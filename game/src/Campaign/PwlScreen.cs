@@ -69,6 +69,48 @@ public partial class PwlScreen : UiScreen
         Bus.On("start", Start);
     }
 
+    public override void _Ready()
+    {
+        // Original screens lay out in real pixels (as the main menu and adventure screen do).
+        GetTree().Root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
+        base._Ready();
+        FitBriefing();
+        // Dev: `--pwl-autostart` picks the first bonus, starts, and dismisses "press any key".
+        if (OS.GetCmdlineUserArgs().Contains("--pwl-autostart"))
+        {
+            if (_bonusSlots.Count > 0) Select(_bonusSlots[0]);
+            _autostart = true;
+            Callable.From(Start).CallDeferred();
+        }
+    }
+
+    bool _autostart;
+
+    public override void _Notification(int what)
+    {
+        base._Notification(what);
+        if (what == NotificationResized) FitBriefing();
+    }
+
+    /// <summary>
+    /// MapDesc is bottom-anchored with ResizeOnTextSet: the box keeps its bottom edge and grows
+    /// upwards to fit the briefing (UiScreen doesn't implement ResizeOnTextSet generally).
+    /// </summary>
+    void FitBriefing()
+    {
+        if (Find("MapDesc") is not { } desc || desc.Size.X <= 0) return;
+        var markup = UiResources.Instance.Text("UI/pwlscreen/MapDesc.txt") ?? "";
+        var values = new Dictionary<string, string>
+        {
+            ["mission_number"] = _mission.Description, ["map_name"] = _mission.Name, ["map_desc"] = MapDescription(_mission.MapTag),
+        };
+        var layout = BitmapTextLayout.Build(markup, values, new Rect2(0, 0, desc.Size.X, 4000));
+        float bottom = desc.Position.Y + desc.Window.Rect.H;
+        float h = Math.Max(desc.Window.Rect.H, layout.Size.Y);
+        desc.Position = new Vector2(desc.Position.X, bottom - h);
+        desc.Size = new Vector2(desc.Size.X, h);
+    }
+
     static UiNode? FindIn(Node parent, string name)
     {
         foreach (var c in parent.GetChildren())
@@ -122,6 +164,7 @@ public partial class PwlScreen : UiScreen
         }
         _phase = Phase.PressKey;
         Find("ProgressBarText")?.SetValue("val", UiResources.StripMarkup(Text("UI/pwlscreen/PressAnyKey.txt")));
+        if (_autostart) GetTree().CreateTimer(1.0).Timeout += () => (GetParent() is CanvasLayer layer ? (Node)layer : this).QueueFree();
     }
 
     public override void _Process(double delta)
@@ -248,6 +291,12 @@ public partial class MissionResultsScreen : UiScreen
         // UISSendGameMessage arguments arrive as written in the data ("0 close_mission_results0 0").
         foreach (var name in new[] { "close_mission_results0", "close_mission_results", "0 close_mission_results0 0" })
             Bus.On(name, Close);
+    }
+
+    public override void _Ready()
+    {
+        GetTree().Root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
+        base._Ready();
     }
 
     void Close()

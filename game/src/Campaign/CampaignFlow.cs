@@ -62,7 +62,11 @@ public static class CampaignFlow
         ApplyCarryOver(session, c, m, profile);
         if (bonusIndex >= 0 && bonusIndex < m.Bonuses.Count) ApplyBonus(session, m.Bonuses[bonusIndex]);
         Active = new ActiveMission(c, m, bonusIndex, session);
-        return AdventureScreen.Open(session);
+        var screen = AdventureScreen.Open(session);
+        // Campaign maps are scripted: host their scripts even before AdventureScreen does it itself.
+        // AdventureScreen.Open already added (and readied) the screen; attach on the next frame.
+        Callable.From(() => ScriptUiBridge.Attach(screen)).CallDeferred();
+        return screen;
     }
 
     static HeroState? MainHero(AdventureSession s, string targetHero)

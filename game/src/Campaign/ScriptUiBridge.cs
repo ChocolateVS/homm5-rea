@@ -46,6 +46,7 @@ public partial class ScriptUiBridge : Node
     /// <summary>The one-line hook for AdventureScreen._Ready: creates the script host and starts the map script.</summary>
     public static ScriptUiBridge Attach(AdventureScreen screen)
     {
+        if (screen.GetNodeOrNull<ScriptUiBridge>("ScriptUiBridge") is { } existing) return existing;
         var bridge = new ScriptUiBridge(screen);
         screen.AddChild(bridge);
         bridge.StartScripts();
