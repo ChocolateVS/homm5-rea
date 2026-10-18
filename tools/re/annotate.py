@@ -31,7 +31,7 @@ VCALLS = {
 
 def ann(src):
     def vcall(m):
-        slot, arg = int(m.group(2), 16), int(m.group(3), 16)
+        slot, arg = int(m.group(2), 16), int(m.group(3), 0)  # decimal args (Ghidra prints e.g. "10") must not parse as hex
         if slot in VCALLS:
             label, table = VCALLS[slot]
             return f'{m.group(0)} /*{label}({table.get(arg, hex(arg))})*/'
