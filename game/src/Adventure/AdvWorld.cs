@@ -34,6 +34,8 @@ public partial class AdvWorld : Node3D
     Node3D? _selection;
 
     public AdvCamera Camera { get; private set; } = null!;
+    /// <summary>Dev (`--adventure-reveal`): no fog of war.</summary>
+    public static bool RevealAll;
     public int Floor { get; private set; }
     public AdvMap Map => _session.Map;
 
@@ -603,7 +605,8 @@ public partial class AdvWorld : Node3D
         int f = Floor;
         int w = Map.TilesX, h = Map.TilesY;
         var data = new byte[w * h];
-        if (f < player.Explored.Count && player.Explored[f] is { } bits && bits.Length >= w * h)
+        if (RevealAll) Array.Fill(data, (byte)255);
+        else if (f < player.Explored.Count && player.Explored[f] is { } bits && bits.Length >= w * h)
             for (int i = 0; i < w * h; i++) data[i] = bits[i] ? (byte)255 : (byte)0;
         var img = Image.CreateFromData(w, h, false, Image.Format.R8, data);
         if (_shroudTex[f] == null) _shroudTex[f] = ImageTexture.CreateFromImage(img);
@@ -613,6 +616,7 @@ public partial class AdvWorld : Node3D
 
     public bool IsExplored(Tile t)
     {
+        if (RevealAll) return true;
         var p = _session.Human;
         return t.Floor < p.Explored.Count && p.Explored[t.Floor] is { } bits && t.Y * Map.TilesX + t.X < bits.Length && bits[t.Y * Map.TilesX + t.X];
     }

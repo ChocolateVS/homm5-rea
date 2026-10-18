@@ -201,10 +201,12 @@ public partial class AdvHud : Control
         box.Visible = playerIndex >= 0;
         if (playerIndex >= 0)
         {
+            // EnemyTurn.txt: "Player <value=PlayerID> turn", filled with the colour name from the
+            // box's related texts color_1..color_8 (Red, Blue, … in ColourModels order).
             var colour = _screen.Session.S.Players.Find(p => p.Index == playerIndex)?.Colour ?? "";
-            Screen.Find("EnemyTurnBox/Text")?.SetValue("player", $"{playerIndex + 1}");
-            Screen.Find("EnemyTurnBox/Text")?.SetValue("value", $"{playerIndex + 1}");
-            Screen.Find("EnemyTurnBox/Text")?.SetValue("color", colour.Replace("PCOLOR_", ""));
+            int ci = AdvColors.ColourModelIndex(colour);
+            var name = UiResources.Instance.Text($"UI/AdventureScreen/EnemyTurnBox/color_{Math.Max(1, ci)}.txt") ?? $"{playerIndex + 1}";
+            Screen.Find("EnemyTurnBox/Text")?.SetValue("PlayerID", UiResources.StripMarkup(name).Trim());
         }
     }
 
@@ -303,7 +305,7 @@ public partial class AdvHud : Control
         }
         // Unexplored tiles are black.
         var me = session.Human;
-        if (f < me.Explored.Count && me.Explored[f] is { } bits)
+        if (!AdvWorld.RevealAll && f < me.Explored.Count && me.Explored[f] is { } bits)
             for (int y = 0; y < map.TilesY; y++)
             for (int x = 0; x < map.TilesX; x++)
                 if (!bits[y * map.TilesX + x]) img.SetPixel(x, y, Colors.Black);
