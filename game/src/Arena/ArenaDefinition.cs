@@ -25,6 +25,8 @@ public sealed class ArenaLight
 public sealed class ArenaDefinition
 {
     public string ScenePath = "", MapPath = "";
+    /// <summary>Map floor the battle takes place on (0 surface, 1 underground).</summary>
+    public int Floor;
     public int MountX, MountY;
     public float MountRot, AdditionalHeight;
     public TerrainData Terrain = null!;
@@ -72,7 +74,12 @@ public sealed class ArenaDefinition
 
         def.MapPath = XdbRef.Parse((string?)scene.Element("Scenery")?.Attribute("href"), def.ScenePath).Path;
         var map = xdb.Load(def.MapPath).Root!;
-        var terrainPath = XdbRef.Parse((string?)map.Element("GroundTerrainFileName")?.Attribute("href"), def.MapPath).Path;
+        // Subterranean arenas play on the map's underground floor (InitialFloor 1, objects on
+        // Floor 1, UndergroundTerrain.bin); the surface terrain there is an unused grass plane.
+        def.Floor = int.TryParse((string?)map.Element("InitialFloor"), out var floor) ? floor : 0;
+        var terrainElement = def.Floor == 1 && (string?)map.Element("UndergroundTerrainFileName")?.Attribute("href") is { Length: > 0 }
+            ? "UndergroundTerrainFileName" : "GroundTerrainFileName";
+        var terrainPath = XdbRef.Parse((string?)map.Element(terrainElement)?.Attribute("href"), def.MapPath).Path;
         def.Terrain = TerrainReader.Read(Game.Instance.Fs.ReadAllBytes(terrainPath));
 
         foreach (var layer in def.Terrain.Layers)
@@ -83,7 +90,8 @@ public sealed class ArenaDefinition
             def.LayerTextures.Add(tex);
         }
 
-        var lightRef = map.Element("GroundAmbientLights")?.Elements("Item").FirstOrDefault()
+        var lightRef = (def.Floor == 1 ? map.Element("UndergroundAmbientLights")?.Elements("Item").FirstOrDefault() : null)
+                       ?? map.Element("GroundAmbientLights")?.Elements("Item").FirstOrDefault()
                        ?? map.Element("AmbientLight");
         if (xdb.Resolve(lightRef, def.MapPath) is { } light)
             def.Light = ReadLight(light, XdbRef.Parse((string?)lightRef?.Attribute("href"), def.MapPath).Path);
@@ -92,6 +100,7 @@ public sealed class ArenaDefinition
         {
             var o = obj.Elements().FirstOrDefault();
             if (o?.Element("Pos") is not { } pos) continue;
+            if (int.TryParse((string?)o.Element("Floor"), out var objFloor) && objFloor != def.Floor) continue;
             var sharedPath = Href(o.Element("Shared"), def.MapPath);
             if (sharedPath == null || !Game.Instance.Fs.Exists(sharedPath)) continue;
             var shared = xdb.Load(sharedPath).Root!;

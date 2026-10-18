@@ -13,6 +13,9 @@ namespace H5Reborn;
 /// </summary>
 public partial class MainMenu : Control
 {
+    /// <summary>Screen to open when the front end loads next (e.g. back to the duel room after a battle).</summary>
+    public static string? ReturnScreen;
+
     public override void _Ready()
     {
         // The original lays its UI out in real screen pixels (no scaling), re-anchoring
@@ -40,7 +43,9 @@ public partial class MainMenu : Control
         // `--goto=xdb:UI/CombatScreen-Heavy.(WindowScreen).xdb` shows any original screen as-is.
         if (DevArgs.Goto is { } path && path.StartsWith("xdb:"))
             UiNavigator.Register(path, () => new UiScreen(path[4..]));
-        UiNavigator.Goto(DevArgs.Goto is { } g && UiNavigator.Has(g) ? g : "mainmenu");
+        var start = ReturnScreen ?? (DevArgs.Goto is { } g && UiNavigator.Has(g) ? g : "mainmenu");
+        ReturnScreen = null;
+        UiNavigator.Goto(start);
         if (DevArgs.Goto == "create") UiNavigator.Goto("lobby");
         foreach (var (pos, at) in DevArgs.Clicks)
             GetTree().CreateTimer(at).Timeout += () => Click(pos);

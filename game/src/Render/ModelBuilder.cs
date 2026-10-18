@@ -100,9 +100,6 @@ public static class ModelBuilder
 
     static Material BuildMaterial(MaterialData m)
     {
-        if (m.AlphaMode is "AM_OVERLAY" or "AM_OVERLAY_ZWRITE")
-            return OverlayMaterial.Create(m.DiffuseTexture != null ? Game.Instance.LoadTexture(m.DiffuseTexture) : null);
-
         var mat = new StandardMaterial3D
         {
             CullMode = m.TwoSided ? BaseMaterial3D.CullModeEnum.Disabled : BaseMaterial3D.CullModeEnum.Back,
@@ -119,6 +116,17 @@ public static class ModelBuilder
             case "AM_TRANSPARENT":
             case "AM_ALPHA_BLEND":
                 mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+                break;
+            // Nival "overlay" materials are alpha-blended layers drawn over the terrain and
+            // scenery (ground decals, cliff skirts with ragged alpha edges, cave floors);
+            // they are lit like any surface. The _ZWRITE variant also writes depth.
+            case "AM_OVERLAY":
+                mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+                mat.RenderPriority = 1;
+                break;
+            case "AM_OVERLAY_ZWRITE":
+                mat.Transparency = BaseMaterial3D.TransparencyEnum.AlphaDepthPrePass;
+                mat.RenderPriority = 1;
                 break;
         }
         if (m.LightingMode == "L_NONE") mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;

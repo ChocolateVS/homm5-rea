@@ -48,6 +48,43 @@ public partial class ArenaScene : Node3D
         Camera = BuildCamera();
         AddChild(Camera);
         Camera.MakeCurrent();
+        Callable.From(FadeOccluders).CallDeferred();
+    }
+
+    /// <summary>Original setvars combat_transparent_walls (1) and combat_wall_fade (0.5).</summary>
+    public const float WallFade = 0.5f;
+
+    /// <summary>
+    /// Scenery standing between the camera and the battlefield is drawn faded (the stock
+    /// combat_transparent_walls / combat_wall_fade = 0.5 behaviour), so arenas whose
+    /// near edge has tall rocks or trees keep the field visible. An object counts as an
+    /// occluder when its screen rectangle overlaps the grid's and it is nearer than the
+    /// grid's near edge along the view direction.
+    /// </summary>
+    void FadeOccluders()
+    {
+        if (GetNodeOrNull<Node3D>("Scenery") is not { } scenery) return;
+        var corners = new[] { new Vector2(0, 0), new Vector2(ArenaGrid.Width, 0), new Vector2(0, ArenaGrid.Height), new Vector2(ArenaGrid.Width, ArenaGrid.Height) }
+            .Select(c => Camera.UnprojectPosition(Grid.CellCenter(c.X, c.Y))).ToArray();
+        var gridRect = new Rect2(corners[0], Vector2.Zero);
+        foreach (var c in corners) gridRect = gridRect.Expand(c);
+        var forward = -Camera.GlobalTransform.Basis.Z;
+        float nearEdgeDepth = (Grid.CellCenter(ArenaGrid.Width * 0.5f, 0) - Camera.GlobalPosition).Dot(forward);
+        foreach (var child in scenery.GetChildren())
+        {
+            if (child is not MeshInstance3D mi || mi.Mesh == null) continue;
+            var aabb = mi.GlobalTransform * mi.GetAabb();
+            if ((aabb.GetCenter() - Camera.GlobalPosition).Dot(forward) > nearEdgeDepth) continue;
+            Rect2? screen = null;
+            for (int i = 0; i < 8; i++)
+            {
+                var p = aabb.GetEndpoint(i);
+                if (Camera.IsPositionBehind(p)) continue;
+                var s = Camera.UnprojectPosition(p);
+                screen = screen is { } r ? r.Expand(s) : new Rect2(s, Vector2.Zero);
+            }
+            if (screen is { } sr && sr.Intersects(gridRect)) mi.Transparency = 1f - WallFade;
+        }
     }
 
     // ---- scenery -------------------------------------------------------------------------
@@ -162,6 +199,7 @@ public partial class ArenaScene : Node3D
     // (Cameras/CombatArena/CombatArena.xdb, DefaultCamera of _(CamerasSet)/CombatArenas.xdb)
     // supplies only the clip planes here: its Rot (-30, -66.8) gives no axis-aligned yaw under
     // any reading, and the exe's Pos/Rot/Rod → view conversion hasn't been traced yet.
+    public const float DefaultYawDeg = 0f;
     public const float DefaultPitchDeg = 46.2f, DefaultFovDeg = 31.2f, DefaultDistance = 24.8f, DefaultTargetDepth = 4.27f;
 
     Camera3D BuildCamera()
@@ -173,7 +211,7 @@ public partial class ArenaScene : Node3D
             cam.Near = float.Parse(c.Element("ClipDistanceMin")!.Value, CultureInfo.InvariantCulture);
             cam.Far = float.Parse(c.Element("ClipDistanceMax")!.Value, CultureInfo.InvariantCulture);
         }
-        PlaceCamera(cam, DefaultPitchDeg, 0f, DefaultDistance, new Vector2(ArenaGrid.Width * 0.5f, DefaultTargetDepth));
+        PlaceCamera(cam, DefaultPitchDeg, DefaultYawDeg, DefaultDistance, new Vector2(ArenaGrid.Width * 0.5f, DefaultTargetDepth));
         return cam;
     }
 

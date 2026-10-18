@@ -961,6 +961,9 @@ public partial class CombatScreen : Control
 
     internal void ReturnToMenu()
     {
+        // A networked duel returns to its lobby room (the server keeps the room after the
+        // game ends), like the original's MP flow; local games go back to the main menu.
+        if (Session.IsNetworked && Ui.Net.LobbyService.Instance.Room != null) MainMenu.ReturnScreen = "wait";
         Session.Leave();
         CombatCursors.Reset();
         Autoplay = false;
