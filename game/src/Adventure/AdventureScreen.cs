@@ -84,6 +84,8 @@ public partial class AdventureScreen : Control
         Hud.Refresh();
         // Map scripts and their UI (messages, dialog scenes, objectives); idempotent, campaigns attach too.
         Campaign.ScriptUiBridge.Attach(this);
+        // Quicksave/quickload, save/load keys and autosave (game/src/Save).
+        Save.SaveHotkeys.Attach(this);
     }
 
     // ---------------------------------------------------------------- state helpers
@@ -176,10 +178,8 @@ public partial class AdventureScreen : Control
     public void ShowEscMenu()
     {
         if (_modal > 0) return;
-        AdvDialogs.YesNo(_dialogLayer, "Main Menu", "Leave this game and return to the main menu?", null, yes =>
-        {
-            if (yes) ReturnToMainMenu();
-        });
+        // The stock in-game menu (UI/EscMenu) with Save/Load (game/src/Save).
+        Save.InGameMenu.Show(this, ReturnToMainMenu);
     }
 
     public void ShowScenarioInfo()

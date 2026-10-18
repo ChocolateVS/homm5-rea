@@ -35,6 +35,17 @@ public static class CampaignFlow
 
     public static ActiveMission? Active { get; private set; }
 
+    /// <summary>Re-establishes the active mission for a campaign game loaded from a save (game/src/Save).</summary>
+    public static void Resume(string campaign, int mission, int bonusIndex, AdventureSession session)
+    {
+        Active = Find(campaign) is { } c && mission >= 0 && mission < c.Missions.Count
+            ? new ActiveMission(c, c.Missions[mission], bonusIndex, session)
+            : null;
+    }
+
+    /// <summary>Leaves campaign mode (a scenario was loaded or started).</summary>
+    public static void ClearActive() => Active = null;
+
     public static void OpenPwl(Node host, string campaign, int mission)
     {
         var c = Find(campaign);

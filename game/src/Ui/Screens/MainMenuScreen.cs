@@ -42,5 +42,7 @@ public partial class MainMenuScreen : UiScreen
         });
         Bus.On("change_profile", () => SetVisible("SinglePlayer/ChangeProfile", true));
         Bus.On("profile_select", () => SetVisible("SinglePlayer/ChangeProfile", false));
+        // Profiles (ChangeProfile panel, first-run name), Load Game and Hall of Fame (game/src/Profiles).
+        Profiles.ProfileMenu.Attach(this);
     }
 }

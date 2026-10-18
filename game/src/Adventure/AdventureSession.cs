@@ -44,6 +44,16 @@ public sealed class AdventureSession
 
     static AdventureDb? _db;
 
+    /// <summary>Adventure rules data shared by every session (loaded on first use).</summary>
+    public static AdventureDb SharedDb => _db ??= AdventureDb.Load(H5Reborn.Game.Instance.Db, H5Reborn.Game.Instance.Fs);
+
+    /// <summary>Battle seed counter; saved with the game so seeds continue identically after loading.</summary>
+    public ulong BattleSeq => _battleSeq;
+
+    /// <summary>Rebuilds a session around a game restored from a save (game/src/Save).</summary>
+    public static AdventureSession Restore(MapFiles files, H5.Adventure.Engine.Adventure game, ulong seed, ulong battleSeq) =>
+        new(SharedDb, game.Map, game, Array.Empty<AdvEvent>(), seed) { Files = files, _battleSeq = battleSeq };
+
     /// <summary>Loads a map (catalogue id, short name or .h5m path) and starts a game with one human player.</summary>
     public static AdventureSession Start(string mapQuery, ulong seed, int humanMapPlayer = -1, int difficulty = 1)
     {

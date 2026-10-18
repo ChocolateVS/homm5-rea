@@ -100,13 +100,14 @@ public static class SoundLibrary
             {
                 Stream = def.Stream, VolumeDb = Mathf.LinearToDb(volume), PitchScale = pitch,
                 UnitSize = def.MinDistance, MaxDistance = def.MaxDistance, Autoplay = true,
+                Bus = Options.AudioBuses.For(Options.AudioBuses.Sfx),
             };
             if (!def.Loop) p3.Finished += p3.QueueFree;
             player = p3;
         }
         else
         {
-            var p2 = new AudioStreamPlayer { Stream = def.Stream, VolumeDb = Mathf.LinearToDb(volume), PitchScale = pitch, Autoplay = true };
+            var p2 = new AudioStreamPlayer { Stream = def.Stream, VolumeDb = Mathf.LinearToDb(volume), PitchScale = pitch, Autoplay = true, Bus = Options.AudioBuses.For(Options.AudioBuses.Sfx) };
             if (!def.Loop) p2.Finished += p2.QueueFree;
             player = p2;
         }

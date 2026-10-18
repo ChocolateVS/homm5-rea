@@ -73,7 +73,9 @@ public sealed class CampaignProfile
     };
 
     static CampaignProfile? _current;
-    public static CampaignProfile Current => _current ??= Load("Player");
+    /// <summary>Progress of the selected player profile (game/src/Profiles).</summary>
+    public static CampaignProfile Current =>
+        _current is { } c && c.Name == Profiles.ProfileManager.CurrentName ? c : _current = Load(Profiles.ProfileManager.CurrentName);
 
     static string PathFor(string name) => $"user://profiles/{name}/campaigns.json";
 

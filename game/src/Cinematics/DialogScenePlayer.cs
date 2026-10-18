@@ -482,7 +482,7 @@ public static class MusicPlayer
         var stream = AudioStreamOggVorbis.LoadFromFile(full);
         if (stream == null) return null;
         stream.Loop = loop;
-        var p = new AudioStreamPlayer { Stream = stream, VolumeDb = Mathf.LinearToDb(Math.Max(0.001f, volume)), Bus = "Master" };
+        var p = new AudioStreamPlayer { Stream = stream, VolumeDb = Mathf.LinearToDb(Math.Max(0.001f, volume)), Bus = Options.AudioBuses.For(Options.AudioBuses.Music) };
         parent.AddChild(p);
         float fadeIn = float.TryParse((string?)root.Element("FadeIn"), NumberStyles.Float, CultureInfo.InvariantCulture, out var fi) ? fi / 1000f : 0;
         if (fadeIn > 0)
