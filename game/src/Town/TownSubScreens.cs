@@ -372,7 +372,8 @@ public sealed partial class BlacksmithScreen : TownSubScreen
         {
             TownUi.SetPicture(Ui.Find($"Choice_{i}/Icon"), TownUi.CreatureIcon(Machines[i]));
             int price = db.WarMachines.TryGetValue(Machines[i], out var wm) ? wm.Cost.Gold * (Machines[i] == native ? 1 : 3) : 0;
-            Ui.Find($"Price_{i}")?.SetValue("Price", price.ToString());
+            // The stock text carries filler digits after the value; show the price alone.
+            Ui.Find($"Price_{i}")?.SetText($"<center><value_value>{price}");
             Ui.Find($"Choice_{i}")?.SetState(i == _choice && (Ui.Find($"Choice_{i}")?.Window.ButtonStates.Count ?? 0) > 1 ? 1 : 0);
         }
         var (name, desc) = MachineTexts(Machines[_choice]);

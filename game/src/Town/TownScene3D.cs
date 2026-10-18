@@ -44,6 +44,7 @@ public partial class TownScene3D : Node3D
     record struct CamLimits(float MinRod, float MaxRod, float MinZ, float MaxZ, float MinPitch, float MaxPitch, bool UsePitch);
 
     readonly ModelLoader _loader = new(Game.Instance.Xdb);
+    MeshInstance3D? _sky;
 
     public TownScene3D(string descPath)
     {
@@ -94,6 +95,8 @@ public partial class TownScene3D : Node3D
         AddChild(Camera);
         SetCamera(desc.Element("initialCamPos"));
         Camera.MakeCurrent();
+        // The dome is authored around the viewer; centre it on the initial eye.
+        if (_sky != null) _sky.Position = Camera.Position;
     }
 
     // ------------------------------------------------------------------ objects
@@ -277,7 +280,8 @@ public partial class TownScene3D : Node3D
                     sm.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
                     mesh.SurfaceSetMaterial(i, sm);
                 }
-                AddChild(new MeshInstance3D { Name = "SkyDome", Mesh = mesh, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, Position = Camera?.GlobalPosition ?? Vector3.Zero });
+                _sky = new MeshInstance3D { Name = "SkyDome", Mesh = mesh, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+                AddChild(_sky);
             }
         }
         var sun = new DirectionalLight3D { Name = "Sun", LightColor = C("LightColor", 2f), ShadowEnabled = true, DirectionalShadowMaxDistance = 600 };
