@@ -52,7 +52,7 @@ exe yet). Addresses are H5_Game.exe virtual addresses.
 | Corners along the path | path track (008ad190 type 4) corner handling not traced | turns at the in-place rate while walking | GAP (inferred) |
 | Attack facing | turn routine | attacker and defender turn instead of snapping | FIXED (inferred from the same routine) |
 | Teleporting movers | moveStart / moveEnd clips | as before | MATCH (prior agent) |
-| Frame checks | — | walker (Nightmare), flyers (Griffins), teleporter (Arch Devil) captured at 10 fps: no snapping or sliding | — |
+| Frame checks | — | walker (Nightmare), flyers (Griffins), teleporter (Arch Devil) captured at 10 fps: no snapping or sliding; a 2x2 walker (Hydra/Cyclops) move was not caught in the captures (same code path, StackCenter with size 2) | — |
 
 ## Cursors and highlights
 
@@ -72,7 +72,7 @@ exe yet). Addresses are H5_Game.exe virtual addresses.
 | Flee/Surrender | choice dialog built in code (exe 00570cf0) from UIGameRoot ID_RETREAT_FACE_TEXTURE, _TITLE_TEXT, _HEADER_TEXT, _DESCRIPTION[_FLEE], _NOGOLD_TOOLTIP/_TEXT, ID_SURRENDER_TEXTURE, _SURRENDER_TOOLTIP/_TEXT, ID_FLEE_TEXT/_TEXTURE, ID_COMBAT_RETREAT T_HEADER/T_FLEE/T_SURRENDER tooltips; close key input_Combat_Retreat_Close; CANT_RETREAT_* refusals | submits SurrenderCmd at once | GAP |
 | Tactics: "not all creatures placed" confirm | NotAllCreaturesPlacedHeader/Question (UI/CombatScreen-Heavy) | none | GAP |
 | Tactics: split stack | SplitStackHeader/Question | none | GAP |
-| War machines: Ballista / Triple Ballista | one targeting action fires every shot (engine 8b48870, exe 00a75bf0) | one ShootCmd; prediction shows "x N" (NORMAL_ATTACK_MULTIPLE) | MATCH |
+| War machines: Ballista / Triple Ballista | one targeting action per turn fires every shot at the chosen target, stopping if it dies (engine 8b48870, exe 00a75bf0) | one ShootCmd, no follow-up shot commands; prediction shows "x N" from `Battle.WarMachineShotsPerAction` (NORMAL_ATTACK_MULTIPLE); each shot emits its own attack event, so N shot animations + projectiles play in sequence | MATCH |
 | First Aid Tent / Catapult targeting | manual with the perks | prior agent (CATAPULT_SHOT targets) | UNVERIFIED |
 | Esc menu | UI/EscMenu | stock window (prior agent) | MATCH (prior agent) |
 | Keyboard shortcuts | profiles/default_profile/input_a2.cfg combat sections | mapped by the prior agent | MATCH (prior agent; not re-checked key by key) |
