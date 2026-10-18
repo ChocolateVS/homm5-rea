@@ -84,3 +84,21 @@ public class AuditSpecTests2(GameDataFixture f)
         Assert.Equal(open, b.SpeedOf(footman));    // no effect outside a siege
     }
 }
+
+[Collection("game")]
+public class AuditRageTests(GameDataFixture f)
+{
+    // exe FUN_008a2c20: Demon Hunter adds ((lvl-1)/1)*2 + 10 rage per event while demons are on the field.
+    [Fact]
+    public void DemonHunterSpeedsUpRageWhenDemonsFight()
+    {
+        var b = f.Duel("CREATURE_GOBLIN", 20, "CREATURE_IMP", 20);
+        var gob = b.State.Units[0];
+        if (!gob.Abilities.Contains("ABILITY_DEMON_RAGED")) gob.Abilities.Add("ABILITY_DEMON_RAGED");
+        var h = b.State.Heroes[0];
+        h.Present = true; h.Level = 6; h.Specialization = "HERO_SPEC_DEMON_HUNTER";
+        int before = gob.RagePoints;
+        b.AddRage(gob, 20);
+        Assert.Equal(before + 20 + (6 - 1) * 2 + 10, gob.RagePoints);
+    }
+}

@@ -1178,10 +1178,18 @@ public sealed partial class Battle
         if (rp != 0) AddRage(u, (int)rp);
     }
 
-    void AddRage(Unit u, int rp)
+    internal void AddRage(Unit u, int rp)
     {
         var h = HeroOf(u);
-        if (h.HasPerk(Sk.Bloodfire)) rp = (int)(rp * Stats.Get("combat/Creatures/Stronghold/DemonRage/RPCoefPowerOfBlood", 1.5));
+        // Rage gain (exe FUN_008a2c20): ×RPCoefUnderBerserk while berserk, ×RPCoefPowerOfBlood (both rounded), then
+        // + DemonHunter_RPBonusPerHeroLevel for the Demon Hunter specialisation when demons are in the battle.
+        if (u.HasEffect("SPELL_BERSERK")) rp = (int)Math.Round(rp * Stats.Get("combat/Creatures/Stronghold/DemonRage/RPCoefUnderBerserk", 1), MidpointRounding.ToEven);
+        if (h.HasPerk(Sk.Bloodfire)) rp = (int)Math.Round(rp * Stats.Get("combat/Creatures/Stronghold/DemonRage/RPCoefPowerOfBlood", 1.5), MidpointRounding.ToEven);
+        if (h.Present && h.Specialization == "HERO_SPEC_DEMON_HUNTER" && S.Living.Any(d => d.Kind == UnitKind.Creature && d.Town == Towns.Inferno))
+        {
+            const string k = "combat/Creatures/Stronghold/DemonRage/DemonHunter_RPBonusPerHeroLevel/";
+            rp += (h.Level - 1) / Math.Max(1, (int)Stats.Get(k + "LevelDivisor", 1)) * (int)Stats.Get(k + "PerDividedLevel", 2) + (int)Stats.Get(k + "Base", 10);
+        }
         u.RagePoints = Math.Max(0, u.RagePoints + rp);
         int maxLevel = (int)h.SkillLevel(Sk.BloodRage);
         if (maxLevel >= 4) maxLevel = 3;
