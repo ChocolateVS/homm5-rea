@@ -77,6 +77,47 @@ public class AuditSkillTests(GameDataFixture f)
         Assert.Equal(baseLuck - 2, b.LuckOf(imp));
     }
 
+    // exe FUN_0097d600 → FUN_00977a80: Cold Death's extra creature HP and Exorcism's doubling are applied to the raw
+    // spell damage BEFORE protection (Exorcism doubles base + Cold Death bonus).
+    [Fact]
+    public void ColdDeathAndExorcismActBeforeProtection()
+    {
+        var (b, s) = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_IMP", 10) });
+        var hero = s.Heroes[0];
+        hero.Perks.RemoveAll(p => p is "HERO_SKILL_DEADLY_COLD" or "HERO_SKILL_ELEMENTAL_OVERKILL");
+        var imp = Of(s, "CREATURE_IMP");
+        var iceBolt = f.Db.Spells["SPELL_ICE_BOLT"];
+        var fireball = f.Db.Spells["SPELL_FIREBALL"];
+        int hp = b.MaxHealthOf(imp);
+
+        Assert.Equal(100, b.PreProtectionPerks(100, imp, iceBolt, hero));
+        hero.Perks.Add("HERO_SKILL_DEADLY_COLD");
+        Assert.Equal(100 + hp, b.PreProtectionPerks(100, imp, iceBolt, hero));
+        Assert.Equal(100, b.PreProtectionPerks(100, imp, fireball, hero));   // only the three cold spells
+
+        hero.Perks.Add("HERO_SKILL_ELEMENTAL_OVERKILL");
+        imp.Summoned = true;
+        Assert.Equal(2 * (100 + hp), b.PreProtectionPerks(100, imp, iceBolt, hero));
+        Assert.Equal(200, b.PreProtectionPerks(100, imp, fireball, hero));
+    }
+
+    // exe FUN_008a0e30 (speed getter FUN_008a1e50): Familiar Ground gives +RoadHome/SpeedBonus on the
+    // RoadHome/NativeTerrain battlefield (grass), nothing elsewhere.
+    [Fact]
+    public void FamiliarGroundAddsSpeedOnGrassOnly()
+    {
+        var (b, s) = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_IMP", 10) });
+        var footman = Of(s, "CREATURE_FOOTMAN");
+        s.Terrain = CombatArenaTable.TerrainGrass;
+        s.Heroes[0].Perks.Remove("HERO_SKILL_ROAD_HOME");
+        int baseSpeed = b.SpeedOf(footman);
+        s.Heroes[0].Perks.Add("HERO_SKILL_ROAD_HOME");
+        int bonus = (int)f.Db.Stats.Get("combat/HeroSkills/Knight/RoadHome/SpeedBonus", 2);
+        Assert.Equal(baseSpeed + bonus, b.SpeedOf(footman));
+        s.Terrain = CombatArenaTable.TerrainLava;
+        Assert.Equal(baseSpeed, b.SpeedOf(footman));
+    }
+
     // exe FUN_0097d740 (FPU chop, +0.5 at 0097d784): the perks' extra elemental damage rounds half up.
     [Fact]
     public void ChillingPerkDamageRoundsHalfUp()

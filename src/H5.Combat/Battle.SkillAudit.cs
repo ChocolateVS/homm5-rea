@@ -1,3 +1,5 @@
+using H5.Core.Data;
+
 namespace H5.Combat;
 
 // Hero skill / perk rules confirmed against H5_Game.exe by the skills audit
@@ -37,4 +39,39 @@ public sealed partial class Battle
     /// The protection percent p (FUN_0097d2a0 with no spell) is not modelled here.
     /// </summary>
     internal static int SpellLikeAmount(double amount) => (int)((double)(float)amount + 0.5);
+
+    /// <summary>
+    /// Familiar Ground (HERO_SKILL_ROAD_HOME, exe FUN_008a0e30 called by the speed getter FUN_008a1e50): +max(0,
+    /// RoadHome/SpeedBonus) speed for the hero's creatures when the battlefield terrain (battle vfunc 0x60) is
+    /// RoadHome/NativeTerrain (TT_GRASS in the stock data). Not implemented by the engine before.
+    /// </summary>
+    internal int RoadHomeSpeedBonus(Unit u)
+    {
+        if (!HeroOf(u).HasPerk(Sk.FamiliarGround)) return 0;
+        int terrain = S.Terrain;
+        int native = (Stats.Node("combat/HeroSkills/Knight/RoadHome/NativeTerrain")?.Value.Trim()) switch
+        {
+            "TT_DIRT" => CombatArenaTable.TerrainDirt, "TT_GRASS" => CombatArenaTable.TerrainGrass,
+            "TT_SAND" => CombatArenaTable.TerrainSand, "TT_SNOW" => CombatArenaTable.TerrainSnow,
+            "TT_LAVA" => CombatArenaTable.TerrainLava, "TT_SUBTERRANEAN" => CombatArenaTable.TerrainSubterranean,
+            "TT_WATER" => CombatArenaTable.TerrainWater, _ => CombatArenaTable.TerrainGrass,
+        };
+        return terrain == native ? Math.Max(0, (int)Stats.Get("combat/HeroSkills/Knight/RoadHome/SpeedBonus", 2)) : 0;
+    }
+
+    /// <summary>
+    /// Spell-damage perks applied before protection (exe FUN_0097d600 → FUN_00977a80, then FUN_0097d2a0 on the result):
+    /// Cold Death (HERO_SKILL_DEADLY_COLD) adds one creature's hit points (vfunc 0x1a8) for Ice Bolt / Circle of Winter /
+    /// Deep Freeze, then Exorcism (HERO_SKILL_ELEMENTAL_OVERKILL) doubles the sum against summoned creatures. The engine
+    /// applied both after protection, adding Cold Death's hit points pre-scaled by the protection share.
+    /// </summary>
+    internal double PreProtectionPerks(double dmg, Unit t, SpellDef sp, HeroState? hero)
+    {
+        if (hero == null) return dmg;
+        string id = BaseSpell(sp.Id);
+        if (hero.HasPerk(Sk.ColdDeath) && id is "SPELL_ICE_BOLT" or "SPELL_FROST_RING" or "SPELL_DEEP_FREEZE" && !ElementImmune(t, Elements.Water))
+            dmg += MaxHealthOf(t);
+        if (hero.HasPerk(Sk.Exorcism) && t.Summoned && sp.School == "MAGIC_SCHOOL_DESTRUCTIVE") dmg *= 2;
+        return dmg;
+    }
 }

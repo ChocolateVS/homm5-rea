@@ -795,6 +795,7 @@ public sealed partial class Battle
         dmg = ElementArtifactDamage(hero, sp.Element, dmg);
         if (IsElementalCaster(_castingCreature))
             dmg = ExeChop(dmg * (double)(float)Stats.Get("combat/Creatures/Neutral/SpellDamageMultiplier", 0.3));
+        dmg = PreProtectionPerks(dmg, t, sp, hero);
         if (!ignoreResist)
         {
             double mult = SpellDamageMultiplier(t, sp, side) * ElementProtectionArtifacts(t, sp.Element);
@@ -806,14 +807,11 @@ public sealed partial class Battle
         }
         if (hero != null)
         {
-            if (hero.HasPerk(Sk.Exorcism) && t.Summoned && sp.School == "MAGIC_SCHOOL_DESTRUCTIVE") dmg *= 2;
             if (hero.HasPerk(Sk.WarlocksLuck) && sp.School == "MAGIC_SCHOOL_DESTRUCTIVE")
             {
                 int luck = hero.Luck;
                 if (luck > 0 && S.Rng.Chance(Math.Min(0.5, luck * 0.1))) { dmg *= 2; Emit(new LuckProc(Actor.Hero(side), true)); }
             }
-            if (hero.HasPerk(Sk.ColdDeath) && id is "SPELL_ICE_BOLT" or "SPELL_FROST_RING" or "SPELL_DEEP_FREEZE" && !ElementImmune(t, Elements.Water))
-                dmg += MaxHealthOf(t) * (ignoreResist ? 1 : SpellDamageMultiplier(t, sp, side));
         }
         // Elemental Chains add their share on top of the protected damage (exe: FUN_0097d600 + FUN_00977e60 in the
         // bolt/chain/area resolvers 0085e7c0/0085edb0/0085f330); the Holy/Unholy Word resolver (00977600) has none.

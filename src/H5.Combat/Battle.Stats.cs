@@ -219,6 +219,7 @@ public sealed partial class Battle
         // Death Tread: the siege attacker's troops get DeathTread/SpeedBonus (exe FUN_008a0ea0).
         if (S.Siege != null && u.Side == 0 && h.HasPerk("HERO_SKILL_DEATH_TREAD"))
             sp += Math.Max(0, Stats.Get("combat/HeroSkills/Necromancer/DeathTread/SpeedBonus", 4));
+        sp += RoadHomeSpeedBonus(u);   // Familiar Ground (exe FUN_008a0e30)
         if (u.HasEffect(H5.Combat.Fx.Battlecry)) sp += Stats.Get("combat/Spells/Warcries/Battlecry_SpeedBonus/Base", 1);
         sp += RageBonus(u, "DEMON_RAGE_BONUS_SPEED");
         var eh = Enemy(u.Side);
