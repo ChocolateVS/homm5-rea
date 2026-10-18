@@ -134,7 +134,7 @@ public partial class TownScreen : Control
         bus.On("enter_market", () => OpenSub("market"));
         bus.On("enter_magic_guild", () => OpenSub("guild"));
         bus.On("enter_blacksmith", () => OpenSub("blacksmith"));
-        bus.On("enter_shipyard", () => Notice("Shipyard", "Ships are built at the town's shipyard on the adventure map."));
+        bus.On("enter_shipyard", OpenShipyard);
         bus.On("enter_special", () => OpenSub("special"));
         bus.On("buy_artifacts", () => Notice("Artifact Merchant", "The artifact merchant is not open yet."));
         bus.On("show_town_info", ShowTownInfo);
@@ -235,11 +235,29 @@ public partial class TownScreen : Control
 
     public void Notice(string title, string text) => AdvDialogs.Message(_dialogLayer, title, text, null);
 
+    /// <summary>
+    /// The town shipyard: the stock shipyard offer (Text/Interface/Shipyard, cost from the engine) and,
+    /// if accepted, <see cref="BuildShipCmd"/> for this town — the boat appears on the town's slipway.
+    /// </summary>
+    void OpenShipyard()
+    {
+        if (Town.Level("TB_SHIPYARD") <= 0) { Notice(Town.Name, "This building has not been built yet."); return; }
+        var me = Session.S.Players.First(p => p.Index == Town.Owner);
+        Adventure.Water.BoatLayer.ShipyardOffer(_dialogLayer, me, yes =>
+        {
+            if (!yes) return;
+            var r = Session.Apply(new BuildShipCmd(Town.Object) { Player = me.Index });
+            if (!r.Ok) Notice(Town.Name, char.ToUpperInvariant((r.Error ?? "Not possible")[0]) + (r.Error ?? "Not possible")[1..] + ".");
+            Refresh();
+        });
+    }
+
     // ------------------------------------------------------------------ sub-screens
 
     /// <summary>Opens a town sub-screen by key (also used by `--town-goto=`).</summary>
     public void OpenSub(string key)
     {
+        if (key == "shipyard") { OpenShipyard(); return; }
         foreach (var c in _subLayer.GetChildren()) c.QueueFree();
         Control? sub = key switch
         {
@@ -378,7 +396,8 @@ public partial class TownScreen : Control
             var t when t.StartsWith("TB_DWELLING_") => "fort",
             _ => null,
         };
-        if (key != null) OpenSub(key);
+        if (view.Def.Type == "TB_SHIPYARD") OpenShipyard();
+        else if (key != null) OpenSub(key);
         else Notice(view.Name, view.Description);
     }
 
