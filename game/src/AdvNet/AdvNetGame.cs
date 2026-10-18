@@ -38,7 +38,7 @@ public sealed class AdvNetGame
     {
         _send = send;
         _pending = pending;
-        Replica = new AdventureNetReplica(Maps, started);
+        Replica = new AdventureNetReplica(Maps, started) { DeferBattleUpdates = true };
         Replica.BattleStarted += b => BattleStarted?.Invoke(b);
         GD.Print($"[advnet] game on {Replica.Map.Map.Id} as map player {Replica.MyPlayer + 1} (side {Replica.MySide})");
     }

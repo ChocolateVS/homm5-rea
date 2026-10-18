@@ -18,9 +18,17 @@ static class AdvNetHooks
         AdvNetScreens.OpenNetworkGame = net =>
         {
             var session = AdventureSession.FromRemote(new RemoteAdventure(net));
-            net.BattleStarted += _ =>
-                GD.PushWarning("[H5] network battle started: interactive network battles are not wired into the combat screen yet");
+            void StartBattle(H5.AdvNet.BattleReplica b) => Callable.From(() => NetBattleLauncher.Start(net, b, node =>
+            {
+                if (node is not AdventureScreen screen) return;
+                foreach (var h in screen.Session.S.Heroes) screen.World.SyncHero(h);
+                screen.World.RefreshShroud();
+                screen.Hud.Refresh();
+            })).CallDeferred();
+            net.BattleStarted += StartBattle;
             AdventureScreen.Open(session);
+            // A battle already running when the game opens (e.g. after a reconnect) starts at once.
+            if (net.Replica.Battle is { } running) StartBattle(running);
             return true;
         };
         AdvNetScreens.OpenHotSeatGame = plan =>

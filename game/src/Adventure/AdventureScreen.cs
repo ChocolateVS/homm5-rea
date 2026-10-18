@@ -83,7 +83,8 @@ public partial class AdventureScreen : Control
         else if (MyTowns().FirstOrDefault() is { } town) World.Camera.CenterOn(town.Pos);
         Hud.Refresh();
         // Map scripts and their UI (messages, dialog scenes, objectives); idempotent, campaigns attach too.
-        Campaign.ScriptUiBridge.Attach(this);
+        // Map scripts run where the game is simulated: never on a network client (the host runs them).
+        if (!Session.IsRemote) Campaign.ScriptUiBridge.Attach(this);
         // Quicksave/quickload, save/load keys and autosave (game/src/Save).
         Save.SaveHotkeys.Attach(this);
     }

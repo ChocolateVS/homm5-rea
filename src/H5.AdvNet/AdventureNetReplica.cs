@@ -127,6 +127,8 @@ public sealed class AdventureNetReplica
                     BattleEvents.Enqueue((Battle, Battle.Opening));
                     BattleStarted?.Invoke(Battle);
                 }
+                else if (Battle != null && DeferBattleUpdates)
+                    _pendingBattle.Enqueue((Battle, o));
                 else if (Battle != null)
                 {
                     var evts = Battle.Apply(o);
@@ -140,6 +142,32 @@ public sealed class AdventureNetReplica
                 Chat.Enqueue(new ChatLine((int)c!["from"]!, (string)c["name"]!, (string)c["scope"]!, (string)c["text"]!));
         if (p["ghosts"] is JsonObject g) Ghosts = g;
         if (p["turn"] is JsonObject t) Turn = t;
+    }
+
+    /// <summary>
+    /// When set (the interactive client), battle updates are queued raw and applied only when
+    /// the combat screen takes them with <see cref="TakeBattleUpdate"/>, so the battle state never
+    /// runs ahead of what has been animated (like duel replicas). Headless users leave it off and
+    /// get updates applied on arrival.
+    /// </summary>
+    public bool DeferBattleUpdates { get; set; }
+    readonly Queue<(BattleReplica Battle, JsonObject Update)> _pendingBattle = new();
+    public int PendingBattleUpdates => _pendingBattle.Count;
+
+    /// <summary>Applies the next queued battle update (deferred mode); returns its events to animate.</summary>
+    public bool TakeBattleUpdate(out BattleReplica battle, out IReadOnlyList<BattleEvent> events)
+    {
+        if (_pendingBattle.Count == 0) { battle = null!; events = Array.Empty<BattleEvent>(); return false; }
+        var (b, o) = _pendingBattle.Dequeue();
+        battle = b;
+        events = b.Apply(o);
+        if (b.Desynced) Desynced = true;
+        if (b.Ended)
+        {
+            if (ReferenceEquals(Battle, b)) Battle = null;
+            BattleEnded?.Invoke(b);
+        }
+        return true;
     }
 
     public bool IsMyTurn => !View.Finished && View.CurrentPlayer >= 0 && View.Players[View.CurrentPlayer].Index == MyPlayer && Battle == null && Turn?["battle"]?.GetValue<bool>() != true;
