@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 116 |
-| MATCH | 83 |
-| GAP | 8 |
-| UNVERIFIED | 324 |
+| FIXED | 125 |
+| MATCH | 85 |
+| GAP | 7 |
+| UNVERIFIED | 314 |
 | N/A | 57 |
 
 ## Core mechanics
@@ -59,7 +59,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_UNDEAD` | FIXED | 008a34c0 | Vampirism grants Undead | tests/H5.Combat.Tests/AuditSpecTests.DynamicAbilitiesFollowTheOriginal |
 | `ABILITY_DEMONIC` | UNVERIFIED | 00977600 | implemented; not yet compared with the exe |  |
 | `ABILITY_ELEMENTAL` | UNVERIFIED | 0097b410 0097c9f0 0097f610 00a59c60 | implemented; not yet compared with the exe |  |
-| `ABILITY_CURSING_ATTACK` | UNVERIFIED | 00a5df30 | implemented; not yet compared with the exe |  |
+| `ABILITY_CURSING_ATTACK` | FIXED | 00a5df30, 00982010 | SPELL_CURSE at BASIC mastery (a5ddb0 mastery arg 1) with the creature spell power, after the spell hit check — engine cast it at Advanced | AuditAbilityTests.CursingAttackCastsBasicCurse |
 | `ABILITY_FLESH_AND_BLOOD` | FIXED | 008a34c0 | Phantom images lose Flesh and Blood | tests/H5.Combat.Tests/AuditSpecTests.DynamicAbilitiesFollowTheOriginal |
 | `ABILITY_ENRAGED` | MATCH | 008a3b90 | on friendly non-summoned death: max(1, attack·killedPower/armyPower) int, permanent; enraged stacks get FriendlyStackKilledRPEnraged rage (fixed) |  |
 | `ABILITY_IMMUNITY_TO_BLIND` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -87,7 +87,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_CHAIN_SHOT` | UNVERIFIED | 00a673c0 | implemented; not yet compared with the exe |  |
 | `ABILITY_WEAKENING_STRIKE` | UNVERIFIED | 00a5deb0 | implemented; not yet compared with the exe |  |
 | `ABILITY_INCORPOREAL` | FIXED | 008a34c0 | Phantom images / Rune of Etherealness are Incorporeal | tests/H5.Combat.Tests/AuditSpecTests.DynamicAbilitiesFollowTheOriginal |
-| `ABILITY_MANA_DRAIN` | UNVERIFIED | 00a59c60 | implemented; not yet compared with the exe |  |
+| `ABILITY_MANA_DRAIN` | MATCH | 00a59c60 | drained = min(attacker count, target mana); target loses it; the drainer heals (with resurrection) drained × its max health |  |
 | `ABILITY_LIFE_DRAIN` | MATCH | 00a59c60 | LifeDrainIntensity of damage |  |
 | `ABILITY_DEATH_CLOUD` | UNVERIFIED | 00a2fd40 00a64830 00b3b330 | implemented; not yet compared with the exe |  |
 | `ABILITY_ELVES_DOUBLE_SHOT` | MATCH | 00a673c0 | second shot re-rolls luck (EXE_FINDINGS) |  |
@@ -109,7 +109,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_REGENERATION` | MATCH | 00bbb080, 008a3340 | turn start: heal Range(max(0,HydraRegenerationMin), max(min, HydraRegenerationMax)) inclusive on the top creature, no resurrection (combined with SPELL_REGENERATION in one heal in the exe) |  |
 | `ABILITY_WHIP_STRIKE` | FIXED | 00a629b0, 00a5e2c0 | melee only (incl. retaliation); r = Rng(100): r<40 Slow, r<75 Weakness, else Berserk; power WhipStrikeSpellPower (creature power if <1) — engine cast Slow/Curse/Berserk uniformly | AuditAbilityTests.WhipStrikeCastsSlowWeaknessOrBerserk |
 | `ABILITY_FIRE_SHIELD` | FIXED | 00a5bcf0 | melee only; clamp(FireShield_Damage_Multiplier,0,10) × min(damage, holder's HP before the blow), dealt as fire spell damage when ≥ 0.5 — engine counted overkill damage (spell-damage rounding in 0097d740 not compared) | AuditAbilityTests.FireShieldIgnoresOverkill |
-| `ABILITY_DEADLY_STRIKE` | UNVERIFIED | 00a5bf60 | implemented; not yet compared with the exe |  |
+| `ABILITY_DEADLY_STRIKE` | FIXED | 00a5bf60, 00a6bd90, 00a67c26 | any strike (incl. retaliation, every target of the blow): target without CRYSTAL_SCALES, the blow alone kills < count/2 (incorporeal targets count as fully killed), Range(0,100) < 25 with the attacker's second roll → the blow's damage is dropped and exactly count/2 (pre-hit) creatures die — engine added half the remaining stack after normal damage, melee non-retaliation only, plain 25 % | AuditAbilityTests.DeadlyStrikeReplacesTheBlowWithHalfTheStack |
 | `ABILITY_REBIRTH` | UNVERIFIED | 00a58bb0 | implemented; not yet compared with the exe |  |
 | `ABILITY_FRIGHTFUL_PRESENCE` | N/A | 008aaec0 00a65d50 | not used by shipped data |  |
 | `ABILITY_CRYSTAL_SCALES` | UNVERIFIED | 0097f610 00a5bf60 00a63020 00a673c0 | implemented; not yet compared with the exe |  |
@@ -144,7 +144,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_PACK_HUNTER` | UNVERIFIED | 00a64120 | implemented; not yet compared with the exe |  |
 | `ABILITY_HOWL` | UNVERIFIED | 00a5cbc0 | implemented; not yet compared with the exe |  |
 | `ABILITY_AGILITY` | UNVERIFIED | 008a6c40 008aaec0 00a66050 | implemented; not yet compared with the exe |  |
-| `ABILITY_HEXING_ATTACK` | UNVERIFIED | 00a5e000 | implemented; not yet compared with the exe |  |
+| `ABILITY_HEXING_ATTACK` | FIXED | 00a5e000, stats +0x3ec | walks HexingAttackSpells in data order (Curse, Slow, Weakness, Disrupting Ray, all Expert) and casts the first the target lacks and doesn't resist — engine picked one at random | AuditAbilityTests.HexingAttackCastsTheFirstMissingSpellInDataOrder |
 | `ABILITY_CLEAVE` | UNVERIFIED | 00a65260 | implemented; not yet compared with the exe |  |
 | `ABILITY_BATTLE_FRENZY` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_PACK_DIVE` | UNVERIFIED | 00a2fd40 | implemented; not yet compared with the exe |  |
@@ -170,7 +170,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_SWALLOW_GOBLIN` | UNVERIFIED | 008d03a0 | implemented; not yet compared with the exe |  |
 | `ABILITY_GOBLIN_THROWER` | UNVERIFIED | 008a4b70 008d03a0 00a65260 00a6fef0 | implemented; not yet compared with the exe |  |
 | `ABILITY_CRUSHING_BLOW` | FIXED | 00a5af70 | 2×2 area (unchanged) PLUS a Bash-like chance (CrushingBlow_ProcFactor, flag 1, no second roll, never on a retaliation, creature targets): ATB 0 and no retaliation — the stun was missing | AuditAbilityTests.CrushingBlowCanStunTheTarget |
-| `ABILITY_EVIL_EYE` | UNVERIFIED | 00a5e770 | implemented; not yet compared with the exe |  |
+| `ABILITY_EVIL_EYE` | FIXED | 00a5e770 | melee strikes only, every target of the blow, permanent SPELL_EFFECT_UNLUCKY (−3 Luck per the ability text) — engine also applied it on shots | AuditAbilityTests.EvilEyeOnlyOnMeleeStrikes |
 | `ABILITY_RANDOM_CASTER_BLESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_SYPHON_MANA` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_SEARING_AURA` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
@@ -182,7 +182,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_WEAKENING_AURA` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
 | `ABILITY_AMMO_STEAL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_SLEEPING_STRIKE` | FIXED | 00a629b0, 00a5e4f0 | proc SleepingStrike_ProcFactor on any strike; immune: IMMUNITY_TO_BLIND, MECHANICAL, ELEMENTAL (undead NOT immune); target then doesn't retaliate — engine excluded undead and ignored blind immunity | AuditAbilityTests.SleepingStrikeImmunityIsBlindMechanicalElementalNotUndead |
-| `ABILITY_SORROW_STRIKE` | UNVERIFIED | 00a5e690 | implemented; not yet compared with the exe |  |
+| `ABILITY_SORROW_STRIKE` | FIXED | 00a5e690 | SPELL_SORROW at mastery SorrowStrike_SpellTrained (3 = Expert) with the creature spell power — engine used Basic (duration term FUN_00a2d700 × power not compared) | AuditAbilityTests.SorrowStrikeUsesTheTrainedMastery |
 | `ABILITY_HORROR_OF_THE_DEATH` | UNVERIFIED | 008a5570 | implemented; not yet compared with the exe |  |
 | `ABILITY_PIERCING_ARROW` | FIXED | 00a5d420, 00a5ceb0, 00b3d010, 00a5a900 | Force Arrow: −50 % defence; extra proc (PiercingArrow_ProcFactor, flag 0, no second roll, not HOLD_GROUND); push cell = the free neighbour (exe ring order (+1,0),(+1,+1),(0,+1),(−1,+1),(−1,0),(−1,−1),(0,−1),(+1,−1)) whose direction from the target is closest to attacker→target, within π/3 (strict <, first wins ties); an entangled target "succeeds" in place; no qualifying cell → no trigger (no stun) | AuditAbilityTests.ForceArrowPushPicksClosestFreeCellWithinSixtyDegrees, PushOfEntangledTargetSucceedsWithoutMoving |
 | `ABILITY_TREEANT_UNION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -257,8 +257,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_EVASION` | MATCH | 00a5a900 | ranged ×(1−clamp(Evasion_DamageReduce,0,1)) |  |
 | `HERO_SKILL_TOUGHNESS` | MATCH | 004bc470 | +2 HP per creature when the Toughness mastery is > 0 |  |
 | `HERO_SKILL_ARCANE_TRAINING` | FIXED | 00a34740 | round(min(cost×0.8, cost−1)) | tests/H5.Combat.Tests/AuditSpecTests.SpellCostsMatchTheOriginalChain |
-| `HERO_SKILL_MASTER_OF_ICE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_MASTER_OF_FIRE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_MASTER_OF_ICE` | MATCH | 004e6600 (004e66b2..004e672a) | Ice Bolt / Frost Ring rider: effect 0xc9 (frozen) for trunc(time-per-turn · EmpoweredIceFreezeDuration / n) — n = 1 for Ice Bolt, targets hit for Frost Ring. Deep Freeze not seen calling this rider (engine applies it) — unverified |  |
+| `HERO_SKILL_MASTER_OF_FIRE` | FIXED | 004e6770, 004e5b70, 00989790 (case 0xca), 00bbe760 | fire rider of Fireball / Firewall / Armageddon (not Magic Arrow: 0097d7b0 case 1 → plain 004e6b60): effect 0xca for one turn, value = (defence + existing crush) / 2 fixed at application, subtracted by the defence sum; Armored (0x55) and Fire Protection (effect 0x61) immune. Engine halved the defence at read time. With no casting hero the exe skips the skill test (creature casters) — engine still requires the hero's skill | MasterOfFireCrushIsAFixedHalfOfTheDefence |
 | `HERO_SKILL_MASTER_OF_LIGHTNINGS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MASTER_OF_CURSES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MASTER_OF_MIND` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -328,7 +328,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_REMOTE_CONTROL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ARTIFICIAL_GLORY` | MATCH | 00a751a0, 00a6acd0, 004ba9d0, 004bae10 | mechanical creatures of a hero with the perk get army morale clamped to ≥ 0 and roll only good morale (00a6ba00); without it their morale is 0 |  |
 | `HERO_SKILL_WILDFIRE` | UNVERIFIED | 00a5a900 00a5ed90 00a75b00 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_COUNTERSPELL` | GAP |  | exe 00978670: 2× cost and single use match; ATB after a counter is set to 0.2+0.1·Sorcery (and a Payback branch) — owner of that ATB change not confirmed, engine uses the normal cast reset |  |
+| `HERO_SKILL_COUNTERSPELL` | FIXED | 00978670, 00977260 | the armed enemy pays 2× the spell cost and the effect is single use; the countered caster's ATB: with Dark Renewal (HERO_SKILL_PAYBACK) and a non-mass spell (spell record +0xcc flag) it becomes 0.2 + 0.1·Sorcery mastery ("Payback!" log), otherwise the normal end-of-action reset (caster vf 0x224) — the GAP's ATB owner is the CASTER | AuditHeroStrikeTests.CounteredCasterWithDarkRenewalKeepsPaybackAtb |
 | `HERO_SKILL_MAGIC_CUSHION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SUPRESS_DARK` | FIXED | 009781e0 | enemy Dark spells ×2 | (HeroManaCost) |
 | `HERO_SKILL_SUPRESS_LIGHT` | FIXED | 009781e0 | enemy Light spells ×2 | (HeroManaCost) |
@@ -356,7 +356,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_OFFENSIVE_FORMATION` | MATCH | 008a4800 | same formula with Offensive_MaxOffenseBonus |  |
 | `HERO_SKILL_DEFENSIVE_FORMATION` | MATCH | 008a22f0 | Fortress race (9) only: += clamp(trunc(10·log10(A/B)), 0, Defensive_MaxDefenseBonus) — trunc matches the manual's floor; operands A (unit+0xf0) / B (unit+0xa0 vf 0x24) taken as adjacent dwarven power / own power per manual p.323 (not traced further) |  |
 | `HERO_SKILL_DISTRACT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_SET_AFIRE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_SET_AFIRE` | FIXED | 004e6770 (004e6893..004e6960), 004e5790 | fire-rider spells only (Fireball, Firewall, Armageddon — engine also fired on Magic Arrow and skipped Armageddon), enemy targets, damage > 0; per-turn damage trunc(trunc(D / clamp(MarkOfFire_FireDamageMultiplier,0,1000) if marked) · SetAfire_DamageMultiplier) with D the damage dealt (engine: base damage / 3); duration SetAfire_DamageDurationInRounds (004e57d0 case 0x10e) | SetAfireBurnsAShareOfTheDamageDealt |
 | `HERO_SKILL_SHRUG_DARKNESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ETERNAL_LIGHT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_RUNIC_ARMOR` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -562,7 +562,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_REMOTE_CONTROL` | UNVERIFIED | 00a75020 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_POISONOUS_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_FROZEN` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_EFFECT_FIRE_DAMAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_EFFECT_FIRE_DAMAGE` | FIXED | 00bbe760 (0xca → 004e5b70) | the armour crush applied as an effect (Fortress moat): same rule as Master of Fire | MasterOfFireCrushIsAFixedHalfOfTheDefence |
 | `SPELL_SPEC_DEMON_HUNTER` | FIXED | 008a2c20 | effect of HERO_SPEC_DEMON_HUNTER (rage bonus) | (AddRage) |
 | `SPELL_ARTFSET_NECROMANCERS_DEBUFF` | UNVERIFIED | 008a22f0 008a4800 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_ENRAGED` | UNVERIFIED | 008a3b90 | implemented; not yet compared with the exe |  |
