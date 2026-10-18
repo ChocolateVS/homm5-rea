@@ -33,6 +33,7 @@ public sealed partial class Battle
         if (u.HasEffect(H5.Combat.Fx.RuneDragonform)) a += u.BaseAttack;   // raw value doubled (p.192)
         if (h.Present && !u.IsWarMachine && !u.IsObject) a += h.Attack;
         if (!u.IsWarMachine && !u.IsObject) a += Side(u).Attack;
+        a += NativeTerrainBonus(u);   // exe FUN_008a4800: +1 when the battlefield is the creature race's native terrain
         a += Fx(u, "SPELL_BLOODLUST");
         a -= Fx(u, "SPELL_WEAKNESS");                       // Suffering
         a += Fx(u, H5.Combat.Fx.Enraged);
@@ -73,27 +74,19 @@ public sealed partial class Battle
         double d = raw;
         if (h.Present && !u.IsWarMachine && !u.IsObject) d += h.Defence;
         if (!u.IsWarMachine && !u.IsObject) d += Side(u).Defence;
-        d += Fx(u, "SPELL_STONESKIN");
         d += Fx(u, H5.Combat.Fx.Benediction);
+        d += NativeTerrainBonus(u);
+        // Defend / Take Roots posture (exe FUN_008a22f0): bonus = max(1, trunc(d·f + 0.001)) on the base + hero +
+        // Prayer + native-terrain defence only (spells and other effects are added afterwards, FUN_008d9390).
+        // f is DefenceBonusOnTakeRoots for ABILITY_TAKE_ROOTS creatures, else DefenceBonusOnDefend (not both);
+        // Hold Ground multiplies it by the matching HoldGround_* multiplier.
+        if (u.Defending || u.HasEffect(H5.Combat.Fx.TakeRoots)) d += DefendPostureBonus(u, h, Math.Floor(d));
+        d += Fx(u, "SPELL_STONESKIN");
         d += RageBonus(u, "DEMON_RAGE_BONUS_DEFENCE");
         if (u.Has(Ab.PreparedPosition) && !u.HasMovedFromStart) d += Stats.Get("combat/Creatures/Fortress/PreparedPosition_DefenceBonus", 5);
         if (u.Has(Ab.Agility)) d += Stats.Get("combat/Creatures/Sylvan/AgilityDefenceBoostPerCell", 2) * AgilityCells(u);
         if (vs != null && u.Has(Ab.AntiGiant) && vs.IsLarge) d += Stats.Get("combat/Creatures/Fortress/AntiGiantDefenceInc", 4);
         if (h.HasPerk(Sk.DefensiveFormation)) d += FormationBonus(u, Stats.Get("combat/HeroSkills/Runemage/Defensive_MaxDefenseBonus", 10));
-        double mult = 1;
-        if (u.Defending)
-        {
-            double bonus = Stats.Get("combat/Creatures/DefenceBonusOnDefend", 0.3);
-            if (h.HasPerk(Sk.HoldGround)) bonus *= Stats.Get("combat/HeroSkills/Knight/HoldGround_DefendBonusMultiplier", 2);
-            mult += bonus;
-        }
-        if (u.HasEffect(H5.Combat.Fx.TakeRoots))
-        {
-            double tr = Stats.Get("combat/Creatures/Sylvan/DefenceBonusOnTakeRoots", 0.5);
-            if (h.HasPerk(Sk.HoldGround)) tr *= Stats.Get("combat/HeroSkills/Knight/HoldGround_TakeRootsBonusMultiplier", 2);
-            mult += tr;
-        }
-        d *= mult;
         // Decreases (Armored creatures are immune to defence reduction, p.171).
         if (!u.Has(Ab.Armored))
         {
@@ -110,6 +103,40 @@ public sealed partial class Battle
                 d *= Math.Max(0, 1 - Stats.Get("combat/Creatures/Dungeon/RiderCharge_DefenceReducePerPathCell", 0.2) * attackerCellsWalked);
         }
         return Math.Max(0, (int)Math.Floor(d));
+    }
+
+    /// <summary>Exe FUN_008a22f0 defend bonus: max(1, trunc(defence·f + 0.001)) (FPU truncation mode).</summary>
+    int DefendPostureBonus(Unit u, HeroState h, double defence)
+    {
+        bool roots = u.Has(Ab.TakeRoots);
+        double f = roots ? Stats.Get("combat/Creatures/Sylvan/DefenceBonusOnTakeRoots", 0.5)
+                         : Stats.Get("combat/Creatures/DefenceBonusOnDefend", 0.3);
+        if (h.Present && h.HasPerk(Sk.HoldGround))
+            f *= roots ? Stats.Get("combat/HeroSkills/Knight/HoldGround_TakeRootsBonusMultiplier", 2)
+                       : Stats.Get("combat/HeroSkills/Knight/HoldGround_DefendBonusMultiplier", 2);
+        return Math.Max(1, (int)(defence * f + 0.001));
+    }
+
+    /// <summary>
+    /// Native terrain (exe FUN_008a4800 / FUN_008a22f0: battlefield vfunc 0x54(race) → +1 attack and +1 defence;
+    /// fan manual p.260 for the race ↔ terrain table). Terrain indices per <see cref="BattleState.Terrain"/>.
+    /// </summary>
+    public int NativeTerrainBonus(Unit u)
+    {
+        // Only on a real battlefield (an arena was chosen); synthetic battles without an arena have no terrain.
+        if (S.Arena == null || u.Kind != UnitKind.Creature || u.IsWarMachine || u.IsObject) return 0;
+        bool native = S.Terrain switch
+        {
+            0 => u.Town == Towns.Necropolis,
+            1 => u.Town is Towns.Haven or Towns.Sylvan,
+            2 => u.Town == Towns.Academy,
+            3 or 7 => u.Town == Towns.Fortress,
+            4 => u.Town == Towns.Inferno,
+            5 => u.Town == Towns.Dungeon,
+            8 or 9 => u.Town == Towns.Stronghold,
+            _ => false,
+        };
+        return native ? 1 : 0;
     }
 
     /// <summary>Dwarven formations (p.323): floor(10*log10(adjacent dwarven power / own power)), capped.</summary>

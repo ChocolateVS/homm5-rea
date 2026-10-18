@@ -1,0 +1,103 @@
+using H5.Core.Data;
+
+namespace H5.Combat.Tests;
+
+/// <summary>Hero-side combat rules confirmed against H5_Game.exe (docs/rules/audit/combat_heroes.md).</summary>
+[Collection("game")]
+public class AuditHeroTests(GameDataFixture f)
+{
+    BattleState Setup((string id, int count)[] mine, (string id, int count)[] theirs, string? arena = "Grass_Big_01", bool heroes = false, int? terrain = null)
+    {
+        var s = BattleSetup.Create(f.Db,
+            new ArmySetup { Hero = heroes ? f.Db.DuelPresets[0].Hero : null, Army = mine.Select(a => new ArmySlot(a.id, a.count)).ToList() },
+            new ArmySetup { Hero = heroes ? f.Db.DuelPresets[3].Hero : null, Army = theirs.Select(a => new ArmySlot(a.id, a.count)).ToList() },
+            7, skipTactics: true, arena: arena);
+        if (terrain is int tt) s.Terrain = tt;
+        return s;
+    }
+
+    static Unit Of(BattleState s, string id) => s.Units.First(u => u.CreatureId == id);
+
+    // exe FUN_008a4800 / FUN_008a22f0: creatures on their race's native terrain get +1 attack and +1 defence
+    // (battlefield vfunc 0x54(race); manual p.260: grass is native to Haven and Sylvan).
+    [Fact]
+    public void NativeTerrainGivesPlusOneAttackAndDefence()
+    {
+        var grass = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_IMP", 10) });
+        Assert.Equal(CombatArenaTable.TerrainGrass, grass.Terrain);
+        var b = new Battle(f.Db, grass);
+        var footman = Of(grass, "CREATURE_FOOTMAN");
+        var imp = Of(grass, "CREATURE_IMP");
+        Assert.Equal(footman.BaseAttack + 1, b.AttackOf(footman));
+        Assert.Equal(footman.BaseDefence + 1, b.DefenceOf(footman));
+        Assert.Equal(imp.BaseAttack, b.AttackOf(imp));       // Inferno: native on lava, not grass
+        Assert.Equal(imp.BaseDefence, b.DefenceOf(imp));
+
+        grass.Terrain = CombatArenaTable.TerrainLava;
+        Assert.Equal(imp.BaseAttack + 1, b.AttackOf(imp));
+        Assert.Equal(footman.BaseAttack, b.AttackOf(footman));
+    }
+
+    // exe FUN_008a22f0 (FPU truncation, +0.001, minimum 1): the defend bonus is computed on base + hero + Prayer +
+    // native terrain only; spells such as Stone Skin are added afterwards and are not multiplied.
+    [Fact]
+    public void DefendBonusIsTruncatedOnTheBaseDefenceOnly()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_IMP", 10) }, terrain: CombatArenaTable.TerrainLava);
+        var b = new Battle(f.Db, s);
+        var footman = Of(s, "CREATURE_FOOTMAN");
+        int baseDef = footman.BaseDefence;          // not native on lava
+        footman.Defending = true;
+        int bonus = Math.Max(1, (int)(baseDef * f.Db.Stats.Get("combat/Creatures/DefenceBonusOnDefend", 0.3) + 0.001));
+        Assert.Equal(baseDef + bonus, b.DefenceOf(footman));
+
+        footman.Effects.Add(new Effect { Id = "SPELL_STONESKIN", Value = 4, Remaining = 3 });
+        Assert.Equal(baseDef + bonus + 4, b.DefenceOf(footman));
+    }
+
+    // exe FUN_008a22f0: a defending ABILITY_TAKE_ROOTS creature uses DefenceBonusOnTakeRoots INSTEAD of the defend
+    // factor (the two never stack).
+    [Fact]
+    public void TakeRootsReplacesTheDefendFactor()
+    {
+        var s = Setup(new[] { ("CREATURE_TREANT_GUARDIAN", 5) }, new[] { ("CREATURE_IMP", 10) }, terrain: CombatArenaTable.TerrainLava);
+        var b = new Battle(f.Db, s);
+        var treant = Of(s, "CREATURE_TREANT_GUARDIAN");
+        Assert.True(treant.Has(Ab.TakeRoots));
+        treant.Defending = true;
+        treant.Effects.Add(new Effect { Id = Fx.TakeRoots, Positive = true });
+        int d = treant.BaseDefence;
+        int expected = d + Math.Max(1, (int)(d * f.Db.Stats.Get("combat/Creatures/Sylvan/DefenceBonusOnTakeRoots", 0.5) + 0.001));
+        Assert.Equal(expected, b.DefenceOf(treant));
+    }
+
+    // exe FUN_008a22f0: the defend bonus is at least 1 (max(1, trunc(d·0.3 + 0.001))).
+    [Fact]
+    public void DefendBonusIsAtLeastOne()
+    {
+        var s = Setup(new[] { ("CREATURE_PEASANT", 10) }, new[] { ("CREATURE_IMP", 10) }, terrain: CombatArenaTable.TerrainLava);
+        var b = new Battle(f.Db, s);
+        var peasant = Of(s, "CREATURE_PEASANT");
+        peasant.Defending = true;
+        Assert.Equal(peasant.BaseDefence + 1, b.DefenceOf(peasant));
+    }
+
+    // exe 00a58de0: the Offence mastery switch has cases 1..3 only — a mastery value of 4 gives no damage bonus.
+    [Fact]
+    public void OffenceBonusOnlyForMasteriesOneToThree()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 100) }, heroes: true);
+        var b = new Battle(f.Db, s);
+        var a = Of(s, "CREATURE_FOOTMAN"); var t = s.Units.First(u => u.Side == 1 && u.CreatureId == "CREATURE_PEASANT");
+        var h = s.Heroes[0];
+        int Dmg(Mastery m)
+        {
+            h.Skills.RemoveAll(x => x.SkillId == Sk.Offence);
+            if (m != Mastery.None) h.Skills.Add(new SkillEntry(Sk.Offence, m));
+            return b.ComputeDamage(a, t, new Battle.Hit { Kind = AttackKind.Melee, FixedRoll = 10 }, ranged: false);
+        }
+        int none = Dmg(Mastery.None);
+        Assert.True(Dmg(Mastery.Expert) > none);
+        Assert.Equal(none, Dmg(Mastery.Ultimate));
+    }
+}

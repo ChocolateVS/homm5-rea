@@ -483,11 +483,12 @@ public sealed partial class Battle
         return h.FavoriteEnemies.Contains(c.Id) || h.FavoriteEnemies.Contains(baseId);
     }
 
+    // exe 00a58de0 / 00a5a900: the mastery switch has cases 1..3 only — any other level gives no bonus.
     double OffenceBonus(HeroState h) => h.SkillLevel(Sk.Offence) switch
     {
         Mastery.Basic => Stats.Get("combat/HeroSkills/SkillOffence/BasicDamageBonus", 0.05),
         Mastery.Advanced => Stats.Get("combat/HeroSkills/SkillOffence/AdvancedDamageBonus", 0.1),
-        >= Mastery.Expert => Stats.Get("combat/HeroSkills/SkillOffence/ExpertDamageBonus", 0.15),
+        Mastery.Expert => Stats.Get("combat/HeroSkills/SkillOffence/ExpertDamageBonus", 0.15),
         _ => 0,
     };
 
@@ -495,7 +496,7 @@ public sealed partial class Battle
     {
         Mastery.Basic => Stats.Get("combat/HeroSkills/SkillDefence/BasicDamageReduce", 0.1),
         Mastery.Advanced => Stats.Get("combat/HeroSkills/SkillDefence/AdvancedDamageReduce", 0.2),
-        >= Mastery.Expert => Stats.Get("combat/HeroSkills/SkillDefence/ExpertDamageReduce", 0.3),
+        Mastery.Expert => Stats.Get("combat/HeroSkills/SkillDefence/ExpertDamageReduce", 0.3),
         _ => 0,
     };
 
