@@ -104,6 +104,43 @@ public sealed partial class Battle
     static bool IsElementalCaster(Unit? u) =>
         u != null && u.CreatureId is "CREATURE_FIRE_ELEMENTAL" or "CREATURE_WATER_ELEMENTAL" or "CREATURE_EARTH_ELEMENTAL" or "CREATURE_AIR_ELEMENTAL";
 
+    /// <summary>
+    /// Level-scaled warcry bonus struct {Base, LevelDivisor, PerDividedLevel} (RPGStats reader FUN_00946030):
+    /// ((level − 1) / LevelDivisor) · PerDividedLevel + Base with integer division — the formula the speed getter
+    /// applies to Battlecry_SpeedBonus (exe 008a1e50, effect caster level at +0x20).
+    /// </summary>
+    internal int WarcryLevelBonus(string node, int level)
+    {
+        int div = Math.Max(1, (int)Stats.Get(node + "/LevelDivisor", 1));
+        return (level - 1) / div * (int)Stats.Get(node + "/PerDividedLevel", 0) + (int)Stats.Get(node + "/Base", 0);
+    }
+
+    /// <summary>Wasp Swarm ATB reduction (exe FUN_0097d7b0, spell 0x27): duration value ×(1 + ((level+2)/3)·perLevel3) for Call of the Wasp.</summary>
+    internal double WaspAtbDrop(SpellDef sp, Mastery m, double power, HeroState? hero)
+    {
+        double drop = sp.DurationAt(m).Eval(power);
+        if (hero != null && Spec(hero, "HERO_SPEC_CALL_OF_THE_WASP") is var wl && wl >= 0)
+            drop *= (wl + 2) / 3 * (double)(float)Stats.Get("combat/HeroSpecializations/Ranger/CallOfTheWasp_ATBReducePerLevel3", 0.02) + 1;
+        return drop;
+    }
+
+    /// <summary>
+    /// Spell immunities granted by the target hero's artifacts (exe FUN_0097c9f0, 0097cdff..0097ce8a): Dwarven Mithral
+    /// Cuirass — Implosion, Greaves — Slow, Helmet — Blind, Shield — Berserk; Ring of Death — Holy Word.
+    /// </summary>
+    internal bool ArtifactSpellImmunity(Unit t, string spellId)
+    {
+        var h = HeroOf(t);
+        if (!h.Present) return false;
+        string? art = spellId switch
+        {
+            "SPELL_IMPLOSION" => "DWARVEN_MITHRAL_CUIRASS", "SPELL_SLOW" => "DWARVEN_MITHRAL_GREAVES",
+            "SPELL_BLIND" => "DWARVEN_MITHRAL_HELMET", "SPELL_BERSERK" => "DWARVEN_MITHRAL_SHIELD",
+            "SPELL_HOLY_WORD" => "ARTIFACT_RING_OF_DEATH", _ => null,
+        };
+        return art != null && h.Artifacts.Contains(art);
+    }
+
     /// <summary>The creature currently casting (set by DoCast), for caster-dependent damage rules.</summary>
     Unit? _castingCreature;
     /// <summary>Set by SpellHits when a damage spell was resisted but Irresistible Magic still lets a share through.</summary>

@@ -414,6 +414,8 @@ public sealed partial class Battle
             if (t.HasEffect(H5.Combat.Fx.Invisible) && !friendly) return "target is invisible";
             if (!t.Alive && sp.Id is not ("SPELL_RESURRECT" or "SPELL_ANIMATE_DEAD")) return "target is dead";
             if (sp.Id == "SPELL_RESURRECT" && (t.Has(Ab.Elemental) || t.Has(Ab.Mechanical) || IsUndeadLike(t))) return "cannot resurrect this creature";
+            // exe FUN_0097c9f0 (spell 0x2a): Elemental and Mechanical creatures are immune to Raise Dead.
+            if (sp.Id == "SPELL_ANIMATE_DEAD" && (t.Has(Ab.Elemental) || t.Has(Ab.Mechanical))) return "cannot raise this creature";
             if (sp.Id == "SPELL_ANIMATE_DEAD" && t.Count >= t.InitialCount && t.TopHealth >= t.MaxHealthCache) return "nothing to raise";
             if (sp.Id == "SPELL_PHANTOM")
             {
@@ -571,7 +573,10 @@ public sealed partial class Battle
                 double dmg = SpellBaseDamage(baseDef, sp, m, power);
                 foreach (var v in S.Living.Where(u => !u.IsObject && !u.IsWarMachine).ToList())
                 {
-                    bool evilKind = IsUndeadLike(v) || v.Has(Ab.Demonic);
+                    // exe FUN_00977600: Holy Word affects Undead, Demonic and Demon-Raged (orc) creatures; Unholy Word
+                    // everything that is neither Undead nor Demonic.
+                    bool evilKind = id == "SPELL_HOLY_WORD" ? IsUndeadLike(v) || v.Has(Ab.Demonic) || v.Has(Ab.DemonRaged)
+                                                            : IsUndeadLike(v) || v.Has(Ab.Demonic);
                     if (id == "SPELL_HOLY_WORD" ? !evilKind : evilKind) continue;
                     if (!SpellHits(side, baseDef, v, hostile: true, hero, area: true)) continue;
                     affected.Add(v.Id);
@@ -750,6 +755,7 @@ public sealed partial class Battle
             && !(hero != null && hero.SkillLevel(Sk.Invocation) > 0)) { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
         if (MindSpells.Contains(id) && MindImmune(t)) { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
         if (LivingOnly.Contains(id) && !IsLiving(t)) { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
+        if (ArtifactSpellImmunity(t, id)) { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
         if (id == "SPELL_SLOW" && t.Has(Ab.ImmuneSlow) || id == "SPELL_BLIND" && t.Has(Ab.ImmuneBlind)
             || id == "SPELL_BERSERK" && t.Has(Ab.ImmuneBerserk) || id == "SPELL_HYPNOTIZE" && t.Has(Ab.ImmuneHypnotize)
             || id == "SPELL_CURSE" && t.Has(Ab.ImmuneCurse))
@@ -828,10 +834,10 @@ public sealed partial class Battle
         if (id == "SPELL_WASP_SWARM")
         {
             var sp = Db.Spell(id)!;
-            double drop = sp.DurationAt(m).Base;
-            if (hero != null && Spec(hero, "HERO_SPEC_CALL_OF_THE_WASP") is var wl && wl >= 0)
-                drop += Stats.Get("combat/HeroSpecializations/Ranger/CallOfTheWasp_ATBReducePerLevel3", 0.02) * (wl / 3);
-            if (drop > 0) SetAtb(t.Id, GetAtb(t.Id) - drop);
+            // exe FUN_0097d7b0 (spell 0x27): ATB −= duration value, ×(1 + ((level+2)/3)·ATBReducePerLevel3) with Call of
+            // the Wasp (spec 0x1a); the result is clamped to 0..1.
+            double drop = WaspAtbDrop(sp, m, power, hero);
+            if (drop > 0) SetAtb(t.Id, Math.Clamp(GetAtb(t.Id) - drop, 0, 1));
         }
         if (id == "SPELL_DEEP_FREEZE")
         {
@@ -1100,7 +1106,7 @@ public sealed partial class Battle
         {
             case "SPELL_WARCRY_RALLING_CRY":
             {
-                int bonus = 1 + level / (int)Stats.Get("combat/Spells/Warcries/RallingCry_MoraleBonus/LevelDivisor", 8);
+                int bonus = WarcryLevelBonus("combat/Spells/Warcries/RallingCry_MoraleBonus", level);
                 foreach (var u in S.LivingOf(side).Where(u => !NeutralMorale(u)).ToList())
                 {
                     AddEffect(u, new Effect { Id = H5.Combat.Fx.RallyingCry, Value = bonus, Remaining = Stats.Get("combat/Spells/Warcries/RallingCry_Duration", 3), Positive = true, SourceSide = side });
@@ -1133,7 +1139,7 @@ public sealed partial class Battle
                 break;
             case "SPELL_WARCRY_BATTLECRY":
             {
-                int att = 1 + level / (int)Stats.Get("combat/Spells/Warcries/Battlecry_OffenceBonus/LevelDivisor", 2);
+                int att = WarcryLevelBonus("combat/Spells/Warcries/Battlecry_OffenceBonus", level);
                 foreach (var u in S.LivingOf(side).Where(u => u.Kind == UnitKind.Creature).ToList())
                 {
                     AddEffect(u, new Effect { Id = H5.Combat.Fx.Battlecry, Value = att, Remaining = 1, Positive = true, SourceSide = side });

@@ -128,4 +128,57 @@ public class AuditSpellTests(GameDataFixture f)
         var sp = f.Db.Spells.Values.First(x => x.ManaCost == 7 && x.School is "MAGIC_SCHOOL_DARK" or "MAGIC_SCHOOL_LIGHT" or "MAGIC_SCHOOL_DESTRUCTIVE" or "MAGIC_SCHOOL_SUMMONING");
         Assert.Equal(5, b.HeroManaCost(h, sp));
     }
+
+    // Warcry bonus structs (RPGStats FUN_00946030; formula used by 008a1e50 for Battlecry speed):
+    // ((level−1)/LevelDivisor)·PerDividedLevel + Base — level 8 Rallying Cry gives +1 morale, not +2.
+    [Fact]
+    public void WarcryBonusesUseLevelMinusOne()
+    {
+        var b = new Battle(f.Db, Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) }));
+        Assert.Equal(1, b.WarcryLevelBonus("combat/Spells/Warcries/RallingCry_MoraleBonus", 8));
+        Assert.Equal(2, b.WarcryLevelBonus("combat/Spells/Warcries/RallingCry_MoraleBonus", 9));
+        Assert.Equal(2, b.WarcryLevelBonus("combat/Spells/Warcries/Battlecry_OffenceBonus", 4));
+        Assert.Equal(1, b.WarcryLevelBonus("combat/Spells/Warcries/Battlecry_SpeedBonus", 30));
+    }
+
+    // exe FUN_0097d7b0 (0x27): Call of the Wasp multiplies the Wasp Swarm ATB drop by 1 + ((level+2)/3)·perLevel3.
+    [Fact]
+    public void CallOfTheWaspMultipliesTheAtbDrop()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        var b = new Battle(f.Db, s);
+        var wasp = f.Db.Spell("SPELL_WASP_SWARM")!;
+        Assert.Equal(0.6, b.WaspAtbDrop(wasp, Mastery.Expert, 5, s.Heroes[0]), 6);
+        s.Heroes[0].Specialization = "HERO_SPEC_CALL_OF_THE_WASP";
+        s.Heroes[0].Level = 10;
+        double per = f.Db.Stats.Get("combat/HeroSpecializations/Ranger/CallOfTheWasp_ATBReducePerLevel3", 0.02);
+        Assert.Equal(0.6 * (1 + 4 * (double)(float)per), b.WaspAtbDrop(wasp, Mastery.Expert, 5, s.Heroes[0]), 5);
+    }
+
+    // exe FUN_0097c9f0: the target hero's Dwarven Mithral pieces and Ring of Death make its army immune to one spell each.
+    [Fact]
+    public void ArtifactsGrantSpellImmunities()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        var b = new Battle(f.Db, s);
+        var u = s.Units.Single(x => x.Side == 0 && x.CreatureId == "CREATURE_FOOTMAN");
+        Assert.False(b.ArtifactSpellImmunity(u, "SPELL_SLOW"));
+        s.Heroes[0].Artifacts.Add("DWARVEN_MITHRAL_GREAVES");
+        s.Heroes[0].Artifacts.Add("ARTIFACT_RING_OF_DEATH");
+        Assert.True(b.ArtifactSpellImmunity(u, "SPELL_SLOW"));
+        Assert.True(b.ArtifactSpellImmunity(u, "SPELL_HOLY_WORD"));
+        Assert.False(b.ArtifactSpellImmunity(u, "SPELL_BLIND"));
+    }
+
+    // exe FUN_0097c9f0 (spell 0x2a): Raise Dead cannot target Elemental or Mechanical creatures.
+    [Fact]
+    public void RaiseDeadSkipsElementalsAndMechanicals()
+    {
+        var s = Setup(new[] { ("CREATURE_IRON_GOLEM", 10), ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        var b = new Battle(f.Db, s);
+        var golem = s.Units.Single(x => x.CreatureId == "CREATURE_IRON_GOLEM");
+        var raise = f.Db.Spell("SPELL_ANIMATE_DEAD")!;
+        golem.Count = 5;
+        Assert.Equal("cannot raise this creature", b.ValidateSpellTarget(Actor.Hero(0), 0, raise, Mastery.Expert, golem.Id, null));
+    }
 }

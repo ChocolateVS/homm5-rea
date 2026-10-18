@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 78 |
-| MATCH | 56 |
-| GAP | 6 |
-| UNVERIFIED | 389 |
+| FIXED | 102 |
+| MATCH | 69 |
+| GAP | 8 |
+| UNVERIFIED | 350 |
 | N/A | 58 |
 
 ## Core mechanics
@@ -250,7 +250,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_INTELLIGENCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_RESISTANCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_LUCKY_STRIKE` | FIXED | 00a59990, 00a5a170 | Soldier's Luck works two ways by caller: flag-1 abilities (Bash, Brutality, Crushing Blow, Flamewave, Taunt, Paw Strike, Bear Roar) double their ProcFactor; callers that name the attacker (on-hit group, Brutality, Warding Arrows, Bear Roar) get a second Range(0,100) roll | AuditProcChanceTests |
-| `HERO_SKILL_TACTICS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_TACTICS` | FIXED | 004d8c10 | extra deployment column (see Tactics phase columns) | AuditHeroTests.TacticsColumnsFollowTheOriginalRule |
 | `HERO_SKILL_ARCHERY` | MATCH | 00a58de0 | ranged strikes ×(1+clamp(SkillOffence/Archery_DamageBonus,0,10)) when HasSkill(0x23) |  |
 | `HERO_SKILL_FRENZY` | MATCH | 004bbfb0, 004bc020 | +1 min and +1 max damage |  |
 | `HERO_SKILL_PROTECTION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -425,7 +425,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_BOMBARDIER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SPEC_IMPREGNABLE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SPEC_HYPNOTIST` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_FLAGBEARER_OF_DARKNESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SPEC_FLAGBEARER_OF_DARKNESS` | FIXED | 004d8c10 | the enemy hero cannot use Tactics (the spec's only combat-code use; its +1 luck is a hero stat) — was missing | AuditHeroTests.TacticsColumnsFollowTheOriginalRule |
 | `HERO_SPEC_HOUNDS` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_SUCCUBUSES` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_ELVEN_VOLLEY` | N/A |  | no combat use found in exe or engine |  |
@@ -497,50 +497,50 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | ID | Status | Exe functions | Original behaviour / note | Regression test |
 |---|---|---|---|---|
-| `SPELL_MAGIC_ARROW` | UNVERIFIED | 00895370 008b7560 008c6bf0 008e85e3 | implemented; not yet compared with the exe |  |
-| `SPELL_MAGIC_FIST` | UNVERIFIED | 00890d70 008945c0 00894980 00895370 | implemented; not yet compared with the exe |  |
-| `SPELL_LIGHTNING_BOLT` | UNVERIFIED | 008945c0 00894710 00894770 00895a90 | implemented; not yet compared with the exe |  |
-| `SPELL_ICE_BOLT` | UNVERIFIED | 008942a0 008945c0 00894710 00895878 | implemented; not yet compared with the exe |  |
-| `SPELL_FIREBALL` | UNVERIFIED | 00890cb0 00891a50 00894980 0089be10 | implemented; not yet compared with the exe |  |
-| `SPELL_FROST_RING` | UNVERIFIED | 00890cb0 00891a61 00894980 0089be10 | implemented; not yet compared with the exe |  |
-| `SPELL_CHAIN_LIGHTNING` | UNVERIFIED | 008942a0 00894980 0089c120 0089c450 | implemented; not yet compared with the exe |  |
-| `SPELL_METEOR_SHOWER` | UNVERIFIED | 00890cb0 00894980 0089c450 0089c580 | implemented; not yet compared with the exe |  |
-| `SPELL_IMPLOSION` | UNVERIFIED | 00890cb0 008942a0 00894980 0089caa0 | implemented; not yet compared with the exe |  |
-| `SPELL_ARMAGEDDON` | UNVERIFIED | 008942a0 0089c120 0089caa0 008af58c | implemented; not yet compared with the exe |  |
-| `SPELL_CURSE` | UNVERIFIED | 0089c120 0089c720 0089caa0 008a2630 | implemented; not yet compared with the exe |  |
-| `SPELL_SLOW` | UNVERIFIED | 008942a0 0089caa0 008af5ae 008b2339 | implemented; not yet compared with the exe |  |
-| `SPELL_DISRUPTING_RAY` | UNVERIFIED | 008942a0 00894980 0089c720 0089caa0 | implemented; not yet compared with the exe |  |
-| `SPELL_PLAGUE` | UNVERIFIED | 008942a0 00894980 0089c720 008af9e0 | implemented; not yet compared with the exe |  |
+| `SPELL_MAGIC_ARROW` | FIXED | 00976b90, 0097d7b0, 0097d600 | single-target damage: truncated base, protection percent | SpellBaseDamageTruncates |
+| `SPELL_MAGIC_FIST` | FIXED | 0097c9f0 (spell 2 → 0), 00976b90 | never resisted; truncated base | SpellBaseDamageTruncates |
+| `SPELL_LIGHTNING_BOLT` | FIXED | 00976b90, 0097d7b0 (→ 004e6a10) | truncated base / protection; stun rider 004e6a10 not compared | ProtectionPercentIsTruncated |
+| `SPELL_ICE_BOLT` | FIXED | 00976b90, 0097d7b0 (→ 004e6600) | truncated base / protection; freeze rider 004e6600 not compared | ProtectionPercentIsTruncated |
+| `SPELL_FIREBALL` | FIXED | 00976b90, 0085eaa0 | truncated base / protection; area enumeration 0085e7c0 / 0097a530 not compared | SpellBaseDamageTruncates |
+| `SPELL_FROST_RING` | FIXED | 00976b90, 0085eaa0 | as Fireball | SpellBaseDamageTruncates |
+| `SPELL_CHAIN_LIGHTNING` | FIXED | 00976b90, 0085edb0 | truncated base; per-target multipliers passed to 0097d600 (param_7) and the jump order (00a5dbb0) not compared; stun only on the first target (iVar16 == 0) matches | SpellBaseDamageTruncates |
+| `SPELL_METEOR_SHOWER` | FIXED | 00976b90, 0085eaa0 | as Fireball | SpellBaseDamageTruncates |
+| `SPELL_IMPLOSION` | FIXED | 00976b90, 0097c9f0 | truncated base; Dwarven Mithral Cuirass immunity | ArtifactsGrantSpellImmunities |
+| `SPELL_ARMAGEDDON` | FIXED | 00976b90, 0085f330 | truncated base / protection; 0085f330 target rule not compared | SpellBaseDamageTruncates |
+| `SPELL_CURSE` | MATCH | 008a2630, 0097c9f0 | (only without Bless) max = min + (max−min)·clamp(v,0,1) if lower; immune: IMMUNITY_TO_CURSE |  |
+| `SPELL_SLOW` | FIXED | 004e4270 (case 0xc), 0097c9f0 | initiative ×(1−clamp(v,0,1)); immune: ABILITY_IMMUNITY_TO_SLOW, Dwarven Mithral Greaves | InitiativeEffectFactorsMultiply, ArtifactsGrantSpellImmunities |
+| `SPELL_DISRUPTING_RAY` | FIXED | 00976db0 (0xd + spec 0x2a), 0097c9f0 | Disrupter deals trunc((lvl−1)·PerLevel/trunc(Div) + Base) with it — the engine checked a non-existent SPELL_VULNERABILITY id, so the bonus never fired; war machines immune unless Disrupter | DisrupterDamagesWithDisruptingRay |
+| `SPELL_PLAGUE` | FIXED | 00976b90, 0097c9f0 | truncated damage; immune: Undead, Mechanical, Elemental | SpellBaseDamageTruncates |
 | `SPELL_WEAKNESS` | UNVERIFIED | 0089c720 008af9e0 008b236c 009a2950 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_WEAKNING_STRIKE` | UNVERIFIED | 0089c720 008b237d 008be8f9 009a2950 | implemented; not yet compared with the exe |  |
-| `SPELL_FORGETFULNESS` | UNVERIFIED | 0089c720 008a1020 008a10e0 008a2c20 | implemented; not yet compared with the exe |  |
-| `SPELL_BERSERK` | UNVERIFIED | 0089c720 008a2630 008a2c20 008af9e0 | implemented; not yet compared with the exe |  |
-| `SPELL_BLIND` | UNVERIFIED | 0089c720 008a1b80 008d3950 008e6190 | implemented; not yet compared with the exe |  |
-| `SPELL_HYPNOTIZE` | UNVERIFIED | 0089c720 008a08d0 008a2c20 008af5f7 | implemented; not yet compared with the exe |  |
-| `SPELL_UNHOLY_WORD` | UNVERIFIED | 0089c720 008af608 008af9e0 00b32880 | implemented; not yet compared with the exe |  |
+| `SPELL_FORGETFULNESS` | GAP | 0097c9f0 (0x11 → ability 0x13) | exe immunity: IMMUNITY_TO_MIND_CONTROL only; engine adds undead/elemental/mechanical (see Berserk) |  |
+| `SPELL_BERSERK` | FIXED | 008a2630, 0097c9f0 | damage ×max(1+v,0); immune: mind immunity / IMMUNITY_TO_BERSERK / Dwarven Mithral Shield (added). Exe checks only the IMMUNITY_TO_MIND_CONTROL ability (008a34c0 never grants it to undead) while the engine also treats undead/elemental/mechanical as mind-immune — open question (another targeting layer may block them) | ArtifactsGrantSpellImmunities |
+| `SPELL_BLIND` | GAP | 0097c9f0 (0x13 → ability 0x10) | immune only with ABILITY_IMMUNITY_TO_BLIND or Dwarven Mithral Helmet (helmet added). Engine also makes undead/elemental/mechanical (living-only + mind list) immune — not confirmed in the exe, left unchanged | ArtifactsGrantSpellImmunities |
+| `SPELL_HYPNOTIZE` | MATCH | 004e4270 (case 0x14), 0097c9f0 | initiative ×clamp(v,0,1); immune: mind immunity / IMMUNITY_TO_HYPNOTIZE; tier ≥ 7 needs Expert (caster mastery < 3 → 100) |  |
+| `SPELL_UNHOLY_WORD` | MATCH | 00977600 | affects creatures that are neither Undead nor Demonic |  |
 | `SPELL_UNHOLY_WORD_HIT_EFFECT` | N/A | 0089c720 008af9e0 00b32880 | visual effect only (client) |  |
-| `SPELL_BLESS` | UNVERIFIED | 0089c720 008a2630 00a51a00 | implemented; not yet compared with the exe |  |
-| `SPELL_HASTE` | UNVERIFIED | 0089c720 008af619 00a51a00 | implemented; not yet compared with the exe |  |
+| `SPELL_BLESS` | MATCH | 008a2630 | min += (max−min)·clamp(v,0,1) |  |
+| `SPELL_HASTE` | FIXED | 004e4270 (case 0x18), 008a4330 | initiative ×(1+max(v,0)) [+ level·Expediter_HasteBonusPerLevel for an Expediter hero], multiplied with the other factors | InitiativeEffectFactorsMultiply, ExpediterBoostsHaste |
 | `SPELL_STONESKIN` | UNVERIFIED | 0089c720 00b32880 | implemented; not yet compared with the exe |  |
 | `SPELL_DISPEL` | UNVERIFIED | 0089c720 008af62a 00a51a00 | implemented; not yet compared with the exe |  |
 | `SPELL_DISPEL_FAIL` | N/A | 008af63b | visual effect only (client) |  |
 | `SPELL_BLOODLUST` | UNVERIFIED | 0089c720 | implemented; not yet compared with the exe |  |
-| `SPELL_DEFLECT_ARROWS` | UNVERIFIED | 008af662 00a5a750 00a5a900 00bfba50 | implemented; not yet compared with the exe |  |
+| `SPELL_DEFLECT_ARROWS` | UNVERIFIED | 00a5a900 (visual only), 00a5a750 | the ranged reduction site was not found (not in 00a5a900 / 00a58de0 / 00a5c5a0); engine ×(1 − clamp(v,0,0.95)) left as is |  |
 | `SPELL_DEFLECT_ARROWS_HIT_EFFECT` | N/A | 0089c720 008af673 | visual effect only (client) |  |
-| `SPELL_ANTI_MAGIC` | UNVERIFIED | 0089c720 00a51a00 | implemented; not yet compared with the exe |  |
+| `SPELL_ANTI_MAGIC` | MATCH | 004e41c0 | resists spells of level ≤ trunc(value) |  |
 | `SPELL_TELEPORT` | UNVERIFIED | 0089c720 008af69a | implemented; not yet compared with the exe |  |
 | `SPELL_TELEPORT_FINISH_EFFECT` | N/A | 009a2350 00a51a00 | visual effect only (client) |  |
-| `SPELL_CELESTIAL_SHIELD` | UNVERIFIED | 009a2350 00a595b0 00a59660 00bfba50 | implemented; not yet compared with the exe |  |
-| `SPELL_HOLY_WORD` | UNVERIFIED | 009a2350 | implemented; not yet compared with the exe |  |
+| `SPELL_CELESTIAL_SHIELD` | MATCH | 00a595b0, 00a59660 | absorbs min(trunc(clamp(v,0,1)·damage), shield HP) |  |
+| `SPELL_HOLY_WORD` | FIXED | 00977600, 0097c9f0, 0085f330 | affects Undead, Demonic and Demon-Raged creatures (engine missed Demon-Raged); Ring of Death holder immune | ArtifactsGrantSpellImmunities |
 | `SPELL_ARMAGEDDON_HIT_EFFECT` | N/A | 009a2350 | visual effect only (client) |  |
-| `SPELL_LAND_MINE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_WASP_SWARM` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_PHANTOM` | UNVERIFIED | 008a34c0 008a3b90 008a6e20 008d00d0 | implemented; not yet compared with the exe |  |
+| `SPELL_LAND_MINE` | MATCH | 0097d7b0 (0x26) | mine count = trunc(max(duration value, 2)) — data PerPower is 0 so engine's Base matches |  |
+| `SPELL_WASP_SWARM` | FIXED | 00976db0, 0097d7b0 (0x27), 0097c9f0 | Call of the Wasp damage trunc((lvl·per+1)·dmg); ATB −= duration·(1 + ((lvl+2)/3)·ATBReducePerLevel3) clamped 0..1 (engine added per3·lvl/3); immune: Undead, Elemental, Mechanical | CallOfTheWaspMultipliesTheAtbDrop |
+| `SPELL_PHANTOM` | MATCH | 0097c9f0 (0x28), 0097d7b0 → 00860be0 | a phantom cannot be cloned |  |
 | `SPELL_EARTHQUAKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_ANIMATE_DEAD` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_ANIMATE_DEAD` | FIXED | 0097c9f0 (0x2a) | immune: Elemental, Mechanical (engine allowed them) | RaiseDeadSkipsElementalsAndMechanicals |
 | `SPELL_SUMMON_ELEMENTALS` | FIXED | 00861630, 00861120 | elemental kind from battlefield terrain (random among candidates) | tests/H5.Combat.Tests/AuditSpecTests2.GrassArenaSummonsAirOrEarthElementals |
 | `SPELL_EFFECT_SUMMON_ELEMENTALS_EARTH` | GAP | 009a2350 | summon-variant effect id at 009a2350 (spell effect table); not mapped |  |
-| `SPELL_RESURRECT` | UNVERIFIED | 009a2350 | implemented; not yet compared with the exe |  |
+| `SPELL_RESURRECT` | MATCH | 0097c9f0 (0x30), 009789b0 | immune: Undead, Elemental, Mechanical |  |
 | `SPELL_SUMMON_BOAT` | N/A | 009a2350 | adventure-map spell (H5.Adventure) |  |
 | `SPELL_DIMENSION_DOOR` | N/A | 009a2350 | adventure-map spell (H5.Adventure) |  |
 | `SPELL_ENCOURAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -548,7 +548,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_MULTISHOT` | UNVERIFIED | 009a2350 | implemented; not yet compared with the exe |  |
 | `SPELL_IMBUE_ARROW` | UNVERIFIED | 009a2350 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_COUNTERSPELL` | UNVERIFIED | 009785e0 00978670 0097c320 00bfbe50 | implemented; not yet compared with the exe |  |
-| `SPELL_SKILL_RESISTANCE` | UNVERIFIED | 0097c9f0 | implemented; not yet compared with the exe |  |
+| `SPELL_SKILL_RESISTANCE` | MATCH | 0097c9f0 (effect 0x52) | +15 resistance | MagicResistanceChanceSumsLikeTheExe |
 | `SPELL_SKILL_FIRST_AID` | UNVERIFIED | 0097f610 | implemented; not yet compared with the exe |  |
 | `SPELL_SKILL_DEMONIC_FIRE` | UNVERIFIED | 00a5ed90 | implemented; not yet compared with the exe |  |
 | `SPELL_SKILL_FIRE_PROTECTION` | UNVERIFIED | 0097af50 | implemented; not yet compared with the exe |  |
@@ -579,7 +579,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_MASS_HASTE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_CONJURE_PHOENIX` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_FIREWALL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_STONE_SPIKES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_STONE_SPIKES` | FIXED | 00976b90, 0085eaa0 (0xed) | as Fireball | SpellBaseDamageTruncates |
 | `SPELL_EFFECT_WOUND` | UNVERIFIED | 008a1e50 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_BERSERKER_RAGE` | UNVERIFIED | 008a32b0 008a4800 00984a00 00a5fee0 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_MARK_OF_FIRE` | UNVERIFIED | 00977a80 | implemented; not yet compared with the exe |  |
@@ -596,20 +596,20 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_EFFECT_BATTLE_FRENZY` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
 | `SPELL_SORROW` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_VAMPIRISM` | UNVERIFIED | 008a34c0 00a59c60 | implemented; not yet compared with the exe |  |
-| `SPELL_DEEP_FREEZE` | UNVERIFIED | 00a5a900 | implemented; not yet compared with the exe |  |
-| `SPELL_REGENERATION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_DIVINE_VENGEANCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_DEEP_FREEZE` | MATCH | 00a5a900 (0x117) | frozen target takes ×max(value·0.01, 1) |  |
+| `SPELL_REGENERATION` | MATCH | 0097c9f0 (0x118) | immune: Undead, Elemental, Mechanical |  |
+| `SPELL_DIVINE_VENGEANCE` | FIXED | 00976b90, 0097d7b0 | truncated base; the engine's ×sqrt(frags) (manual p.191) not located in the exe — extra damage term 00977e60 not decompiled | SpellBaseDamageTruncates |
 | `SPELL_ARCANE_CRYSTAL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_SUMMON_HIVE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_BLADE_BARRIER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_BLADE_BARRIER` | MATCH | 0097d7b0 (0x11c) | three cells (y−1, y, y+1) |  |
 | `SPELL_EFFECT_PREPARATION` | UNVERIFIED | 00a5fee0 00a64e90 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_EXPLODING_CORPSES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_MASTER_OF_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_WARCRY_RALLING_CRY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_WARCRY_RALLING_CRY` | FIXED | FUN_00946030 struct, 008a1e50 formula | morale +((lvl−1)/LevelDivisor)·PerDividedLevel + Base (engine 1 + lvl/8) | WarcryBonusesUseLevelMinusOne |
 | `SPELL_WARCRY_CALL_OF_BLOOD` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_WARCRY_WORD_OF_THE_CHIEF` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_WARCRY_FEAR_MY_ROAR` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_WARCRY_BATTLECRY` | UNVERIFIED | 008a1e50 | implemented; not yet compared with the exe |  |
+| `SPELL_WARCRY_BATTLECRY` | FIXED | 008a1e50 (0x126), FUN_00946030 | speed +((lvl−1)/div)·per + base (confirmed), offence by the same struct formula (engine 1 + lvl/2) | WarcryBonusesUseLevelMinusOne |
 | `SPELL_WARCRY_SHOUT_OF_MANY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_ARTFSET_LIONS_DEMORALIZED` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
 | `SPELL_DEMON_RAGE_LEVEL_1` | MATCH | 008a84e0 | rage level thresholds RPForLevel1..3 (engine RageLevel) |  |
