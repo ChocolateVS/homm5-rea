@@ -154,25 +154,41 @@ public partial class ArenaScene : Node3D
 
     // ---- camera --------------------------------------------------------------------------
 
+    // Default combat view, fitted to the original combat screenshots in the stock manual
+    // (Game Manual 3.0.pdf p.14): an axis-aligned view looking north (script docs: yaw 0 =
+    // north), the 12-cell axis across the screen, the near edge being grid row 0. Fitting the
+    // projected grid corners gives pitch 46.2°, vertical FOV 31.2°, eye 24.8 cells from a
+    // target 4.27 cells in from the near edge (0 px residual). The stock camera file
+    // (Cameras/CombatArena/CombatArena.xdb, DefaultCamera of _(CamerasSet)/CombatArenas.xdb)
+    // supplies only the clip planes here: its Rot (-30, -66.8) gives no axis-aligned yaw under
+    // any reading, and the exe's Pos/Rot/Rod → view conversion hasn't been traced yet.
+    public const float DefaultPitchDeg = 46.2f, DefaultFovDeg = 31.2f, DefaultDistance = 24.8f, DefaultTargetDepth = 4.27f;
+
     Camera3D BuildCamera()
     {
-        var cam = new Camera3D { Name = "CombatCamera", Near = 1f, Far = 500f, Fov = 70, KeepAspect = Camera3D.KeepAspectEnum.Height };
-        var center = Grid.GridCenter;
-        float px = -5.68482f, py = -5.08563f, pz = 9.80903f; // fallback: stock values
+        var cam = new Camera3D { Name = "CombatCamera", Near = 1f, Far = 500f, Fov = DefaultFovDeg, KeepAspect = Camera3D.KeepAspectEnum.Height };
         if (Game.Instance.Fs.Exists(CombatCameraPath))
         {
             var c = Game.Instance.Xdb.Load(CombatCameraPath).Root!;
-            float F(string a, string b) => float.Parse(c.Element(a)!.Element(b)!.Value, CultureInfo.InvariantCulture);
-            (px, py, pz) = (F("Pos", "x"), F("Pos", "y"), F("Pos", "z"));
-            cam.Fov = float.Parse(c.Element("FOV")!.Value, CultureInfo.InvariantCulture);
             cam.Near = float.Parse(c.Element("ClipDistanceMin")!.Value, CultureInfo.InvariantCulture);
             cam.Far = float.Parse(c.Element("ClipDistanceMax")!.Value, CultureInfo.InvariantCulture);
         }
-        // Pos is the eye offset from the battlefield centre in map space (Z-up); the camera
-        // looks at the centre. FOV is vertical. See docs/formats/arena.md for the evidence.
-        var eye = center + new Vector3(px, pz, -py);
-        cam.LookAtFromPosition(eye, center, Vector3.Up);
+        PlaceCamera(cam, DefaultPitchDeg, 0f, DefaultDistance, new Vector2(ArenaGrid.Width * 0.5f, DefaultTargetDepth));
         return cam;
+    }
+
+    /// <summary>
+    /// Orbit placement: looks at a grid point (cell units) from <paramref name="distance"/> cells,
+    /// pitched down by <paramref name="pitchDeg"/>, yaw 0 = looking north (towards higher rows).
+    /// </summary>
+    public void PlaceCamera(Camera3D cam, float pitchDeg, float yawDeg, float distance, Vector2 gridTarget)
+    {
+        var target = Grid.CellCenter(gridTarget.X, gridTarget.Y);
+        float p = Mathf.DegToRad(pitchDeg), y = Mathf.DegToRad(yawDeg);
+        // North is Godot −Z; the eye sits south of the target (+Z) rotated by yaw about Up.
+        var back = new Vector3(Mathf.Sin(y), 0, Mathf.Cos(y)) * (distance * Mathf.Cos(p));
+        var eye = target + back + new Vector3(0, distance * Mathf.Sin(p), 0);
+        cam.LookAtFromPosition(eye, target, Vector3.Up);
     }
 
     // ---- units ---------------------------------------------------------------------------
