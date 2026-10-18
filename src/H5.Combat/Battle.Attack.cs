@@ -780,10 +780,11 @@ public sealed partial class Battle
         {
             double per = a.CreatureId.Contains("MANTICORE") ? Stats.Get("combat/Creatures/Neutral/ManticorePoisonDamagePerPower", 4)
                                                             : Stats.Get("combat/Creatures/Dungeon/AssasinPoisonDamagePerPower", 1);
-            AddEffect(t, new Effect { Id = H5.Combat.Fx.Poison, Value = per * a.Count, Actions = (int)Stats.Get("combat/Creatures/Dungeon/AssasinPoisonCounter", 3), SourceSide = a.Side });
+            ApplyDamageOverTime(a, t, H5.Combat.Fx.Poison, per, (int)Stats.Get("combat/Creatures/Dungeon/AssasinPoisonCounter", 3), dispellable: true);
         }
         if (HasAbilityNow(a, Ab.Venom) && living)
-            AddEffect(t, new Effect { Id = H5.Combat.Fx.Poison, Value = 5 * a.Count, Actions = 3, SourceSide = a.Side, Dispellable = false });
+            ApplyDamageOverTime(a, t, FxVenom, Stats.Get("combat/Creatures/Stronghold/VenomDamagePerPower", 5),
+                (int)Stats.Get("combat/Creatures/Stronghold/VenomDuration", 3), dispellable: false);
         if (HasAbilityNow(a, Ab.WeakeningStrike) && melee)
         {
             var e = t.GetEffect(H5.Combat.Fx.WeakeningStrike);
@@ -1126,6 +1127,9 @@ public sealed partial class Battle
     {
         if (u.GetEffect(H5.Combat.Fx.Poison) is { } poison)
             DealDamage(u, (int)poison.Value, -1, AttackKind.Other, "POISON");
+        // Venom ticks on its own (exe FUN_00bbb900 handles 0xb4 and 0x128 as separate damage-over-time effects).
+        if (u.Alive && u.GetEffect(FxVenom) is { } venom)
+            DealDamage(u, (int)venom.Value, -1, AttackKind.Other, "VENOM");
         if (u.Alive && u.GetEffect("SPELL_PLAGUE") is { } decay)
             DealSpellDamageRaw(u, (int)decay.Value, "SPELL_PLAGUE");
         if (u.Alive && u.GetEffect(H5.Combat.Fx.Ignite) is { } ign)

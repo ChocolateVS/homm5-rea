@@ -337,7 +337,7 @@ public sealed partial class Battle
             case Ab.LayHands:
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
                 Heal(t, t.MaxHealthCache, resurrect: true, Ab.LayHands);    // one creature fully healed (p.177)
-                foreach (var id in t.Effects.Where(e => !e.Positive && e.School == "MAGIC_SCHOOL_DARK" || e.Id is H5.Combat.Fx.Poison or H5.Combat.Fx.Wound or H5.Combat.Fx.Sleep).Select(e => e.Id).ToList())
+                foreach (var id in t.Effects.Where(e => !e.Positive && e.School == "MAGIC_SCHOOL_DARK" || e.Id is H5.Combat.Fx.Poison or FxVenom or H5.Combat.Fx.Wound or H5.Combat.Fx.Sleep).Select(e => e.Id).ToList())
                     RemoveEffect(t, id);
                 break;
             case Ab.ResurrectAllies:
