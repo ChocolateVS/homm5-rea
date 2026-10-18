@@ -97,7 +97,8 @@ public sealed partial class Battle
     /// <summary>Phoenix Rebirth: once per combat a killed stack rises again with as many creatures (p.179).</summary>
     bool TryRebirth(Unit t)
     {
-        if (!t.Has(Ab.Rebirth) || t.AbilityUses.ContainsKey(Ab.Rebirth)) return false;
+        // A Phantom Forces copy (SPELL_PHANTOM, 0x28) never rises again (exe FUN_00a58bb0).
+        if (!t.Has(Ab.Rebirth) || t.IsClone || t.AbilityUses.ContainsKey(Ab.Rebirth)) return false;
         t.AbilityUses[Ab.Rebirth] = 1;
         Emit(new AbilityTriggered(t.Id, Ab.Rebirth));
         t.Count = 0;
