@@ -14,8 +14,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 |---|---|
 | FIXED | 59 |
 | MATCH | 40 |
-| GAP | 4 |
-| UNVERIFIED | 421 |
+| GAP | 5 |
+| UNVERIFIED | 420 |
 | N/A | 61 |
 
 ## Core mechanics
@@ -326,7 +326,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_REMOTE_CONTROL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ARTIFICIAL_GLORY` | UNVERIFIED | 00a6acd0 00a751a0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_WILDFIRE` | UNVERIFIED | 00a5a900 00a5ed90 00a75b00 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_COUNTERSPELL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_COUNTERSPELL` | GAP |  | exe 00978670: 2× cost and single use match; ATB after a counter is set to 0.2+0.1·Sorcery (and a Payback branch) — owner of that ATB change not confirmed, engine uses the normal cast reset |  |
 | `HERO_SKILL_MAGIC_CUSHION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SUPRESS_DARK` | FIXED | 009781e0 | enemy Dark spells ×2 | (HeroManaCost) |
 | `HERO_SKILL_SUPRESS_LIGHT` | FIXED | 009781e0 | enemy Light spells ×2 | (HeroManaCost) |

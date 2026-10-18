@@ -135,6 +135,7 @@ GAP = {
     'HERO_SPEC_INFERNAL_MACHINE': 'test hero only (Tank_Hero); not shipped — N/A in practice',
     'HERO_SPEC_MIND_CLEANER': 'economy spec (gold, Haven discount); combat-side call at 00983790 not analysed',
     'SPELL_EFFECT_SUMMON_ELEMENTALS_EARTH': 'summon-variant effect id at 009a2350 (spell effect table); not mapped',
+    'HERO_SKILL_COUNTERSPELL': 'exe 00978670: 2× cost and single use match; ATB after a counter is set to 0.2+0.1·Sorcery (and a Payback branch) — owner of that ATB change not confirmed, engine uses the normal cast reset',
     'HERO_SKILL_ELEMENTAL_BALANCE': 'enemy counter-summon on Summon Elementals (00861630): count/placement not ported',
 }
 NOT_USED_ABILITIES = set()
