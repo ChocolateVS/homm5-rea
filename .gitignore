@@ -18,3 +18,4 @@ tools/aire/scripts/*
 !tools/aire/scripts/ReaderChain.java
 tools/rmgre/out/
 tools/camre/out/
+tools/cam/out/
