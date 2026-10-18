@@ -38,6 +38,7 @@ public partial class MainMenu : Control
         UiNavigator.Register("multiplayer", () => new MainMenuScreen("MultiPlayer"));
         UiNavigator.Register("lobby", () => new DuelLobbyScreen());
         UiNavigator.Register("wait", () => new DuelWaitScreen());
+        UiNavigator.Register("hotseatduel", () => new Combat.HotseatDuelScreen());
 
         DevArgs.Parse();
         // `--goto=xdb:UI/CombatScreen-Heavy.(WindowScreen).xdb` shows any original screen as-is.

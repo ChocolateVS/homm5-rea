@@ -308,7 +308,8 @@ public partial class CombatHud : Control
     void FillPlacementBar()
     {
         var s = _screen.Session.Battle.State;
-        int side = _screen.Session.ViewSide;
+        // The side currently deploying (hot-seat: player 1, then player 2), else the viewer's side.
+        int side = _screen.Session.LocalSides.Where(sd => !s.TacticsDone[sd]).Cast<int?>().FirstOrDefault() ?? _screen.Session.ViewSide;
         var units = s.Units.Where(u => u.Side == side && u.Alive && !u.IsWarMachine && !u.IsObject).ToList();
         for (int i = 1; i <= 7; i++)
         {

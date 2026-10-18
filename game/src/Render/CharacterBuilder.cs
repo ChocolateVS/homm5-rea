@@ -38,12 +38,22 @@ public static class CharacterBuilder
     {
         var (modelPath, arenaSet, advSet) = Anims.ReadCharacter(characterXdbPath);
         if (modelPath == null) throw new InvalidOperationException($"{characterXdbPath} has no model");
-        var asset = new ModelLoader(Game.Instance.Xdb).Load(modelPath);
         var setPath = adventureMap ? advSet ?? arenaSet : arenaSet ?? advSet;
+        return BuildFromModel(modelPath, setPath, System.IO.Path.GetFileNameWithoutExtension(characterXdbPath));
+    }
+
+    /// <summary>
+    /// Builds an animated node straight from a (Model) and an (AnimSet) — how adventure-map
+    /// objects reference their visuals (AdvMap*Shared Model/AnimSet), and how player-coloured
+    /// hero variants (Character ColourModels) are drawn.
+    /// </summary>
+    public static Character BuildFromModel(string modelPath, string? setPath, string? name = null)
+    {
+        var asset = new ModelLoader(Game.Instance.Xdb).Load(modelPath);
         var skeleton = Anims.LoadSkeletonForModel(modelPath);
         var animations = setPath != null ? Anims.LoadAnimSet(setPath) : new();
 
-        var node = new Character { Name = System.IO.Path.GetFileNameWithoutExtension(characterXdbPath) };
+        var node = new Character { Name = name ?? System.IO.Path.GetFileNameWithoutExtension(modelPath) };
         if (skeleton == null || skeleton.Bones.Count == 0)
         {
             // Rigid model with no skeleton: static mesh, empty player so callers needn't special-case.

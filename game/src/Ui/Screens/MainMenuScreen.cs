@@ -25,9 +25,19 @@ public partial class MainMenuScreen : UiScreen
         Bus.On("ubi_com", () => UiNavigator.Goto("lobby"));
         Bus.On("main_menu_exit", () => GetTree().Quit());
         Bus.On("hot_seat", () => ShowOnly("HotSeatSubMenu", Panels));
-        Bus.On("duel_mode_hotseat", () => Combat.CombatLauncher.StartHotseat());
-        // TODO(custom-game): custom maps are not implemented yet; until then this starts a duel against the AI.
-        Bus.On("custom_game", () => Combat.CombatLauncher.StartVsAiRandom());
+        // Hot-seat duel: preset choice on the stock duel options window, then a local battle.
+        Bus.On("duel_mode_hotseat", () =>
+        {
+            if (!UiNavigator.Has("hotseatduel")) UiNavigator.Register("hotseatduel", () => new Combat.HotseatDuelScreen());
+            UiNavigator.Goto("hotseatduel");
+        });
+        // Custom Game opens the stock map list (UI/CustomGameCreate) like the original; a duel
+        // against the AI stays reachable through Hot-Seat → Duel Mode and `--combat-vs-ai`.
+        Bus.On("custom_game", () =>
+        {
+            if (!UiNavigator.Has("customgame")) UiNavigator.Register("customgame", () => new Adventure.CustomGameScreen());
+            UiNavigator.Goto("customgame");
+        });
         Bus.On("change_profile", () => SetVisible("SinglePlayer/ChangeProfile", true));
         Bus.On("profile_select", () => SetVisible("SinglePlayer/ChangeProfile", false));
     }
