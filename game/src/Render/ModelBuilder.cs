@@ -100,6 +100,9 @@ public static class ModelBuilder
 
     static Material BuildMaterial(MaterialData m)
     {
+        if (m.AlphaMode is "AM_OVERLAY" or "AM_OVERLAY_ZWRITE")
+            return OverlayMaterial.Create(m.DiffuseTexture != null ? Game.Instance.LoadTexture(m.DiffuseTexture) : null);
+
         var mat = new StandardMaterial3D
         {
             CullMode = m.TwoSided ? BaseMaterial3D.CullModeEnum.Disabled : BaseMaterial3D.CullModeEnum.Back,

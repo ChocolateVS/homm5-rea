@@ -25,6 +25,18 @@ public partial class ArenaViewer : Node3D
             Callable.From(Open).CallDeferred();
             return true;
         }
+        if (arg == "--view-menu-background")
+        {
+            Callable.From(() =>
+            {
+                var tree = (SceneTree)Engine.GetMainLoop();
+                tree.CurrentScene?.QueueFree();
+                var bg = new MainMenuBackground { Name = "MainMenuBackground" };
+                tree.Root.AddChild(bg);
+                tree.CurrentScene = bg;
+            }).CallDeferred();
+            return true;
+        }
         if (arg == "--arena-units") { ShowUnits = true; return true; }
         if (arg == "--arena-grid") { ShowGrid = true; return true; }
         return false;

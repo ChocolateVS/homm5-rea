@@ -22,7 +22,6 @@ public partial class GridOverlay : Node3D
         [CellMark.Aimable2] = "UI/CombatArena/Grid/aimable_2.xdb",
     };
 
-    static Shader? _shader;
     const int Subdiv = 4;
     const float Lift = 0.03f;
 
@@ -88,12 +87,7 @@ public partial class GridOverlay : Node3D
         {
             var texRef = (string?)Game.Instance.Xdb.Load(path).Root!.Element("Texture")?.Attribute("href");
             if (texRef != null && Game.Instance.LoadTexture(H5.Core.Xdb.XdbRef.Parse(texRef, path).Path) is { } tex)
-            {
-                _shader ??= GD.Load<Shader>("res://src/Arena/GridOverlay.gdshader");
-                var sm = new ShaderMaterial { Shader = _shader };
-                sm.SetShaderParameter("tex", tex);
-                result = sm;
-            }
+                result = Render.OverlayMaterial.Create(tex);
         }
         _materials[mark] = result;
         return result;
