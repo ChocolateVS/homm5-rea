@@ -21,6 +21,8 @@ public sealed class GameDatabase
     public List<DuelPreset> DuelPresets { get; } = new();
     /// <summary>Artifact set effect id (ARTFSET_EFFECT_*) → member artifacts (DefaultStats ArtifactSets).</summary>
     public Dictionary<string, List<string>> ArtifactSets { get; } = new();
+    /// <summary>Combat arena scenes by name (Scenes/CombatArenas), with their obstacle groups.</summary>
+    public Dictionary<string, CombatArenaDef> Arenas { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
     public RpgStats Stats { get; private set; } = null!;
     public ExperienceTable Experience { get; } = new();
     public List<string> Warnings { get; } = new();
@@ -51,6 +53,7 @@ public sealed class GameDatabase
         db.LoadHeroes(fs);
         db.LoadDuelPresets();
         db.LoadArtifactSets();
+        db.Arenas = ArenaLoader.Load(db._x);
         db._x = null!;
         return db;
     }

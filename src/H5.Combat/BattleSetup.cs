@@ -17,14 +17,25 @@ public static class BattleSetup
     /// Obstacles are generated from the DefaultStats obstacle rules unless provided.
     /// </summary>
     public static BattleState Create(GameDatabase db, ArmySetup attacker, ArmySetup defender, ulong seed,
-        IEnumerable<Cell>? obstacles = null, bool skipTactics = false)
+        IEnumerable<Cell>? obstacles = null, bool skipTactics = false, string? arena = null)
     {
         var s = new BattleState { Rng = new Rng(seed) };
         var sides = new[] { attacker, defender };
         for (int side = 0; side < 2; side++)
             s.Heroes[side] = MakeHero(db, sides[side].Hero, side);
 
-        s.Obstacles = obstacles?.ToList() ?? GenerateObstacles(db, s);
+        if (obstacles != null)
+        {
+            s.Arena = arena;
+            s.Obstacles = obstacles.ToList();
+        }
+        else
+        {
+            s.Arena = arena ?? PickArena(db, s.Rng);
+            var group = s.Arena != null && db.Arenas.TryGetValue(s.Arena, out var def) ? def.Obstacles : null;
+            s.ObstaclePlacements = ObstacleGenerator.Generate(db, s.Rng, group, s.Width, s.Height);
+            s.Obstacles = s.ObstaclePlacements.SelectMany(p => p.Cells).Distinct().ToList();
+        }
 
         // Tactics: a third deployment column, cancelled if both heroes have it (fan manual p.108).
         bool t0 = s.Heroes[0].HasPerk(Sk.Tactics), t1 = s.Heroes[1].HasPerk(Sk.Tactics);
@@ -49,8 +60,17 @@ public static class BattleSetup
         return s;
     }
 
-    public static BattleState CreateDuel(GameDatabase db, int presetA, int presetB, ulong seed, bool skipTactics = false) =>
-        Create(db, ArmySetup.FromHero(db.DuelPresets[presetA].Hero), ArmySetup.FromHero(db.DuelPresets[presetB].Hero), seed, skipTactics: skipTactics);
+    public static BattleState CreateDuel(GameDatabase db, int presetA, int presetB, ulong seed, bool skipTactics = false, string? arena = null) =>
+        Create(db, ArmySetup.FromHero(db.DuelPresets[presetA].Hero), ArmySetup.FromHero(db.DuelPresets[presetB].Hero), seed,
+            skipTactics: skipTactics, arena: arena);
+
+    /// <summary>A random open-field arena (one whose obstacles are placed randomly), chosen with the battle's RNG.</summary>
+    public static string? PickArena(GameDatabase db, Rng rng)
+    {
+        var open = db.Arenas.Values.Where(a => a.Obstacles is { FixedObstacles: false, Obstacles.Count: > 0 })
+            .Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal).ToList();
+        return open.Count == 0 ? null : open[rng.Next(open.Count)];
+    }
 
     static HeroState MakeHero(GameDatabase db, HeroInstance? hi, int side)
     {

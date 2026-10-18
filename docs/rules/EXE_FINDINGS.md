@@ -116,6 +116,35 @@ unless the creature has UNLIMITED_RETALIATION, and set back to 1 at the creature
 Resurrect (0x30) / Animate Dead (0x2a) use the spell power table, scaled by the hero's army
 size ratio when cast through a hero.
 
+## Battle RNG (resolved)
+
+Nival's combat RNG (vtable methods at 0x008c0470 ff.): state `s`; each draw steps the MSVC LCG
+twice (`s1 = s·0x343fd + 0x269ec3`, `s2 = s1·0x343fd + 0x269ec3`, store `s2`) and returns
+`r = (s1 >> 7) ^ (s2 << 6)`. `+0x10 Next(n) = r mod n`; `+0x0c Range(min,max) = min + Next(max−min+1)`
+(**inclusive**); float `(uint)r · (max−min) · 2⁻³² + min`. Consequence: the percent roll
+`Range(0,100) < chance` has 101 outcomes (a nominal 10 % is 10/101). H5Reborn keeps its own
+xoshiro generator (bit-exact sequences cannot match anyway) but reproduces these ranges.
+
+## Combat obstacles (resolved, `src/H5.Combat/Obstacles.cs`)
+
+`FUN_004b3860` (per battle) → parameters `FUN_004b33a0`/`FUN_004b3020` → up to 10 attempts of
+placement `FUN_004b3650`/`FUN_004b34a0` + validation `FUN_004b2850`; objects created by `FUN_004b2e10`.
+Works on the internal grid W×H = (12+4)×(10+2):
+* Arena scene `ObstaclesGroup` with `FixedObstacles = true` (boat, abyss): listed tiles are absolute
+  internal cells. No group (sieges, special arenas) ⇒ no obstacles.
+* Free lines are **rows**: `n = min(FreeLines, H−4)` rows from `start = Range(1, H−n−1)`.
+* `mode = Next(3)` → small (≤ 2 tiles) / big (> 2) / mixed candidates; `count = Range(Min, Max)` of the
+  mode's DefaultStats pair, clamped to [0,100]. If no candidate matches, all are used (and a
+  MinSmall/MaxSmall count is rolled and discarded).
+* **`ObstaclesMaxArea` is never read**; the area limit is `(W−4)·(H−2)/4` = 30.
+* Per obstacle: candidates are drawn with `Next(nValid)` (index 0 if only one) until one fits the
+  remaining area (non-fitting ones are dropped; an empty pool ends placement). Rotation
+  `Range(0,4)` quarter turns (k = 4 is a full turn). Anchors x ∈ [4, W−5], y ∈ [1, H−2]; every tile
+  must stay in that zone, off free rows and off occupied tiles (`FUN_004b27b0`); one anchor by
+  `Range(0, n−1)`. The area is spent even if no anchor fits.
+* Validation: Dijkstra (8-way, cost 2/3) of a 2×2 creature from internal (3,2); every free zone cell
+  must be covered by a reachable footprint, otherwise retry; after 10 failures the field is empty.
+
 ## Still open
 
 * Lay Hands charges, First Aid Tent action count, war machine and hero placement, obstacle

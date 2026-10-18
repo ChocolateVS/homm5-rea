@@ -180,6 +180,10 @@ public sealed class BattleState
     public int Width = 12;
     public int Height = 10;
     public List<Cell> Obstacles = new();
+    /// <summary>Combat arena scene name (Scenes/CombatArenas/&lt;Arena&gt;.xdb) the battle takes place on; null = none chosen.</summary>
+    public string? Arena;
+    /// <summary>Obstacle models and footprints produced by the original placement algorithm (for rendering).</summary>
+    public List<ObstaclePlacement> ObstaclePlacements = new();
     public List<Unit> Units = new();
     public HeroState[] Heroes = { new() { Side = 0 }, new() { Side = 1 } };
     public List<FieldObject> Fields = new();

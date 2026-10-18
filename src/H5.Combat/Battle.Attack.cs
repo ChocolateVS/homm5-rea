@@ -294,7 +294,7 @@ public sealed partial class Battle
     }
 
     /// <summary>The engine's generic "combat ability roll": succeeds when rand(0..99) &lt; chance (exe 00a5a170).</summary>
-    bool RollPercent(int chance) => chance >= 100 || chance > 0 && S.Rng.Next(100) < chance;
+    bool RollPercent(int chance) => chance >= 100 || chance > 0 && S.Rng.Next(101) < chance;   // rand(0,100) is inclusive (exe 008c04c0)
 
     bool IncorporealMiss(Unit a, Unit t, bool ranged)
     {
