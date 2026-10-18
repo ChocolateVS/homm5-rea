@@ -11,11 +11,14 @@ using HeroState = H5.Adventure.State.HeroState;
 namespace H5Reborn.Hero;
 
 /// <summary>
-/// The hero screen (UI/HeroScreen3, single-hero page HeroPage_Self with Bookmarks_HeroSingle) over the 3D
-/// stand Arenas/Interface/Hero_screen (the hero's adventure character at ph_hero). Bookmarks switch the
-/// Army (attributes, creature stacks with drag-and-drop/split, war machines), Inventory (paper doll and a
-/// paged 10-slot backpack; click to wear/take off), Skills (skill table, racial/specialisation row),
-/// Abilities (perks per skill) and Biography pages. Esc or right click closes it.
+/// The hero screen (UI/HeroScreen3) over the 3D stand Arenas/Interface/Hero_screen (the hero's adventure
+/// character at ph_hero). Single mode shows HeroPage_Self with Bookmarks_HeroSingle. Meeting mode (two own
+/// heroes meet on the map) shows the stock side-by-side layout: HeroPage_Self2 + Bookmarks_HeroSingle for the
+/// visiting hero on the left and HeroPage_Meet + Bookmarks_HeroMeet for the met hero on the right; creature
+/// stacks drag between the two armies and clicking an artifact passes it to the other hero's backpack.
+/// Bookmarks switch the Army (attributes, stacks with drag-and-drop/split, war machines), Inventory (paper
+/// doll and a paged 10-slot backpack; click to wear/take off), Skills, Abilities and Biography pages of their
+/// panel. Esc or right click closes it.
 /// </summary>
 public partial class HeroScreen : Control
 {
@@ -26,20 +29,30 @@ public partial class HeroScreen : Control
     };
     static readonly string[] Pages = { "Army", "Inventory", "Skills", "Abilities", "Biography" };
 
+    /// <summary>One hero's page in the screen (one in single mode, two when heroes meet).</summary>
+    sealed class Panel(HeroState hero, UiNode page, string bookmarks)
+    {
+        public HeroState Hero = hero;
+        public readonly UiNode Page = page;
+        public readonly string Bookmarks = bookmarks;
+        public int BackpackPage;
+        public Panel? Other;
+    }
+
     readonly AdventureScreen _adv;
     readonly TownScreen? _town;
-    HeroState _hero;
+    readonly HeroState _hero;
+    readonly HeroState? _meet;
     UiScreen _ui = null!;
-    UiNode _page = null!;
     ArmySlots _army = null!;
-    string _current = "Army";
-    int _backpackPage;
+    readonly List<Panel> _panels = new();
 
-    public HeroScreen(AdventureScreen adv, HeroState hero, TownScreen? town = null)
+    public HeroScreen(AdventureScreen adv, HeroState hero, TownScreen? town = null, HeroState? meet = null)
     {
         _adv = adv;
         _hero = hero;
         _town = town;
+        _meet = meet;
         Name = "HeroScreen";
         AnchorRight = 1;
         AnchorBottom = 1;
@@ -54,33 +67,56 @@ public partial class HeroScreen : Control
         return s;
     }
 
+    /// <summary>Opens the meeting screen for two heroes of the same player standing next to each other.</summary>
+    public static HeroScreen OpenMeeting(AdventureScreen adv, HeroState visitor, HeroState met)
+    {
+        var s = new HeroScreen(adv, visitor, meet: met);
+        adv.DialogLayer.AddChild(s);
+        return s;
+    }
+
     public override void _Ready()
     {
         Add3DStand();
         _ui = new UiScreen("UI/HeroScreen3.(WindowScreen).xdb");
         AddChild(_ui);
-        _page = _ui.Find("HeroPage_Self")!;
-        _page.Visible = true;
         _ui.SetVisible("Bookmarks_HeroSingle", true);
-        _ui.SetVisible("Bookmarks_HeroMeet", false);
-        _ui.SetVisible("HeroPage_Meet", false);
-        _ui.SetVisible("HeroPage_Self2", false);
+        _ui.SetVisible("Bookmarks_HeroMeet", _meet != null);
+        _ui.SetVisible("HeroPage_Self", _meet == null);
+        _ui.SetVisible("HeroPage_Self2", _meet != null);
+        _ui.SetVisible("HeroPage_Meet", _meet != null);
+        if (_meet == null)
+            _panels.Add(new Panel(_hero, _ui.Find("HeroPage_Self")!, "Bookmarks_HeroSingle"));
+        else
+        {
+            var left = new Panel(_hero, _ui.Find("HeroPage_Self2")!, "Bookmarks_HeroSingle");
+            var right = new Panel(_meet, _ui.Find("HeroPage_Meet")!, "Bookmarks_HeroMeet");
+            (left.Other, right.Other) = (right, left);
+            _panels.Add(left);
+            _panels.Add(right);
+        }
+        foreach (var p in _panels) p.Page.Visible = true;
         _ui.Bus.On("bookmark", (_, src) =>
         {
             var name = src?.Name.ToString() ?? "Army";
-            ShowPage(name == "Invertory" ? "Inventory" : name);
+            var group = src?.GetParent()?.Name.ToString() ?? "Bookmarks_HeroSingle";
+            if (_panels.Find(p => p.Bookmarks == group) is { } panel) ShowPage(panel, name == "Invertory" ? "Inventory" : name);
         });
         _ui.Bus.On("cast_spell", OpenSpellbook);
         _ui.Bus.On("slot_click", (_, src) => { if (src != null) ClickArtifactSlot(src); });
-        _ui.Bus.On("inv_left_self", () => { _backpackPage = Math.Max(0, _backpackPage - 1); Refresh(); });
-        _ui.Bus.On("inv_right_self", () => { _backpackPage++; Refresh(); });
+        // The stock arrows send both *_self and *_meet; the panel is the one holding the button.
+        _ui.Bus.On("inv_left_self", (_, src) => TurnBackpack(src, -1));
+        _ui.Bus.On("inv_right_self", (_, src) => TurnBackpack(src, +1));
 
+        // One ArmySlots for both panels so stacks drag between the two heroes (TransferStackCmd /
+        // SwapStacksCmd accept a neighbouring own hero as the target).
         _army = new ArmySlots(this, () => cmd => Apply(cmd));
         _army.Changed += Refresh;
-        for (int i = 1; i <= 7; i++)
-            if (Find($"Army/ArmyStacks/Slot_{i}") is { } slot)
-                _army.Add(new ArmySlotView { Node = slot, Hero = _hero.Id, Slot = i - 1 });
-        ShowPage("Army");
+        foreach (var p in _panels)
+            for (int i = 1; i <= 7; i++)
+                if (Find(p, $"Army/ArmyStacks/Slot_{i}") is { } slot)
+                    _army.Add(new ArmySlotView { Node = slot, Hero = p.Hero.Id, Slot = i - 1 });
+        foreach (var p in _panels) ShowPage(p, "Army");
     }
 
     void Add3DStand()
@@ -109,7 +145,14 @@ public partial class HeroScreen : Control
         }).CallDeferred();
     }
 
-    UiNode? Find(string path) => _page.FindChild(path.Split('/')[0], true, false) is UiNode first
+    void TurnBackpack(Node? src, int delta)
+    {
+        var panel = _panels.Find(p => src != null && p.Page.IsAncestorOf(src)) ?? _panels[0];
+        panel.BackpackPage = Math.Max(0, panel.BackpackPage + delta);
+        Refresh();
+    }
+
+    static UiNode? Find(Panel p, string path) => p.Page.FindChild(path.Split('/')[0], true, false) is UiNode first
         ? path.Contains('/') ? first.GetNodeOrNullByNames(path.Split('/')[1..]) : first
         : null;
 
@@ -122,36 +165,45 @@ public partial class HeroScreen : Control
         return r.Ok;
     }
 
-    void ShowPage(string page)
+    void ShowPage(Panel panel, string page)
     {
-        _current = page;
-        foreach (var p in Pages) if (_page.FindChild(p, false, false) is UiNode n) n.Visible = p == page;
+        foreach (var p in Pages) if (panel.Page.FindChild(p, false, false) is UiNode n) n.Visible = p == page;
         // The page-level attribute panel replaces the face/name block on the Inventory page (the Army
         // page shows attributes inside its own panel).
-        if (_page.FindChild("Attributes", false, false) is UiNode top) top.Visible = page == "Inventory";
-        if (_page.FindChild("HeroInfo", false, false) is UiNode info) info.Visible = page != "Inventory";
+        if (panel.Page.FindChild("Attributes", false, false) is UiNode top) top.Visible = page == "Inventory";
+        if (panel.Page.FindChild("HeroInfo", false, false) is UiNode info) info.Visible = page != "Inventory";
         // The inventory page has its own attribute panel at the top; the army page shows attributes inside.
         foreach (var bm in new[] { "Army", "Invertory", "Skills", "Abilities", "Biography" })
-            if (_ui.Find($"Bookmarks_HeroSingle/{bm}") is { } b && b.Window.ButtonStates.Count > 1)
+            if (_ui.Find($"{panel.Bookmarks}/{bm}") is { } b && b.Window.ButtonStates.Count > 1)
                 b.SetState((bm == "Invertory" ? "Inventory" : bm) == page ? 1 : 0);
         Refresh();
     }
 
     public void Refresh()
     {
-        var h = _hero;
+        if (_adv.Session.S.Players.FirstOrDefault(p => p.Index == _hero.Owner) is { } owner) TownUi.SetResourceBar(_ui, owner);
+        _army.Refresh(_adv.Session.S);
+        foreach (var p in _panels)
+        {
+            if (_adv.Session.S.Hero(p.Hero.Id) is { } fresh) p.Hero = fresh;
+            RefreshPanel(p);
+        }
+    }
+
+    void RefreshPanel(Panel panel)
+    {
+        var h = panel.Hero;
         var db = Game.Instance.Db;
-        if (_adv.Session.S.Players.FirstOrDefault(p => p.Index == h.Owner) is { } owner) TownUi.SetResourceBar(_ui, owner);
-        TownUi.SetPicture(Find("HeroInfo/Face"), TownUi.HeroFace(h));
-        var name = Find("HeroInfo/Name");
+        TownUi.SetPicture(Find(panel, "HeroInfo/Face"), TownUi.HeroFace(h));
+        var name = Find(panel, "HeroInfo/Name");
         name?.SetValue("HeroName", h.Name);
         name?.SetValue("HeroLevel", h.Level.ToString());
         name?.SetValue("HeroClass", ClassName(h.Class));
         long next = Game.Instance.Db.Experience.For(h.Level + 1);
-        if (Find("HeroInfo/Experience") is { } bar) bar.TooltipText = $"{h.Experience} / {next}";
+        if (Find(panel, "HeroInfo/Experience") is { } bar) bar.TooltipText = $"{h.Experience} / {next}";
 
         var (morale, luck) = (h.NextBattleMorale + h.ScriptMorale, h.NextBattleLuck + h.ScriptLuck);
-        foreach (var attrs in _page.FindChildren("Attributes", "", true, false).OfType<UiNode>())
+        foreach (var attrs in panel.Page.FindChildren("Attributes", "", true, false).OfType<UiNode>())
         {
             Set(attrs, "Attack", h.Attack);
             Set(attrs, "Defence", h.Defence);
@@ -166,33 +218,34 @@ public partial class HeroScreen : Control
             }
         }
 
-        _army.Refresh(_adv.Session.S);
         foreach (var (window, has, machine) in new[] { ("Ballista", h.Ballista, "WAR_MACHINE_BALLISTA"), ("FirstAidTent", h.FirstAidTent, "WAR_MACHINE_FIRST_AID_TENT"), ("AmmoCart", h.AmmoCart, "WAR_MACHINE_AMMO_CART") })
-            if (Find($"Army/WarMachinesStacks/{window}") is { } wm)
+            if (Find(panel, $"Army/WarMachinesStacks/{window}") is { } wm)
                 TownUi.SetPicture(wm.FindChild("Pic", true, false) as Control, has ? TownUi.CreatureIcon(machine) : null);
 
         // Paper doll and backpack.
         var worn = h.Artifacts.ToList();
         foreach (var (window, slot) in PaperDoll)
         {
-            if (Find($"Inventory/{window}") is not { } node) continue;
+            if (Find(panel, $"Inventory/{window}") is not { } node) continue;
             string? art = null;
             var ofSlot = worn.Where(a => db.Artifacts.TryGetValue(a, out var d) && d.Slot == slot).ToList();
             if (window == "Ring_2") art = ofSlot.Skip(1).FirstOrDefault(); else art = ofSlot.FirstOrDefault();
             node.SetMeta("artifact", art ?? "");
             node.SetMeta("backpack", false);
+            node.SetMeta("hero", h.Id);
             TownUi.SetPicture(node, art != null ? ArtifactIcon(art) : null);
             node.TooltipText = art != null ? ArtifactName(art) : "";
         }
         int pages = Math.Max(1, (h.Backpack.Count + 9) / 10);
-        _backpackPage = Math.Clamp(_backpackPage, 0, pages - 1);
+        panel.BackpackPage = Math.Clamp(panel.BackpackPage, 0, pages - 1);
         for (int i = 0; i < 10; i++)
         {
-            if (Find($"Inventory/Slot_{i + 1}") is not { } node) continue;
-            int idx = _backpackPage * 10 + i;
+            if (Find(panel, $"Inventory/Slot_{i + 1}") is not { } node) continue;
+            int idx = panel.BackpackPage * 10 + i;
             var art = idx < h.Backpack.Count ? h.Backpack[idx] : null;
             node.SetMeta("artifact", art ?? "");
             node.SetMeta("backpack", true);
+            node.SetMeta("hero", h.Id);
             TownUi.SetPicture(node, art != null ? ArtifactIcon(art) : null);
             node.TooltipText = art != null ? ArtifactName(art) : "";
         }
@@ -201,24 +254,24 @@ public partial class HeroScreen : Control
         var skills = h.Skills.Where(s => s.Mastery > Mastery.None).ToList();
         for (int i = 0; i < 6; i++)
         {
-            if (Find($"Skills/Cell_{i + 1}") is not { } cell) continue;
+            if (Find(panel, $"Skills/Cell_{i + 1}") is not { } cell) continue;
             var s = i < skills.Count ? skills[i] : null;
             cell.Visible = true;
             TownUi.SetPicture(cell.FindChild("Icon", true, false) as Control, s != null ? AdvDialogs.SkillIcon(s.SkillId, (int)s.Mastery) : null);
             (cell.FindChild("Desc", true, false) as UiNode)?.SetText(s != null ? $"<body_bright>{AdvDialogs.SkillName(s.SkillId, (int)s.Mastery)}" : "");
         }
-        if (Find("Skills/Racial_1") is { } racial)
+        if (Find(panel, "Skills/Racial_1") is { } racial)
         {
             racial.Visible = true;
             TownUi.SetPicture(racial.FindChild("Icon", true, false) as Control, SpecializationIcon(h));
         }
-        Find("Skills/Racial_Desc")?.SetText($"<body_bright>{SpecializationName(h)}");
+        Find(panel, "Skills/Racial_Desc")?.SetText($"<body_bright>{SpecializationName(h)}");
 
         // Abilities: each learned skill with up to three of its perks.
         var perkDefs = _adv.Session.Db.Perks;
         for (int row = 0; row < 6; row++)
         {
-            if (Find($"Abilities/Abilities{row}") is not { } line) continue;
+            if (Find(panel, $"Abilities/Abilities{row}") is not { } line) continue;
             var s = row < skills.Count ? skills[row] : null;
             line.Visible = s != null;
             if (s == null) continue;
@@ -233,7 +286,7 @@ public partial class HeroScreen : Control
         }
 
         // Biography.
-        if (Find("Biography") is { } bio && Game.Instance.Db.Heroes.TryGetValue(h.DefId, out var hd) && Game.Instance.Fs.Exists(hd.SourcePath))
+        if (Find(panel, "Biography") is { } bio && Game.Instance.Db.Heroes.TryGetValue(h.DefId, out var hd) && Game.Instance.Fs.Exists(hd.SourcePath))
         {
             var root = Game.Instance.Xdb.Load(hd.SourcePath).Root!;
             var text = Game.Instance.Xdb.ReadText((string?)root.Element("BiographyFileRef")?.Attribute("href"), hd.SourcePath) ?? "";
@@ -256,7 +309,12 @@ public partial class HeroScreen : Control
         var art = node.HasMeta("artifact") ? node.GetMeta("artifact").AsString() : "";
         if (art.Length == 0) return;
         bool fromBackpack = node.GetMeta("backpack").AsBool();
-        Apply(new MoveArtifactCmd(_hero.Id, art, fromBackpack, _hero.Id, ToBackpack: !fromBackpack));
+        int heroId = node.HasMeta("hero") ? node.GetMeta("hero").AsInt32() : _hero.Id;
+        if (_panels.Find(p => p.Hero.Id == heroId)?.Other is { } other)
+            // Meeting: the artifact goes to the other hero's backpack.
+            Apply(new MoveArtifactCmd(heroId, art, fromBackpack, other.Hero.Id, ToBackpack: true));
+        else
+            Apply(new MoveArtifactCmd(heroId, art, fromBackpack, heroId, ToBackpack: !fromBackpack));
     }
 
     void OpenSpellbook()

@@ -425,6 +425,16 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 Hud.UpdateMinimap();
                 break;
+            case ObjectVisited { Object: -1 } mv when HumanCaused(player) && !Autoplay && mv.What.StartsWith("meet:")
+                                                    && int.TryParse(mv.What[5..], out var metId)
+                                                    && s.Hero(mv.HeroId) is { } visitor && s.Hero(metId) is { } met
+                                                    && met.Owner == visitor.Owner:
+                // Two of the player's heroes meet: the stock side-by-side hero screen (army/artifact exchange).
+                var meeting = Hero.HeroScreen.OpenMeeting(this, visitor, met);
+                await ToSignal(meeting, Node.SignalName.TreeExited);
+                foreach (var h in s.Heroes) World.SyncHero(h);
+                Hud.Refresh();
+                break;
             case HeroMoved m:
                 await AnimateMove(m, player);
                 if (s.Hero(m.HeroId) is { } hm) World.SyncHero(hm);
