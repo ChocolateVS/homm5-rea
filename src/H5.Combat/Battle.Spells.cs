@@ -1115,17 +1115,18 @@ public sealed partial class Battle
             case "SPELL_RUNE_OF_BERSERKING": AddEffect(t, new Effect { Id = H5.Combat.Fx.RuneBerserking, Positive = true, Dispellable = false }); break;
             case "SPELL_RUNE_OF_MAGIC_CONTROL": AddEffect(t, new Effect { Id = H5.Combat.Fx.RuneMagicControl, Positive = true, Dispellable = false }); break;
             case "SPELL_RUNE_OF_EXORCISM":
-                foreach (var e in t.Effects.Where(e => !e.Positive && e.Dispellable && e.Id != H5.Combat.Fx.Poison && (e.SpellLevel <= 3)).Select(e => e.Id).ToList())
+                foreach (var e in t.Effects.Where(ExorcismRemoves).Select(e => e.Id).ToList())   // exe FUN_008d9b30 → FUN_004e4000
                     RemoveEffect(t, e);
                 break;
             case "SPELL_RUNE_OF_ELEMENTAL_IMMUNITY":
             {
-                int a = S.Rng.Next(4), b = (a + 1 + S.Rng.Next(3)) % 4;
+                var (a, b) = RollElementalImmunity();   // exe FUN_00c54620; exe element codes (1 air, 2 fire, 3 water, 4 earth)
                 AddEffect(t, new Effect { Id = H5.Combat.Fx.RuneElementalImmunity, Value = a, Value2 = b, Positive = true, Dispellable = false });
                 break;
             }
             case "SPELL_RUNE_OF_ETHEREALNESS": AddEffect(t, new Effect { Id = H5.Combat.Fx.RuneEtherealness, Remaining = 1, Positive = true, Dispellable = false }); break;
-            case "SPELL_RUNE_OF_STUNNING": AddEffect(t, new Effect { Id = H5.Combat.Fx.RuneThunderclap, Positive = true, Dispellable = false }); break;
+            // exe FUN_00c9d290: vf 0x25c(id, 1) — lasts one action, like Rune of Charge (FUN_00b40aa0).
+            case "SPELL_RUNE_OF_STUNNING": AddEffect(t, new Effect { Id = H5.Combat.Fx.RuneThunderclap, Actions = 1, Positive = true, Dispellable = false }); break;
             case "SPELL_RUNE_OF_REVIVE":
             {
                 int dead = t.InitialCount - t.Count;
@@ -1136,7 +1137,7 @@ public sealed partial class Battle
             }
             case "SPELL_RUNE_OF_BATTLERAGE": AddEffect(t, new Effect { Id = H5.Combat.Fx.RuneBattleRage, Positive = true, Dispellable = false }); break;
             case "SPELL_RUNE_OF_DRAGONFORM":
-                if (t.Name.Contains("Dragon", StringComparison.OrdinalIgnoreCase)) return false;
+                if (DragonformForbidden(t)) return false;   // exe FUN_004b4460 → FUN_004bb000
                 AddEffect(t, new Effect { Id = H5.Combat.Fx.RuneDragonform, Remaining = 1, Positive = true, Dispellable = false });
                 break;
             default: return false;
@@ -1147,17 +1148,21 @@ public sealed partial class Battle
     void Warcry(string id, int side, HeroState? hero, Unit? target, List<int> affected, SpellDef sp)
     {
         if (hero == null) return;
-        int level = hero.Level + (hero.HasPerk(Sk.MightyShout) ? (int)Stats.Get("combat/HeroSkills/Barbarian/MightyVoice_HeroLevelBonus", 5) : 0);
+        int level = WarcryLevel(hero);
         double rageMult = hero.HasPerk(Sk.ShoutOfRage) ? (id == "SPELL_WARCRY_CALL_OF_BLOOD"
             ? Stats.Get("combat/HeroSkills/Barbarian/VoiceOfRage_RageMultCallOfBlood", 1.5) : Stats.Get("combat/HeroSkills/Barbarian/VoiceOfRage_RageMultOther", 2)) : 1;
-        int armyRp = (int)(Stats.Get($"combat/Spells/Warcries/RPToArmyOnWarcryLevel{Math.Clamp(sp.Level, 1, 3)}", 20) * rageMult);
-        foreach (var u in S.LivingOf(side).Where(u => u.Has(Ab.DemonRaged)).ToList()) AddRage(u, armyRp);
+        // exe FUN_009be6c0 → FUN_008a56f0: every warcry but Call of Blood gives the caster's army FUN_009bdbd0's rage points.
+        if (id != "SPELL_WARCRY_CALL_OF_BLOOD")
+        {
+            int armyRp = WarcryRagePoints(id, hero);
+            foreach (var u in S.LivingOf(side).Where(u => u.Has(Ab.DemonRaged)).ToList()) AddRage(u, armyRp);
+        }
         switch (id)
         {
             case "SPELL_WARCRY_RALLING_CRY":
             {
                 int bonus = WarcryLevelBonus("combat/Spells/Warcries/RallingCry_MoraleBonus", level);
-                foreach (var u in S.LivingOf(side).Where(u => !NeutralMorale(u)).ToList())
+                foreach (var u in S.LivingOf(side).Where(u => !WarcryTargetInvalid(id, u)).ToList())
                 {
                     AddEffect(u, new Effect { Id = H5.Combat.Fx.RallyingCry, Value = bonus, Remaining = Stats.Get("combat/Spells/Warcries/RallingCry_Duration", 3), Positive = true, SourceSide = side });
                     affected.Add(u.Id);
@@ -1165,10 +1170,10 @@ public sealed partial class Battle
                 break;
             }
             case "SPELL_WARCRY_CALL_OF_BLOOD":
-                if (target != null && target.Has(Ab.DemonRaged)) { AddRage(target, (int)(level * Stats.Get("combat/Spells/Warcries/CallOfBlood_RPPerCasterLevel", 10) * rageMult)); affected.Add(target.Id); }
+                if (target != null && !WarcryTargetInvalid(id, target)) { AddRage(target, WarcryRagePoints(id, hero)); affected.Add(target.Id); }
                 break;
             case "SPELL_WARCRY_WORD_OF_THE_CHIEF":
-                if (target != null && IsLiving(target))
+                if (target != null && !WarcryTargetInvalid(id, target))
                 {
                     HeroStrike(hero, target, levelBonus: 0, friendly: true);
                     if (target.Alive)
@@ -1180,7 +1185,7 @@ public sealed partial class Battle
                 }
                 break;
             case "SPELL_WARCRY_FEAR_MY_ROAR":
-                if (target != null && !MindImmune(target) && S.Rng.Chance(0.5 + (level - target.Level) * 0.05))
+                if (target != null && !WarcryTargetInvalid(id, target) && RollPercent(target, FearMyRoarPercent(level, target), secondRoll: false))
                 {
                     Emit(new AbilityTriggered(Actor.Hero(side), "FEAR_MY_ROAR", target.Id));
                     SetAtb(target.Id, 0);
@@ -1192,7 +1197,7 @@ public sealed partial class Battle
                 int att = WarcryLevelBonus("combat/Spells/Warcries/Battlecry_OffenceBonus", level);
                 foreach (var u in S.LivingOf(side).Where(u => u.Kind == UnitKind.Creature).ToList())
                 {
-                    AddEffect(u, new Effect { Id = H5.Combat.Fx.Battlecry, Value = att, Remaining = 1, Positive = true, SourceSide = side });
+                    AddEffect(u, new Effect { Id = H5.Combat.Fx.Battlecry, Value = att, Value2 = BattlecrySpeedBonus(level), Remaining = 1, Positive = true, SourceSide = side });
                     affected.Add(u.Id);
                 }
                 break;
@@ -1200,8 +1205,8 @@ public sealed partial class Battle
             case "SPELL_WARCRY_SHOUT_OF_MANY":
                 if (target != null)
                 {
-                    int n = S.LivingOf(side).Where(u => u.Kind == UnitKind.Creature).Sum(u => u.Count);
-                    DealSpellDamage(target, sp, n * Stats.Get("combat/Spells/Warcries/ShoutOfMany_DamagePerCreatureInArmy", 1), side, false, null);
+                    int dmg = ShoutOfManyDamage(side);
+                    if (dmg > 0) DealDamage(target, dmg, Actor.Hero(side), AttackKind.Spell, sp.Id);
                     affected.Add(target.Id);
                 }
                 break;

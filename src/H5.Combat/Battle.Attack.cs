@@ -738,13 +738,17 @@ public sealed partial class Battle
         bool melee = !ranged;
         bool living = IsLiving(t);
 
-        if (melee && !retaliation && HasAbilityNow(a, Ab.Bash) && !t.Has(Ab.Mechanical) && !t.IsWarMachine
+        // Rune of Stunning shares Bash's single chance and immunity (exe FUN_00a59a90 / FUN_00a5d370): Bash_ProcFactor,
+        // never against MECHANICAL; Bash only off retaliation and in melee, the rune on any strike.
+        bool thunderclap = a.HasEffect(H5.Combat.Fx.RuneThunderclap);
+        if ((thunderclap || melee && !retaliation && HasAbilityNow(a, Ab.Bash)) && !t.Has(Ab.Mechanical) && !t.IsWarMachine
             && ProcRoll(a, t, Stats.Get("combat/Creatures/Haven/Bash_ProcFactor", 1.5), primaryHpBefore, soldiersLuckDoubles: true, secondRoll: false))
         {
-            Emit(new AbilityTriggered(a.Id, Ab.Bash, t.Id));
+            Emit(new AbilityTriggered(a.Id, thunderclap ? "RUNE_THUNDERCLAP" : Ab.Bash, t.Id));
             SetAtb(t.Id, 0);
             stunned = true;
-            RageEvent(t, "ReceiveBashRP");
+            if (thunderclap) RemoveEffect(a, H5.Combat.Fx.RuneThunderclap);
+            else RageEvent(t, "ReceiveBashRP");
         }
         // Crushing Blow (exe FUN_00a5af70): besides its 2x2 area, a Bash-like chance (CrushingBlow_ProcFactor, never on a
         // retaliation, no Soldier's Luck second roll) to zero the target's ATB and cancel its retaliation.
@@ -878,12 +882,6 @@ public sealed partial class Battle
         }
         if (HasAbilityNow(a, Ab.StormStrike) && melee)
             StormStrikeChain(a, t, dmg);
-        if (a.HasEffect(H5.Combat.Fx.RuneThunderclap) && RollProc(a, ProcChance(a, t, 1, primaryHpBefore)))
-        {
-            Emit(new AbilityTriggered(a.Id, "RUNE_THUNDERCLAP", t.Id));
-            SetAtb(t.Id, 0);
-            RemoveEffect(a, H5.Combat.Fx.RuneThunderclap);
-        }
         if (a.HasEffect(H5.Combat.Fx.RuneMagicControl))
         {
             var bless = t.Effects.Where(e => e.Positive && e.School == "MAGIC_SCHOOL_LIGHT").ToList();

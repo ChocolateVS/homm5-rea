@@ -240,8 +240,10 @@ public sealed partial class Battle
         if (S.Siege != null && u.Side == 0 && h.HasPerk("HERO_SKILL_DEATH_TREAD"))
             sp += Math.Max(0, Stats.Get("combat/HeroSkills/Necromancer/DeathTread/SpeedBonus", 4));
         sp += RoadHomeSpeedBonus(u);   // Familiar Ground (exe FUN_008a0e30)
-        if (u.HasEffect(H5.Combat.Fx.Battlecry)) sp += Stats.Get("combat/Spells/Warcries/Battlecry_SpeedBonus/Base", 1);
-        sp += RageBonus(u, "DEMON_RAGE_BONUS_SPEED");
+        // exe FUN_008a1e50 order: Wound trunc((1 − clamp(dec, 0, 1))·speed) → enemy Storm Wind on flyers → Rune of Charge ×2
+        // → enemy Necromancers set → Demon Rage speed bonus → Battlecry ((level−1)/div·per + base); clamped at 0.
+        if (u.HasEffect(H5.Combat.Fx.Wound))
+            sp = Math.Floor((1 - Math.Clamp((double)(float)Stats.Get("combat/Creatures/Fortress/Wound_SpeedDecrease", 0.4), 0, 1)) * sp);
         var eh = Enemy(u.Side);
         // Storm Wind slows enemy flyers by StormWind_SpeedPenalty; results below 2 become 1 (exe 008a1e50).
         if (eh.Present && u.Flying && (eh.HasPerk(Sk.StormWind) || eh.HasPerk(Sk.BarbStormWind)))
@@ -249,10 +251,11 @@ public sealed partial class Battle
             sp -= Stats.Get("combat/HeroSkills/Ranger/StormWind_SpeedPenalty", 2);
             if (sp < 2) sp = 1;
         }
-        if (eh.Present && Specials.Pieces(eh, Specials.Necromancers) >= 2) sp -= (int)Stats.Get("ArtifactsSetsEffectsConsts/Necromancers_2_EnemyCreature_DeSpeed", 1);
         if (u.HasEffect(H5.Combat.Fx.RuneCharge)) sp *= 2;
-        if (u.HasEffect(H5.Combat.Fx.Wound)) sp *= 1 - Stats.Get("combat/Creatures/Fortress/Wound_SpeedDecrease", 0.4);
-        return Math.Max(1, (int)Math.Floor(sp));
+        if (eh.Present && Specials.Pieces(eh, Specials.Necromancers) >= 2) sp -= (int)Stats.Get("ArtifactsSetsEffectsConsts/Necromancers_2_EnemyCreature_DeSpeed", 1);
+        sp += RageBonus(u, "DEMON_RAGE_BONUS_SPEED");
+        if (u.GetEffect(H5.Combat.Fx.Battlecry) is { } battlecry) sp += battlecry.Value2;
+        return Math.Max(0, (int)Math.Floor(sp));
     }
 
     public (double Min, double Max) DamageRangeOf(Unit u)
@@ -405,8 +408,8 @@ public sealed partial class Battle
     {
         if (u.GetEffect(H5.Combat.Fx.RuneElementalImmunity) is { } ri)
         {
-            string[] els = { Elements.Fire, Elements.Water, Elements.Air, Elements.Earth };
-            if (els[(int)ri.Value] == element || els[(int)ri.Value2] == element) return true;
+            // exe FUN_00c546b0: the effect holds two exe element codes (1 air, 2 fire, 3 water, 4 earth).
+            if (ExeElement((int)ri.Value) == element || ExeElement((int)ri.Value2) == element) return true;
         }
         return element switch
         {
