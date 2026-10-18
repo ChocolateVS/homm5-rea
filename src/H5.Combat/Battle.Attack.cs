@@ -207,6 +207,7 @@ public sealed partial class Battle
                 SetAtb(t.Id, GetAtb(t.Id) - Stats.Get("combat/Creatures/Sylvan/WardingArrowsATBAffect", 0.2));
             }
             if (u.IsWarMachine && u.Alive && t.Alive) SpecBallistaShot(u, t);
+            if (u.IsWarMachine && u.Alive && t.Alive && HeroOf(u).HasPerk("HERO_SKILL_IMBUE_BALLISTA")) ImbuedCast(HeroOf(u), t);
             if (u.IsWarMachine && u.Alive)
             {
                 if (HeroOf(u).HasPerk("HERO_SKILL_WILDFIRE") && t.Alive)
@@ -852,6 +853,7 @@ public sealed partial class Battle
         t.Count = 0;
         t.TopHealth = 0;
         Emit(new UnitDied(t.Id));
+        EndSeductionOf(t);
         foreach (var h in S.Heroes)
             foreach (var key in h.Links.Where(kv => kv.Value == t.Id).Select(kv => kv.Key).ToList())
                 h.Links.Remove(key);

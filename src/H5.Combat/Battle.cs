@@ -136,6 +136,7 @@ public sealed partial class Battle
         }
         CombatStartEffects();
         SpecCombatStart();
+        RemoteControlAtStart();
         AdvanceUntilDecision();
     }
 

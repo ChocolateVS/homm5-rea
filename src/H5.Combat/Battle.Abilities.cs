@@ -52,6 +52,7 @@ public sealed partial class Battle
                 dmg = Math.Max(dmg * 2, MaxHealthOf(t));
         }
         DealDamage(t, (int)dmg, actor, AttackKind.Hero, null);
+        if (!friendly) ImbuedCast(h, t);
         RageEvent(t, "ReceiveHeroAttackRP");
         if (!t.Alive || friendly) return;
         if (h.HasPerk(Sk.StunningBlow)) AddAtb(t.Id, -Stats.Get("combat/HeroSkills/Barbarian/StunningBlow_ATBDrop", 0.1), cap: 1);
@@ -104,6 +105,7 @@ public sealed partial class Battle
         if (h.HasPerk(Sk.RainOfArrows) && h.FavoriteEnemies.Count > 0) yield return new("RAIN_OF_ARROWS", AbilityTargeting.None);
         if (h.HasPerk(Sk.PowerfulBlow)) yield return new("POWERFUL_BLOW", AbilityTargeting.Friend);
         if (h.HasPerk(Sk.ConsumeCorpse) && S.Units.Any(u => !u.Alive && u.Kind == UnitKind.Creature && !u.Removed)) yield return new("CONSUME_CORPSE", AbilityTargeting.DeadFriend);
+        foreach (var more in HeroAbilities2(h)) yield return more;
     }
 
     string? DoHeroAbility(UseAbilityCmd c)
@@ -116,6 +118,11 @@ public sealed partial class Battle
         int actor = Actor.Hero(c.Side);
         double reset = 0;
         Emit(new AbilityTriggered(actor, c.Ability, t?.Id));
+        if (DoHeroAbility2(h, c, t, ref reset))
+        {
+            if (reset >= 0) EndAction(actor, reset, false);   // negative: the ability takes no turn
+            return null;
+        }
         switch (c.Ability)
         {
             case "DIVINE_GUIDANCE":
@@ -183,9 +190,15 @@ public sealed partial class Battle
     {
         bool Once(string id) => !u.AbilityUses.ContainsKey(id);
         var h = HeroOf(u);
-        if (u.CreatureId == "WAR_MACHINE_FIRST_AID_TENT") { if (u.Shots > 0) yield return new("FIRST_AID", AbilityTargeting.Friend); yield break; }
+        if (u.CreatureId == "WAR_MACHINE_FIRST_AID_TENT")
+        {
+            if (u.Shots > 0) yield return new("FIRST_AID", AbilityTargeting.Friend);
+            if (u.Shots > 0 && h.HasPerk(Sk.PlagueTent)) yield return new("PLAGUE_TENT", AbilityTargeting.Enemy);   // damage = heal amount
+            yield break;
+        }
         if (u.IsWarMachine || u.IsObject) yield break;
         if (u.Has(Ab.LayHands) && Once(Ab.LayHands)) yield return new(Ab.LayHands, AbilityTargeting.Friend, NeedsAdjacency: false);
+        if (u.Has("ABILITY_SEDUCE") && Once("ABILITY_SEDUCE")) yield return new("ABILITY_SEDUCE", AbilityTargeting.Enemy);
         if (u.Has(Ab.ResurrectAllies) && Once(Ab.ResurrectAllies)) yield return new(Ab.ResurrectAllies, AbilityTargeting.DeadFriend);
         if (u.Has(Ab.Dash) && Once(Ab.Dash)) yield return new(Ab.Dash, AbilityTargeting.None);
         if (u.Has(Ab.Explosion)) yield return new(Ab.Explosion, AbilityTargeting.None);
@@ -248,9 +261,18 @@ public sealed partial class Battle
         if (handledExtra) { EndAction(u.Id, 0); return null; }
         switch (c.Ability)
         {
+            case "ABILITY_SEDUCE":
+                if (Seduce(u, t!) is { } se) return se;
+                break;
             case "FIRST_AID":
                 if (!IsLiving(t!)) return "target cannot be healed";
                 TentHeal(u, t!);
+                allowMorale = false;
+                break;
+            case "PLAGUE_TENT":
+                u.Shots = Math.Max(0, u.Shots - 1);
+                Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
+                DealDamage(t, TentHealAmount(u), u.Id, AttackKind.Ability, c.Ability);
                 allowMorale = false;
                 break;
             case Ab.LayHands:

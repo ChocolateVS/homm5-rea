@@ -132,7 +132,7 @@ public sealed partial class Battle
         if (u.HasEffect(H5.Combat.Fx.RageOfForest)) init += Stats.Get("combat/Creatures/Sylvan/RageOfTheForestInitiativeInc", 5);
         if (Adjacent(u).Any(o => o.Side == u.Side && o.Has(Ab.PresenceOfCommander))) init += 1;
         init += RageBonus(u, "DEMON_RAGE_BONUS_INITIATIVE");
-        if (u.HasEffect(H5.Combat.Fx.Frozen) || u.HasEffect(H5.Combat.Fx.Seduced)) return 0;
+        if (u.HasEffect(H5.Combat.Fx.Frozen) || u.HasEffect(FxSeducing)) return 0;   // a seducing stack's ATB is frozen (p.181)
         return Math.Max(0.1, init);
     }
 

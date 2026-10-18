@@ -42,7 +42,8 @@ public sealed partial class Battle
         ["SPELL_BLOODLUST"] = "SPELL_WEAKNESS", ["SPELL_WEAKNESS"] = "SPELL_BLOODLUST",
     };
 
-    static string BaseSpell(string id) => MassToBase.TryGetValue(id, out var b) ? b : id;
+    static string BaseSpell(string id) =>
+        MassToBase.TryGetValue(id, out var b) ? b : id.StartsWith("SPELL_EMPOWERED_") ? "SPELL_" + id["SPELL_EMPOWERED_".Length..] : id;
     static bool IsMass(string id) => MassToBase.ContainsKey(id);
 
     public SpellTargeting TargetingOf(SpellDef sp)
@@ -78,6 +79,10 @@ public sealed partial class Battle
         if (h.HasPerk(Sk.PowerOfEndurance)) set.Add("SPELL_MASS_STONESKIN");
         if (h.HasPerk(Sk.TeleportAssault)) set.Add("SPELL_TELEPORT");
         if (h.HasPerk(Sk.RuneArmour)) set.Add("SPELL_CELESTIAL_SHIELD");
+        // Empowered Spells: empowered versions of the known damaging Destructive spells (double mana, +50% damage).
+        if (h.HasPerk(Sk.EmpoweredSpells))
+            foreach (var s in set.ToList())
+                if (Db.Spell("SPELL_EMPOWERED_" + s["SPELL_".Length..]) is { } emp) set.Add(emp.Id);
         if (h.SkillLevel(Sk.Runelore) > Mastery.None)
             foreach (var r in Db.Spells.Values.Where(x => x.School == "MAGIC_SCHOOL_RUNIC"))
                 if (h.Spells.Contains(r.Id)) set.Add(r.Id);
@@ -225,10 +230,21 @@ public sealed partial class Battle
             double power = HeroSpellPower(h, sp);
             if (sp.School == "MAGIC_SCHOOL_RUNIC" && RuneError(h, sp, c.TargetId) is { } re) return re;
             if (ValidateSpellTarget(c.ActorId, h.Side, sp, mastery, c.TargetId, c.Cell) is { } te) return te;
+            var target = c.TargetId is int tid ? S.Unit(tid) : null;
+            // Mark of the Wizard: spells on the marked stack are doubled when the hero can pay the cost twice.
+            bool doubled = target != null && h.Links.TryGetValue(LinkMarkOfWizard, out var markedId) && markedId == target.Id && h.Mana >= 2 * cost;
+            if (doubled) cost *= 2;
             h.Mana -= cost;
             Emit(new ManaChanged(c.ActorId, h.Mana));
-            var target = c.TargetId is int tid ? S.Unit(tid) : null;
+            if (Counterspelled(h, cost))
+            {
+                Emit(new SpellResisted(target?.Id ?? c.ActorId, sp.Id));
+                EndAction(c.ActorId, HeroCastAtbReset(h, sp), false);
+                return null;
+            }
+            if (doubled) _spellDamageScale *= 2;
             ResolveSpell(c.ActorId, h.Side, sp, mastery, power, target, c.Cell, fromHero: true);
+            _spellDamageScale = 1;
             if (sp.School == "MAGIC_SCHOOL_RUNIC") { h.AbilityUses[$"{sp.Id}:{c.TargetId}"] = 1; TapRunes(h); }
             double reset = HeroCastAtbReset(h, sp);
             EndAction(c.ActorId, reset, false);
@@ -350,6 +366,21 @@ public sealed partial class Battle
 
     /// <summary>Applies a spell. Caster is an actor id (hero or unit); side is the caster's controlling side.</summary>
     void ResolveSpell(int caster, int side, SpellDef sp, Mastery m, double power, Unit? target, Cell? cell, bool fromHero)
+    {
+        double prevScale = _spellDamageScale;
+        if (sp.Id.StartsWith("SPELL_EMPOWERED_")) _spellDamageScale *= 1.5;
+        if (target != null) target = MagicMirror(side, sp, target);
+        try { ResolveSpellCore(caster, side, sp, m, power, target, cell, fromHero); }
+        finally { _spellDamageScale = prevScale; }
+        // Mark of the Wizard: a spell striking another creature affects the marked stack as well.
+        var mh = fromHero ? S.Heroes[side] : null;
+        if (mh != null && target != null && mh.Links.TryGetValue(LinkMarkOfWizard, out var mid) && mid != target.Id
+            && S.Unit(mid) is { Alive: true } marked && TargetingOf(sp) == SpellTargeting.Unit && !IsMass(sp.Id))
+            ResolveSpellCore(caster, side, sp, m, power, marked, cell, fromHero);
+        if (mh != null && target != null && IsDamageSpell(BaseSpell(sp.Id))) MatronSalvo(mh, target);
+    }
+
+    void ResolveSpellCore(int caster, int side, SpellDef sp, Mastery m, double power, Unit? target, Cell? cell, bool fromHero)
     {
         string id = BaseSpell(sp.Id);
         var baseDef = Db.Spell(id) ?? sp;
@@ -650,6 +681,8 @@ public sealed partial class Battle
     {
         if (!t.Alive) return 0;
         string id = BaseSpell(sp.Id);
+        dmg *= _spellDamageScale;
+        dmg += ElementalChainBonus(hero, sp, t, dmg);
         if (!ignoreResist)
         {
             double mult = SpellDamageMultiplier(t, sp, side);
