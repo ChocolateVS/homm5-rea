@@ -15,6 +15,9 @@ public sealed partial class Adventure
         _ => 1,
     };
 
+    /// <summary>A town dwelling tier's weekly growth (for the fort screen's plates).</summary>
+    public int WeeklyGrowthOf(TownState t, int tier) => WeeklyGrowth(t, tier);
+
     Stack?[]? ArmyAt(int hero, int town, out Tile? where)
     {
         where = null;

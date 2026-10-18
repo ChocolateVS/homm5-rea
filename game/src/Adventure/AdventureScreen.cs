@@ -30,6 +30,8 @@ public partial class AdventureScreen : Control
     bool _playing;                // an event is being animated
     int _modal;                   // open dialogs
     Control _dialogLayer = null!;
+    /// <summary>Layer for modal screens (town, hero); anything in it locks map input.</summary>
+    public Control DialogLayer => _dialogLayer;
     Control _flyLayer = null!;
 
     /// <summary>Dev/test: the local player's turns are played by the bot (`--adventure-autoplay`).</summary>
@@ -236,13 +238,13 @@ public partial class AdventureScreen : Control
         if (s.Heroes.FirstOrDefault(h => h.Alive && !h.Garrisoned && h.Pos == tile && h.Owner == Session.Human.Index) is { } mine)
         {
             if (mine.Id != SelectedHeroId) { Select(mine); return; }
-            if (doubleClick) Message(mine.Name, HeroSummary(mine), AdvDialogs.HeroFace(mine));
+            if (doubleClick) Hero.HeroScreen.Open(this, mine);
             return;
         }
         // Own town without the hero standing at its entrance: show the town (screen not ported yet).
         if (Session.Game.TownAt(tile) is { } town && town.Owner == Session.Human.Index && Selected?.Pos != tile && _plotted != tile)
         {
-            if (doubleClick || Selected == null) { Message(town.Name, TownSummary(town)); return; }
+            if (doubleClick || Selected == null) { Town.TownScreen.Open(this, town); return; }
         }
         if (Selected is not { } hero) return;
         if (_plotted == tile) { SendMove(hero, tile); return; }

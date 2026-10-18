@@ -208,7 +208,7 @@ public static partial class AdvDialogs
     }
 
     /// <summary>Skill/perk icon from Skills.xdb: Texture items are indexed by mastery (item 0 is empty for skills).</summary>
-    static Texture2D? SkillIcon(string id, int level)
+    public static Texture2D? SkillIcon(string id, int level)
     {
         var textures = SkillItem(id)?.Element("Texture")?.Elements("Item").ToList();
         if (textures is not { Count: > 0 }) return null;

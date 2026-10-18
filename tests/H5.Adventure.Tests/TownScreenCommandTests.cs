@@ -75,3 +75,16 @@ public class TownScreenCommandTests(Fixture f)
         Assert.Equal(2, h.Backpack.Count);
     }
 }
+
+[Collection("adv")]
+public class StartRevealTests(Fixture f)
+{
+    /// <summary>Regression: the adventure client showed only fog because nothing was explored at the start.</summary>
+    [Fact]
+    public void PlayersStartWithTilesAroundTheirHeroesAndTownsExplored()
+    {
+        var g = Engine.Adventure.NewGame(f.Db, f.Map("A2M1"), GameSetup.AllPlayers(f.Map("A2M1"), 1, 1)).Game;
+        foreach (var p in g.S.Players.Where(p => g.S.Heroes.Any(h => h.Alive && h.Owner == p.Index)))
+            Assert.True(p.Explored.Sum(bits => bits.Count(b => b)) > 0, $"player {p.Index} has nothing explored");
+    }
+}
