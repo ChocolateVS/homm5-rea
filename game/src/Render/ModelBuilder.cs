@@ -160,6 +160,12 @@ public static class ModelBuilder
         return m;
     }
 
+    /// <summary>
+    /// Original-renderer lighting (H5Lit shaders driven by <see cref="H5Lighting"/>) instead of
+    /// Godot's PBR materials.
+    /// </summary>
+    public static bool UseOriginalLighting = true;
+
     static Material BuildMaterial(MaterialData m, (string? Effect, float Param, bool AddPlaced) fx)
     {
         if (fx.Effect == "M_REFLECT_WATER")
@@ -167,6 +173,22 @@ public static class ModelBuilder
         if (fx.Effect == "M_CLOUDS_H5")
             return CloudsMaterial(m.DiffuseTexture != null ? Game.Instance.LoadTexture(m.DiffuseTexture) : null, fx.Param,
                 m.LightingMode == "L_SELFILLUM", m.AlphaMode is "AM_TRANSPARENT" or "AM_ALPHA_BLEND", fx.AddPlaced, m.TwoSided);
+
+        if (UseOriginalLighting)
+        {
+            // The original renderer's lighting model (H5Lit; see H5Lighting for the evidence).
+            var texture = m.DiffuseTexture != null ? Game.Instance.LoadTexture(m.DiffuseTexture) : null;
+            var blend = m.AlphaMode switch
+            {
+                "AM_ALPHA_TEST" => H5LitMaterials.Blend.AlphaTest,
+                "AM_TRANSPARENT" or "AM_ALPHA_BLEND" => fx.AddPlaced ? H5LitMaterials.Blend.Additive : H5LitMaterials.Blend.Alpha,
+                "AM_OVERLAY" or "AM_OVERLAY_ZWRITE" => H5LitMaterials.Blend.Alpha,
+                _ => H5LitMaterials.Blend.Opaque,
+            };
+            var lit = H5LitMaterials.Create(texture, blend, m.TwoSided, selfIllum: m.LightingMode is "L_NONE" or "L_SELFILLUM");
+            if (m.AlphaMode is "AM_OVERLAY" or "AM_OVERLAY_ZWRITE") lit.RenderPriority = 1;
+            return lit;
+        }
 
         var mat = new StandardMaterial3D
         {

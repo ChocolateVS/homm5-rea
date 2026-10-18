@@ -138,6 +138,8 @@ public partial class ArenaScene : Node3D
 
     void BuildLighting(ArenaLight light)
     {
+        // Original-renderer lighting and fog for H5Lit materials (models, terrain).
+        H5Lighting.Apply(light.Source, light.SourceFile);
         // The original lights in an overbright (×2) range: LightColor ~0.5 is a normal sun.
         var env = new Godot.Environment
         {
@@ -184,6 +186,8 @@ public partial class ArenaScene : Node3D
                         m.DisableFog = true;
                         m.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
                     }
+                    else if (H5LitMaterials.IsH5Lit(mesh.SurfaceGetMaterial(i)))
+                        mesh.SurfaceSetMaterial(i, H5LitMaterials.AsBackdrop((ShaderMaterial)mesh.SurfaceGetMaterial(i), alpha: false));
                 var dome = new MeshInstance3D
                 {
                     Name = "SkyDome", Mesh = mesh,

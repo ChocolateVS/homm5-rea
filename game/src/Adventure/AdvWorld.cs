@@ -223,6 +223,8 @@ public partial class AdvWorld : Node3D
             if (_sun[f] != null) _sun[f]!.Visible = f == floor;
             if (_env[f] != null) _env[f]!.Environment = f == floor ? _envRes[f] : null;
         }
+        // Original-renderer lighting and fog for the visible floor (H5Lit materials/terrain).
+        Render.H5Lighting.Apply(_lightRec[floor], _lightFile[floor], p => _session.Files.Exists(p) ? _session.Files.LoadXml(p).Root : null);
         if (_shroudMaterial != null && _shroudTex[floor] != null) _shroudMaterial.SetShaderParameter("shroud", _shroudTex[floor]);
         RefreshShroud();
         Boats?.OnFloorChanged();
@@ -231,6 +233,8 @@ public partial class AdvWorld : Node3D
     // ---------------------------------------------------------------- lighting
 
     readonly Godot.Environment?[] _envRes = new Godot.Environment?[2];
+    readonly XElement?[] _lightRec = new XElement?[2];
+    readonly string?[] _lightFile = new string?[2];
 
     static readonly string[] RmgGroundLights =
     {
@@ -271,6 +275,8 @@ public partial class AdvWorld : Node3D
             var e = light?.Element(n);
             return e == null ? new Vector3(d, d, d) : new Vector3(F(e.Element("x"), d), F(e.Element("y"), d), F(e.Element("z"), d));
         }
+        _lightRec[f] = light;
+        _lightFile[f] = lightFile;
         Color C(Vector3 v, float scale = 1) => new(Math.Min(1, v.X * scale), Math.Min(1, v.Y * scale), Math.Min(1, v.Z * scale));
 
         // The original lights in an overbright (×2) range, like the combat arenas (ArenaScene).

@@ -137,7 +137,12 @@ public partial class SpellBook3D : Control
         _vp.AddChild(sun);
         sun.RotationDegrees = new Vector3(-70, 20, 0);
 
-        _book = CharacterBuilder.BuildFromModel(_d.Model, _d.AnimSet, "SpellBook");
+        // The book is drawn in its own viewport over a live battle/map, so it keeps Godot-lit
+        // materials instead of publishing its light to the shared H5Lit globals.
+        bool original = ModelBuilder.UseOriginalLighting;
+        ModelBuilder.UseOriginalLighting = false;
+        try { _book = CharacterBuilder.BuildFromModel(_d.Model, _d.AnimSet, "SpellBook"); }
+        finally { ModelBuilder.UseOriginalLighting = original; }
         _vp.AddChild(_book);
         _mesh = _book.FindChild("Mesh", recursive: true, owned: false) as MeshInstance3D;
         if (_book.Has("idle00")) _book.Play("idle00", loop: true);

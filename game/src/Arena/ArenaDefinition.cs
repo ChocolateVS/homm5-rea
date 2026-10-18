@@ -15,6 +15,9 @@ public sealed class ArenaLight
     public float Pitch = 45, Yaw = 45, FogStart = 1000, FogDistance = 1000;
     public string? SkyDomeModel, SkyCubeTexture;
     public string? DistanceFog;
+    /// <summary>The AmbientLight record itself and its file (for the original-lighting shaders).</summary>
+    public XElement? Source;
+    public string? SourceFile;
 }
 
 /// <summary>
@@ -158,6 +161,8 @@ public sealed class ArenaDefinition
         SkyDomeModel = Href(e.Element("SkyDome"), file),
         SkyCubeTexture = Href(e.Element("Sky"), file),
         DistanceFog = Href(e.Element("DistanceFog"), file),
+        Source = e,
+        SourceFile = file,
     };
 
     static string? Href(XElement? e, string currentFile)
