@@ -37,7 +37,11 @@ void fragment() {
 		EMISSION = h5_srgb_to_linear(mix(h5_fog_color, t.rgb, v_fog));
 		ALBEDO = vec3(0.0);
 	}
-	ALPHA = (alpha_scissor >= 0.0 ? 1.0 : t.a) * opacity;
+#ifdef H5_BLEND
+	// Only blended variants write ALPHA: any ALPHA write moves a Godot material into the
+	// transparent pass (no depth write, drawn last), which made opaque scenery cover objects.
+	ALPHA = t.a * opacity;
+#endif
 }
 
 void light() {

@@ -25,7 +25,8 @@ public static class H5LitMaterials
                 Blend.Additive => ", blend_add, depth_draw_never, shadows_disabled",
                 _ => "",
             };
-        var code = _body.Replace("render_mode specular_disabled, ambient_light_disabled, diffuse_lambert;", $"render_mode {mode};");
+        var code = _body.Replace("render_mode specular_disabled, ambient_light_disabled, diffuse_lambert;",
+            $"render_mode {mode};" + (blend is Blend.Alpha or Blend.Additive ? "\n#define H5_BLEND" : ""));
         s = new Shader { Code = code };
         _shaders[(blend, twoSided)] = s;
         return s;

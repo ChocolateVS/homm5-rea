@@ -164,7 +164,7 @@ public static class ModelBuilder
     /// Original-renderer lighting (H5Lit shaders driven by <see cref="H5Lighting"/>) instead of
     /// Godot's PBR materials.
     /// </summary>
-    public static bool UseOriginalLighting = true;
+    public static bool UseOriginalLighting = System.Environment.GetEnvironmentVariable("H5_LIGHTING") != "pbr";
 
     static Material BuildMaterial(MaterialData m, (string? Effect, float Param, bool AddPlaced) fx)
     {
@@ -181,7 +181,9 @@ public static class ModelBuilder
             var blend = m.AlphaMode switch
             {
                 "AM_ALPHA_TEST" => H5LitMaterials.Blend.AlphaTest,
-                "AM_TRANSPARENT" or "AM_ALPHA_BLEND" => fx.AddPlaced ? H5LitMaterials.Blend.Additive : H5LitMaterials.Blend.Alpha,
+                // AddPlaced is not additive blending for world models: such surfaces (map markers,
+                // helper cards) carry ~zero alpha and must stay invisible, as with alpha blending.
+                "AM_TRANSPARENT" or "AM_ALPHA_BLEND" => H5LitMaterials.Blend.Alpha,
                 "AM_OVERLAY" or "AM_OVERLAY_ZWRITE" => H5LitMaterials.Blend.Alpha,
                 _ => H5LitMaterials.Blend.Opaque,
             };
