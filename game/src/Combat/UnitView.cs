@@ -1,4 +1,5 @@
 using Godot;
+using H5.Assets.Model;
 using H5.Combat;
 using H5.Core.Ui;
 using H5Reborn.Arena;
@@ -136,6 +137,38 @@ public partial class UnitView : Node3D
     public void Play(string kind, bool loop = false)
     {
         if (Character is { } c && c.Has(kind)) c.Play(kind, loop);
+    }
+
+    Dictionary<string, AnimSetEntry>? _animEntries;
+
+    /// <summary>The arena (AnimSet) entries of this creature, by kind (sound and effect refs).</summary>
+    AnimSetEntry? Entry(string kind)
+    {
+        if (_animEntries == null)
+        {
+            _animEntries = new(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var path = IsWarMachine ? null : CreatureModels.CharacterPathFor(CreatureId);
+                var loader = new AnimSetLoader(Game.Instance.Xdb);
+                if (path != null && loader.ReadCharacter(path).ArenaAnimSet is { } set)
+                    foreach (var e in loader.ReadAnimSet(set)) _animEntries[e.Kind] = e;
+            }
+            catch (Exception e) { GD.PushWarning($"[H5] anim set for {CreatureId}: {e.Message}"); }
+        }
+        return _animEntries.GetValueOrDefault(kind);
+    }
+
+    /// <summary>
+    /// Plays an animation the way the original does for one-shot actions: the clip, its
+    /// (BasicSkelAnim) sound and its effect (e.g. a sword trail) attached to the character.
+    /// </summary>
+    public void PlayAction(string kind, bool loop = false)
+    {
+        Play(kind, loop);
+        if (Entry(kind) is not { } e) return;
+        if (e.SoundHref is { } snd) Audio.SoundLibrary.Play(snd, this);
+        if (!loop && e.EffectHref is { } fx && Model is { } m) Effects.EffectPlayer.Play(fx, m);
     }
 
     public bool Has(string kind) => Character?.Has(kind) ?? false;

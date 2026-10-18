@@ -24,6 +24,14 @@ public static class CombatLauncher
     public static (int N, string Path)? AttackScreenshot;
     /// <summary>`--sign-screenshot=N:path`: capture 0.4 s after the Nth casualty sign appears.</summary>
     public static (int N, string Path)? SignScreenshot;
+    /// <summary>`--shot-screenshot=N:path` / `--spell-screenshot=N:path`: capture mid-flight / mid-visual.</summary>
+    public static (int N, string Path)? ShotScreenshot, SpellScreenshot;
+
+    static (int, string) ParseShot(string v)
+    {
+        int colon = v.IndexOf(':');
+        return (int.Parse(v[..colon]), v[(colon + 1)..]);
+    }
     /// <summary>`--autoplay-turns=N`: the AI plays the local side's first N commands, then hands over.</summary>
     public static int AutoplayTurns;
     /// <summary>`--hover-target=melee|shoot`: point the simulated mouse at the first such legal target.</summary>
@@ -59,6 +67,8 @@ public static class CombatLauncher
             AttackScreenshot = (int.Parse(v[..colon]), v[(colon + 1)..]);
             return true;
         }
+        if (arg.StartsWith("--shot-screenshot=")) { ShotScreenshot = ParseShot(arg["--shot-screenshot=".Length..]); return true; }
+        if (arg.StartsWith("--spell-screenshot=")) { SpellScreenshot = ParseShot(arg["--spell-screenshot=".Length..]); return true; }
         if (arg.StartsWith("--sign-screenshot="))
         {
             var v = arg["--sign-screenshot=".Length..];

@@ -405,7 +405,8 @@ public partial class CombatScreen : Control
                 dead.Dead = true;
                 dead.Count = 0;
                 dead.UpdatePlaque();
-                if (dead.Has("death")) dead.Play("death");
+                // The body stays on the field after the death animation (corpses can be raised).
+                if (dead.Has("death")) dead.PlayAction("death");
                 else dead.Visible = false;
                 break;
 
@@ -416,7 +417,7 @@ public partial class CombatScreen : Control
                     v.Cell = us.Cell;
                     v.Count = us.Count;
                     v.Position = Arena.Grid.StackCenter(new Vector2I(us.Cell.X, us.Cell.Y), v.Size);
-                    if (v.Has("birth")) v.Play("birth");
+                    if (v.Has("birth")) v.PlayAction("birth");
                     v.UpdatePlaque();
                 }
                 Hud.Log.AddLine(CombatLogText.Summoned(this, us));
@@ -466,7 +467,7 @@ public partial class CombatScreen : Control
                 await FinishAttack();
                 Hud.Log.AddLine(CombatLogText.Ended(this, be.Winner));
                 foreach (var v in _units.Values)
-                    if (!v.Dead && v.Side == be.Winner && v.Has("happy")) v.Play("happy");
+                    if (!v.Dead && v.Side == be.Winner && v.Has("happy")) v.PlayAction("happy");
                 break;
         }
     }
@@ -537,8 +538,7 @@ public partial class CombatScreen : Control
             if (!u.Has(kind)) kind = u.Has("attack00") ? "attack00" : "attack";
             if (a.Kind is AttackKind.Melee or AttackKind.Retaliation && u.Has("attack01") && (Session.Battle.State.TurnCounter + a.Target) % 2 == 1)
                 kind = "attack01";
-            u.Play(kind);
-            PlayAnimSound(u, kind);
+            u.PlayAction(kind);
             float action = u.ActionTime(kind), length = u.Length(kind);
             await Delay(Math.Max(0.15f, action));
             if (CombatLauncher.AttackScreenshot is { } shot && ++_attackCount == shot.N)
@@ -547,6 +547,16 @@ public partial class CombatScreen : Control
                 GD.Print($"[H5] attack screenshot {shot.Path} ({kind})");
             }
             _attackRemainderUntil = Now + Math.Max(0, length - action);
+            // Shooters release their original (Shot) at the action frame; the hit (damage event,
+            // hit animation, casualty sign) waits for the missile to arrive.
+            if (a.Kind == AttackKind.Ranged && target != null && CreatureModels.ShotFor(u.CreatureId) is { } shotXdb)
+            {
+                var arrived = false;
+                var p = Effects.ProjectilePlayer.Fire(shotXdb, Arena, u, (target.GlobalPosition + target.SignAnchor()) * 0.5f, () => arrived = true);
+                MaybeCapture(ref _shotCount, CombatLauncher.ShotScreenshot, Math.Max(0.05, (p?.FlightTime ?? 0) * 0.5));
+                double deadline = Now + Math.Min(3.0, (p?.FlightTime ?? 0) + 0.2);
+                while (!arrived && Now < deadline) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            }
         }
         else if (attackerNode is Character hero)
         {
@@ -562,15 +572,23 @@ public partial class CombatScreen : Control
     {
         if (View(d.Target) is not { } v) return;
         v.Count = d.CountLeft;
-        if (d.CountLeft > 0)
-        {
-            v.Play("hit");
-            PlayAnimSound(v, "hit");
-        }
+        if (d.CountLeft > 0) v.PlayAction("hit");
         v.UpdatePlaque();
         if (d.Killed > 0) _signs.Casualty(v, v.SignAnchor, -d.Killed);
         Hud.Log.AddLine(CombatLogText.Damage(this, d, Hud.PendingLuck));
         Hud.PendingLuck = 0;
+    }
+
+    int _shotCount, _spellCount;
+
+    void MaybeCapture(ref int counter, (int N, string Path)? shot, double after)
+    {
+        if (shot is not { } s || ++counter != s.N) return;
+        GetTree().CreateTimer(after).Timeout += () =>
+        {
+            GetViewport().GetTexture().GetImage().SavePng(s.Path);
+            GD.Print($"[H5] capture {s.Path}");
+        };
     }
 
     async Task AnimateSpell(SpellCast sc)
@@ -579,36 +597,24 @@ public partial class CombatScreen : Control
         if (Actor.IsHero(sc.Caster) && _heroes.GetValueOrDefault(Actor.HeroSide(sc.Caster)) is Character hero && hero.Has("cast"))
             hero.Play("cast");
         else if (View(sc.Caster) is { } cv && cv.Has("cast"))
-            cv.Play("cast");
-        await Delay(0.5);
-        // Spell visual effects use the undecoded particle format; flash the affected stacks.
-        foreach (var id in sc.Affected)
-            if (View(id) is { } v) Flash(v);
-        await Delay(0.35);
-    }
-
-    void Flash(UnitView v)
-    {
-        var light = new OmniLight3D { LightColor = new Color(0.7f, 0.8f, 1f), LightEnergy = 4f, OmniRange = 2.5f, Position = new Vector3(0, 1.2f, 0) };
-        v.AddChild(light);
-        var tw = CreateTween();
-        tw.TweenProperty(light, "light_energy", 0f, 0.6f);
-        tw.TweenCallback(Callable.From(light.QueueFree));
-    }
-
-    void PlayAnimSound(UnitView v, string kind)
-    {
-        var path = CreatureModels.CharacterPathFor(v.CreatureId);
-        if (path == null) return;
-        try
+            cv.PlayAction("cast");
+        await Delay(0.4);
+        // The spell's original (SpellVisual) plays on every affected stack (or the target cell);
+        // playback continues after its HitDelay so damage lands with the visual.
+        var spellXdb = Game.Instance.Db.Spell(sc.Spell)?.SourcePath;
+        var points = sc.Affected.Select(View).Where(v => v != null).Select(v => v!.GlobalPosition).ToList();
+        if (points.Count == 0 && sc.Cell is { } c) points.Add(Arena.Grid.CellCenter(new Vector2I(c.X, c.Y)));
+        if (!string.IsNullOrEmpty(spellXdb) && points.Count > 0)
         {
-            var set = new AnimSetLoader(Game.Instance.Xdb).ReadCharacter(path).ArenaAnimSet;
-            if (set == null) return;
-            var entry = new AnimSetLoader(Game.Instance.Xdb).ReadAnimSet(set).FirstOrDefault(x => x.Kind == kind);
-            if (entry?.SoundHref is { } snd) Audio.SoundLibrary.Play(snd, v);
+            int pending = points.Count;
+            foreach (var at in points) Effects.SpellVisualPlayer.PlaySpell(spellXdb, Arena, at, () => pending--);
+            MaybeCapture(ref _spellCount, CombatLauncher.SpellScreenshot, 0.5);
+            double deadline = Now + 2.5;
+            while (pending > 0 && Now < deadline) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         }
-        catch (Exception e) { GD.PushWarning($"[H5] sound {kind}: {e.Message}"); }
+        else await Delay(0.35);
     }
+
 
     /// <summary>After a batch, snap views to the authoritative state (positions, counts, deaths).</summary>
     void SyncWithState()
@@ -636,7 +642,7 @@ public partial class CombatScreen : Control
             {
                 v.Dead = true;
                 v.Count = 0;
-                if (u.Removed) v.Visible = false; else v.Play("death");
+                if (u.Removed) v.Visible = false; else v.PlayAction("death");
             }
             v.UpdatePlaque();
         }

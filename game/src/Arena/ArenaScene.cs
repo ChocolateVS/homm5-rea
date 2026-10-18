@@ -299,6 +299,14 @@ public static class CreatureModels
         return _creatureFiles.GetValueOrDefault(creatureId);
     }
 
+    /// <summary>Creature → CreatureVisual → AnimShot (the (Shot) xdb a shooter fires), or null.</summary>
+    public static string? ShotFor(string creatureId)
+    {
+        if (Game.Instance.Db.Creatures.GetValueOrDefault(creatureId)?.VisualPath is not { } visual || !Game.Instance.Fs.Exists(visual)) return null;
+        var r = XdbRef.Parse((string?)Game.Instance.Xdb.Load(visual).Root?.Element("AnimShot")?.Attribute("href"), visual);
+        return r.IsEmpty || !Game.Instance.Fs.Exists(r.Path) ? null : r.Path;
+    }
+
     /// <summary>Creature → CreatureVisual → AnimCharacter (Character xdb path).</summary>
     public static string? CharacterPathFor(string creatureId)
     {
