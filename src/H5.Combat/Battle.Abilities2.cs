@@ -70,13 +70,7 @@ public sealed partial class Battle
             Emit(new AbilityTriggered(a.Id, Ab.ManaDrain, t.Id));
             Heal(a, drained * a.MaxHealthCache, resurrect: true, Ab.ManaDrain);
         }
-        // Deadly Strike: 25% to kill half the target stack (p.315).
-        if (melee && !retaliation && HasAbilityNow(a, Ab.DeadlyStrike) && t.Count > 1 && S.Rng.Chance(0.25))
-        {
-            Emit(new AbilityTriggered(a.Id, Ab.DeadlyStrike, t.Id));
-            int half = t.Count / 2;
-            DealDamage(t, (half - 1) * t.MaxHealthCache + t.TopHealth, a.Id, AttackKind.Ability, Ab.DeadlyStrike);
-        }
+        // Deadly Strike is resolved in the strike loop (Strike → DeadlyStrikeKills, exe FUN_00a5bf60).
     }
 
     /// <summary>Phoenix Rebirth: once per combat a killed stack rises again with as many creatures (p.179).</summary>

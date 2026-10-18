@@ -163,6 +163,70 @@ public class AuditAbilityTests(GameDataFixture f)
     }
 
     [Fact]
+    public void DeadlyStrikeReplacesTheBlowWithHalfTheStack()   // FUN_00a5bf60: kills = pre-hit count / 2, damage dropped
+    {
+        bool seen = false;
+        foreach (var (b, r) in Attacks("CREATURE_DEATH_KNIGHT", 2, "CREATURE_PEASANT", 300, L, R, seeds: 60))
+        {
+            if (!r.Events.OfType<AbilityTriggered>().Any(e => e.Ability == Ab.DeadlyStrike)) continue;
+            seen = true;
+            // The first blow killed exactly 150; anything after (retaliation, etc.) only lowers further.
+            var died = r.Events.OfType<Damaged>().First(e => e.Target == b.State.Units[1].Id);
+            Assert.Equal(150, died.Killed);
+        }
+        Assert.True(seen);
+        for (ulong seed = 1; seed <= 60; seed++)   // Crystal Scales (granted: no shipped creature has it)
+        {
+            var b = f.Duel("CREATURE_DEATH_KNIGHT", 2, "CREATURE_PEASANT", 300, seed, L, R);
+            b.Begin();
+            var (a, t) = (b.State.Units[0], b.State.Units[1]);
+            t.Abilities.Add("ABILITY_CRYSTAL_SCALES"); t.Abilities.Sort(StringComparer.Ordinal);
+            b.State.Active = a.Id;
+            var r = b.Apply(new AttackCmd(a.Id, t.Id) { Side = 0 });
+            Assert.DoesNotContain(r.Events.OfType<AbilityTriggered>(), e => e.Ability == Ab.DeadlyStrike);
+        }
+    }
+
+    [Fact]
+    public void CursingAttackCastsBasicCurse()   // FUN_00a5df30: a5ddb0(…, SPELL_CURSE, power, mastery 1)
+    {
+        var (b, _) = Attacks("CREATURE_SHADOW_DRAGON", 5, "CREATURE_PEASANT", 300, L, R, seeds: 1).First();
+        Assert.Equal(Mastery.Basic, b.State.Units[1].GetEffect("SPELL_CURSE")!.Mastery);
+    }
+
+    [Fact]
+    public void HexingAttackCastsTheFirstMissingSpellInDataOrder()   // FUN_00a5e000: HexingAttackSpells in order
+    {
+        var b = f.Duel("CREATURE_MUMMY", 10, "CREATURE_PEASANT", 300, 1, L, R);
+        b.Begin();
+        var (a, t) = (b.State.Units[0], b.State.Units[1]);
+        t.Effects.Add(new Effect { Id = "SPELL_CURSE", Remaining = 9 });
+        b.State.Active = a.Id;
+        Assert.True(b.Apply(new AttackCmd(a.Id, t.Id) { Side = 0 }).Ok);
+        Assert.True(t.HasEffect("SPELL_SLOW"));
+        Assert.False(t.HasEffect("SPELL_WEAKNESS") || t.HasEffect("SPELL_DISRUPTING_RAY"));
+    }
+
+    [Fact]
+    public void EvilEyeOnlyOnMeleeStrikes()   // FUN_00a5e770: requires the melee flag (+0x14 == 0)
+    {
+        var b = f.Duel("CREATURE_ARCHER", 20, "CREATURE_PEASANT", 300, 1, new Cell(1, 5), new Cell(10, 5));
+        b.Begin();
+        var (a, t) = (b.State.Units[0], b.State.Units[1]);
+        a.Abilities.Add(Ab.EvilEye); a.Abilities.Sort(StringComparer.Ordinal);
+        b.State.Active = a.Id;
+        Assert.True(b.Apply(new ShootCmd(a.Id, t.Id) { Side = 0 }).Ok);
+        Assert.False(t.HasEffect(Fx.EvilEye));
+    }
+
+    [Fact]
+    public void SorrowStrikeUsesTheTrainedMastery()   // FUN_00a5e690: mastery = SorrowStrike_SpellTrained (3)
+    {
+        var (b, _) = Attacks("CREATURE_HORROR_DRAGON", 3, "CREATURE_PEASANT", 300, L, R, seeds: 1).First();
+        Assert.Equal(Mastery.Expert, b.State.Units[1].GetEffect("SPELL_SORROW")!.Mastery);
+    }
+
+    [Fact]
     public void PurgerNeverRemovesPrayer()   // FUN_004e4000: SPELL_PRAYER (0x36), DEATH_SCREAM (0x3b), SEDUCE_CASTED excluded
     {
         bool removedPrayer = false, removedBless = false;

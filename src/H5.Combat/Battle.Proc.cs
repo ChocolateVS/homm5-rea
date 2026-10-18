@@ -61,6 +61,20 @@ public sealed partial class Battle
         return (int)(100f - (100 - p) / (float)Stats.Get("combat/Creatures/Fortress/BearRoar_SmallCreaturesChanceMult", 2));
     }
 
+    /// <summary>
+    /// Deadly Strike's kills for one target hit (exe FUN_00a5bf60): 0 unless the attacker has the ability, the target
+    /// lacks Crystal Scales, the blow alone would kill fewer than half the stack (incorporeal targets count as fully
+    /// killed, FUN_00a6bd90) and Range(0,100) &lt; 25 (attacker's second roll); then count / 2.
+    /// </summary>
+    int DeadlyStrikeKills(Unit attacker, Unit target, int damage)
+    {
+        if (!HasAbilityNow(attacker, Ab.DeadlyStrike) || target.Has("ABILITY_CRYSTAL_SCALES") || target.IsWarMachine || target.IsObject) return 0;
+        int half = target.Count / 2;
+        int wouldKill = target.Has(Ab.Incorporeal) ? target.Count : KillsFor(damage, target);
+        if (wouldKill >= half) return 0;
+        return RollPercent(attacker, 25, secondRoll: true) ? half : 0;
+    }
+
     /// <summary>The effect a gated stack carries for the rest of the battle (exe spell id 0x9f).</summary>
     internal const string GatedEffect = "SPELL_ABILITY_GATING";
 

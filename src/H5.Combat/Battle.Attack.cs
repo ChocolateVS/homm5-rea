@@ -303,7 +303,19 @@ public sealed partial class Battle
             // The pattern share is applied to the already truncated damage and truncated again (exe 00a67bf3).
             if (factor != 1) dmg = (int)(dmg * (float)factor);
             int hpBefore = target.TotalHealth;
-            int killed = DealDamage(target, dmg, a.Id, ranged ? AttackKind.Ranged : hit.Kind, null);
+            int killed;
+            // Deadly Strike (exe FUN_00a5bf60, from the strike loop 00a67c26): on any strike against a target without
+            // Crystal Scales whose blow would kill fewer than half its creatures, a 25 % roll (attacker's second roll
+            // applies) replaces the blow with exactly half the stack (pre-hit count / 2); incorporeal targets count as
+            // fully killed for the check, so they're never struck down this way.
+            if (DeadlyStrikeKills(a, target, dmg) is > 0 and var half)
+            {
+                Emit(new AbilityTriggered(a.Id, Ab.DeadlyStrike, target.Id));
+                killed = DealDamage(target, (half - 1) * target.MaxHealthCache + target.TopHealth, a.Id, AttackKind.Ability, Ab.DeadlyStrike);
+                dmg = hpBefore - target.TotalHealth;
+            }
+            else
+                killed = DealDamage(target, dmg, a.Id, ranged ? AttackKind.Ranged : hit.Kind, null);
             a.Frags += killed * target.Tier;
             if (primary) { primaryDamage = dmg; primaryKilled = killed; }
             AfterHitOnTarget(a, target, hit, ranged, dmg, killed, primary, hpBefore, targetHpBefore, ref stunned);
@@ -749,12 +761,24 @@ public sealed partial class Battle
             double v = (e?.Value ?? 0) + Stats.Get("combat/Creatures/Necropolis/ZombieWeakeningStrike", 2);
             AddEffect(t, new Effect { Id = H5.Combat.Fx.WeakeningStrike, Value = v, SourceSide = a.Side });
         }
+        // Cursing Attack (exe FUN_00a5df30): SPELL_CURSE at BASIC mastery with the creature spell power.
         if (HasAbilityNow(a, Ab.CursingAttack) && !t.Has(Ab.ImmuneCurse))
-            ApplySpellEffectFromCreature(a, t, "SPELL_CURSE", Mastery.Advanced, CreatureSpellPower(a.Count, Math.Max(1, a.WeeklyGrowth)));
+            ApplySpellEffectFromCreature(a, t, "SPELL_CURSE", Mastery.Basic, CreatureSpellPower(a.Count, Math.Max(1, a.WeeklyGrowth)));
+        // Hexing Attack (exe FUN_00a5e000): walks HexingAttackSpells in data order (Curse, Slow, Weakness, Disrupting Ray,
+        // all Expert) and casts the first one the target doesn't already have and doesn't resist — not a random pick.
         if (HasAbilityNow(a, Ab.HexingAttack))
         {
             string[] hex = { "SPELL_CURSE", "SPELL_SLOW", "SPELL_WEAKNESS", "SPELL_DISRUPTING_RAY" };
-            ApplySpellEffectFromCreature(a, t, hex[S.Rng.Next(hex.Length)], Mastery.Expert, CreatureSpellPower(a.Count, Math.Max(1, a.WeeklyGrowth)));
+            int power = CreatureSpellPower(a.Count, Math.Max(1, a.WeeklyGrowth));
+            foreach (var id in hex)
+            {
+                if (t.HasEffect(id) || Db.Spell(id) is not { } sp || !t.Alive) continue;
+                if (ApplyEffectSpell(a.Id, Controller(a), sp, Mastery.Expert, power, t, a.Level, null))
+                {
+                    Emit(new AbilityTriggered(a.Id, id, t.Id));
+                    break;
+                }
+            }
         }
         if (melee && HasAbilityNow(a, Ab.WhipStrike) && living
             && ProcRoll(a, t, Stats.Get("combat/Creatures/Dungeon/WhipStrike_ProcFactor", 1.5)))
@@ -776,10 +800,14 @@ public sealed partial class Battle
             Emit(new AbilityTriggered(a.Id, Ab.MarkOfFire, t.Id));
             AddEffect(t, new Effect { Id = H5.Combat.Fx.MarkOfFire, Remaining = Stats.Get("combat/Creatures/Fortress/MarkOfFire_EffectDurationInRounds", 2), SourceSide = a.Side });
         }
-        if (HasAbilityNow(a, Ab.EvilEye))
+        // Evil Eye (exe FUN_00a5e770): melee strikes only, on every target the blow hits (permanent -3 Luck,
+        // SPELL_EFFECT_UNLUCKY).
+        if (!ranged && HasAbilityNow(a, Ab.EvilEye))
             AddEffect(t, new Effect { Id = H5.Combat.Fx.EvilEye, Value = 3, SourceSide = a.Side });
+        // Sorrow Strike (exe FUN_00a5e690): SPELL_SORROW at mastery SorrowStrike_SpellTrained (3 = Expert in data).
         if (HasAbilityNow(a, Ab.SorrowStrike))
-            ApplySpellEffectFromCreature(a, t, "SPELL_SORROW", Mastery.Basic, CreatureSpellPower(a.Count, Math.Max(1, a.WeeklyGrowth)));
+            ApplySpellEffectFromCreature(a, t, "SPELL_SORROW", (Mastery)Math.Clamp((int)Stats.Get("combat/Creatures/Necropolis/SorrowStrike_SpellTrained", 3), 0, 4),
+                CreatureSpellPower(a.Count, Math.Max(1, a.WeeklyGrowth)));
         // Sleeping Strike (exe FUN_00a629b0 → FUN_00a5e4f0): immune are IMMUNITY_TO_BLIND, mechanical and elemental
         // (undead are NOT immune); no melee/ranged restriction.
         if (HasAbilityNow(a, Ab.SleepingStrike) && !t.Has(Ab.ImmuneBlind) && !t.Has(Ab.Mechanical) && !t.Has(Ab.Elemental)
