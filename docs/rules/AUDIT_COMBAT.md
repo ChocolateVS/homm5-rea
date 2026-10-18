@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 110 |
+| FIXED | 113 |
 | MATCH | 77 |
 | GAP | 7 |
-| UNVERIFIED | 337 |
+| UNVERIFIED | 334 |
 | N/A | 57 |
 
 ## Core mechanics
@@ -149,14 +149,14 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_BATTLE_FRENZY` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_PACK_DIVE` | UNVERIFIED | 00a2fd40 | implemented; not yet compared with the exe |  |
 | `ABILITY_CHAMPION_CHARGE` | UNVERIFIED | 008aa990 | implemented; not yet compared with the exe |  |
-| `ABILITY_PURGER` | UNVERIFIED | 00a629b0, 00a5d690 | trigger verified (any strike, Purger_ProcFactor, chance on post-hit HP, second roll); the dispel itself (00a5d690 → 004e6470) not yet compared |  |
+| `ABILITY_PURGER` | FIXED | 00a629b0, 00a5d690, 004e6470, 004e4000 | trigger: any strike, Purger_ProcFactor, chance on post-hit HP, second roll; removes ONE effect picked with RNG Next(n) (vtable +0x10) among the target's dispellable effects beneficial to it, never SPELL_PRAYER (hero Prayer), SPELL_DEATH_SCREAM or SPELL_EFFECT_SEDUCE_CASTED — engine could strip the hero's Prayer | AuditAbilityTests.PurgerNeverRemovesPrayer |
 | `ABILITY_BLADE_BARRIER` | N/A | 0097af50 00a5a900 00a5beb0 00a5fee0 | not used by shipped data |  |
 | `ABILITY_DEMON_RAGED` | MATCH | 008a2c20, 008a3b90 | rage events and coefficients per exe (see AddRage) |  |
-| `ABILITY_COWARDICE` | UNVERIFIED | 00a629b0, 00a5d790 | exe: melee only, while the target would retaliate; the stack runs (00a5d790(0)) and, if it can't, gains UseCowardiceRP rage; engine models the run after the whole attack — order not yet confirmed |  |
+| `ABILITY_COWARDICE` | FIXED | 00a629b0, 00a5d790, 008a0520 | melee only, and only while the target would retaliate (after Fear / Bear Roar have had their say); runs inside the hit (before the retaliation and before any further strike of the attack — a double attack's second blow no longer lands); a successful run cancels the retaliation and costs UseCowardiceRP rage; if it can't move it retaliates normally — engine reacted after the whole attack and ran without a pending retaliation. Destination search (008a0250) not compared | AuditAbilityTests.CowardiceRunsInsideTheFirstStrike, CowardiceNeedsAPendingRetaliation |
 | `ABILITY_TREACHERY` | UNVERIFIED | 008a0b60 | implemented; not yet compared with the exe |  |
 | `ABILITY_SET_SNARES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_DEFILE_MAGIC` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
-| `ABILITY_MANEURE` | UNVERIFIED | 00a629b0, 00a5d790, 00b3d3f0 | exe: melee only, attacker without NO_ENEMY_RETALIATION, not a retaliation; runs (00a5d790(1)) then shoots back (00b3d3f0) unless blocked — half-damage factor not yet confirmed |  |
+| `ABILITY_MANEURE` | UNVERIFIED | 00a629b0, 00a5d790, 008a0520, 00b3d3f0 | timing now matches the exe (inside the retaliated hit, attacker without NO_ENEMY_RETALIATION, melee, not a retaliation; shot from the new place via FUN_00a66050 during the move); the half-damage factor and the destination search (008a0250) are not yet confirmed | AuditAbilityTests.CowardiceRunsInsideTheFirstStrike (shared path) |
 | `ABILITY_BRUTALITY` | FIXED | 00a65260 (00a657a0) | Assault proc after the first strike uses Brutality_ProcFactor (engine used 1), flag 1, second roll | AuditStrikeTests |
 | `ABILITY_TAUNT` | FIXED | 00a65d50 (00a65e0a) | Taunt_ProcFactor with flag 1 (Soldier's Luck doubles) and no second roll | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
 | `ABILITY_FIERCE_RETALIATION` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
@@ -210,7 +210,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_PREPARED_POSITION` | UNVERIFIED | 008aaec0 | implemented; not yet compared with the exe |  |
 | `ABILITY_BATTLE_RAGE` | UNVERIFIED | 008a6e20 | implemented; not yet compared with the exe |  |
 | `ABILITY_HARPOON_STRIKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_BEAR_ROAR` | UNVERIFIED | 00a5e800 | factor flag 1 + second roll verified; the per-victim size multiplier / victim set (stats +0x354 block) not yet compared |  |
+| `ABILITY_BEAR_ROAR` | FIXED | 00a5e800 | only while the struck target would retaliate, melee, not a retaliation; victims = enemies next to the bear (target and its neighbours), not fully spell-immune; per victim p = ProcPercent(BearRoar_ProcFactor, flag 1), and for a 1×1 victim p = trunc(100 − (100 − p)/BearRoar_SmallCreaturesChanceMult); attacker's second roll; a frightened victim runs like Fear (FUN_0089ffc0 mode 2, ATB 0) and the target no longer retaliates; the bear gets SPELL_ABILITY_BEAR_ROAR — engine multiplied the ProcFactor exponent by the size factor and only reset ATB | AuditAbilityTests.BearRoarHalvesTheFailureOfSmallVictims |
 | `ABILITY_HOLD_GROUND` | FIXED | 008a34c0 | rooted Take Roots creature holds ground | (Unit.Has) |
 | `ABILITY_FLAMEWAVE` | FIXED | 00a62030 (00a62397) | FlameWave_ProcFactor with flag 1 and no second roll | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
 | `ABILITY_FLAMESTRIKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -344,6 +344,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_PAYBACK` | UNVERIFIED | 00977260 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ELITE_CASTERS` | FIXED | 009781e0 | creature casters: integer half | (CreatureManaCost) |
 | `HERO_SKILL_ELEMENTAL_OVERKILL` | UNVERIFIED | 00977a80 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ABSOLUTE_CHAINS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_RUNELORE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_STRONG_RUNE` | UNVERIFIED | 00984a00 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_FINE_RUNE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |

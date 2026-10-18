@@ -96,6 +96,69 @@ public class AuditAbilityTests(GameDataFixture f)
     }
 
     [Fact]
+    public void CowardiceRunsInsideTheFirstStrike()   // FUN_00a629b0 → FUN_00a5d790(0): runs instead of retaliating
+    {
+        var b = f.Duel("CREATURE_MINOTAUR_KING", 1, "CREATURE_GOBLIN", 200, 1, L, R);
+        b.State.Obstacles.Clear();
+        b.Begin();
+        var (a, t) = (b.State.Units[0], b.State.Units[1]);
+        b.State.Active = a.Id;
+        var r = b.Apply(new AttackCmd(a.Id, t.Id) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        Assert.Contains(r.Events.OfType<AbilityTriggered>(), e => e.Ability == Ab.Cowardice);
+        // The goblins ran during the first blow, so the double attack's second strike never landed and nobody retaliated.
+        Assert.Single(r.Events.OfType<AttackStarted>(), e => e.Attacker == a.Id);
+        Assert.DoesNotContain(r.Events.OfType<AttackStarted>(), e => e.Kind == AttackKind.Retaliation);
+    }
+
+    [Fact]
+    public void CowardiceNeedsAPendingRetaliation()   // FUN_00a629b0: only while *param_2 (target would retaliate)
+    {
+        var b = f.Duel("CREATURE_MINOTAUR_KING", 1, "CREATURE_GOBLIN", 200, 1, L, R);
+        b.State.Obstacles.Clear();
+        b.Begin();
+        var (a, t) = (b.State.Units[0], b.State.Units[1]);
+        t.RetaliationsLeft = 0;
+        b.State.Active = a.Id;
+        var r = b.Apply(new AttackCmd(a.Id, t.Id) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        Assert.DoesNotContain(r.Events.OfType<AbilityTriggered>(), e => e.Ability == Ab.Cowardice);
+        Assert.Equal(R, t.Pos);
+    }
+
+    [Fact]
+    public void BearRoarHalvesTheFailureOfSmallVictims()   // FUN_00a5e800: p = trunc(100 − (100 − p)/SmallCreaturesChanceMult)
+    {
+        var b = f.Duel("CREATURE_BLACKBEAR_RIDER", 10, "CREATURE_PEASANT", 100, 1, L, R);
+        var (a, small) = (b.State.Units[0], b.State.Units[1]);
+        int p = b.ProcPercent(a, small, 0.9, soldiersLuckDoubles: true);
+        Assert.Equal((int)(100f - (100 - p) / 2f), b.BearRoarPercent(a, small));
+        var big = f.Duel("CREATURE_BLACKBEAR_RIDER", 10, "CREATURE_GOLD_DRAGON", 2, 1, L, R);
+        var (a2, dragon) = (big.State.Units[0], big.State.Units[1]);
+        Assert.Equal(big.ProcPercent(a2, dragon, 0.9, soldiersLuckDoubles: true), big.BearRoarPercent(a2, dragon));
+    }
+
+    [Fact]
+    public void PurgerNeverRemovesPrayer()   // FUN_004e4000: SPELL_PRAYER (0x36), DEATH_SCREAM (0x3b), SEDUCE_CASTED excluded
+    {
+        bool removedPrayer = false, removedBless = false;
+        for (ulong seed = 1; seed <= 60; seed++)
+        {
+            var b = f.Duel("CREATURE_ZEALOT", 20, "CREATURE_PEASANT", 400, seed, L, R);
+            b.Begin();
+            var (a, t) = (b.State.Units[0], b.State.Units[1]);
+            t.Effects.Add(new Effect { Id = Fx.Benediction, Value = 2, Remaining = 5, Positive = true });
+            t.Effects.Add(new Effect { Id = "SPELL_BLESS", Remaining = 5, Positive = true });
+            b.State.Active = a.Id;
+            Assert.True(b.Apply(new AttackCmd(a.Id, t.Id) { Side = 0 }).Ok);
+            removedPrayer |= !t.HasEffect(Fx.Benediction);
+            removedBless |= !t.HasEffect("SPELL_BLESS");
+        }
+        Assert.False(removedPrayer);
+        Assert.True(removedBless);
+    }
+
+    [Fact]
     public void PushOfEntangledTargetSucceedsWithoutMoving()   // FUN_00a5ceb0: SPELL_ABILITY_ENTANGLING_ROOTS → current position
     {
         var b = f.Duel("CREATURE_SHARP_SHOOTER", 30, "CREATURE_TREANT", 5, 1, new Cell(1, 5), new Cell(7, 5));

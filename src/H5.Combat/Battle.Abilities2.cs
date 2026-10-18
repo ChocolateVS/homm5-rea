@@ -18,6 +18,8 @@ public sealed partial class Battle
         var dest = options.OrderBy(c => Octile(c, t.Pos)).ThenBy(c => c.X).ThenBy(c => c.Y).First();
         Emit(new AbilityTriggered(t.Id, cowardice ? Ab.Cowardice : Ab.Maneure, attacker.Id));
         MoveUnit(t, dest);
+        // Running costs Cowardice stacks UseCowardiceRP blood rage (exe FUN_00a629b0: only when the run succeeded).
+        if (cowardice) RageEvent(t, "UseCowardiceRP");
         if (maneuver && t.Alive && CanShoot(t))
         {
             if (!HasAmmoCart(t.Side)) t.Shots--;

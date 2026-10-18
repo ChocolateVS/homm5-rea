@@ -49,6 +49,18 @@ public sealed partial class Battle
         return (int)Math.Round((double)((1f - fail) * 100f + 0.5f), MidpointRounding.ToEven);
     }
 
+    /// <summary>
+    /// Bear Roar chance against one victim (exe FUN_00a5e800): p = ProcPercent(BearRoar_ProcFactor, Soldier's Luck doubles);
+    /// a 1×1 victim divides its failure by BearRoar_SmallCreaturesChanceMult: p = trunc(100 − (100 − p)/mult) in single
+    /// precision under the truncating FPU mode.
+    /// </summary>
+    internal int BearRoarPercent(Unit attacker, Unit victim)
+    {
+        int p = ProcPercent(attacker, victim, Stats.Get("combat/Creatures/Fortress/BearRoar_ProcFactor", 0.9), soldiersLuckDoubles: true);
+        if (victim.IsLarge) return p;
+        return (int)(100f - (100 - p) / (float)Stats.Get("combat/Creatures/Fortress/BearRoar_SmallCreaturesChanceMult", 2));
+    }
+
     /// <summary>Chance + roll in one call.</summary>
     bool ProcRoll(Unit attacker, Unit target, double procFactor, int? targetHpOverride = null, bool soldiersLuckDoubles = false, bool secondRoll = true) =>
         RollPercent(attacker, ProcPercent(attacker, target, procFactor, targetHpOverride, soldiersLuckDoubles), secondRoll);

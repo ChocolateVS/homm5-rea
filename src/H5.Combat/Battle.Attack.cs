@@ -134,8 +134,10 @@ public sealed partial class Battle
         bool runeBattleRage = u.HasEffect(H5.Combat.Fx.RuneBattleRage);
         bool stunned = false;
         int killedTotal = 0;
-        // Targets that flee from melee (Cowardice / Manoeuvre) react after the whole attack instead of retaliating.
+        // Targets that flee from melee (Cowardice / Manoeuvre) react inside the hit that would be retaliated (exe
+        // FUN_00a629b0 → FUN_00a5d790, before the retaliation and before any further strike of the attack).
         bool fleeingTarget = HasAbilityNow(t, Ab.Cowardice) || HasAbilityNow(t, Ab.Maneure);
+        bool fled = false;
         // The retaliation verdict is taken before the blow (exe FUN_00a5fee0), so an Expert-blinded target stays silent
         // even though the hit removes its blindness.
         bool noRetBase = HasAbilityNow(u, Ab.NoEnemyRetaliation) || runeBattleRage
@@ -147,9 +149,13 @@ public sealed partial class Battle
             killedTotal += r.Killed;
             // Retaliation follows the strike that allows it, inside the strike loop (exe FUN_00a65260 → FUN_00a64e90 →
             // FUN_00a646b0): a double attack is answered after its first blow.
-            if (!fleeingTarget && u.Alive && t.Alive && !noRetBase && !r.Stunned
+            if (u.Alive && t.Alive && !noRetBase && !r.Stunned
                 && !(preparation && retaliated && !HasAbilityNow(t, Ab.UnlimitedRetaliation)) && CanRetaliate(t, u))
             {
+                // A would-be retaliator with Cowardice / Manoeuvre runs instead (and Manoeuvre shoots back from its new
+                // place); one that can't move retaliates normally.
+                if (fleeingTarget && (fled = ReactiveRetreat(u, t)))
+                    break;
                 Retaliate(t, u);
                 retaliated = true;
             }
@@ -174,11 +180,6 @@ public sealed partial class Battle
         if (u.Alive && t.Alive) LizardBites(u, t);
         if (u.Alive && t.Alive) PackHunterAssist(u, t);
         if (u.Alive && t.Alive) Flamewave(u, t);
-        bool fled = u.Alive && ReactiveRetreat(u, t);
-        bool noRet = noRetBase || stunned || fled;
-        if (fleeingTarget && u.Alive && t.Alive && !noRet && !(preparation && retaliated && !HasAbilityNow(t, Ab.UnlimitedRetaliation)) && CanRetaliate(t, u))
-            Retaliate(t, u);
-
         PowerfulBlowFollowUp(u, t, melee: true);
         RetaliationStrikeTrigger(u, t);
 
@@ -800,9 +801,12 @@ public sealed partial class Battle
         }
         if (HasAbilityNow(a, Ab.EntanglingRoots) && melee && !t.Flying && !a.HasEffect(H5.Combat.Fx.RageOfForest))
             AddEffect(t, new Effect { Id = H5.Combat.Fx.Entangled, SourceUnit = a.Id, SourceSide = a.Side });
+        // Purger (exe FUN_00a5d690 → FUN_004e6470/FUN_004e4000): one random (RNG Next(n)) dispellable beneficial effect;
+        // the hero's Prayer (SPELL_PRAYER), Death Scream and the seducer's own marker are never candidates.
         if (HasAbilityNow(a, Ab.Purger) && ProcRoll(a, t, Stats.Get("combat/Creatures/Haven/Purger_ProcFactor", 2)))
         {
-            var pos = t.Effects.Where(e => e.Positive && e.Dispellable).ToList();
+            var pos = t.Effects.Where(e => e.Positive && e.Dispellable
+                && e.Id is not (H5.Combat.Fx.Benediction or H5.Combat.Fx.BansheeHowl)).ToList();
             if (pos.Count > 0) { Emit(new AbilityTriggered(a.Id, Ab.Purger, t.Id)); RemoveEffect(t, pos[S.Rng.Next(pos.Count)].Id); }
         }
         if (HasAbilityNow(a, Ab.StormStrike) && melee)
@@ -825,18 +829,23 @@ public sealed partial class Battle
                     Positive = true, SourceSide = a.Side, Mastery = stolen.Mastery, Power = stolen.Power, School = stolen.School, SpellLevel = stolen.SpellLevel });
             }
         }
-        if (HasAbilityNow(a, Ab.BearRoar) && melee && !retaliation)
+        // Bear Roar only fires while the struck target would still retaliate (exe FUN_00a5e800 checks *param_2).
+        if (HasAbilityNow(a, Ab.BearRoar) && melee && !retaliation && !stunned && CanRetaliate(t, a))
         {
             bool any = false;
             foreach (var victim in new[] { t }.Concat(Adjacent(t).Where(o => Controller(o) != Controller(a) && AreAdjacent(o, a))).Distinct().ToList())
             {
                 if (MindImmune(victim)) continue;
-                double mult = victim.IsLarge ? 1 : Stats.Get("combat/Creatures/Fortress/BearRoar_SmallCreaturesChanceMult", 2);
-                if (ProcRoll(a, victim, Stats.Get("combat/Creatures/Fortress/BearRoar_ProcFactor", 0.9) * mult, soldiersLuckDoubles: true))
+                // exe FUN_00a5e800: p = ProcPercent(BearRoar_ProcFactor, Soldier's Luck doubles); for a 1×1 victim the
+                // failure is divided by BearRoar_SmallCreaturesChanceMult (p = trunc(100 − (100 − p)/mult)), then the
+                // usual roll with the attacker's second roll. A frightened victim runs like Fear (FUN_0089ffc0 mode 2).
+                if (RollPercent(a, BearRoarPercent(a, victim), secondRoll: true))
                 {
                     any = true;
                     Emit(new AbilityTriggered(a.Id, Ab.BearRoar, victim.Id));
                     SetAtb(victim.Id, 0);
+                    if (victim == t) stunned = true;   // the frightened target no longer retaliates
+                    Flee(victim, a);
                 }
             }
             if (any) AddEffect(a, new Effect { Id = H5.Combat.Fx.BearRoar, Remaining = Stats.Get("combat/Creatures/Fortress/BearRoar_EffectDuration", 2), Positive = true });
