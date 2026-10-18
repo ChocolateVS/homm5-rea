@@ -14,7 +14,8 @@ _Last updated: 2026-10-19 (overnight run). Demo build: `G:\H5Reborn-play` (launc
 | Hover attack predictions missing | **Fixed** — damage/kill predictions for attacks, shots, hero strikes and abilities. |
 | Right-click should be a small window, not a big panel | **Fixed** — original right-click creature tooltip. |
 | Troop movement "cooked" | **Fixed per exe** — anim blends, turn-in-place, exe move speeds; walker/flyer frame sequences checked. |
-| Triple Ballista usable 3 times | In progress (combat mechanics audit). |
+| Triple Ballista usable 3 times | **Fixed per exe** — one action fires all shots at the chosen target (1 base, +1 Triple Ballista, +1 Ballista, +1 Ring of Machine Affinity), stopping if it dies; catapult likewise. |
+| "Not sure all combat mechanics are implemented" | **Audit pass 1 done, honest coverage:** of 585 items, 59 fixed, 40 confirmed matching, 5 gaps, 61 not applicable, **420 not yet verified line-by-line**. Fixes include retaliation timing on double attacks, spell cost order/rounding, 14 missing specialisations, terrain-based Summon Elementals. Three parallel audits now cover the remaining spells, creature abilities and hero skills/artifacts. |
 | Hero movement on the map | In progress (adventure workstream). |
 | Animated sword slash trail | **Fixed** — effect models now play their original transparency tracks (Footman slash appears at 0.63 s, flashes at 0.8 s, gone by 1.5 s). |
 | Minimap view box outside the minimap | In progress (adventure workstream). |
