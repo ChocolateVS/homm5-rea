@@ -13,9 +13,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 | Status | Count |
 |---|---|
 | FIXED | 125 |
-| MATCH | 85 |
+| MATCH | 86 |
 | GAP | 7 |
-| UNVERIFIED | 314 |
+| UNVERIFIED | 313 |
 | N/A | 57 |
 
 ## Core mechanics
@@ -102,7 +102,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_MAGIC_PROOF_75` | MATCH | 0097af50 (0097b265) | independent ×0.25 |  |
 | `ABILITY_POISONOUS_ATTACK` | UNVERIFIED | 00a61720 | implemented; not yet compared with the exe |  |
 | `ABILITY_STRIKE_AND_RETURN` | UNVERIFIED | 008d4330 00a2f130 00a2f710 00a2f8f0 | implemented; not yet compared with the exe |  |
-| `ABILITY_BRAVERY` | UNVERIFIED | 00a6acd0 | implemented; not yet compared with the exe |  |
+| `ABILITY_BRAVERY` | MATCH | 00a6acd0 | morale of a non-undead stack: if an Aura of Bravery effect applies, max(m, AuraOfBraveryMoraleMin), else with BRAVERY max(m, 1) — same as the engine for stock data (both minimums are 1) |  |
 | `ABILITY_RIDER_CHARGE` | MATCH | 00a5a900 | defence ×clamp(1 − cells·RiderCharge_DefenceReducePerPathCell, 0, 1), not vs ARMORED |  |
 | `ABILITY_LIZARD_BITE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_SIX_HEADED_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
