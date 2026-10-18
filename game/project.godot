@@ -1,0 +1,29 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+
+config/name="H5Reborn"
+config/description="Heroes of Might and Magic V: Tribes of the East, reimplemented on Godot 4."
+run/main_scene="res://scenes/Boot.tscn"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+
+[autoload]
+
+Game="*res://src/Game.cs"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=1024
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[dotnet]
+
+project/assembly_name="H5Reborn"
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+textures/vram_compression/import_s3tc_bptc=true

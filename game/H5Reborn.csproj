@@ -1,0 +1,15 @@
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>H5Reborn</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\src\H5.Core\H5.Core.csproj" />
+    <ProjectReference Include="..\src\H5.Assets\H5.Assets.csproj" />
+    <ProjectReference Include="..\src\H5.Combat\H5.Combat.csproj" />
+  </ItemGroup>
+</Project>
