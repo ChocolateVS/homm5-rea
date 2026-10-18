@@ -21,6 +21,8 @@ public sealed class Effect
     public string Id = "";
     /// <summary>Remaining duration in battle time units (one unit = one turn of an Initiative-10 creature). Infinity = until removed.</summary>
     public double Remaining = double.PositiveInfinity;
+    /// <summary>Duration the effect was (last) applied with, for the "Turns: x/y" display (exe tooltip maxval).</summary>
+    public double Duration;
     /// <summary>Remaining own actions, or -1 when not action-limited.</summary>
     public int Actions = -1;
     public double Value;

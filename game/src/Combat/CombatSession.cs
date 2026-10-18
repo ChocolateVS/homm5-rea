@@ -53,7 +53,8 @@ public abstract class CombatSession
     /// Ransom ("safe passage") for a side's remaining troops, or null when surrender is not
     /// possible (no enemy hero to pay). The adventure host supplies it; duels have none.
     /// </summary>
-    public virtual int? SurrenderCost(int side) => null;
+    public virtual int? SurrenderCost(int side) =>
+        Battle.RetreatRefusal(side, surrender: true) == 0 ? (int)Math.Min(int.MaxValue, Battle.SurrenderCost(side)) : null;
 
     /// <summary>The side's gold for the ransom check.</summary>
     public virtual long Gold(int side) => 0;

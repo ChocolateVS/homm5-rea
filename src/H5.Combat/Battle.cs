@@ -295,6 +295,7 @@ public sealed partial class Battle
     public Effect AddEffect(Unit u, Effect e)
     {
         int i = u.Effects.FindIndex(x => x.Id == e.Id);
+        if (e.Duration <= 0) e.Duration = e.Remaining;
         if (i >= 0) u.Effects[i] = e; else u.Effects.Add(e);
         Emit(new EffectAdded(u.Id, e.Id, double.IsPositiveInfinity(e.Remaining) ? -1 : e.Remaining, e.Value));
         BondOfLightCopy(u, e);

@@ -114,7 +114,7 @@ public partial class CreatureTooltip : Control
         var lines = list.Select(e =>
         {
             string nm = Game.Instance.Db.Spells.GetValueOrDefault(e.Id)?.Name is { Length: > 0 } sn ? sn : e.Id;
-            string dur = e.Remaining > 0 && e.Remaining < 1e6 ? turnsTpl.Replace("<value=val>", Math.Ceiling(e.Remaining).ToString()).Replace("<value=maxval>", Math.Ceiling(e.Remaining).ToString()) : perm;
+            string dur = e.Remaining > 0 && e.Remaining < 1e6 ? turnsTpl.Replace("<value=val>", Math.Ceiling(e.Remaining).ToString()).Replace("<value=maxval>", Math.Ceiling(e.Duration > 0 && e.Duration < 1e6 ? Math.Max(e.Duration, e.Remaining) : e.Remaining).ToString()) : perm;
             string color = e.Positive ? Text(_root, "FriendlyEffectColor") : Text(_root, "NonFriendlyEffectColor");
             return tpl.Replace("<value=color>", color).Replace("<value=name>", CombatLogText.Escape(nm))
                       .Replace("<value=duration>", dur).Replace("<value=addition>", "");
