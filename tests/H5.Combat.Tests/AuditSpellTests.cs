@@ -305,4 +305,35 @@ public class AuditSpellTests(GameDataFixture f)
         b.AddEffect(t, new Effect { Id = Fx.MarkOfFire, Remaining = 2 });
         Assert.Equal(16, b.SetAfireDamage(t, 100));     // 100 / 2 = 50 → trunc(50 · 0.33f) = 16
     }
+
+    // exe FUN_0097d7b0 case 0x20: Teleport Assault adds 0.5 ATB clamped to 1.25 (not 1), and does nothing for a disabled
+    // (blinded, frozen, sabotaged, asleep, seduced) stack (FUN_004e4a20).
+    [Fact]
+    public void TeleportAssaultClampsAtOnePointTwoFiveAndSkipsDisabledStacks()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        s.Heroes[0].Perks.Add("HERO_SKILL_TELEPORT_ASSAULT");
+        var b = new Battle(f.Db, s);
+        var u = s.Units.Single(x => x.Side == 0 && x.CreatureId == "CREATURE_FOOTMAN");
+        u.Atb = 0.9;
+        b.ApplyTeleportAssault(u);
+        Assert.Equal(1.25, u.Atb, 6);
+        u.Atb = 0.3;
+        b.ApplyTeleportAssault(u);
+        Assert.Equal(0.8, u.Atb, 6);
+        b.AddEffect(u, new Effect { Id = "SPELL_BLIND", Remaining = 3 });
+        b.ApplyTeleportAssault(u);
+        Assert.Equal(0.8, u.Atb, 6);
+    }
+
+    // exe FUN_00bbe8b0: dispel pct = trunc(clamp(base·100 + 3·level difference, 0, 100)), halved for Eternal Light.
+    [Fact]
+    public void DispelChanceIsAWholePercentPlusThreePerLevel()
+    {
+        Assert.Equal(55, Battle.DispelPercent(0.4, 15, 10, false));
+        Assert.Equal(27, Battle.DispelPercent(0.4, 15, 10, true));
+        Assert.Equal(0, Battle.DispelPercent(0.4, 1, 21, false));
+        Assert.Equal(100, Battle.DispelPercent(1.0, 13, 10, false));
+        Assert.Equal(60, Battle.DispelPercent(0.6, 10, 10, false));
+    }
 }

@@ -707,7 +707,7 @@ public sealed partial class Battle
             {
                 if (target == null || cell is not Cell to) return;
                 Teleport(target, to);
-                if (hero != null && hero.HasPerk(Sk.TeleportAssault)) AddAtb(target.Id, 0.5);   // p.123
+                ApplyTeleportAssault(target);
                 affected.Add(target.Id);
                 break;
             }
@@ -969,6 +969,31 @@ public sealed partial class Battle
         return true;
     }
 
+    /// <summary>
+    /// Teleport Assault (exe FUN_0097d7b0 case 0x20): when the teleported stack's own hero has the perk (skill 0x8a) and the
+    /// stack is not disabled (FUN_004e4a20: Blind 0x13, Frozen 0xc9, Sabotage 0x14a, Sleeping Strike 0x150, Seduce 0x148),
+    /// its ATB gains 0.5 (DAT_00e0ab70) clamped to 0..1.25 (FUN_004738f0(x, 0, 1.25)) — not capped at 1 as the fan manual says.
+    /// </summary>
+    internal void ApplyTeleportAssault(Unit t)
+    {
+        if (!HeroOf(t).HasPerk(Sk.TeleportAssault)) return;
+        if (t.HasEffect("SPELL_BLIND") || t.HasEffect(H5.Combat.Fx.Frozen) || t.HasEffect(H5.Combat.Fx.Sabotaged)
+            || t.HasEffect(H5.Combat.Fx.Sleep) || t.HasEffect(H5.Combat.Fx.Seduced)) return;
+        AddAtb(t.Id, 0.5, 1.25);
+    }
+
+    /// <summary>
+    /// Cleansing chance per effect (exe FUN_00bbe8b0, 00bbe976..00bbe9dc): pct = trunc(clamp(base·100 + 3·(dispeller level −
+    /// effect caster level), 0, 100)) in chop mode, then halved (integer) for an Eternal Light effect; rolled with
+    /// FUN_00a5a170 (Range(0,100) &lt; pct, no second roll).
+    /// </summary>
+    internal static int DispelPercent(double baseChance, int dispellerLevel, int effectCasterLevel, bool eternalLight)
+    {
+        float v = (float)baseChance * 100f + 3 * (dispellerLevel - effectCasterLevel);
+        int pct = (int)Math.Clamp(v, 0f, 100f);
+        return eternalLight ? pct / 2 : pct;
+    }
+
     Effect MakeSpellEffect(string id, SpellDef sp, Mastery m, double power, int side, int casterLevel, double value, double duration, bool positive) => new()
     {
         Id = id, Value = value, Remaining = duration, SourceSide = side, CasterLevel = casterLevel, Power = power, Mastery = m,
@@ -981,9 +1006,8 @@ public sealed partial class Battle
         bool friendly = Controller(t) == side;
         foreach (var e in t.Effects.Where(e => e.Dispellable && e.Positive != friendly && e.SpellLevel > 0).ToList())
         {
-            double chance = baseChance + (dispellerLevel - e.CasterLevel) * 0.03;
-            if (e.SourceSide >= 0 && S.Heroes[e.SourceSide].HasPerk(Sk.EternalLight) && e.School == "MAGIC_SCHOOL_LIGHT") chance /= 2;
-            if (S.Rng.Chance(chance)) RemoveEffect(t, e.Id);
+            bool eternal = e.SourceSide >= 0 && S.Heroes[e.SourceSide].HasPerk(Sk.EternalLight) && e.School == "MAGIC_SCHOOL_LIGHT";
+            if (RollPercent(t, DispelPercent(baseChance, dispellerLevel, e.CasterLevel, eternal), false)) RemoveEffect(t, e.Id);
         }
         if (friendly)
             foreach (var id in new[] { H5.Combat.Fx.Wound, H5.Combat.Fx.MarkOfFire, H5.Combat.Fx.EvilEye, H5.Combat.Fx.WeakeningStrike, H5.Combat.Fx.ArmorCrushed, H5.Combat.Fx.Sleep })
