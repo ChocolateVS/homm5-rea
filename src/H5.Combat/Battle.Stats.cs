@@ -15,11 +15,7 @@ public sealed partial class Battle
     public bool IsUndeadLike(Unit u) => u.Has(Ab.Undead) || u.HasEffect("SPELL_VAMPIRISM");
     bool NeutralMorale(Unit u) => u.Has(Ab.Undead) || u.Has(Ab.Elemental) || u.Has(Ab.Mechanical) || u.IsWarMachine || u.IsObject
                                   || u.HasEffect("SPELL_VAMPIRISM");
-    /// <summary>Mind immunity. Shawl of the Great Lich on the opposing hero removes IMMUNITY_TO_MIND_CONTROL
-    /// (creature HasAbility override, exe FUN_008a34c0, artifact 0x45).</summary>
-    public bool MindImmune(Unit u) =>
-        u.Has(Ab.ImmuneMind) && !(Enemy(u.Side) is { Present: true } e && e.Artifacts.Contains("ARTIFACT_SHAWL_OF_GREAT_LICH"))
-        || u.Has(Ab.Undead) || u.Has(Ab.Elemental) || u.Has(Ab.Mechanical) || u.IsWarMachine || u.IsObject;
+    public bool MindImmune(Unit u) => u.Has(Ab.ImmuneMind) || u.Has(Ab.Undead) || u.Has(Ab.Elemental) || u.Has(Ab.Mechanical) || u.IsWarMachine || u.IsObject;
 
     IEnumerable<Unit> Adjacent(Unit u) => S.Living.Where(o => o.Id != u.Id && !o.IsObject && AreAdjacent(u, o));
 

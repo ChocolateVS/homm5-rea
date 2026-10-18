@@ -394,27 +394,21 @@ public sealed partial class BlacksmithScreen : TownSubScreen
 }
 
 /// <summary>
-/// The marketplace (UI/MarketplaceAndMail, market page). The original exchange-rate formula has not been
-/// traced in the exe yet, so trading is disabled here rather than guessed.
+/// The town marketplace (UI/MarketplaceAndMail, market page), driven by <see cref="MarketController"/>
+/// with the exe's exchange-rate tables and the town owner's marketplace count.
 /// </summary>
 public sealed partial class MarketScreen : TownSubScreen
 {
+    readonly MarketController _market;
+
     public MarketScreen(TownScreen owner) : base(owner, "UI/MarketplaceAndMail.(WindowScreen).xdb")
     {
-        Ui.SetVisible("MarketMainWindow", true);
-        Ui.SetVisible("MailMainWindow", false);
-        for (int i = 0; i < 7; i++)
-        {
-            Ui.Find($"TreasureButton_{i}")?.SetText($"<center>{TownUi.ResourceNames[i]}");
-            Ui.Find($"RateButton_{i}")?.SetText($"<center>{TownUi.ResourceNames[i]}");
-        }
-        Ui.Find("LeftButtonPanelHeader")?.SetText("<center>You give");
-        Ui.Find("RightButtonPanelHeader")?.SetText("<center>You get");
+        _market = new MarketController(this, Ui, owner.Session, () => Me, -1, () => Owner.Refresh(), Close);
     }
 
-    public override void _Ready()
+    public override void Refresh()
     {
-        base._Ready();
-        Owner.Notice("Marketplace", "Trading is not available yet: the original exchange rates have not been recovered.");
+        base.Refresh();
+        _market?.Refresh();
     }
 }

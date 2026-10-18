@@ -105,12 +105,6 @@ Status: **MATCH** (already right), **FIXED** (changed in this audit), **GAP** (n
 | Tavern face | Double click hires | MATCH |
 | Main menu keyboard | No input_a2.cfg section | MATCH (none) |
 
-## Shared UI runtime fixes (reported by other workstreams)
-| Item | Original (evidence) | Status |
-|---|---|---|
-| Markup inside inserted values | Stock templates insert formatted strings (BuildingToolTip nameDesc.txt inserts descriptions containing `<color_default>`/`<br>`; owned.txt inserts a colour-tagged name); the original renders them formatted | FIXED (`UiMarkup` parses `<value=…>` contents in place; test `MarkupValueTests`) |
-| Player colour names | UI/RefTables/PlayerColourSchemes.xdb: PCOLOR_BLUE → dark_blue*.txt ("Blue"), PCOLOR_TEAL → blue*.txt ("Teal") — the text files are cross-named | FIXED (`AdvColors.TextName` reads the table; the hot-seat code's compensating swap removed) |
-
 ## Verification
 Off-screen runs with `--input-test` (`game/src/Input/InputTestDriver.cs`) on A2M1 at 1920×1080:
 double click town → town screen; single click on City Hall → nothing, double click → hall; Esc → hall

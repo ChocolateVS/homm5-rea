@@ -212,8 +212,6 @@ public static class BattleSetup
             if (h.Specialization == "HERO_SPEC_ELVEN_FURY" && u.CreatureId is "CREATURE_BLADE_JUGGLER" or "CREATURE_WAR_DANCER"
                     or "CREATURE_WOOD_ELF" or "CREATURE_GRAND_ELF" or "CREATURE_DRUID" or "CREATURE_DRUID_ELDER")
                 GrantAbility(u, Ab.Enraged);
-            // Unicorn Horn Bow (artifact 4): every shooter in the army has No Range Penalty (FUN_008a34c0).
-            if (h.Artifacts.Contains("UNICORN_HORN_BOW") && u.MaxShots > 0) GrantAbility(u, Ab.NoRangePenalty);
             if (h.Specialization == "HERO_SPEC_WYVERN_TAMER" && (u.CreatureId.Contains("WYVERN") || u.CreatureId.Contains("PAOKAI")))
                 u.BaseHealth += (int)Specials.LevelFormula(db.Stats, "combat/HeroSpecializations/Barbarian/WyvernTamer_HealthBonus", h.Level, 1, 1, 2);
             if (Specials.Pieces(h, Specials.Ogres) >= 2)

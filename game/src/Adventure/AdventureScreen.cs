@@ -504,6 +504,17 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 Hud.UpdateMinimap();
                 break;
+            case ObjectVisited { What: "BUILDING_TRADING_POST" } tp when HumanCaused(player) && !Autoplay && s.Hero(tp.HeroId) is { } trader:
+            {
+                // Trading Post: the marketplace screen at the 3-marketplace rates while the hero stands on it.
+                Hud.Visible = false;
+                var post = new Town.TradingPostScreen(this, trader.Owner, tp.Object);
+                AddChild(post);
+                await ToSignal(post, Node.SignalName.TreeExited);
+                Hud.Visible = true;
+                Hud.Refresh();
+                break;
+            }
             case ObjectVisited { Object: -1 } mv when HumanCaused(player) && !Autoplay && mv.What.StartsWith("meet:")
                                                     && int.TryParse(mv.What[5..], out var metId)
                                                     && s.Hero(mv.HeroId) is { } visitor && s.Hero(metId) is { } met

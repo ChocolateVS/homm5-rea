@@ -264,7 +264,8 @@ public partial class TownScreen : Control
             Notice(Town.Name, reason);
             return;
         }
-        _hud.Visible = sub is not HeroScreen;
+        // The hero screen and the marketplace (own resource bar and jog dial) replace the town HUD.
+        _hud.Visible = sub is not HeroScreen and not MarketScreen;
         _subLayer.AddChild(sub);
     }
 
