@@ -62,10 +62,23 @@ exe yet). Addresses are H5_Game.exe virtual addresses.
 | Cursor set (move, fly, attack ×8, shoot, cast, can't cast, wait) | hwcursors/*.cur | decoded originals (prior agent) | MATCH |
 | Movement area / selection marks | UI/CombatArena/Grid materials | prior agent | UNVERIFIED |
 
+## HUD, dialogs and flows
+
+| Element | Original | Ours | Status |
+|---|---|---|---|
+| Tooltips on HUD buttons | UI/Tooltips/Main.(TooltipContext).xdb: TextTooltip window, 300 ms delay, 223 px line, text.txt markup | StockTooltip (shrinks one-line tooltips to their text) | FIXED |
+| `<hotkey=…>` in tooltips ("Wait (W)") | rendered by the markup parser from the key bindings | tag dropped | GAP |
+| Auto-combat feedback | no log line; jog button state | invented "Auto combat on/off" log line removed; button state not toggled | FIXED / GAP (button state) |
+| Flee/Surrender | choice dialog built in code (exe 00570cf0) from UIGameRoot ID_RETREAT_FACE_TEXTURE, _TITLE_TEXT, _HEADER_TEXT, _DESCRIPTION[_FLEE], _NOGOLD_TOOLTIP/_TEXT, ID_SURRENDER_TEXTURE, _SURRENDER_TOOLTIP/_TEXT, ID_FLEE_TEXT/_TEXTURE, ID_COMBAT_RETREAT T_HEADER/T_FLEE/T_SURRENDER tooltips; close key input_Combat_Retreat_Close; CANT_RETREAT_* refusals | submits SurrenderCmd at once | GAP |
+| Tactics: "not all creatures placed" confirm | NotAllCreaturesPlacedHeader/Question (UI/CombatScreen-Heavy) | none | GAP |
+| Tactics: split stack | SplitStackHeader/Question | none | GAP |
+| War machines: Ballista / Triple Ballista | one targeting action fires every shot (engine 8b48870, exe 00a75bf0) | one ShootCmd; prediction shows "x N" (NORMAL_ATTACK_MULTIPLE) | MATCH |
+| First Aid Tent / Catapult targeting | manual with the perks | prior agent (CATAPULT_SHOT targets) | UNVERIFIED |
+| Esc menu | UI/EscMenu | stock window (prior agent) | MATCH (prior agent) |
+| Keyboard shortcuts | profiles/default_profile/input_a2.cfg combat sections | mapped by the prior agent | MATCH (prior agent; not re-checked key by key) |
+
 ## Not yet audited
 
-ATB bar (hover, click, scroll, markers), jog dial button states and tooltips, spellbook targeting
-flow (mass spells, cast on cell, invalid-target messages), war machine control flows (Ballista and
-Triple Ballista — the engine now fires all shots in one action, 8b48870 — First Aid Tent, Catapult,
-Ammo Cart), creature ability activation flows, tactics phase UI, combat log behaviour,
-surrender/retreat dialogs and costs, results screen, Esc menu, keyboard shortcuts: **UNVERIFIED**.
+ATB bar (hover, click, scroll, markers), spellbook targeting flow (mass spells, cast on cell,
+invalid-target messages: the SpellStrings texts exist but are not shown), creature ability
+activation flows, combat log behaviour (scrolling, hover), results screen details: **UNVERIFIED**.

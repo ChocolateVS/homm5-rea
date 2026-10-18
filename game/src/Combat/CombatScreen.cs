@@ -1278,8 +1278,8 @@ public partial class CombatScreen : Control
 
     internal void CmdAutoCombat()
     {
+        // The stock game writes no log line for this (the jog button's own state shows it).
         Autoplay = !Autoplay;
-        Hud.Log.AddLine(Autoplay ? "<body>Auto combat on." : "<body>Auto combat off.");
     }
 
     /// <summary>Legal actions of the stack/hero the local player is acting with, or null.</summary>
