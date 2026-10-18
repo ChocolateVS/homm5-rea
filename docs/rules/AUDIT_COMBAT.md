@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 164 |
-| MATCH | 104 |
+| FIXED | 168 |
+| MATCH | 110 |
 | GAP | 7 |
-| UNVERIFIED | 255 |
+| UNVERIFIED | 245 |
 | N/A | 58 |
 
 ## Core mechanics
@@ -101,7 +101,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_ENERGY_CHANNEL` | FIXED | 009781e0, 00978120 | ×0.75 rounded, at least −1 | (HeroManaCost) |
 | `ABILITY_MAGIC_PROOF_75` | MATCH | 0097af50 (0097b265) | independent ×0.25 |  |
 | `ABILITY_POISONOUS_ATTACK` | FIXED | 00a61720, 00982010, 00bbf160, 00bbb900, 00bbe150 | on a strike the attacker applies SPELL_ABILITY_POISONOUS_ATTACK (0xb4) through the spell application check (00982010); the effect is (re)applied only if the target has none or the existing effect's power (+0x28) is not greater than the new power — a stronger poison is never replaced by a weaker one; the counter is AssasinPoisonCounter for every poisoner (ManticorePoisonCounter is never read); the damage-over-time tick (00bbb900) treats poison and venom as separate effects. Power = stack size (fan manual p.178 PDF: "proportional to the number of creatures", multiplier 1 Assassin / 4 Manticore) — engine always overwrote the effect. Spell-immunity side of 00982010 not compared | AuditAbilityBTests.AStrongerPoisonIsNeverReplacedByAWeakerOne |
-| `ABILITY_STRIKE_AND_RETURN` | UNVERIFIED | 008d4330 00a2f130 00a2f710 00a2f8f0 | implemented; not yet compared with the exe |  |
+| `ABILITY_STRIKE_AND_RETURN` | FIXED | 00a65260 (00a658eb–00a6594a), 00a66050 | after the strike loop, a stack with STRIKE_AND_RETURN (0x37) that walked at least one cell walks back (00a66050 with its "forced" flag 1, so no ride-by) unless it is held by Entangling Roots (SPELL_ABILITY_ENTANGLING_ROOTS, 0xac) — engine returned even when entangled (stock witches fly, so this matters only for walkers granted the ability or other rooting sources). Not compared: two context flags tested at 00a65908/00a65912, and the engine still teleports back instead of walking the path | AuditAbilityBTests.StrikeAndReturnStaysWhenEntangled |
 | `ABILITY_BRAVERY` | MATCH | 00a6acd0 | morale of a non-undead stack: if an Aura of Bravery effect applies, max(m, AuraOfBraveryMoraleMin), else with BRAVERY max(m, 1) — same as the engine for stock data (both minimums are 1) |  |
 | `ABILITY_RIDER_CHARGE` | MATCH | 00a5a900 | defence ×clamp(1 − cells·RiderCharge_DefenceReducePerPathCell, 0, 1), not vs ARMORED |  |
 | `ABILITY_LIZARD_BITE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -512,7 +512,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_SLOW` | FIXED | 004e4270 (case 0xc), 0097c9f0 | initiative ×(1−clamp(v,0,1)); immune: ABILITY_IMMUNITY_TO_SLOW, Dwarven Mithral Greaves | InitiativeEffectFactorsMultiply, ArtifactsGrantSpellImmunities |
 | `SPELL_DISRUPTING_RAY` | FIXED | 00976db0 (0xd + spec 0x2a), 0097c9f0 | Disrupter deals trunc((lvl−1)·PerLevel/trunc(Div) + Base) with it — the engine checked a non-existent SPELL_VULNERABILITY id, so the bonus never fired; war machines immune unless Disrupter | DisrupterDamagesWithDisruptingRay |
 | `SPELL_PLAGUE` | FIXED | 00976b90, 0097c9f0 | truncated damage; immune: Undead, Mechanical, Elemental | SpellBaseDamageTruncates |
-| `SPELL_WEAKNESS` | UNVERIFIED | 0089c720 008af9e0 008b236c 009a2950 | implemented; not yet compared with the exe |  |
+| `SPELL_WEAKNESS` | MATCH | 0098a430 (effect 0xf), 004e57d0 | Suffering: attack sum = trunc(sum − max(0, value)) in chop mode (stock values are whole numbers); not blocked by Armored; duration = time-per-turn · power |  |
 | `SPELL_ABILITY_WEAKNING_STRIKE` | UNVERIFIED | 0089c720 008b237d 008be8f9 009a2950 | implemented; not yet compared with the exe |  |
 | `SPELL_FORGETFULNESS` | GAP | 0097c9f0 (0x11 → ability 0x13) | exe immunity: IMMUNITY_TO_MIND_CONTROL only; engine adds undead/elemental/mechanical (see Berserk) |  |
 | `SPELL_BERSERK` | FIXED | 008a2630, 0097c9f0 | damage ×max(1+v,0); immune: mind immunity / IMMUNITY_TO_BERSERK / Dwarven Mithral Shield (added). Exe checks only the IMMUNITY_TO_MIND_CONTROL ability (008a34c0 never grants it to undead) while the engine also treats undead/elemental/mechanical as mind-immune — open question (another targeting layer may block them) | ArtifactsGrantSpellImmunities |
@@ -522,14 +522,14 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_UNHOLY_WORD_HIT_EFFECT` | N/A | 0089c720 008af9e0 00b32880 | visual effect only (client) |  |
 | `SPELL_BLESS` | MATCH | 008a2630 | min += (max−min)·clamp(v,0,1) |  |
 | `SPELL_HASTE` | FIXED | 004e4270 (case 0x18), 008a4330 | initiative ×(1+max(v,0)) [+ level·Expediter_HasteBonusPerLevel for an Expediter hero], multiplied with the other factors | InitiativeEffectFactorsMultiply, ExpediterBoostsHaste |
-| `SPELL_STONESKIN` | UNVERIFIED | 0089c720 00b32880 | implemented; not yet compared with the exe |  |
-| `SPELL_DISPEL` | UNVERIFIED | 0089c720 008af62a 00a51a00 | implemented; not yet compared with the exe |  |
+| `SPELL_STONESKIN` | MATCH | 00989790 (effect 0x19, 009898ab..009898cb chop), 004e57d0 | defence sum = trunc(sum + max(0, value)); duration = time-per-turn · power |  |
+| `SPELL_DISPEL` | FIXED | 00bbf000 (0x1a → 00bbe8b0), 00bbe976..00bbe9dc, 00e182c0, 00a5a170 | per dispellable effect: pct = trunc(clamp(base·100 + 3·(dispeller level − effect caster level), 0, 100)) (chop), halved (integer) for an Eternal Light effect (+0x53), rolled with FUN_00a5a170 (no second roll). Engine used a fractional chance and NextDouble | DispelChanceIsAWholePercentPlusThreePerLevel |
 | `SPELL_DISPEL_FAIL` | N/A | 008af63b | visual effect only (client) |  |
-| `SPELL_BLOODLUST` | UNVERIFIED | 0089c720 | implemented; not yet compared with the exe |  |
+| `SPELL_BLOODLUST` | MATCH | 0098a430 (effect 0x1c), 004e57d0 | attack sum = trunc(sum + max(0, value)); duration = time-per-turn · power |  |
 | `SPELL_DEFLECT_ARROWS` | UNVERIFIED | 00a5a900 (visual only), 00a5a750 | the ranged reduction site was not found (not in 00a5a900 / 00a58de0 / 00a5c5a0); engine ×(1 − clamp(v,0,0.95)) left as is |  |
 | `SPELL_DEFLECT_ARROWS_HIT_EFFECT` | N/A | 0089c720 008af673 | visual effect only (client) |  |
 | `SPELL_ANTI_MAGIC` | MATCH | 004e41c0 | resists spells of level ≤ trunc(value) |  |
-| `SPELL_TELEPORT` | UNVERIFIED | 0089c720 008af69a | implemented; not yet compared with the exe |  |
+| `SPELL_TELEPORT` | FIXED | 0097d7b0 (case 0x20), 004e4a20, 00e0ab70 | Teleport Assault (skill 0x8a of the teleported stack's hero): ATB += 0.5 clamped 0..1.25 (engine capped at 1), skipped when the stack is Blind (0x13), Frozen (0xc9), Sabotaged (0x14a), asleep (0x150) or Seduced (0x148) | TeleportAssaultClampsAtOnePointTwoFiveAndSkipsDisabledStacks |
 | `SPELL_TELEPORT_FINISH_EFFECT` | N/A | 009a2350 00a51a00 | visual effect only (client) |  |
 | `SPELL_CELESTIAL_SHIELD` | MATCH | 00a595b0, 00a59660 | absorbs min(trunc(clamp(v,0,1)·damage), shield HP) |  |
 | `SPELL_HOLY_WORD` | FIXED | 00977600, 0097c9f0, 0085f330 | affects Undead, Demonic and Demon-Raged creatures (engine missed Demon-Raged); Ring of Death holder immune | ArtifactsGrantSpellImmunities |
@@ -538,7 +538,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_WASP_SWARM` | FIXED | 00976db0, 0097d7b0 (0x27), 0097c9f0 | Call of the Wasp damage trunc((lvl·per+1)·dmg); ATB −= duration·(1 + ((lvl+2)/3)·ATBReducePerLevel3) clamped 0..1 (engine added per3·lvl/3); immune: Undead, Elemental, Mechanical | CallOfTheWaspMultipliesTheAtbDrop |
 | `SPELL_PHANTOM` | MATCH | 0097c9f0 (0x28), 0097d7b0 → 00860be0 | a phantom cannot be cloned |  |
 | `SPELL_EARTHQUAKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_ANIMATE_DEAD` | FIXED | 0097c9f0 (0x2a) | immune: Elemental, Mechanical (engine allowed them) | RaiseDeadSkipsElementalsAndMechanicals |
+| `SPELL_ANIMATE_DEAD` | FIXED | 0097c9f0 (0x2a), 009789b0 | immune: Elemental, Mechanical (engine allowed them). Raised HP = trunc(max(0, eval(power))) in chop mode (00978a8b) — matches; an extra factor (target vf+0x70 object: vf+0x1a8 / vf+0x50) multiplies it when present — not identified | RaiseDeadSkipsElementalsAndMechanicals |
 | `SPELL_SUMMON_ELEMENTALS` | FIXED | 00861630, 00861120 | elemental kind from battlefield terrain (random among candidates) | tests/H5.Combat.Tests/AuditSpecTests2.GrassArenaSummonsAirOrEarthElementals |
 | `SPELL_EFFECT_SUMMON_ELEMENTALS_EARTH` | GAP | 009a2350 | summon-variant effect id at 009a2350 (spell effect table); not mapped |  |
 | `SPELL_RESURRECT` | MATCH | 0097c9f0 (0x30), 009789b0 | immune: Undead, Elemental, Mechanical |  |
@@ -571,15 +571,15 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_MASS_SLOW` | MATCH | 0097a530 | whole enemy army; effect as SPELL_SLOW |  |
 | `SPELL_MASS_FORGETFULNESS` | GAP | 0097a530 | whole enemy army (matches); immunity as SPELL_FORGETFULNESS (GAP) |  |
 | `SPELL_MASS_PLAGUE` | MATCH | 0097a530 (default case) | aimed: 4×4 area, enemy stacks only; effect as SPELL_PLAGUE |  |
-| `SPELL_MASS_WEAKNESS` | UNVERIFIED | 0097a530 | whole enemy army (matches); SPELL_WEAKNESS effect not yet compared |  |
+| `SPELL_MASS_WEAKNESS` | MATCH | 0097a530, 0098a430 (0xf) | whole enemy army; effect as SPELL_WEAKNESS |  |
 | `SPELL_MASS_BLESS` | MATCH | 0097a530 | whole own army; effect as SPELL_BLESS |  |
-| `SPELL_MASS_DISPEL` | UNVERIFIED | 0097a530 (default case) | aimed: 4×4 area, TARGET_NEUTRAL → all stacks (matches); dispel rules not yet compared |  |
-| `SPELL_MASS_STONESKIN` | UNVERIFIED | 0097a530 | whole own army (matches); SPELL_STONESKIN effect not yet compared |  |
+| `SPELL_MASS_DISPEL` | FIXED | 0097a530 (default case), 00bbe8b0 | aimed: 4×4 area, TARGET_NEUTRAL → all stacks (matches); per-effect chance as SPELL_DISPEL | DispelChanceIsAWholePercentPlusThreePerLevel |
+| `SPELL_MASS_STONESKIN` | MATCH | 0097a530, 00989790 (0x19) | whole own army; effect as SPELL_STONESKIN |  |
 | `SPELL_MASS_DEFLECT_ARROWS` | UNVERIFIED | 0097a530 | whole own army (matches); Deflect Arrows reduction site not found |  |
-| `SPELL_MASS_BLOODLUST` | UNVERIFIED | 0097a530 | whole own army (matches); SPELL_BLOODLUST effect not yet compared |  |
+| `SPELL_MASS_BLOODLUST` | MATCH | 0097a530, 0098a430 (0x1c) | whole own army; effect as SPELL_BLOODLUST |  |
 | `SPELL_MASS_HASTE` | MATCH | 0097a530 | whole own army (TARGET_FRIEND → caster vf +0xc); effect as SPELL_HASTE |  |
-| `SPELL_CONJURE_PHOENIX` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_FIREWALL` | UNVERIFIED | 0097a530 (case 0xec) | cells = (x, y−1), (x, y), (x, y+1) — matches; the field's entry/turn damage is not yet compared |  |
+| `SPELL_CONJURE_PHOENIX` | UNVERIFIED | 0097d7b0 (0xeb) → 00862130, 00861f90, 00862970, 008628f0 | stats come from the SRPGCombatUniqueCreatureStats resource GameMechanics/RPGStats/ConjuredPhoenix.xdb (Health 300 + 30/power, damage 10–15 per power, offence/defence 10 + 2/level), fed with the caster's power, level and knowledge; the exact "power" argument (engine: ceil(SP / divisor)) is lost in the decompile. If the ENEMY hero has Elemental Balance (skill 0x54) a second phoenix is summoned for that side (00862130) — engine lacks it (heroes partition) |  |
+| `SPELL_FIREWALL` | UNVERIFIED | 0097a530 (case 0xec), 0085cda0, 0098ade0, 0098a920 / 0098aa40 → 004e6770 | cells = (x, y−1), (x, y), (x, y+1) — matches; the field object (0x8c bytes, ctor 0098ade0) forwards entry/turn damage to the fire rider 004e6770, which deals the amount it is given without a new protection step — the caller computing that amount was not traced, so whether the engine's protection on each hit matches is open |  |
 | `SPELL_STONE_SPIKES` | FIXED | 00976b90, 0085eaa0, 0097a530 (case 0xed) | as Fireball, area = centre + 4 orthogonal cells | SpellBaseDamageTruncates |
 | `SPELL_EFFECT_WOUND` | UNVERIFIED | 008a1e50 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_BERSERKER_RAGE` | UNVERIFIED | 008a32b0 008a4800 00984a00 00a5fee0 | implemented; not yet compared with the exe |  |

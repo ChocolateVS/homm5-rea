@@ -59,7 +59,7 @@ decompiler's `ROUND` is a truncation toward zero there.
 | `SPELL_ANTI_MAGIC` | MATCH | 004e41c0 | resists spells of level ≤ trunc(value) | |
 | `SPELL_PHANTOM` | MATCH | 0097c9f0 (0x28), 0097d7b0 → 00860be0 | a phantom cannot be cloned | |
 | `SPELL_RESURRECT` | MATCH | 0097c9f0 (0x30), 009789b0 | immune: Undead, Elemental, Mechanical | |
-| `SPELL_ANIMATE_DEAD` | FIXED | 0097c9f0 (0x2a) | immune: Elemental, Mechanical (engine allowed them) | RaiseDeadSkipsElementalsAndMechanicals |
+| `SPELL_ANIMATE_DEAD` | FIXED | 0097c9f0 (0x2a), 009789b0 | immune: Elemental, Mechanical (engine allowed them). Raised HP = trunc(max(0, eval(power))) in chop mode (00978a8b) — matches; an extra factor (target vf+0x70 object: vf+0x1a8 / vf+0x50) multiplies it when present — not identified | RaiseDeadSkipsElementalsAndMechanicals |
 | `SPELL_REGENERATION` | MATCH | 0097c9f0 (0x118) | immune: Undead, Elemental, Mechanical | |
 | `SPELL_SKILL_RESISTANCE` | MATCH | 0097c9f0 (effect 0x52) | +15 resistance | MagicResistanceChanceSumsLikeTheExe |
 | `SPELL_BLADE_BARRIER` | MATCH | 0097d7b0 (0x11c) | three cells (y−1, y, y+1) | |
@@ -67,19 +67,25 @@ decompiler's `ROUND` is a truncation toward zero there.
 | `SPELL_WARCRY_BATTLECRY` | FIXED | 008a1e50 (0x126), FUN_00946030 | speed +((lvl−1)/div)·per + base (confirmed), offence by the same struct formula (engine 1 + lvl/2) | WarcryBonusesUseLevelMinusOne |
 | `SPELL_RUNE_OF_REVIVE` | MATCH | 00c20690 | revived = trunc((float)(initial − current count) · max(0, ReviveSpellPercent)); engine (int)(dead·0.4) gives the same integers (0.4f > 0.4, products of multiples of 5 are exact) | |
 | `SPELL_WARCRY_FEAR_MY_ROAR` | GAP | 004e57d0, 009bdbd0 | the duration table 004e57d0 has no 0x125 case (no lasting effect — the engine only zeroes ATB, consistent); the success chance 0.5 + (level − target level)·0.05 used by the engine was not located in the exe (no 0x125 dispatch outside the enum table 009f29c0) | |
+| `SPELL_WEAKNESS` | MATCH | 0098a430 (effect 0xf), 004e57d0 | Suffering: attack sum = trunc(sum − max(0, value)) in chop mode (stock values are whole numbers); not blocked by Armored; duration = time-per-turn · power | |
+| `SPELL_BLOODLUST` | MATCH | 0098a430 (effect 0x1c), 004e57d0 | attack sum = trunc(sum + max(0, value)); duration = time-per-turn · power | |
+| `SPELL_STONESKIN` | MATCH | 00989790 (effect 0x19, 009898ab..009898cb chop), 004e57d0 | defence sum = trunc(sum + max(0, value)); duration = time-per-turn · power | |
+| `SPELL_TELEPORT` | FIXED | 0097d7b0 (case 0x20), 004e4a20, 00e0ab70 | Teleport Assault (skill 0x8a of the teleported stack's hero): ATB += 0.5 clamped 0..1.25 (engine capped at 1), skipped when the stack is Blind (0x13), Frozen (0xc9), Sabotaged (0x14a), asleep (0x150) or Seduced (0x148) | TeleportAssaultClampsAtOnePointTwoFiveAndSkipsDisabledStacks |
+| `SPELL_DISPEL` | FIXED | 00bbf000 (0x1a → 00bbe8b0), 00bbe976..00bbe9dc, 00e182c0, 00a5a170 | per dispellable effect: pct = trunc(clamp(base·100 + 3·(dispeller level − effect caster level), 0, 100)) (chop), halved (integer) for an Eternal Light effect (+0x53), rolled with FUN_00a5a170 (no second roll). Engine used a fractional chance and NextDouble | DispelChanceIsAWholePercentPlusThreePerLevel |
+| `SPELL_CONJURE_PHOENIX` | UNVERIFIED | 0097d7b0 (0xeb) → 00862130, 00861f90, 00862970, 008628f0 | stats come from the SRPGCombatUniqueCreatureStats resource GameMechanics/RPGStats/ConjuredPhoenix.xdb (Health 300 + 30/power, damage 10–15 per power, offence/defence 10 + 2/level), fed with the caster's power, level and knowledge; the exact "power" argument (engine: ceil(SP / divisor)) is lost in the decompile. If the ENEMY hero has Elemental Balance (skill 0x54) a second phoenix is summoned for that side (00862130) — engine lacks it (heroes partition) | |
 | `SPELL_DEFLECT_ARROWS` | UNVERIFIED | 00a5a900 (visual only), 00a5a750 | the ranged reduction site was not found (not in 00a5a900 / 00a58de0 / 00a5c5a0); engine ×(1 − clamp(v,0,0.95)) left as is | |
-| `SPELL_FIREWALL` | UNVERIFIED | 0097a530 (case 0xec) | cells = (x, y−1), (x, y), (x, y+1) — matches; the field's entry/turn damage is not yet compared | |
+| `SPELL_FIREWALL` | UNVERIFIED | 0097a530 (case 0xec), 0085cda0, 0098ade0, 0098a920 / 0098aa40 → 004e6770 | cells = (x, y−1), (x, y), (x, y+1) — matches; the field object (0x8c bytes, ctor 0098ade0) forwards entry/turn damage to the fire rider 004e6770, which deals the amount it is given without a new protection step — the caller computing that amount was not traced, so whether the engine's protection on each hit matches is open | |
 | `SPELL_MASS_DISRUPTING_RAY` | MATCH | 0097a530 (default case), spell record +0xcc IsAimed, +0xd0 Target | aimed mass spell: 4×4 area x−1..x+2, y−1..y+2, TARGET_HOSTILE → enemy stacks only; effect as SPELL_DISRUPTING_RAY | |
 | `SPELL_MASS_PLAGUE` | MATCH | 0097a530 (default case) | aimed: 4×4 area, enemy stacks only; effect as SPELL_PLAGUE | |
-| `SPELL_MASS_DISPEL` | UNVERIFIED | 0097a530 (default case) | aimed: 4×4 area, TARGET_NEUTRAL → all stacks (matches); dispel rules not yet compared | |
+| `SPELL_MASS_DISPEL` | FIXED | 0097a530 (default case), 00bbe8b0 | aimed: 4×4 area, TARGET_NEUTRAL → all stacks (matches); per-effect chance as SPELL_DISPEL | DispelChanceIsAWholePercentPlusThreePerLevel |
 | `SPELL_MASS_CURSE` | MATCH | 0097a530 (default case, IsAimed false) | whole enemy army (TARGET_HOSTILE → caster vf +0x10); effect as SPELL_CURSE | |
 | `SPELL_MASS_SLOW` | MATCH | 0097a530 | whole enemy army; effect as SPELL_SLOW | |
 | `SPELL_MASS_HASTE` | MATCH | 0097a530 | whole own army (TARGET_FRIEND → caster vf +0xc); effect as SPELL_HASTE | |
 | `SPELL_MASS_BLESS` | MATCH | 0097a530 | whole own army; effect as SPELL_BLESS | |
 | `SPELL_MASS_FORGETFULNESS` | GAP | 0097a530 | whole enemy army (matches); immunity as SPELL_FORGETFULNESS (GAP) | |
-| `SPELL_MASS_WEAKNESS` | UNVERIFIED | 0097a530 | whole enemy army (matches); SPELL_WEAKNESS effect not yet compared | |
-| `SPELL_MASS_STONESKIN` | UNVERIFIED | 0097a530 | whole own army (matches); SPELL_STONESKIN effect not yet compared | |
-| `SPELL_MASS_BLOODLUST` | UNVERIFIED | 0097a530 | whole own army (matches); SPELL_BLOODLUST effect not yet compared | |
+| `SPELL_MASS_WEAKNESS` | MATCH | 0097a530, 0098a430 (0xf) | whole enemy army; effect as SPELL_WEAKNESS | |
+| `SPELL_MASS_STONESKIN` | MATCH | 0097a530, 00989790 (0x19) | whole own army; effect as SPELL_STONESKIN | |
+| `SPELL_MASS_BLOODLUST` | MATCH | 0097a530, 0098a430 (0x1c) | whole own army; effect as SPELL_BLOODLUST | |
 | `SPELL_MASS_DEFLECT_ARROWS` | UNVERIFIED | 0097a530 | whole own army (matches); Deflect Arrows reduction site not found | |
 | `HERO_SKILL_ELEMENTAL_VISION` | FIXED | 00977e60, 004b12c0, 004b0ef0, 004b0d40, 004b0d80, 004b0e90 | Elemental Chains on damage spells: Warlock (class 6) with Elemental Vision; spell element opposite to the target's; m = 1 + Invocation·0.1 + altars·0.1 (float), ×2 Absolute Chains, ×Runic_2Warlock_ElementalVisionMultiplier with ≥ 2 Runic pieces; extra = trunc(D·m − D) of the damage after protection; target element re-rolled. Engine: any class, Destructive school only, bonus before protection, no altars/Absolute Chains/Runic. Creature-attack chaining (Altar of Elements, 004b13e0 path) not implemented; re-roll picker (004b0e90 → 00877220) not traced | ElementalChainsUseTheExeMultiplier |
 | `HERO_SKILL_ABSOLUTE_CHAINS` | FIXED | 004b0d80 (skill 0x96) | doubles the Elemental Chains fraction x | ElementalChainsUseTheExeMultiplier |
