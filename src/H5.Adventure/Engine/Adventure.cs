@@ -79,6 +79,7 @@ public sealed partial class Adventure
             SwapStacksCmd c => DoSwap(c),
             GarrisonHeroCmd c => DoGarrison(c),
             MoveArtifactCmd c => DoMoveArtifact(c),
+            CastAdventureSpellCmd c => DoCastAdventureSpell(c),
             _ => "unknown command",
         };
         var result = err != null ? AdvResult.Reject(err) : new AdvResult { Ok = true, Events = _ev };
