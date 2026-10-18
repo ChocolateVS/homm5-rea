@@ -196,4 +196,34 @@ public class AuditAbilityTestsA(GameDataFixture f)
         Assert.Equal(hpGolems, golems.TotalHealth);   // Mechanical is skipped
         Assert.Equal(2f, coef);                         // the 3.1 patch value (a2p1-data.pak)
     }
+
+    Battle WithHeroes(string a, int countA, string b2, int countB, int enemyMana)
+    {
+        var b = f.Duel(a, countA, b2, countB, 1, new Cell(1, 2), new Cell(10, 7));
+        b.State.Heroes[0].Present = true;
+        b.State.Heroes[1].Present = true;
+        b.State.Heroes[1].Mana = enemyMana;
+        return b;
+    }
+
+    [Fact]
+    public void ManaStealerTakesCeilOfStackTimesRateOverGrowth()   // FUN_0097bd60: ceil(N · 4 / growth 16)
+    {
+        var b = WithHeroes("CREATURE_IMP", 10, "CREATURE_PEASANT", 10, 100);
+        b.Begin();
+        Assert.Equal(97, b.State.Heroes[1].Mana);   // ceil(10·4/16) = 3 (the engine rounded 2.5 down to 2)
+        Assert.Equal(3, b.State.Heroes[0].Mana);
+    }
+
+    [Fact]
+    public void SyphonManaUsesTheHalvedRateNotHalfTheStack()   // FUN_0097bd60 spell 0x13f: k = trunc(4·0.5 + 0.5) = 2
+    {
+        var b = WithHeroes("CREATURE_QUASIT", 20, "CREATURE_PEASANT", 10, 100);
+        b.Begin();
+        var q = b.State.Units[0];
+        b.State.Active = q.Id;
+        var r = b.Apply(new UseAbilityCmd(q.Id, Ab.SyphonMana) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(97, b.State.Heroes[1].Mana);   // ceil(20·2/16) = 3 (the engine took 20·0.5 = 10)
+    }
 }

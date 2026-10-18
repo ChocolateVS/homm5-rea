@@ -174,15 +174,18 @@ public sealed partial class Battle
             case Ab.SyphonMana:
             {
                 var eh = Enemy(Controller(u));
-                int drained = Math.Min(eh.Mana, (int)(u.Count * Stats.Get("combat/Creatures/Inferno/SyphonManaCoef", 0.5)));
+                int drained = ManaDrainAmount(u, eh.Mana, syphon: true);   // exe FUN_0097bd60 (spell 0x13f)
                 eh.Mana -= drained;
                 Emit(new ManaChanged(Actor.Hero(eh.Side), eh.Mana));
                 Emit(new AbilityTriggered(u.Id, c.Ability));
                 var casters = S.LivingOf(u.Side).Where(o => o.MaxMana > 0).ToList();
-                for (int i = 0; i < casters.Count && drained > 0; i++)
+                // Even split, the remainder going to the first stacks of the list (exe: amount / n + (i < amount % n)).
+                int total = drained;
+                for (int i = 0; i < casters.Count && total > 0; i++)
                 {
-                    int share = drained / (casters.Count - i);
-                    casters[i].Mana += share; drained -= share;
+                    int share = total / casters.Count + (i < total % casters.Count ? 1 : 0);
+                    if (share <= 0) continue;
+                    casters[i].Mana += share;
                     Emit(new ManaChanged(casters[i].Id, casters[i].Mana));
                 }
                 return null;

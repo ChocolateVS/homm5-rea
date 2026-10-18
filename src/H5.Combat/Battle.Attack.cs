@@ -1288,17 +1288,17 @@ public sealed partial class Battle
         foreach (var u in S.Units.Where(u => u.Alive).ToList())
         {
             var mine = S.Heroes[u.Side]; var enemy = S.Heroes[1 - u.Side];
-            // Mana Stealer / Mana Destroyer: 0.25 mana per creature (p.178).
+            // Mana Stealer / Mana Destroyer (p.178): ceil(N · ManaStealPerWeekPopulation / weekly growth), exe FUN_0097bd60.
             if (u.Has(Ab.ManaStealer) && enemy.Present)
             {
-                int n = Math.Min(enemy.Mana, (int)Math.Round(u.Count * 0.25));
+                int n = ManaDrainAmount(u, enemy.Mana, syphon: false);
                 enemy.Mana -= n; Emit(new ManaChanged(Actor.Hero(enemy.Side), enemy.Mana));
                 if (mine.Present) { mine.Mana += n; Emit(new ManaChanged(Actor.Hero(mine.Side), mine.Mana)); }
                 Emit(new AbilityTriggered(u.Id, Ab.ManaStealer));
             }
             if (u.Has(Ab.ManaDestroyer) && enemy.Present)
             {
-                int n = Math.Min(enemy.Mana, (int)Math.Round(u.Count * 0.25));
+                int n = ManaDrainAmount(u, enemy.Mana, syphon: false);
                 enemy.Mana -= n; Emit(new ManaChanged(Actor.Hero(enemy.Side), enemy.Mana));
                 Emit(new AbilityTriggered(u.Id, Ab.ManaDestroyer));
             }
