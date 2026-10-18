@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 170 |
-| MATCH | 112 |
+| FIXED | 178 |
+| MATCH | 115 |
 | GAP | 8 |
-| UNVERIFIED | 244 |
+| UNVERIFIED | 233 |
 | N/A | 58 |
 
 ## Core mechanics
@@ -77,8 +77,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_JOUSTING` | MATCH | 00a58de0 | melee, cells walked > 0: ×(1 + clamp(clamp(perCell,0,10),0,100)·cells), Cavalry Commander factor |  |
 | `ABILITY_BASH` | FIXED | 00a675e6, 00a59a90, 00a59990 | chance base min(75, 25+⌊3A/T⌋) / max(5, 25−⌊3T/A⌋) with HP before the hit; Bash_ProcFactor as an exponent; Soldier's Luck doubles the factor (flag 1) and gives NO second roll; never on a retaliation unless Rune of Stunning; target not mechanical | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
 | `ABILITY_BATTLE_DIVE` | UNVERIFIED | 008aaec0 008d0ec0 008d5eb0 | implemented; not yet compared with the exe |  |
-| `ABILITY_MANA_DESTROYER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
-| `ABILITY_MANA_STEALER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
+| `ABILITY_MANA_DESTROYER` | FIXED | 0097bd60 | same amount as Mana Stealer, only removed from the enemy hero (same engine fix) | AuditAbilityTestsA.ManaStealerTakesCeilOfStackTimesRateOverGrowth |
+| `ABILITY_MANA_STEALER` | FIXED | 0097bd60 (0097bdd9–0097be6d), spell 0xa6 | amount = min(enemy hero mana, ceil(N · ManaStealPerWeekPopulation / weekly growth)) (integer `(N·k + g − 1) / g`, k = 0 if not positive); the enemy hero loses it and the own hero gains it. The engine used Math.Round(N · 0.25) (banker's rounding: 10 imps gave 2 instead of 3) | AuditAbilityTestsA.ManaStealerTakesCeilOfStackTimesRateOverGrowth |
 | `ABILITY_EXPLOSION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_RANGED_RETALIATE` | FIXED | 00a5fee0 (00a5ff9b) | a ranged attack is answered only when the target has RANGED_RETALIATE and can shoot (vf 0x1e0); the check sits inside the common retaliation routine, so all the other rules still apply afterwards — Hypnotize, Gating, Expert Blind, No Enemy Retaliation, invisible attacker, Swift Attack vs Slow, sleeping/stunned/frozen (vf 0x1e4); Cowardice is skipped for shots. The engine answered every shot when retaliations and shots were left, ignoring those rules | AuditAbilityTestsA.RangedRetaliationObeysTheOtherRetaliationRules |
 | `ABILITY_FEAR` | FIXED | 00a629b0, 00a5e1b0, 00a5d790 | only on the attacker's own strike (never a retaliation, +0x21) and only while the target would retaliate; mind-immunity check (00a5e1b0); the target flees instead of retaliating — engine could trigger on retaliations / when no retaliation was pending | AuditAbilityTests.FearNeverTriggersOnRetaliation |
@@ -88,13 +88,13 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_WEAKENING_STRIKE` | UNVERIFIED | 00a629b0 → 00a5deb0 → 00a5ddb0 → 00bbf160 | on every strike (incl. ranged/retaliation as far as 00a629b0's helper list shows), with power ZombieWeakeningStrike (0 if < 1), applied through the spell-effect pipeline (00a5ddb0 → 00bbf160 → 00988df0 cast record → 00bbf000); a successful application also feeds the Demon Rage/Blood Rage counter (army vf 0x7c, field +0x80 of 008a18b0). Whether re-application stacks (engine: adds ZombieWeakeningStrike per hit) depends on 00bbf000, not yet decoded; the engine also limits it to melee |  |
 | `ABILITY_INCORPOREAL` | FIXED | 008a34c0 | Phantom images / Rune of Etherealness are Incorporeal | tests/H5.Combat.Tests/AuditSpecTests.DynamicAbilitiesFollowTheOriginal |
 | `ABILITY_MANA_DRAIN` | MATCH | 00a59c60 | drained = min(attacker count, target mana); target loses it; the drainer heals (with resurrection) drained × its max health |  |
-| `ABILITY_LIFE_DRAIN` | MATCH | 00a59c60 | LifeDrainIntensity of damage |  |
+| `ABILITY_LIFE_DRAIN` | FIXED | 00a59c60 (00a59d4e..00a59d6e, chop) | shares the Vampirism path: heal = trunc(LifeDrainIntensity · damage + 0.5) (rounded half up; the engine truncated), resurrecting; no drain from Undead / Mechanical / Elemental targets. Fixed by the spells audit in commit 280b126 (row moved here from MATCH) | AuditSpellTests.DrainRoundsHalfUpAndSkipsUndead |
 | `ABILITY_DEATH_CLOUD` | UNVERIFIED | 00a2fd40 00a64830 00b3b330 | implemented; not yet compared with the exe |  |
 | `ABILITY_ELVES_DOUBLE_SHOT` | MATCH | 00a673c0 | second shot re-rolls luck (EXE_FINDINGS) |  |
 | `ABILITY_WARDING_ARROWS` | FIXED | 00a5b000 | every ranged shot, WardingArrows_ProcFactor (flag 0, second roll); ATB = max(0, ATB − clamp(WardingArrowsATBAffect,0,1)); no damage requirement — engine required damage > 0 and could go below 0 | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
 | `ABILITY_BLINDING_ATTACK` | MATCH | 00a629b0, 00a5e440 | BlindingAttack_ProcFactor on the strike; Blind at basic mastery with BlindingAttackSpellPower (creature power if <1) via the spell application (immunities by spell rules, FUN_00a5ddb0 not compared); a blinded target doesn't retaliate |  |
 | `ABILITY_AURA_OF_MAGIC_RESISTANCE` | MATCH | 008a4b70 | the stack itself or an adjacent allied stack with the aura sets flag 8 (the resistance value is applied in the spell-resistance code, spells audit) |  |
-| `ABILITY_TAKE_ROOTS` | UNVERIFIED | 008a22f0 008a34c0 008a65e0 008a6910 | implemented; not yet compared with the exe |  |
+| `ABILITY_TAKE_ROOTS` | MATCH | 008a65e0 (from 008a6be0, the Wait/Defend handler), 008a6910 (from 008aa960, turn start), 008a22f0 | rooted flag (+0xcd) set when the stack waits or defends and cleared when its next turn starts; while rooted the defend posture uses DefenceBonusOnTakeRoots instead of DefenceBonusOnDefend (heroes audit row "Defend posture"). Engine: FX_TAKE_ROOTS added on Wait and Defend, removed at turn start, same posture rule. (The same function arms SPELL_EFFECT_PREPARATION for HERO_SKILL_PREPARATION on any waiting/defending stack — heroes partition) |  |
 | `ABILITY_ENTANGLING_ROOTS` | FIXED | 008a34c0 | suppressed by Rage of the Forest | (Unit.Has) |
 | `ABILITY_ACID_BREATH` | FIXED | Gold_Dragon.xdb / Green_Dragon.xdb PatternAttack, 00a62030 | only the dragons' pattern: attack cell + the cell behind it (12 rotations, RotateToMainTarget = true), coefficient 1, DamageAll = true. The random 1..5-cell radius exists in the exe only for RAINBOW_BREATH (00a62030); the engine applied it to Acid Breath too (the in-game text "random radius" is not what the code does) | AuditAbilityTestsA.AcidBreathHitsOnlyTheCellBehindTheTargetIncludingAllies |
 | `ABILITY_MAGIC_ATTACK` | UNVERIFIED | 00a62030 00a66b60 00a6b710 00b3b330 | implemented; not yet compared with the exe |  |
@@ -172,7 +172,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_CRUSHING_BLOW` | FIXED | 00a5af70 | 2×2 area (unchanged) PLUS a Bash-like chance (CrushingBlow_ProcFactor, flag 1, no second roll, never on a retaliation, creature targets): ATB 0 and no retaliation — the stun was missing | AuditAbilityTests.CrushingBlowCanStunTheTarget |
 | `ABILITY_EVIL_EYE` | FIXED | 00a5e770 | melee strikes only, every target of the blow, permanent SPELL_EFFECT_UNLUCKY (−3 Luck per the ability text) — engine also applied it on shots | AuditAbilityTests.EvilEyeOnlyOnMeleeStrikes |
 | `ABILITY_RANDOM_CASTER_BLESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_SYPHON_MANA` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `ABILITY_SYPHON_MANA` | FIXED | 0097bd60 (0097bdfb–0097be32), spell 0x13f | k' = trunc(ManaStealPerWeekPopulation · SyphonManaCoef + 0.5) (= 2 with the stock 4 and 0.5), amount = min(enemy mana, ceil(N · k' / growth)); shared between the receiving stacks as amount / n with the remainder to the first ones. The engine drained trunc(N · SyphonManaCoef) — 20 quasits took 10 mana instead of 3 — and gave the remainder to the last stacks | AuditAbilityTestsA.SyphonManaUsesTheHalvedRateNotHalfTheStack |
 | `ABILITY_SEARING_AURA` | MATCH | 008a4b70 (flag 0x800), 00bbb650 | a stack flagged 0x800 (an enemy with the aura next to it) takes, at the start of its turn, `SearingAuraDamageHits (RPGStats+0x234) × aura stack size` per adjacent aura stack through the elemental-protection function FUN_0097d600 (fire), logged "SEARING_AURA_HIT" — as the engine's turn-start DealElementalDamage per adjacent enemy aura stack |  |
 | `ABILITY_AXE_OF_SLAUGHTER` | MATCH | 00a63020 (00a6060f, 00a6062a) | the strike damage gets `target stack size (vf 0x1d8) × AxeOfSlaughterDamageHits` added after the other flat bonuses (FUN_00a5c000 / FUN_00a5ed90) — as the engine (`AxeOfSlaughterDamageHits × t.Count`, melee: the Pit Spawn cannot shoot) |  |
 | `ABILITY_SUMMON_OTHER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -243,7 +243,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_NECROMANCY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_AVENGER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ARTIFICIER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_INVOCATION` | UNVERIFIED | 0097d2a0 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_INVOCATION` | MATCH | 0097d2a0 (0097d42c..0097d47f), 004e5cb0 | Irresistible Magic: for spells listed by FUN_004e5cb0, share' = (1 − {0,20,40,50,75}[caster hero mastery of 0x12] %) × share (table 00f46f18), also when fully resisted (share 1). Engine formula identical (ApplyProtectionPercent); spell-set difference noted below |  |
 | `HERO_SKILL_FIRST_AID` | FIXED | 00977190 | tent heal 10/20/50/100, Empiric, ring ×2 | tests/H5.Combat.Tests/WarMachineAuditTests |
 | `HERO_SKILL_BALLISTA` | FIXED | 00a75bf0, 00a65260 | one action = all shots at the chosen target; +1 shot | tests/H5.Combat.Tests/WarMachineAuditTests.BallistaShotsPerAction |
 | `HERO_SKILL_CATAPULT` | FIXED | 00a75bf0, 00b3bb50 | catapult shots fired in one action at the aimed building | tests/H5.Combat.Tests/WarMachineAuditTests |
@@ -253,7 +253,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_TACTICS` | FIXED | 004d8c10 | extra deployment column (see Tactics phase columns) | AuditHeroTests.TacticsColumnsFollowTheOriginalRule |
 | `HERO_SKILL_ARCHERY` | MATCH | 00a58de0 | ranged strikes ×(1+clamp(SkillOffence/Archery_DamageBonus,0,10)) when HasSkill(0x23) |  |
 | `HERO_SKILL_FRENZY` | MATCH | 004bbfb0, 004bc020 | +1 min and +1 max damage |  |
-| `HERO_SKILL_PROTECTION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_PROTECTION` | MATCH | 0097af50 (0097af97) | target hero's mastery of skill 0x25 > 0 → protection product starts at 0.85 (0x3f59999a), for any spell in FUN_004e5cb0's list (school-independent); the 14 % truncation is handled by the protection percent (spells audit) |  |
 | `HERO_SKILL_EVASION` | MATCH | 00a5a900 | ranged ×(1−clamp(Evasion_DamageReduce,0,1)) |  |
 | `HERO_SKILL_TOUGHNESS` | MATCH | 004bc470 | +2 HP per creature when the Toughness mastery is > 0 |  |
 | `HERO_SKILL_ARCANE_TRAINING` | FIXED | 00a34740 | round(min(cost×0.8, cost−1)) | tests/H5.Combat.Tests/AuditSpecTests.SpellCostsMatchTheOriginalChain |
@@ -289,7 +289,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_RETRIBUTION` | MATCH | 00a58de0 | non-retaliation strikes ×(1+clamp(max(0,morale)·Retribution_DamageBonusPerMorale,0,10)) |  |
 | `HERO_SKILL_HOLD_GROUND` | FIXED | 008a22f0 | multiplies the defend factor by HoldGround_DefendBonusMultiplier, or the Take Roots factor by HoldGround_TakeRootsBonusMultiplier (see Defend posture) | AuditHeroTests.TakeRootsReplacesTheDefendFactor |
 | `HERO_SKILL_GUARDIAN_ANGEL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_ANCIENT_SMITHY` | FIXED | 00a5ed90 | Fiery Wrath: creature (unit vfunc 0 == 1, so not war machines) strikes add fire damage 0.1 × the damage dealt via FUN_0097d740 (rounded half up after protection). Engine truncated. Same function also handles Hellfire and Flaming Arrows | AuditSkillTests.ChillingPerkDamageRoundsHalfUp |
+| `HERO_SKILL_ANCIENT_SMITHY` | FIXED | 00a5ed90 (call 00a5effb), 0097d740 | Fiery Wrath: 0.1 × damage dealt (creatures only) as fire damage via FUN_0097d740 with stand-in spell Fireball (ECX = 5), no caster; no Mark of Fire multiplier (FUN_00977a80 is not on this path). Engine skipped protection and doubled it on Mark of Fire targets | AuditSkillTestsG.PerkElementalDamageIsReducedByProtectionOfItsStandInSpell |
 | `HERO_SKILL_PARIAH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ELEMENTAL_BALANCE` | GAP |  | enemy counter-summon on Summon Elementals (00861630): count/placement not ported |  |
 | `HERO_SKILL_ABSOLUTE_CHARGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -302,14 +302,14 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_EXPLODING_CORPSES` | FIXED | 0097b690, 0085eaa0 | consumed corpse explodes: fire 1+SP to all adjacent units | (UseAbility CONSUME_CORPSE) |
 | `HERO_SKILL_DEMONIC_FLAME` | UNVERIFIED | 00a5ed90 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_WEAKENING_STRIKE` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_FIRE_PROTECTION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_FIRE_PROTECTION` | MATCH | 0097af50 (0097b142) | fire element: ×0.5 when the target carries the perk's buff SPELL_SKILL_FIRE_PROTECTION (0x61, the skill's spellBuffs), and ×0.5 again with FIRE_PROOF_50. The engine's perk ×0.5 is the same factor. Not compared: whether the buff can be dispelled |  |
 | `HERO_SKILL_FIRE_AFFINITY` | FIXED | 00861630 | always Fire Elementals; others by terrain | (ResolveSpell) |
 | `HERO_SKILL_DEATH_TREAD` | FIXED | 008a0ea0 | siege attacker +4 speed | tests/H5.Combat.Tests/AuditSpecTests2.DeathTreadOnlyInSieges |
 | `HERO_SKILL_LAST_AID` | UNVERIFIED | 0097f610 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DEAD_LUCK` | MATCH | 00989c40 | luck −1 for stacks whose ENEMY hero (army vfunc 0x10) has the perk |  |
-| `HERO_SKILL_CHILLING_STEEL` | FIXED | 00a5c000 | strikes add cold damage 0.1 × the damage dealt (Last-Stand clamped, capped at the target's HP), dealt via FUN_0097d740 (rounded half up after protection). Engine truncated (9 damage → 0 instead of 1). The protection percent FUN_0097d2a0 for this call is not modelled | AuditSkillTests.ChillingPerkDamageRoundsHalfUp |
-| `HERO_SKILL_CHILLING_BONES` | FIXED | 00a5bc50 | melee hit on an ABILITY_UNDEAD stack whose hero has the perk: the attacker takes 0.05 × the damage dealt as cold damage when ≥ 0.5, via FUN_0097d740 (rounded half up). Engine truncated | AuditSkillTests.ChillingPerkDamageRoundsHalfUp |
-| `HERO_SKILL_SPELLPROOF_BONES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_CHILLING_STEEL` | FIXED | 00a5c000, 0097d740, 0097d2a0 | 0.1 × damage dealt as cold damage via FUN_0097d740 with stand-in spell Ice Bolt (ECX = 4), no caster: immune or resisted (roll) → 0, else trunc((1 − p/100)·amount + 0.5) with p the target side's protection percent. Engine skipped protection and the resistance roll | AuditSkillTestsG.PerkElementalDamageIsReducedByProtectionOfItsStandInSpell |
+| `HERO_SKILL_CHILLING_BONES` | FIXED | 00a5bc50, 0097d740 | 0.05 × damage dealt to an attacker of an undead stack, via FUN_0097d740 with stand-in spell SPELL_SKILL_CHILLING_BONES (ECX = 0xcf; school Special, element water — so Boneward / Sap Magic don't apply). Engine skipped protection | AuditSkillTestsG.PerkElementalDamageIsReducedByProtectionOfItsStandInSpell |
+| `HERO_SKILL_SPELLPROOF_BONES` | FIXED | 0097af50 (0097afc0) | Boneward: ×0.8 (constant 00e1857c) for Destructive spells on every stack of the hero; no undead condition (text: "any Destructive Magic spells to all troops"). Engine also required an undead target | AuditSkillTestsG.BonewardProtectsLivingTroopsFromDestructiveSpellsOnly |
 | `HERO_SKILL_DEADLY_COLD` | FIXED | 00977a80, 0097d600 | Cold Death: Ice Bolt (4), Circle of Winter (6), Deep Freeze (0x117) add one creature's HP (vfunc 0x1a8) to the raw spell damage BEFORE protection (FUN_0097d600 applies FUN_0097d2a0 to the sum). Engine added the HP after protection, pre-scaled by the protection share | AuditSkillTests.ColdDeathAndExorcismActBeforeProtection |
 | `HERO_SKILL_SPIRIT_LINK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_TWILIGHT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -327,9 +327,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_MARCH_OF_THE_MACHINES` | MATCH | 004bc0b0, 004bc190 | +2 speed for mechanical creatures; +2 initiative for Iron/Steel/Obsidian Golems (creatures 61/62/161) |  |
 | `HERO_SKILL_REMOTE_CONTROL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ARTIFICIAL_GLORY` | MATCH | 00a751a0, 00a6acd0, 004ba9d0, 004bae10 | mechanical creatures of a hero with the perk get army morale clamped to ≥ 0 and roll only good morale (00a6ba00); without it their morale is 0 |  |
-| `HERO_SKILL_WILDFIRE` | MATCH | 00a5ed90, 00a5a900 (00a5aa76), 00a75b00 | Flaming Arrows: the Ballista (war machine id 1) deals 50 extra fire damage (float 50.0 via FUN_0097d740) and the target's defence is halved (SAR 1 at 00a5aa7d) — the manual's "defence 0" is wrong; 00a75b00 only picks the FIRE_BALLISTA visual |  |
+| `HERO_SKILL_WILDFIRE` | FIXED | 00a5ed90, 0097d740 | Flaming Arrows: for a shot (vfunc 0x7c type 1) of a hero with the perk the extra fire amount is 50.0 (0x42480000), dealt through the same FUN_0097d740 call (Fireball stand-in): protection and resistance roll apply, no Mark of Fire. Engine dealt a flat 50 (×2 on Mark of Fire) | AuditSkillTestsG.PerkElementalDamageIsReducedByProtectionOfItsStandInSpell |
 | `HERO_SKILL_COUNTERSPELL` | FIXED | 00978670, 00977260 | the armed enemy pays 2× the spell cost and the effect is single use; the countered caster's ATB: with Dark Renewal (HERO_SKILL_PAYBACK) and a non-mass spell (spell record +0xcc flag) it becomes 0.2 + 0.1·Sorcery mastery ("Payback!" log), otherwise the normal end-of-action reset (caster vf 0x224) — the GAP's ATB owner is the CASTER | AuditHeroStrikeTests.CounteredCasterWithDarkRenewalKeepsPaybackAtb |
-| `HERO_SKILL_MAGIC_CUSHION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_MAGIC_CUSHION` | FIXED | 0097af50 (0097b009) | Sap Magic: ×0.8 only for Destructive spells cast by a hero (caster vfunc 0x78 non-null). Engine reduced every spell from any caster | AuditSkillTestsG.SapMagicOnlyReducesDestructiveSpellsOfHeroes |
 | `HERO_SKILL_SUPRESS_DARK` | FIXED | 009781e0 | enemy Dark spells ×2 | (HeroManaCost) |
 | `HERO_SKILL_SUPRESS_LIGHT` | FIXED | 009781e0 | enemy Light spells ×2 | (HeroManaCost) |
 | `HERO_SKILL_UNSUMMON` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -343,7 +343,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_SECRETS_OF_DESTRUCTION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_PAYBACK` | UNVERIFIED | 00977260 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ELITE_CASTERS` | FIXED | 009781e0 | creature casters: integer half | (CreatureManaCost) |
-| `HERO_SKILL_ELEMENTAL_OVERKILL` | FIXED | 00977a80 | Exorcism: ×2 against summoned targets (vfunc 0x70 summoner, its vfunc 0x58), applied after Cold Death and before protection. Engine doubled after protection. The exe has no school check in this function (FUN_00977a80 serves every damage spell); the engine keeps its Destructive-only condition — not changed | AuditSkillTests.ColdDeathAndExorcismActBeforeProtection |
+| `HERO_SKILL_ELEMENTAL_OVERKILL` | FIXED | 00977a80, 0097d600 | Exorcism: ×2 against summoned targets (target vfunc 0x70 summoner, its vfunc 0x58) after Cold Death and before protection, for every damage spell reaching FUN_00977a80 through FUN_0097d600 (bolt/chain/area resolvers, Holy/Unholy Word, Earthquake/Wasp 0097d7b0, 0097f610, 00984a00 …) — no school check. Engine limited it to Destructive spells | AuditSkillTestsG.ExorcismDoublesEveryDamageSpellAgainstSummonedStacks |
 | `HERO_SKILL_ABSOLUTE_CHAINS` | FIXED | 004b0d80 (skill 0x96) | doubles the Elemental Chains fraction x | ElementalChainsUseTheExeMultiplier |
 | `HERO_SKILL_RUNELORE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_STRONG_RUNE` | UNVERIFIED | 00984a00 | implemented; not yet compared with the exe |  |
@@ -369,7 +369,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_POWERFULL_BLOW` | FIXED | 00bc1b90, 008cf42b | the follow-up strike (SPELL_EFFECT_POWERFULL_BLOW) always gets +3 levels (engine: melee only) and adds PowerfullBlow_ChanceToCritical (10) to the critical chance (engine rolled 10 % × 4 separately) | AuditHeroStrikeTests.CriticalChanceComposesCriticalStrikeAndPowerfulBlow |
 | `HERO_SKILL_ABSOLUTE_RAGE` | FIXED | 008aaec0 | battle start: rage += AbsoluteRageRP (rage vfunc 0x7c) and Memory of our Blood is then skipped (if/else in the exe). Engine applied both perks | AuditSkillTests.AbsoluteRageReplacesMemoryOfOurBlood |
 | `HERO_SKILL_BATTLE_ELATION` | MATCH | 008a0db0 | on good morale, the stack's rage gains BattleElation_RPOnGoodMorale when its hero has the perk (rage vfunc 0x7c) |  |
-| `HERO_SKILL_LUCK_OF_THE_BARBARIAN` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_LUCK_OF_THE_BARBARIAN` | FIXED | 0097af50 (0097b051..0097b0ae) | when the stack's luck (vfunc 0x1ac) is positive: ×clamp(1 − 1·LuckOfTheBarbarian_MagicProofPerLuck, 0, 1) — the luck test is SETG (0/1), so it does not scale with luck. Engine scaled by the luck value (luck 3 → ×0.85 instead of ×0.95) | AuditSkillTestsG.LuckOfTheBarbarianIsAFlatFactorWhenLuckIsPositive |
 | `HERO_SKILL_STUNNING_BLOW` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DEFEND_US_ALL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_POWER_OF_BLOOD` | FIXED | 008a2c20 | rage ×RPCoefPowerOfBlood rounded (was truncated) | (AddRage) |
@@ -402,7 +402,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_BARBARIAN_INTELLIGENCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_BARBARIAN_ELITE_CASTERS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_BARBARIAN_STORM_WIND` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_BARBARIAN_FIRE_PROTECTION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_BARBARIAN_FIRE_PROTECTION` | MATCH | 0097af50 (0097b142) | same buff SPELL_SKILL_FIRE_PROTECTION (Skills.xdb spellBuffs), same ×0.5 |  |
 | `HERO_SKILL_BARBARIAN_SUN_FIRE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_BARBARIAN_DISTRACT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 
