@@ -35,6 +35,20 @@ public sealed class GameInstall
             "Could not find a Heroes V: Tribes of the East install. Set H5_GAME_DIR to the game folder.");
     }
 
+    /// <summary>
+    /// Identifies the exact game data in use (stock archives + mods) so multiplayer
+    /// peers can refuse to play with mismatched rules. Based on names and sizes,
+    /// which is cheap and catches patches and mod differences.
+    /// </summary>
+    public string DataFingerprint()
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var p in EnumeratePaks())
+            sb.Append(Path.GetFileName(p).ToLowerInvariant()).Append(':').Append(new FileInfo(p).Length).Append(';');
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(sb.ToString()));
+        return Convert.ToHexString(hash, 0, 8);
+    }
+
     public IEnumerable<string> EnumeratePaks()
     {
         foreach (var name in StockPaks)

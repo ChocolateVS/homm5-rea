@@ -3,10 +3,12 @@
   <ItemGroup>
     <ProjectReference Include="..\H5.Core\H5.Core.csproj" />
     <ProjectReference Include="..\H5.Combat\H5.Combat.csproj" />
+    <ProjectReference Include="..\H5.Net\H5.Net.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <AssemblyName>h5server</AssemblyName>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
