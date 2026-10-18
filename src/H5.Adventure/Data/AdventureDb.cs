@@ -100,6 +100,25 @@ public sealed class AdventureDb
     XdbLoader? _xdb;
     readonly Dictionary<string, string?> _townBonus = new(StringComparer.OrdinalIgnoreCase);
 
+    readonly Dictionary<string, bool> _scenarioHero = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// AdvMapHeroShared ScenarioHero flag: campaign-only heroes (e.g. GhostFSLord) that taverns never offer
+    /// unless a map lists them as available.
+    /// </summary>
+    public bool IsScenarioHero(HeroDef def)
+    {
+        if (_xdb == null || string.IsNullOrEmpty(def.SourcePath)) return false;
+        lock (_scenarioHero)
+        {
+            if (_scenarioHero.TryGetValue(def.SourcePath, out var v)) return v;
+            v = _xdb.FileSystem.Exists(def.SourcePath)
+                && string.Equals(_xdb.Load(def.SourcePath).Root?.Element("ScenarioHero")?.Value.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+            _scenarioHero[def.SourcePath] = v;
+            return v;
+        }
+    }
+
     /// <summary>TOWN_BONUS_* of a (TownSpecialization) xdb (TownState.Specialization), or null. Cached.</summary>
     public string? TownSpecializationBonus(string? specPath)
     {

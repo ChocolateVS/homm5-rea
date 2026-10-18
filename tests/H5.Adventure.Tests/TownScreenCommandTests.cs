@@ -88,3 +88,17 @@ public class StartRevealTests(Fixture f)
             Assert.True(p.Explored.Sum(bits => bits.Count(b => b)) > 0, $"player {p.Index} has nothing explored");
     }
 }
+
+[Collection("adv")]
+public class TavernPoolTests(Fixture f)
+{
+    /// <summary>Campaign-only heroes (ScenarioHero=true, e.g. GhostFSLord) are never offered in taverns on ordinary maps.</summary>
+    [Fact]
+    public void TavernPoolExcludesScenarioHeroes()
+    {
+        var g = f.NewGame();
+        Assert.NotEmpty(g.S.HeroPool);
+        Assert.DoesNotContain(g.S.HeroPool, id => f.Db.IsScenarioHero(f.Core.Heroes[id]));
+        Assert.DoesNotContain("GhostFSLord", g.S.HeroPool);
+    }
+}

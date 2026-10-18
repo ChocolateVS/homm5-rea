@@ -217,7 +217,7 @@ public sealed partial class Adventure
         var used = new HashSet<string>(S.Heroes.Select(h => h.DefId));
         foreach (var d in Core.Heroes.Values.OrderBy(d => d.Id, StringComparer.Ordinal))
             if (!used.Contains(d.Id) && d.Class.Length > 0 && PlayableRaces.Contains(d.Town) &&
-                (Map.AvailableHeroes.Count == 0 || Map.AvailableHeroes.Contains(d.Id)))
+                (Map.AvailableHeroes.Count == 0 ? !Db.IsScenarioHero(d) : Map.AvailableHeroes.Contains(d.Id)))
                 S.HeroPool.Add(d.Id);
     }
 
