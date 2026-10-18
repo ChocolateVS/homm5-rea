@@ -26,7 +26,18 @@ public sealed partial class Battle
     public static bool AreAdjacent(Unit a, Unit b) => Distance(a, b) <= 1;
     public static bool AdjacentAt(Unit a, Cell aPos, Unit b) => Distance(a, aPos, b, b.Pos) <= 1;
 
-    /// <summary>Euclidean centre distance, used for the shooting range penalty.</summary>
+    /// <summary>
+    /// Squared Euclidean distance between the nearest cells of two footprints (exe 00b3c690/00b3c7a0),
+    /// used by the shooting range penalty and Precise Shot.
+    /// </summary>
+    public static int NearestCellDistanceSq(Unit a, Unit b)
+    {
+        int dx = Gap(a.Pos.X, a.Pos.X + a.Size - 1, b.Pos.X, b.Pos.X + b.Size - 1);
+        int dy = Gap(a.Pos.Y, a.Pos.Y + a.Size - 1, b.Pos.Y, b.Pos.Y + b.Size - 1);
+        return dx * dx + dy * dy;
+    }
+
+    /// <summary>Euclidean centre distance.</summary>
     public static double CenterDistance(Unit a, Unit b)
     {
         var (ax, ay) = a.Center; var (bx, by) = b.Center;

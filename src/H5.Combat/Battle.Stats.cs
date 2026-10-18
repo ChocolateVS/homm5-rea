@@ -147,8 +147,12 @@ public sealed partial class Battle
         if (u.HasEffect(H5.Combat.Fx.Battlecry)) sp += Stats.Get("combat/Spells/Warcries/Battlecry_SpeedBonus/Base", 1);
         sp += RageBonus(u, "DEMON_RAGE_BONUS_SPEED");
         var eh = Enemy(u.Side);
+        // Storm Wind slows enemy flyers by StormWind_SpeedPenalty; results below 2 become 1 (exe 008a1e50).
         if (eh.Present && u.Flying && (eh.HasPerk(Sk.StormWind) || eh.HasPerk(Sk.BarbStormWind)))
-            sp -= 1;   // fan manual p.121 says -1 Speed; DefaultStats StormWind_SpeedPenalty is 2 (unconfirmed which applies)
+        {
+            sp -= Stats.Get("combat/HeroSkills/Ranger/StormWind_SpeedPenalty", 2);
+            if (sp < 2) sp = 1;
+        }
         if (eh.Present && Specials.Pieces(eh, Specials.Necromancers) >= 2) sp -= (int)Stats.Get("ArtifactsSetsEffectsConsts/Necromancers_2_EnemyCreature_DeSpeed", 1);
         if (u.HasEffect(H5.Combat.Fx.RuneCharge)) sp *= 2;
         if (u.HasEffect(H5.Combat.Fx.Wound)) sp *= 1 - Stats.Get("combat/Creatures/Fortress/Wound_SpeedDecrease", 0.4);
@@ -162,6 +166,13 @@ public sealed partial class Battle
         if (u.GetEffect("SPELL_BLESS") is { } bless) min = min + bless.Value * (max - min);   // Divine Strength (p.190)
         if (u.GetEffect("SPELL_CURSE") is { } curse) max = min + curse.Value * (max - min);   // Weakness (p.186)
         if (u.GetEffect("SPELL_BERSERK") is { } fr) { min *= 1 + fr.Value; max *= 1 + fr.Value; }
+        // Fog Veil scales the enemy shooters' damage range, so it applies to their melee too (exe 008a2630).
+        var eh = Enemy(u.Side);
+        if (eh.Present && u.MaxShots > 0 && !u.IsWarMachine && (eh.HasPerk(Sk.FogVeil) || eh.HasPerk(Sk.BarbFogVeil)))
+        {
+            double k = 1 - Stats.Get("combat/HeroSkills/Ranger/FogVeil_DamageDecrease", 0.25);
+            min *= k; max *= k;
+        }
         if (min > max) min = max;
         return (min, max);
     }
