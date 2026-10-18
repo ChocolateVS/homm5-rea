@@ -92,6 +92,17 @@ public static class TownLauncher
                 if (box.IntersectsSegment(cam.GlobalPosition, target))
                     hits.Add(((box.GetCenter() - cam.GlobalPosition).Length(), mi.GetPath().ToString().Replace("/root/AdventureScreen/AdvWorld/", ""), box));
             }
+            foreach (var mmi in adv.World.FindChildren("*", "MultiMeshInstance3D", true, false).OfType<MultiMeshInstance3D>())
+            {
+                if (!mmi.IsVisibleInTree() || mmi.Multimesh?.Mesh == null) continue;
+                var local = mmi.Multimesh.Mesh.GetAabb();
+                for (int k = 0; k < mmi.Multimesh.InstanceCount; k++)
+                {
+                    var box = mmi.GlobalTransform * mmi.Multimesh.GetInstanceTransform(k) * local;
+                    if (box.IntersectsSegment(cam.GlobalPosition, target))
+                        hits.Add(((box.GetCenter() - cam.GlobalPosition).Length(), $"{mmi.Name}[{k}]", box));
+                }
+            }
             foreach (var hh in hits.OrderBy(x => x.D).Take(8)) GD.Print($"[H5]   ray hits {hh.Name} at {hh.D:0.0} box={hh.Box.Position}..{hh.Box.End}");
             if (adv.World.FindChild("Town_905", true, false)?.FindChild("Mesh", true, false) is MeshInstance3D tm)
                 for (int s = 0; s < tm.Mesh.GetSurfaceCount(); s++)
