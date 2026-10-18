@@ -166,6 +166,7 @@ public sealed partial class Battle
             if (weaken.Length > 0 && e.HasPerk(weaken)) p *= 1 - Stats.Get("combat/HeroSkills/Barbarian/WeakenMagic_SpellPowerDecrease", 0.25);
         }
         p *= ShatterPowerFactor(h, sp);
+        p += PowerFeedBonus(h);
         return Math.Max(0, p);
     }
 
@@ -241,10 +242,23 @@ public sealed partial class Battle
         int cp = CreatureSpellPower(u.Count, Math.Max(1, u.WeeklyGrowth));
         if (Specials.Pieces(HeroOf(u), Specials.Magis) >= 2) cp *= (int)Stats.Get("ArtifactsSetsEffectsConsts/Magis_2_Casters_SpellpowerMultiplier", 2);
         if (ValidateSpellTarget(u.Id, Controller(u), sp, known.Mastery, c.TargetId, c.Cell) is { } te2) return te2;
+        var castTarget = c.TargetId is int t2 ? S.Unit(t2) : null;
+        var castCell = c.Cell;
+        // Defile Magic (p.324): 1 fails, 2 halves spell power, 3 doubles the cost, 4 backfires onto the goblins.
+        int defile = DefileOutcome(u, sp);
+        if (defile == 3) ucost = (int)(ucost * Stats.Get("combat/Creatures/Stronghold/DefileMagicManaCoef", 2));
+        if (defile == 2) cp = Math.Max(1, (int)(cp * Stats.Get("combat/Creatures/Stronghold/DefileMagicSpellPowerCoef", 0.5)));
+        if (defile == 4 && sp.Target == "TARGET_HOSTILE" && !sp.IsAreaAttack && castTarget != null
+            && S.Units.Find(g => g.Alive && g.Has(Ab.DefileMagic) && Controller(g) != Controller(u)) is { } defilers)
+        {
+            castTarget = defilers; ucost = 0;
+        }
+        if (u.Mana < ucost) { EndAction(u.Id, 0); return null; }
         u.Mana -= ucost;
         Emit(new ManaChanged(u.Id, u.Mana));
         RageEvent(u, "CastSpellRP");
-        ResolveSpell(u.Id, Controller(u), sp, known.Mastery, cp, c.TargetId is int t2 ? S.Unit(t2) : null, c.Cell, fromHero: false);
+        if (defile == 1) { Emit(new SpellResisted(castTarget?.Id ?? u.Id, sp.Id)); EndAction(u.Id, 0); return null; }
+        ResolveSpell(u.Id, Controller(u), sp, known.Mastery, cp, castTarget, castCell, fromHero: false);
         ManaBurst(u);
         EndAction(u.Id, 0);
         return null;
@@ -396,7 +410,7 @@ public sealed partial class Battle
                 {
                     if (!SpellHits(side, baseDef, v, hostile: true, hero, area: true)) continue;
                     affected.Add(v.Id);
-                    DealSpellDamage(v, baseDef, dmg, side, false, hero, m);
+                    DealSpellDamage(v, baseDef, v.Has(Ab.Magnetism) ? dmg : MagnetismRedirect(v, dmg, victims, baseDef, side), side, false, hero, m);
                     if (v.Alive) SpellSideEffects(id, v, m, power, hero, first: true, side, victims.Count);
                 }
                 break;

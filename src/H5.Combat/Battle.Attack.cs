@@ -33,6 +33,7 @@ public sealed partial class Battle
             if (!Reachable(u).ContainsKey(from)) return "attack position not reachable";
         }
         if (!AdjacentAt(u, from, t)) return "target not adjacent to attack position";
+        t = TauntRedirect(u, t, from);
         RageEvent(u, "MeleeAtackRP");
         PerformMeleeAttack(u, t, from);
         EndAction(u.Id, 0);
@@ -140,6 +141,8 @@ public sealed partial class Battle
         if (runeBattleRage) RemoveEffect(u, H5.Combat.Fx.RuneBattleRage);
 
         if (u.Alive && t.Alive) LizardBites(u, t);
+        if (u.Alive && t.Alive) PackHunterAssist(u, t);
+        if (u.Alive && t.Alive) Flamewave(u, t);
         bool fled = u.Alive && ReactiveRetreat(u, t);
         bool noRet = HasAbilityNow(u, Ab.NoEnemyRetaliation) || runeBattleRage || stunned || fled;
         if (u.Alive && t.Alive && !noRet && !(preparation && retaliated && !HasAbilityNow(t, Ab.UnlimitedRetaliation)) && CanRetaliate(t, u))
@@ -248,6 +251,11 @@ public sealed partial class Battle
             if (IncorporealMiss(a, target, ranged))
             {
                 Emit(new Missed(a.Id, target.Id, "incorporeal"));
+                continue;
+            }
+            if (EldritchProtected(a, target, ranged))
+            {
+                Emit(new Missed(a.Id, target.Id, "eldritch_aura"));
                 continue;
             }
             var h = new Hit
@@ -823,6 +831,7 @@ public sealed partial class Battle
         SetTotalHealth(t, Math.Max(0, total));
         int killed = before - t.Count;
         Emit(new Damaged(t.Id, amount, killed, t.Count, t.TopHealth, source, kind, by));
+        CheckTreachery(t);
         // Mark of the Necromancer feeds mana (p.142).
         foreach (var h in S.Heroes)
             if (h.Present && h.Links.TryGetValue(Sk.MarkOfNecromancer, out var linked) && linked == t.Id)

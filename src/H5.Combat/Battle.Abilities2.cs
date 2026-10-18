@@ -96,6 +96,7 @@ public sealed partial class Battle
         if (u.Has(Ab.Scavenger)) yield return new(Ab.Scavenger, AbilityTargeting.DeadFriend);
         if (u.Has(Ab.GoblinThrower) && Adjacent(u).Any(o => o.Side == u.Side && o.CreatureId.StartsWith("CREATURE_GOBLIN")))
             yield return new(Ab.GoblinThrower, AbilityTargeting.Enemy);
+        foreach (var more in UnitAbilities3(u)) yield return more;
     }
 
     /// <summary>Handles abilities from <see cref="MoreUnitAbilities"/>; returns null if not one of them.</summary>
@@ -182,7 +183,6 @@ public sealed partial class Battle
                 return null;
             }
         }
-        handled = false;
-        return null;
+        return DoAbilities3(u, c, t, out handled);
     }
 }

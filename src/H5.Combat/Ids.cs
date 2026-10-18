@@ -53,7 +53,7 @@ public static class Ab
         RideByAttack = "ABILITY_RIDE_BY_ATTACK", TreeantUnion = "ABILITY_TREEANT_UNION", PowerFeed = "ABILITY_POWER_FEED",
         DefileMagic = "ABILITY_DEFILE_MAGIC", Treachery = "ABILITY_TREACHERY", LizardBite = "ABILITY_LIZARD_BITE",
         HorrorOfDeath = "ABILITY_HORROR_OF_THE_DEATH", Brutality = "ABILITY_BRUTALITY", RandomCaster = "ABILITY_RANDOM_CASTER",
-        RandomCasterBless = "ABILITY_RANDOM_CASTER_BLESS";
+        RandomCasterBless = "ABILITY_RANDOM_CASTER_BLESS", PackHunter = "ABILITY_PACK_HUNTER", Howl = "ABILITY_HOWL";
 
     /// <summary>Gating, available through the Demon Lord's Gating skill (not a data ability).</summary>
     public const string Gating = "GATING";

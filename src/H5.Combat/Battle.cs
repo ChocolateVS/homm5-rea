@@ -270,6 +270,7 @@ public sealed partial class Battle
                 var f = S.Fields[i];
                 S.Fields.RemoveAt(i);
                 Emit(new FieldChanged(f.Id, f.Kind, f.Cells, true));
+                if (f.Kind is "PACK_DIVE" or "BATTLE_DIVE") ResolveDive(f);
             }
     }
 
@@ -293,6 +294,7 @@ public sealed partial class Battle
         int i = u.Effects.FindIndex(x => x.Id == e.Id);
         if (i >= 0) u.Effects[i] = e; else u.Effects.Add(e);
         Emit(new EffectAdded(u.Id, e.Id, double.IsPositiveInfinity(e.Remaining) ? -1 : e.Remaining, e.Value));
+        BondOfLightCopy(u, e);
         if (e.Id is H5.Combat.Fx.BearRoar or H5.Combat.Fx.ResurrectionPenalty) RefreshHealth(u);
         return e;
     }
@@ -312,9 +314,9 @@ public sealed partial class Battle
         StartOfTurnDamage(u);
         if (!u.Alive) { CheckEnd(); return false; }
 
-        if (u.HasEffect("SPELL_BLIND") || u.HasEffect(H5.Combat.Fx.Sleep) || u.HasEffect(H5.Combat.Fx.Stunned) || u.HasEffect(H5.Combat.Fx.Sabotaged))
+        if (u.HasEffect("SPELL_BLIND") || u.HasEffect(H5.Combat.Fx.Sleep) || u.HasEffect(H5.Combat.Fx.Stunned) || u.HasEffect(H5.Combat.Fx.Sabotaged) || u.HasEffect(FxDiving))
         {
-            Emit(new TurnSkipped(u.Id, u.HasEffect("SPELL_BLIND") ? "blind" : u.HasEffect(H5.Combat.Fx.Sleep) ? "asleep" : "stunned"));
+            Emit(new TurnSkipped(u.Id, u.HasEffect("SPELL_BLIND") ? "blind" : u.HasEffect(H5.Combat.Fx.Sleep) ? "asleep" : u.HasEffect(FxDiving) ? "diving" : "stunned"));
             RemoveEffect(u, H5.Combat.Fx.Stunned);
             RemoveEffect(u, H5.Combat.Fx.Sabotaged);
             FinishTurn(u, 0, allowMorale: false);

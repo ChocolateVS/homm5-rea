@@ -135,6 +135,9 @@ public sealed partial class Battle
     {
         var path = PathTo(u, to);
         if (path.Count < 2) return path;
+        path = ApplySnares(u, path);
+        to = path[^1];
+        if (path.Count < 2) return path;
         int steps = Steps(path, u.Flying);
         var from = u.Pos;
         u.Pos = to;
