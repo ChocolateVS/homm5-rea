@@ -15,6 +15,8 @@ public sealed partial class Battle
         if (h.HasPerk("HERO_SKILL_COUNTERSPELL") && !h.Links.ContainsKey(LinkCounterspell)) yield return new(LinkCounterspell, AbilityTargeting.None);
         if (h.HasPerk(Sk.MarkOfWizard)) yield return new("MARK_OF_WIZARD", AbilityTargeting.Enemy);
         if (h.HasPerk(Sk.Banish) && S.Living.Any(u => u.Summoned && Controller(u) != h.Side)) yield return new("BANISH", AbilityTargeting.None);
+        if (h.HasPerk("HERO_SKILL_MELT_ARTIFACT") && S.Units.Any(u => u.Side == h.Side && u.Kind == UnitKind.Creature && u.ArtifactEffects >= 0 && !u.Removed))
+            yield return new("CONSUME_ARTIFACT", AbilityTargeting.Friend);
         // Imbuing takes no turn, so it may be changed at most once per hero turn.
         if (h.HasPerk(Sk.ImbueArrow) && h.AbilityUses.GetValueOrDefault("IMBUE_TURN", -1) != S.TurnCounter)
             foreach (var s in HeroSpells(h).Where(s => s != h.ImbuedSpell))
@@ -30,6 +32,10 @@ public sealed partial class Battle
         {
             case LinkCounterspell:
                 h.Links[LinkCounterspell] = 1;
+                return true;
+            case "CONSUME_ARTIFACT":
+                if (t == null || t.Side != h.Side || t.ArtifactEffects < 0) return false;
+                ConsumeArtifact(h, t, ref reset);
                 return true;
             case "MARK_OF_WIZARD":
                 h.Links[LinkMarkOfWizard] = t!.Id;

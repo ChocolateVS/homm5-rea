@@ -17,7 +17,7 @@ public static class BattleSetup
     /// Obstacles are generated from the DefaultStats obstacle rules unless provided.
     /// </summary>
     public static BattleState Create(GameDatabase db, ArmySetup attacker, ArmySetup defender, ulong seed,
-        IEnumerable<Cell>? obstacles = null, bool skipTactics = false, string? arena = null)
+        IEnumerable<Cell>? obstacles = null, bool skipTactics = false, string? arena = null, SiegeSetup? siege = null)
     {
         var s = new BattleState { Rng = new Rng(seed) };
         var sides = new[] { attacker, defender };
@@ -37,6 +37,8 @@ public static class BattleSetup
             s.Obstacles = s.ObstaclePlacements.SelectMany(p => p.Cells).Distinct().ToList();
         }
 
+        if (siege != null) SiegeBuilder.Prepare(db, s, siege);
+
         // Tactics: a third deployment column, cancelled if both heroes have it (fan manual p.108).
         bool t0 = s.Heroes[0].HasPerk(Sk.Tactics), t1 = s.Heroes[1].HasPerk(Sk.Tactics);
         s.DeployColumns0 = t0 && !t1 ? 3 : 2;
@@ -48,16 +50,35 @@ public static class BattleSetup
             var slots = sides[side].Army.Where(a => a.Count > 0 && db.Creatures.ContainsKey(a.Creature)).Take(7).ToList();
             var placed = DefaultPlacement(db, s, side, slots);
             for (int i = 0; i < slots.Count; i++)
-                AddCreature(db, s, side, slots[i].Creature, slots[i].Count, placed[i], summoned: false);
+                AddCreature(db, s, side, slots[i].Creature, slots[i].Count, placed[i], summoned: false).ArtifactEffects = slots[i].ArtifactEffects;
             if (h.Present && sides[side].Hero is { } hi)
             {
                 if (hi.Ballista) AddWarMachine(db, s, side, "WAR_MACHINE_BALLISTA");
                 if (hi.FirstAidTent) AddWarMachine(db, s, side, "WAR_MACHINE_FIRST_AID_TENT");
                 if (hi.AmmoCart) AddWarMachine(db, s, side, "WAR_MACHINE_AMMO_CART");
+                // Every hero owns a Catapult; it only takes part in sieges of fortified towns (p.306).
+                if (side == 0 && s.Siege != null) AddWarMachine(db, s, side, "WAR_MACHINE_CATAPULT");
             }
         }
+        if (siege != null) SiegeBuilder.AddGuardPost(db, s, siege, (u, c) => NearestFreeCell(s, u.Size, c));
         if (skipTactics) s.TacticsDone = new[] { true, true };
         return s;
+    }
+
+    static Cell? NearestFreeCell(BattleState s, int size, Cell around)
+    {
+        var taken = new HashSet<Cell>(s.Obstacles);
+        foreach (var u in s.Units) if (u.Alive && u.Kind == UnitKind.Creature) foreach (var c in u.Cells()) taken.Add(c);
+        Cell? best = null; int bestD = int.MaxValue;
+        for (int x = 0; x <= s.Width - size; x++)
+        for (int y = 0; y <= s.Height - size; y++)
+        {
+            var p = new Cell(x, y);
+            if (!Fits(s, taken, p, size)) continue;
+            int d = Battle.Octile(p, around);
+            if (d < bestD) { bestD = d; best = p; }
+        }
+        return best;
     }
 
     public static BattleState CreateDuel(GameDatabase db, int presetA, int presetB, ulong seed, bool skipTactics = false, string? arena = null) =>

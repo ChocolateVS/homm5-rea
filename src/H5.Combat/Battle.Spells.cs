@@ -600,7 +600,8 @@ public sealed partial class Battle
                 break;
             }
             case "SPELL_EARTHQUAKE":
-                break;   // only affects town fortifications (sieges)
+                SiegeEarthquake(side, hero, baseDef, m, power);   // only affects town fortifications (sieges)
+                break;
             case "SPELL_TELEPORT":
             {
                 if (target == null || cell is not Cell to) return;

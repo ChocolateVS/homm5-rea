@@ -28,7 +28,7 @@ public sealed partial class Battle
     {
         if (CheckHeroActive(c, out var h) is { } e) return e;
         var t = S.Unit(c.TargetId);
-        if (t == null || !t.Alive || Controller(t) == c.Side) return "invalid target";
+        if (t == null || !t.Alive || Controller(t) == c.Side || IsSiegeTower(t)) return "invalid target";
         if (t.HasEffect(H5.Combat.Fx.Invisible)) return "target is invisible";
         if (t.CreatureId == "BLADE_BARRIER") return "blade barrier cannot be hit by the hero";
         HeroStrike(h, t, levelBonus: 0, friendly: false);
@@ -196,8 +196,15 @@ public sealed partial class Battle
             if (u.Shots > 0 && h.HasPerk(Sk.PlagueTent)) yield return new("PLAGUE_TENT", AbilityTargeting.Enemy);   // damage = heal amount
             yield break;
         }
+        if (u.CreatureId == "WAR_MACHINE_CATAPULT")
+        {
+            if (S.Siege != null && CatapultTargets().Count > 0) yield return new("CATAPULT_SHOT", AbilityTargeting.Cell);
+            yield break;
+        }
         if (u.IsWarMachine || u.IsObject) yield break;
-        if (u.Has(Ab.LayHands) && Once(Ab.LayHands)) yield return new(Ab.LayHands, AbilityTargeting.Friend, NeedsAdjacency: false);
+        // No per-combat limit: the Paladin has no ability charges (SpellPoints1 = 0) and Lay Hands costs no mana,
+        // unlike charge-limited abilities such as Resurrect Allies (SpellPoints1 = 1). See docs/rules/EXE_FINDINGS.md.
+        if (u.Has(Ab.LayHands)) yield return new(Ab.LayHands, AbilityTargeting.Friend, NeedsAdjacency: false);
         if (u.Has("ABILITY_SEDUCE") && Once("ABILITY_SEDUCE")) yield return new("ABILITY_SEDUCE", AbilityTargeting.Enemy);
         if (u.Has(Ab.ResurrectAllies) && Once(Ab.ResurrectAllies)) yield return new(Ab.ResurrectAllies, AbilityTargeting.DeadFriend);
         if (u.Has(Ab.Dash) && Once(Ab.Dash)) yield return new(Ab.Dash, AbilityTargeting.None);
@@ -255,6 +262,7 @@ public sealed partial class Battle
         if (TargetError(info, Controller(u), t) is { } te) return te;
         if (info.NeedsAdjacency && t != null && !AreAdjacent(u, t)) return "target must be adjacent";
         if (info.Targeting == AbilityTargeting.Cell && (c.Cell is not Cell cc || !S.InBounds(cc))) return "needs a target cell";
+        if (c.Ability == "CATAPULT_SHOT") return DoCatapultShot(u, c);
         double reset = 0;
         bool allowMorale = true;
         if (DoMoreAbilities(u, c, t, out bool handledExtra) is { } extraErr) return extraErr;
@@ -277,7 +285,6 @@ public sealed partial class Battle
                 break;
             case Ab.LayHands:
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
-                u.AbilityUses[c.Ability] = 1;
                 Heal(t, t.MaxHealthCache, resurrect: true, Ab.LayHands);    // one creature fully healed (p.177)
                 foreach (var id in t.Effects.Where(e => !e.Positive && e.School == "MAGIC_SCHOOL_DARK" || e.Id is H5.Combat.Fx.Poison or H5.Combat.Fx.Wound or H5.Combat.Fx.Sleep).Select(e => e.Id).ToList())
                     RemoveEffect(t, id);

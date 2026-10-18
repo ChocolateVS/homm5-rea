@@ -48,6 +48,7 @@ public sealed partial class Battle
     {
         if (!S.InBounds(c)) return true;
         if (S.Obstacles.Contains(c)) return true;
+        if (GateBlocks(c, mover)) return true;
         foreach (var o in S.Units)
             if (o.Id != mover.Id && o.Alive && !o.IsWarMachine && o.Occupies(c)) return true;
         return false;
@@ -60,7 +61,8 @@ public sealed partial class Battle
     }
 
     public bool CanMove(Unit u) =>
-        !u.IsWarMachine && !u.IsObject && !IsEntangled(u) && !u.HasEffect("SPELL_BLIND") && !u.HasEffect(H5.Combat.Fx.Sleep);
+        !u.IsWarMachine && !u.IsObject && !IsEntangled(u) && !u.HasEffect("SPELL_BLIND") && !u.HasEffect(H5.Combat.Fx.Sleep)
+        && !u.HasEffect(H5.Combat.Fx.MoatRoots);
 
     bool IsEntangled(Unit u) =>
         u.GetEffect(H5.Combat.Fx.Entangled) is { } e && S.Unit(e.SourceUnit) is { Alive: true } src && AreAdjacent(u, src);
@@ -136,6 +138,7 @@ public sealed partial class Battle
         var path = PathTo(u, to);
         if (path.Count < 2) return path;
         path = ApplySnares(u, path);
+        path = StopAtMoat(u, path);
         to = path[^1];
         if (path.Count < 2) return path;
         int steps = Steps(path, u.Flying);
@@ -164,6 +167,7 @@ public sealed partial class Battle
             else if (f.Kind == "FIREWALL")
                 DealSpellDamage(u, Db.Spell("SPELL_FIREWALL")!, f.Damage, f.Side, ignoreResist: false);
         }
+        if (u.Alive) EnterMoat(u, touched);
         if (u.HasEffect(H5.Combat.Fx.Invisible) && S.LivingOf(1 - u.Side).Any(e => AreAdjacent(u, e)))
             RemoveEffect(u, H5.Combat.Fx.Invisible);
         return path;

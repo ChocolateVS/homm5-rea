@@ -22,7 +22,7 @@ public sealed partial class Battle
     {
         if (CheckActive(c, c.UnitId, out var u) is { } err) return err;
         var t = S.Unit(c.TargetId);
-        if (t == null || !t.Alive || t.IsObject && t.Side == u.Side) return "invalid target";
+        if (t == null || !t.Alive || t.IsObject && t.Side == u.Side || IsSiegeTower(t)) return "invalid target";
         if (t.Id == u.Id) return "cannot attack self";
         if (Controller(t) == Controller(u) && !u.HasEffect("SPELL_BERSERK")) return "cannot attack own unit";
         if (t.HasEffect(H5.Combat.Fx.Invisible) && t.Side != u.Side) return "target is invisible";
@@ -44,7 +44,7 @@ public sealed partial class Battle
     {
         if (CheckActive(c, c.UnitId, out var u) is { } err) return err;
         var t = S.Unit(c.TargetId);
-        if (t == null || !t.Alive || Controller(t) == Controller(u)) return "invalid target";
+        if (t == null || !t.Alive || Controller(t) == Controller(u) || IsSiegeTower(t)) return "invalid target";
         if (t.HasEffect(H5.Combat.Fx.Invisible)) return "target is invisible";
         if (!CanShoot(u)) return "unit cannot shoot";
         RageEvent(u, "RangedAttackRP");
@@ -394,6 +394,8 @@ public sealed partial class Battle
             int half = S.Width / 2;
             if (NearestCellDistanceSq(a, t) > half * half) m *= 0.5;
         }
+        // Shooting across intact town walls (same exe function; not affected by No Range Penalty).
+        if (ranged && ShotCrossesWalls(a, t)) m *= 0.5;
 
         // ---- defender stage (exe 00a5a900)
         int A = AttackOf(a, t), D = DefenceOf(t, a);
@@ -991,6 +993,8 @@ public sealed partial class Battle
                 }
                 FinishTurn(u, 0, allowMorale: false);
                 return false;
+            case "WAR_MACHINE_CATAPULT":
+                return CatapultTurn(u);
             case "WAR_MACHINE_FIRST_AID_TENT":
                 if (h.HasPerk(Sk.FirstAid) && !S.AiControlled[u.Side] && h.Present && u.Shots > 0) return true;
                 var heal = BestTentTarget(u);
@@ -1025,6 +1029,7 @@ public sealed partial class Battle
 
     void ObjectTurn(Unit u)
     {
+        if (IsSiegeTower(u)) { TowerTurn(u); return; }
         if (u.CreatureId == "SUMMON_HIVE")
         {
             var caster = S.Heroes[u.Side];

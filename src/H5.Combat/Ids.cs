@@ -64,7 +64,7 @@ public static class Fx
 {
     public const string
         Enraged = "FX_ENRAGED", BattleRage = "FX_BATTLE_RAGE", Poison = "FX_POISON", Wound = "FX_WOUND", MarkOfFire = "FX_MARK_OF_FIRE",
-        Frozen = "FX_FROZEN", ArmorCrushed = "FX_ARMOR_CRUSHED", Dash = "FX_DASH", Invisible = "FX_INVISIBLE", Entangled = "FX_ENTANGLED",
+        Frozen = "FX_FROZEN", ArmorCrushed = "FX_ARMOR_CRUSHED", Dash = "FX_DASH", Invisible = "FX_INVISIBLE", Entangled = "FX_ENTANGLED", MoatRoots = "FX_MOAT_ROOTS",
         TakeRoots = "FX_TAKE_ROOTS", Sleep = "FX_SLEEP", WeakeningStrike = "FX_WEAKENING_STRIKE", EvilEye = "FX_EVIL_EYE",
         RageOfForest = "FX_RAGE_OF_FOREST", BerserkerRage = "FX_BERSERKER_RAGE", Benediction = "FX_BENEDICTION", BansheeHowl = "FX_BANSHEE_HOWL",
         RallyingCry = "FX_RALLYING_CRY", Battlecry = "FX_BATTLECRY", BearRoar = "FX_BEAR_ROAR", Ignite = "FX_IGNITE", Feared = "FX_FEARED",

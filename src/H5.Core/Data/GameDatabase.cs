@@ -23,6 +23,12 @@ public sealed class GameDatabase
     public Dictionary<string, List<string>> ArtifactSets { get; } = new();
     /// <summary>Combat arena scenes by name (Scenes/CombatArenas), with their obstacle groups.</summary>
     public Dictionary<string, CombatArenaDef> Arenas { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Siege layout per town type (TOWN_HEAVEN, …): walls, gate, towers, moat, siege arena.</summary>
+    public Dictionary<string, TownCombatDef> TownCombat { get; private set; } = new();
+    /// <summary>Fortification hit points by building type (WALL, GATE, BIG_TOWER, …).</summary>
+    public Dictionary<string, ArenaBuildingStatsDef> ArenaBuildingStats { get; private set; } = new();
+    /// <summary>Moat damage and effects per town type.</summary>
+    public Dictionary<string, MoatDef> Moats { get; private set; } = new();
     public RpgStats Stats { get; private set; } = null!;
     public ExperienceTable Experience { get; } = new();
     public List<string> Warnings { get; } = new();
@@ -54,6 +60,9 @@ public sealed class GameDatabase
         db.LoadDuelPresets();
         db.LoadArtifactSets();
         db.Arenas = ArenaLoader.Load(db._x);
+        db.TownCombat = SiegeLoader.LoadTownCombat(db._x);
+        db.ArenaBuildingStats = SiegeLoader.LoadBuildingStats(db._x);
+        db.Moats = SiegeLoader.LoadMoats(db._x);
         db._x = null!;
         return db;
     }

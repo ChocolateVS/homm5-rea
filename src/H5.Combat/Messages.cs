@@ -66,6 +66,7 @@ public sealed record SurrenderCmd : BattleCommand;
 [JsonDerivedType(typeof(TurnSkipped), "skipped")]
 [JsonDerivedType(typeof(FieldChanged), "field")]
 [JsonDerivedType(typeof(BattleEnded), "ended")]
+[JsonDerivedType(typeof(BuildingDamaged), "building_damaged")]
 public abstract record BattleEvent;
 
 public sealed record PhaseChanged(BattlePhase Phase) : BattleEvent;
@@ -86,6 +87,8 @@ public sealed record SpellCast(int Caster, string Spell, int? Target, Cell? Cell
 public sealed record SpellResisted(int Target, string Spell) : BattleEvent;
 public sealed record EffectAdded(int UnitId, string Effect, double Duration, double Value) : BattleEvent;
 public sealed record EffectRemoved(int UnitId, string Effect) : BattleEvent;
+/// <summary>A siege building (SiegeState.Buildings id) lost hit points; Destroyed once it falls.</summary>
+public sealed record BuildingDamaged(int Building, int Damage, int Health, bool Destroyed, string By) : BattleEvent;
 public sealed record AbilityTriggered(int UnitId, string Ability, int? Target = null) : BattleEvent;
 public sealed record AtbChanged(int Actor, double Atb) : BattleEvent;
 public sealed record ManaChanged(int Actor, int Mana) : BattleEvent;

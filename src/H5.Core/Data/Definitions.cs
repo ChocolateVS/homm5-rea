@@ -113,7 +113,11 @@ public sealed class WarMachineDef
 }
 
 public sealed record SkillEntry(string SkillId, Mastery Mastery);
-public sealed record ArmySlot(string Creature, int Count);
+public sealed record ArmySlot(string Creature, int Count)
+{
+    /// <summary>Crafted effects of the creature artifact this stack carries (Artificer), or -1 for none.</summary>
+    public int ArtifactEffects { get; init; } = -1;
+}
 
 /// <summary>A hero as defined by an AdvMapHeroShared descriptor (class, base stats, starting skills).</summary>
 public sealed class HeroDef

@@ -82,6 +82,8 @@ public sealed class Unit
     public int RagePoints;
     public int RageLevel;
     public List<Effect> Effects = new();
+    /// <summary>Crafted effects of the creature artifact the stack carries (Artificer), or -1 for none.</summary>
+    public int ArtifactEffects = -1;
     /// <summary>Uses of limited abilities ("once per combat" etc.), keyed by ability id.</summary>
     public Dictionary<string, int> AbilityUses = new();
     public bool HasActed;
@@ -185,6 +187,8 @@ public sealed class BattleState
     /// <summary>Obstacle models and footprints produced by the original placement algorithm (for rendering).</summary>
     public List<ObstaclePlacement> ObstaclePlacements = new();
     public List<Unit> Units = new();
+    /// <summary>Town fortifications, moat and towers when the battle is a siege; null for field battles.</summary>
+    public SiegeState? Siege;
     public HeroState[] Heroes = { new() { Side = 0 }, new() { Side = 1 } };
     public List<FieldObject> Fields = new();
     public Rng Rng = new(1);
