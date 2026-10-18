@@ -522,8 +522,8 @@ public sealed partial class Battle
                 {
                     if (!SpellHits(side, baseDef, v, hostile: true, hero, area: true)) continue;
                     affected.Add(v.Id);
-                    DealSpellDamage(v, baseDef, v.Has(Ab.Magnetism) ? dmg : MagnetismRedirect(v, dmg, victims, baseDef, side), side, false, hero, m);
-                    if (v.Alive) SpellSideEffects(id, v, m, power, hero, first: true, side, victims.Count);
+                    int dealt = DealSpellDamage(v, baseDef, v.Has(Ab.Magnetism) ? dmg : MagnetismRedirect(v, dmg, victims, baseDef, side), side, false, hero, m);
+                    if (v.Alive) SpellSideEffects(id, v, m, power, hero, first: true, side, victims.Count, dealt);
                 }
                 break;
             }
@@ -557,8 +557,8 @@ public sealed partial class Battle
                     if (SpellHits(side, baseDef, v, hostile: true, hero, area: true))
                     {
                         affected.Add(v.Id);
-                        DealSpellDamage(v, baseDef, dmg, side, false, hero, m);
-                        if (v.Alive) SpellSideEffects(id, v, m, power, hero, true, side);
+                        int dealt = DealSpellDamage(v, baseDef, dmg, side, false, hero, m);
+                        if (v.Alive) SpellSideEffects(id, v, m, power, hero, true, side, dealt: dealt);
                     }
                     if (v.Alive && v.Cells().All(x => x.X >= cx && x.X < cx + 4 && x.Y >= cy && x.Y < cy + 4))
                         DealDamage(v, (int)rock, caster, AttackKind.Spell, "ARMAGEDDON_ROCK");
@@ -830,7 +830,7 @@ public sealed partial class Battle
     void DealSpellDamageRaw(Unit t, int dmg, string by) => DealDamage(t, dmg, -1, AttackKind.Spell, by);
 
     /// <summary>Freeze/stun/armour-crush/ATB riders of damage spells.</summary>
-    void SpellSideEffects(string id, Unit t, Mastery m, double power, HeroState? hero, bool first, int side, int targetsHit = 1)
+    void SpellSideEffects(string id, Unit t, Mastery m, double power, HeroState? hero, bool first, int side, int targetsHit = 1, int dealt = 0)
     {
         if (id == "SPELL_WASP_SWARM")
         {
@@ -854,15 +854,15 @@ public sealed partial class Battle
         }
         if (hero.HasPerk(Sk.MasterStorms) && first && id is "SPELL_LIGHTNING_BOLT" or "SPELL_CHAIN_LIGHTNING")
             SetAtb(t.Id, GetAtb(t.Id) * (1 - Stats.Get("combat/HeroSkills/EmpoweredLightningATBDrop", 0.3)));
-        if (hero.HasPerk(Sk.MasterFire) && id is "SPELL_FIREBALL" or "SPELL_FIREWALL" or "SPELL_ARMAGEDDON"
+        // Master of Fire and Set Afire live in the fire rider (exe FUN_004e6770), which only the area / Armageddon / fire
+        // field resolvers call — Magic Arrow's single-target path (0097d7b0 case 1) deals plain damage (004e6b60).
+        bool fireRider = id is "SPELL_FIREBALL" or "SPELL_FIREWALL" or "SPELL_ARMAGEDDON";
+        if (hero.HasPerk(Sk.MasterFire) && fireRider
             && !HeroOf(t).HasPerk(Sk.FireResistance) && !HeroOf(t).HasPerk(Sk.BarbFireResistance))
-            AddEffect(t, new Effect { Id = H5.Combat.Fx.ArmorCrushed, Remaining = 1, SourceSide = side });
-        if (hero.HasPerk(Sk.Ignite) && Db.Spell(id)?.Element == Elements.Fire && id is not "SPELL_ARMAGEDDON")
-        {
-            var sp = Db.Spell(id)!;
-            AddEffect(t, new Effect { Id = H5.Combat.Fx.Ignite, Value = sp.DamageAt(m).Eval(power) / 3.0,
+            ApplyArmorCrush(t, side);
+        if (hero.HasPerk(Sk.Ignite) && fireRider && dealt > 0 && Controller(t) != side)
+            AddEffect(t, new Effect { Id = H5.Combat.Fx.Ignite, Value = SetAfireDamage(t, dealt),
                 Remaining = Stats.Get("combat/HeroSkills/Runemage/SetAfire_DamageDurationInRounds", 3), SourceSide = side });
-        }
     }
 
     /// <summary>Buffs, curses and other non-damage spells. Returns true if the target was affected.</summary>

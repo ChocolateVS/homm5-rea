@@ -186,6 +186,32 @@ public sealed partial class Battle
         return (int)((1f - Math.Clamp(mult, 0f, 1f)) * 100f) > 99;
     }
 
+    /// <summary>
+    /// Master of Fire's armour crush (exe FUN_004e5b70, effect 0xca): for one turn the target's defence is lowered by
+    /// (current defence + an existing crush) / 2 with integer division — the value is fixed when applied and the
+    /// defence sum subtracts it (FUN_00989790 case 0xca). Armored stacks (ability 0x55) are immune.
+    /// </summary>
+    internal void ApplyArmorCrush(Unit t, int side)
+    {
+        if (t.Has(Ab.Armored)) return;
+        int existing = (int)(t.GetEffect(H5.Combat.Fx.ArmorCrushed)?.Value ?? 0);
+        int value = (DefenceOf(t) + existing) / 2;
+        AddEffect(t, new Effect { Id = H5.Combat.Fx.ArmorCrushed, Value = value, Remaining = 1, SourceSide = side });
+    }
+
+    /// <summary>
+    /// Set Afire's damage per turn (exe 004e68ca..004e694b): D = the spell damage dealt to the target, divided back by
+    /// clamp(MarkOfFire_FireDamageMultiplier, 0, 1000) when the target carries Mark of Fire (both truncated), then
+    /// trunc(D · SetAfire_DamageMultiplier).
+    /// </summary>
+    internal int SetAfireDamage(Unit t, int dealt)
+    {
+        int d = dealt;
+        if (t.HasEffect(H5.Combat.Fx.MarkOfFire))
+            d = ExeChop(d / (double)Math.Clamp((float)Stats.Get("combat/Creatures/Fortress/MarkOfFire_FireDamageMultiplier", 2), 0f, 1000f));
+        return ExeChop(d * (double)(float)Stats.Get("combat/HeroSkills/Runemage/SetAfire_DamageMultiplier", 0.33));
+    }
+
     /// <summary>The creature currently casting (set by DoCast), for caster-dependent damage rules.</summary>
     Unit? _castingCreature;
     /// <summary>Set by SpellHits when a damage spell was resisted but Irresistible Magic still lets a share through.</summary>

@@ -263,4 +263,32 @@ public class AuditSpellTests(GameDataFixture f)
         t.Element1 = Elements.Earth;
         Assert.Equal(0, b.ElementalChainExtra(h, bolt, t, 100));      // Warlocks only (class 6)
     }
+
+    // FUN_004e5b70 / FUN_00989790 case 0xca: Master of Fire stores (defence + existing crush) / 2 when applied and the
+    // defence sum subtracts it, so re-applying does not halve again; Armored stacks are immune.
+    [Fact]
+    public void MasterOfFireCrushIsAFixedHalfOfTheDefence()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        var b = new Battle(f.Db, s);
+        var u = s.Units.Single(x => x.Side == 0 && x.CreatureId == "CREATURE_FOOTMAN");
+        int d = b.DefenceOf(u);
+        b.ApplyArmorCrush(u, 1);
+        Assert.Equal(d - d / 2, b.DefenceOf(u));
+        b.ApplyArmorCrush(u, 1);
+        Assert.Equal(d - d / 2, b.DefenceOf(u));
+    }
+
+    // 004e68ca..004e694b: Set Afire burns for trunc(D · 0.33f) of the damage dealt, D first divided back by the Mark of
+    // Fire multiplier (2) when the target is marked.
+    [Fact]
+    public void SetAfireBurnsAShareOfTheDamageDealt()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        var b = new Battle(f.Db, s);
+        var t = s.Units.Single(x => x.Side == 1 && x.CreatureId == "CREATURE_PEASANT");
+        Assert.Equal(33, b.SetAfireDamage(t, 100));
+        b.AddEffect(t, new Effect { Id = Fx.MarkOfFire, Remaining = 2 });
+        Assert.Equal(16, b.SetAfireDamage(t, 100));     // 100 / 2 = 50 → trunc(50 · 0.33f) = 16
+    }
 }

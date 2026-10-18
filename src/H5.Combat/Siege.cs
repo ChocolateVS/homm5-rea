@@ -449,7 +449,8 @@ public sealed partial class Battle
                 AddEffect(u, new Effect { Id = H5.Combat.Fx.MarkOfFire, Remaining = Stats.Get("combat/Creatures/Fortress/MarkOfFire_EffectDurationInRounds", 2), SourceSide = 1 });
                 break;
             case "SPELL_EFFECT_FIRE_DAMAGE":
-                AddEffect(u, new Effect { Id = H5.Combat.Fx.ArmorCrushed, Remaining = 1, SourceSide = 1 });
+                // Effect 0xca goes through FUN_00bbe760 → FUN_004e5b70: the Master of Fire armour crush.
+                ApplyArmorCrush(u, 1);
                 break;
             default:
                 if (Db.Spell(sp.Spell) is { } def)

@@ -95,7 +95,7 @@ public sealed partial class Battle
             d -= Fx(u, H5.Combat.Fx.WeakeningStrike);
             if (!IsUndeadLike(u) && Adjacent(u).Any(o => o.Has(Ab.WeakeningAura)))
                 d -= Stats.Get("combat/Creatures/Necropolis/WeakeningAuraDeffenceDec", 2);
-            if (u.HasEffect(H5.Combat.Fx.ArmorCrushed)) d *= 0.5;   // Master of Fire (p.113)
+            d -= Fx(u, H5.Combat.Fx.ArmorCrushed);   // Master of Fire: fixed half of the defence at application (exe 00989790 case 0xca)
             if (u.HasEffect(H5.Combat.Fx.RageOfForest)) d -= Fx(u, H5.Combat.Fx.RageOfForest);
             if (u.HasEffect(H5.Combat.Fx.BerserkerRage)) d = 0;
             // Rider Charge: -20% of target defence per cell walked (p.179).
