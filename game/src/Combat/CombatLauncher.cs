@@ -26,6 +26,8 @@ public static class CombatLauncher
     public static (int N, string Path)? SignScreenshot;
     /// <summary>`--shot-screenshot=N:path` / `--spell-screenshot=N:path`: capture mid-flight / mid-visual.</summary>
     public static (int N, string Path)? ShotScreenshot, SpellScreenshot;
+    /// <summary>`--open-spellbook`: autoplay the local side until its hero acts, then open the spellbook.</summary>
+    public static bool OpenSpellbook;
 
     static (int, string) ParseShot(string v)
     {
@@ -67,6 +69,7 @@ public static class CombatLauncher
             AttackScreenshot = (int.Parse(v[..colon]), v[(colon + 1)..]);
             return true;
         }
+        if (arg == "--open-spellbook") { OpenSpellbook = true; return true; }
         if (arg.StartsWith("--shot-screenshot=")) { ShotScreenshot = ParseShot(arg["--shot-screenshot=".Length..]); return true; }
         if (arg.StartsWith("--spell-screenshot=")) { SpellScreenshot = ParseShot(arg["--spell-screenshot=".Length..]); return true; }
         if (arg.StartsWith("--sign-screenshot="))

@@ -332,52 +332,35 @@ public partial class CombatHud : Control
 
     void ToggleSpells()
     {
-        if (_spellPanel != null && IsInstanceValid(_spellPanel)) { _spellPanel.QueueFree(); _spellPanel = null; return; }
-        var spells = _screen.AvailableSpells();
-        if (spells.Count == 0) { Log.AddLine("<body>No spells can be cast now."); return; }
-        _spellPanel = BuildSpellPanel(spells);
-        AddChild(_spellPanel);
-    }
-
-    Control BuildSpellPanel(IReadOnlyList<SpellOption> spells)
-    {
-        // The original spellbook (UI/SpellBook) is a separate screen with page flipping;
-        // this is a compact list styled with original assets until that screen is ported.
-        var panel = PanelBase(new Vector2(420, 40 + 44 * spells.Count), "Spells");
-        int y = 36;
-        foreach (var sp in spells)
+        if (_spellPanel != null && IsInstanceValid(_spellPanel)) { ((SpellBook3D)_spellPanel).Close(); return; }
+        var b = _screen.Session.Battle;
+        var la = _screen.MyLegalActions();
+        if (la == null) return;
+        // The original opens the 3D spellbook for the acting hero (all known spells; ones that
+        // can't be cast now are drawn in the "can not cast" style) or for a caster creature.
+        IReadOnlyCollection<string> known;
+        int mana, maxMana;
+        bool warcries;
+        if (la.IsHero)
         {
-            var def = Game.Instance.Db.Spell(sp.Spell);
-            var row = new Button
-            {
-                Position = new Vector2(16, y), Size = new Vector2(388, 40), Flat = true,
-                FocusMode = FocusModeEnum.None, MouseDefaultCursorShape = CursorShape.PointingHand,
-            };
-            var icon = new TextureRect
-            {
-                Texture = UiResources.Instance.Texture(SpellIcon(sp.Spell)), Size = new Vector2(36, 36), Position = new Vector2(2, 2),
-                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = MouseFilterEnum.Ignore,
-            };
-            row.AddChild(icon);
-            row.AddChild(new BitmapText
-            {
-                Markup = $"<body_bright>{CombatLogText.Escape(def?.Name ?? sp.Spell)}<body>   ({sp.ManaCost} mana)",
-                Position = new Vector2(46, 10), Size = new Vector2(340, 24), Wrap = false,
-            });
-            var chosen = sp;
-            row.Pressed += () => { _spellPanel?.QueueFree(); _spellPanel = null; _screen.ChooseSpell(chosen); };
-            panel.AddChild(row);
-            y += 44;
+            var h = b.State.Heroes[Actor.HeroSide(la.Actor)];
+            known = h.Spells;
+            (mana, maxMana) = (h.Mana, h.MaxMana);
+            warcries = h.Spells.Count > 0 && h.Spells.All(s => Game.Instance.Db.Spell(s)?.School == "MAGIC_SCHOOL_WARCRIES");
         }
-        return panel;
-    }
-
-    static string? SpellIcon(string id)
-    {
-        var def = Game.Instance.Db.Spell(id);
-        if (def == null || !Game.Instance.Fs.Exists(def.SourcePath)) return null;
-        var h = (string?)Game.Instance.Xdb.Load(def.SourcePath).Root!.Element("Texture")?.Attribute("href");
-        return string.IsNullOrEmpty(h) ? null : XdbRef.Parse(h, def.SourcePath).Path;
+        else if (b.State.Unit(la.Actor) is { } u)
+        {
+            known = u.Spells.Select(k => k.Spell).ToList();
+            (mana, maxMana) = (u.Mana, u.MaxMana);
+            warcries = false;
+        }
+        else return;
+        if (known.Count == 0) { Log.AddLine("<body>No spells can be cast now."); return; }
+        var book = new SpellBook3D(known, la.Spells, mana, maxMana, warcries);
+        book.Chosen += _screen.ChooseSpell;
+        book.Closed += () => _spellPanel = null;
+        _spellPanel = book;
+        AddChild(book);
     }
 
     // ---------------------------------------------------------------- unit info

@@ -271,6 +271,12 @@ public partial class CombatScreen : Control
                 return;
             }
             if (Autoplay || CombatLauncher.AutoplayTurns > 0) AutoplayStep();
+            else if (CombatLauncher.OpenSpellbook && !Session.Busy && MySideToAct() is int me)
+            {
+                if (Session.Battle.State.Phase == BattlePhase.Tactics) CmdEndTactics();
+                else if (Session.Battle.GetLegalActions() is { IsHero: true }) { CombatLauncher.OpenSpellbook = false; Hud.ToggleSpellsPublic(); }
+                else Session.Submit(_autoAi.Decide(Session.Battle, me) with { Side = me });
+            }
             AimDevMouse();
             UpdateHover();
         }
@@ -599,11 +605,17 @@ public partial class CombatScreen : Control
         else if (View(sc.Caster) is { } cv && cv.Has("cast"))
             cv.PlayAction("cast");
         await Delay(0.4);
-        // The spell's original (SpellVisual) plays on every affected stack (or the target cell);
-        // playback continues after its HitDelay so damage lands with the visual.
+        // The spell's original (SpellVisual); playback continues after its HitDelay so damage
+        // lands with the visual.
         var spellXdb = Game.Instance.Db.Spell(sc.Spell)?.SourcePath;
-        var points = sc.Affected.Select(View).Where(v => v != null).Select(v => v!.GlobalPosition).ToList();
-        if (points.Count == 0 && sc.Cell is { } c) points.Add(Arena.Grid.CellCenter(new Vector2I(c.X, c.Y)));
+        // One visual per cast: at the target stack, else the target cell (area spells), else the
+        // field centre (global spells such as Armageddon). Playing it on every affected stack
+        // multiplies area effects far beyond the original.
+        var points = new List<Vector3>();
+        if (sc.Target is int tid && View(tid) is { } tv) points.Add(tv.GlobalPosition);
+        else if (sc.Cell is { } c) points.Add(Arena.Grid.CellCenter(new Vector2I(c.X, c.Y)));
+        else if (sc.Affected.Count == 1 && View(sc.Affected[0]) is { } one) points.Add(one.GlobalPosition);
+        else if (sc.Affected.Count > 0) points.Add(Arena.Grid.GridCenter);
         if (!string.IsNullOrEmpty(spellXdb) && points.Count > 0)
         {
             int pending = points.Count;
@@ -1003,6 +1015,9 @@ public partial class CombatScreen : Control
         Autoplay = !Autoplay;
         Hud.Log.AddLine(Autoplay ? "<body>Auto combat on." : "<body>Auto combat off.");
     }
+
+    /// <summary>Legal actions of the stack/hero the local player is acting with, or null.</summary>
+    internal LegalActions? MyLegalActions() => MySideToAct() is null ? null : Session.Battle.GetLegalActions();
 
     internal IReadOnlyList<SpellOption> AvailableSpells()
     {
