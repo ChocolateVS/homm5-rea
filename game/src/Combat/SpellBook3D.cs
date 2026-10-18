@@ -47,6 +47,8 @@ public partial class SpellBook3D : Control
     readonly List<Entry> _all;
     readonly int _mana, _maxMana;
     readonly bool _orcs;
+    /// <summary>Adventure-map book: shows the MAGIC_SCHOOL_ADVENTURE spells under the adventure tab.</summary>
+    readonly bool _adventure;
     Character _book = null!;
     MeshInstance3D? _mesh;
     Camera3D _cam = null!;
@@ -57,13 +59,14 @@ public partial class SpellBook3D : Control
     readonly Dictionary<int, (Entry? E, StandardMaterial3D Mat)> _slots = new();
     int? _hoverPart;
 
-    public SpellBook3D(IReadOnlyCollection<string> knownSpells, IReadOnlyList<SpellOption> castable, int mana, int maxMana, bool warcries)
+    public SpellBook3D(IReadOnlyCollection<string> knownSpells, IReadOnlyList<SpellOption> castable, int mana, int maxMana, bool warcries, bool adventure = false)
     {
         Name = "SpellBook3D";
         AnchorRight = 1;
         AnchorBottom = 1;
         MouseFilter = MouseFilterEnum.Stop;
         _orcs = warcries;
+        _adventure = adventure;
         _d = LoadDesc(warcries ? OrcDesc : StandardDesc);
         _asset = new ModelLoader(Game.Instance.Xdb).Load(_d.Model);
         _mana = mana;
@@ -71,8 +74,9 @@ public partial class SpellBook3D : Control
         var byId = castable.ToDictionary(o => o.Spell);
         _all = knownSpells.Distinct()
             .Select(id => (id, def: Game.Instance.Db.Spell(id)))
-            .Where(x => x.def != null && x.def.School is not ("MAGIC_SCHOOL_ADVENTURE" or "MAGIC_SCHOOL_NONE" or "MAGIC_SCHOOL_SPECIAL")
-                        && (warcries ? x.def.School == "MAGIC_SCHOOL_WARCRIES" : x.def.School != "MAGIC_SCHOOL_WARCRIES"))
+            .Where(x => x.def != null && (adventure ? x.def.School == "MAGIC_SCHOOL_ADVENTURE"
+                        : x.def.School is not ("MAGIC_SCHOOL_ADVENTURE" or "MAGIC_SCHOOL_NONE" or "MAGIC_SCHOOL_SPECIAL")
+                          && (warcries ? x.def.School == "MAGIC_SCHOOL_WARCRIES" : x.def.School != "MAGIC_SCHOOL_WARCRIES")))
             .OrderBy(x => x.def!.Level).ThenBy(x => x.def!.Name, StringComparer.Ordinal)
             .Select(x => new Entry { Spell = x.id, Option = byId.GetValueOrDefault(x.id), Cost = byId.GetValueOrDefault(x.id)?.ManaCost ?? x.def!.ManaCost })
             .ToList();
@@ -208,7 +212,7 @@ public partial class SpellBook3D : Control
         return vp.GetTexture();
     }
 
-    List<Entry> SchoolSpells() => _all.Where(e => _orcs || SchoolOf(e) == _school).ToList();
+    List<Entry> SchoolSpells() => _all.Where(e => _orcs || _adventure || SchoolOf(e) == _school).ToList();
 
     int PageCount => Math.Max(1, (SchoolSpells().Count + 5) / 6);
 
@@ -251,8 +255,8 @@ public partial class SpellBook3D : Control
         SetPartVisible(_d.Prev, _page > 0);
         // Selected school bookmark glows with SchoolHighlightColor.
         for (int i = 0; i < _d.Schools.Length && i < SchoolOrder.Length; i++)
-            HighlightPart(_d.Schools[i], SchoolOrder[i] == _school ? _d.SchoolHighlight : null);
-        HighlightPart(_d.Combat, _d.SchoolHighlight);
+            HighlightPart(_d.Schools[i], !_adventure && SchoolOrder[i] == _school ? _d.SchoolHighlight : null);
+        HighlightPart(_adventure ? _d.Adventure : _d.Combat, _d.SchoolHighlight);
     }
 
     readonly Dictionary<int, Material?> _baseMaterials = new();

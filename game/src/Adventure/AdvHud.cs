@@ -49,7 +49,7 @@ public partial class AdvHud : Control
         bus.On("flip_floor", _screen.FlipFloor);
         bus.On("EscMenu", _screen.ShowEscMenu);
         bus.On("information", _screen.ShowScenarioInfo);
-        bus.On("SpellBookWindow", () => _screen.Message("Spellbook", "The adventure spellbook is not available yet."));
+        bus.On("SpellBookWindow", () => _screen.OpenAdventureSpellbook());
         bus.On("show_minimap", () => Toggle("Minimap"));
         bus.On("show_res_bar", () => Toggle("resource-bar"));
         bus.On("show_list_bar", () => Toggle("TownHeroPanel"));

@@ -159,7 +159,8 @@ public static partial class AdventureLauncher
     static bool _testAttack;
     static Vector2? _click;
     static float? _yaw;
-    static bool _go, _endTurn, _meetTest;
+    static bool _go, _endTurn, _meetTest, _spellbook;
+    static string? _cast;
     static int? _floor;
     static Vector2I? _look;
 
@@ -177,6 +178,8 @@ public static partial class AdventureLauncher
         if (arg == "--adventure-test-attack") { _testAttack = true; return true; }
         if (arg == "--adventure-end-turn") { _endTurn = true; return true; }
         if (arg == "--adventure-meet-test") { _meetTest = true; return true; }
+        if (arg == "--adventure-spellbook") { _spellbook = true; return true; }
+        if (arg.StartsWith("--adventure-cast=")) { _cast = arg["--adventure-cast=".Length..]; return true; }
         if (arg == "--adventure-reveal") { AdvWorld.RevealAll = true; return true; }
         if (arg == "--adventure-go") { _go = true; return true; }
         if (arg == "--adventure-verbose") { AdventureScreen.Verbose = true; return true; }
@@ -232,6 +235,8 @@ public static partial class AdventureLauncher
         if (_testAttack) After(0.5).Timeout += screen.TestAttackNearest;
         if (_endTurn) After(0.5).Timeout += screen.EndTurn;
         if (_meetTest) After(0.5).Timeout += screen.MeetTest;
+        if (_spellbook) After(0.5).Timeout += () => screen.DevSpellbook(null);
+        if (_cast is { } cast) After(0.5).Timeout += () => screen.DevSpellbook(cast);
         if (_click is { } click)
         {
             After(0.3).Timeout += () => screen.SimulateClick(click);

@@ -232,10 +232,57 @@ public partial class AdventureScreen : Control
     Tile? TileAt(Vector2 screen) =>
         World.TileAtRay(World.Camera.ProjectRayOrigin(screen), World.Camera.ProjectRayNormal(screen));
 
+    /// <summary>An aimed adventure spell waiting for its target tile (Instant Travel).</summary>
+    string? _pendingSpell;
+
+    /// <summary>
+    /// The adventure spellbook (the stock 3D book opened on its adventure tab) for the selected hero.
+    /// Town Portal and Summon Creatures cast at once (Summon Creatures takes the whole garrison of the
+    /// nearest own town); Instant Travel waits for a click on the destination.
+    /// </summary>
+    public void OpenAdventureSpellbook()
+    {
+        if (InputLocked || Selected is not { } h) return;
+        var g = Session.Game;
+        var options = h.Spells
+            .Where(sp => Game.Instance.Db.Spell(sp)?.School == "MAGIC_SCHOOL_ADVENTURE" && h.Mana >= g.AdventureSpellCost(sp))
+            .Select(sp => new H5.Combat.SpellOption { Spell = sp, ManaCost = g.AdventureSpellCost(sp) }).ToList();
+        var book = new Combat.SpellBook3D(h.Spells, options, h.Mana, g.MaxMana(h), warcries: false, adventure: true);
+        book.Chosen += opt =>
+        {
+            if (opt.Spell == H5.Adventure.Engine.Adventure.SpellDimensionDoor) { _pendingSpell = opt.Spell; return; }
+            CastAdventureSpell(h, opt.Spell, null);
+        };
+        book.Closed += () => book.QueueFree();
+        _dialogLayer.AddChild(book);
+    }
+
+    void CastAdventureSpell(HeroState h, string spell, Tile? target)
+    {
+        var r = Session.Apply(new CastAdventureSpellCmd(h.Id, spell, target) { Player = Session.Human.Index });
+        if (!r.Ok)
+        {
+            var cant = spell switch
+            {
+                H5.Adventure.Engine.Adventure.SpellSummonCreatures => AdvTexts.Get("Text/Game/Spells/Adventure/Summon_Creatures/cant_cast.txt"),
+                H5.Adventure.Engine.Adventure.SpellSummonBoat => AdvTexts.Get("Text/Game/Spells/Adventure/Summon_Boat/cant_cast.txt"),
+                _ => "",
+            };
+            if (cant.Length > 0) Message("", cant);
+            if (Verbose) GD.Print($"[H5] adventure spell {spell} rejected: {r.Error}");
+        }
+    }
+
     void Click(Tile tile, bool doubleClick)
     {
         if (InputLocked) return;
         var s = Session.S;
+        if (_pendingSpell is { } aimed)
+        {
+            _pendingSpell = null;
+            if (Selected is { } caster) CastAdventureSpell(caster, aimed, tile);
+            return;
+        }
         // Own hero: select it.
         if (s.Heroes.FirstOrDefault(h => h.Alive && !h.Garrisoned && h.Pos == tile && h.Owner == Session.Human.Index) is { } mine)
         {
@@ -668,6 +715,24 @@ public partial class AdventureScreen : Control
     /// can reach today; the battle then plays on the combat screen (AI on both sides) and returns.
     /// </summary>
     /// <summary>Dev: hires a hero in the first own town (if needed) and opens the meeting screen for two own heroes.</summary>
+    /// <summary>Dev: teaches the selected hero the adventure spells (full mana), then opens the book or casts <paramref name="spell"/>.</summary>
+    public void DevSpellbook(string? spell)
+    {
+        if (Selected is not { } h && MyHeroes().FirstOrDefault() is { } first) Select(first);
+        if (Selected is not { } hero) return;
+        foreach (var sp in new[] { H5.Adventure.Engine.Adventure.SpellTownPortal, H5.Adventure.Engine.Adventure.SpellDimensionDoor, H5.Adventure.Engine.Adventure.SpellSummonCreatures, H5.Adventure.Engine.Adventure.SpellSummonBoat })
+            if (!hero.Spells.Contains(sp)) hero.Spells.Add(sp);
+        hero.Mana = Session.Game.MaxMana(hero) + 100;
+        if (spell == null) OpenAdventureSpellbook();
+        else
+        {
+            CastAdventureSpell(hero, spell, null);
+            foreach (var h2 in Session.S.Heroes) World.SyncHero(h2);
+            if (Selected is { } moved) World.Camera.CenterOn(moved.Pos);
+            Hud.Refresh();
+        }
+    }
+
     public void MeetTest()
     {
         var s = Session.S;
