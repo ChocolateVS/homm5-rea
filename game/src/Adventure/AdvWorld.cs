@@ -320,7 +320,14 @@ public partial class AdvWorld : Node3D
         Node3D node;
         if (animSet != null)
         {
-            try { node = CharacterBuilder.BuildFromModel(model, animSet); }
+            try
+            {
+                var c = CharacterBuilder.BuildFromModel(model, animSet);
+                // Buildings without idle00 (a few use idle01/page01…) loop their first clip.
+                if (!c.Has("idle00") && c.Player.GetAnimationList() is { Length: > 0 } clips)
+                    c.Play(clips[0].Replace(Character.Lib, ""), loop: true);
+                node = c;
+            }
             catch (Exception e)
             {
                 GD.PushWarning($"[H5] animated object {model}: {e.Message}");
