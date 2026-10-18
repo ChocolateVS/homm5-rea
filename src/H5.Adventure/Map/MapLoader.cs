@@ -1,0 +1,342 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
+using H5.Assets.Terrain;
+using H5.Core.Data;
+using H5.Core.IO;
+using H5.Core.Xdb;
+
+namespace H5.Adventure.Map;
+
+/// <summary>Reads an adventure map (map.xdb, terrain, texts, script) into an <see cref="AdvMap"/>.</summary>
+public sealed class MapLoader
+{
+    readonly GameDatabase _db;
+    readonly SharedCatalog _catalog;
+
+    public MapLoader(GameDatabase db, PakFileSystem fs) : this(db, new SharedCatalog(new XdbLoader(fs))) { }
+
+    public MapLoader(GameDatabase db, SharedCatalog catalog)
+    {
+        _db = db;
+        _catalog = catalog;
+    }
+
+    public SharedCatalog Catalog => _catalog;
+
+    public AdvMap Load(MapCatalog.MapRef map)
+    {
+        using var files = map.Open(_catalog.Xdb.FileSystem);
+        var m = Load(files);
+        m.Id = map.Id;
+        return m;
+    }
+
+    public AdvMap Load(MapFiles files)
+    {
+        var path = files.MapXdbPath;
+        var root = files.LoadXml(path).Root ?? throw new InvalidDataException($"{path}: empty");
+        var m = new AdvMap
+        {
+            Id = files.MapDir, Source = files.Source,
+            Version = root.Int("Version"), TilesX = root.Int("TileX"), TilesY = root.Int("TileY"),
+            HasSurface = root.Bool("HasSurface", true), HasUnderground = root.Bool("HasUnderground"),
+            InitialFloor = root.Int("InitialFloor"), CustomGameMap = root.Bool("CustomGameMap"),
+            HeroMaxLevel = root.Int("HeroMaxLevel"), CustomTeams = root.Bool("CustomTeams"),
+            RandomMoons = root.Bool("RandomMoons"),
+            Name = files.ReadText(root.Href("NameFileRef"))?.Trim() ?? "",
+            Description = files.ReadText(root.Href("DescriptionFileRef"))?.Trim() ?? "",
+            SpellIds = root.StrItems("spellIDs"), ArtifactIds = root.StrItems("artifactIDs"),
+            AvailableHeroes = root.Items("AvailableHeroes").Select(i => i.Value.Trim()).Where(s => s.Length > 0).ToList(),
+        };
+
+        ReadPlayers(root, m);
+        ReadObjectives(root, m, files);
+        ReadScript(root, m, files);
+
+        if (m.HasSurface || !m.HasUnderground)
+            m.Floors[0] = ReadFloor(files, root.Href("GroundTerrainFileName"), 0, m);
+        if (m.HasUnderground)
+            m.Floors[1] = ReadFloor(files, root.Href("UndergroundTerrainFileName"), 1, m);
+
+        int index = 0;
+        foreach (var item in root.Element("objects")?.Elements("Item") ?? Enumerable.Empty<XElement>())
+        {
+            var e = item.Elements().FirstOrDefault();
+            if (e == null) continue;
+            try
+            {
+                var o = ReadObject(e, files);
+                o.Index = index++;
+                o.Uid = (string?)item.Attribute("id") ?? "";
+                m.Objects.Add(o);
+            }
+            catch (Exception ex) { m.Warnings.Add($"object {e.Name.LocalName}: {ex.Message}"); }
+        }
+        ApplyStaticBlocking(m);
+        return m;
+    }
+
+    // ----------------------------------------------------------------- players & goals
+
+    static readonly Regex XPointerId = new(@"id\((item_[^)]+)\)", RegexOptions.Compiled);
+
+    static string? UidFromHref(string? href) =>
+        href == null ? null : XPointerId.Match(href) is { Success: true } mt ? mt.Groups[1].Value : null;
+
+    static void ReadPlayers(XElement root, AdvMap m)
+    {
+        int i = 0;
+        foreach (var p in root.Items("players"))
+        {
+            var tf = p.Element("TavernFilter");
+            m.Players.Add(new MapPlayer
+            {
+                Index = i++, Active = p.Bool("ActivePlayer"), Team = p.Int("Team"),
+                CanBeHuman = p.Bool("CanBeHumanPlayer"), CanBeComputer = p.Bool("CanBeComputerPlayer"),
+                Race = p.Str("Race"), Colour = p.Str("Colour"), Behaviour = p.Str("Behaviour"),
+                MainTownUid = UidFromHref(p.Href("MainTown")), MainHeroUid = UidFromHref(p.Href("MainHero")),
+                HeroInTown = p.Bool("HeroInTown"), DefaultBonus = p.Str("DefaultBonus"),
+                ReserveHeroes = p.Items("ReserveHeroes").Select(x => x.Value.Trim()).Where(s => s.Length > 0).ToList(),
+                BannedHeroes = tf.StrItems("BannedHeroes"), AllowedHeroes = tf.StrItems("AllowedHeroes"),
+                BannedHeroRaces = tf.StrItems("BannedHeroesRaces"),
+            });
+        }
+    }
+
+    static void ReadObjectives(XElement root, AdvMap m, MapFiles files)
+    {
+        var obj = root.Element("Objectives");
+        if (obj == null) return;
+        foreach (var (group, primary) in new[] { ("Primary", true), ("Secondary", false) })
+        {
+            var g = obj.Element(group);
+            if (g == null) continue;
+            foreach (var o in g.Element("Common").Items("Objectives"))
+                m.Objectives.Add(ReadObjective(o, primary, -1, files));
+            int player = 0;
+            foreach (var ps in g.Items("PlayerSpecific"))
+            {
+                foreach (var o in ps.Items("Objectives"))
+                    m.Objectives.Add(ReadObjective(o, primary, player, files));
+                player++;
+            }
+        }
+    }
+
+    static MapObjective ReadObjective(XElement o, bool primary, int player, MapFiles files) => new()
+    {
+        Primary = primary, Player = player, Name = o.Str("Name"), Kind = o.Str("Kind"),
+        Parameters = o.StrItems("Parameters"), Timeout = o.Int("Timeout", -1), Holdout = o.Int("Holdout", -1),
+        InstantVictory = o.Bool("InstantVictory"), InitiallyActive = o.Bool("IsInitialyActive", true),
+        NeedComplete = o.Bool("NeedComplete", true),
+        Caption = files.ReadText(o.Href("CaptionFileRef"))?.Trim(),
+    };
+
+    static void ReadScript(XElement root, AdvMap m, MapFiles files)
+    {
+        var href = root.Href("MapScript");
+        if (href == null) return;
+        var scriptXdb = files.Resolve(href);
+        if (!files.Exists(scriptXdb)) return;
+        var s = files.LoadXml(scriptXdb).Root;
+        var file = s.Href("FileName");
+        var lua = file != null ? files.Resolve(file, scriptXdb) : scriptXdb[..scriptXdb.LastIndexOf('.')] + ".lua";
+        m.ScriptPath = lua;
+        if (files.TryReadAllBytes(lua, out var b)) m.ScriptSource = TextDecoding.Decode(b);
+    }
+
+    // ----------------------------------------------------------------- terrain
+
+    MapFloor? ReadFloor(MapFiles files, string? href, int floor, AdvMap m)
+    {
+        if (href == null) return null;
+        var p = files.Resolve(href);
+        if (!files.TryReadAllBytes(p, out var bytes)) { m.Warnings.Add($"floor {floor}: missing {p}"); return null; }
+        var t = TerrainReader.Read(bytes);
+        int w = t.TilesX, h = t.TilesY;
+        var f = new MapFloor
+        {
+            Index = floor, Width = w, Height = h, Data = t,
+            Terrain = new TerrainClass[w * h], TileType = new string[w * h], Blocked = new bool[w * h],
+        };
+        var layerTypes = t.Layers.Select(l => _catalog.TileType(l.TilePath)).ToArray();
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                // The tile's type is the topmost layer that covers at least half of it
+                // (average of its four corner weights); layer 0 is the base.
+                int chosen = 0;
+                for (int li = t.Layers.Count - 1; li > 0; li--)
+                {
+                    var g = t.Layers[li].Weights;
+                    int sum = g[x, y] + g[x + 1, y] + g[x, y + 1] + g[x + 1, y + 1];
+                    if (sum >= 4 * 128) { chosen = li; break; }
+                }
+                var type = layerTypes.Length > 0 ? layerTypes[chosen] : "";
+                f.TileType[y * w + x] = type;
+                f.Terrain[y * w + x] = SharedCatalog.Classify(type);
+            }
+        return f;
+    }
+
+    /// <summary>Marks tiles that no hero can enter: object blocked tiles, rivers and out-of-land water.</summary>
+    static void ApplyStaticBlocking(AdvMap m)
+    {
+        foreach (var f in m.Floors)
+        {
+            if (f == null) continue;
+            for (int i = 0; i < f.Terrain.Length; i++)
+                if (f.Terrain[i] == TerrainClass.River) f.Blocked[i] = true;
+        }
+        foreach (var o in m.Objects)
+        {
+            var f = m.Floor(o.Pos.Floor);
+            if (f == null) continue;
+            var active = new HashSet<Tile>(o.ActiveTiles);
+            foreach (var b in o.BlockedTiles)
+                if (f.InBounds(b.X, b.Y) && !active.Contains(b)) f.Blocked[b.Y * f.Width + b.X] = true;
+        }
+    }
+
+    // ----------------------------------------------------------------- objects
+
+    static ObjectKind KindOf(string tag) => tag switch
+    {
+        "AdvMapStatic" => ObjectKind.Static,
+        "AdvMapTreasure" => ObjectKind.Treasure,
+        "AdvMapMonster" => ObjectKind.Monster,
+        "AdvMapBuilding" => ObjectKind.Building,
+        "AdvMapArtifact" => ObjectKind.Artifact,
+        "AdvMapMine" => ObjectKind.Mine,
+        "AdvMapAbanMine" => ObjectKind.AbandonedMine,
+        "AdvMapDwelling" => ObjectKind.Dwelling,
+        "AdvMapShrine" => ObjectKind.Shrine,
+        "AdvMapTown" => ObjectKind.Town,
+        "AdvMapHero" => ObjectKind.Hero,
+        "AdvMapPrison" => ObjectKind.Prison,
+        "AdvMapGarrison" => ObjectKind.Garrison,
+        "AdvMapShipyard" => ObjectKind.Shipyard,
+        "AdvMapTent" => ObjectKind.Tent,
+        "AdvMapSign" => ObjectKind.Sign,
+        "AdvMapHillFort" => ObjectKind.HillFort,
+        "AdvMapSeerHut" => ObjectKind.SeerHut,
+        "AdvMapDwarvenWarren" => ObjectKind.DwarvenWarren,
+        "AdvMapCartographer" => ObjectKind.Cartographer,
+        "AdvMapSphinx" => ObjectKind.Sphinx,
+        "AdvMapStand" => ObjectKind.Stand,
+        _ => ObjectKind.Unknown,
+    };
+
+    public static int PlayerIndex(string id) =>
+        id.StartsWith("PLAYER_", StringComparison.Ordinal) && int.TryParse(id[7..], out var n) && n >= 1 ? n - 1 : -1;
+
+    static List<ArmySlot> Army(XElement e, string name) =>
+        e.Items(name).Where(s => s.Str("Creature") is { Length: > 0 } c && c != "CREATURE_UNKNOWN" && s.Int("Count") > 0)
+            .Select(s => new ArmySlot(s.Str("Creature"), s.Int("Count"))).ToList();
+
+    MapObject ReadObject(XElement e, MapFiles files)
+    {
+        var tag = e.Name.LocalName;
+        var pos = e.Element("Pos");
+        var o = new MapObject
+        {
+            Tag = tag, Kind = KindOf(tag), Name = e.Str("Name"),
+            Pos = new Tile(pos.Int("x"), pos.Int("y"), e.Int("Floor")),
+            Rot = (float)e.Dbl("Rot"),
+            Owner = PlayerIndex(e.Str("PlayerID")),
+        };
+        var sharedHref = e.Href("Shared");
+        if (sharedHref != null)
+        {
+            o.SharedPath = files.Resolve(sharedHref);
+            o.Shared = _catalog.Get(o.SharedPath, p => files.Exists(p) ? files.LoadXml(p).Root : null);
+        }
+        foreach (var c in e.Elements())
+            if (!c.HasElements && c.Attribute("href") == null && c.Value.Length > 0)
+                o.Props[c.Name.LocalName] = c.Value.Trim();
+        o.Guards = Army(e, "armySlots");
+
+        switch (o.Kind)
+        {
+            case ObjectKind.Monster:
+                o.Creature = o.Shared.Creature;
+                o.MonsterRandomLevel = o.Shared.Type switch
+                {
+                    "MONSTER_RANDOM_ANY" => 8,
+                    { } t when t.StartsWith("MONSTER_RANDOM_L") => int.Parse(t[^1..], CultureInfo.InvariantCulture),
+                    _ => 0,
+                };
+                o.CustomAmount = e.Bool("Custom");
+                o.Amount = e.Int("Amount"); o.Amount2 = e.Int("Amount2");
+                o.Mood = e.Str("Mood"); o.Courage = e.Str("Courage");
+                o.DoesNotGrow = e.Bool("DoesNotGrow");
+                var res = Resources.Parse(e.Element("Resources"));
+                if (res != new Resources(0, 0, 0, 0, 0, 0, 0)) o.Reward = res;
+                o.RewardArtifact = e.Str("ArtifactID") is { Length: > 0 } a && a != "ARTIFACT_NONE" ? a : null;
+                foreach (var s in e.Items("AdditionalStacks"))
+                {
+                    var cr = s.Str("Creature");
+                    if (cr.Length > 0 && cr != "CREATURE_UNKNOWN") o.AdditionalStacks.Add(new ArmySlot(cr, s.Int("Amount", s.Int("Count"))));
+                }
+                break;
+            case ObjectKind.Artifact:
+                o.ArtifactId = o.Shared.ArtifactId;
+                o.SpellId = e.Str("spellID") is { Length: > 0 } sp && sp != "SPELL_NONE" ? sp : null;
+                break;
+            case ObjectKind.Shrine:
+                o.SpellId = e.Str("SpellID") is { Length: > 0 } ss && ss != "SPELL_NONE" ? ss : null;
+                break;
+            case ObjectKind.Treasure:
+                o.TreasureCustom = e.Bool("IsCustom"); o.TreasureAmount = e.Int("Amount");
+                break;
+            case ObjectKind.Dwelling:
+                o.RandomCreatures = e.Bool("RandomCreatures");
+                o.CreaturesEnabled = e.Items("creaturesEnabled").Select(i => i.Value.Trim() == "1" || i.Value.Trim() == "true").ToArray();
+                break;
+            case ObjectKind.Town:
+                o.TownType = o.Shared.TownType;
+                o.Specialization = files.Resolve(e.Href("Specialization")) is { Length: > 0 } sp2 ? sp2 : null;
+                foreach (var b in e.Items("buildings"))
+                    o.Buildings.Add(new TownBuildingInit(b.Str("Type"), UpgradeLevel(b.Str("InitialUpgrade")), UpgradeLevel(b.Str("MaxUpgrade"))));
+                o.TownSpells = e.StrItems("spellIDs");
+                break;
+            case ObjectKind.Hero:
+            case ObjectKind.Prison:
+                o.OverrideMask = e.Int("OverrideMask");
+                if (o.Kind == ObjectKind.Hero || e.Element("Editable") != null)
+                    o.Hero = LoadHero(e, files);
+                break;
+        }
+        return o;
+    }
+
+    /// <summary>"BLD_UPG_NONE" → 0, "BLD_UPG_1" → 1 … "BLD_UPG_5" → 5.</summary>
+    public static int UpgradeLevel(string s) =>
+        s.StartsWith("BLD_UPG_", StringComparison.Ordinal) && int.TryParse(s[8..], out var n) ? n : 0;
+
+    HeroInstance LoadHero(XElement e, MapFiles files)
+    {
+        var hi = _db.LoadHeroInstance(e, files.MapXdbPath);
+        // A placed hero only overrides the shared hero's editable data where the map
+        // author changed it; empty sections fall back to the shared definition.
+        // TODO(exe): confirm the exact OverrideMask bit meanings (observed: 1 = name).
+        if (hi.Shared is { } sh)
+        {
+            if (hi.Attack == 0 && hi.Defence == 0 && hi.SpellPower == 0 && hi.Knowledge == 0)
+            { hi.Attack = sh.Attack; hi.Defence = sh.Defence; hi.SpellPower = sh.SpellPower; hi.Knowledge = sh.Knowledge; }
+            if (hi.Skills.All(s => s.SkillId == sh.PrimarySkill?.SkillId))
+                foreach (var s in sh.Skills) if (hi.Skills.All(x => x.SkillId != s.SkillId)) hi.Skills.Add(s);
+            if (hi.Perks.Count == 0) hi.Perks.AddRange(sh.Perks);
+            if (hi.Spells.Count == 0) hi.Spells.AddRange(sh.Spells);
+            if (!hi.Ballista && !hi.FirstAidTent && !hi.AmmoCart)
+            { hi.Ballista = sh.Ballista; hi.FirstAidTent = sh.FirstAidTent; hi.AmmoCart = sh.AmmoCart; }
+        }
+        var nameRef = e.Element("Editable").Href("NameFileRef");
+        if ((e.Int("OverrideMask") & 1) != 0 && files.ReadText(nameRef)?.Trim() is { Length: > 0 } name)
+            hi.DisplayName = name;
+        else if (hi.Shared != null && string.IsNullOrEmpty(hi.DisplayName))
+            hi.DisplayName = hi.Shared.Name;
+        return hi;
+    }
+}
