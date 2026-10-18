@@ -99,6 +99,14 @@ public sealed class MapScriptData
                 if (!d.ObjectTriggers.TryGetValue(uid, out var map)) d.ObjectTriggers[uid] = map = new(StringComparer.Ordinal);
                 map[t.Name.LocalName] = fn;
             }
+            // Seer Hut quests are objectives too (GetObjectiveState(questName)); unknown until taken.
+            if (e.Name.LocalName == "AdvMapSeerHut" && e.Element("Quest") is { } quest && quest.Str("Name").Length > 0)
+                d.Objectives.Add(new ObjectiveDef
+                {
+                    Name = quest.Str("Name"), Player = -1, Primary = false, Kind = quest.Str("Kind"),
+                    InitiallyActive = false, InitiallyVisible = true,
+                    ProgressSteps = quest.Element("ProgressCommentsFileRef")?.Elements("Item").Count() ?? 0,
+                });
             var cs = e.Element("CombatScript");
             var csHref = (string?)cs?.Attribute("href");
             if (!string.IsNullOrEmpty(csHref)) d.CombatScripts[uid] = files.Resolve(csHref, files.MapXdbPath);

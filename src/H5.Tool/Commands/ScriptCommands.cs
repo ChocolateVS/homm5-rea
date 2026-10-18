@@ -68,6 +68,7 @@ sealed class ScriptRunCommand : ICommand
         {
             using var files = mref.Open(ctx.Fs);
             var map = loader.Load(files);
+            if (map.Players.Count(p => p.Active) == 0) { Console.WriteLine($"{mref.Id,-40} (no active players: not a playable map)"); continue; }
             var (g, _) = H5.Adventure.Engine.Adventure.NewGame(db, map, H5.Adventure.Engine.GameSetup.AllPlayers(map, humans: 1, seed));
             if (args.Contains("--heroes"))
             {
@@ -82,10 +83,17 @@ sealed class ScriptRunCommand : ICommand
             if (map.ScriptPath != null && files.TryReadAllBytes(map.ScriptPath, out var b)) src = ScriptText.FromBytes(b);
             var sw = System.Diagnostics.Stopwatch.StartNew();
             host.Start(map.ScriptPath, src);
+            if (args.Contains("--trace"))
+            {
+                var inner = g.CommandSink!;
+                g.CommandSink = cmd => { Console.Error.WriteLine($"[day {g.S.Day} p{g.S.CurrentPlayer}] {cmd}"); var r = inner(cmd); Console.Error.WriteLine($"   -> {(r.Ok ? "ok" : r.Error)} threads={host.L.Threads.Count}"); return r; };
+            }
             var bot = new H5.Adventure.Engine.SimpleAdventureBot();
             int turns = 0;
             while (!g.S.Finished && g.S.Day <= days && turns < days * 10)
             {
+                // A blocked game (BlockGame) only advances script time, like the original.
+                for (int guard = 0; host.World.GameBlocked && guard < 3000; guard++) host.Tick();
                 bot.PlayTurn(g, seed * 1000003UL + (ulong)turns);
                 host.Tick(20);
                 turns++;

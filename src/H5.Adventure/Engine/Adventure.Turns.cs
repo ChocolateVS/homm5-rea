@@ -234,11 +234,20 @@ public sealed partial class Adventure
             else p.DaysWithoutTown++;
             // A player with no town and no hero is out; on maps with "DieInWeekWithoutTowns" losing
             // every town also eliminates the player after 7 days.
-            if ((!hasTown && !hasHero) || (Map.DieInWeekWithoutTowns && p.DaysWithoutTown >= 7))
+            if ((DefaultVictoryRules && !hasTown && !hasHero) || (Map.DieInWeekWithoutTowns && p.DaysWithoutTown >= 7))
                 Eliminate(p);
         }
         CheckVictory();
     }
+
+    /// <summary>
+    /// The automatic outcome rules (a player with no town and no hero is out; the last team standing
+    /// wins) belong to OBJECTIVE_KIND_DEFEAT_ALL. Maps whose primary objectives are all scripted
+    /// (OBJECTIVE_KIND_MANUAL, 18 of the stock campaign maps) decide victory and defeat in Lua
+    /// (Win/Loose) — their AI players often start with nothing until scripts deploy them.
+    /// </summary>
+    public bool DefaultVictoryRules =>
+        !Map.Objectives.Any(o => o.Primary) || Map.Objectives.Any(o => o.Primary && o.Kind is "OBJECTIVE_KIND_DEFEAT_ALL" or "OBJECTIVE_KIND_STAY_UNDEFEATED");
 
     void Eliminate(PlayerState p)
     {
@@ -254,7 +263,7 @@ public sealed partial class Adventure
     void CheckVictory()
     {
         var teams = S.Players.Where(p => p.Alive).Select(p => p.Team).Distinct().ToList();
-        if (teams.Count <= 1 && !S.Finished)
+        if (teams.Count <= 1 && !S.Finished && (DefaultVictoryRules || teams.Count == 0))
         {
             S.Finished = true;
             S.WinnerTeam = teams.Count == 1 ? teams[0] : null;

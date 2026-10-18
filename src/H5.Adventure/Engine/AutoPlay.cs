@@ -50,21 +50,21 @@ public sealed class SimpleAdventureBot
             for (int step = 0; step < 6 && actions < MaxActionsPerTurn && h.Alive && !g.S.Finished; step++)
             {
                 ResolvePending(g, battleSeedBase + (ulong)actions);
-                while (h.PendingLevelUps.Count > 0) Send(g, new ChooseLevelUpCmd(h.Id, 0) { Player = me });
+                while (h.PendingLevelUps.Count > 0 && Send(g, new ChooseLevelUpCmd(h.Id, 0) { Player = me }).Ok) { }
                 var target = PickTarget(g, h);
                 if (target == null) break;
                 var r = Send(g, new MoveHeroCmd(h.Id, target.Value) { Player = me });
                 actions++;
                 if (!r.Ok) break;
                 ResolvePending(g, battleSeedBase + (ulong)actions);
-                while (h.Alive && h.PendingLevelUps.Count > 0) Send(g, new ChooseLevelUpCmd(h.Id, 0) { Player = me });
+                while (h.Alive && h.PendingLevelUps.Count > 0 && Send(g, new ChooseLevelUpCmd(h.Id, 0) { Player = me }).Ok) { }
                 if (h.InTown >= 0 && g.S.Town(h.InTown) is { } home && home.Owner == me) TakeGarrison(g, h, home);
                 if (h.MovePoints < 100) break;
             }
         }
         ResolvePending(g, battleSeedBase + 999);
         foreach (var h in g.S.Heroes.Where(h => h.Alive && h.Owner == me))
-            while (h.PendingLevelUps.Count > 0) Send(g, new ChooseLevelUpCmd(h.Id, 0) { Player = me });
+            while (h.PendingLevelUps.Count > 0 && Send(g, new ChooseLevelUpCmd(h.Id, 0) { Player = me }).Ok) { }
         if (!g.S.Finished) Send(g, new EndTurnCmd { Player = me });
     }
 

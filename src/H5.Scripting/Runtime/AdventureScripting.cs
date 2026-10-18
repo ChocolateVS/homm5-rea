@@ -126,6 +126,8 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
     /// <summary>Applies a player/AI command to the engine and fires the script triggers it causes.</summary>
     public AdvResult Apply(AdvCommand cmd)
     {
+        // BlockGame stops the interface and the AI: nothing can be ordered until UnblockGame.
+        if (World.GameBlocked) return AdvResult.Reject("the game is blocked by a script");
         var heroesBefore = HeroSnapshot();
         var r = Game.Apply(cmd);
         if (r.Ok) Dispatch(r.Events, heroesBefore);

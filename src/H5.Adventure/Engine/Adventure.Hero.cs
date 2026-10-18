@@ -135,6 +135,8 @@ public sealed partial class Adventure
         if (h.PendingLevelUps.Count == 0) return "no pending level-up";
         var offer = h.PendingLevelUps[0];
         int n = offer.Skills.Count + offer.Perks.Count;
+        // Nothing left to offer (every skill/perk known): only the attribute point applies.
+        if (n == 0) { h.PendingLevelUps.RemoveAt(0); return null; }
         if (c.Option < 0 || c.Option >= n) return "invalid option";
         h.PendingLevelUps.RemoveAt(0);
         if (c.Option < offer.Skills.Count)
