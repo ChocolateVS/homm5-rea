@@ -199,11 +199,15 @@ public partial class CombatScreen : Control
         {
             var c = CharacterBuilder.Build(characterPath);
             c.Name = $"Hero{side}";
-            // Heroes watch from behind their army's flank, outside the grid.
-            float gx = side == 0 ? -2.0f : ArenaGrid.Width + 2.0f;
-            float gy = ArenaGrid.Height / 2f;
-            c.Position = Arena.Grid.CellCenter(gx, gy);
-            c.Rotation = new Vector3(0, ArenaGrid.FacingYaw(side), 0);
+            // The stock manual's combat screenshot (Game Manual 3.0 p.14) shows a hero standing in
+            // a ~2-cell square just outside the grid's left edge beside the far rows; with the
+            // armies deployed along the 12-cell edges, each hero stands off the left end of its
+            // own deployment rows (attacker: near rows, defender: far rows), facing the field.
+            var pos = Arena.Grid.CellCenter(-1.0f, side == 0 ? 1.0f : ArenaGrid.Height - 1.0f);
+            c.Position = pos;
+            // Models face Godot +Z at yaw 0 (see UnitView.FaceTowards).
+            var d = Arena.Grid.GridCenter - pos;
+            c.Rotation = new Vector3(0, Mathf.Atan2(d.X, d.Z), 0);
             Arena.Units.AddChild(c);
             _heroes[side] = c;
         }
@@ -977,8 +981,23 @@ public partial class CombatScreen : Control
         if (QuitWhenDone) GetTree().CreateTimer(2.0, ignoreTimeScale: true).Timeout += () => GetTree().Quit();
     }
 
+    /// <summary>
+    /// Set by whoever opened this combat to take over when the player leaves the results
+    /// screen (the adventure map resumes instead of returning to the main menu). One-shot.
+    /// </summary>
+    public static Action<CombatSession>? ReturnHandler;
+
     internal void ReturnToMenu()
     {
+        if (ReturnHandler is { } handler)
+        {
+            ReturnHandler = null;
+            Session.Leave();
+            CombatCursors.Reset();
+            Autoplay = false;
+            handler(Session);
+            return;
+        }
         // A networked duel returns to its lobby room (the server keeps the room after the
         // game ends), like the original's MP flow; local games go back to the main menu.
         if (Session.IsNetworked && Ui.Net.LobbyService.Instance.Room != null) MainMenu.ReturnScreen = "wait";
