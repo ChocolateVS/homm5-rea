@@ -28,7 +28,10 @@ public partial class MainMenu : Control
             Name = "Background3DContainer", AnchorRight = 1, AnchorBottom = 1, Stretch = true,
             MouseFilter = MouseFilterEnum.Ignore,
         };
-        container.AddChild(new SubViewport { Name = "Background3D", TransparentBg = true, HandleInputLocally = false });
+        var background = new SubViewport { Name = "Background3D", TransparentBg = true, HandleInputLocally = false };
+        // The stock 3D backdrop (Arenas/Interface/MainMenu) behind the menu UI.
+        background.AddChild(new Arena.MainMenuBackground());
+        container.AddChild(background);
         AddChild(container);
 
         var layer = new Control { Name = "UiLayer", AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore };
