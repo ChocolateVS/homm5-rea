@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 167 |
-| MATCH | 110 |
-| GAP | 7 |
-| UNVERIFIED | 246 |
+| FIXED | 170 |
+| MATCH | 112 |
+| GAP | 8 |
+| UNVERIFIED | 244 |
 | N/A | 58 |
 
 ## Core mechanics
@@ -80,11 +80,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_MANA_DESTROYER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
 | `ABILITY_MANA_STEALER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
 | `ABILITY_EXPLOSION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_RANGED_RETALIATE` | UNVERIFIED | 00a5fee0 00bfb4b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_RANGED_RETALIATE` | FIXED | 00a5fee0 (00a5ff9b) | a ranged attack is answered only when the target has RANGED_RETALIATE and can shoot (vf 0x1e0); the check sits inside the common retaliation routine, so all the other rules still apply afterwards — Hypnotize, Gating, Expert Blind, No Enemy Retaliation, invisible attacker, Swift Attack vs Slow, sleeping/stunned/frozen (vf 0x1e4); Cowardice is skipped for shots. The engine answered every shot when retaliations and shots were left, ignoring those rules | AuditAbilityTestsA.RangedRetaliationObeysTheOtherRetaliationRules |
 | `ABILITY_FEAR` | FIXED | 00a629b0, 00a5e1b0, 00a5d790 | only on the attacker's own strike (never a retaliation, +0x21) and only while the target would retaliate; mind-immunity check (00a5e1b0); the target flees instead of retaliating — engine could trigger on retaliations / when no retaliation was pending | AuditAbilityTests.FearNeverTriggersOnRetaliation |
 | `ABILITY_FRIGHT_AURA` | MATCH | 008a4b70, 00989fd0 | a stack that is neither Undead nor Mechanical gets morale flag 4 when an adjacent enemy stack has the aura; flag 4 = morale −3 (00989fd0) |  |
 | `ABILITY_VORPAL_SWORD` | FIXED | 00a673c0, 00a63020 | +1 creature killed on the strike, only vs creature targets without CRYSTAL_SCALES — engine ignored both conditions | AuditAbilityTests.VorpalSwordDoesNotWorkOnCrystalScales |
-| `ABILITY_CHAIN_SHOT` | UNVERIFIED | 00a673c0 | implemented; not yet compared with the exe |  |
+| `ABILITY_CHAIN_SHOT` | GAP | 00a673c0 (00a6748a), 00a64ad0, 00a5dbb0, 00a59ba0 | base damage rolled once (FUN_00a597a0 → FUN_00a58de0), then for each target in chain order: `d ← d × rangePenalty(target)` (FUN_00a5c5a0, so the penalty compounds down the chain) and `d ← d × 0.5` (DAT_00e0ab70) from an initial 2·base, each target getting its own defence/flat-bonus stages (FUN_00a5a900, FUN_00a5ed90, FUN_00977e60). Chain order FUN_00a5dbb0: repeatedly the candidate nearest (vf 0x118) to the LAST chained stack, ties broken by the battle RNG (vf 0xc, Range(0, n−1)), at most 3 more; candidates exclude creatures of town 8 (TOWN_INFERNO — the "Demonic" rule is a town test, FUN_004ba910 = creature +0x98) and objects with vf 0x7c ≠ 0. Engine differences: ties by id instead of random, no compounding range penalty, Demonic ability instead of Inferno town, and the whole chain is skipped when the main target is Demonic (the exe only filters the extra targets). Not changed yet: the distance metric vf 0x118 and whether the main target is always first in the list are unconfirmed |  |
 | `ABILITY_WEAKENING_STRIKE` | UNVERIFIED | 00a629b0 → 00a5deb0 → 00a5ddb0 → 00bbf160 | on every strike (incl. ranged/retaliation as far as 00a629b0's helper list shows), with power ZombieWeakeningStrike (0 if < 1), applied through the spell-effect pipeline (00a5ddb0 → 00bbf160 → 00988df0 cast record → 00bbf000); a successful application also feeds the Demon Rage/Blood Rage counter (army vf 0x7c, field +0x80 of 008a18b0). Whether re-application stacks (engine: adds ZombieWeakeningStrike per hit) depends on 00bbf000, not yet decoded; the engine also limits it to melee |  |
 | `ABILITY_INCORPOREAL` | FIXED | 008a34c0 | Phantom images / Rune of Etherealness are Incorporeal | tests/H5.Combat.Tests/AuditSpecTests.DynamicAbilitiesFollowTheOriginal |
 | `ABILITY_MANA_DRAIN` | MATCH | 00a59c60 | drained = min(attacker count, target mana); target loses it; the drainer heals (with resurrection) drained × its max health |  |
@@ -173,12 +173,12 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_EVIL_EYE` | FIXED | 00a5e770 | melee strikes only, every target of the blow, permanent SPELL_EFFECT_UNLUCKY (−3 Luck per the ability text) — engine also applied it on shots | AuditAbilityTests.EvilEyeOnlyOnMeleeStrikes |
 | `ABILITY_RANDOM_CASTER_BLESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_SYPHON_MANA` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_SEARING_AURA` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
-| `ABILITY_AXE_OF_SLAUGHTER` | UNVERIFIED | 00a63020 00a673c0 | implemented; not yet compared with the exe |  |
+| `ABILITY_SEARING_AURA` | MATCH | 008a4b70 (flag 0x800), 00bbb650 | a stack flagged 0x800 (an enemy with the aura next to it) takes, at the start of its turn, `SearingAuraDamageHits (RPGStats+0x234) × aura stack size` per adjacent aura stack through the elemental-protection function FUN_0097d600 (fire), logged "SEARING_AURA_HIT" — as the engine's turn-start DealElementalDamage per adjacent enemy aura stack |  |
+| `ABILITY_AXE_OF_SLAUGHTER` | MATCH | 00a63020 (00a6060f, 00a6062a) | the strike damage gets `target stack size (vf 0x1d8) × AxeOfSlaughterDamageHits` added after the other flat bonuses (FUN_00a5c000 / FUN_00a5ed90) — as the engine (`AxeOfSlaughterDamageHits × t.Count`, melee: the Pit Spawn cannot shoot) |  |
 | `ABILITY_SUMMON_OTHER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_SEDUCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_LEAP` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_DEATH_WAIL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `ABILITY_DEATH_WAIL` | FIXED | 0085e610 (0085e68b–0085e751), 0097a530 case 0x13c, 00b3c730/00b3c690 | area: every stack at Chebyshev gap (nearest cells) 1..DeathWailRange from the banshees, skipping HasAbility(UNDEAD) (dynamic: Vampirism counts) and MECHANICAL — elementals are hit. Damage per target, FPU in chop mode: `trunc(trunc(N · (DeathWailDamageConst − morale) · DeathWailDamageCoef) / DeathWailDamageArgument^(gap − 1))`. The 3.1 patch data (a2p1-data.pak) sets Coef = 2 (3.0 data: 1, which gives the fan manual's p.173 numbers); the engine hard-coded 1 / ½ / ¼ and so dealt half the 3.1 damage, and skipped elementals. Note: the area code itself adds stacks of both sides; whether the cast later drops allies (spell targeting flags) is not traced — the engine keeps enemies only | AuditAbilityTestsA.DeathWailUsesTheDataCoefficientAndGapExponent |
 | `ABILITY_WEAKENING_AURA` | MATCH | 008a4b70, 00989fd0 | non-Undead stacks next to any stack (either side) with the aura get flag 0x20 = morale −WeakeningAuraMoraleDec |  |
 | `ABILITY_AMMO_STEAL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_SLEEPING_STRIKE` | FIXED | 00a629b0, 00a5e4f0 | proc SleepingStrike_ProcFactor on any strike; immune: IMMUNITY_TO_BLIND, MECHANICAL, ELEMENTAL (undead NOT immune); target then doesn't retaliate — engine excluded undead and ignored blind immunity | AuditAbilityTests.SleepingStrikeImmunityIsBlindMechanicalElementalNotUndead |
@@ -545,7 +545,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_SUMMON_BOAT` | N/A | 009a2350 | adventure-map spell (H5.Adventure) |  |
 | `SPELL_DIMENSION_DOOR` | N/A | 009a2350 | adventure-map spell (H5.Adventure) |  |
 | `SPELL_ENCOURAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_HOLY_CHARGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_DEMONIC_STRIKE_CAST` | N/A | 009a2350 | visual effect only (client) |  |
+| `SPELL_DEMONIC_STRIKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_MULTISHOT` | UNVERIFIED | 009a2350 | implemented; not yet compared with the exe |  |
 | `SPELL_IMBUE_ARROW` | UNVERIFIED | 009a2350 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_COUNTERSPELL` | UNVERIFIED | 009785e0 00978670 0097c320 00bfbe50 | implemented; not yet compared with the exe |  |
@@ -596,7 +598,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_RUNE_OF_DRAGONFORM` | UNVERIFIED | 0097af50 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_BATTLE_FRENZY` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
 | `SPELL_SORROW` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_VAMPIRISM` | UNVERIFIED | 008a34c0 00a59c60 | implemented; not yet compared with the exe |  |
+| `SPELL_VAMPIRISM` | FIXED | 00a59c60 (00a59d4e..00a59d6e chop), 008a34c0, 00e15a80 | drain heal = trunc(frac·damage + 0.5) — rounded half up (engine truncated); frac = LifeDrainIntensity (ABILITY_LIFE_DRAIN) + Vampirism value·0.01; no drain from Undead (0xa, dynamic), Mechanical (9) or Elemental (0xc) targets (engine drained Undead). Same code path as ABILITY_LIFE_DRAIN (abilities partition: its MATCH needs these two corrections too). Whether the damage term excludes overkill was not traced | DrainRoundsHalfUpAndSkipsUndead |
 | `SPELL_DEEP_FREEZE` | MATCH | 00a5a900 (0x117) | frozen target takes ×max(value·0.01, 1) |  |
 | `SPELL_REGENERATION` | MATCH | 0097c9f0 (0x118) | immune: Undead, Elemental, Mechanical |  |
 | `SPELL_DIVINE_VENGEANCE` | FIXED | 00976b90, 0097d7b0 | truncated base; the engine's ×sqrt(frags) (manual p.191) not located in the exe — extra damage term 00977e60 not decompiled | SpellBaseDamageTruncates |
@@ -612,6 +614,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_WARCRY_FEAR_MY_ROAR` | GAP | 004e57d0, 009bdbd0 | the duration table 004e57d0 has no 0x125 case (no lasting effect — the engine only zeroes ATB, consistent); the success chance 0.5 + (level − target level)·0.05 used by the engine was not located in the exe (no 0x125 dispatch outside the enum table 009f29c0) |  |
 | `SPELL_WARCRY_BATTLECRY` | FIXED | 008a1e50 (0x126), FUN_00946030 | speed +((lvl−1)/div)·per + base (confirmed), offence by the same struct formula (engine 1 + lvl/2) | WarcryBonusesUseLevelMinusOne |
 | `SPELL_WARCRY_SHOUT_OF_MANY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_ABILITY_VENOM` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_ARTFSET_LIONS_DEMORALIZED` | FIXED | 008cf7ff-008cf86d, 00989fd0 (case 0x129) | was not implemented: a Knight (hero class 1) with 2+ Lions pieces (set 3) marks every hero-strike target with effect 0x129 (infinite, not re-applied if present); the mark lowers morale by Lions_2_HeroAttack_DeMorale (+0x1178) | AuditSpecSetTests.LionsSetDemoralisesTheKnightsTargets |
 | `SPELL_DEMON_RAGE_LEVEL_1` | MATCH | 008a84e0 | rage level thresholds RPForLevel1..3 (engine RageLevel) |  |
 | `SPELL_DEMON_RAGE_LEVEL_2` | MATCH | 008a84e0 | rage level thresholds RPForLevel1..3 (engine RageLevel) |  |
@@ -625,6 +628,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_ABILITY_RAGE_OF_THE_FOREST` | UNVERIFIED | 008a32b0 008a34c0 008a4330 008a4800 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_POWER_FEED` | UNVERIFIED | 0097c1d0 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_SLEEPING_STRIKE` | UNVERIFIED | 008d3950 00a597a0 00a5fee0 00a63020 | implemented; not yet compared with the exe |  |
+| `SPELL_EFFECT_PREPARED_POSITION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_BATTLE_RAGE` | UNVERIFIED | 008a4330 | implemented; not yet compared with the exe |  |
 
 ## Artifacts (combat effects found in this audit)
