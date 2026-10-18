@@ -1,0 +1,33 @@
+using H5.Core.Data;
+
+namespace H5.Combat.Tests;
+
+/// <summary>The hover prediction's retaliation verdict follows the engine's rules (exe 00a5fee0).</summary>
+[Collection("game")]
+public class UiPredictionTests(GameDataFixture f)
+{
+    Battle Adjacent() => f.Duel("CREATURE_FOOTMAN", 10, "CREATURE_PEASANT", 30, posA: new Cell(4, 4), posB: new Cell(5, 4));
+
+    [Fact]
+    public void OnlyExpertBlindStopsRetaliationInPrediction()
+    {
+        foreach (var (mastery, expect) in new[] { (Mastery.Basic, true), (Mastery.Advanced, true), (Mastery.Expert, false) })
+        {
+            var b = Adjacent();
+            var (a, t) = (b.State.Units[0], b.State.Units[1]);
+            b.AddEffect(t, new Effect { Id = "SPELL_BLIND", Mastery = mastery, Remaining = 10 });
+            var p = b.PredictAttack(a.Id, t.Id, null, ranged: false)!;
+            Assert.Equal(expect, p.Retaliates);
+            if (!expect) Assert.Equal("COMBAT_NO_BLIND_RETALIATE", p.RetaliateKey);
+        }
+    }
+
+    [Fact]
+    public void HypnotizedTargetNeverRetaliatesInPrediction()
+    {
+        var b = Adjacent();
+        var (a, t) = (b.State.Units[0], b.State.Units[1]);
+        b.AddEffect(t, new Effect { Id = "SPELL_HYPNOTIZE", SourceSide = t.Side, Remaining = 10 });
+        Assert.Equal("COMBAT_NO_HYPNOTIZE_RETALIATE", b.PredictAttack(a.Id, t.Id, null, ranged: false)!.RetaliateKey);
+    }
+}

@@ -65,7 +65,8 @@ public sealed partial class Battle
     {
         if (!t.Alive || t.IsWarMachine || t.IsObject) return (false, "COMBAT_NO_RETALIATE");
         if (a.HasEffect(H5.Combat.Fx.RuneBattleRage)) return (false, "COMBAT_NO_RETALIATE");
-        if (t.HasEffect("SPELL_HYPNOTIZE") && Controller(t) == Controller(a)) return (false, "COMBAT_NO_HYPNOTIZE_RETALIATE");
+        // A hypnotized stack never retaliates (engine CanRetaliate; exe 00a5fee0 reports it with this string).
+        if (t.HasEffect("SPELL_HYPNOTIZE")) return (false, "COMBAT_NO_HYPNOTIZE_RETALIATE");
         if (t.HasEffect("SPELL_ABILITY_GATING")) return (false, "COMBAT_NO_GATING_RETALIATE");
         if (ranged && !(HasAbilityNow(t, "ABILITY_RANGED_RETALIATE") && t.MaxShots > 0))
             return (false, "COMBAT_NO_SHOOTER_RETALIATE");
@@ -74,7 +75,7 @@ public sealed partial class Battle
         if (a.HasEffect(H5.Combat.Fx.Invisible)) return (false, "COMBAT_NO_RETALIATE_TO_INVISIBLE");
         if (HasAbilityNow(a, Ab.FastAttack) && t.HasEffect("SPELL_SLOW")) return (false, "COMBAT_NO_RETALIATE_TO_FAST_ATTACKER");
         bool can = t.RetaliationsLeft > 0 && !t.HasEffect(H5.Combat.Fx.Sleep) && !t.HasEffect(H5.Combat.Fx.Stunned)
-                   && !t.HasEffect(H5.Combat.Fx.Frozen) && !t.HasEffect("SPELL_BLIND");
+                   && !t.HasEffect(H5.Combat.Fx.Frozen);   // lesser Blind does not stop retaliation (only Expert, above)
         if (!can) return (false, "COMBAT_NO_RETALIATE");
         if (!ranged && t.Has("ABILITY_COWARDICE") && TotalHealthOf(a) > TotalHealthOf(t))
             return (false, "COMBAT_NO_RETALIATE_COVARDICE");
