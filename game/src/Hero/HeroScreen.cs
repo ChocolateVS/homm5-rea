@@ -129,6 +129,9 @@ public partial class HeroScreen : Control
         AddChild(vpc);
         var scene = new TownScene3D(stand);
         vp.AddChild(scene);
+        // The stand scene is the screen's backdrop; the mounted hero belongs to the single-hero page
+        // (the meeting layout covers the area where he stands).
+        if (_meet != null) return;
         Callable.From(() =>
         {
             if (!Game.Instance.Db.Heroes.TryGetValue(_hero.DefId, out var def) || !Game.Instance.Fs.Exists(def.SourcePath)) return;

@@ -667,6 +667,19 @@ public partial class AdventureScreen : Control
     /// Test helper (`--adventure-test-attack`): sends the selected hero at the nearest monster it
     /// can reach today; the battle then plays on the combat screen (AI on both sides) and returns.
     /// </summary>
+    /// <summary>Dev: hires a hero in the first own town (if needed) and opens the meeting screen for two own heroes.</summary>
+    public void MeetTest()
+    {
+        var s = Session.S;
+        if (MyHeroes().Count() < 2 && s.Towns.FirstOrDefault(t => t.Owner == Session.Human.Index) is { } town)
+            Session.Apply(new HireHeroCmd(town.Object, 0));
+        var mine = MyHeroes().Take(2).ToList();
+        // Layout check when only one own hero exists: pair it with any other hero on the map.
+        if (mine.Count == 1 && s.Heroes.FirstOrDefault(h => h.Alive && h.Id != mine[0].Id) is { } any) mine.Add(any);
+        if (mine.Count == 2) Hero.HeroScreen.OpenMeeting(this, mine[0], mine[1]);
+        else GD.PushWarning("[H5] meet test: need two heroes");
+    }
+
     public void TestAttackNearest()
     {
         if (Selected is not { } hero) { GD.Print("[H5] test attack: no hero"); return; }
