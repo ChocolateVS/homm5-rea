@@ -72,6 +72,7 @@ public sealed partial class Adventure
         if (c.Building.StartsWith("TB_DWELLING_") && next == 1 && int.TryParse(c.Building[^1..], out var tier))
             t.Available[tier - 1] += WeeklyGrowth(t, tier);
         Emit(new BuildingBuilt(t.Object, c.Building, next));
+        if (c.Building == ArtifactMerchantBuilding) StockArtifactMerchants();
         foreach (var h in S.Heroes.Where(h => h.Alive && h.InTown == t.Object && c.Building == "TB_MAGIC_GUILD")) LearnFromGuild(h, t);
         return null;
     }

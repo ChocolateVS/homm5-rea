@@ -233,6 +233,8 @@ public sealed class AdvState
     public List<HeroState> OffMapHeroes = new();
     public List<TownState> Towns = new();
     public Dictionary<int, ObjState> Objects = new();
+    /// <summary>Artifact merchant stock (6 slots, null = sold) by town or map object index.</summary>
+    public Dictionary<int, string?[]> ArtifactMarkets = new();
     /// <summary>Hero definition ids not yet in play (tavern pool).</summary>
     public List<string> HeroPool = new();
     public PendingBattle? Battle;

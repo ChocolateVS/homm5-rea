@@ -206,3 +206,21 @@ public static class UpgradeChooser
         return choose;
     }
 }
+
+/// <summary>The map's Artifact Merchant wagon (BUILDING_BLACK_MARKET): UI/BuyArtefact for the visiting hero.</summary>
+public sealed partial class BlackMarketScreen : MapBuildingScreen
+{
+    readonly ArtifactMerchantController _merchant;
+
+    public BlackMarketScreen(AdventureScreen adv, int heroId, int market) : base(adv, "UI/BuyArtefact.(WindowScreen).xdb", heroId, market)
+    {
+        _merchant = new ArtifactMerchantController(Ui, adv.Session, () => Me, () => Hero, market, () => adv.Hud.Refresh(),
+            text => AdvDialogs.Message(this, adv.ObjectTitle(market), text, null));
+    }
+
+    public override void Refresh()
+    {
+        base.Refresh();
+        _merchant?.Refresh();
+    }
+}

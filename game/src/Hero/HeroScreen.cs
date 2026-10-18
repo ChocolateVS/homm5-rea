@@ -353,13 +353,13 @@ public partial class HeroScreen : Control
     static System.Xml.Linq.XElement? ArtifactItem(string id) =>
         Game.Instance.Xdb.Load(ArtifactTable).Root?.Element("objects")?.Elements("Item").FirstOrDefault(i => (string?)i.Element("ID") == id)?.Element("obj");
 
-    static Texture2D? ArtifactIcon(string id)
+    internal static Texture2D? ArtifactIcon(string id)
     {
         var href = (string?)ArtifactItem(id)?.Element("Icon")?.Attribute("href");
         return string.IsNullOrEmpty(href) ? null : Game.Instance.LoadTexture(XdbRef.Parse(href, ArtifactTable).Path);
     }
 
-    static string ArtifactName(string id) =>
+    internal static string ArtifactName(string id) =>
         Game.Instance.Db.Artifacts.TryGetValue(id, out var a) && a.Name.Length > 0 ? a.Name : id;
 
     public override void _UnhandledInput(InputEvent e)

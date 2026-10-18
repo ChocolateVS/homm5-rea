@@ -516,13 +516,16 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 break;
             }
-            case ObjectVisited { What: "BUILDING_HILL_FORT" or "BUILDING_WARMACHINE_FACTORY" } bv when HumanCaused(player) && !Autoplay && s.Hero(bv.HeroId) is { } visitor:
+            case ObjectVisited { What: "BUILDING_HILL_FORT" or "BUILDING_WARMACHINE_FACTORY" or "BUILDING_BLACK_MARKET" } bv when HumanCaused(player) && !Autoplay && s.Hero(bv.HeroId) is { } visitor:
             {
-                // Hill Fort / War Machine Factory: their stock windows while the hero stands at the object.
+                // Hill Fort / War Machine Factory / Artifact Merchant: their stock windows while the hero stands at the object.
                 Hud.Visible = false;
-                Control screen = bv.What == "BUILDING_HILL_FORT"
-                    ? new HillFortScreen(this, visitor.Id, bv.Object)
-                    : new WarMachineFactoryScreen(this, visitor.Id, bv.Object);
+                Control screen = bv.What switch
+                {
+                    "BUILDING_HILL_FORT" => new HillFortScreen(this, visitor.Id, bv.Object),
+                    "BUILDING_BLACK_MARKET" => new BlackMarketScreen(this, visitor.Id, bv.Object),
+                    _ => new WarMachineFactoryScreen(this, visitor.Id, bv.Object),
+                };
                 AddChild(screen);
                 await ToSignal(screen, Node.SignalName.TreeExited);
                 Hud.Visible = true;

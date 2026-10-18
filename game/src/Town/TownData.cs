@@ -97,5 +97,6 @@ public static class TownData
         foreach (var def in Defs(s.Db, t))
             if (def.Level <= t.MaxLevel.GetValueOrDefault(def.Type) && t.Level(def.Type) < def.Level)
                 t.Built[def.Type] = def.Level;
+        s.Game.StockArtifactMerchants();
     }
 }

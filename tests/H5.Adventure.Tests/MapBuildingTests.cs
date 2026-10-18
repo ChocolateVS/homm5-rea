@@ -115,3 +115,49 @@ public class WitchHutAndTreeTests(Fixture f)
         Assert.False(g.Apply(new UseTreeOfKnowledgeCmd(h.Id, tree.Index) { Player = p.Index }).Ok);
     }
 }
+
+/// <summary>Artifact merchants (exe CBlackMarket): 3 minor, 2 major, 1 relic; CostOfGold, halved in the Week of Trade.</summary>
+[Collection("adv")]
+public class ArtifactMerchantTests(Fixture f)
+{
+    [Fact]
+    public void MapMerchantIsStockedAndSells()
+    {
+        var g = f.NewGame("A2M1");
+        var p = g.Current;
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
+        var wagon = g.Map.Objects.First(o => o.Shared.Type == "BUILDING_BLACK_MARKET");
+        var stock = g.MerchantStock(wagon.Index);
+        Assert.Equal(6, stock.Count);
+        Assert.Equal(stock.Count(a => a != null), stock.Where(a => a != null).Distinct().Count());
+        string[] classes = { "ARTF_CLASS_MINOR", "ARTF_CLASS_MINOR", "ARTF_CLASS_MINOR", "ARTF_CLASS_MAJOR", "ARTF_CLASS_MAJOR", "ARTF_CLASS_RELIC" };
+        for (int i = 0; i < 6; i++)
+            if (stock[i] is { } a) { Assert.Equal(classes[i], f.Db.ArtifactClass[a]); Assert.DoesNotContain(a, f.Db.ArtifactsNotForSale); }
+        Assert.Contains("GOLDEN_SEXTANT", f.Db.ArtifactsNotForSale);
+        int slot = Enumerable.Range(0, 6).First(i => stock[i] != null);
+        var art = stock[slot]!;
+        p.Purse[Purse.Gold] = 100000;
+        Assert.False(g.Apply(new BuyMerchantArtifactCmd(h.Id, wagon.Index, slot) { Player = p.Index }).Ok);   // not there
+        h.Pos = wagon.ActiveTiles.FirstOrDefault(wagon.Pos);
+        g.S.MoonWeek = "WEEK_OF_TRADE";
+        int price = g.MerchantPrice(art);
+        Assert.Equal(f.Core.Artifacts[art].CostOfGold / 2, price);
+        var r = g.Apply(new BuyMerchantArtifactCmd(h.Id, wagon.Index, slot) { Player = p.Index });
+        Assert.True(r.Ok, r.Error);
+        Assert.Contains(art, h.Artifacts);
+        Assert.Equal(100000 - price, p.Purse[Purse.Gold]);
+        Assert.Null(g.MerchantStock(wagon.Index)[slot]);
+    }
+
+    [Fact]
+    public void AcademyMerchantStocksWhenBuilt()
+    {
+        var g = f.NewGame("A2M1");
+        var town = g.S.Towns.First();
+        town.Type = "TOWN_ACADEMY";
+        Assert.Empty(g.MerchantStock(town.Object));
+        town.Built[Engine.Adventure.ArtifactMerchantBuilding] = 1;
+        g.StockArtifactMerchants();
+        Assert.Equal(6, g.MerchantStock(town.Object).Count);
+    }
+}

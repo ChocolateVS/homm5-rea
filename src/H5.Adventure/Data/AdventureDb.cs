@@ -87,6 +87,8 @@ public sealed class AdventureDb
     public Dictionary<string, BankDef> Banks { get; } = new();
     /// <summary>Artifact id → class (ARTF_CLASS_MINOR/MAJOR/RELIC/GRAIL).</summary>
     public Dictionary<string, string> ArtifactClass { get; } = new();
+    /// <summary>Artifacts with Artifacts.xdb CanBeGeneratedToSell = false (never offered by merchants).</summary>
+    public HashSet<string> ArtifactsNotForSale { get; } = new(StringComparer.Ordinal);
     /// <summary>Hero class → preferred spells for the town spell shop (HeroClass.xdb).</summary>
     public Dictionary<string, List<string>> PreferredSpells { get; } = new();
     public Dictionary<string, PerkDef> Perks { get; } = new();
@@ -276,6 +278,7 @@ public sealed class AdventureDb
             var obj = item.Element("obj");
             var t = obj.Str("Type");
             if (t.StartsWith("ARTF_CLASS_", StringComparison.Ordinal) && item.Str("ID") != "ARTIFACT_NONE") ArtifactClass[item.Str("ID")] = t;
+            if (obj.Str("CanBeGeneratedToSell") == "false") ArtifactsNotForSale.Add(item.Str("ID"));
         }
     }
 

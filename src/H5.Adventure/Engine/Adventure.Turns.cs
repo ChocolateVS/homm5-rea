@@ -33,6 +33,7 @@ public sealed partial class Adventure
             Emit(new WeekStarted(S.Week, S.MoonWeek));
             WeeklyGrowthAll();
             foreach (var p in S.Players) RollTavern(p);
+            RestockTownArtifactMerchants();
         }
         foreach (var t in S.Towns) t.BuiltToday = false;
         foreach (var p in S.Players.Where(p => p.Alive)) DailyIncome(p);

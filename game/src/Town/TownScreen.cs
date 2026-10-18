@@ -136,7 +136,7 @@ public partial class TownScreen : Control
         bus.On("enter_blacksmith", () => OpenSub("blacksmith"));
         bus.On("enter_shipyard", OpenShipyard);
         bus.On("enter_special", () => OpenSub("special"));
-        bus.On("buy_artifacts", () => Notice("Artifact Merchant", "The artifact merchant is not open yet."));
+        bus.On("buy_artifacts", () => OpenSub("artifacts"));
         bus.On("show_town_info", () => OpenSub("info"));
         bus.On("click_pointer", (_, src) => { if (src?.Name == "Hero" && VisitingHero() is { } h) OpenHero(h); });
         // The dndicon template is only used by the original drag code.
@@ -257,6 +257,7 @@ public partial class TownScreen : Control
             "hero" => VisitingHero() is { } h ? new HeroScreen(Adv, h, this) : GarrisonHero() is { } g ? new HeroScreen(Adv, g, this) : null,
             "upgrade" => new UpgradeCreaturesScreen(this),
             "info" => new TownInfoScreen(this),
+            "artifacts" => Town.Type == "TOWN_ACADEMY" && Town.Level(H5.Adventure.Engine.Adventure.ArtifactMerchantBuilding) > 0 ? new ArtifactMerchantScreen(this) : null,
             "special" => null,
             _ => null,
         };
