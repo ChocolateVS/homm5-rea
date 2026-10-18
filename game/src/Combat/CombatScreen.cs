@@ -1135,6 +1135,8 @@ public partial class CombatScreen : Control
     {
         if (!k.Pressed || k.Echo || k.CtrlPressed) return false;
         bool tactics = Session.Battle.State.Phase == BattlePhase.Tactics;
+        // esc_menu section: close_menu 'ESC' / 'E' while the in-game menu is open.
+        if (Hud.EscMenuOpen && k.Keycode is Key.Escape or Key.E) { Hud.CloseEscMenu(); return true; }
         switch (k.Keycode)
         {
             case Key.Escape or Key.F4 or Key.F10: Hud.ShowOptions(); return true;

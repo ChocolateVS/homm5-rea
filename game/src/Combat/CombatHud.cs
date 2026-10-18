@@ -142,10 +142,21 @@ public partial class CombatHud : Control
         menu.Bus.On("surrender", () => { CloseOptions(); _screen.CmdSurrender(); });
         menu.Bus.On("main_menu", () => { CloseOptions(); _screen.ReturnToMenu(); });
         menu.Bus.On("exit_to_windows", () => GetTree().Quit());
-        menu.Bus.On("options", () => Log.AddLine("<body>The game options screen is not reproduced yet."));
+        menu.Bus.On("options", () =>
+        {
+            // The stock data-driven Options screen (UI/uiconsts GameOptions), as on the adventure map.
+            CloseOptions();
+            Options.GameOptionsScreen? options = null;
+            options = new Options.GameOptionsScreen(() => options!.QueueFree()) { MouseFilter = MouseFilterEnum.Stop };
+            AddChild(options);
+        });
         _escMenu = menu;
         AddChild(menu);
     }
+
+    /// <summary>esc_menu bindsection: close_menu on ESC or E while the menu is open.</summary>
+    internal bool EscMenuOpen => _escMenu != null;
+    internal void CloseEscMenu() => CloseOptions();
 
     void CloseOptions()
     {
