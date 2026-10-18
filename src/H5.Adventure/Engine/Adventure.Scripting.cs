@@ -57,6 +57,15 @@ public sealed partial class Adventure
     public HeroState? HeroByName(string name) =>
         S.Heroes.Find(h => h.Alive && (h.DefId == name || h.Name == name));
 
+    /// <summary>
+    /// A hero by script name wherever it is: on the map, in a player's reserve, or dead — hero
+    /// script functions work "regardless of where the hero is" (script reference).
+    /// </summary>
+    public HeroState? HeroByNameAnywhere(string name) =>
+        HeroByName(name)
+        ?? S.OffMapHeroes.Find(h => h.DefId == name || h.Name == name)
+        ?? S.Heroes.Find(h => h.DefId == name || h.Name == name);
+
     public MapObject? ObjectByName(string name) =>
         string.IsNullOrEmpty(name) ? null : Map.Objects.Find(o => o.Name == name && !(S.Objects.TryGetValue(o.Index, out var os) && os.Removed));
 
@@ -118,7 +127,9 @@ public sealed partial class Adventure
     /// <summary>Puts a hero definition on the map for a player (DeployReserveHero).</summary>
     public HeroState ScriptDeployHero(HeroDef def, int owner, Tile pos)
     {
-        var h = HeroFromDef(def, owner, pos);
+        var h = S.OffMapHeroes.Find(x => x.DefId == def.Id);
+        if (h != null) { S.OffMapHeroes.Remove(h); h.Pos = pos; h.Owner = owner; h.Alive = true; }
+        else h = HeroFromDef(def, owner, pos);
         S.Heroes.Add(h);
         S.HeroPool.Remove(def.Id);
         RevealAround(h);
@@ -284,6 +295,26 @@ public sealed partial class Adventure
         Emit(new HeroMoved(-1 - index, new[] { from, to }, 0));
     }
 
+    /// <summary>Re-applies a saved script placement to the static map (loading a save; no events).</summary>
+    public void RestorePlacement(int index, Tile pos, float rot)
+    {
+        var o = Map.Objects[index];
+        var oldTiles = o.BlockedTiles.Concat(o.ActiveTiles).ToList();
+        o.Pos = pos;
+        o.Rot = rot;
+        RefreshBlocking(oldTiles.Concat(o.BlockedTiles));
+        _activeIndex = null;
+    }
+
+    /// <summary>Re-applies blocking for objects removed in the saved state (loading a save).</summary>
+    public void RestoreRemovedBlocking()
+    {
+        var tiles = S.Objects.Where(kv => kv.Value.Removed && kv.Key < Map.Objects.Count)
+            .SelectMany(kv => Map.Objects[kv.Key].BlockedTiles).ToList();
+        RefreshBlocking(tiles);
+        _activeIndex = null;
+    }
+
     /// <summary>SetObjectRotation: changes the footprint orientation (quarter turns).</summary>
     public void ScriptRotateObject(int index, float rot)
     {
@@ -295,11 +326,11 @@ public sealed partial class Adventure
     }
 
     /// <summary>Adds a script-created object (CreateMonster, CreateArtifact…) and rolls its state.</summary>
-    public MapObject ScriptAddObject(MapObject o)
+    public MapObject ScriptAddObject(MapObject o, bool setup = true)
     {
         o.Index = Map.Objects.Count;
         Map.Objects.Add(o);
-        SetupObject(o);
+        if (setup) SetupObject(o);
         RefreshBlocking(o.BlockedTiles);
         _activeIndex = null;
         return o;

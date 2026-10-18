@@ -127,11 +127,15 @@ public sealed partial class AdventureScripting
         });
         Reg("AddHeroCreatures", c =>
         {
+            // FUN_005c6140: argument errors only; a full army silently takes nothing (world command).
+            if (c.Str(0).Length == 0) throw c.Error("Hero name is not specified");
             var h = Hero(c, 0);
-            var cr = CreatureName(c, 1);
+            int id = c.Int(1);
+            var cr = Ids.Creatures.Name(id) is { } n0 && id > 0 ? n0 : throw c.Error($"Invalid creature ID {id}");
             int n = c.Int(2);
-            if (n <= 0) return;
-            if (!h.Army.TryAdd(cr, n)) throw c.Error($"Hero \"{h.DefId}\" has no free army slot");
+            if (n < 0) throw c.Error("Quantity cannot be negative");
+            if (n == 0) return;
+            if (!h.Army.TryAdd(cr, n)) { Log.Add($"AddHeroCreatures: hero {h.DefId} has no free slot for {cr}"); return; }
             GameEvents.Add(new H5.Adventure.Engine.ArmyChanged(h.Id, -1));
         });
         Reg("RemoveHeroCreatures", c =>

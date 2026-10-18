@@ -88,7 +88,7 @@ public static class BaseLibrary
         var src = ctx.Str(0);
         try
         {
-            var p = Compiler.Compile(src, "parse");
+            var p = ctx.L.Compile(src, "parse");
             ctx.Return(LuaValue.Function(ctx.L.NewClosure(p, Array.Empty<LuaValue>())));
         }
         catch (LuaSyntaxException) { ctx.Return(LuaValue.Nil); }

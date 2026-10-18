@@ -24,7 +24,7 @@ public sealed partial class AdventureScripting
     HeroState Hero(HostContext c, int i)
     {
         var name = c.Str(i);
-        return Game.HeroByName(name) ?? throw c.Error($"Hero \"{name}\" doesn't exist");
+        return Game.HeroByNameAnywhere(name) ?? throw c.Error($"Hero \"{name}\" doesn't exist");
     }
 
     HeroState? HeroOrNull(HostContext c, int i) => Game.HeroByName(c.Str(i));

@@ -223,6 +223,8 @@ public sealed class AdvState
     public Rng Rng = new(1);
     public List<PlayerState> Players = new();
     public List<HeroState> Heroes = new();
+    /// <summary>Heroes that exist but are not on the map: player reserves (DeployReserveHero), kept out of taverns.</summary>
+    public List<HeroState> OffMapHeroes = new();
     public List<TownState> Towns = new();
     public Dictionary<int, ObjState> Objects = new();
     /// <summary>Hero definition ids not yet in play (tavern pool).</summary>

@@ -18,7 +18,7 @@ namespace H5.Scripting.Lua;
 /// </summary>
 public sealed partial class LuaState
 {
-    public LuaTable Globals { get; }
+    public LuaTable Globals { get; private set; }
     public readonly List<LuaThread> Threads = new();
     public LuaThread? Current { get; private set; }
     /// <summary>While positive, sleep() is ignored (the original's no-yield counter, +0x50).</summary>
@@ -62,19 +62,52 @@ public sealed partial class LuaState
 
     public LuaThread NewThread(string label) => new() { Id = _nextId++, Label = label };
 
-    public void Register(string name, HostCall call) =>
-        Globals.Set(name, LuaValue.Function(new HostFunction(name, call) { Id = 0 }));
+    public void Register(string name, HostCall call)
+    {
+        var f = new HostFunction(name, call) { Id = 0 };
+        HostFunctions[name] = f;
+        Globals.Set(name, LuaValue.Function(f));
+    }
 
     public LuaValue GetGlobal(string name) => Globals.Get(name);
     public void SetGlobal(string name, LuaValue v) => Globals.Set(name, v);
 
     // ---- loading and running ------------------------------------------------------------
 
+    readonly Dictionary<string, string> _keyBySource = new(StringComparer.Ordinal);
+    /// <summary>Host functions by name, for re-linking function values after loading a snapshot.</summary>
+    public readonly Dictionary<string, HostFunction> HostFunctions = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Compiles a chunk and remembers its source under a key unique to that source text, so
+    /// closures can be re-linked to their prototypes after a save is loaded.
+    /// </summary>
     public Proto Compile(string source, string chunk)
     {
         var p = Compiler.Compile(source, chunk);
-        Chunks[chunk] = (source, p);
+        if (!_keyBySource.TryGetValue(source, out var key))
+        {
+            key = chunk;
+            for (int n = 2; Chunks.ContainsKey(key); n++) key = $"{chunk}#{n}";
+            _keyBySource[source] = key;
+            Chunks[key] = (source, p);
+        }
+        SetChunkKey(p, key);
         return p;
+    }
+
+    internal void ReplaceGlobals(LuaTable g) => Globals = g;
+
+    internal void RestoreSourceIndex()
+    {
+        _keyBySource.Clear();
+        foreach (var (key, (source, _)) in Chunks) _keyBySource.TryAdd(source, key);
+    }
+
+    static void SetChunkKey(Proto p, string key)
+    {
+        p.ChunkKey = key;
+        foreach (var c in p.Protos) SetChunkKey(c, key);
     }
 
     /// <summary>

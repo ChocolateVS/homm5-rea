@@ -69,6 +69,12 @@ sealed class ScriptRunCommand : ICommand
             using var files = mref.Open(ctx.Fs);
             var map = loader.Load(files);
             var (g, _) = H5.Adventure.Engine.Adventure.NewGame(db, map, H5.Adventure.Engine.GameSetup.AllPlayers(map, humans: 1, seed));
+            if (args.Contains("--heroes"))
+            {
+                foreach (var h in g.S.Heroes) Console.WriteLine($"  hero {h.DefId} ({h.Name}) owner {h.Owner} at {h.Pos} town {h.InTown} garrison {h.Garrisoned}");
+                foreach (var h in g.S.OffMapHeroes) Console.WriteLine($"  reserve {h.DefId} owner {h.Owner}");
+                foreach (var o in map.OfKind(ObjectKind.Town)) Console.WriteLine($"  town #{o.Index} {o.Name} owner {o.Owner} garrisonHero {o.GarrisonHero?.Shared?.Id}");
+            }
             var host = AdventureScripting.Create(g, files, ids, loader.Catalog);
             host.AutoAnswerUi = true;
             host.SegmentsPerCommand = 2;

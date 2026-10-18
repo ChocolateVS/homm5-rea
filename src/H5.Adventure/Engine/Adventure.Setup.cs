@@ -166,6 +166,18 @@ public sealed partial class Adventure
             if (TownAt(o.Pos) is { } t && t.Owner == owner) h.InTown = t.Object;
             S.Heroes.Add(h);
         }
+        // Player reserves exist from the start but stay off the map until scripts deploy them.
+        foreach (var p in S.Players)
+        {
+            if (p.Index >= Map.Players.Count) continue;
+            foreach (var hi in Map.Players[p.Index].ReserveHeroInstances)
+            {
+                if (hi.Shared == null || S.Heroes.Any(x => x.DefId == hi.Shared.Id) || S.OffMapHeroes.Any(x => x.DefId == hi.Shared.Id)) continue;
+                var h = HeroFromInstance(hi, p.Index, default);
+                S.OffMapHeroes.Add(h);
+                S.HeroPool.Remove(h.DefId);
+            }
+        }
         // Heroes the editor placed in town garrisons (AdvMapTown/GarrisonHero) belong to the town's owner.
         foreach (var o in Map.OfKind(ObjectKind.Town))
         {

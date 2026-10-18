@@ -51,6 +51,7 @@ public sealed class MapLoader
         };
 
         ReadPlayers(root, m);
+        ReadReserveHeroes(root, m, files);
         ReadObjectives(root, m, files);
         ReadScript(root, m, files);
 
@@ -314,12 +315,72 @@ public sealed class MapLoader
         return o;
     }
 
+    /// <summary>Reserve heroes are inline AdvMapHero objects in each player's &lt;ReserveHeroes&gt; list.</summary>
+    void ReadReserveHeroes(XElement root, AdvMap m, MapFiles files)
+    {
+        int i = 0;
+        foreach (var p in root.Items("players"))
+        {
+            if (i >= m.Players.Count) break;
+            var mp = m.Players[i++];
+            mp.ReserveHeroes.Clear();
+            foreach (var item in p.Items("ReserveHeroes"))
+            {
+                if (item.Element("AdvMapHero") is { } h)
+                {
+                    var hi = LoadHero(h, files);
+                    mp.ReserveHeroInstances.Add(hi);
+                    if (hi.Shared?.Id is { Length: > 0 } id) mp.ReserveHeroes.Add(id);
+                }
+                else if ((string?)item.Attribute("href") is { Length: > 0 } href && !href.StartsWith('#'))
+                {
+                    var path = XdbRef.Parse(href, files.MapXdbPath).Path;
+                    var def = _db.Heroes.Values.FirstOrDefault(d => d.SourcePath.Equals(path, StringComparison.OrdinalIgnoreCase));
+                    if (def != null) mp.ReserveHeroes.Add(def.Id);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Some campaign heroes use shared files not named *.(AdvMapHeroShared).xdb (e.g.
+    /// MapObjects/Stronghold/Gottai.xdb), which the database's catalogue scan does not pick up;
+    /// define such a hero from its file on first use so map heroes always have their identity.
+    /// </summary>
+    void EnsureHeroDef(XElement heroObject, MapFiles files)
+    {
+        var path = XdbRef.Parse(heroObject.Href("Shared"), files.MapXdbPath).Path;
+        if (path.Length == 0 || _db.Heroes.Values.Any(h => h.SourcePath.Equals(path, StringComparison.OrdinalIgnoreCase))) return;
+        if (!files.Exists(path)) return;
+        var root = files.LoadXml(path).Root;
+        if (root == null || root.Name.LocalName != "AdvMapHeroShared") return;
+        var ed = root.Element("Editable");
+        var def = new HeroDef
+        {
+            Id = root.Str("InternalName") is { Length: > 0 } id ? id : Path.GetFileName(path).Split('.')[0],
+            SourcePath = path, Class = root.Str("Class"), Specialization = root.Str("Specialization"), Town = root.Str("TownType"),
+            Name = files.ReadText(ed.Href("NameFileRef"), path)?.Trim() ?? "",
+        };
+        var ps = root.Element("PrimarySkill");
+        if (ps != null && ps.Str("SkillID") is { Length: > 0 } psId && psId != "HERO_SKILL_NONE")
+            def.PrimarySkill = new SkillEntry(psId, MasteryParse.Parse(ps.Str("Mastery")));
+        def.Attack = ed.Int("Offence"); def.Defence = ed.Int("Defence"); def.SpellPower = ed.Int("Spellpower"); def.Knowledge = ed.Int("Knowledge");
+        foreach (var s in ed.Items("skills")) def.Skills.Add(new SkillEntry(s.Str("SkillID"), MasteryParse.Parse(s.Str("Mastery"))));
+        def.Perks.AddRange(ed.StrItems("perkIDs"));
+        def.Spells.AddRange(ed.StrItems("spellIDs"));
+        def.Ballista = ed.Bool("Ballista"); def.FirstAidTent = ed.Bool("FirstAidTent"); def.AmmoCart = ed.Bool("AmmoCart");
+        // Campaign variants reuse a stock hero's InternalName (RedHeaven07_Orlando is "Orlando"):
+        // keep both definitions, the variant under its file path; scripts still see def.Id.
+        if (!_db.Heroes.TryAdd(def.Id, def)) _db.Heroes[path] = def;
+    }
+
     /// <summary>"BLD_UPG_NONE" → 0, "BLD_UPG_1" → 1 … "BLD_UPG_5" → 5.</summary>
     public static int UpgradeLevel(string s) =>
         s.StartsWith("BLD_UPG_", StringComparison.Ordinal) && int.TryParse(s[8..], out var n) ? n : 0;
 
     HeroInstance LoadHero(XElement e, MapFiles files)
     {
+        EnsureHeroDef(e, files);
         var hi = _db.LoadHeroInstance(e, files.MapXdbPath);
         // A placed hero only overrides the shared hero's editable data where the map
         // author changed it; empty sections fall back to the shared definition.

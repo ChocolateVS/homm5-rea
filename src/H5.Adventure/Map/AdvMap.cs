@@ -67,6 +67,8 @@ public sealed class MapPlayer
     public bool HeroInTown;
     public string DefaultBonus = "";
     public List<string> ReserveHeroes = new();
+    /// <summary>Editor-defined reserve heroes (DeployReserveHero puts them on the map).</summary>
+    public List<HeroInstance> ReserveHeroInstances = new();
     public List<string> BannedHeroes = new(), AllowedHeroes = new(), BannedHeroRaces = new();
 }
 

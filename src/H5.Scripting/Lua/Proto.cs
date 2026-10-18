@@ -49,6 +49,8 @@ public struct Instr
 public sealed class Proto
 {
     public string Chunk = "";
+    /// <summary>Key of the compiled source in <see cref="LuaState.Chunks"/> (unique per distinct source).</summary>
+    public string ChunkKey = "";
     public string Name = "?";
     public int LineDefined;
     public int NumParams;

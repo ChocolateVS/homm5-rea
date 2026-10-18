@@ -119,10 +119,11 @@ public sealed partial class AdventureScripting
             var cr = CreatureName(c, 1);
             int n = c.Int(2);
             var o = ObjOrNull(c, 0, out var h);
-            if (n <= 0) return;
-            if (h != null) { if (!h.Army.TryAdd(cr, n)) throw c.Error($"Hero \"{h.DefId}\" has no army slot"); return; }
+            if (n < 0) throw c.Error("Quantity cannot be negative");
+            if (n == 0) return;
+            if (h != null) { if (!h.Army.TryAdd(cr, n)) Log.Add($"AddObjectCreatures: {h.DefId} has no free slot"); return; }
             if (o == null) throw c.Error($"Object \"{c.Str(0)}\" has no army");
-            if (S.Town(o.Index) is { } town) { if (!town.Garrison.TryAdd(cr, n)) throw c.Error("Town garrison is full"); return; }
+            if (S.Town(o.Index) is { } town) { if (!town.Garrison.TryAdd(cr, n)) Log.Add($"AddObjectCreatures: {o.Name} garrison is full"); return; }
             var guards = S.Obj(o.Index).Guards;
             var stack = guards.Find(g => g.Creature == cr);
             if (o.Kind == ObjectKind.Monster && stack == null && guards.Count > 0)
