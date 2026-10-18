@@ -24,6 +24,13 @@ public partial class ArenaScene : Node3D
 
     readonly Dictionary<string, (ArrayMesh Mesh, ModelAsset Model)?> _meshCache = new(StringComparer.OrdinalIgnoreCase);
 
+    public static ArenaScene Create(ArenaDefinition definition)
+    {
+        var scene = new ArenaScene { Name = "Arena" };
+        scene.Build(definition);
+        return scene;
+    }
+
     public static ArenaScene Create(string arenaNameOrPath)
     {
         var scene = new ArenaScene { Name = "Arena" };

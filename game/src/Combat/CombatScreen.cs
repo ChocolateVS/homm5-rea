@@ -63,7 +63,12 @@ public partial class CombatScreen : Control
         // Like the front end, the original HUD is laid out in real pixels.
         GetTree().Root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
 
-        Arena = ArenaScene.Create(PickArena(Session.Seed));
+        // The authoritative battle state names its arena (engine-picked, seeded); older states
+        // without one fall back to the duel rule below.
+        var stateArena = Session.Battle.State.Arena;
+        var definition = !string.IsNullOrEmpty(stateArena) ? ArenaDefinition.Load(stateArena) : ArenaDefinition.Load(PickArena(Session.Seed));
+        GD.Print($"[H5] combat arena: {definition.ScenePath} mount ({definition.MountX},{definition.MountY})");
+        Arena = ArenaScene.Create(definition);
         AddChild(Arena);
         PlaceObstacles();
 
@@ -108,13 +113,14 @@ public partial class CombatScreen : Control
         }
     }
 
-    /// <summary>Deterministic arena choice from the battle seed (both network peers agree).</summary>
-    static string PickArena(ulong seed)
+    /// <summary>
+    /// Duel arenas: duels are fought on Maps/DuelMode/PresetMap, which is all grass, so the
+    /// original draws from the grass entry of CombatArenaTypes (average size: Grass_Big_01,
+    /// Grass_Big_02, Grass_Small_03). The choice is seeded so both network peers agree.
+    /// </summary>
+    static CombatArenaTable.Entry PickArena(ulong seed)
     {
-        var all = ArenaDefinition.ListArenas()
-            .Where(p => p.Contains("Grass", StringComparison.OrdinalIgnoreCase) && !p.Contains("Beach", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (all.Count == 0) all = ArenaDefinition.ListArenas().ToList();
+        var all = CombatArenaTable.ForBattle(CombatArenaTable.TerrainGrass);
         return all[(int)(seed % (ulong)all.Count)];
     }
 
@@ -122,30 +128,42 @@ public partial class CombatScreen : Control
 
     void PlaceObstacles()
     {
-        // The engine places its own obstacles (BattleState.Obstacles); show them with the
-        // original 1x1 grass-arena obstacle models.
-        var models = new[] { "Rock1x1_1", "Rock1x1_2", "Rock1x1_3", "Rock1x1_4" };
+        var s = Session.Battle.State;
         var loader = new ModelLoader(Game.Instance.Xdb);
-        var cache = new Dictionary<string, ArrayMesh?>();
-        foreach (var c in Session.Battle.State.Obstacles)
+        var cache = new Dictionary<string, ArrayMesh?>(StringComparer.OrdinalIgnoreCase);
+        ArrayMesh? Mesh(string modelPath)
         {
-            var name = models[(c.X * 7 + c.Y * 13) % models.Length];
-            var obstacle = $"ArenaObjects/_(ArenaObstacle)/GrassArena/{name}.xdb";
-            if (!cache.TryGetValue(name, out var mesh))
+            if (cache.TryGetValue(modelPath, out var m)) return m;
+            try { m = Game.Instance.Fs.Exists(modelPath) ? ModelBuilder.BuildMesh(loader.Load(modelPath), skinned: false) : null; }
+            catch (Exception e) { GD.PushWarning($"[H5] obstacle {modelPath}: {e.Message}"); m = null; }
+            return cache[modelPath] = m;
+        }
+
+        if (s.ObstaclePlacements.Count > 0)
+        {
+            // Original obstacle models placed by the engine's port of the stock generator: the
+            // model origin sits on the anchor tile, turned by the placement's quarter turns.
+            foreach (var p in s.ObstaclePlacements)
             {
-                mesh = null;
-                try
+                if (p.Model == null || Mesh(p.Model) is not { } mesh) continue;
+                Arena.AddChild(new MeshInstance3D
                 {
-                    if (Game.Instance.Fs.Exists(obstacle))
-                    {
-                        var r = H5.Core.Xdb.XdbRef.Parse((string?)Game.Instance.Xdb.Load(obstacle).Root!.Element("Model")?.Attribute("href"), obstacle);
-                        if (!r.IsEmpty) mesh = ModelBuilder.BuildMesh(loader.Load(r.Path), skinned: false);
-                    }
-                }
-                catch (Exception e) { GD.PushWarning($"[H5] obstacle {name}: {e.Message}"); }
-                cache[name] = mesh;
+                    Name = $"Obstacle_{p.Anchor.X}_{p.Anchor.Y}", Mesh = mesh,
+                    Position = Arena.Grid.CellCenter(new Vector2I(p.Anchor.X, p.Anchor.Y)),
+                    Rotation = new Vector3(0, p.Rotation * Mathf.Pi / 2, 0),
+                });
             }
-            if (mesh == null) continue;
+            return;
+        }
+
+        // States without placements (fixed cell lists): show the original grass 1x1 rocks.
+        var rocks = new[] { "Rock1x1_1", "Rock1x1_2", "Rock1x1_3", "Rock1x1_4" };
+        foreach (var c in s.Obstacles)
+        {
+            var obstacle = $"ArenaObjects/_(ArenaObstacle)/GrassArena/{rocks[(c.X * 7 + c.Y * 13) % rocks.Length]}.xdb";
+            if (!Game.Instance.Fs.Exists(obstacle)) continue;
+            var r = H5.Core.Xdb.XdbRef.Parse((string?)Game.Instance.Xdb.Load(obstacle).Root!.Element("Model")?.Attribute("href"), obstacle);
+            if (r.IsEmpty || Mesh(r.Path) is not { } mesh) continue;
             Arena.AddChild(new MeshInstance3D
             {
                 Name = $"Obstacle_{c.X}_{c.Y}", Mesh = mesh,

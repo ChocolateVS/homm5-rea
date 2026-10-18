@@ -58,9 +58,19 @@ public sealed class ArenaDefinition
 
     public static ArenaDefinition Load(string nameOrPath)
     {
+        var path = ResolveScenePath(nameOrPath);
+        return Load(Game.Instance.Xdb.Load(path).Root!, path);
+    }
+
+    /// <summary>An arena from <see cref="CombatArenaTable"/>: a scene reference or an inline scene.</summary>
+    public static ArenaDefinition Load(CombatArenaTable.Entry entry) =>
+        entry.InlineScene != null ? Load(entry.InlineScene, CombatArenaTable.Path) : Load(entry.ScenePath!);
+
+    /// <summary>Builds a definition from an AdventureFlybyScene element; hrefs resolve against <paramref name="scenePath"/>.</summary>
+    public static ArenaDefinition Load(XElement scene, string scenePath)
+    {
         var xdb = Game.Instance.Xdb;
-        var def = new ArenaDefinition { ScenePath = ResolveScenePath(nameOrPath) };
-        var scene = xdb.Load(def.ScenePath).Root!;
+        var def = new ArenaDefinition { ScenePath = scenePath };
 
         var mount = scene.Element("MountPoint");
         def.MountX = (int)F(mount?.Element("Pos")?.Element("x"));
