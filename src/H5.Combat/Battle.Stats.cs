@@ -19,12 +19,16 @@ public sealed partial class Battle
 
     IEnumerable<Unit> Adjacent(Unit u) => S.Living.Where(o => o.Id != u.Id && !o.IsObject && AreAdjacent(u, o));
 
+    SideBonus Side(Unit u) => S.SideBonuses is { Length: 2 } sb ? sb[u.Side] : NoSideBonus;
+    static readonly SideBonus NoSideBonus = new();
+
     public int AttackOf(Unit u, Unit? vs = null)
     {
         var h = HeroOf(u);
         double a = u.BaseAttack;
         if (u.HasEffect(H5.Combat.Fx.RuneDragonform)) a += u.BaseAttack;   // raw value doubled (p.192)
         if (h.Present && !u.IsWarMachine && !u.IsObject) a += h.Attack;
+        if (!u.IsWarMachine && !u.IsObject) a += Side(u).Attack;
         a += Fx(u, "SPELL_BLOODLUST");
         a -= Fx(u, "SPELL_WEAKNESS");                       // Suffering
         a += Fx(u, H5.Combat.Fx.Enraged);
@@ -62,6 +66,7 @@ public sealed partial class Battle
         if (u.HasEffect(H5.Combat.Fx.RuneDragonform)) raw += u.BaseDefence;
         double d = raw;
         if (h.Present && !u.IsWarMachine && !u.IsObject) d += h.Defence;
+        if (!u.IsWarMachine && !u.IsObject) d += Side(u).Defence;
         d += Fx(u, "SPELL_STONESKIN");
         d += Fx(u, H5.Combat.Fx.Benediction) > 0 ? 1 : 0;
         d += RageBonus(u, "DEMON_RAGE_BONUS_DEFENCE");
@@ -213,7 +218,7 @@ public sealed partial class Battle
             if (!(HeroOf(u).HasPerk(Sk.ArtificialGlory) && (u.Has(Ab.Mechanical) || u.IsWarMachine))) return 0;
         }
         var h = HeroOf(u);
-        int m = h.Present ? h.Morale : 0;
+        int m = (h.Present ? h.Morale : 0) + Side(u).Morale;
         // Army composition (p.314, rules 2 and 3)
         var army = S.Units.Where(x => x.Side == u.Side && x.Kind == UnitKind.Creature && !x.Summoned && x.InitialCount > 0).ToList();
         if (army.Count >= 2)
@@ -257,7 +262,7 @@ public sealed partial class Battle
     {
         if (u.IsObject) return 0;
         var h = HeroOf(u);
-        int l = h.Present ? h.Luck : 0;
+        int l = (h.Present ? h.Luck : 0) + Side(u).Luck;
         var eh = Enemy(u.Side);
         if (eh.Present && eh.HasPerk(Sk.DeadLuck)) l -= 1;
         l -= (int)Fx(u, "SPELL_SORROW");

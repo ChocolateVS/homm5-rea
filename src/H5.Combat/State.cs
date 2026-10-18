@@ -190,6 +190,12 @@ public sealed class BattleState
     /// <summary>Town fortifications, moat and towers when the battle is a siege; null for field battles.</summary>
     public SiegeState? Siege;
     public HeroState[] Heroes = { new() { Side = 0 }, new() { Side = 1 } };
+    /// <summary>
+    /// Bonuses for all creatures of a side that do not depend on a hero being present: town buildings and
+    /// town specialisations for the troops guarding (or assaulting) a town (fan manual p.244, DefaultStats
+    /// TownBuildingBonuses). Filled by the adventure layer; zero in duels.
+    /// </summary>
+    public SideBonus[] SideBonuses = { new(), new() };
     public List<FieldObject> Fields = new();
     public Rng Rng = new(1);
     public BattlePhase Phase = BattlePhase.Tactics;
@@ -235,4 +241,10 @@ public sealed class BattleState
         foreach (var b in bytes) { h ^= b; h *= 1099511628211UL; }
         return h.ToString("x16");
     }
+}
+
+/// <summary>Flat stat modifiers applied to every creature of one side (see <see cref="BattleState.SideBonuses"/>).</summary>
+public sealed class SideBonus
+{
+    public int Attack, Defence, Morale, Luck;
 }

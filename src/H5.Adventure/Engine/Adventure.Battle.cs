@@ -169,9 +169,26 @@ public sealed partial class Adventure
         var attackerSetup = new ArmySetup { Hero = ToInstance(att), Army = att.Army.ToSlots() };
         var defHero = pb.DefenderHero >= 0 ? S.Hero(pb.DefenderHero) : null;
         var defenderSetup = new ArmySetup { Hero = defHero != null ? ToInstance(defHero) : null, Army = pb.DefenderArmy.Select(s => new ArmySlot(s.Creature, s.Count)).ToList() };
-        var state = BattleSetup.Create(Core, attackerSetup, defenderSetup, seed);
+        // Town assault: fortifications, moat, towers, Guard Post, and town combat bonuses.
+        var town = pb.DefenderObject >= 0 ? S.Town(pb.DefenderObject) : null;
+        TownCombatBonus? defBonus = null, attBonus = null;
+        if (town != null)
+        {
+            (defBonus, attBonus) = TownBonuses(town);
+            if (defenderSetup.Hero is { } dh) { dh.SpellPower += defBonus.HeroSpellPower; dh.Knowledge += defBonus.HeroKnowledge; }
+        }
+        var state = BattleSetup.Create(Core, attackerSetup, defenderSetup, seed, siege: town != null ? SiegeFor(town) : null);
         state.Heroes[0].Morale += att.NextBattleMorale; state.Heroes[0].Luck += att.NextBattleLuck;
         if (defHero != null) { state.Heroes[1].Morale += defHero.NextBattleMorale; state.Heroes[1].Luck += defHero.NextBattleLuck; }
+        if (defBonus != null) AddSide(state.SideBonuses[1], defBonus);
+        if (attBonus != null) AddSide(state.SideBonuses[0], attBonus);
+        foreach (var (side, h) in new[] { (0, (HeroState?)att), (1, defHero) })
+        {
+            if (h == null) continue;
+            var (ga, gl) = GrailHeroBonus(h.Owner);
+            state.Heroes[side].Attack += ga;
+            state.Heroes[side].Luck += gl;
+        }
         return state;
     }
 

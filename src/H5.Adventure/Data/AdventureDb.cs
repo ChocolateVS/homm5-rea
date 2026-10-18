@@ -97,12 +97,28 @@ public sealed class AdventureDb
 
     AdventureDb(GameDatabase core) => Core = core;
 
+    XdbLoader? _xdb;
+    readonly Dictionary<string, string?> _townBonus = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>TOWN_BONUS_* of a (TownSpecialization) xdb (TownState.Specialization), or null. Cached.</summary>
+    public string? TownSpecializationBonus(string? specPath)
+    {
+        if (string.IsNullOrEmpty(specPath) || _xdb == null) return null;
+        lock (_townBonus)
+        {
+            if (_townBonus.TryGetValue(specPath, out var b)) return b;
+            b = _xdb.FileSystem.Exists(specPath) ? _xdb.Load(specPath).Root?.Element("Bonus")?.Value.Trim() : null;
+            _townBonus[specPath] = b;
+            return b;
+        }
+    }
+
     const string TownTypesInfo = "GameMechanics/RefTables/TownTypesInfo.xdb";
 
     public static AdventureDb Load(GameDatabase core, PakFileSystem fs)
     {
         var x = new XdbLoader(fs);
-        var db = new AdventureDb(core);
+        var db = new AdventureDb(core) { _xdb = x };
         db.LoadBuildings(x, fs);
         db.LoadHeroClasses(x);
         db.LoadMoonWeeks(x);
