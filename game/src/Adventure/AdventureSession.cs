@@ -85,7 +85,9 @@ public sealed class AdventureSession
     /// <summary>Applies a command for the current (human) player.</summary>
     public AdvResult Apply(AdvCommand cmd)
     {
-        var r = Game.Apply(cmd with { Player = Game.Current.Index });
+        // Through the script host's sink when one is attached, so map triggers see the human's actions.
+        var c = cmd with { Player = Game.Current.Index };
+        var r = Game.CommandSink?.Invoke(c) ?? Game.Apply(c);
         if (!r.Ok) GD.Print($"[H5] adventure command rejected: {cmd.GetType().Name}: {r.Error}");
         return r;
     }

@@ -63,7 +63,7 @@ public partial class AdventureScreen : Control
     public override void _Ready()
     {
         // Like the other original screens, the HUD is laid out in real pixels.
-        GetTree().Root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
+        H5Reborn.Settings.VideoSettings.ApplyScaling();
         if (_built) return;
         _built = true;
 
@@ -82,6 +82,8 @@ public partial class AdventureScreen : Control
         if (first != null) Select(first);
         else if (MyTowns().FirstOrDefault() is { } town) World.Camera.CenterOn(town.Pos);
         Hud.Refresh();
+        // Map scripts and their UI (messages, dialog scenes, objectives); idempotent, campaigns attach too.
+        Campaign.ScriptUiBridge.Attach(this);
     }
 
     // ---------------------------------------------------------------- state helpers
