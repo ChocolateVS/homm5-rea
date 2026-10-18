@@ -262,6 +262,13 @@ public sealed partial class TavernScreen : TownSubScreen
     public override void Refresh()
     {
         base.Refresh();
+        for (int i = 0; i < 2; i++)
+        {
+            var id = i < Me.Tavern.Length ? Me.Tavern[i] : null;
+            var bm = Ui.Find($"Hero{i + 1}Bookmark");
+            TownUi.SetPicture(bm, id != null && Combat.CombatIcons.Hero(id, false) is { } face ? Game.Instance.LoadTexture(face) : null);
+            if (bm != null && bm.Window.ButtonStates.Count > 1) bm.SetState(i == _slot ? 1 : 0);
+        }
         var defId = _slot < Me.Tavern.Length ? Me.Tavern[_slot] : null;
         var db = Game.Instance.Db;
         Ui.Find("price")?.SetValue("price", H5.Adventure.Engine.Adventure.HeroHireCost.ToString());

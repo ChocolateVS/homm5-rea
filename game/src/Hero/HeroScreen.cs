@@ -126,6 +126,10 @@ public partial class HeroScreen : Control
     {
         _current = page;
         foreach (var p in Pages) if (_page.FindChild(p, false, false) is UiNode n) n.Visible = p == page;
+        // The page-level attribute panel replaces the face/name block on the Inventory page (the Army
+        // page shows attributes inside its own panel).
+        if (_page.FindChild("Attributes", false, false) is UiNode top) top.Visible = page == "Inventory";
+        if (_page.FindChild("HeroInfo", false, false) is UiNode info) info.Visible = page != "Inventory";
         // The inventory page has its own attribute panel at the top; the army page shows attributes inside.
         foreach (var bm in new[] { "Army", "Invertory", "Skills", "Abilities", "Biography" })
             if (_ui.Find($"Bookmarks_HeroSingle/{bm}") is { } b && b.Window.ButtonStates.Count > 1)
@@ -137,6 +141,7 @@ public partial class HeroScreen : Control
     {
         var h = _hero;
         var db = Game.Instance.Db;
+        if (_adv.Session.S.Players.FirstOrDefault(p => p.Index == h.Owner) is { } owner) TownUi.SetResourceBar(_ui, owner);
         TownUi.SetPicture(Find("HeroInfo/Face"), TownUi.HeroFace(h));
         var name = Find("HeroInfo/Name");
         name?.SetValue("HeroName", h.Name);

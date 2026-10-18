@@ -117,6 +117,8 @@ public sealed class ArmySlots
         {
             var army = v.Hero >= 0 ? s.Hero(v.Hero)?.Army : v.Town >= 0 ? s.Town(v.Town)?.Garrison : null;
             var stack = army != null && v.Slot < army.Length ? army[v.Slot] : null;
+            // The 'Pic' window is hidden in the data and shown by code when the slot holds a stack.
+            v.PicHost.Visible = stack is { Count: > 0 };
             TownUi.SetPicture(v.PicHost, stack is { Count: > 0 } ? TownUi.CreatureIcon(stack.Creature) : null);
             if (v.Node.FindChild("Text", true, false) is UiNode t) { t.Visible = stack is { Count: > 0 }; t.SetValue("NumberOfCreatures", stack?.Count.ToString() ?? ""); }
             if (v.Node.FindChild("highlight", true, false) is Control hl) hl.Visible = v == _selected;

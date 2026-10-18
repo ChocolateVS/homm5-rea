@@ -65,7 +65,7 @@ public partial class TownScene3D : Node3D
             else
             {
                 objPath = XdbRef.Parse(href, DescPath).Path;
-                obj = Game.Instance.Fs.Exists(objPath) ? xdb.Load(objPath).Root : null;
+                obj = !string.IsNullOrEmpty(objPath) && Game.Instance.Fs.Exists(objPath) ? xdb.Load(objPath).Root : null;
             }
             if (obj == null) continue;
             try
@@ -254,6 +254,32 @@ public partial class TownScene3D : Node3D
                 TonemapMode = Godot.Environment.ToneMapper.Linear,
             },
         });
+        // Sky dome named by the ambient light (as on the adventure map), drawn unshaded behind everything.
+        var skyHref = (string?)light.Element("SkyDome")?.Attribute("href");
+        if (!string.IsNullOrEmpty(skyHref))
+        {
+            var skyPath = XdbRef.Parse(skyHref, light.Document?.BaseUri ?? "").Path;
+            if (!Game.Instance.Fs.Exists(skyPath)) skyPath = XdbRef.Parse(skyHref).Path;
+            if (Game.Instance.Fs.Exists(skyPath))
+            {
+                var mesh = ModelBuilder.BuildMesh(_loader.Load(skyPath), skinned: false);
+                for (int i = 0; i < mesh.GetSurfaceCount(); i++)
+                {
+                    StandardMaterial3D? sm = mesh.SurfaceGetMaterial(i) switch
+                    {
+                        StandardMaterial3D std => (StandardMaterial3D)std.Duplicate(),
+                        ShaderMaterial shm => new StandardMaterial3D { AlbedoTexture = shm.GetShaderParameter("tex").As<Texture2D>() },
+                        _ => null,
+                    };
+                    if (sm == null) continue;
+                    sm.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+                    sm.DisableFog = true;
+                    sm.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+                    mesh.SurfaceSetMaterial(i, sm);
+                }
+                AddChild(new MeshInstance3D { Name = "SkyDome", Mesh = mesh, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, Position = Camera?.GlobalPosition ?? Vector3.Zero });
+            }
+        }
         var sun = new DirectionalLight3D { Name = "Sun", LightColor = C("LightColor", 2f), ShadowEnabled = true, DirectionalShadowMaxDistance = 600 };
         float p = Mathf.DegToRad(F(light.Element("Pitch"), 45)), y = Mathf.DegToRad(F(light.Element("Yaw"), 45));
         var toSun = new Vector3(Mathf.Cos(p) * Mathf.Cos(y), Mathf.Sin(p), -Mathf.Cos(p) * Mathf.Sin(y));
@@ -307,14 +333,16 @@ public partial class TownScene3D : Node3D
     }
 
     /// <summary>
-    /// View direction in mesh space (sin yaw·cos pitch, cos yaw·cos pitch, sin pitch) → Godot. Town interiors
+    /// View direction in mesh space (−sin yaw·cos pitch, cos yaw·cos pitch, sin pitch) → Godot. Town interiors
     /// are authored in plain mesh space: with this reading the eye lies inside the scene bounds and looks
     /// into it for all eight towns, while the Y-negated main-menu reading puts every town camera outside.
     /// </summary>
     static Vector3 Dir(float pitchDeg, float yawDeg)
     {
         float p = Mathf.DegToRad(pitchDeg), y = Mathf.DegToRad(yawDeg);
-        var m = new System.Numerics.Vector3(Mathf.Sin(y) * Mathf.Cos(p), Mathf.Cos(y) * Mathf.Cos(p), Mathf.Sin(p));
+        // Yaw sign checked on the hero screen stand (camera at (−2,−4), yaw −30°, must face the hero at
+        // the origin) and the fort hall (yaw −90° must face the creature spots at larger x).
+        var m = new System.Numerics.Vector3(-Mathf.Sin(y) * Mathf.Cos(p), Mathf.Cos(y) * Mathf.Cos(p), Mathf.Sin(p));
         return ModelBuilder.ToGodot(m);
     }
 
