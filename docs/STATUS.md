@@ -17,13 +17,13 @@ _Last updated: 2026-10-19 morning (demo refreshed to commit 566974a; builds, mai
 | Combat UI audit | Pass 1: 46 items — 26 fixed, 6 match, 11 gaps, 3 unverified (`docs/rules/AUDIT_COMBAT_UI.md`). Pass 2 running: ATB bar, spellbook targeting, abilities, log, results, the Flee/Surrender dialog (still surrenders instantly), tactics confirmations, ballista shot sequence, a white-glowing Griffin bug. |
 | Triple Ballista usable 3 times | **Fixed per exe** — one action fires all shots at the chosen target (1 base, +1 Triple Ballista, +1 Ballista, +1 Ring of Machine Affinity), stopping if it dies; catapult likewise. |
 | "Not sure all combat mechanics are implemented" | **Audit pass 1 done, honest coverage:** of 585 items, 59 fixed, 40 confirmed matching, 5 gaps, 61 not applicable, **420 not yet verified line-by-line**. Fixes include retaliation timing on double attacks, spell cost order/rounding, 14 missing specialisations, terrain-based Summon Elementals. Three parallel audits now cover the remaining spells, creature abilities and hero skills/artifacts. |
-| Hero movement on the map | In progress (adventure workstream). |
+| Hero movement on the map | **Fixed** — smooth movement along one rounded route (commit 9a06250). |
 | Animated sword slash trail | **Fixed** — effect models now play their original transparency tracks (Footman slash appears at 0.63 s, flashes at 0.8 s, gone by 1.5 s). |
-| Minimap view box outside the minimap | In progress (adventure workstream). Note: the minimap itself works — at the A2M1 start only the south-west corner is explored, a small patch in the minimap's bottom-left, half under the minimize button. |
+| Minimap view box outside the minimap | **Fixed** — frame clipped to the minimap (7b4bcba). Note: the minimap itself works — at the A2M1 start only the south-west corner is explored, a small patch in the minimap's bottom-left, half under the minimize button. |
 | (found in testing) "RANDOM TOWN" placeholder | **Fixed** — random towns show the rolled faction's town. The orange ring under the hero is the original selected-hero symbol (kept). |
 | Hero/town bar full of empty slots | **Fixed** — the bar now shows only your heroes/towns. |
 | Adventure lighting / no fog | **Fixed per exe** — gamma-space lighting and the original distance+height fog, for adventure, combat, towns and the menu. One output constant inferred (see rendering notes). A grey-object regression on A2M1 found during verification is being fixed. |
-| Zoom out further on the adventure map | In progress — "Extended zoom" option, on by default. |
+| Zoom out further on the adventure map | **Done** — "Extended zoom" option, on by default (c9095fc); turn it off in Options for the original limit. |
 | All double-click / click interactions | **Audited** — 61 interactions: 20 matched, 32 fixed, 7 gaps (`docs/rules/AUDIT_INPUT.md`). Double-click hero/town (map and lists), stacks → creature info, building double-click, object tooltips (300 ms / 2 s expand), all `input_a2.cfg` hotkeys. Gaps: dig / kingdom overview / puzzle map screens not built yet. |
 
 ## New features since your last session
@@ -42,7 +42,7 @@ _Last updated: 2026-10-19 morning (demo refreshed to commit 566974a; builds, mai
 - Plus exe findings: `docs/rules/EXE_FINDINGS.md`, `CAMERA.md`, `AI.md`, `AUDIO.md`, `BOATS.md`, `SAVE.md`, `RMG.md`
 
 ## Known gaps (not yet like the original)
-- Market exchange rates, kingdom overview, town info, artifact merchant, faction special buildings, Witch Hut / Seer Huts / Sphinx / grail. (Done since: creature upgrades in towns/Hill Fort, War Machine Factory, Cartographer, Obelisk visits.)
+- Market exchange rates, kingdom overview, town info, artifact merchant, faction special buildings, Witch Hut / Seer Huts / Sphinx / grail. (Done since: creature upgrades in towns/Hill Fort, War Machine Factory, Cartographer, Obelisk visits, Witch Hut, Tree of Knowledge, Town Info and Creature Upgrade screens, Artifact Merchant + merchant wagon, necromancy raise after battle.)
 - Coastline is jagged; no shore foam. Some arenas too dark; lava glow; underground lighting.
 - Ghost Mode: a few effect details not traced in the exe; possessed stacks are AI-played.
 - Map editor not rebuilt (separate project — ask if wanted). Web port: after parity.
