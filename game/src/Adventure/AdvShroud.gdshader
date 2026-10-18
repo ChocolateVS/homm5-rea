@@ -15,6 +15,9 @@ void vertex() {
 
 void fragment() {
 	float depth = texture(depth_tex, SCREEN_UV).x;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	depth = depth * 2.0 - 1.0; // OpenGL NDC depth is -1..1
+#endif
 	vec4 view = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, depth, 1.0);
 	view.xyz /= view.w;
 	vec3 world = (INV_VIEW_MATRIX * vec4(view.xyz, 1.0)).xyz;

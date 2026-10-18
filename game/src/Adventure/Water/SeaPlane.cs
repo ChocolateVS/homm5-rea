@@ -43,7 +43,7 @@ public static class SeaPlane
         {
             Code = """
                 shader_type spatial;
-                render_mode unshaded, cull_back, specular_disabled, depth_draw_opaque;
+                render_mode unshaded, cull_back, specular_disabled, depth_draw_never;
                 uniform sampler2D water_tex : source_color, filter_linear_mipmap, repeat_enable;
                 uniform sampler2D bump : hint_normal, filter_linear_mipmap, repeat_enable;
                 uniform bool has_tex = false;
@@ -51,6 +51,10 @@ public static class SeaPlane
                 uniform vec3 sky_color : source_color = vec3(0.55, 0.62, 0.70);
                 uniform vec3 deep_color : source_color = vec3(0.06, 0.09, 0.12);
                 uniform float mirror = 0.9;
+                // Shallow water near the coast fades out with the depth of the ground below
+                // (scene depth), hiding the flat plane's jagged cut through the per-tile terrain.
+                uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
+                uniform float shore_fade = 0.45;
                 varying vec3 world_pos;
                 void vertex() { world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
                 void fragment() {
@@ -68,7 +72,14 @@ public static class SeaPlane
                     vec3 r = reflect(-view, n);
                     vec3 refl = mix(deep_color * 2.0, sky_color, sqrt(clamp(r.y, 0.0, 1.0)));
                     ALBEDO = mix(base.rgb, refl, mirror * (0.35 + 0.65 * fresnel));
-                    ALPHA = clamp(max(base.a, 0.6) + fresnel * 0.4, 0.0, 1.0);
+                    float d = texture(depth_tex, SCREEN_UV).x;
+                    #if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+                    d = d * 2.0 - 1.0; // OpenGL NDC depth is -1..1
+                    #endif
+                    vec4 vp = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, d, 1.0);
+                    vec3 ground = (INV_VIEW_MATRIX * vec4(vp.xyz / vp.w, 1.0)).xyz;
+                    float shore = clamp((world_pos.y - ground.y) / shore_fade, 0.0, 1.0);
+                    ALPHA = clamp(max(base.a, 0.6) + fresnel * 0.4, 0.0, 1.0) * shore;
                 }
                 """,
         };
