@@ -166,11 +166,13 @@ public sealed partial class Battle
                 Emit(new AbilityTriggered(u.Id, Ab.Brutality, t.Id));
                 strikes++;
             }
-            // Cleave: an extra strike once a creature is killed (p.172).
-            if (i == strikes - 1 && r.Killed > 0 && HasAbilityNow(u, Ab.Cleave) && t.Alive && u.Alive)
+            // Cleave: checked after the FIRST strike only; if it killed at least one creature the strike loop gets one
+            // more full iteration (pattern attack, retaliation rules as usual) — exe FUN_00a65260 (HasAbility(0x63) at
+            // 00a657e2 inside `if (strike == 0)`, loop count and last index both +1).
+            if (i == 0 && r.Killed > 0 && HasAbilityNow(u, Ab.Cleave) && t.Alive && u.Alive)
             {
                 Emit(new AbilityTriggered(u.Id, Ab.Cleave, t.Id));
-                Strike(u, t, new Hit { Kind = AttackKind.Melee, CellsWalked = walked }, pattern: false);
+                strikes++;
             }
         }
         // Rune of Berserking is spent by the attack unless the first blow already killed the target (p.192).
@@ -573,9 +575,12 @@ public sealed partial class Battle
             }
             if (HasAbilityNow(a, Ab.FireBreath))
                 Add(BehindTarget(t, dx, dy, 1), 1, enemiesOnly: false);
+            // Champion Charge: pattern only when the walked distance is strictly greater than ChampionChargeMinimalDistance
+            // (exe FUN_008aa990: MinimalDistance < walked); ChampionCharge.xdb: the cell behind the target at
+            // DamageToOtherTargetsCoefficient 0.5 with DamageAll = true (allies standing there are hit too).
             if (HasAbilityNow(a, Ab.ChampionCharge) && hit.Kind == AttackKind.Melee
-                && hit.CellsWalked >= Stats.Get("combat/Creatures/Haven/ChampionChargeMinimalDistance", 2))
-                Add(BehindTarget(t, dx, dy, 1), 0.5);
+                && hit.CellsWalked > Stats.Get("combat/Creatures/Haven/ChampionChargeMinimalDistance", 2))
+                Add(BehindTarget(t, dx, dy, 1), 0.5, enemiesOnly: false);
             if (HasAbilityNow(a, Ab.AcidBreath) || HasAbilityNow(a, Ab.RainbowBreath))
             {
                 // Prismatic Breath: 1..5 cells behind the target (p.179).

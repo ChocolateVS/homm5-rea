@@ -315,7 +315,8 @@ public sealed partial class Battle
 
         u.RetaliationsLeft = HasAbilityNow(u, Ab.UnlimitedRetaliation) ? int.MaxValue : 1;
         u.Defending = false;
-        u.FrenzyMultiplier = 1;
+        // Battle Frenzy is NOT reset here: the exe keeps SPELL_EFFECT_BATTLE_FRENZY for the whole battle (exe
+        // FUN_00a629b0 adds it with duration 0x7ffffffe; FUN_00a58de0 multiplies each retaliation by factor^stacks).
         RemoveEffect(u, H5.Combat.Fx.TakeRoots);
         // Mountain King: the hero's creatures get MountainKing_ActiveRune (Rune of Thunderclap) refreshed at the
         // start of each of their turns (exe FUN_008a6c40).
