@@ -158,8 +158,8 @@ public partial class DuelLobbyScreen : UiScreen
                     LobbyService.Instance.Send(new JoinRoom(first.Room.RoomId, null));
                 }
                 break;
-            case RoomState when UiNavigator.Current == this:
-                UiNavigator.Goto("wait");
+            case RoomState rs when UiNavigator.Current == this:
+                UiNavigator.Goto(rs.Mode == "adventure" ? "advwait" : "wait");
                 break;
         }
     }
@@ -253,7 +253,8 @@ public partial class DuelLobbyScreen : UiScreen
             try { await lobby.HostAsync(); }
             catch (Exception e) { OnError("Network", e.Message); return; }
         }
-        UiNavigator.ShowOverlay(new CreateGameDialog());
+        // Standard (adventure map) game or duel, like the original lobby's two game types.
+        UiNavigator.ShowOverlay(new AdvNet.GameTypeDialog());
     }
 
     async void Exit()

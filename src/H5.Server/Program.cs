@@ -75,7 +75,9 @@ public static class SessionFactories
 {
     public static IEnumerable<IGameSessionFactory> All(GameInstall install)
     {
-        var db = H5.Core.Data.GameDatabase.Load(PakFileSystem.OpenInstall(install));
+        var fs = PakFileSystem.OpenInstall(install);
+        var db = H5.Core.Data.GameDatabase.Load(fs);
         yield return new H5.Duel.DuelSessionFactory(db);
+        yield return new H5.AdvNet.AdventureSessionFactory(new H5.AdvNet.AdvMapSource(db, fs, install));
     }
 }

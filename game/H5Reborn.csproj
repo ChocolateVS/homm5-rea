@@ -15,5 +15,6 @@
     <ProjectReference Include="..\src\H5.Net\H5.Net.csproj" />
     <ProjectReference Include="..\src\H5.Adventure\H5.Adventure.csproj" />
     <ProjectReference Include="..\src\H5.Scripting\H5.Scripting.csproj" />
+    <ProjectReference Include="..\src\H5.AdvNet\H5.AdvNet.csproj" />
   </ItemGroup>
 </Project>

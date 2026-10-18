@@ -71,6 +71,9 @@ public partial class LobbyService : Node
     /// <summary>The running networked combat, created as soon as GameStarted arrives so no update is missed.</summary>
     public Combat.NetCombatSession? Combat { get; private set; }
 
+    /// <summary>The running networked adventure game (lobby mode "adventure"), created on GameStarted.</summary>
+    public AdvNet.AdvNetGame? Adventure { get; private set; }
+
     public event Action<Message>? MessageReceived;
     public event Action<string>? StatusChanged;
     public event Action<string>? Disconnected;
@@ -156,7 +159,11 @@ public partial class LobbyService : Node
             Bind = DevArgs.NetLoopback ? IPAddress.Loopback : IPAddress.Any,
             Fingerprint = install.DataFingerprint(),
             LanBind = DevArgs.NetLoopback ? new IPEndPoint(IPAddress.Loopback, LanDiscovery.DefaultPort) : null,
-        }, new IGameSessionFactory[] { new H5.Duel.DuelSessionFactory(Game.Instance.Db) }, s => GD.Print($"[server] {s}"));
+        }, new IGameSessionFactory[]
+        {
+            new H5.Duel.DuelSessionFactory(Game.Instance.Db),
+            new H5.AdvNet.AdventureSessionFactory(AdvNet.AdvNetGame.Maps),
+        }, s => GD.Print($"[server] {s}"));
         var hostPort = _host.Port;
         await ConnectChannelAsync($"127.0.0.1:{hostPort}",
             async ct => await TcpFrameChannel.ConnectAsync("127.0.0.1", hostPort, TimeSpan.FromSeconds(5), ct));
@@ -164,11 +171,11 @@ public partial class LobbyService : Node
     }
 
     /// <summary>Lists the hosted game on the configured master server and returns the join code.</summary>
-    public async Task<string> PublishOnlineAsync(bool hasPassword)
+    public async Task<string> PublishOnlineAsync(bool hasPassword, string mode = "duel", int maxPlayers = 2)
     {
         if (_host == null) throw new InvalidOperationException("Not hosting");
         if (string.IsNullOrWhiteSpace(Settings.MasterUrl)) throw new InvalidOperationException("No online server is configured. Set one under Online server.");
-        var online = await _host.PublishOnlineAsync(MasterClient.ParseAddress(Settings.MasterUrl), "duel", 2, hasPassword,
+        var online = await _host.PublishOnlineAsync(MasterClient.ParseAddress(Settings.MasterUrl), mode, maxPlayers, hasPassword,
             mapPorts: Settings.MapRouterPorts && !DevArgs.NetLoopback);
         StatusChanged?.Invoke($"Online game listed. Join code: {online.Lobby.Code}");
         GD.Print($"[net] online join code {online.Lobby.Code}");
@@ -261,6 +268,14 @@ public partial class LobbyService : Node
             case GameStarted gs:
                 // After a reconnect GameStarted is resent only if the client lost its game state entirely.
                 Started = gs;
+                if (AdvNet.AdvNetGame.IsAdventure(gs))
+                {
+                    Combat = null;
+                    try { Adventure = new AdvNet.AdvNetGame(gs, cmd => _client?.SendCommand(cmd) ?? 0, () => _client?.PendingCommands ?? 0); }
+                    catch (Exception e) { Adventure = null; ErrorRaised?.Invoke("Cannot start the game", e.Message); }
+                    break;
+                }
+                Adventure = null;
                 Combat = new Combat.NetCombatSession(Game.Instance.Db, gs,
                     cmd => _client?.SendCommand(cmd) ?? 0, () => _client?.PendingCommands ?? 0);
                 break;
@@ -271,6 +286,7 @@ public partial class LobbyService : Node
                 break;
         }
         Combat?.OnMessage(m);
+        Adventure?.OnMessage(m);
         MessageReceived?.Invoke(m);
     }
 
