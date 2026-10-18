@@ -104,11 +104,10 @@ public partial class ScriptUiBridge : Node
 
         if (Host.GameEvents.Count > 0)
         {
-            // Script-made changes (heroes moved/removed, objects created…) — resync the map view.
+            // Script-made changes (heroes moved/removed, objects created…) play through the adventure
+            // screen's event queue so they animate; a resync marker follows them.
+            Screen.Session.EnqueueScripted(Host.GameEvents.ToList());
             Host.GameEvents.Clear();
-            foreach (var h in Screen.Session.S.Heroes) Screen.World.SyncHero(h);
-            foreach (var o in Screen.Session.Map.Objects) Screen.World.SyncObject(o.Index);
-            Screen.Hud.Refresh();
         }
         foreach (var ev in Host.Events.ToList()) Present(ev);
         Host.Events.Clear();

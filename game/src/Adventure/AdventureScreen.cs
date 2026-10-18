@@ -417,6 +417,14 @@ public partial class AdventureScreen : Control
         var s = Session.S;
         switch (ev)
         {
+            case ScriptResync:
+                // After script-made changes have played: bring every model in line with the state
+                // (covers objects the script created or moved without a dedicated event).
+                foreach (var h in s.Heroes) World.SyncHero(h);
+                foreach (var o in Session.Map.Objects) World.SyncObject(o.Index);
+                Hud.Refresh();
+                Hud.UpdateMinimap();
+                break;
             case HeroMoved m:
                 await AnimateMove(m, player);
                 if (s.Hero(m.HeroId) is { } hm) World.SyncHero(hm);

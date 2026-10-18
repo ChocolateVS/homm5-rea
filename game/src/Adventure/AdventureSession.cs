@@ -82,6 +82,16 @@ public sealed class AdventureSession
 
     public int PendingEvents => _events.Count;
 
+    /// <summary>
+    /// Queues events produced outside a player command (map scripts) so they animate like any
+    /// other; a trailing <see cref="ScriptResync"/> brings the view fully in line afterwards.
+    /// </summary>
+    public void EnqueueScripted(IEnumerable<AdvEvent> events)
+    {
+        foreach (var e in events) _events.Enqueue((e, -1));
+        _events.Enqueue((new ScriptResync(), -1));
+    }
+
     /// <summary>Applies a command for the current (human) player.</summary>
     public AdvResult Apply(AdvCommand cmd)
     {
@@ -124,3 +134,6 @@ public sealed class AdventureSession
 
     public AdvResult QuickCombat() => Apply(H5.Adventure.Engine.QuickCombat.Resolve(Game, Seed ^ ++_battleSeq, H5.Combat.AI.BattleAiRegistry.Create("original")));
 }
+
+/// <summary>Client-side marker queued after script-made events: resync every model with the state.</summary>
+public sealed record ScriptResync : AdvEvent;
