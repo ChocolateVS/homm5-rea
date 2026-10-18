@@ -161,3 +161,50 @@ public class ArtifactMerchantTests(Fixture f)
         Assert.Equal(6, g.MerchantStock(town.Object).Count);
     }
 }
+
+/// <summary>Tear of Asha, digging and obelisk puzzle pieces.</summary>
+[Collection("adv")]
+public class GrailTests(Fixture f)
+{
+    [Fact]
+    public void GrailIsBuriedOnOpenLandAndFoundByDigging()
+    {
+        var g = f.NewGame("A2M1");
+        var p = g.Current;
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
+        Assert.NotNull(g.S.Grail);
+        var grail = g.S.Grail!.Value;
+        var floor = g.Map.Floor(grail.Floor)!;
+        Assert.False(floor.IsBlocked(grail.X, grail.Y));
+        Assert.False(floor.IsWater(grail.X, grail.Y));
+        // Next to it: nothing (no Tear of Asha Vision); a moved hero cannot dig.
+        h.Pos = grail with { X = grail.X + 1 };
+        h.MovePoints = h.MaxMovePoints - 1;
+        Assert.False(g.Apply(new DigCmd(h.Id) { Player = p.Index }).Ok);
+        h.MovePoints = h.MaxMovePoints;
+        Assert.True(g.Apply(new DigCmd(h.Id) { Player = p.Index }).Ok);
+        Assert.Equal(0, h.MovePoints);
+        Assert.False(g.S.GrailFound);
+        h.Pos = grail;
+        h.MovePoints = h.MaxMovePoints;
+        var r = g.Apply(new DigCmd(h.Id) { Player = p.Index });
+        Assert.True(r.Ok, r.Error);
+        Assert.True(g.S.GrailFound);
+        Assert.Contains(Engine.Adventure.GrailArtifact, h.Artifacts);
+    }
+
+    [Fact]
+    public void ObelisksUncoverPuzzlePieces()
+    {
+        var g = f.NewGame("A2M1");
+        var p = g.Current;
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
+        var obelisks = g.Map.Objects.Where(o => o.Shared.Type == "BUILDING_OBELISK").ToList();
+        Assert.Equal(0, g.PuzzlePiecesOpen(p));
+        if (obelisks.Count == 0) return;
+        g.InteractWithObject(h, obelisks[0].Index);
+        Assert.Equal(Engine.Adventure.PuzzlePieces / obelisks.Count, g.PuzzlePiecesOpen(p));
+        foreach (var o in obelisks) g.InteractWithObject(h, o.Index);
+        Assert.Equal(Engine.Adventure.PuzzlePieces, g.PuzzlePiecesOpen(p));
+    }
+}

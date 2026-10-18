@@ -32,6 +32,7 @@ namespace H5.Adventure.Engine;
 [JsonDerivedType(typeof(BuyCartographerMapCmd), "buy_cartographer_map")]
 [JsonDerivedType(typeof(UseTreeOfKnowledgeCmd), "use_tree_of_knowledge")]
 [JsonDerivedType(typeof(BuyMerchantArtifactCmd), "buy_merchant_artifact")]
+[JsonDerivedType(typeof(DigCmd), "dig")]
 public abstract record AdvCommand
 {
     /// <summary>Issuing player; the session layer fills it from the connection.</summary>

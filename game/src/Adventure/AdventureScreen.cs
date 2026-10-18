@@ -184,15 +184,38 @@ public partial class AdventureScreen : Control
         Save.InGameMenu.Show(this, ReturnToMainMenu);
     }
 
-    public void ShowScenarioInfo()
+    /// <summary>The information box (UI/MissionObjectives) on its objectives page.</summary>
+    public void ShowScenarioInfo() => ShowMissionBox("TabObjectives");
+
+    /// <summary>Opens UI/MissionObjectives on a tab (TabObjectives, TabLog or TabKingdom).</summary>
+    public void ShowMissionBox(string tab)
     {
-        if (_modal > 0) return;
-        var m = Session.Map;
-        var goal = m.Objectives.FirstOrDefault(o => o.Primary && o.Kind != "OBJECTIVE_KIND_SCENARIO_INFO")?.Kind ?? "OBJECTIVE_KIND_DEFEAT_ALL";
-        Message(m.Name, $"{m.Description}<br><br>Day {Session.S.DayOfWeek}, week {Session.S.WeekOfMonth}, month {Session.S.Month}.<br>Goal: {GoalText(goal)}");
+        if (_modal > 0 || GetNodeOrNull("MissionBox") != null) return;
+        AddChild(new MissionBoxScreen(this, tab));
     }
 
-    static string GoalText(string kind) => kind switch
+    /// <summary>The puzzle map of the Tear of Asha (UI/PuzzleMap).</summary>
+    public void ShowPuzzleMap()
+    {
+        if (_modal > 0 || GetNodeOrNull("PuzzleMap") != null) return;
+        AddChild(new PuzzleMapScreen(this));
+    }
+
+    /// <summary>adv_dig: asks (stock dig_graal texts), then digs with the selected hero.</summary>
+    public void DigWithSelected()
+    {
+        if (_modal > 0 || Selected is not { } hero || !Session.IsHumanTurn) return;
+        string T(string file, string fallback) => AdvTexts.Get($"UI/AdventureScreen-heavy/{file}") is { Length: > 0 } t ? t : fallback;
+        AdvDialogs.YesNo(_dialogLayer, T("dig_graal_header.txt", "Dig for the Tear of Asha"), T("dig_graal_confirmation.txt", "Do you want to dig?"), null, yes =>
+        {
+            if (!yes) return;
+            var r = Session.Apply(new DigCmd(hero.Id) { Player = Session.Human.Index });
+            if (!r.Ok) Message(T("dig_graal_header.txt", "Dig for the Tear of Asha"), char.ToUpperInvariant((r.Error ?? "Not possible")[0]) + (r.Error ?? "Not possible")[1..] + ".");
+            Hud.Refresh();
+        });
+    }
+
+    internal static string GoalText(string kind) => kind switch
     {
         "OBJECTIVE_KIND_DEFEAT_ALL" => "Defeat all enemies",
         _ => kind.Replace("OBJECTIVE_KIND_", "").Replace('_', ' ').ToLowerInvariant(),
@@ -577,6 +600,17 @@ public partial class AdventureScreen : Control
                     c => { pick = c; done(); }));
                 if (pick != 0 || !afford || learner.Level >= maxLevel) break;
                 Session.Apply(new UseTreeOfKnowledgeCmd(learner.Id, tk.Object) { Player = me.Index });
+                Hud.Refresh();
+                break;
+            }
+            case ObjectVisited { What: "dig:nothing" or "dig:grail" } dg when HumanCaused(player) && !Autoplay:
+            {
+                var title = AdvTexts.Get("UI/AdventureScreen-heavy/dig_graal_header.txt") is { Length: > 0 } dt ? dt : "Dig for the Tear of Asha";
+                var text = dg.What == "dig:grail"
+                    ? $"{ArtifactName(H5.Adventure.Engine.Adventure.GrailArtifact)}<br>{(Game.Instance.Db.Artifacts.TryGetValue(H5.Adventure.Engine.Adventure.GrailArtifact, out var ga) ? ga.Description : "")}"
+                    : AdvTexts.Get("Text/Game/Buildings/Obelisk/NoGrailHere.txt") is { Length: > 0 } ng ? ng : "No sign of a Tear of Asha here...";
+                var face = dg.What == "dig:grail" ? ArtifactIcon(H5.Adventure.Engine.Adventure.GrailArtifact) : null;
+                await Dialog(done => AdvDialogs.Message(_dialogLayer, title, text, face, done));
                 Hud.Refresh();
                 break;
             }

@@ -149,6 +149,15 @@ public partial class UiScreen : Control
         return node;
     }
 
+    /// <summary>Removes a window made by <see cref="Instantiate"/> (and its node) from the screen.</summary>
+    public void RemoveInstance(UiNode node)
+    {
+        foreach (var w in node.Window.Descendants().Prepend(node.Window)) _nodes.Remove(w);
+        foreach (var parent in _nodes.Keys.ToList()) parent.Children.Remove(node.Window);
+        node.QueueFree();
+        QueueRelayout();
+    }
+
     /// <summary>Finds a node by window name, optionally by a '/'-separated path of names (e.g. "MultiPlayer/MenuPanel/BackBtn").</summary>
     public UiNode? Find(string path)
     {

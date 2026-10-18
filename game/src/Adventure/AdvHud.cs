@@ -50,6 +50,10 @@ public partial class AdvHud : Control
         bus.On("flip_floor", _screen.FlipFloor);
         bus.On("EscMenu", _screen.ShowEscMenu);
         bus.On("information", _screen.ShowScenarioInfo);
+        bus.On("adv_dig", _screen.DigWithSelected);
+        bus.On("input_adv_show_kingdom_overview", () => _screen.ShowMissionBox("TabKingdom"));
+        bus.On("input_open_puzzle_map", _screen.ShowPuzzleMap);
+        bus.On("open_puzzle_map", _screen.ShowPuzzleMap);
         bus.On("SpellBookWindow", () => _screen.OpenAdventureSpellbook());
         bus.On("show_minimap", () => Toggle("Minimap"));
         bus.On("show_res_bar", () => Toggle("resource-bar"));

@@ -173,7 +173,7 @@ public static partial class AdventureLauncher
     static Vector2? _click;
     static float? _yaw;
     static bool _go, _endTurn, _meetTest, _spellbook;
-    static string? _visitTest;
+    static string? _visitTest, _open;
     static string? _cast;
     static int? _floor;
     static Vector2I? _look;
@@ -193,6 +193,7 @@ public static partial class AdventureLauncher
         if (arg == "--adventure-end-turn") { _endTurn = true; return true; }
         if (arg == "--adventure-meet-test") { _meetTest = true; return true; }
         if (arg.StartsWith("--adventure-visit-test=")) { _visitTest = arg["--adventure-visit-test=".Length..]; return true; }
+        if (arg.StartsWith("--adventure-open=")) { _open = arg["--adventure-open=".Length..]; return true; }
         if (arg == "--adventure-spellbook") { _spellbook = true; return true; }
         if (arg == "--adventure-rmg-test")
         {
@@ -268,6 +269,13 @@ public static partial class AdventureLauncher
         if (_endTurn) After(0.5).Timeout += screen.EndTurn;
         if (_meetTest) After(0.5).Timeout += screen.MeetTest;
         if (_visitTest is { } visit) After(0.5).Timeout += () => screen.DevVisit(visit);
+        // `--adventure-open=objectives|kingdom|heroes|puzzle`: opens that screen (screenshots).
+        if (_open is { } open) After(0.5).Timeout += () =>
+        {
+            if (open == "puzzle") screen.ShowPuzzleMap();
+            else screen.ShowMissionBox(open == "objectives" ? "TabObjectives" : "TabKingdom");
+            if (open == "heroes") screen.GetNode("MissionBox").Call("ShowHeroesForDev");
+        };
         if (_spellbook) After(0.5).Timeout += () => screen.DevSpellbook(null);
         if (_cast is { } cast) After(0.5).Timeout += () => screen.DevSpellbook(cast);
         if (_click is { } click)

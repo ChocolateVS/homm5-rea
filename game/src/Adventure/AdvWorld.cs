@@ -334,7 +334,7 @@ public partial class AdvWorld : Node3D
                 m.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
                 mesh.SurfaceSetMaterial(i, m);
             }
-            var dome = new MeshInstance3D { Name = "SkyDome", Mesh = mesh, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+            var dome = new MeshInstance3D { Name = "SkyDome", Mesh = mesh, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, Layers = SkyLayer };
             dome.Position = new Vector3(Map.TilesX * 0.5f * Unit, 0, -Map.TilesY * 0.5f * Unit);
             _floors[f].AddChild(dome);
         }
@@ -700,6 +700,11 @@ public partial class AdvWorld : Node3D
 
     // ---------------------------------------------------------------- fog of war
 
+    /// <summary>Render layer of the fog-of-war quad.</summary>
+    public const uint ShroudLayer = 1u << 1;
+    /// <summary>Render layer of the sky dome (left out of the puzzle map's view from above).</summary>
+    public const uint SkyLayer = 1u << 2;
+
     void BuildShroud()
     {
         _shroudMaterial = new ShaderMaterial { Shader = GD.Load<Shader>("res://src/Adventure/AdvShroud.gdshader") };
@@ -711,6 +716,8 @@ public partial class AdvWorld : Node3D
             MaterialOverride = _shroudMaterial,
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
             ExtraCullMargin = 16384,
+            // Its own render layer, so the puzzle map's top-down camera can leave the shroud out.
+            Layers = ShroudLayer,
         };
         AddChild(quad);
     }

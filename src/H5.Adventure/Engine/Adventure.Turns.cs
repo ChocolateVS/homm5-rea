@@ -47,11 +47,24 @@ public sealed partial class Adventure
     /// </summary>
     public Func<int, int, int, int, int>? MineIncomeHook { get; set; }
 
-    /// <summary>Gold from town halls, resources from silos and mines (fan manual p.224, p.269).</summary>
     /// <summary>Daily gold of a town's hall (Town Info "Income").</summary>
     public static int TownGoldIncome(TownState t) => t.Level("TB_TOWN_HALL") switch { 1 => 500, 2 => 1000, 3 => 2000, >= 4 => 4000, _ => 0 };
 
+    /// <summary>The daily income the player can expect (Kingdom Overview): as paid, minus the Dwarven Warren's random resource.</summary>
+    public Purse ExpectedIncome(PlayerState p) => Income(p, display: true);
+
+    /// <summary>Gold from town halls, resources from silos and mines (fan manual p.224, p.269).</summary>
     void DailyIncome(PlayerState p)
+    {
+        var inc = Income(p, display: false);
+        if (inc.R.Any(v => v != 0))
+        {
+            for (int i = 0; i < 7; i++) p.Purse[i] += inc[i];
+            Emit(new ResourcesChanged(p.Index, inc.R, (int[])p.Purse.R.Clone()));
+        }
+    }
+
+    Purse Income(PlayerState p, bool display)
     {
         var inc = new Purse();
         foreach (var t in S.Towns.Where(t => t.Owner == p.Index))
@@ -67,12 +80,12 @@ public sealed partial class Adventure
             {
                 case ObjectKind.Mine:
                     var (kind, amount) = MineYield(o.Shared.Type);
-                    if (kind >= 0 && MineIncomeHook != null) amount = MineIncomeHook(idx, p.Index, kind, amount);
+                    if (kind >= 0 && MineIncomeHook != null && !display) amount = MineIncomeHook(idx, p.Index, kind, amount);
                     if (kind >= 0) inc[kind] += amount;
                     break;
                 case ObjectKind.DwarvenWarren:
                     // One random resource excluding wood and gold (p.269).
-                    inc[Purse.Ore + 1 + S.Rng.Next(5)] += 1;
+                    if (!display) inc[Purse.Ore + 1 + S.Rng.Next(5)] += 1;
                     break;
             }
         }
@@ -89,11 +102,7 @@ public sealed partial class Adventure
                 inc[Purse.Mercury] = inc[Purse.Crystal] = inc[Purse.Sulfur] = inc[Purse.Gem] = 0;
                 break;
         }
-        if (inc.R.Any(v => v != 0))
-        {
-            for (int i = 0; i < 7; i++) p.Purse[i] += inc[i];
-            Emit(new ResourcesChanged(p.Index, inc.R, (int[])p.Purse.R.Clone()));
-        }
+        return inc;
     }
 
     /// <summary>Daily yield of a mine type (p.269).</summary>
