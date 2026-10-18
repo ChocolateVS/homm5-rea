@@ -559,12 +559,27 @@ public partial class CombatHud : Control
         string outcome = won
             ? (r.Contains("surrender") ? "EnemySurrender" : r.Contains("fled") || r.Contains("retreat") ? "EnemyFled" : "EnemyDefated")
             : (r.Contains("surrender") ? "HeroSurrender" : r.Contains("fled") || r.Contains("retreat") ? "HeroFled" : "HeroDefeated");
+        // Exe FUN_005836a0: DescriptionText_Format with the outcome text (type 1 defeated / 2 fled /
+        // 3 surrendered) and, when the enemy was destroyed but the winner kept no troops, <value=no_army> =
+        // WINNER_HAS_NO_ARMY; below it DescriptionExp_Format with HeroExp (own victory) or EnemyExp and the
+        // winner's experience (only when the winning side has a hero).
         if (res.Find("HeaderCont") is { } cont)
-            cont.AddChild(new BitmapText
+        {
+            string Txt(string n) => UiResources.Instance.Text(ResultTexts + n + ".txt") ?? "";
+            bool destroyed = outcome is "EnemyDefated" or "HeroDefeated";
+            bool winnerNoArmy = destroyed && winner is int ws && !s.Units.Any(u => u.Side == ws && u.Alive && u.Kind == UnitKind.Creature);
+            var desc = (Txt("DescriptionText_Format") is { Length: > 0 } fmt ? fmt : "<body_bright><center><value=val>")
+                .Replace("<value=player_hint>", "")
+                .Replace("<value=val>", Txt(outcome))
+                .Replace("<value=no_army>", winnerNoArmy ? Txt("WINNER_HAS_NO_ARMY") : "");
+            long exp = winner is int wi ? _screen.Session.WinnerExperience(wi) : -1;
+            if (exp >= 0)
             {
-                Markup = "<body_bright>" + (UiResources.Instance.Text(ResultTexts + outcome + ".txt") ?? ""),
-                AnchorRight = 1, AnchorBottom = 1,
-            });
+                var expLine = (won ? Txt("HeroExp") : Txt("EnemyExp")).Replace("<value=exp>", exp.ToString());
+                desc += "<br>" + (Txt("DescriptionExp_Format") is { Length: > 0 } ef ? ef : "<body_bright><left><value=val>").Replace("<value=val>", expLine);
+            }
+            cont.AddChild(new BitmapText { Markup = desc, AnchorRight = 1, AnchorBottom = 1 });
+        }
         var h = s.Heroes[me];
         if (h.Present) SetTex(res.Find("Header/Icon"), UiResources.Instance.Texture(CombatIcons.Hero(h.HeroId, true)));
         FillLosses(res, "LostUnits", me);

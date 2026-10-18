@@ -60,6 +60,25 @@ public abstract class CombatSession
 
     /// <summary>False when the side owns no town with a tavern to flee to (CANT_RETREAT_NO_TOWNS).</summary>
     public virtual bool HasTavernTown(int side) => true;
+
+    /// <summary>
+    /// Experience the winning hero gains, for the results screen (-1 when the winner has no hero). Default:
+    /// the slain enemy creatures' Exp (fan manual p.298) plus 500 for defeating (not chasing off) the enemy
+    /// hero; the adventure host overrides it with its own coefficients (neutral difficulty, moon weeks).
+    /// </summary>
+    public virtual long WinnerExperience(int winner)
+    {
+        var s = Battle.State;
+        if (!s.Heroes[winner].Present) return -1;
+        long exp = 0;
+        foreach (var u in s.Units)
+            if (u.Side != winner && u.Kind == UnitKind.Creature && !u.Summoned
+                && Game.Instance.Db.Creatures.TryGetValue(u.CreatureId, out var cd))
+                exp += (long)Math.Max(0, u.InitialCount - Math.Max(0, u.Count)) * cd.Exp;
+        var loser = s.Heroes[1 - winner];
+        if (loser.Present && !loser.Fled) exp += 500;
+        return exp;
+    }
 }
 
 /// <summary>A duel played entirely on this machine: some sides human, others the built-in AI.</summary>
