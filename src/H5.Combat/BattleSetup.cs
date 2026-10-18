@@ -41,9 +41,7 @@ public static class BattleSetup
         if (siege != null) SiegeBuilder.Prepare(db, s, siege);
 
         // Tactics: a third deployment column, cancelled if both heroes have it (fan manual p.108).
-        bool t0 = s.Heroes[0].HasPerk(Sk.Tactics), t1 = s.Heroes[1].HasPerk(Sk.Tactics);
-        s.DeployColumns0 = t0 && !t1 ? 3 : 2;
-        s.DeployColumns1 = t1 && !t0 ? 3 : 2;
+        (s.DeployColumns0, s.DeployColumns1) = TacticsColumns(s.Heroes[0], s.Heroes[1]);
 
         for (int side = 0; side < 2; side++)
         {
@@ -87,6 +85,17 @@ public static class BattleSetup
     /// from the grass entry of the original arena table (average size: Grass_Big_01, Grass_Big_02,
     /// Grass_Small_03) with the battle's RNG.
     /// </summary>
+    /// <summary>
+    /// Deployment columns per side (exe FUN_004d8c10): a side qualifies with Tactics unless the ENEMY hero is a
+    /// Flagbearer of Darkness; only when exactly one side qualifies does it get the third column.
+    /// </summary>
+    internal static (int Side0, int Side1) TacticsColumns(HeroState h0, HeroState h1)
+    {
+        bool t0 = h0.HasPerk(Sk.Tactics) && h1.Specialization != "HERO_SPEC_FLAGBEARER_OF_DARKNESS";
+        bool t1 = h1.HasPerk(Sk.Tactics) && h0.Specialization != "HERO_SPEC_FLAGBEARER_OF_DARKNESS";
+        return (t0 && !t1 ? 3 : 2, t1 && !t0 ? 3 : 2);
+    }
+
     public static BattleState CreateDuel(GameDatabase db, int presetA, int presetB, ulong seed, bool skipTactics = false, string? arena = null)
     {
         if (arena == null)

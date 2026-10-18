@@ -153,4 +153,19 @@ public class AuditHeroTests(GameDataFixture f)
         var other = BattleSetup.AddCreature(f.Db, s, 0, "CREATURE_BEAR_RIDER", 3, new Cell(0, 0), summoned: false);
         Assert.Equal(f.Db.Creature("CREATURE_BEAR_RIDER").Health + extra, other.BaseHealth);
     }
+
+    // exe FUN_004d8c10: a side qualifies with Tactics unless the enemy hero is a Flagbearer of Darkness
+    // (HERO_SPEC_FLAGBEARER_OF_DARKNESS, spec 0x11); the third column goes to a side only if exactly one qualifies.
+    [Fact]
+    public void TacticsColumnsFollowTheOriginalRule()
+    {
+        HeroState H(bool tactics, string spec = "") => new() { Present = true, Specialization = spec,
+            Perks = tactics ? new List<string> { Sk.Tactics } : new List<string>() };
+        const string flag = "HERO_SPEC_FLAGBEARER_OF_DARKNESS";
+        Assert.Equal((3, 2), BattleSetup.TacticsColumns(H(true), H(false)));
+        Assert.Equal((2, 2), BattleSetup.TacticsColumns(H(true), H(true)));            // both cancelled
+        Assert.Equal((2, 2), BattleSetup.TacticsColumns(H(true), H(false, flag)));     // Flagbearer denies it
+        Assert.Equal((2, 3), BattleSetup.TacticsColumns(H(true), H(true, flag)));      // only the Flagbearer qualifies
+        Assert.Equal((2, 2), BattleSetup.TacticsColumns(H(false, flag), H(false)));
+    }
 }
