@@ -658,8 +658,11 @@ public sealed partial class Battle
             // Fire/Magma Shield on melee (p.174, p.177).
             if (!ranged && a.Alive)
             {
-                if (t.Has(Ab.FireShield)) DealElementalDamage(a, (int)(dmg * Stats.Get("combat/Creatures/Abilities/FireShield_Damage_Multiplier", 0.2)), Elements.Fire, t.Id, Ab.FireShield);
-                if (t.Has(Ab.MagmaShield) && a.Alive) DealElementalDamage(a, (int)(dmg * Stats.Get("combat/Creatures/Abilities/MagmaShield_Damage_Multiplier", 0.4)), Elements.Fire, t.Id, Ab.MagmaShield);
+                // Fire / Magma Shield (exe 00a5bcf0 / 00a5bdd0): clamp(multiplier, 0, 10) × the damage taken, capped at the
+                // shield holder's hit points before the blow (overkill doesn't count).
+                int taken = Math.Min(dmg, hpBefore);
+                if (t.Has(Ab.FireShield)) DealElementalDamage(a, (int)(taken * Math.Clamp(Stats.Get("combat/Creatures/Abilities/FireShield_Damage_Multiplier", 0.2), 0, 10)), Elements.Fire, t.Id, Ab.FireShield);
+                if (t.Has(Ab.MagmaShield) && a.Alive) DealElementalDamage(a, (int)(taken * Math.Clamp(Stats.Get("combat/Creatures/Abilities/MagmaShield_Damage_Multiplier", 0.4), 0, 10)), Elements.Fire, t.Id, Ab.MagmaShield);
                 var th = HeroOf(t);
                 if (th.HasPerk(Sk.ChillingBones) && IsUndeadLike(t) && a.Alive) DealElementalDamage(a, (int)(dmg * 0.05), Elements.Water, t.Id, "CHILLING_BONES");
                 if (t.Has(Ab.AcidBlood) && a.Alive && !retaliation)

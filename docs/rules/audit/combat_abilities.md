@@ -37,3 +37,5 @@ FUN_00a64120 / FUN_00a629b0: `+0x14` = ranged strike, `+0x21` = retaliation stri
 | `ABILITY_REGENERATION` | MATCH | 00bbb080, 008a3340 | turn start: heal Range(max(0,HydraRegenerationMin), max(min, HydraRegenerationMax)) inclusive on the top creature, no resurrection (combined with SPELL_REGENERATION in one heal in the exe) |  |
 | `ABILITY_UNLIMITED_RETALIATION` | MATCH | 008a1120 | the retaliation counter is only decremented without the ability |  |
 | `ABILITY_VORPAL_SWORD` | FIXED | 00a673c0, 00a63020 | +1 creature killed on the strike, only vs creature targets without CRYSTAL_SCALES — engine ignored both conditions | AuditAbilityTests.VorpalSwordDoesNotWorkOnCrystalScales |
+| `ABILITY_FIRE_SHIELD` | FIXED | 00a5bcf0 | melee only; clamp(FireShield_Damage_Multiplier,0,10) × min(damage, holder's HP before the blow), dealt as fire spell damage when ≥ 0.5 — engine counted overkill damage (spell-damage rounding in 0097d740 not compared) | AuditAbilityTests.FireShieldIgnoresOverkill |
+| `ABILITY_MAGMA_SHIELD` | FIXED | 00a5bdd0 | same as Fire Shield with MagmaShield_Damage_Multiplier | AuditAbilityTests.FireShieldIgnoresOverkill |

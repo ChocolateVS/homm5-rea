@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 103 |
+| FIXED | 105 |
 | MATCH | 77 |
 | GAP | 8 |
-| UNVERIFIED | 341 |
+| UNVERIFIED | 339 |
 | N/A | 58 |
 
 ## Core mechanics
@@ -108,7 +108,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_SIX_HEADED_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_REGENERATION` | MATCH | 00bbb080, 008a3340 | turn start: heal Range(max(0,HydraRegenerationMin), max(min, HydraRegenerationMax)) inclusive on the top creature, no resurrection (combined with SPELL_REGENERATION in one heal in the exe) |  |
 | `ABILITY_WHIP_STRIKE` | FIXED | 00a629b0, 00a5e2c0 | melee only (incl. retaliation); r = Rng(100): r<40 Slow, r<75 Weakness, else Berserk; power WhipStrikeSpellPower (creature power if <1) — engine cast Slow/Curse/Berserk uniformly | AuditAbilityTests.WhipStrikeCastsSlowWeaknessOrBerserk |
-| `ABILITY_FIRE_SHIELD` | UNVERIFIED | 00a5bcf0 | implemented; not yet compared with the exe |  |
+| `ABILITY_FIRE_SHIELD` | FIXED | 00a5bcf0 | melee only; clamp(FireShield_Damage_Multiplier,0,10) × min(damage, holder's HP before the blow), dealt as fire spell damage when ≥ 0.5 — engine counted overkill damage (spell-damage rounding in 0097d740 not compared) | AuditAbilityTests.FireShieldIgnoresOverkill |
 | `ABILITY_DEADLY_STRIKE` | UNVERIFIED | 00a5bf60 | implemented; not yet compared with the exe |  |
 | `ABILITY_REBIRTH` | UNVERIFIED | 00a58bb0 | implemented; not yet compared with the exe |  |
 | `ABILITY_FRIGHTFUL_PRESENCE` | N/A | 008aaec0 00a65d50 | not used by shipped data |  |
@@ -140,7 +140,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_STORMSTRIKE` | UNVERIFIED | 00a608d0 00a641c0 | implemented; not yet compared with the exe |  |
 | `ABILITY_MARK_OF_FIRE` | FIXED | 00a629b0, 00a5e610 | only on RANGED strikes (+0x14), MarkOfFire_ProcFactor — engine also applied it in melee | AuditAbilityTests.MarkOfFireOnlyOnRangedStrikes |
 | `ABILITY_CROSS_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_MAGMA_SHIELD` | UNVERIFIED | 00a5bdd0 | implemented; not yet compared with the exe |  |
+| `ABILITY_MAGMA_SHIELD` | FIXED | 00a5bdd0 | same as Fire Shield with MagmaShield_Damage_Multiplier | AuditAbilityTests.FireShieldIgnoresOverkill |
 | `ABILITY_PACK_HUNTER` | UNVERIFIED | 00a64120 | implemented; not yet compared with the exe |  |
 | `ABILITY_HOWL` | UNVERIFIED | 00a5cbc0 | implemented; not yet compared with the exe |  |
 | `ABILITY_AGILITY` | UNVERIFIED | 008a6c40 008aaec0 00a66050 | implemented; not yet compared with the exe |  |

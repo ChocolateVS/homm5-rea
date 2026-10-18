@@ -110,6 +110,20 @@ public class AuditAbilityTests(GameDataFixture f)
     }
 
     [Fact]
+    public void FireShieldIgnoresOverkill()   // 00a5bcf0: damage taken capped at the holder's HP before the blow
+    {
+        var b = f.Duel("CREATURE_PEASANT", 3000, "CREATURE_FIRE_ELEMENTAL", 1, 1, L, R);
+        b.Begin();
+        var (a, t) = (b.State.Units[0], b.State.Units[1]);
+        int hpBefore = t.TotalHealth, attackerBefore = a.TotalHealth;
+        b.State.Active = a.Id;
+        Assert.True(b.Apply(new AttackCmd(a.Id, t.Id) { Side = 0 }).Ok);
+        Assert.False(t.Alive);
+        int burnt = attackerBefore - a.TotalHealth;
+        Assert.InRange(burnt, 1, (int)(hpBefore * f.Db.Stats.Get("combat/Creatures/Abilities/FireShield_Damage_Multiplier", 0.2)));
+    }
+
+    [Fact]
     public void FearNeverTriggersOnRetaliation()   // FUN_00a629b0: Fear requires !retaliation (+0x21) and a pending retaliation
     {
         foreach (var (b, r) in Attacks("CREATURE_PEASANT", 30, "CREATURE_NIGHTMARE", 40, L, R))
