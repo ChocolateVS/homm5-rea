@@ -655,7 +655,7 @@ public sealed partial class Battle
         {
             // Extra elemental damage from hero perks.
             if (t.Alive && (ah.HasPerk(Sk.FieryWrath) || ah.HasPerk(Sk.BarbFieryWrath)) && !a.IsWarMachine)
-                DealElementalDamage(t, (int)(dmg * 0.1), Elements.Fire, a.Id, "FIERY_WRATH");
+                DealElementalDamage(t, SpellLikeAmount(dmg * (double)0.1f), Elements.Fire, a.Id, "FIERY_WRATH");   // exe FUN_00a5ed90
             if (t.Alive && ah.HasPerk(Sk.ColdSteel) && !a.IsWarMachine)
                 DealElementalDamage(t, SpellLikeAmount(dmg * (double)0.1f), Elements.Water, a.Id, "COLD_STEEL");   // exe FUN_00a5c000
             if (t.Alive && ah.HasPerk(Sk.Hellfire) && !a.IsWarMachine && (!retaliation || ah.HasPerk(Sk.Hellwrath)) && ah.Mana >= 5
@@ -694,12 +694,7 @@ public sealed partial class Battle
         }
         if (!t.Alive || dmg <= 0 || !a.Alive) return;
 
-        // Target reactions
-        if (HasAbilityNow(t, Ab.BattleRage) && !t.HasEffect(H5.Combat.Fx.BattleRage))
-            AddEffect(t, new Effect { Id = H5.Combat.Fx.BattleRage, Value = Stats.Get("combat/Creatures/Fortress/BattleRage_AttackBonus", 5),
-                Remaining = Stats.Get("combat/Creatures/Fortress/BattleRage_EffectDuration", 2), Positive = true, Dispellable = false });
-        if (t.HasEffect("SPELL_BLIND")) RemoveEffect(t, "SPELL_BLIND");   // blinded creatures regain sight when attacked (p.186)
-        if (t.HasEffect(H5.Combat.Fx.Sleep)) RemoveEffect(t, H5.Combat.Fx.Sleep);
+        // Target reactions (Battle Rage, Blind and Sleeping Strike are handled for any damage in DealDamage, exe FUN_008a6e20)
         if (t.HasEffect("SPELL_HYPNOTIZE")) RemoveEffect(t, "SPELL_HYPNOTIZE");
         if (t.IsClone) { Kill(t, a.Id); return; }
 
@@ -949,6 +944,17 @@ public sealed partial class Battle
         SetTotalHealth(t, Math.Max(0, total));
         int killed = before - t.Count;
         Emit(new Damaged(t.Id, amount, killed, t.Count, t.TopHealth, source, kind, by));
+        // The creature's take-damage handler (exe FUN_008a6e20) runs for any damage, spells included: it ends Blind
+        // and Sleeping Strike, and a Battle Rager (ABILITY_BATTLE_RAGE) gets SPELL_EFFECT_BATTLE_RAGE re-applied every
+        // time, which refreshes its duration (round(BattleRage_EffectDuration) turns).
+        if (t.Count > 0)
+        {
+            if (t.HasEffect("SPELL_BLIND")) RemoveEffect(t, "SPELL_BLIND");
+            if (t.HasEffect(H5.Combat.Fx.Sleep)) RemoveEffect(t, H5.Combat.Fx.Sleep);
+            if (HasAbilityNow(t, Ab.BattleRage))
+                AddEffect(t, new Effect { Id = H5.Combat.Fx.BattleRage, Value = Stats.Get("combat/Creatures/Fortress/BattleRage_AttackBonus", 5),
+                    Remaining = Math.Round(Stats.Get("combat/Creatures/Fortress/BattleRage_EffectDuration", 2)), Positive = true, Dispellable = false });
+        }
         CheckTreachery(t);
         // Mark of the Necromancer feeds mana (p.142).
         foreach (var h in S.Heroes)
