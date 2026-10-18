@@ -12,11 +12,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 75 |
-| MATCH | 48 |
+| FIXED | 78 |
+| MATCH | 56 |
 | GAP | 6 |
-| UNVERIFIED | 397 |
-| N/A | 60 |
+| UNVERIFIED | 389 |
+| N/A | 58 |
 
 ## Core mechanics
 
@@ -27,6 +27,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | Luck: clamp ±5, 10 %/point, once per attack | MATCH | 00a6b820, 008a3ef0, 00a5a170 | EXE_FINDINGS |
 | Morale: clamp ±5 (00a6bd10), 10 %/point, ATB 0.5 good/bad (00a6cf90/00a6cd80) | MATCH | 00a6bd10, 00a6cf90, 00a6cd80 | this audit |
 | Ability trigger chance: integer ratio, ProcFactor as exponent, Range(0,100) roll, Soldier's Luck double/second roll | FIXED | 00a59990, 00a5a170, 00a5d1b0 | AuditProcChanceTests |
+| Retaliation verdict: only Expert Blind blocks, decided before the blow | FIXED | 00a5fee0 | AuditAbilityTests.OnlyExpertBlindStopsRetaliation |
 | Retaliation reset at own turn start / Wait / Defend | MATCH | 008aa960, 008a1990, 008a6be0 | EXE_FINDINGS |
 | Retaliation timing inside the strike loop | FIXED | 00a65260, 00a64e90, 00a646b0 | AuditStrikeTests |
 | Strikes per action (Double Attack, Berserking, Double Shot) | FIXED | 008a0f90 | AuditStrikeTests |
@@ -50,7 +51,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_NO_MELEE_PENALTY` | UNVERIFIED | 008d58c0 00a58de0 00bfb4b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_NO_RANGE_PENALTY` | UNVERIFIED | 00a5c5a0 | implemented; not yet compared with the exe |  |
 | `ABILITY_RANGE_PENALTY` | UNVERIFIED | 00a58de0 00bfb4b0 | implemented; not yet compared with the exe |  |
-| `ABILITY_NO_ENEMY_RETALIATION` | UNVERIFIED | 00a2f130 00a2f710 00a2f8f0 00a5fee0 | implemented; not yet compared with the exe |  |
+| `ABILITY_NO_ENEMY_RETALIATION` | MATCH | 00a5fee0, 00a629b0 | attacker with it gets no retaliation unless the target has SPELL_EFFECT_PREPARATION and Preparation_RetaliateToNER (true in DefaultStats); also suppresses Maneuver's return shot |  |
 | `ABILITY_UNLIMITED_RETALIATION` | UNVERIFIED | 008a1120 | implemented; not yet compared with the exe |  |
 | `ABILITY_DOUBLE_ATTACK` | FIXED | 008a0f90, 00a65260, 00a64e90 | retaliation follows the first blow | tests/H5.Combat.Tests/AuditStrikeTests.DoubleAttackIsAnsweredAfterTheFirstBlow |
 | `ABILITY_DOUBLE_SHOT` | N/A | 008a0f90 | not used by shipped data |  |
@@ -160,7 +161,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_TAUNT` | FIXED | 00a65d50 (00a65e0a) | Taunt_ProcFactor with flag 1 (Soldier's Luck doubles) and no second roll | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
 | `ABILITY_FIERCE_RETALIATION` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
 | `ABILITY_SACRIFICE_GOBLIN` | UNVERIFIED | 008d03a0 | implemented; not yet compared with the exe |  |
-| `ABILITY_FAST_ATTACK` | UNVERIFIED | 00a5fee0 | implemented; not yet compared with the exe |  |
+| `ABILITY_FAST_ATTACK` | MATCH | 00a5fee0 | no retaliation against a FAST_ATTACK attacker while the target is under SPELL_SLOW |  |
 | `ABILITY_PRESENCE_OF_COMMANDER` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
 | `ABILITY_ORDER_OF_THE_CHIEF` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_VENOM` | UNVERIFIED | 00a61e60 | implemented; not yet compared with the exe |  |
@@ -202,7 +203,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_ACID_BLOOD` | UNVERIFIED | 008aa990 00a673c0 | implemented; not yet compared with the exe |  |
 | `ABILITY_AURA_OF_BRAVERY` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
 | `ABILITY_INCINERATE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_INVISIBILITY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `ABILITY_INVISIBILITY` | MATCH | 00a5fee0 | no retaliation against an attacker under SPELL_ABILITY_INVISIBILITY |  |
 | `ABILITY_RIDE_BY_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_ANTI_GIANT` | MATCH | 00a5a900 | AntiGiantDefenceInc vs large |  |
 | `ABILITY_AVENGING_FLAME` | N/A | 00a61090 | not used by shipped data |  |
@@ -251,10 +252,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_LUCKY_STRIKE` | FIXED | 00a59990, 00a5a170 | Soldier's Luck works two ways by caller: flag-1 abilities (Bash, Brutality, Crushing Blow, Flamewave, Taunt, Paw Strike, Bear Roar) double their ProcFactor; callers that name the attacker (on-hit group, Brutality, Warding Arrows, Bear Roar) get a second Range(0,100) roll | AuditProcChanceTests |
 | `HERO_SKILL_TACTICS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ARCHERY` | MATCH | 00a58de0 | ranged strikes ×(1+clamp(SkillOffence/Archery_DamageBonus,0,10)) when HasSkill(0x23) |  |
-| `HERO_SKILL_FRENZY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_FRENZY` | MATCH | 004bbfb0, 004bc020 | +1 min and +1 max damage |  |
 | `HERO_SKILL_PROTECTION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_EVASION` | MATCH | 00a5a900 | ranged ×(1−clamp(Evasion_DamageReduce,0,1)) |  |
-| `HERO_SKILL_TOUGHNESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_TOUGHNESS` | MATCH | 004bc470 | +2 HP per creature when the Toughness mastery is > 0 |  |
 | `HERO_SKILL_ARCANE_TRAINING` | FIXED | 00a34740 | round(min(cost×0.8, cost−1)) | tests/H5.Combat.Tests/AuditSpecTests.SpellCostsMatchTheOriginalChain |
 | `HERO_SKILL_MASTER_OF_ICE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MASTER_OF_FIRE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -316,14 +317,14 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_IMBUE_BALLISTA` | UNVERIFIED | 00a59be0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_CUNNING_OF_THE_WOODS` | UNVERIFIED | 00a5ae40 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ELVEN_LUCK` | MATCH | 00a6a680, 00a6b820 | good-luck multiplier = ElvenLuck_DamageMultiplier instead of GoodLuck_DamageMultiplier |  |
-| `HERO_SKILL_FOREST_RAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_FOREST_RAGE` | MATCH | 004bc020 | +1 max damage for Sylvan creatures |  |
 | `HERO_SKILL_LAST_STAND` | UNVERIFIED | 00a59490 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SUN_FIRE` | UNVERIFIED | 00983790 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SOIL_BURN` | UNVERIFIED | 00a61a60 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_STORM_WIND` | UNVERIFIED | 008a1e50 008a4330 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_FOG_VEIL` | UNVERIFIED | 008a2630 008a4330 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ABSOLUTE_LUCK` | MATCH | 008a3ef0, 00a6a680 | every strike is lucky (good-luck multiplier) unless the target's hero has Absolute Protection (then a normal roll) |  |
-| `HERO_SKILL_MARCH_OF_THE_MACHINES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_MARCH_OF_THE_MACHINES` | MATCH | 004bc0b0, 004bc190 | +2 speed for mechanical creatures; +2 initiative for Iron/Steel/Obsidian Golems (creatures 61/62/161) |  |
 | `HERO_SKILL_REMOTE_CONTROL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ARTIFICIAL_GLORY` | MATCH | 00a751a0, 00a6acd0, 004ba9d0, 004bae10 | mechanical creatures of a hero with the perk get army morale clamped to ≥ 0 and roll only good morale (00a6ba00); without it their morale is 0 |  |
 | `HERO_SKILL_WILDFIRE` | UNVERIFIED | 00a5a900 00a5ed90 00a75b00 | implemented; not yet compared with the exe |  |
@@ -334,7 +335,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_UNSUMMON` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_TELEPORT_ASSAULT` | UNVERIFIED | 0097d7b0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SHAKE_GROUND` | MATCH | 0097d7b0 | verified in EXE_FINDINGS.md |  |
-| `HERO_SKILL_FAST_AND_FURIOUS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_FAST_AND_FURIOUS` | MATCH | 004bc0b0 | +1 speed for every creature in the army |  |
 | `HERO_SKILL_LUCKY_SPELLS` | UNVERIFIED | 00983790 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_POWER_OF_HASTE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_POWER_OF_STONE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -424,7 +425,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_BOMBARDIER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SPEC_IMPREGNABLE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SPEC_HYPNOTIST` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_FLAGBEARER_OF_DARKNESS` | N/A |  | no combat use found in exe or engine |  |
+| `HERO_SPEC_FLAGBEARER_OF_DARKNESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SPEC_HOUNDS` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_SUCCUBUSES` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_ELVEN_VOLLEY` | N/A |  | no combat use found in exe or engine |  |
@@ -474,7 +475,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_RESEARCHER` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_SACRED_HAMMER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SPEC_ECONOMIST` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_DEFENDER` | N/A |  | no combat use found in exe or engine |  |
+| `HERO_SPEC_DEFENDER` | FIXED | 004bc470 | Defenders and upgrades (base creature Defender): +level/5 HP — engine lacked the HP part | AuditHeroTests.DefenderSpecialisationAddsLevelOverFiveHealth |
 | `HERO_SPEC_STORMCALLER` | FIXED | 0097c9f0 | Air spells skip the resistance roll | (SpellHits) |
 | `HERO_SPEC_MASTER_OF_INITIATIVE` | FIXED | 008a4330 | enemy initiative penalty (+own +1 %/lvl from description) | (InitiativeOf) |
 | `HERO_SPEC_CHOSEN_BY_GODS` | N/A |  | no combat use found in exe or engine |  |
@@ -483,7 +484,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_CENTAUR_MISTRESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SPEC_OFFENDER` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_WAR_LEADER` | FIXED | 00a34740 | warcry cost −(lvl/4·1+1) | (HeroManaCost) |
-| `HERO_SPEC_WYVERN_TAMER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SPEC_WYVERN_TAMER` | FIXED | 004bc470 | creatures whose base creature is Wyvern (Wyvern, Foul Wyvern, Paokai): +((level−1)/LevelDivisor)·PerDividedLevel + Base HP — engine used level/LevelDivisor (+2 HP too many) | AuditHeroTests.WyvernTamerHealthUsesLevelMinusOne |
 | `HERO_SPEC_BLOODDRINKER` | UNVERIFIED | 00a5c300 | implemented; not yet compared with the exe |  |
 | `HERO_SPEC_ORC_ELDER` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_GOBLIN_KING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |

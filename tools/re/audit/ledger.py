@@ -227,6 +227,7 @@ MECH = [
     ('Luck: clamp ±5, 10 %/point, once per attack', 'MATCH', '00a6b820, 008a3ef0, 00a5a170', 'EXE_FINDINGS'),
     ('Morale: clamp ±5 (00a6bd10), 10 %/point, ATB 0.5 good/bad (00a6cf90/00a6cd80)', 'MATCH', '00a6bd10, 00a6cf90, 00a6cd80', 'this audit'),
     ('Ability trigger chance: integer ratio, ProcFactor as exponent, Range(0,100) roll, Soldier\'s Luck double/second roll', 'FIXED', '00a59990, 00a5a170, 00a5d1b0', 'AuditProcChanceTests'),
+    ('Retaliation verdict: only Expert Blind blocks, decided before the blow', 'FIXED', '00a5fee0', 'AuditAbilityTests.OnlyExpertBlindStopsRetaliation'),
     ('Retaliation reset at own turn start / Wait / Defend', 'MATCH', '008aa960, 008a1990, 008a6be0', 'EXE_FINDINGS'),
     ('Retaliation timing inside the strike loop', 'FIXED', '00a65260, 00a64e90, 00a646b0', 'AuditStrikeTests'),
     ('Strikes per action (Double Attack, Berserking, Double Shot)', 'FIXED', '008a0f90', 'AuditStrikeTests'),

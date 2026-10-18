@@ -25,3 +25,6 @@ FUN_00a64120 / FUN_00a629b0: `+0x14` = ranged strike, `+0x21` = retaliation stri
 | `ABILITY_FLAMEWAVE` | FIXED | 00a62030 (00a62397) | FlameWave_ProcFactor with flag 1 and no second roll | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
 | `ABILITY_BEAR_ROAR` | UNVERIFIED | 00a5e800 | factor flag 1 + second roll verified; the per-victim size multiplier / victim set (stats +0x354 block) not yet compared |  |
 | `HERO_SKILL_LUCKY_STRIKE` | FIXED | 00a59990, 00a5a170 | Soldier's Luck works two ways by caller: flag-1 abilities (Bash, Brutality, Crushing Blow, Flamewave, Taunt, Paw Strike, Bear Roar) double their ProcFactor; callers that name the attacker (on-hit group, Brutality, Warding Arrows, Bear Roar) get a second Range(0,100) roll | AuditProcChanceTests |
+| `ABILITY_NO_ENEMY_RETALIATION` | MATCH | 00a5fee0, 00a629b0 | attacker with it gets no retaliation unless the target has SPELL_EFFECT_PREPARATION and Preparation_RetaliateToNER (true in DefaultStats); also suppresses Maneuver's return shot |  |
+| `ABILITY_FAST_ATTACK` | MATCH | 00a5fee0 | no retaliation against a FAST_ATTACK attacker while the target is under SPELL_SLOW |  |
+| `ABILITY_INVISIBILITY` | MATCH | 00a5fee0 | no retaliation against an attacker under SPELL_ABILITY_INVISIBILITY |  |

@@ -136,7 +136,10 @@ public sealed partial class Battle
         int killedTotal = 0;
         // Targets that flee from melee (Cowardice / Manoeuvre) react after the whole attack instead of retaliating.
         bool fleeingTarget = HasAbilityNow(t, Ab.Cowardice) || HasAbilityNow(t, Ab.Maneure);
-        bool noRetBase = HasAbilityNow(u, Ab.NoEnemyRetaliation) || runeBattleRage;
+        // The retaliation verdict is taken before the blow (exe FUN_00a5fee0), so an Expert-blinded target stays silent
+        // even though the hit removes its blindness.
+        bool noRetBase = HasAbilityNow(u, Ab.NoEnemyRetaliation) || runeBattleRage
+                         || t.GetEffect("SPELL_BLIND") is { Mastery: >= Mastery.Expert };
         for (int i = 0; i < strikes && u.Alive && t.Alive; i++)
         {
             var r = Strike(u, t, hit, pattern: true, extraAdjacentAll: runeBattleRage);
@@ -194,8 +197,8 @@ public sealed partial class Battle
         if (!AreAdjacent(t, attacker)) return false;
         if (!ignoreNoRetaliation && HasAbilityNow(attacker, Ab.NoEnemyRetaliation)) return false;
         if (t.HasEffect(H5.Combat.Fx.Sleep) || t.HasEffect(H5.Combat.Fx.Stunned) || t.HasEffect("SPELL_HYPNOTIZE") || t.HasEffect(H5.Combat.Fx.Frozen)) return false;
+        // Only Expert Blind stops retaliation (exe FUN_00a5fee0: blind effect level > 2; manual p.186).
         if (t.GetEffect("SPELL_BLIND") is { Mastery: >= Mastery.Expert }) return false;
-        if (t.HasEffect("SPELL_BLIND")) return false;
         if (attacker.HasEffect(H5.Combat.Fx.Invisible)) return false;
         if (HasAbilityNow(attacker, Ab.FastAttack) && t.HasEffect("SPELL_SLOW")) return false;    // Swift Attack (p.181)
         return true;

@@ -1,3 +1,5 @@
+using H5.Core.Data;
+
 namespace H5.Combat.Tests;
 
 /// <summary>
@@ -73,6 +75,22 @@ public class AuditAbilityTests(GameDataFixture f)
         Assert.Contains(Attacks("CREATURE_SHARP_SHOOTER", 30, "CREATURE_PEASANT", 400, new Cell(1, 5), new Cell(8, 5),
             cmd: b => new ShootCmd(b.State.Units[0].Id, b.State.Units[1].Id) { Side = 0 }),
             x => x.r.Events.OfType<AbilityTriggered>().Any(e => e.Ability == Ab.PiercingArrow) && x.b.State.Units[1].Pos == new Cell(9, 5));
+    }
+
+    [Theory]
+    [InlineData(Mastery.Basic, true)]
+    [InlineData(Mastery.Advanced, true)]
+    [InlineData(Mastery.Expert, false)]
+    public void OnlyExpertBlindStopsRetaliation(Mastery m, bool retaliates)   // FUN_00a5fee0: blind level > 2
+    {
+        var b = f.Duel("CREATURE_PEASANT", 20, "CREATURE_PEASANT", 60, 1, L, R);
+        b.Begin();
+        var (a, t) = (b.State.Units[0], b.State.Units[1]);
+        t.Effects.Add(new Effect { Id = "SPELL_BLIND", Mastery = m, Remaining = 3 });
+        b.State.Active = a.Id;
+        var r = b.Apply(new AttackCmd(a.Id, t.Id) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(retaliates, r.Events.OfType<AttackStarted>().Any(e => e.Attacker == t.Id && e.Kind == AttackKind.Retaliation));
     }
 
     [Fact]
