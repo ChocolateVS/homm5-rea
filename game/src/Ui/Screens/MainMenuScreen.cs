@@ -23,7 +23,8 @@ public partial class MainMenuScreen : UiScreen
         Bus.On("back", () => ShowOnly("Main", Panels));
         Bus.On("lan", () => UiNavigator.Goto("lobby"));
         Bus.On("ubi_com", () => UiNavigator.Goto("lobby"));
-        Bus.On("main_menu_exit", () => GetTree().Quit());
+        Bus.On("main_menu_exit", () => Cinematics.AfterGameSplash.ShowAndQuit(GetTree()));
+        Campaign.CampaignMenu.Attach(this); // Single Player → Campaign / mission selection
         Bus.On("hot_seat", () => ShowOnly("HotSeatSubMenu", Panels));
         // Hot-seat duel: preset choice on the stock duel options window, then a local battle.
         Bus.On("duel_mode_hotseat", () =>
