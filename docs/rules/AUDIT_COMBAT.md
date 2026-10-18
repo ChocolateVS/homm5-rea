@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 102 |
-| MATCH | 69 |
+| FIXED | 103 |
+| MATCH | 77 |
 | GAP | 8 |
-| UNVERIFIED | 350 |
+| UNVERIFIED | 341 |
 | N/A | 58 |
 
 ## Core mechanics
@@ -48,11 +48,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 | ID | Status | Exe functions | Original behaviour / note | Regression test |
 |---|---|---|---|---|
 | `ABILITY_SHOOTER` | MATCH | 008a0f90 | ranged strikes per action 1 |  |
-| `ABILITY_NO_MELEE_PENALTY` | UNVERIFIED | 008d58c0 00a58de0 00bfb4b0 | implemented; not yet compared with the exe |  |
-| `ABILITY_NO_RANGE_PENALTY` | UNVERIFIED | 00a5c5a0 | implemented; not yet compared with the exe |  |
-| `ABILITY_RANGE_PENALTY` | UNVERIFIED | 00a58de0 00bfb4b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_NO_MELEE_PENALTY` | MATCH | 00a58de0 | melee damage ×0.5 for SHOOTER stacks without NO_MELEE_PENALTY |  |
+| `ABILITY_NO_RANGE_PENALTY` | MATCH | 00a5c5a0 | skips the (width/2)² distance penalty; wall penalty still applies |  |
+| `ABILITY_RANGE_PENALTY` | MATCH | 00a58de0, 00a5c5a0 | ranged damage ×0.5 for stacks with RANGE_PENALTY (and they skip the distance penalty) |  |
 | `ABILITY_NO_ENEMY_RETALIATION` | MATCH | 00a5fee0, 00a629b0 | attacker with it gets no retaliation unless the target has SPELL_EFFECT_PREPARATION and Preparation_RetaliateToNER (true in DefaultStats); also suppresses Maneuver's return shot |  |
-| `ABILITY_UNLIMITED_RETALIATION` | UNVERIFIED | 008a1120 | implemented; not yet compared with the exe |  |
+| `ABILITY_UNLIMITED_RETALIATION` | MATCH | 008a1120 | the retaliation counter is only decremented without the ability |  |
 | `ABILITY_DOUBLE_ATTACK` | FIXED | 008a0f90, 00a65260, 00a64e90 | retaliation follows the first blow | tests/H5.Combat.Tests/AuditStrikeTests.DoubleAttackIsAnsweredAfterTheFirstBlow |
 | `ABILITY_DOUBLE_SHOT` | N/A | 008a0f90 | not used by shipped data |  |
 | `ABILITY_MECHANICAL` | UNVERIFIED | 008a4b70 0097a530 0097b410 0097c9f0 | implemented; not yet compared with the exe |  |
@@ -71,10 +71,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_IMMUNITY_TO_WATER` | UNVERIFIED | 0097c9f0 | implemented; not yet compared with the exe |  |
 | `ABILITY_IMMUNITY_TO_EARTH` | UNVERIFIED | 0097c9f0 | implemented; not yet compared with the exe |  |
 | `ABILITY_MAGIC_PROOF_50` | MATCH | 0097af50 (0097b249) | independent ×0.5 |  |
-| `ABILITY_PRECISE_SHOT` | UNVERIFIED | 00a5a900 | implemented; not yet compared with the exe |  |
+| `ABILITY_PRECISE_SHOT` | MATCH | 00a5a900, 00a5a8b0 | ranged, not ARMORED target: defence 0 when squared nearest distance ≤ PreciseShotRange² |  |
 | `ABILITY_LARGE_SHIELD` | MATCH | 00a5a900 | ranged damage ×0.5 (own or adjacent Shield Other aura) |  |
 | `ABILITY_SHIELD_OTHER` | MATCH | 00a5a900 | aura type 2 gives adjacent allies the Large Shield reduction |  |
-| `ABILITY_JOUSTING` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
+| `ABILITY_JOUSTING` | MATCH | 00a58de0 | melee, cells walked > 0: ×(1 + clamp(clamp(perCell,0,10),0,100)·cells), Cavalry Commander factor |  |
 | `ABILITY_BASH` | FIXED | 00a675e6, 00a59a90, 00a59990 | chance base min(75, 25+⌊3A/T⌋) / max(5, 25−⌊3T/A⌋) with HP before the hit; Bash_ProcFactor as an exponent; Soldier's Luck doubles the factor (flag 1) and gives NO second roll; never on a retaliation unless Rune of Stunning; target not mechanical | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
 | `ABILITY_BATTLE_DIVE` | UNVERIFIED | 008aaec0 008d0ec0 008d5eb0 | implemented; not yet compared with the exe |  |
 | `ABILITY_MANA_DESTROYER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
@@ -83,7 +83,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_RANGED_RETALIATE` | UNVERIFIED | 00a5fee0 00bfb4b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_FEAR` | FIXED | 00a629b0, 00a5e1b0, 00a5d790 | only on the attacker's own strike (never a retaliation, +0x21) and only while the target would retaliate; mind-immunity check (00a5e1b0); the target flees instead of retaliating — engine could trigger on retaliations / when no retaliation was pending | AuditAbilityTests.FearNeverTriggersOnRetaliation |
 | `ABILITY_FRIGHT_AURA` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
-| `ABILITY_VORPAL_SWORD` | UNVERIFIED | 00a63020 00a673c0 | implemented; not yet compared with the exe |  |
+| `ABILITY_VORPAL_SWORD` | FIXED | 00a673c0, 00a63020 | +1 creature killed on the strike, only vs creature targets without CRYSTAL_SCALES — engine ignored both conditions | AuditAbilityTests.VorpalSwordDoesNotWorkOnCrystalScales |
 | `ABILITY_CHAIN_SHOT` | UNVERIFIED | 00a673c0 | implemented; not yet compared with the exe |  |
 | `ABILITY_WEAKENING_STRIKE` | UNVERIFIED | 00a5deb0 | implemented; not yet compared with the exe |  |
 | `ABILITY_INCORPOREAL` | FIXED | 008a34c0 | Phantom images / Rune of Etherealness are Incorporeal | tests/H5.Combat.Tests/AuditSpecTests.DynamicAbilitiesFollowTheOriginal |
@@ -103,10 +103,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_POISONOUS_ATTACK` | UNVERIFIED | 00a61720 | implemented; not yet compared with the exe |  |
 | `ABILITY_STRIKE_AND_RETURN` | UNVERIFIED | 008d4330 00a2f130 00a2f710 00a2f8f0 | implemented; not yet compared with the exe |  |
 | `ABILITY_BRAVERY` | UNVERIFIED | 00a6acd0 | implemented; not yet compared with the exe |  |
-| `ABILITY_RIDER_CHARGE` | UNVERIFIED | 00a5a900 | implemented; not yet compared with the exe |  |
+| `ABILITY_RIDER_CHARGE` | MATCH | 00a5a900 | defence ×clamp(1 − cells·RiderCharge_DefenceReducePerPathCell, 0, 1), not vs ARMORED |  |
 | `ABILITY_LIZARD_BITE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_SIX_HEADED_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_REGENERATION` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
+| `ABILITY_REGENERATION` | MATCH | 00bbb080, 008a3340 | turn start: heal Range(max(0,HydraRegenerationMin), max(min, HydraRegenerationMax)) inclusive on the top creature, no resurrection (combined with SPELL_REGENERATION in one heal in the exe) |  |
 | `ABILITY_WHIP_STRIKE` | FIXED | 00a629b0, 00a5e2c0 | melee only (incl. retaliation); r = Rng(100): r<40 Slow, r<75 Weakness, else Berserk; power WhipStrikeSpellPower (creature power if <1) — engine cast Slow/Curse/Berserk uniformly | AuditAbilityTests.WhipStrikeCastsSlowWeaknessOrBerserk |
 | `ABILITY_FIRE_SHIELD` | UNVERIFIED | 00a5bcf0 | implemented; not yet compared with the exe |  |
 | `ABILITY_DEADLY_STRIKE` | UNVERIFIED | 00a5bf60 | implemented; not yet compared with the exe |  |
