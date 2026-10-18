@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 168 |
+| FIXED | 167 |
 | MATCH | 110 |
 | GAP | 7 |
-| UNVERIFIED | 245 |
+| UNVERIFIED | 246 |
 | N/A | 58 |
 
 ## Core mechanics
@@ -80,7 +80,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_MANA_DESTROYER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
 | `ABILITY_MANA_STEALER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
 | `ABILITY_EXPLOSION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_RANGED_RETALIATE` | FIXED | 00a5fee0 (00a5ff9b) | a ranged attack is answered only when the target has RANGED_RETALIATE and can shoot (vf 0x1e0); the check sits inside the common retaliation routine, so all the other rules still apply afterwards — Hypnotize, Gating, Expert Blind, No Enemy Retaliation, invisible attacker, Swift Attack vs Slow, sleeping/stunned/frozen (vf 0x1e4); Cowardice is skipped for shots. The engine answered every shot when retaliations and shots were left, ignoring those rules | AuditAbilityTestsA.RangedRetaliationObeysTheOtherRetaliationRules |
+| `ABILITY_RANGED_RETALIATE` | UNVERIFIED | 00a5fee0 00bfb4b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_FEAR` | FIXED | 00a629b0, 00a5e1b0, 00a5d790 | only on the attacker's own strike (never a retaliation, +0x21) and only while the target would retaliate; mind-immunity check (00a5e1b0); the target flees instead of retaliating — engine could trigger on retaliations / when no retaliation was pending | AuditAbilityTests.FearNeverTriggersOnRetaliation |
 | `ABILITY_FRIGHT_AURA` | MATCH | 008a4b70, 00989fd0 | a stack that is neither Undead nor Mechanical gets morale flag 4 when an adjacent enemy stack has the aura; flag 4 = morale −3 (00989fd0) |  |
 | `ABILITY_VORPAL_SWORD` | FIXED | 00a673c0, 00a63020 | +1 creature killed on the strike, only vs creature targets without CRYSTAL_SCALES — engine ignored both conditions | AuditAbilityTests.VorpalSwordDoesNotWorkOnCrystalScales |
@@ -125,7 +125,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_FIRE_BREATH` | FIXED | FirebreatherHound.xdb PatternAttack | for the Firebreather Hound (the only Haven/Inferno/Necropolis/Sylvan creature with it) the breath IS its pattern: the three-headed cells plus the same three cells two steps out, DamageToOtherTargetsCoefficient 0.75 for every secondary target, DamageAll = false (own stacks are not burnt). The engine added the generic "one cell behind, ×1, allies too" breath on top. The generic breath used by dragons (part B) is unchanged | AuditAbilityTestsA.FirebreatherHoundUsesItsOwnPattern |
 | `ABILITY_HARM_TOUCH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_WAR_DANCE` | MATCH | War_Dancer.xdb PatternAttack | all 8 neighbours of the attacker, DamageToOtherTargetsCoefficient 0.5, DamageAll = false — as the engine |  |
-| `ABILITY_REPAIR` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `ABILITY_REPAIR` | UNVERIFIED | 009789b0 | heal amount for SPELL_ABILITY_REPAIR (case 0xad) = round(stack size × clamp(GremlinRepairPowerPreCreature, 0, 1000)) — same value as the engine's (int)(5 × count); targeting and uses per combat not compared |  |
 | `ABILITY_RANDOM_CASTER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_DASH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_CALL_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -202,19 +202,19 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_ENCHANTED_OBSIDIAN` | UNVERIFIED | 008d8087 0097c9f0 0097f610 00982010 | implemented; not yet compared with the exe |  |
 | `ABILITY_ACID_BLOOD` | UNVERIFIED | 008aa990 00a673c0 | implemented; not yet compared with the exe |  |
 | `ABILITY_AURA_OF_BRAVERY` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
-| `ABILITY_INCINERATE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `ABILITY_INCINERATE` | UNVERIFIED | 00a58de0 | ×IncinerateCoef on the strike (special 0x142) matches the engine; the area/pattern is not compared |  |
 | `ABILITY_INVISIBILITY` | MATCH | 00a5fee0 | no retaliation against an attacker under SPELL_ABILITY_INVISIBILITY |  |
 | `ABILITY_RIDE_BY_ATTACK` | FIXED | 00a66050, 00a5fa50, 00a61c50, 00b3d560 | skipped only on forced runs (Cowardice/Maneuver call 00a66050 with its last flag 1); victims = enemies (00b3d560) adjacent to path points 1 … N−1−RideByAttack_LastPointsToExclude (the start cell is not scanned), each attached to the point it is closest to and hit in path order as the rider passes; damage = base roll through FUN_00a5c790 with a fixed luck multiplier 1.0 (integer), × RideByAttack_DamageCoef in single precision, truncated (FISTP under chop, 00a61d42), dealt directly (no AttackStarted, no luck, no retaliation, no on-hit effects) — engine scanned the start cell, rolled luck and ran the full strike. Kept: the main target is not a victim (not traced) and ride-by only on attack moves (the ability text: "on its way to the main target") | AuditAbilityBTests.RideByAttackSkipsTheStartCellAndHitsWithoutRetaliation |
 | `ABILITY_ANTI_GIANT` | MATCH | 00a5a900 | AntiGiantDefenceInc vs large |  |
 | `ABILITY_AVENGING_FLAME` | N/A | 00a61090 | not used by shipped data |  |
-| `ABILITY_PREPARED_POSITION` | UNVERIFIED | 008aaec0 | implemented; not yet compared with the exe |  |
+| `ABILITY_PREPARED_POSITION` | UNVERIFIED | 008aaec0, 008a15c0, 00989790 | at battle start the stack gets SPELL_EFFECT_PREPARED_POSITION (0x151, permanent) worth +PreparedPosition_DefenceBonus defence (00989790 case 0x151); it is removed by a vtable handler (008a15c0, slot not identified) — the engine's "until it first moves" is plausible but the removal event is not traced |  |
 | `ABILITY_BATTLE_RAGE` | FIXED | 008a6e20, 0098a430, 008a4330 | the creature's take-damage virtual runs for ANY damage (spells, fields, abilities): if the creature has BATTLE_RAGE (0xa2) it re-applies SPELL_EFFECT_BATTLE_RAGE for round(f·BattleRage_EffectDuration), refreshing the duration every time; the effect gives +BattleRage_AttackBonus attack (0098a430 case 0x152) and initiative (008a4330) — engine applied it only from strikes and only when absent (no refresh). The same handler ends SPELL_BLIND and SPELL_EFFECT_SLEEPING_STRIKE on any damage (engine: strikes only) | AuditAbilityBTests.BattleRageIsReappliedOnEveryDamageIncludingSpells, AnyDamageEndsBlindAndSleepingStrike |
 | `ABILITY_HARPOON_STRIKE` | FIXED | 00a58de0, 00a5d5f0, 00a5ceb0, 00a673c0 | the shot's damage ×(1 + HarpoonStrike_DamageBonus) (special 0x14b); the pull needs a target without HOLD_GROUND (dynamic ability 0xa5) and, unless HarpoonStrike_WorksOnLargeCreatures, a 1×1 target; the destination is the free neighbouring cell closest to "towards the harpooner" within π/4 (FUN_00a5ceb0 with its first argument 1 swaps the centres), exe ring order on ties; no qualifying cell → no pull — engine stepped one cell straight towards the attacker and ignored the damage bonus and the large-creature flag | AuditAbilityBTests.HarpoonPullsTowardsTheHarpoonerWithinFortyFiveDegrees, HarpoonNeverPullsCreaturesThatHoldTheirGround |
 | `ABILITY_BEAR_ROAR` | FIXED | 00a5e800 | only while the struck target would retaliate, melee, not a retaliation; victims = enemies next to the bear (target and its neighbours), not fully spell-immune; per victim p = ProcPercent(BearRoar_ProcFactor, flag 1), and for a 1×1 victim p = trunc(100 − (100 − p)/BearRoar_SmallCreaturesChanceMult); attacker's second roll; a frightened victim runs like Fear (FUN_0089ffc0 mode 2, ATB 0) and the target no longer retaliates; the bear gets SPELL_ABILITY_BEAR_ROAR — engine multiplied the ProcFactor exponent by the size factor and only reset ATB | AuditAbilityTests.BearRoarHalvesTheFailureOfSmallVictims |
 | `ABILITY_HOLD_GROUND` | FIXED | 008a34c0 | rooted Take Roots creature holds ground | (Unit.Has) |
 | `ABILITY_FLAMEWAVE` | FIXED | 00a62030 (00a62397) | FlameWave_ProcFactor with flag 1 and no second roll | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
-| `ABILITY_FLAMESTRIKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_LIQUID_FLAME_BREATH` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_FLAMESTRIKE` | UNVERIFIED | 00a58de0 | the strike's damage ×Flamestrike_DamageMultipiler (special 0x159) matches the engine; the engine also applies Mark of Fire afterwards — not traced |  |
+| `ABILITY_LIQUID_FLAME_BREATH` | UNVERIFIED | 0098af20, 0098ad50 | the burning field deals stack size × LiquidFlameBreath_DamagePerCreature through the spell damage path (0097d600, ratio 1.0); its duration is trunc(Min·f) … trunc(Max·f) with an RNG draw only when they differ (engine uses Min; identical for stock data where Min = Max = 2) |  |
 | `ABILITY_IMMUNITY_TO_CURSE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_IMMUNITY_TO_BERSERK` | UNVERIFIED | 0097c9f0 | implemented; not yet compared with the exe |  |
 | `ABILITY_IMMUNITY_TO_HYPNOTIZE` | UNVERIFIED | 0097c9f0 | implemented; not yet compared with the exe |  |
