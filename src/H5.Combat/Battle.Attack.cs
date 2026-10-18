@@ -257,7 +257,7 @@ public sealed partial class Battle
             if (u.IsWarMachine && u.Alive)
             {
                 if (HeroOf(u).HasPerk("HERO_SKILL_WILDFIRE") && t.Alive)
-                    DealElementalDamage(t, 50, Elements.Fire, u.Id, "FLAMING_ARROWS");
+                    DealPerkElementalDamage(t, 50, "SPELL_FIREBALL", u.Id, "FLAMING_ARROWS");   // exe FUN_00a5ed90 (Wildfire 0x82) → 0097d740, ECX=5
             }
         }
         if (rangedRetaliation && t.Alive && u.Alive && t.RetaliationsLeft > 0 && CanShoot(t))
@@ -690,9 +690,9 @@ public sealed partial class Battle
         {
             // Extra elemental damage from hero perks.
             if (t.Alive && (ah.HasPerk(Sk.FieryWrath) || ah.HasPerk(Sk.BarbFieryWrath)) && !a.IsWarMachine)
-                DealElementalDamage(t, SpellLikeAmount(dmg * (double)0.1f), Elements.Fire, a.Id, "FIERY_WRATH");   // exe FUN_00a5ed90
+                DealPerkElementalDamage(t, dmg * (double)0.1f, "SPELL_FIREBALL", a.Id, "FIERY_WRATH");   // exe FUN_00a5ed90 → 0097d740, ECX=5
             if (t.Alive && ah.HasPerk(Sk.ColdSteel) && !a.IsWarMachine)
-                DealElementalDamage(t, SpellLikeAmount(dmg * (double)0.1f), Elements.Water, a.Id, "COLD_STEEL");   // exe FUN_00a5c000
+                DealPerkElementalDamage(t, dmg * (double)0.1f, "SPELL_ICE_BOLT", a.Id, "COLD_STEEL");   // exe FUN_00a5c000 → 0097d740, ECX=4
             if (t.Alive && ah.HasPerk(Sk.Hellfire) && !a.IsWarMachine && (!retaliation || ah.HasPerk(Sk.Hellwrath)) && ah.Mana >= 5
                 && S.Rng.Chance(Stats.Get("combat/HeroSkills/DemonLord/CriticalStrike_ChanceToWork", 30) / 100.0))
             {
@@ -720,7 +720,7 @@ public sealed partial class Battle
                 if (t.Has(Ab.FireShield)) DealElementalDamage(a, (int)(taken * Math.Clamp(Stats.Get("combat/Creatures/Abilities/FireShield_Damage_Multiplier", 0.2), 0, 10)), Elements.Fire, t.Id, Ab.FireShield);
                 if (t.Has(Ab.MagmaShield) && a.Alive) DealElementalDamage(a, (int)(taken * Math.Clamp(Stats.Get("combat/Creatures/Abilities/MagmaShield_Damage_Multiplier", 0.4), 0, 10)), Elements.Fire, t.Id, Ab.MagmaShield);
                 var th = HeroOf(t);
-                if (th.HasPerk(Sk.ChillingBones) && IsUndeadLike(t) && a.Alive) DealElementalDamage(a, SpellLikeAmount(dmg * (double)0.05f), Elements.Water, t.Id, "CHILLING_BONES");   // exe FUN_00a5bc50
+                if (th.HasPerk(Sk.ChillingBones) && IsUndeadLike(t) && a.Alive) DealPerkElementalDamage(a, dmg * (double)0.05f, "SPELL_SKILL_CHILLING_BONES", t.Id, "CHILLING_BONES");   // exe FUN_00a5bc50 → 0097d740, ECX=0xcf
                 if (t.Has(Ab.AcidBlood) && a.Alive && !retaliation)
                 {
                     Emit(new AbilityTriggered(t.Id, Ab.AcidBlood, a.Id));

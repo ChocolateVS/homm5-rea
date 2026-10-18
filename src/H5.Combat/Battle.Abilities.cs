@@ -385,7 +385,7 @@ public sealed partial class Battle
                 foreach (var v in Adjacent(u).ToList())
                 {
                     var spell = Db.Spell("SPELL_ABILITY_EXPLOSION") ?? Db.Spell("SPELL_FIREBALL")!;
-                    DealDamage(v, (int)(dmg * SpellDamageMultiplier(v, spell, Controller(u))), u.Id, AttackKind.Ability, c.Ability);
+                    DealDamage(v, (int)(dmg * SpellDamageMultiplier(v, spell, Controller(u), casterIsHero: false)), u.Id, AttackKind.Ability, c.Ability);
                 }
                 break;
             }

@@ -1,0 +1,12 @@
+{"files": ["src/H5.Combat/Battle.SkillAuditG.cs", "tests/H5.Combat.Tests/AuditSkillTestsG.cs",
+           "docs/rules/audit/combat_heroes_skills_g.md", "docs/rules/AUDIT_COMBAT.md",
+           "tools/re/audit_skills_g/ghidra.sh", "tools/re/audit_skills_g/verify.sh", "tools/re/audit_skills_g/commit_mine.py",
+           "tools/re/audit_skills_g/trybuild.sh", "tools/re/audit_skills_g/patchlib.py", "tools/re/audit_skills_g/patch_stats.py",
+           "tools/re/audit_skills_g/patch_spells.py", "tools/re/audit_skills_g/patch_abil.py", "tools/re/audit_skills_g/patch_skillaudit.py",
+           "tools/re/audit_skills_g/patch_attack.py", "tools/re/audit_skills_g/patch_gitignore.py", "tools/re/audit_skills_g/spec1.json"],
+ "patches": [["tools/re/audit_skills_g/patch_stats.py", "src/H5.Combat/Battle.Stats.cs"],
+             ["tools/re/audit_skills_g/patch_spells.py", "src/H5.Combat/Battle.Spells.cs"],
+             ["tools/re/audit_skills_g/patch_abil.py", "src/H5.Combat/Battle.Abilities.cs"],
+             ["tools/re/audit_skills_g/patch_skillaudit.py", "src/H5.Combat/Battle.SkillAudit.cs"],
+             ["tools/re/audit_skills_g/patch_attack.py", "src/H5.Combat/Battle.Attack.cs"],
+             ["tools/re/audit_skills_g/patch_gitignore.py", ".gitignore"]]}

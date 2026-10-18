@@ -378,7 +378,14 @@ public sealed partial class Battle
     }
 
     /// <summary>Damage multiplier for incoming spell damage (magic-proof abilities, Protection, Boneward...).</summary>
-    double SpellDamageMultiplier(Unit target, SpellDef spell, int casterSide)
+    /// <remarks>
+    /// Hero perks per exe FUN_0097af50 (target side): Boneward (HERO_SKILL_SPELLPROOF_BONES) and Sap Magic
+    /// (HERO_SKILL_MAGIC_CUSHION) ×0.8 only for Destructive spells (spell school field +0x88 == 0), Sap Magic only when the
+    /// caster is a hero (caster vfunc 0x78); Luck of the Barbarian ×clamp(1 − MagicProofPerLuck, 0, 1) when the stack's
+    /// luck is positive. <paramref name="protectionOnly"/> leaves out the damage boosts (vulnerability auras, Mark of
+    /// Fire), which the exe applies to raw spell damage in FUN_00977a80 rather than to the protection share.
+    /// </remarks>
+    internal double SpellDamageMultiplier(Unit target, SpellDef spell, int casterSide, bool casterIsHero = true, bool protectionOnly = false)
     {
         double m = 1;
         if (target.Has(Ab.MagicProof25)) m *= 0.75;
@@ -389,11 +396,12 @@ public sealed partial class Battle
         var th = HeroOf(target);
         if (th.HasPerk(Sk.Protection)) m *= 0.85;                                                // p.112
         if (Specials.Pieces(th, Specials.Dwarven) >= 2) m *= 1 - Stats.Get("ArtifactsSetsEffectsConsts/Dwarven_2_Creature_MagicProofPercents", 40) / 100.0;
-        if (th.HasPerk(Sk.SapMagic)) m *= 0.8;                                                   // p.114
-        if (th.HasPerk(Sk.Boneward) && spell.School == "MAGIC_SCHOOL_DESTRUCTIVE" && IsUndeadLike(target)) m *= 0.8;
+        if (th.HasPerk(Sk.SapMagic) && casterIsHero && spell.School == "MAGIC_SCHOOL_DESTRUCTIVE") m *= 0.8;   // exe 0097b009
+        if (th.HasPerk(Sk.Boneward) && spell.School == "MAGIC_SCHOOL_DESTRUCTIVE") m *= 0.8;                   // exe 0097afc0
         if ((th.HasPerk(Sk.FireResistance) || th.HasPerk(Sk.BarbFireResistance)) && spell.Element == Elements.Fire) m *= 0.5;
-        if (th.HasPerk(Sk.LuckOfBarbarian))
-            m *= Math.Max(0, 1 - Stats.Get("combat/HeroSkills/Barbarian/LuckOfTheBarbarian_MagicProofPerLuck", 0.05) * Math.Max(0, LuckOf(target)));
+        if (th.HasPerk(Sk.LuckOfBarbarian) && LuckOf(target) > 0)                                                // exe 0097b051
+            m *= Math.Clamp(1 - (double)(float)Stats.Get("combat/HeroSkills/Barbarian/LuckOfTheBarbarian_MagicProofPerLuck", 0.05), 0, 1);
+        if (protectionOnly) return m;
         // Elemental gargoyle vulnerability auras (p.171)
         bool Near(string ab) => target.Has(ab) || Adjacent(target).Any(o => o.Has(ab));
         if (spell.Element == Elements.Fire && Near(Ab.AuraFireVuln)) m *= 1.5;

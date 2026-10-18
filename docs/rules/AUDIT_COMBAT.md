@@ -15,7 +15,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | FIXED | 178 |
 | MATCH | 115 |
 | GAP | 8 |
-| UNVERIFIED | 233 |
+| UNVERIFIED | 234 |
 | N/A | 58 |
 
 ## Core mechanics
@@ -567,6 +567,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_EFFECT_FIRE_DAMAGE` | FIXED | 00bbe760 (0xca → 004e5b70) | the armour crush applied as an effect (Fortress moat): same rule as Master of Fire | MasterOfFireCrushIsAFixedHalfOfTheDefence |
 | `SPELL_SPEC_DEMON_HUNTER` | FIXED | 008a2c20 | effect of HERO_SPEC_DEMON_HUNTER (rage bonus) | (AddRage) |
 | `SPELL_ARTFSET_NECROMANCERS_DEBUFF` | FIXED | 008a8140, 008a6c40, 008a4800, 008a22f0 | was not implemented: a stack failing its morale check gets effect 0xce when the opposing hero has > 3 Necromancers pieces; removed at the stack's next turn start; while present attack and defence are trunc(value·(1 − pct·0.01)), pct = Necromancers_4_EnemyCreature_BadMoralePenaltyToAttackDefencePercents (RPGStats+0x1198). The 2-piece Death Scream initiative doubling (BansheeWhail_DeInitiativeMultiplier, +0x1190, 004e4270) was also missing | AuditSpecSetTests.NecromancersDebuffCutsAttackAndDefence, DeathScreamInitiativeDoublesWithTheNecromancersSet |
+| `SPELL_SKILL_CHILLING_BONES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_ENRAGED` | UNVERIFIED | 008a3b90 | implemented; not yet compared with the exe |  |
 | `SPELL_MASS_CURSE` | MATCH | 0097a530 (default case, IsAimed false) | whole enemy army (TARGET_HOSTILE → caster vf +0x10); effect as SPELL_CURSE |  |
 | `SPELL_MASS_DISRUPTING_RAY` | MATCH | 0097a530 (default case), spell record +0xcc IsAimed, +0xd0 Target | aimed mass spell: 4×4 area x−1..x+2, y−1..y+2, TARGET_HOSTILE → enemy stacks only; effect as SPELL_DISRUPTING_RAY |  |

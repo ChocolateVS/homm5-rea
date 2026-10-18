@@ -821,7 +821,7 @@ public sealed partial class Battle
         dmg = PreProtectionPerks(dmg, t, sp, hero);
         if (!ignoreResist)
         {
-            double mult = SpellDamageMultiplier(t, sp, side) * ElementProtectionArtifacts(t, sp.Element);
+            double mult = SpellDamageMultiplier(t, sp, side, casterIsHero: hero != null) * ElementProtectionArtifacts(t, sp.Element);
             bool immune = (sp.Element != Elements.None && ElementImmune(t, sp.Element)) || t.Has(Ab.ImmuneMagic);
             var inv = hero != null ? hero.SkillLevel(Sk.Invocation) : Mastery.None;
             if ((immune || fullProtection) && inv == Mastery.None) return 0;

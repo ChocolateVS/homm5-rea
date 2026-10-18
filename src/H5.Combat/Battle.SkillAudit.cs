@@ -71,7 +71,8 @@ public sealed partial class Battle
         string id = BaseSpell(sp.Id);
         if (hero.HasPerk(Sk.ColdDeath) && id is "SPELL_ICE_BOLT" or "SPELL_FROST_RING" or "SPELL_DEEP_FREEZE" && !ElementImmune(t, Elements.Water))
             dmg += MaxHealthOf(t);
-        if (hero.HasPerk(Sk.Exorcism) && t.Summoned && sp.School == "MAGIC_SCHOOL_DESTRUCTIVE") dmg *= 2;
+        // No school check: FUN_00977a80 serves every damage spell routed through FUN_0097d600 (skills audit G).
+        if (hero.HasPerk(Sk.Exorcism) && t.Summoned) dmg *= 2;
         return dmg;
     }
 
