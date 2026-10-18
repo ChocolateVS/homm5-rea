@@ -52,7 +52,7 @@ public partial class CombatHud : Control
         bus.On("Combat_SpellBook", ToggleSpells);
         bus.On("Combat_Retreat", _screen.CmdSurrender);
         bus.On("Combat_AutoCombat", _screen.CmdAutoCombat);
-        bus.On("Combat_OptionsMenu", () => Log.AddLine("<body>Options are not available yet."));
+        bus.On("Combat_OptionsMenu", ShowOptions);
         bus.On("Combat_SpecialAbility", _screen.CmdSpecial);
         bus.On("autoplace_army", _screen.CmdEndTactics);
         bus.On("confirm_placement", _screen.CmdEndTactics);
@@ -97,6 +97,37 @@ public partial class CombatHud : Control
         Screen.SetVisible("OnJog-Spellbook", !tactics && !special);
         if (tactics) FillPlacementBar();
         UpdateAtb();
+    }
+
+    internal void ToggleLogPublic() => ToggleLog();
+    internal void ToggleSpellsPublic() => ToggleSpells();
+
+    UiScreen? _escMenu;
+
+    /// <summary>
+    /// The stock in-game menu (UI/EscMenu, opened by the jog dial's menu button and
+    /// ESC/F4/F10): Return to game, Surrender, Main menu, Quit to Windows, Options.
+    /// Save/Load/Restart mission have no meaning in a duel and are disabled.
+    /// </summary>
+    public void ShowOptions()
+    {
+        if (_escMenu != null) { CloseOptions(); return; }
+        var menu = new UiScreen("UI/EscMenu.(WindowScreen).xdb") { MouseFilter = MouseFilterEnum.Stop };
+        foreach (var name in new[] { "SaveBtn", "LoadBtn", "RestartMissionBtn" })
+            if (menu.Find(name) is { } b) b.Enabled = false;
+        menu.Bus.On("return_to_game", CloseOptions);
+        menu.Bus.On("surrender", () => { CloseOptions(); _screen.CmdSurrender(); });
+        menu.Bus.On("main_menu", () => { CloseOptions(); _screen.ReturnToMenu(); });
+        menu.Bus.On("exit_to_windows", () => GetTree().Quit());
+        menu.Bus.On("options", () => Log.AddLine("<body>The game options screen is not reproduced yet."));
+        _escMenu = menu;
+        AddChild(menu);
+    }
+
+    void CloseOptions()
+    {
+        _escMenu?.QueueFree();
+        _escMenu = null;
     }
 
     void ToggleLog()

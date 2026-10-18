@@ -23,6 +23,7 @@ public partial class CombatScreen : Control
     public CombatSession Session { get; }
     public ArenaScene Arena { get; private set; } = null!;
     public CombatHud Hud { get; private set; } = null!;
+    CombatCamera _camera = null!;
 
     readonly Dictionary<int, UnitView> _units = new();
     readonly Dictionary<int, Node3D> _heroes = new();
@@ -71,6 +72,7 @@ public partial class CombatScreen : Control
         Arena = ArenaScene.Create(definition);
         AddChild(Arena);
         PlaceObstacles();
+        _camera = new CombatCamera(Arena);
 
         _plaqueLayer = new Control { Name = "Plaques", AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore };
         AddChild(_plaqueLayer);
@@ -218,9 +220,38 @@ public partial class CombatScreen : Control
 
     // ---------------------------------------------------------------- frame loop
 
+    /// <summary>Setvar combat_stir_animation_period (default 60000 ms, exe 00af7750).</summary>
+    const double StirPeriod = 60.0;
+    readonly Dictionary<int, double> _nextStir = new();
+
+    /// <summary>Idle stacks occasionally play their "stir00" fidget, once per stir period each.</summary>
+    void UpdateStirs()
+    {
+        double now = Now;
+        foreach (var v in _units.Values)
+        {
+            if (!_nextStir.TryGetValue(v.UnitId, out var at))
+            {
+                // Stagger stacks deterministically over the period so they don't fidget in unison.
+                _nextStir[v.UnitId] = now + StirPeriod * ((v.UnitId * 0.618034) % 1.0);
+                continue;
+            }
+            if (now < at) continue;
+            _nextStir[v.UnitId] = now + StirPeriod;
+            if (!v.Dead && v.Has("stir00") && v.Character?.Player.CurrentAnimation.ToString().EndsWith("idle00") == true)
+            {
+                v.Play("stir00");
+                v.Character.Player.AnimationFinished += OnStirDone;
+                void OnStirDone(StringName _) { v.Character!.Player.AnimationFinished -= OnStirDone; v.Idle(); }
+            }
+        }
+    }
+
     public override void _Process(double delta)
     {
+        _camera.Process(delta, GetViewport().GuiGetFocusOwner() is not LineEdit);
         foreach (var v in _units.Values) v.PositionPlaque(Arena.Camera);
+        if (!_playing) UpdateStirs();
 
         if (!_playing)
         {
@@ -851,15 +882,48 @@ public partial class CombatScreen : Control
         };
     }
 
+    /// <summary>Stock combat key bindings (input_a2.cfg sections combat_screen / combat_screen_tactic).</summary>
+    bool HandleKey(InputEventKey k)
+    {
+        if (!k.Pressed || k.Echo || k.CtrlPressed) return false;
+        bool tactics = Session.Battle.State.Phase == BattlePhase.Tactics;
+        switch (k.Keycode)
+        {
+            case Key.Escape or Key.F4 or Key.F10: Hud.ShowOptions(); return true;
+            case Key.Tab when !tactics: Hud.ToggleLogPublic(); return true;
+            case Key.Enter or Key.KpEnter or Key.Space when tactics: CmdEndTactics(); return true;
+            case Key.A or Key.V when tactics: CmdEndTactics(); return true;
+            case Key.Enter or Key.KpEnter or Key.Space or Key.D when !tactics: CmdDefend(); return true;
+            case Key.W when !tactics: CmdWait(); return true;
+            case Key.A or Key.V when !tactics: CmdAutoCombat(); return true;
+            case Key.R when !tactics: CmdSurrender(); return true;
+            case Key.C or Key.S when !tactics: Hud.ToggleSpellsPublic(); return true;
+        }
+        return false;
+    }
+
+    bool _rightDragged;
+
     public override void _UnhandledInput(InputEvent e)
     {
+        if (e is InputEventKey key && HandleKey(key)) { GetViewport().SetInputAsHandled(); return; }
+        if (e is InputEventMouseMotion { ButtonMask: MouseButtonMask.Right } && _camera.HandleInput(e)) { _rightDragged = true; return; }
+        if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp or MouseButton.WheelDown } && _camera.HandleInput(e)) return;
+        if (e is InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Right } rel)
+        {
+            // Right click (not a drag) opens the creature info window, like the original.
+            if (!_rightDragged && !_playing && _mode == InputMode.Normal && Arena.CellAtScreen(rel.Position) is { } rc
+                && Session.Battle.State.At(new Cell(rc.X, rc.Y)) is { } info) Hud.ShowUnitInfo(info);
+            _rightDragged = false;
+            return;
+        }
         if (e is not InputEventMouseButton { Pressed: true } mb) return;
         if (_playing) return;
         var cell = Arena.CellAtScreen(mb.Position);
         if (mb.ButtonIndex == MouseButton.Right)
         {
-            if (_mode != InputMode.Normal) { CancelTargeting(); return; }
-            if (cell is { } rc && Session.Battle.State.At(new Cell(rc.X, rc.Y)) is { } info) Hud.ShowUnitInfo(info);
+            _rightDragged = false;
+            if (_mode != InputMode.Normal) CancelTargeting();
             return;
         }
         if (mb.ButtonIndex != MouseButton.Left) return;
