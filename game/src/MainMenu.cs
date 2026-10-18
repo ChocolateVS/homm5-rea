@@ -28,7 +28,9 @@ public partial class MainMenu : Control
             Name = "Background3DContainer", AnchorRight = 1, AnchorBottom = 1, Stretch = true,
             MouseFilter = MouseFilterEnum.Ignore,
         };
-        var background = new SubViewport { Name = "Background3D", TransparentBg = true, HandleInputLocally = false };
+        // Opaque: sky areas not covered by the scene's cards show the scene's fog/clear colour,
+        // as the original's 3D view does, not the black backing.
+        var background = new SubViewport { Name = "Background3D", TransparentBg = false, HandleInputLocally = false };
         // The stock 3D backdrop (Arenas/Interface/MainMenu) behind the menu UI.
         background.AddChild(new Arena.MainMenuBackground());
         container.AddChild(background);
