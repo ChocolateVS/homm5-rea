@@ -12,11 +12,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 149 |
-| MATCH | 100 |
-| GAP | 9 |
-| UNVERIFIED | 273 |
-| N/A | 57 |
+| FIXED | 164 |
+| MATCH | 104 |
+| GAP | 7 |
+| UNVERIFIED | 255 |
+| N/A | 58 |
 
 ## Core mechanics
 
@@ -80,7 +80,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_MANA_DESTROYER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
 | `ABILITY_MANA_STEALER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
 | `ABILITY_EXPLOSION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_RANGED_RETALIATE` | UNVERIFIED | 00a5fee0 00bfb4b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_RANGED_RETALIATE` | FIXED | 00a5fee0 (00a5ff9b) | a ranged attack is answered only when the target has RANGED_RETALIATE and can shoot (vf 0x1e0); the check sits inside the common retaliation routine, so all the other rules still apply afterwards — Hypnotize, Gating, Expert Blind, No Enemy Retaliation, invisible attacker, Swift Attack vs Slow, sleeping/stunned/frozen (vf 0x1e4); Cowardice is skipped for shots. The engine answered every shot when retaliations and shots were left, ignoring those rules | AuditAbilityTestsA.RangedRetaliationObeysTheOtherRetaliationRules |
 | `ABILITY_FEAR` | FIXED | 00a629b0, 00a5e1b0, 00a5d790 | only on the attacker's own strike (never a retaliation, +0x21) and only while the target would retaliate; mind-immunity check (00a5e1b0); the target flees instead of retaliating — engine could trigger on retaliations / when no retaliation was pending | AuditAbilityTests.FearNeverTriggersOnRetaliation |
 | `ABILITY_FRIGHT_AURA` | MATCH | 008a4b70, 00989fd0 | a stack that is neither Undead nor Mechanical gets morale flag 4 when an adjacent enemy stack has the aura; flag 4 = morale −3 (00989fd0) |  |
 | `ABILITY_VORPAL_SWORD` | FIXED | 00a673c0, 00a63020 | +1 creature killed on the strike, only vs creature targets without CRYSTAL_SCALES — engine ignored both conditions | AuditAbilityTests.VorpalSwordDoesNotWorkOnCrystalScales |
@@ -100,7 +100,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_MAGIC_ATTACK` | UNVERIFIED | 00a62030 00a66b60 00a6b710 00b3b330 | implemented; not yet compared with the exe |  |
 | `ABILITY_ENERGY_CHANNEL` | FIXED | 009781e0, 00978120 | ×0.75 rounded, at least −1 | (HeroManaCost) |
 | `ABILITY_MAGIC_PROOF_75` | MATCH | 0097af50 (0097b265) | independent ×0.25 |  |
-| `ABILITY_POISONOUS_ATTACK` | UNVERIFIED | 00a61720 | implemented; not yet compared with the exe |  |
+| `ABILITY_POISONOUS_ATTACK` | FIXED | 00a61720, 00982010, 00bbf160, 00bbb900, 00bbe150 | on a strike the attacker applies SPELL_ABILITY_POISONOUS_ATTACK (0xb4) through the spell application check (00982010); the effect is (re)applied only if the target has none or the existing effect's power (+0x28) is not greater than the new power — a stronger poison is never replaced by a weaker one; the counter is AssasinPoisonCounter for every poisoner (ManticorePoisonCounter is never read); the damage-over-time tick (00bbb900) treats poison and venom as separate effects. Power = stack size (fan manual p.178 PDF: "proportional to the number of creatures", multiplier 1 Assassin / 4 Manticore) — engine always overwrote the effect. Spell-immunity side of 00982010 not compared | AuditAbilityBTests.AStrongerPoisonIsNeverReplacedByAWeakerOne |
 | `ABILITY_STRIKE_AND_RETURN` | UNVERIFIED | 008d4330 00a2f130 00a2f710 00a2f8f0 | implemented; not yet compared with the exe |  |
 | `ABILITY_BRAVERY` | MATCH | 00a6acd0 | morale of a non-undead stack: if an Aura of Bravery effect applies, max(m, AuraOfBraveryMoraleMin), else with BRAVERY max(m, 1) — same as the engine for stock data (both minimums are 1) |  |
 | `ABILITY_RIDER_CHARGE` | MATCH | 00a5a900 | defence ×clamp(1 − cells·RiderCharge_DefenceReducePerPathCell, 0, 1), not vs ARMORED |  |
@@ -110,7 +110,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_WHIP_STRIKE` | FIXED | 00a629b0, 00a5e2c0 | melee only (incl. retaliation); r = Rng(100): r<40 Slow, r<75 Weakness, else Berserk; power WhipStrikeSpellPower (creature power if <1) — engine cast Slow/Curse/Berserk uniformly | AuditAbilityTests.WhipStrikeCastsSlowWeaknessOrBerserk |
 | `ABILITY_FIRE_SHIELD` | FIXED | 00a5bcf0 | melee only; clamp(FireShield_Damage_Multiplier,0,10) × min(damage, holder's HP before the blow), dealt as fire spell damage when ≥ 0.5 — engine counted overkill damage (spell-damage rounding in 0097d740 not compared) | AuditAbilityTests.FireShieldIgnoresOverkill |
 | `ABILITY_DEADLY_STRIKE` | FIXED | 00a5bf60, 00a6bd90, 00a67c26 | any strike (incl. retaliation, every target of the blow): target without CRYSTAL_SCALES, the blow alone kills < count/2 (incorporeal targets count as fully killed), Range(0,100) < 25 with the attacker's second roll → the blow's damage is dropped and exactly count/2 (pre-hit) creatures die — engine added half the remaining stack after normal damage, melee non-retaliation only, plain 25 % | AuditAbilityTests.DeadlyStrikeReplacesTheBlowWithHalfTheStack |
-| `ABILITY_REBIRTH` | UNVERIFIED | 00a58bb0 | implemented; not yet compared with the exe |  |
+| `ABILITY_REBIRTH` | FIXED | 00a58bb0 | a dead stack with REBIRTH (0x40) and charges left (vf +0x2c) rises again unless it is a Phantom Forces copy (SPELL_PHANTOM, 0x28): one charge is spent and the reborn count comes from vf +0x170 — engine also reborn phantom copies. The charge count and the reborn amount (InitialCount in the engine) are not traced further | AuditAbilityBTests.PhantomCopiesOfAPhoenixNeverRebirth |
 | `ABILITY_FRIGHTFUL_PRESENCE` | N/A | 008aaec0 00a65d50 | not used by shipped data |  |
 | `ABILITY_CRYSTAL_SCALES` | UNVERIFIED | 0097f610 00a5bf60 00a63020 00a673c0 | implemented; not yet compared with the exe |  |
 | `ABILITY_LARGE_CREATURE` | N/A |  | not used by shipped data |  |
@@ -164,7 +164,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_FAST_ATTACK` | MATCH | 00a5fee0 | no retaliation against a FAST_ATTACK attacker while the target is under SPELL_SLOW |  |
 | `ABILITY_PRESENCE_OF_COMMANDER` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
 | `ABILITY_ORDER_OF_THE_CHIEF` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_VENOM` | UNVERIFIED | 00a61e60 | implemented; not yet compared with the exe |  |
+| `ABILITY_VENOM` | FIXED | 00a61e60, 00bbb900, 00bbe150 | same shape as poison but its own effect SPELL_ABILITY_VENOM (0x128) with VenomDuration turns and VenomDamagePerPower per creature; it coexists with poison and ticks separately — engine stored venom as the poison effect (each replaced the other) with hard-coded 5 and 3. Lay Hands still removes it (fan manual) | AuditAbilityBTests.PoisonAndVenomAreSeparateEffectsAndBothTick |
 | `ABILITY_SCAVENGER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_LIGHTNING_BREATH` | UNVERIFIED | 00a62030 00a63020 00a673c0 | implemented; not yet compared with the exe |  |
 | `ABILITY_SWALLOW_GOBLIN` | UNVERIFIED | 008d03a0 | implemented; not yet compared with the exe |  |
@@ -411,7 +411,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | ID | Status | Exe functions | Original behaviour / note | Regression test |
 |---|---|---|---|---|
 | `HERO_SPEC_SUZERAIN` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_WHITE_KNIGHT` | FIXED | 009781e0, 00989fd0, 00989790, 0098a430 | Light spells −1 mana; Prayer bonus ×2 | tests/H5.Combat.Tests/AuditSpecTests.WhiteKnightDoublesPrayer |
+| `HERO_SPEC_WHITE_KNIGHT` | FIXED | 004e4270 (case 0x36) | Prayer initiative 1 + Prayer_InitiativeBonus × (WhiteKnight_PrayerMultiplier if the effect's caster is a White Knight); engine checked the creature's own hero | (same code path as Expediter) AuditSpecSetTests.ExpediterBonusFollowsTheCasterOfHaste |
 | `HERO_SPEC_JOUSTING` | MATCH | 00a58de0, 0094aee0 | Jousting factor (1+clamp(clamp(perCell,0,10),0,100)·cells) × (1+clamp(CavalryCommander_JoustingBonus,0,1000)+clamp(…PerLevel,0,1000)·level) (struct fields +4/+8) |  |
 | `HERO_SPEC_PEASANTS` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_ARCHERS` | N/A |  | no combat use found in exe or engine |  |
@@ -419,12 +419,12 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_GRIFFINS` | FIXED | 008a34c0 | basic Griffins (creature 7) gain Battle Dive | tests/H5.Combat.Tests/AuditSpecTests.GriffonCommanderGivesGriffinsBattleDive |
 | `HERO_SPEC_WAR_MACHINES` | MATCH | 00b3b7d0 | verified in EXE_FINDINGS.md |  |
 | `HERO_SPEC_LOGISTICS` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_HASTE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SPEC_HASTE` | FIXED | 004e4270 (case 0x18), 008a4330 | Haste factor 1 + max(0, v) + Expediter level × clamp(Expediter_HasteBonusPerLevel, 0, 100) — the Expediter is the effect's caster hero (effect vf 0xc); engine used the creature's own hero | AuditSpecSetTests.ExpediterBonusFollowsTheCasterOfHaste |
 | `HERO_SPEC_FURIOUS` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_GATE_KEEPER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SPEC_GATE_KEEPER` | FIXED | 0085fe60 | additive gating bonus level × clamp(GatekeeperHeroSpecPerLevelPortionBonus, −1, 1000); see the Gating core row for the other terms fixed alongside | AuditSpecSetTests.GatingPortionAddsBonusesAndScalesOnlyTheBase |
 | `HERO_SPEC_BEATER` | FIXED | 00a34740 | Teleport costs half (Rusher) | (HeroManaCost) |
-| `HERO_SPEC_BOMBARDIER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SPEC_IMPREGNABLE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SPEC_BOMBARDIER` | FIXED | 0085f0f0 | ballista shot carries Fireball (spell 5) cast at a fixed mastery 3 (Expert) with power (level−1)·PerLevel / Divisor + Base (integer, Base −1, /5, ×1, unclamped); engine used the hero's own mastery and Base + floor(level/Divisor)·PerLevel clamped at 0 | AuditSpecSetTests.BombardierPowerUsesLevelMinusOne |
+| `HERO_SPEC_IMPREGNABLE` | MATCH | 0097c9f0 | magic resistance + level + 5 percent (verified by the spells audit, Battle.SpellAudit) |  |
 | `HERO_SPEC_HYPNOTIST` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_FLAGBEARER_OF_DARKNESS` | FIXED | 004d8c10 | the enemy hero cannot use Tactics (the spec's only combat-code use; its +1 luck is a hero stat) — was missing | AuditHeroTests.TacticsColumnsFollowTheOriginalRule |
 | `HERO_SPEC_HOUNDS` | N/A |  | no combat use found in exe or engine |  |
@@ -437,20 +437,20 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_WAYLAYER` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_CALL_OF_THE_WASP` | MATCH | 00976db0 | Wasp Swarm damage ×(1+lvl·perLevel) |  |
 | `HERO_SPEC_TALENTED_WARRIOR` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_FOREST_GUARDIAN` | UNVERIFIED | 00a59340 | implemented; not yet compared with the exe |  |
+| `HERO_SPEC_FOREST_GUARDIAN` | MATCH | 00a59340 | Sylvan (town 4) attackers vs a favoured enemy of their hero (hero vf 0x25c contains target id): ×(1 + clamp(ForestGuardian_DamageBonus + level·PerHeroLevel, 0, 10)) — offsets 0x858/0x85c |  |
 | `HERO_SPEC_HEIR_OF_UNDEAD` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_ZOMBIES` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_VAMPIRES` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_REANIMATOR` | FIXED | 009789b0 | Animate Dead +((lvl−1)/5)+1 spell power | (HeroSpellPower) |
-| `HERO_SPEC_MALEDICTOR` | UNVERIFIED | 00989790 | implemented; not yet compared with the exe |  |
-| `HERO_SPEC_DARK_EMISSARY` | UNVERIFIED | 00989cf6 00989fd0 | implemented; not yet compared with the exe |  |
-| `HERO_SPEC_MIND_CLEANER` | GAP | 00983790 | economy spec (gold, Haven discount); combat-side call at 00983790 not analysed |  |
+| `HERO_SPEC_MALEDICTOR` | MATCH | 00989790 (case 0xb) | Curse also lowers defence by (level + 2) / 3 (integer), skipped for ABILITY_ARMORED (0x55) — engine subtracts Value2 inside the not-Armored branch |  |
+| `HERO_SPEC_DARK_EMISSARY` | FIXED | 00989fd0 (case 0x3b) | Death Scream morale −trunc(DeathScream_MoralePenalty · f), f = DarkEissary_DeathScreamMultiplier (else 1) + BansheeWhail_DeMorale with 2+ Necromancers pieces; Howl of Terror (0x6f) −6. Engine took max(multiplier, 2) for the set, so Dark Emissary + set gave 2 instead of 3. Dark Emissary does not affect initiative (004e4270) | AuditSpecSetTests.DeathScreamMoraleCombinesDarkEmissaryAndTheSet |
+| `HERO_SPEC_MIND_CLEANER` | FIXED | 00983790 (0098431f-009843f2) | combat spec (was marked economy-only): after an enemy hero's spell resolves, ability roll (no second roll) of 100 / max(1, circle + 1) − caster level + Mind Cleaner level (integer); success blocks that spell in the caster's book for the rest of the combat (hero vf 0x2b8). Hero roles in the subtraction read from the call order; levels taken as hero level (vf 0x20) | AuditSpecSetTests.MindCleanerBlocksTheEnemySpell |
 | `HERO_SPEC_EMPIRIC` | FIXED | 00977190 | First Aid Tent +5 HP per level | tests/H5.Combat.Tests/WarMachineAuditTests |
 | `HERO_SPEC_SOULHUNTER` | FIXED | 00a5b440, 00a61310 | min(count, level) Manes when an enemy stack dies | tests/H5.Combat.Tests/AuditSpecTests2.SoulhunterRaisesManesFromDeadEnemies |
 | `HERO_SPEC_MASTER_OF_ELEMENTS` | FIXED | 00a5a5a0, 00a61310 | elementals on own stack death; summon spell power | tests/H5.Combat.Tests/AuditSpecTests2.MasterOfElementsSummonsOnOwnLosses |
 | `HERO_SPEC_RADIANT` | MATCH | 00983150 | verified in EXE_FINDINGS.md |  |
 | `HERO_SPEC_INEXHAUSTIBLE` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_FEATHER_MAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SPEC_FEATHER_MAGE` | FIXED | 00bc1eb0 | hero initiative ×(1 + clamp(FeatherMage_InitiativeBonusBase + level·PerLevel, 0, 5)); engine had no Base term and no clamp | AuditSpecSetTests.FeatherMageInitiativeIsClamped |
 | `HERO_SPEC_DISRUPTER` | FIXED | 00976db0 | Vulnerability deals round(10 + (lvl−1)·10/3) | (ResolveSpell) |
 | `HERO_SPEC_WEILDER_OF_FIRE` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_GREMLINS` | N/A |  | no combat use found in exe or engine |  |
@@ -461,7 +461,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_POWER_BARGAIN` | FIXED | 00a34740 | empowered spells ×clamp(1−0.05−0.01·lvl, 0.5, 1) | (HeroManaCost) |
 | `HERO_SPEC_RIDERS` | FIXED | 00a58de0 | Lizard Bite ×0.5·(1.2+0.01·lvl) | (LizardBites) |
 | `HERO_SPEC_DARK_ACOLYTE` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_POISONER` | UNVERIFIED | 009844e0 | implemented; not yet compared with the exe |  |
+| `HERO_SPEC_POISONER` | FIXED | 009844e0 | per enemy stack (exe pre-filters valid targets with 00982010 — not ported), ability roll of trunc(100·clamp(Poisoner_PlagueProb + level·PerLevel, 0, 1)); hits get Plague (spell 0xe). Engine used a continuous unclamped chance | AuditSpecSetTests.PoisonerAndSacredHammerChancesAreClampedWholePercents |
 | `HERO_SPEC_MATRON_SALVO` | UNVERIFIED | 00978e10 | implemented; not yet compared with the exe |  |
 | `HERO_SPEC_SAVAGE` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_WITCHES` | N/A |  | no combat use found in exe or engine |  |
@@ -474,7 +474,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_BEAR_RIDERS` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_MAGISTER` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_RESEARCHER` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_SACRED_HAMMER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SPEC_SACRED_HAMMER` | FIXED | 00bbebd0 | light-school (school 2) spell on a friend: ability roll of trunc(100·clamp(ChanceToCastBase + level·PerLevel, 0, 1)) casts SacredHammer_SpellToCast; engine used a continuous unclamped chance | AuditSpecSetTests.PoisonerAndSacredHammerChancesAreClampedWholePercents |
 | `HERO_SPEC_ECONOMIST` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_DEFENDER` | FIXED | 004bc470 | Defenders and upgrades (base creature Defender): +level/5 HP — engine lacked the HP part | AuditHeroTests.DefenderSpecialisationAddsLevelOverFiveHealth |
 | `HERO_SPEC_STORMCALLER` | FIXED | 0097c9f0 | Air spells skip the resistance roll | (SpellHits) |
@@ -486,13 +486,13 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_OFFENDER` | FIXED | 00bc1b90 (00bc1d20-00bc1d7f) | hero strike ×(level·Offender_HeroAttackDamageBonusPerLevel + 1), x87 truncation — was missing | AuditHeroStrikeTests.OffenderScalesTheStrikeByLevel |
 | `HERO_SPEC_WAR_LEADER` | FIXED | 00a34740 | warcry cost −(lvl/4·1+1) | (HeroManaCost) |
 | `HERO_SPEC_WYVERN_TAMER` | FIXED | 004bc470 | creatures whose base creature is Wyvern (Wyvern, Foul Wyvern, Paokai): +((level−1)/LevelDivisor)·PerDividedLevel + Base HP — engine used level/LevelDivisor (+2 HP too many) | AuditHeroTests.WyvernTamerHealthUsesLevelMinusOne |
-| `HERO_SPEC_BLOODDRINKER` | UNVERIFIED | 00a5c300 | implemented; not yet compared with the exe |  |
+| `HERO_SPEC_BLOODDRINKER` | FIXED | 00a5c300 | each stack killed adds effect 0x13a (infinite) of ((level−1)/LevelDivisor)·PerDividedLevel + Base attack to every creature of the hero's army (accumulating, per the spec text); engine used Base + floor(level/Divisor)·Per (shared Specials.LevelFormula corrected) | AuditSpecSetTests.LevelFormulaUsesLevelMinusOne |
 | `HERO_SPEC_ORC_ELDER` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_GOBLIN_KING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SPEC_GOBLIN_KING` | MATCH | 008a0b60 | Treachery threshold lowered by GoblinKing_TreacheryBonusPerLevel × level (EXE_FINDINGS Treachery) |  |
 | `HERO_SPEC_DEMON_HUNTER` | FIXED | 008a2c20 | rage gain +((lvl−1)/1)·2+10 when demons fight; Berserk/Power of Blood coefs rounded | (AddRage) |
 | `HERO_SPEC_AVATAR_OF_DEATH` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_VESSEL_OF_ELRATH` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_INFERNAL_MACHINE` | GAP | 008cf270 008cfbc0 | test hero only (Tank_Hero); not shipped — N/A in practice |  |
+| `HERO_SPEC_INFERNAL_MACHINE` | N/A | 0085f0f0, 008cf270, 008cfbc0 | test hero only (Tank_Hero); shares the Bombardier fireball path in 0085f0f0 |  |
 
 ## Spells and spell effects
 
@@ -564,7 +564,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_EFFECT_FROZEN` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_FIRE_DAMAGE` | FIXED | 00bbe760 (0xca → 004e5b70) | the armour crush applied as an effect (Fortress moat): same rule as Master of Fire | MasterOfFireCrushIsAFixedHalfOfTheDefence |
 | `SPELL_SPEC_DEMON_HUNTER` | FIXED | 008a2c20 | effect of HERO_SPEC_DEMON_HUNTER (rage bonus) | (AddRage) |
-| `SPELL_ARTFSET_NECROMANCERS_DEBUFF` | UNVERIFIED | 008a22f0 008a4800 | implemented; not yet compared with the exe |  |
+| `SPELL_ARTFSET_NECROMANCERS_DEBUFF` | FIXED | 008a8140, 008a6c40, 008a4800, 008a22f0 | was not implemented: a stack failing its morale check gets effect 0xce when the opposing hero has > 3 Necromancers pieces; removed at the stack's next turn start; while present attack and defence are trunc(value·(1 − pct·0.01)), pct = Necromancers_4_EnemyCreature_BadMoralePenaltyToAttackDefencePercents (RPGStats+0x1198). The 2-piece Death Scream initiative doubling (BansheeWhail_DeInitiativeMultiplier, +0x1190, 004e4270) was also missing | AuditSpecSetTests.NecromancersDebuffCutsAttackAndDefence, DeathScreamInitiativeDoublesWithTheNecromancersSet |
 | `SPELL_ABILITY_ENRAGED` | UNVERIFIED | 008a3b90 | implemented; not yet compared with the exe |  |
 | `SPELL_MASS_CURSE` | MATCH | 0097a530 (default case, IsAimed false) | whole enemy army (TARGET_HOSTILE → caster vf +0x10); effect as SPELL_CURSE |  |
 | `SPELL_MASS_DISRUPTING_RAY` | MATCH | 0097a530 (default case), spell record +0xcc IsAimed, +0xd0 Target | aimed mass spell: 4×4 area x−1..x+2, y−1..y+2, TARGET_HOSTILE → enemy stacks only; effect as SPELL_DISRUPTING_RAY |  |
@@ -612,7 +612,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_WARCRY_FEAR_MY_ROAR` | GAP | 004e57d0, 009bdbd0 | the duration table 004e57d0 has no 0x125 case (no lasting effect — the engine only zeroes ATB, consistent); the success chance 0.5 + (level − target level)·0.05 used by the engine was not located in the exe (no 0x125 dispatch outside the enum table 009f29c0) |  |
 | `SPELL_WARCRY_BATTLECRY` | FIXED | 008a1e50 (0x126), FUN_00946030 | speed +((lvl−1)/div)·per + base (confirmed), offence by the same struct formula (engine 1 + lvl/2) | WarcryBonusesUseLevelMinusOne |
 | `SPELL_WARCRY_SHOUT_OF_MANY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_ARTFSET_LIONS_DEMORALIZED` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
+| `SPELL_ARTFSET_LIONS_DEMORALIZED` | FIXED | 008cf7ff-008cf86d, 00989fd0 (case 0x129) | was not implemented: a Knight (hero class 1) with 2+ Lions pieces (set 3) marks every hero-strike target with effect 0x129 (infinite, not re-applied if present); the mark lowers morale by Lions_2_HeroAttack_DeMorale (+0x1178) | AuditSpecSetTests.LionsSetDemoralisesTheKnightsTargets |
 | `SPELL_DEMON_RAGE_LEVEL_1` | MATCH | 008a84e0 | rage level thresholds RPForLevel1..3 (engine RageLevel) |  |
 | `SPELL_DEMON_RAGE_LEVEL_2` | MATCH | 008a84e0 | rage level thresholds RPForLevel1..3 (engine RageLevel) |  |
 | `SPELL_DEMON_RAGE_LEVEL_3` | MATCH | 008a84e0 | rage level thresholds RPForLevel1..3 (engine RageLevel) |  |
