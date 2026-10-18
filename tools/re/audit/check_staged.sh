@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds HEAD + the currently staged changes in a clean worktree (and runs tests with --test).
 ROOT=G:/H5Reborn
-WT=G:/H5Reborn-audit-check
+WT=C:/Users/rghth/AppData/Local/Temp/claude/G--HoMM-5---Tribes-of-the-East/e85be553-54d1-4853-aa98-82c8dd346b0f/scratchpad/audit-check-wt
 TMP=$ROOT/tools/re/audit/out/staged.diff
 mkdir -p "$ROOT/tools/re/audit/out"
 cd "$ROOT" || exit 1

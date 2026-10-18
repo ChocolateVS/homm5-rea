@@ -3,7 +3,7 @@
 # worktree, without touching the shared index (other agents commit concurrently).
 # Usage: verify.sh "<path> <path> ..." [--test | <xunit filter>]
 ROOT=G:/H5Reborn
-WT=G:/H5Reborn-audit-check
+WT=C:/Users/rghth/AppData/Local/Temp/claude/G--HoMM-5---Tribes-of-the-East/e85be553-54d1-4853-aa98-82c8dd346b0f/scratchpad/audit-check-wt
 cd "$ROOT" || exit 1
 git worktree remove --force "$WT" >/dev/null 2>&1; rm -rf "$WT"
 git worktree add -f --detach "$WT" HEAD >/dev/null 2>&1 || { echo "worktree failed"; exit 1; }
