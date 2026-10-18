@@ -152,3 +152,62 @@ sealed class AdvWaterRuleCommand : ICommand
         return n;
     }
 }
+
+/// <summary>Lists ships, sailing heroes and shipyard states of a map after game setup.</summary>
+sealed class AdvBoatsCommand : ICommand
+{
+    public string Name => "adv-boats";
+    public string Help => "adv-boats <map> [seed=1]  - ships, sailing heroes and shipyard states at game start";
+
+    public int Run(ToolContext ctx, string[] args)
+    {
+        if (args.Length < 1) { Console.WriteLine(Help); return 1; }
+        var core = GameDatabase.Load(ctx.Fs);
+        var map = new MapLoader(core, ctx.Fs).Load(MapCatalog.Find(ctx.Fs, ctx.Install, args[0])!);
+        ulong seed = args.Length > 1 ? ulong.Parse(args[1]) : 1;
+        var db = H5.Adventure.Data.AdventureDb.Load(core, ctx.Fs);
+        var (g, _) = H5.Adventure.Engine.Adventure.NewGame(db, map, H5.Adventure.Engine.GameSetup.AllPlayers(map, humans: 0, seed));
+        foreach (var b in g.S.Boats)
+            Console.WriteLine($"boat #{b.Id} {b.Pos} model={b.Model} hero={b.HeroId} {(b.HeroId >= 0 ? g.S.Hero(b.HeroId)?.Name + " p" + (g.S.Hero(b.HeroId)?.Owner + 1) : "")}");
+        foreach (var o in map.Objects.Where(o => o.Kind == ObjectKind.Shipyard || (o.Kind == ObjectKind.Town && o.ShipTile is { } st && st != (0, 0))))
+            Console.WriteLine($"{o} slipway={g.SlipwayOf(o.Index)} status={g.ShipyardStatus(o.Index)}");
+        return 0;
+    }
+}
+
+/// <summary>Temporary: height statistics of sea vs coast vs land vertices (plain heights and chunk 13).</summary>
+sealed class AdvWaterHeightsCommand : ICommand
+{
+    public string Name => "adv-water-heights";
+    public string Help => "adv-water-heights <map>  - vertex height stats by plateau level (chunk 5 and chunk 13)";
+
+    public int Run(ToolContext ctx, string[] args)
+    {
+        var core = GameDatabase.Load(ctx.Fs);
+        var m = new MapLoader(core, ctx.Fs).Load(MapCatalog.Find(ctx.Fs, ctx.Install, args[0])!);
+        foreach (var f in m.Floors)
+        {
+            if (f?.Data?.VertexFlags is not { } lv) continue;
+            var d = f.Data;
+            var byLevel = new SortedDictionary<int, List<float>>();
+            var byLevel2 = new SortedDictionary<int, List<float>>();
+            for (int y = 0; y < lv.Height; y++)
+                for (int x = 0; x < lv.Width; x++)
+                {
+                    int l = lv[x, y];
+                    if (!byLevel.TryGetValue(l, out var list)) byLevel[l] = list = new();
+                    list.Add(d.Heights[x, y]);
+                    if (d.Heights2 is { } h2 && x < h2.Width && y < h2.Height)
+                    {
+                        if (!byLevel2.TryGetValue(l, out var l2)) byLevel2[l] = l2 = new();
+                        l2.Add(h2[x, y]);
+                    }
+                }
+            Console.WriteLine($"floor {f.Index}: heights2={(d.Heights2 != null)} flags14={d.Flags14}");
+            foreach (var (l, list) in byLevel)
+                Console.WriteLine($"  level {l,3}: n={list.Count,6} h min={list.Min():F2} max={list.Max():F2} avg={list.Average():F2}" +
+                    (byLevel2.TryGetValue(l, out var l2) ? $" | h13 min={l2.Min():F2} max={l2.Max():F2} avg={l2.Average():F2}" : ""));
+        }
+        return 0;
+    }
+}
