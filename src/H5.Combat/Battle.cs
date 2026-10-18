@@ -300,6 +300,10 @@ public sealed partial class Battle
         return e;
     }
 
+    /// <summary>Morale roll (exe 00a6b8f0 bad / 00a6ba00 good): |morale| clamped to 5; succeeds iff the battle RNG's
+    /// inclusive Range(1,100) is below 10·|morale|, i.e. (10·|m| − 1) % (9 % at ±1, 49 % at ±5).</summary>
+    internal bool MoraleRoll(int morale) => S.Rng.Range(1, 100) < 10 * Math.Min(5, Math.Abs(morale));
+
     /// <summary>Start-of-turn processing. Returns true if the actor needs a command.</summary>
     bool BeginTurn(int actor)
     {
@@ -329,7 +333,7 @@ public sealed partial class Battle
 
         // Bad morale: the turn is lost and ATB reset to 0.5 (p.311).
         int morale = MoraleOf(u);
-        if (morale < 0 && S.Rng.Chance(Math.Min(0.5, -morale * 0.1)))
+        if (morale < 0 && MoraleRoll(morale))
         {
             Emit(new MoraleProc(u.Id, false));
             RageEvent(u, "BadMoraleRP");
@@ -378,7 +382,7 @@ public sealed partial class Battle
         if (u.Alive && allowMorale && reset < 0.5)
         {
             int morale = MoraleOf(u);
-            if (morale > 0 && S.Rng.Chance(Math.Min(0.5, morale * 0.1)))
+            if (morale > 0 && MoraleRoll(morale))
             {
                 reset = Stats.Get("combat/LuckAndMorale/GoodMorale_ATBValue", 0.5);
                 Emit(new MoraleProc(u.Id, true));

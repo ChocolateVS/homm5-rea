@@ -100,4 +100,24 @@ public class AuditHeroTests(GameDataFixture f)
         Assert.True(Dmg(Mastery.Expert) > none);
         Assert.Equal(none, Dmg(Mastery.Ultimate));
     }
+
+    // exe 00a6ba00 (good) / 00a6b8f0 (bad): |morale| clamped to 5, success iff Range(1,100) < 10·|morale|
+    // (inclusive range: 9 % at ±1, 49 % at ±5 — not the manual's flat 10 % per point).
+    [Fact]
+    public void MoraleRollUsesTheInclusiveRangeAndClampsAtFive()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_IMP", 10) });
+        var b = new Battle(f.Db, s);
+        foreach (int m in new[] { 1, -1, 3, -4, 5, 8, -9 })
+            for (int i = 0; i < 200; i++)
+            {
+                var r = s.Rng;
+                var probe = new Rng { S0 = r.S0, S1 = r.S1, S2 = r.S2, S3 = r.S3 };
+                bool expected = probe.Range(1, 100) < 10 * Math.Min(5, Math.Abs(m));
+                Assert.Equal(expected, b.MoraleRoll(m));
+            }
+        int hits = 0, n = 20000;
+        for (int i = 0; i < n; i++) if (b.MoraleRoll(1)) hits++;
+        Assert.InRange(hits / (double)n, 0.075, 0.105);   // 9 %
+    }
 }

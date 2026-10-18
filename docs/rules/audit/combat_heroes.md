@@ -13,6 +13,8 @@ the decompiler's `ROUND` is a truncation toward zero.
 |---|---|---|---|---|
 | Native terrain | FIXED | 008a4800, 008a22f0 | +1 attack and +1 defence when the battlefield is native to the creature's race (battlefield vfunc 0x54(race); race ↔ terrain table from manual p.260). Engine had no native-terrain bonus. | AuditHeroTests.NativeTerrainGivesPlusOneAttackAndDefence |
 | Defend posture | FIXED | 008a22f0 | defence = base + hero + Prayer + native; if defending: += max(1, trunc(that·f + 0.001)), f = DefenceBonusOnTakeRoots for ABILITY_TAKE_ROOTS creatures else DefenceBonusOnDefend (never both), × HoldGround_* multiplier; spell/effect bonuses (FUN_008d9390) are added afterwards and are not multiplied. Engine multiplied the whole defence incl. spells by (1+0.3[+0.5]). | AuditHeroTests.DefendBonusIsTruncatedOnTheBaseDefenceOnly, TakeRootsReplacesTheDefendFactor, DefendBonusIsAtLeastOne |
+| Morale rolls | FIXED | 00a6ba00, 00a6b8f0 | |morale| clamped to 5; good (m ≥ 1) / bad (m ≤ −1) succeeds iff the RNG's inclusive Range(1,100) < 10·|m| → (10|m|−1) % (9 % at ±1, 49 % at ±5). Engine used a continuous 10 %·|m| capped at 50 %. | AuditHeroTests.MoraleRollUsesTheInclusiveRangeAndClampsAtFive |
+| Luck roll | MATCH | 00a6b820, 008a3ef0 | luck clamped ±5, ability roll 00a5a170; good result through 00a6a680 (Elven Luck multiplier) |  |
 | Attacker multipliers | MATCH | 00a58de0 | luck × penalties × (1+clamp(Offence[mastery 1..3],0,10)) melee / (1+clamp(Archery_DamageBonus,0,10)) ranged with the Archery perk; retaliation: Training table (mastery 1..4); own strike: Retribution max(0,morale)·perMorale; Jousting with Cavalry Commander | RulesTests, AuditHeroTests.OffenceBonusOnlyForMasteriesOneToThree |
 
 ## IDs
@@ -29,3 +31,7 @@ the decompiler's `ROUND` is a truncation toward zero.
 | `HERO_SKILL_DEFENSIVE_FORMATION` | MATCH | 008a22f0 | Fortress race (9) only: += clamp(trunc(10·log10(A/B)), 0, Defensive_MaxDefenseBonus) — trunc matches the manual's floor; operands A (unit+0xf0) / B (unit+0xa0 vf 0x24) taken as adjacent dwarven power / own power per manual p.323 (not traced further) |  |
 | `HERO_SKILL_OFFENSIVE_FORMATION` | MATCH | 008a4800 | same formula with Offensive_MaxOffenseBonus |  |
 | `HERO_SKILL_DEATH_TO_NONEXISTENT` | MATCH | 00a5a900 (00a5adc6) | damage ×DeathToNonexistent_DamageToSummonsMult when the target has a summoner link (vf 0x6c → 0x58) |  |
+| `HERO_SKILL_ABSOLUTE_LUCK` | MATCH | 008a3ef0, 00a6a680 | every strike is lucky (good-luck multiplier) unless the target's hero has Absolute Protection (then a normal roll) |  |
+| `HERO_SKILL_ABSOLUTE_PROTECTION` | MATCH | 008a3ef0 | enemy rolls normally; a lucky result becomes normal, anything else becomes BadLuck_DamageMultiplier — unless the attacker's hero has Absolute Luck |  |
+| `HERO_SKILL_ELVEN_LUCK` | MATCH | 00a6a680, 00a6b820 | good-luck multiplier = ElvenLuck_DamageMultiplier instead of GoodLuck_DamageMultiplier |  |
+| `HERO_SKILL_ARTIFICIAL_GLORY` | MATCH | 00a751a0, 00a6acd0, 004ba9d0, 004bae10 | mechanical creatures of a hero with the perk get army morale clamped to ≥ 0 and roll only good morale (00a6ba00); without it their morale is 0 |  |
