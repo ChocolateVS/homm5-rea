@@ -104,18 +104,21 @@ public abstract partial class TownSubScreen
         if (e is not InputEventKey { Pressed: true, Echo: false } k) return false;
         var actions = KeyBindings.Actions(Section, k);
         if (actions.Count == 0) actions = KeyBindings.Actions(KeyBindings.Global, k);
+        // Close actions win over jog-dial ones (Esc is bound to both jd_button_0 and close_window globally).
+        if (actions.Any(a => a is "close" or "close_window" or "esc_pressed" || a.EndsWith("_close")))
+        {
+            Close();
+            GetViewport().SetInputAsHandled();
+            return true;
+        }
         foreach (var a in actions)
         {
-            if (a is "close" or "close_window" or "esc_pressed" || a.EndsWith("_close"))
-            {
-                Close();
-                GetViewport().SetInputAsHandled();
-                return true;
-            }
-            // jd_button_N: jog-dial buttons of the screen; forwarded by name to the screen's bus.
+            // jd_button_N: the screen's jog-dial buttons, forwarded by name; jd_button_0 is the dial's
+            // central (close/OK) button, so it closes when the screen does not handle it itself.
             if (a.StartsWith("jd_button_") || a.StartsWith("input_page_"))
             {
-                Ui.Bus.Send(a);
+                bool handled = Ui.Bus.Dispatch(new H5.Core.Ui.UiCommand("Code", a), null);
+                if (!handled && a == "jd_button_0") Close();
                 GetViewport().SetInputAsHandled();
                 return true;
             }
