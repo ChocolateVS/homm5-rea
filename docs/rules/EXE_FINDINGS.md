@@ -255,3 +255,35 @@ match the fan manual's formula (p.137): heal (and resurrect) 10 × level × (1 +
 
 * Exact hero / war machine cells (see Placement); the tower ×1.5 condition (`00bcdf10`); moat trigger code;
   tower initiative / targeting; automatic catapult targeting.
+
+## Deployment axis and combat views (resolved)
+
+Question: do the armies face each other along the 12-cell axis (engine) or across the 10-cell depth?
+**Verdict: along the 12-cell axis — the engine is right**; what differs by phase is the camera.
+
+* **Exe — obstacle generator** (`FUN_004b3860` family, see "Combat obstacles"): on the 16×12 internal grid random
+  obstacle anchors are confined to x ∈ [4, W−5] (field columns 2..9) while y spans every row, so the two outer
+  columns at each end of the 12-cell axis are always free: those are the deployment zones (2 columns, 3 with
+  Tactics). Fixed layouts agree: Boat_Arena blocks the middle columns x 6..9 (water between two armies).
+* **Stock manual text** (Game Manual 3.0.pdf p.14, "Combat Screen"): "the attacking army is displayed on the left,
+  as well as your hero and any war machines". The mid-battle screenshot (p.14, second image) fits a 12-cell near
+  edge with the eye 24.9 cells (= `Rod` 50 of `Cameras/CombatArena/CombatArena.xdb` at 2 units per cell) from the
+  target, pitch 46.4°, vertical FOV ~31–35°.
+* **Stock manual tactics screenshot** (p.14, first image): the deploying army's band is *across* the near edge and
+  is 10 cells wide (cell outlines 19.5 px apart across a 193 px edge in the 271 px image), i.e. the tactics view
+  looks along the 12-cell axis from behind the deploying army. A free fit gives vertical FOV 35.6°, matching the
+  combat screen object's default FOV of 35.0 (constructor `FUN_0054ba40` stores 35.0 / 1.0 / 1000.0 as FOV / clip
+  near / clip far); with FOV 35 the fit leaves 1.2 px residual: pitch 43.4°, eye 20.2 cells from a target on the
+  centre line 5.0 cells in from the deploying army's edge. The manual also says the enemy army is not visible
+  during tactics.
+* The combat camera object in the exe is an orbit camera (fields Rod, Pitch, two angles, FOV, clip, `Anchor` —
+  readers `FUN_009fea20`/`FUN_009feb80`/`FUN_009fedd0`/`FUN_009fef60`); the conversion from the camera xdb's
+  `Pos`/`Rot` (`(-5.68,-5.09,9.81)` / `(-30,-66.8,0)`, a Maya-style rotation) was not traced, so the client uses
+  the screenshot fits. Console command `combat_camera_limits` (`FUN_00543e50` → `FUN_00543430`) toggles between
+  the free (`+0x3b8`, `FUN_007d6ee0`) and limited (`+0x3bc`, `FUN_007d5ec0`) camera controllers.
+* Sieges: walls x 7–9, central tower x 13 (field cells) ⇒ the town is on the defender's (right, high-x) side.
+* Duel arenas: duels are fought on Maps/DuelMode/PresetMap (grass), so the arena comes from the grass entry of
+  `GameMechanics/CombatArenaTypes/CombatArenaTypes.xdb` (average: Grass_Big_01, Grass_Big_02, Grass_Small_03),
+  loaded as `GameDatabase.ArenaTable` (`BattleSetup.PickArena(db, rng, terrain)`).
+
+Tests: `tests/H5.Combat.Tests/DeploymentAxisTests.cs`.

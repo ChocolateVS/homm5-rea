@@ -213,6 +213,27 @@ public partial class ArenaScene : Node3D
     public static Vector2 DefaultTarget => new(ArenaGrid.Width * 0.5f, DefaultTargetDepth * ArenaGrid.Height / 10f);
     public const float DefaultPitchDeg = 46.2f, DefaultFovDeg = 31.2f, DefaultDistance = 24.8f, DefaultTargetDepth = 4.27f;
 
+    // Tactics-phase view, fitted to the stock manual's tactics screenshot (Game Manual 3.0.pdf p.14,
+    // first image): the camera stands behind the deploying army and looks along the 12-cell axis,
+    // so that army's two deployment columns form the near band across the screen (10 cells wide,
+    // measured from the band's cell outlines) and the enemy end is far away. With the combat
+    // screen's default FOV of 35° (H5_Game.exe combat screen constructor FUN_0054ba40 stores
+    // 35.0 / 1.0 / 1000.0 as FOV / near / far) the fit leaves 1.2 px residual: pitch 43.4°, eye
+    // 20.2 cells from a target on the field's centre line 5.0 cells in from that army's edge.
+    // Combat proper then uses the default view above (attacker on the left, manual p.14 text).
+    public const float TacticsPitchDeg = 43.4f, TacticsFovDeg = 35f, TacticsDistance = 20.2f, TacticsTargetDepth = 5.0f;
+
+    /// <summary>Yaw for the tactics view of a side: the attacker (side 0, cx = 0) is seen from the west, the defender from the east.</summary>
+    public static float TacticsYawDeg(int side) => side == 0 ? -90f : 90f;
+
+    public static float FieldScale => Math.Max(ArenaGrid.Width / 12f, ArenaGrid.Height / 10f);
+    public static float TacticsDistanceForField => TacticsDistance * FieldScale;
+    public static Vector2 TacticsTarget(int side)
+    {
+        float depth = TacticsTargetDepth * ArenaGrid.Width / 12f;
+        return new(side == 0 ? depth : ArenaGrid.Width - depth, ArenaGrid.Height * 0.5f);
+    }
+
     Camera3D BuildCamera()
     {
         var cam = new Camera3D { Name = "CombatCamera", Near = 1f, Far = 500f, Fov = DefaultFovDeg, KeepAspect = Camera3D.KeepAspectEnum.Height };

@@ -17,12 +17,23 @@ public sealed class GameDatabase
     public Dictionary<string, ArtifactDef> Artifacts { get; } = new();
     public Dictionary<string, HeroClassDef> HeroClasses { get; } = new();
     public Dictionary<string, WarMachineDef> WarMachines { get; } = new();
+    /// <summary>
+    /// Heroes by InternalName. A few shared heroes reuse another's InternalName (Tan/Cyrus,
+    /// Orlando Haven/Inferno); the entry whose file name matches the name wins here, and every
+    /// variant stays reachable through <see cref="HeroesByPath"/> / <see cref="HeroesByName"/>.
+    /// </summary>
     public Dictionary<string, HeroDef> Heroes { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Every shared hero by its (AdvMapHeroShared) xdb path.</summary>
+    public Dictionary<string, HeroDef> HeroesByPath { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>InternalName → all shared heroes using it.</summary>
+    public Dictionary<string, List<HeroDef>> HeroesByName { get; } = new(StringComparer.OrdinalIgnoreCase);
     public List<DuelPreset> DuelPresets { get; } = new();
     /// <summary>Artifact set effect id (ARTFSET_EFFECT_*) → member artifacts (DefaultStats ArtifactSets).</summary>
     public Dictionary<string, List<string>> ArtifactSets { get; } = new();
     /// <summary>Combat arena scenes by name (Scenes/CombatArenas), with their obstacle groups.</summary>
     public Dictionary<string, CombatArenaDef> Arenas { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Terrain/size → arena lists the original picks battlefields from (CombatArenaTypes.xdb).</summary>
+    public CombatArenaTable ArenaTable { get; private set; } = new();
     /// <summary>Siege layout per town type (TOWN_HEAVEN, …): walls, gate, towers, moat, siege arena.</summary>
     public Dictionary<string, TownCombatDef> TownCombat { get; private set; } = new();
     /// <summary>Fortification hit points by building type (WALL, GATE, BIG_TOWER, …).</summary>
@@ -60,6 +71,7 @@ public sealed class GameDatabase
         db.LoadDuelPresets();
         db.LoadArtifactSets();
         db.Arenas = ArenaLoader.Load(db._x);
+        db.ArenaTable = CombatArenaTable.Load(db._x);
         db.TownCombat = SiegeLoader.LoadTownCombat(db._x);
         db.ArenaBuildingStats = SiegeLoader.LoadBuildingStats(db._x);
         db.Moats = SiegeLoader.LoadMoats(db._x);
@@ -245,9 +257,23 @@ public sealed class GameDatabase
             ReadEditable(ed, out h.Attack, out h.Defence, out h.SpellPower, out h.Knowledge, h.Skills, h.Perks, h.Spells,
                 out h.Ballista, out h.FirstAidTent, out h.AmmoCart);
             if (h.Id.Length == 0) h.Id = Path.GetFileName(path).Split('.')[0];
-            Heroes[h.Id] = h;
+            RegisterHero(h);
         }
     }
+
+    /// <summary>Adds a shared hero to the lookups (also used for map-embedded/campaign variants).</summary>
+    public void RegisterHero(HeroDef h)
+    {
+        HeroesByPath[h.SourcePath] = h;
+        if (!HeroesByName.TryGetValue(h.Id, out var list)) HeroesByName[h.Id] = list = new();
+        list.RemoveAll(x => x.SourcePath.Equals(h.SourcePath, StringComparison.OrdinalIgnoreCase));
+        list.Add(h);
+        static bool NameMatches(HeroDef d) => Path.GetFileName(d.SourcePath).Split('.')[0].Equals(d.Id, StringComparison.OrdinalIgnoreCase);
+        if (!Heroes.TryGetValue(h.Id, out var cur) || (!NameMatches(cur) && NameMatches(h))) Heroes[h.Id] = h;
+    }
+
+    public HeroDef? HeroByPath(string sharedPath) =>
+        HeroesByPath.TryGetValue(PakFileSystem.Normalize(sharedPath), out var h) ? h : null;
 
     static void ReadEditable(XElement? ed, out int att, out int def, out int sp, out int kn,
         List<SkillEntry> skills, List<string> perks, List<string> spells, out bool ballista, out bool tent, out bool cart)
@@ -263,7 +289,7 @@ public sealed class GameDatabase
     public HeroInstance LoadHeroInstance(XElement root, string path)
     {
         var sharedPath = XdbRef.Parse(root.Href("Shared"), path).Path;
-        Heroes.TryGetValue(Heroes.Values.FirstOrDefault(h => h.SourcePath.Equals(sharedPath, StringComparison.OrdinalIgnoreCase))?.Id ?? "", out var shared);
+        var shared = HeroByPath(sharedPath);
         var hi = new HeroInstance
         {
             SourcePath = path, Shared = shared, DisplayName = root.Str("Name"),

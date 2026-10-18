@@ -27,9 +27,52 @@ public sealed class CombatCamera
 
     public CombatCamera(ArenaScene arena) => _arena = arena;
 
+    // Scripted view changes (tactics view → combat view) glide over this many seconds.
+    const float TransitionSeconds = 1.0f;
+    (float Pitch, float Yaw, float Distance, Vector2 Target, float Fov) _from, _to;
+    float _transition = -1;
+
+    /// <summary>Behind the deploying army, looking along the 12-cell axis (stock tactics view).</summary>
+    public void ShowTacticsView(int side, bool instant) =>
+        SetView(ArenaScene.TacticsPitchDeg, ArenaScene.TacticsYawDeg(side), ArenaScene.TacticsDistanceForField,
+            ArenaScene.TacticsTarget(side), ArenaScene.TacticsFovDeg, instant);
+
+    /// <summary>The default combat view: attacker on the left.</summary>
+    public void ShowBattleView(bool instant) =>
+        SetView(ArenaScene.DefaultPitchDeg, ArenaScene.DefaultYawDeg, ArenaScene.DefaultDistanceForField,
+            ArenaScene.DefaultTarget, ArenaScene.DefaultFovDeg, instant);
+
+    public void SetView(float pitch, float yaw, float distance, Vector2 target, float fov, bool instant)
+    {
+        _lift = 0;
+        _to = (pitch, yaw, distance, target, fov);
+        if (instant) { _transition = -1; Set(_to); return; }
+        _from = (_pitch, _yaw, _distance, _target, _arena.Camera.Fov);
+        // Turn the short way round.
+        while (_to.Yaw - _from.Yaw > 180) _from.Yaw += 360;
+        while (_to.Yaw - _from.Yaw < -180) _from.Yaw -= 360;
+        _transition = 0;
+    }
+
+    void Set((float Pitch, float Yaw, float Distance, Vector2 Target, float Fov) v)
+    {
+        (_pitch, _yaw, _distance, _target) = (v.Pitch, v.Yaw, v.Distance, v.Target);
+        _arena.Camera.Fov = v.Fov;
+        Apply();
+    }
+
     public void Process(double delta, bool keyboardFree)
     {
         float dt = (float)delta;
+        if (_transition >= 0)
+        {
+            _transition = Math.Min(1, _transition + dt / TransitionSeconds);
+            float k = _transition * _transition * (3 - 2 * _transition);
+            Set((Mathf.Lerp(_from.Pitch, _to.Pitch, k), Mathf.Lerp(_from.Yaw, _to.Yaw, k), Mathf.Lerp(_from.Distance, _to.Distance, k),
+                _from.Target.Lerp(_to.Target, k), Mathf.Lerp(_from.Fov, _to.Fov, k)));
+            if (_transition >= 1) _transition = -1;
+            return;
+        }
         bool ctrl = Input.IsKeyPressed(Key.Ctrl);
         Vector2 move = Vector2.Zero;
         float pitch = 0, yaw = 0, lift = 0, zoom = 0;

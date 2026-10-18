@@ -80,6 +80,7 @@ public partial class CombatScreen : Control
         PlaceObstacles();
         if (st.Siege != null) { _siege = new SiegeView(Arena, st); Arena.AddChild(_siege); }
         _camera = new CombatCamera(Arena);
+        ApplyPhaseCamera(st.Phase, instant: true);
 
         _plaqueLayer = new Control { Name = "Plaques", AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore };
         AddChild(_plaqueLayer);
@@ -379,6 +380,7 @@ public partial class CombatScreen : Control
 
             case PhaseChanged p:
                 Hud.OnPhase(p.Phase);
+                ApplyPhaseCamera(p.Phase, instant: false);
                 break;
 
             case Deployed d when View(d.UnitId) is { } dv:
@@ -752,6 +754,36 @@ public partial class CombatScreen : Control
     void RefreshAll()
     {
         Hud.Refresh();
+    }
+
+    /// <summary>
+    /// Tactics phase: the stock view from behind the deploying local army; combat: the default view
+    /// (attacker on the left). See ArenaScene.TacticsPitchDeg for the evidence.
+    /// </summary>
+    void ApplyPhaseCamera(BattlePhase phase, bool instant)
+    {
+        if (phase == BattlePhase.Tactics)
+        {
+            var s = Session.Battle.State;
+            int side = Session.LocalSides.FirstOrDefault(sd => !s.TacticsDone[sd], Session.LocalSides.FirstOrDefault(0));
+            _camera.ShowTacticsView(side, instant);
+            // "At this stage you cannot actually see the enemy army ... revealed when combat starts" (manual p.14).
+            SetArmyVisibility(v => v.Side == side);
+        }
+        else if (phase == BattlePhase.Combat)
+        {
+            _camera.ShowBattleView(instant);
+            SetArmyVisibility(_ => true);
+        }
+    }
+
+    void SetArmyVisibility(Func<UnitView, bool> visible)
+    {
+        foreach (var v in _units.Values)
+        {
+            v.Visible = visible(v);
+            v.UpdatePlaque();
+        }
     }
 
     // ---------------------------------------------------------------- input

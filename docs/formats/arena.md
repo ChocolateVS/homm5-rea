@@ -27,7 +27,7 @@
 The playable battlefield is a 12×10 grid of 1-tile cells (14×14 sieges not yet examined).
 **Cell (cx, cy), cx ∈ [0,12), cy ∈ [0,10), is map tile (Mount.x + cx, Mount.y − 11 + cy)**, i.e. the
 grid covers tiles x ∈ [Mount.x, Mount.x+12), y ∈ [Mount.y−11, Mount.y−1). The long axis (12) is map
-+X; the armies face each other along it (attacker at cx = 0). Implemented in
++X; the armies face each other along it (attacker at cx = 0, on the left of the battle view). Implemented in
 `game/src/Arena/ArenaGrid.cs`. Evidence (all 63 `Scenes/CombatArenas/*.xdb`):
 
 * **Axis/extent — fixed obstacles.** `ArenaObjects/BoatArena/BoatArenaBlocked.xdb` blocks cells
@@ -60,13 +60,19 @@ the grid (the manual shows creatures about 0.6 of a cell tall).
 
 ### Combat camera
 
-`Cameras/CombatArena/CombatArena.xdb` is the only combat-arena camera (others are cinematics):
-`Pos (−5.68, −5.09, 9.81)`, `Rot (−30, −66.8, 0)`, `Rod 50`, `FOV 70`. Current reading: Pos is the eye
-offset from the battlefield centre (map space) looking at the centre, FOV vertical. This gives an
-angled view at ~52° with the whole grid in frame and clear sightlines on all arenas tested (an eye
-offset from the internal grid origin instead lands inside the treeline). **Unreconciled:** the Rot
-angles don't match this look direction, and the main-menu camera (below) uses Pos-as-eye with an
-explicit yaw. Needs a screenshot of the original battle screen to settle.
+`Cameras/CombatArena/CombatArena.xdb` is the only combat-arena camera (`DefaultCamera` of
+`_(CamerasSet)/CombatArenas.xdb`): `Pos (−5.68, −5.09, 9.81)`, `Rot (−30, −66.8, 0)`, `Rod 50`, `FOV 70`.
+The exe's conversion of Pos/Rot into its orbit camera (Rod, Pitch, angles, Anchor) is not traced, so the client
+uses views fitted to the stock manual's screenshots (Game Manual 3.0.pdf p.14; docs/rules/EXE_FINDINGS.md
+"Deployment axis and combat views"):
+
+* **Battle view** — looks north (towards higher rows, the 12-cell axis across the screen, attacker on the left
+  as the manual's text says): pitch 46.2°, vertical FOV 31.2°, eye 24.8 cells (≈ Rod 50 at 2 units/cell) from a
+  target 4.27 cells in from the near edge.
+* **Tactics view** — behind the deploying army, looking along the 12-cell axis (attacker seen from the west,
+  defender from the east): pitch 43.4°, vertical FOV 35° (the combat screen's default FOV in the exe), eye
+  20.2 cells from a target on the centre line 5.0 cells in from that army's edge. The enemy army is hidden until
+  combat starts; the camera then glides to the battle view.
 
 ### Grid overlay
 

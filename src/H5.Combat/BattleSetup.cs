@@ -81,9 +81,33 @@ public static class BattleSetup
         return best;
     }
 
-    public static BattleState CreateDuel(GameDatabase db, int presetA, int presetB, ulong seed, bool skipTactics = false, string? arena = null) =>
-        Create(db, ArmySetup.FromHero(db.DuelPresets[presetA].Hero), ArmySetup.FromHero(db.DuelPresets[presetB].Hero), seed,
+    /// <summary>
+    /// A duel. Duels are fought on Maps/DuelMode/PresetMap, which is all grass, so the arena is drawn
+    /// from the grass entry of the original arena table (average size: Grass_Big_01, Grass_Big_02,
+    /// Grass_Small_03) with the battle's RNG.
+    /// </summary>
+    public static BattleState CreateDuel(GameDatabase db, int presetA, int presetB, ulong seed, bool skipTactics = false, string? arena = null)
+    {
+        if (arena == null)
+        {
+            // Drawn from a seed-derived RNG so the battle's own RNG stream is unaffected by the choice.
+            var pick = new Rng(seed ^ 0x9E3779B97F4A7C15UL);
+            arena = PickArena(db, pick, CombatArenaTable.TerrainGrass);
+        }
+        return Create(db, ArmySetup.FromHero(db.DuelPresets[presetA].Hero), ArmySetup.FromHero(db.DuelPresets[presetB].Hero), seed,
             skipTactics: skipTactics, arena: arena);
+    }
+
+    /// <summary>
+    /// An arena for a battle on the given terrain type (CombatArenaTable.Terrain*), from the original
+    /// terrain/size table; falls back to any open arena when the table has none for that terrain.
+    /// </summary>
+    public static string? PickArena(GameDatabase db, Rng rng, int terrain,
+        CombatArenaTable.Size size = CombatArenaTable.Size.Average, CombatArenaTable.Kind kind = CombatArenaTable.Kind.New)
+    {
+        var list = db.ArenaTable.ForBattle(terrain, size, kind).Where(db.Arenas.ContainsKey).ToList();
+        return list.Count == 0 ? PickArena(db, rng) : list[rng.Next(list.Count)];
+    }
 
     /// <summary>A random open-field arena (one whose obstacles are placed randomly), chosen with the battle's RNG.</summary>
     public static string? PickArena(GameDatabase db, Rng rng)
