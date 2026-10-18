@@ -66,6 +66,7 @@ public partial class AdventureScreen : Control
         H5Reborn.Settings.VideoSettings.ApplyScaling();
         if (_built) return;
         _built = true;
+        Audio.AdventureAudio.Attach(this);
 
         World = new AdvWorld(Session);
         AddChild(World);

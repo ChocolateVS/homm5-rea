@@ -37,3 +37,24 @@ Match is by uid string, case-insensitive (pak paths are upper-case, descriptors 
 all), **MS ADPCM (0x0002, 5 files)** and PCM. `game/src/Audio/SoundLibrary.cs` resolves a Sound xdb by
 `uid` (bin/Sounds, then bin/SoundsLoc), builds an `AudioStreamWav`/`AudioStreamOggVorbis` and plays it
 with the descriptor's volume/pitch variation (3D sounds via `AudioStreamPlayer3D`).
+
+## Music and ambience routing (implemented — game/src/Audio, src/H5.Assets/Audio/Music*.cs)
+
+Exe evidence and behaviour are in `docs/rules/AUDIO.md`. Data used:
+
+* `Sounds/_(Music)/*.xdb` → `Music { FileName, FadeIn, FadeOut, MinPausedTime, MaxPausedTime }` (ms).
+  `FileName` is relative to the original working dir `bin/`: `..\Music\a2\Main_Menu.ogg` →
+  `<install>/music/a2/Main_Menu.ogg` (every descriptor resolves — tested).
+* `Sounds/_(Music)/TableRaceMusic.xdb` (UIGameRoot.TableRaceMusic): per race `TownAmbientSoundSet`,
+  `TownMusic`, `TavernMusic`, `DwellingMusic`, `combatMusics[]`, `SiegeMusic`, `Win/Loose/RetreatCombatMusic`,
+  `WaitMusic`, and building sounds. `TOWN_NO_TYPE` (neutrals) has only a combat theme.
+* `UI/UIGameRoot.(UIGameRoot).xdb`: `musics` (MAIN_MENU_MUSIC_ID, MP_MAIN_MENU_MUSIC_ID,
+  CREDITS_SCREEN_MUSIC_ID, HERO_FIND_GRAIL_MUSIC, BUILD_GRAIL_MUSIC), `sounds` (HERO_LEVEL_UP_SOUND,
+  NEW_WEEK_*_SOUND, OBJECTIVE_*_SOUND, BUY/HIRE…), `ambientSounds` (INVISIBLE_AMBIENT_SOUND).
+* `UI/uiconsts.(UIGameConstsH5).xdb`: `ButtonClickSound`, `DisableButtonClickSound` (→ UI/Sounds/*.(UISPlaySound)).
+* `MapObjects/_(AdvMapTile)/**`: `AmbientSoundSet` + `AdventureMusic` per terrain tile.
+* `(AdvMapHeroShared).AdventureMusic` (campaign heroes), `(Campaign)`: `AdventureMusic`, `Win/LoseMissionMusic`,
+  and per mission `startMusics`, `additionalAdventureMusics`, `additionalWaitMusics`, `additionalCombatMusics`.
+* Arena `(ArenaDesc)`/`CombatArenaTypes`: `AmbientSoundSet`/`AmbientSound`, `Music` (towns).
+* `AmbientSoundSet { Loop, sounds[], MinPauseTime, MaxPauseTime }` (pauses in seconds, floats).
+* Some original Oggs carry a malformed Vorbis comment ("Sony Ogg Vorbis 1.0 Final"); Godot logs a harmless warning.

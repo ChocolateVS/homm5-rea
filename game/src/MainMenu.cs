@@ -21,6 +21,7 @@ public partial class MainMenu : Control
         // The original lays its UI out in real screen pixels (no scaling), re-anchoring
         // panels to the corners at higher resolutions.
         H5Reborn.Settings.VideoSettings.ApplyScaling();
+        Audio.MenuAudio.Attach(this, "MAIN_MENU_MUSIC_ID");
 
         AddChild(new ColorRect { Name = "Black", Color = Colors.Black, AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore });
         var container = new SubViewportContainer

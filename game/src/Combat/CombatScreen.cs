@@ -65,6 +65,7 @@ public partial class CombatScreen : Control
     {
         // Like the front end, the original HUD is laid out in real pixels.
         H5Reborn.Settings.VideoSettings.ApplyScaling();
+        Audio.CombatAudio.Attach(this);
 
         // The authoritative battle state names its arena (engine-picked, seeded); older states
         // without one fall back to the duel rule below.

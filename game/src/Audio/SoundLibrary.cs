@@ -10,6 +10,8 @@ public sealed class SoundDef
 {
     public AudioStream Stream = null!;
     public bool Loop, Is3D;
+    /// <summary>Localised speech (bin/SoundsLoc in sound.pak): routed to the Speech bus.</summary>
+    public bool Speech;
     public float MinDistance = 30, MaxDistance = 10000, VolumeBase = 1, VolumeVar, FrequencyVar;
 }
 
@@ -43,8 +45,9 @@ public static class SoundLibrary
         var uid = x.Element("uid")?.Value;
         if (string.IsNullOrEmpty(uid)) return null;
         byte[]? bytes = null;
+        bool speech = false;
         foreach (var dir in new[] { "bin/Sounds/", "bin/SoundsLoc/" })
-            if (fs.TryReadAllBytes(dir + uid, out var b)) { bytes = b; break; }
+            if (fs.TryReadAllBytes(dir + uid, out var b)) { bytes = b; speech = dir == "bin/SoundsLoc/"; break; }
         if (bytes == null) return null;
 
         float F(string tag, float d) => x.Element(tag) is { } e && !string.IsNullOrWhiteSpace(e.Value)
@@ -55,6 +58,7 @@ public static class SoundLibrary
             Is3D = x.Element("Is3D")?.Value == "true",
             MinDistance = F("MinDistance", 30), MaxDistance = F("MaxDistance", 10000),
             VolumeBase = F("VolumeBase", 1), VolumeVar = F("VolumeVar", 0), FrequencyVar = F("FrequencyVar", 0),
+            Speech = speech,
         };
         def.Stream = Decode(bytes, def.Loop) ?? throw new InvalidDataException("unknown audio format");
         return def;
@@ -88,9 +92,21 @@ public static class SoundLibrary
     /// Plays a sound once under <paramref name="parent"/> (3D sounds at its position) with the
     /// descriptor's random volume/pitch variation. Non-looping players free themselves.
     /// </summary>
-    public static Node? Play(string soundHref, Node parent)
+    public static Node? Play(string soundHref, Node parent) => Play(soundHref, parent, null);
+
+    /// <summary>
+    /// Plays a 2D interface sound that must outlive the current screen (button clicks that
+    /// change screens): it is parented to the persistent music manager node.
+    /// </summary>
+    public static Node? PlayUi(string soundHref) =>
+        MusicManager.Instance is { } host ? Play(soundHref, host, null) : null;
+
+    /// <summary>As <see cref="Play(string, Node)"/>, routed to <paramref name="bus"/> (default: Speech for localised voice, else SFX).</summary>
+    public static Node? Play(string soundHref, Node parent, string? bus)
     {
+        AudioSystem.EnsureInstalled();
         if (Load(soundHref) is not { } def) return null;
+        bus ??= def.Speech ? AudioSystem.SpeechBus : Options.AudioBuses.For(Options.AudioBuses.Sfx);
         float volume = Math.Max(0.001f, def.VolumeBase + Rng.RandfRange(-def.VolumeVar, def.VolumeVar));
         float pitch = Math.Max(0.1f, 1 + Rng.RandfRange(-def.FrequencyVar, def.FrequencyVar));
         Node player;
@@ -100,14 +116,14 @@ public static class SoundLibrary
             {
                 Stream = def.Stream, VolumeDb = Mathf.LinearToDb(volume), PitchScale = pitch,
                 UnitSize = def.MinDistance, MaxDistance = def.MaxDistance, Autoplay = true,
-                Bus = Options.AudioBuses.For(Options.AudioBuses.Sfx),
+                Bus = bus,
             };
             if (!def.Loop) p3.Finished += p3.QueueFree;
             player = p3;
         }
         else
         {
-            var p2 = new AudioStreamPlayer { Stream = def.Stream, VolumeDb = Mathf.LinearToDb(volume), PitchScale = pitch, Autoplay = true, Bus = Options.AudioBuses.For(Options.AudioBuses.Sfx) };
+            var p2 = new AudioStreamPlayer { Stream = def.Stream, VolumeDb = Mathf.LinearToDb(volume), PitchScale = pitch, Autoplay = true, Bus = bus };
             if (!def.Loop) p2.Finished += p2.QueueFree;
             player = p2;
         }

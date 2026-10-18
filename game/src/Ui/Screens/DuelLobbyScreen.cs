@@ -79,6 +79,7 @@ public partial class DuelLobbyScreen : UiScreen
     public override void _Ready()
     {
         base._Ready();
+        Audio.MenuAudio.Attach(this, "MP_MAIN_MENU_MUSIC_ID");
         var lobby = LobbyService.Instance;
         lobby.MessageReceived += OnMessage;
         lobby.StatusChanged += OnStatus;

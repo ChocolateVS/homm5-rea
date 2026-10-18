@@ -59,6 +59,7 @@ public partial class TownScreen : Control
 
     public override void _Ready()
     {
+        Audio.TownAudio.Attach(this);
         _vpc = new SubViewportContainer { Name = "Town3D", AnchorRight = 1, AnchorBottom = 1, Stretch = true, MouseFilter = MouseFilterEnum.Stop };
         _vp = new SubViewport { OwnWorld3D = true, HandleInputLocally = false, PhysicsObjectPicking = false };
         _vpc.AddChild(_vp);
