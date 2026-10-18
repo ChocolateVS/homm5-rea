@@ -1,6 +1,6 @@
 # H5Reborn — status report
 
-_Last updated: 2026-10-19 (overnight run). Demo build: `G:\H5Reborn-play` (launchers: `Play H5Reborn.bat`, `Duel vs Computer.bat`, `Host Network Duel (h5server).bat`)._
+_Last updated: 2026-10-19 morning (demo refreshed to commit 566974a; builds, main menu / duel / adventure smoke-tested at 1920×1080). Demo build: `G:\H5Reborn-play` (launchers: `Play H5Reborn.bat`, `Duel vs Computer.bat`, `Host Network Duel (h5server).bat`)._
 
 ## Verified for this build
 - Full test suite: **355 tests pass** (15 test projects).
@@ -11,9 +11,10 @@ _Last updated: 2026-10-19 (overnight run). Demo build: `G:\H5Reborn-play` (launc
 |---|---|
 | Main menu should be animated, not a broken picture | **Fixed** — the original's live 3D scene (Cyclops on a burning battlefield) with its 30 s camera loop, troop animations and 13 effects, pre-rolled 10 s like the exe. Not a video in the original. |
 | Credits button did nothing | **Fixed** — original credits roll over the Magic Guild scene. |
-| Hover attack predictions missing | **Fixed** — damage/kill predictions for attacks, shots, hero strikes and abilities. |
-| Right-click should be a small window, not a big panel | **Fixed** — original right-click creature tooltip. |
-| Troop movement "cooked" | **Fixed per exe** — anim blends, turn-in-place, exe move speeds; walker/flyer frame sequences checked. |
+| Hover attack predictions missing | **Fixed** — stock wording, e.g. "Attack. Damage: 84 (Kills: 14). No retaliation", plus the small label beside the cursor; damage/kill/retaliation formulas from the exe. |
+| Right-click should be a small window, not a big panel | **Fixed** — original small creature tooltip (green/red vs base); right-click three times for active effects. |
+| Troop movement "cooked" | **Fixed per exe** — 300 ms clip crossfades, turn on the spot at the exe rate, walk at the animation's speed; flyers fly straight (the earlier take-off arc was invented). 10 fps captures of walker/flyer/teleporter show no snapping. |
+| Combat UI audit | Pass 1: 46 items — 26 fixed, 6 match, 11 gaps, 3 unverified (`docs/rules/AUDIT_COMBAT_UI.md`). Pass 2 running: ATB bar, spellbook targeting, abilities, log, results, the Flee/Surrender dialog (still surrenders instantly), tactics confirmations, ballista shot sequence, a white-glowing Griffin bug. |
 | Triple Ballista usable 3 times | **Fixed per exe** — one action fires all shots at the chosen target (1 base, +1 Triple Ballista, +1 Ballista, +1 Ring of Machine Affinity), stopping if it dies; catapult likewise. |
 | "Not sure all combat mechanics are implemented" | **Audit pass 1 done, honest coverage:** of 585 items, 59 fixed, 40 confirmed matching, 5 gaps, 61 not applicable, **420 not yet verified line-by-line**. Fixes include retaliation timing on double attacks, spell cost order/rounding, 14 missing specialisations, terrain-based Summon Elementals. Three parallel audits now cover the remaining spells, creature abilities and hero skills/artifacts. |
 | Hero movement on the map | In progress (adventure workstream). |
