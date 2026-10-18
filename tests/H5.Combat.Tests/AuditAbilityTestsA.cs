@@ -99,4 +99,53 @@ public class AuditAbilityTestsA(GameDataFixture f)
         BeginTurn(b, u.Id);
         Assert.Equal(bare, b.DefenceOf(u));                                // a turn without moving keeps no bonus
     }
+
+    (Battle b, ApplyResult r) Hit(string attacker, int count, string target, int tcount, Cell a, Cell tpos, params (int side, string id, Cell pos)[] extra)
+    {
+        var b = f.Duel(attacker, count, target, tcount, 1, a, tpos);
+        foreach (var (side, id, pos) in extra) BattleSetup.AddCreature(b.Db, b.State, side, id, 50, pos, summoned: false);
+        b.Begin();
+        b.State.Active = b.State.Units[0].Id;
+        var r = b.Apply(new AttackCmd(b.State.Units[0].Id, b.State.Units[1].Id) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        return (b, r);
+    }
+
+    static bool Damaged(Battle b, ApplyResult r, Cell c) =>
+        r.Events.OfType<Damaged>().Any(d => b.State.Units.First(u => u.Id == d.Target).Pos == c);
+
+    [Fact]
+    public void ThreeHeadedHitsTheCellsBesideTheTargetNotBesideTheAttacker()   // Cerberius.xdb PatternAttack (8 rotations)
+    {
+        var (b, r) = Hit("CREATURE_CERBERI", 20, "CREATURE_PEASANT", 200, new Cell(5, 5), new Cell(6, 5),
+            (1, "CREATURE_PEASANT", new Cell(6, 4)), (1, "CREATURE_PEASANT", new Cell(5, 4)));
+        Assert.True(Damaged(b, r, new Cell(6, 4)));    // (1,-1): beside the target
+        Assert.False(Damaged(b, r, new Cell(5, 4)));   // (0,-1): beside the attacker — not in the pattern
+    }
+
+    [Fact]
+    public void FirebreatherHoundUsesItsOwnPattern()   // FirebreatherHound.xdb: far cells two steps out, DamageAll = false
+    {
+        var (b, r) = Hit("CREATURE_FIREBREATHER_HOUND", 20, "CREATURE_PEASANT", 200, new Cell(5, 5), new Cell(6, 5),
+            (1, "CREATURE_PEASANT", new Cell(7, 3)), (0, "CREATURE_PEASANT", new Cell(7, 5)));
+        Assert.True(Damaged(b, r, new Cell(7, 3)));    // 2 × (1,-1)
+        Assert.False(Damaged(b, r, new Cell(7, 5)));   // own stack behind the target: enemies only
+    }
+
+    [Fact]
+    public void AcidBreathHitsOnlyTheCellBehindTheTargetIncludingAllies()   // Gold_Dragon.xdb pattern, DamageAll = true
+    {
+        for (ulong seed = 1; seed <= 10; seed++)
+        {
+            var b = f.Duel("CREATURE_GOLD_DRAGON", 3, "CREATURE_CAVALIER", 30, seed, new Cell(2, 4), new Cell(4, 4));
+            BattleSetup.AddCreature(b.Db, b.State, 0, "CREATURE_PEASANT", 50, new Cell(6, 5), summoned: false);
+            BattleSetup.AddCreature(b.Db, b.State, 1, "CREATURE_PEASANT", 50, new Cell(7, 4), summoned: false);
+            b.Begin();
+            b.State.Active = b.State.Units[0].Id;
+            var r = b.Apply(new AttackCmd(b.State.Units[0].Id, b.State.Units[1].Id) { Side = 0 });
+            Assert.True(r.Ok, r.Error);
+            Assert.True(Damaged(b, r, new Cell(6, 5)));    // the own stack right behind the target
+            Assert.False(Damaged(b, r, new Cell(7, 4)));   // two cells behind: no random radius for Acid Breath
+        }
+    }
 }

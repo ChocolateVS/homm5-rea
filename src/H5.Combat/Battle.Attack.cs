@@ -558,8 +558,24 @@ public sealed partial class Battle
                 foreach (var o in Adjacent(a)) Add(o, 1);
             if (HasAbilityNow(a, Ab.WarDance))
                 foreach (var o in Adjacent(a)) Add(o, 0.5);
+            // Three-Headed Attack / Spray: data PatternAttack (Cerberius, Sprite, Pixie, FirebreatherHound .xdb; 8 rotations,
+            // RotateToMainTarget = false, DamageAll = false): for a 1x1 attacker the attack cell plus the two cells beside it —
+            // straight attacks: the target cell ± the perpendicular; diagonal attacks: the two orthogonal neighbours. The
+            // Firebreather Hound's pattern adds the same three cells two steps out and deals DamageToOtherTargetsCoefficient
+            // 0.75 to every secondary target (its fire breath is that pattern, not the generic one below).
+            bool houndPattern = HasAbilityNow(a, Ab.ThreeHeaded) && HasAbilityNow(a, Ab.FireBreath);
             if (HasAbilityNow(a, Ab.ThreeHeaded) || HasAbilityNow(a, Ab.Spray))
-                foreach (var o in Adjacent(a).Where(o => AreAdjacent(o, t))) Add(o, 1);
+            {
+                double f = houndPattern ? 0.75 : 1;
+                if (a.IsLarge || (dx == 0 && dy == 0))
+                    foreach (var o in Adjacent(a).Where(o => AreAdjacent(o, t))) Add(o, f);
+                else
+                    foreach (var c in FanCells(a.Pos, dx, dy))
+                    {
+                        Add(S.At(c), f);
+                        if (houndPattern) Add(S.At(new Cell(a.Pos.X + 2 * (c.X - a.Pos.X), a.Pos.Y + 2 * (c.Y - a.Pos.Y))), f);
+                    }
+            }
             if (HasAbilityNow(a, Ab.Whirlwind))
                 foreach (var o in Adjacent(a))
                 {
@@ -573,7 +589,7 @@ public sealed partial class Battle
                 for (int ox = 0; ox < 2; ox++) for (int oy = 0; oy < 2; oy++)
                     Add(S.At(new Cell(anchor.X + (dx < 0 ? -ox : ox), anchor.Y + (dy < 0 ? -oy : oy))), 1, enemiesOnly: false);
             }
-            if (HasAbilityNow(a, Ab.FireBreath))
+            if (HasAbilityNow(a, Ab.FireBreath) && !houndPattern)
                 Add(BehindTarget(t, dx, dy, 1), 1, enemiesOnly: false);
             // Champion Charge: pattern only when the walked distance is strictly greater than ChampionChargeMinimalDistance
             // (exe FUN_008aa990: MinimalDistance < walked); ChampionCharge.xdb: the cell behind the target at
@@ -581,10 +597,16 @@ public sealed partial class Battle
             if (HasAbilityNow(a, Ab.ChampionCharge) && hit.Kind == AttackKind.Melee
                 && hit.CellsWalked > Stats.Get("combat/Creatures/Haven/ChampionChargeMinimalDistance", 2))
                 Add(BehindTarget(t, dx, dy, 1), 0.5, enemiesOnly: false);
-            if (HasAbilityNow(a, Ab.AcidBreath) || HasAbilityNow(a, Ab.RainbowBreath))
+            // Acid Breath (Gold/Green Dragon): only their PatternAttack — the attack cell and the one behind it (12 rotations),
+            // coefficient 1, DamageAll = true; the exe has no random-radius code for it (only RAINBOW_BREATH, FUN_00a62030).
+            if (HasAbilityNow(a, Ab.AcidBreath) && !HasAbilityNow(a, Ab.RainbowBreath))
+                Add(BehindTarget(t, dx, dy, 1), 1, enemiesOnly: false);
+            if (HasAbilityNow(a, Ab.RainbowBreath))
             {
                 // Prismatic Breath: 1..5 cells behind the target (p.179).
-                int n = Math.Min(5, 1 + (S.Rng.Range(1, 10) + LuckOf(a)) / 2);
+                // radius = clamp((luck + Range(1,10)) / 2 + 1, 1, 5) — exe FUN_00a62030 (the area itself, FUN_00b3ea30, is a
+                // random walk of cells, not yet ported: the engine keeps the straight line behind the target).
+                int n = Math.Clamp(1 + (S.Rng.Range(1, 10) + LuckOf(a)) / 2, 1, 5);
                 for (int i = 1; i <= n; i++) Add(BehindTarget(t, dx, dy, i), 1, enemiesOnly: false);
             }
             if (HasAbilityNow(a, Ab.LightningBreath))
@@ -619,6 +641,12 @@ public sealed partial class Battle
     }
 
     bool CellsWithin(Unit o, Unit t, int r) => o.Cells().Any(c => t.Cells().Any(tc => tc.Chebyshev(c) <= r));
+
+    /// <summary>The attack cell and the two cells beside it for a 1x1 attacker (Three-Headed / Spray pattern data).</summary>
+    static Cell[] FanCells(Cell p, int dx, int dy) => dx != 0 && dy != 0
+        ? new[] { new Cell(p.X + dx, p.Y + dy), new Cell(p.X + dx, p.Y), new Cell(p.X, p.Y + dy) }
+        : new[] { new Cell(p.X + dx, p.Y + dy), new Cell(p.X + dx + (dy != 0 ? 1 : 0), p.Y + dy + (dx != 0 ? 1 : 0)),
+                  new Cell(p.X + dx - (dy != 0 ? 1 : 0), p.Y + dy - (dx != 0 ? 1 : 0)) };
 
     Unit? BehindTarget(Unit t, int dx, int dy, int depth)
     {
