@@ -505,6 +505,9 @@ public static class LightReader
             SkyDomeModel = H(e.Element("SkyDome")),
             SkyCubeTexture = H(e.Element("Sky")),
             DistanceFog = H(e.Element("DistanceFog")),
+            // The record itself, for the original-lighting shaders (published by ArenaScene).
+            Source = e,
+            SourceFile = path,
         };
     }
 }

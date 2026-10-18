@@ -11,3 +11,4 @@ game/src/Town/TownScene3D.cs
 game/src/Combat/SpellBook3D.cs
 game/src/Adventure/Water/SeaPlane.cs
 game/src/Adventure/AdvShroud.gdshader
+game/src/Cinematics/DialogScenePlayer.cs
