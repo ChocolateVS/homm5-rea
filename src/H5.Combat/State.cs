@@ -97,7 +97,21 @@ public sealed class Unit
     /// <summary>Per-creature max HP including effect bonuses; refreshed by the engine when stats change.</summary>
     public int MaxHealthCache;
 
-    public bool Has(string ability) => Abilities.Contains(ability);
+    /// <summary>
+    /// Ability test with the original's dynamic rules (creature HasAbility override, exe FUN_008a34c0):
+    /// Phantom images and Rune of Etherealness grant Incorporeal; Phantom images lose Flesh and Blood;
+    /// Vampirism makes the target Undead; Rage of the Forest suppresses Entangling Roots; a rooted
+    /// Take Roots creature holds its ground. Hero-specialisation grants are added at setup.
+    /// </summary>
+    public bool Has(string ability) => ability switch
+    {
+        "ABILITY_INCORPOREAL" => IsClone || HasEffect("FX_RUNE_ETHEREALNESS") || Abilities.Contains(ability),
+        "ABILITY_FLESH_AND_BLOOD" => !IsClone && Abilities.Contains(ability),
+        "ABILITY_UNDEAD" => HasEffect("SPELL_VAMPIRISM") || Abilities.Contains(ability),
+        "ABILITY_ENTANGLING_ROOTS" => !HasEffect("FX_RAGE_OF_FOREST") && Abilities.Contains(ability),
+        "ABILITY_HOLD_GROUND" => Abilities.Contains(ability) || Abilities.Contains("ABILITY_TAKE_ROOTS") && HasEffect("FX_TAKE_ROOTS"),
+        _ => Abilities.Contains(ability),
+    };
     public Effect? GetEffect(string id) => Effects.Find(e => e.Id == id);
     public bool HasEffect(string id) => Effects.Exists(e => e.Id == id);
 

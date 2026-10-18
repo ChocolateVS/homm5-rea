@@ -635,22 +635,101 @@ public partial class AdventureScreen : Control
         if (!visible) return;
         var h = Session.S.Hero(m.HeroId);
         if (h != null && m.Path[0].Floor != World.Floor && HumanCaused(player)) World.SetFloor(m.Path[0].Floor);
-        float speed = World.HeroSpeed(m.HeroId) * (Autoplay ? 4 : 1);
-        if (hero.Has("move")) hero.Play("move", loop: true);
+        bool human = HumanCaused(player);
+        // adventure_speed_human / adventure_speed_ai (defaults 1 and 2) scale the walk; the exe reads
+        // them per side as max(value, 0) (FUN_008da900; setvars registered in FUN_008e45c0).
+        float mult = Math.Max(H5Reborn.Options.OptionsStore.GetFloat(human ? "adventure_speed_human" : "adventure_speed_ai", human ? 1 : 2), 0.25f);
+        if (Autoplay) mult *= 4;
+        // Ground speed = clip MovementSpeed × SpeedFactor; the clip's own forward drift is stripped
+        // at build time (CharacterBuilder.ExtractRootMotion), so the node carries the travel.
+        float ground = hero.GroundSpeeds.TryGetValue("move", out var gs) && gs > 0.1f ? gs : World.HeroSpeed(m.HeroId);
+        float speed = ground * mult;
+        if (hero.Has("move"))
+        {
+            hero.Play("move", loop: true);
+            hero.Player.SpeedScale = hero.SpeedFactor("move") * mult;
+        }
+
+        // One continuous route through the tile centres, corners rounded, walked at constant speed
+        // (previously one tween per tile: a stop, a rotation snap and a camera jump at every tile).
+        var start = AdvWorld.WorldToMap(hero.Position);
+        var pts = new List<Vector2> { start };
+        var floors = new List<int> { h?.Pos.Floor ?? m.Path[0].Floor };
         foreach (var t in m.Path)
         {
-            var target = World.StandPoint(t);
-            var dir = target - hero.Position;
-            if (dir.LengthSquared() < 1e-4f) continue;
-            // Original models face local +Z in Godot space (see ArenaGrid.FacingYaw).
-            hero.Rotation = new Vector3(0, Mathf.Atan2(dir.X, dir.Z), 0);
-            var tw = CreateTween();
-            tw.TweenProperty(hero, "position", target, dir.Length() / speed);
-            await ToSignal(tw, Tween.SignalName.Finished);
-            if (HumanCaused(player)) World.Camera.CenterOn(t);
+            var c = new Vector2(t.X + 0.5f, t.Y + 0.5f);
+            if (c.DistanceSquaredTo(pts[^1]) < 1e-4f) continue;
+            pts.Add(c);
+            floors.Add(t.Floor);
         }
+        if (pts.Count < 2) { if (hero.Has("idle00")) hero.Play("idle00", loop: true); return; }
+        var curve = new Curve2D { BakeInterval = 0.05f };
+        for (int i = 0; i < pts.Count; i++)
+        {
+            // Bezier handles along the corner bisector, a quarter of the shorter neighbouring
+            // segment long: straight runs stay straight, 45°/90° turns are rounded off.
+            var hIn = Vector2.Zero; var hOut = Vector2.Zero;
+            if (i > 0 && i < pts.Count - 1)
+            {
+                var a = pts[i] - pts[i - 1]; var b = pts[i + 1] - pts[i];
+                var tangent = (a.Normalized() + b.Normalized()).Normalized();
+                float len = 0.25f * Math.Min(a.Length(), b.Length());
+                hIn = -tangent * len; hOut = tangent * len;
+            }
+            curve.AddPoint(pts[i], hIn, hOut);
+        }
+        float total = curve.GetBakedLength();
+        float yaw = hero.Rotation.Y;
+
+        // Map +y is Godot −Z; original models face local +Z (see ArenaGrid.FacingYaw).
+        static float YawOf(Vector2 d) => Mathf.Atan2(d.X, -d.Y);
+
+        // Turn on the spot first when the route starts behind the hero, instead of walking a
+        // backwards-curving arc.
+        float wantYaw = YawOf(curve.SampleBaked(Math.Min(0.3f, total), true) - start);
+        float turn = Mathf.Abs(Mathf.AngleDifference(yaw, wantYaw));
+        if (turn > Mathf.Pi / 2)
+        {
+            float from = yaw, elapsed = 0, turnTime = turn / (TurnRate * mult);
+            while (elapsed < turnTime)
+            {
+                await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+                if (!IsInstanceValid(hero)) return;
+                elapsed += (float)GetProcessDeltaTime();
+                yaw = Mathf.LerpAngle(from, wantYaw, Math.Min(1, elapsed / turnTime));
+                hero.Rotation = new Vector3(0, yaw, 0);
+            }
+        }
+
+        float s = 0;
+        while (s < total)
+        {
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            if (!IsInstanceValid(hero)) return;
+            float dt = (float)GetProcessDeltaTime();
+            // The route is in tiles, the clip's ground speed in world units (AdvWorld.Unit per tile).
+            s = Math.Min(total, s + speed * dt / AdvWorld.Unit);
+            var p = curve.SampleBaked(s, true);
+            // Floor of the leg being walked (a subterranean gate changes floor at a path tile).
+            int leg = Math.Clamp((int)(s / total * (pts.Count - 1)) + 1, 1, pts.Count - 1);
+            // Height sampled continuously along the way, not interpolated between tile centres.
+            hero.Position = World.StandPointAt(p.X, p.Y, floors[leg]);
+            var ahead = curve.SampleBaked(Math.Min(total, s + 0.25f), true) - p;
+            if (ahead.LengthSquared() > 1e-6f)
+            {
+                yaw = Mathf.LerpAngle(yaw, YawOf(ahead), 1f - Mathf.Exp(-TurnEase * dt));
+                hero.Rotation = new Vector3(0, yaw, 0);
+            }
+            if (human) World.Camera.Follow(hero.Position);
+            if (Verbose) GD.Print($"[H5] walk t={Time.GetTicksMsec()} s={s:F3}/{total:F3} pos=({hero.Position.X:F3},{hero.Position.Y:F3},{hero.Position.Z:F3}) yaw={Mathf.RadToDeg(yaw):F1} dt={dt:F4}");
+        }
+        hero.Position = World.StandPoint(m.Path[^1]);
+        if (human) World.Camera.StopFollow();
         if (hero.Has("idle00")) hero.Play("idle00", loop: true);
     }
+
+    /// <summary>On-the-spot turn rate (rad/s) and the easing rate for turning while walking.</summary>
+    const float TurnRate = 2.5f * Mathf.Pi, TurnEase = 14f;
 
     async Task LevelUp(HeroState h)
     {

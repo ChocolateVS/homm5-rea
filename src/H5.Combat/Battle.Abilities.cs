@@ -134,8 +134,13 @@ public sealed partial class Battle
             case "POWERFUL_BLOW": h.Links[Sk.PowerfulBlow] = t!.Id; reset = 0.5; break;
             case "BENEDICTION":
                 h.AbilityUses["BENEDICTION"] = 1;
+                // Prayer bonus (attack/defence/morale) = Prayer_DefenceBonus, ×WhiteKnight_PrayerMultiplier (rounded) for the
+                // White Knight specialisation (exe FUN_00989fd0 / FUN_00989790 / FUN_0098a430, effect SPELL_PRAYER).
+                double prayer = Stats.Get("combat/HeroSkills/Knight/Prayer_DefenceBonus", 1);
+                if (h.Specialization == "HERO_SPEC_WHITE_KNIGHT")
+                    prayer = ExeRound(prayer * Stats.Get("combat/HeroSkills/Knight/WhiteKnight_PrayerMultiplier", 2));
                 foreach (var u in S.LivingOf(c.Side).Where(u => u.Kind == UnitKind.Creature && !IsUndeadLike(u) && !u.Has(Ab.Mechanical)).ToList())
-                    AddEffect(u, new Effect { Id = H5.Combat.Fx.Benediction, Value = 1, Remaining = 2 + 0.25 * h.Level, Positive = true, SourceSide = c.Side });
+                    AddEffect(u, new Effect { Id = H5.Combat.Fx.Benediction, Value = prayer, Remaining = 2 + 0.25 * h.Level, Positive = true, SourceSide = c.Side });
                 break;
             case "BANSHEE_HOWL":
                 h.AbilityUses["BANSHEE_HOWL"] = 1;

@@ -194,6 +194,13 @@ public static class BattleSetup
             if (h.HasPerk(Sk.MarchOfGolems) && u.Has(Ab.Mechanical)) { u.BaseSpeed += 2; u.BaseInitiative += 2; }
             // Creature specialisations: +1 Attack/Defense per two levels, starting on first level.
             if (h.SpecFamily.Contains(u.CreatureId)) { u.BaseAttack += (h.Level + 1) / 2; u.BaseDefence += (h.Level + 1) / 2; }
+            // Specialisation-granted abilities (creature HasAbility override, exe FUN_008a34c0):
+            // Griffon Commander gives basic Griffins (creature 7) Battle Dive; Elven Fury gives creatures
+            // 45..50 (Blade Jugglers/War Dancers, Wood/Grand Elves, Druids/Druid Elders) Enraged.
+            if (h.Specialization == "HERO_SPEC_GRIFFINS" && u.CreatureId == "CREATURE_GRIFFIN") GrantAbility(u, Ab.BattleDive);
+            if (h.Specialization == "HERO_SPEC_ELVEN_FURY" && u.CreatureId is "CREATURE_BLADE_JUGGLER" or "CREATURE_WAR_DANCER"
+                    or "CREATURE_WOOD_ELF" or "CREATURE_GRAND_ELF" or "CREATURE_DRUID" or "CREATURE_DRUID_ELDER")
+                GrantAbility(u, Ab.Enraged);
             if (h.Specialization == "HERO_SPEC_WYVERN_TAMER" && (u.CreatureId.Contains("WYVERN") || u.CreatureId.Contains("PAOKAI")))
                 u.BaseHealth += (int)Specials.LevelFormula(db.Stats, "combat/HeroSpecializations/Barbarian/WyvernTamer_HealthBonus", h.Level, 1, 1, 2);
             if (Specials.Pieces(h, Specials.Ogres) >= 2)
@@ -214,6 +221,13 @@ public static class BattleSetup
         u.RetaliationsLeft = u.Has(Ab.UnlimitedRetaliation) ? int.MaxValue : 1;
         s.Units.Add(u);
         return u;
+    }
+
+    static void GrantAbility(Unit u, string ability)
+    {
+        if (u.Abilities.Contains(ability)) return;
+        u.Abilities.Add(ability);
+        u.Abilities.Sort(StringComparer.Ordinal);
     }
 
     public static Unit AddWarMachine(GameDatabase db, BattleState s, int side, string machineId)

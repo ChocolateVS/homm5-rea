@@ -175,34 +175,85 @@ public sealed partial class Battle
         return Math.Max(0, p);
     }
 
+    // Rounding helpers matching the x87 code: ROUND is round-half-even, int division truncates.
+    static int ExeRound(double v) => (int)Math.Round(v, MidpointRounding.ToEven);
+
+    /// <summary>
+    /// Hero spell cost: base cost (exe FUN_00a34740) then combat modifiers (FUN_009781e0).
+    /// Base: warcries — Voice Training min(cost×(1.001−discount), cost−1), War Leader −(lvl/div·per+base), ≥1;
+    /// other spells — Rusher (HERO_SPEC_BEATER) halves Teleport, Ring of Magi halves, Power Bargain
+    /// ×clamp(1−reduce−lvl·perLevel, 0.5, 1), Arcane Training round(min(cost×0.8, cost−1)), ≥0.
+    /// Then: Energy Channel ×0.75 (at least −1), enemy Suppress Dark/Light ×2, White Knight −1 on Light,
+    /// enemy Corrupt Magic ×(1+increase); never below 0.
+    /// </summary>
     public int HeroManaCost(HeroState h, SpellDef sp)
     {
         if (sp.School == "MAGIC_SCHOOL_RUNIC") return 0;
-        double c = sp.ManaCost;
-        if (h.HasPerk(Sk.ArcaneTraining)) c *= 0.8;                                      // p.131
-        if (S.LivingOf(h.Side).Any(u => u.Has(Ab.EnergyChannel))) c *= 0.75;            // p.174
-        if (sp.School == "MAGIC_SCHOOL_WARCRIES" && h.HasPerk(Sk.ShoutTraining)) c *= 1 - Stats.Get("combat/HeroSkills/Barbarian/VoiceTraining_WarcryCostDiscount", 0.2);
-        var e = Enemy(h.Side);
-        if (e.Present)
+        int c = sp.ManaCost;
+        if (sp.School == "MAGIC_SCHOOL_WARCRIES")
         {
-            if (sp.School == "MAGIC_SCHOOL_DARK" && e.HasPerk(Sk.SealOfDarkness)) c *= 2;
-            if (sp.School == "MAGIC_SCHOOL_LIGHT" && e.HasPerk(Sk.SuppressLight)) c *= 2;
-            string corrupt = sp.School switch
+            if (h.HasPerk(Sk.ShoutTraining))
+                c = ExeRound(Math.Min((1.001 - Stats.Get("combat/HeroSkills/Barbarian/VoiceTraining_WarcryCostDiscount", 0.2)) * c, c - 1.0));
+            if (h.Specialization == "HERO_SPEC_WAR_LEADER")
             {
-                "MAGIC_SCHOOL_DESTRUCTIVE" => Sk.CorruptDestructive, "MAGIC_SCHOOL_DARK" => Sk.CorruptDark,
-                "MAGIC_SCHOOL_LIGHT" => Sk.CorruptLight, "MAGIC_SCHOOL_SUMMONING" => Sk.CorruptSummoning, _ => "",
-            };
-            if (corrupt.Length > 0 && e.HasPerk(corrupt)) c *= 1 + Stats.Get("combat/HeroSkills/Barbarian/CorruptMagic_SpellCostIncrease", 0.5);
+                int div = Math.Max(1, (int)Stats.Get("combat/HeroSpecializations/Barbarian/WarLeader_WarcryCostReducePerHeroLevel/LevelDivisor", 1));
+                c -= h.Level / div * (int)Stats.Get("combat/HeroSpecializations/Barbarian/WarLeader_WarcryCostReducePerHeroLevel/PerDividedLevel", 0)
+                     + (int)Stats.Get("combat/HeroSpecializations/Barbarian/WarLeader_WarcryCostReducePerHeroLevel/Base", 0);
+            }
+            return Math.Max(1, c);
         }
-        return Math.Max(1, (int)Math.Ceiling(c - 1e-9));
+        if (sp.Id == "SPELL_TELEPORT" && h.Specialization == "HERO_SPEC_BEATER") c /= 2;
+        if (h.Artifacts.Contains("RING_OF_MAGI")) c /= 2;
+        if (h.Specialization == "HERO_SPEC_POWER_BARGAIN")
+        {
+            double f = 1 - Stats.Get("combat/HeroSpecializations/Warlock/PowerBargain_CostReduce", 0)
+                         - h.Level * Stats.Get("combat/HeroSpecializations/Warlock/PowerBargain_CostReducePerLevel", 0);
+            c = ExeRound(Math.Clamp(f, 0.5, 1.0) * c);
+        }
+        if (h.HasPerk(Sk.ArcaneTraining)) c = ExeRound(Math.Min(c * 0.8, c - 1.0));
+        c = Math.Max(0, c);
+
+        int adjust = 0;
+        if (S.LivingOf(h.Side).Any(u => u.Has(Ab.EnergyChannel)))
+        {
+            int r = ExeRound(c * 0.75);
+            adjust = r != c ? 0 : -1;    // guarantees at least one point of discount
+            c = r;
+        }
+        var e = Enemy(h.Side);
+        if (e.Present && (sp.School == "MAGIC_SCHOOL_DARK" && e.HasPerk(Sk.SealOfDarkness) || sp.School == "MAGIC_SCHOOL_LIGHT" && e.HasPerk(Sk.SuppressLight)))
+        {
+            if (c * 2 == c) adjust++;
+            c *= 2;
+        }
+        if (sp.School == "MAGIC_SCHOOL_LIGHT" && h.Specialization == "HERO_SPEC_WHITE_KNIGHT") c -= 1;
+        if (e.Present && CorruptPerk(sp.School) is { Length: > 0 } corrupt && e.HasPerk(corrupt))
+            c = ExeRound((1 + Stats.Get("combat/HeroSkills/Barbarian/CorruptMagic_SpellCostIncrease", 0.5)) * c);
+        return Math.Max(0, c + adjust);
     }
 
+    static string CorruptPerk(string school) => school switch
+    {
+        "MAGIC_SCHOOL_DESTRUCTIVE" => Sk.CorruptDestructive, "MAGIC_SCHOOL_DARK" => Sk.CorruptDark,
+        "MAGIC_SCHOOL_LIGHT" => Sk.CorruptLight, "MAGIC_SCHOOL_SUMMONING" => Sk.CorruptSummoning, _ => "",
+    };
+
+    /// <summary>Creature caster spell cost (FUN_009781e0 creature path): Elite Casters halves with integer
+    /// division; enemy Suppress/Corrupt apply as for heroes.</summary>
     int CreatureManaCost(Unit u, SpellDef sp)
     {
-        double c = sp.ManaCost;
+        int c = sp.ManaCost, adjust = 0;
+        var e = Enemy(u.Side);
+        if (e.Present && (sp.School == "MAGIC_SCHOOL_DARK" && e.HasPerk(Sk.SealOfDarkness) || sp.School == "MAGIC_SCHOOL_LIGHT" && e.HasPerk(Sk.SuppressLight)))
+        {
+            if (c * 2 == c) adjust++;
+            c *= 2;
+        }
         var h = HeroOf(u);
-        if (h.HasPerk(Sk.RefinedMana) || h.HasPerk(Sk.BarbRefinedMana)) c *= 0.5;       // p.120
-        return Math.Max(1, (int)Math.Ceiling(c - 1e-9));
+        if (h.HasPerk(Sk.RefinedMana) || h.HasPerk(Sk.BarbRefinedMana)) c /= 2;
+        if (e.Present && CorruptPerk(sp.School) is { Length: > 0 } corrupt && e.HasPerk(corrupt))
+            c = ExeRound((1 + Stats.Get("combat/HeroSkills/Barbarian/CorruptMagic_SpellCostIncrease", 0.5)) * c);
+        return Math.Max(0, c + adjust);
     }
 
     bool CanCastWarcry(HeroState h, SpellDef sp)

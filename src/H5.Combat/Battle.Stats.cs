@@ -34,7 +34,7 @@ public sealed partial class Battle
         a += Fx(u, H5.Combat.Fx.Enraged);
         a += Fx(u, H5.Combat.Fx.BattleRage);
         a += Fx(u, H5.Combat.Fx.Sacrifice);
-        a += Fx(u, H5.Combat.Fx.Benediction) > 0 ? 1 : 0;
+        a += Fx(u, H5.Combat.Fx.Benediction);
         a += Fx(u, H5.Combat.Fx.Battlecry);
         a -= Fx(u, H5.Combat.Fx.WeakeningStrike);
         a += Fx(u, H5.Combat.Fx.RageOfForest);
@@ -70,7 +70,7 @@ public sealed partial class Battle
         if (h.Present && !u.IsWarMachine && !u.IsObject) d += h.Defence;
         if (!u.IsWarMachine && !u.IsObject) d += Side(u).Defence;
         d += Fx(u, "SPELL_STONESKIN");
-        d += Fx(u, H5.Combat.Fx.Benediction) > 0 ? 1 : 0;
+        d += Fx(u, H5.Combat.Fx.Benediction);
         d += RageBonus(u, "DEMON_RAGE_BONUS_DEFENCE");
         if (u.Has(Ab.PreparedPosition) && !u.HasMovedFromStart) d += Stats.Get("combat/Creatures/Fortress/PreparedPosition_DefenceBonus", 5);
         if (u.Has(Ab.Agility)) d += Stats.Get("combat/Creatures/Sylvan/AgilityDefenceBoostPerCell", 2) * AgilityCells(u);
@@ -241,7 +241,7 @@ public sealed partial class Battle
             else if (!Towns.Allied(u.Town, h.Town)) m -= 2;
         }
         m -= (int)Fx(u, "SPELL_SORROW");
-        if (u.HasEffect(H5.Combat.Fx.Benediction)) m += 1;
+        if (u.GetEffect(H5.Combat.Fx.Benediction) is { } prayer) m += (int)prayer.Value;
         m += (int)Fx(u, H5.Combat.Fx.RallyingCry);
         if (u.HasEffect(H5.Combat.Fx.BearRoar)) m += (int)Stats.Get("combat/Creatures/Fortress/BearRoar_MoraleBonus", 1);
         if (u.HasEffect(H5.Combat.Fx.RunicAttunement)) m += (int)Stats.Get("combat/HeroSkills/Runemage/RunicAttunement_MoraleBonus", 2);

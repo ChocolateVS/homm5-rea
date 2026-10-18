@@ -106,9 +106,18 @@ public partial class AdvWorld : Node3D
     /// within <see cref="MaxStepUp"/> above the ground — roofs and arches above are ignored.
     /// Uses the collision shapes added for towns (see <see cref="AddWalkable"/>).
     /// </summary>
-    public Vector3 StandPoint(Tile t)
+    public Vector3 StandPoint(Tile t) => StandPointAt(TileCenter(t));
+
+    /// <summary>
+    /// <see cref="StandPoint(Tile)"/> for any point on the map, used while a hero walks between tile
+    /// centres so it follows the terrain and town bases continuously instead of cutting straight
+    /// lines between centre heights.
+    /// </summary>
+    public Vector3 StandPointAt(float mapX, float mapY, int floor) =>
+        StandPointAt(new Vector3(mapX * Unit, HeightAt(floor, mapX, mapY), -mapY * Unit));
+
+    Vector3 StandPointAt(Vector3 p)
     {
-        var p = TileCenter(t);
         var space = GetWorld3D()?.DirectSpaceState;
         if (space == null) return p;
         float best = p.Y;

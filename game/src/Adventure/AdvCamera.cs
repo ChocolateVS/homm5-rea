@@ -19,8 +19,10 @@ public partial class AdvCamera : Camera3D
     public const float MinDistance = 10, MaxDistance = 70, MinPitch = 30, MaxPitch = 55;
     const float ZoomSpeed = 0.3f, PitchSpeed = 5f, YawSpeed = 1.5f, ScrollSpeed = 1.4f;
     const int EdgeMargin = 4;
+    const float FollowRate = 6f;
 
     readonly AdvWorld _world;
+    Vector2? _follow;
     Vector2 _target;   // map coordinates (tiles)
     float _yaw = DefYaw, _pitch = DefPitch, _distance = DefDistance;
     bool _rotating, _panning;
@@ -49,6 +51,14 @@ public partial class AdvCamera : Camera3D
         _target = new Vector2(t.X + 0.5f, t.Y + 0.5f);
         Apply();
     }
+
+    /// <summary>
+    /// Keeps the view on a moving point (a walking hero), easing towards it every frame rather
+    /// than jumping tile by tile. <see cref="StopFollow"/> ends it.
+    /// </summary>
+    public void Follow(Vector3 world) => _follow = AdvWorld.WorldToMap(world);
+
+    public void StopFollow() => _follow = null;
 
     public void SetYaw(float degrees)
     {
@@ -92,8 +102,14 @@ public partial class AdvCamera : Camera3D
 
     public override void _Process(double delta)
     {
-        if (!InputEnabled) { EdgeScroll = Vector2I.Zero; return; }
         float dt = (float)delta;
+        if (_follow is { } f)
+        {
+            // Exponential ease: no overshoot, no per-tile jumps.
+            _target = _target.Lerp(f, 1f - Mathf.Exp(-FollowRate * dt));
+            if (!InputEnabled) { Apply(); EdgeScroll = Vector2I.Zero; return; }
+        }
+        if (!InputEnabled) { EdgeScroll = Vector2I.Zero; return; }
         float speed = ScrollSpeed * _distance * dt;
         float right = 0, forward = 0;
         bool ctrl = Input.IsKeyPressed(Key.Ctrl);
