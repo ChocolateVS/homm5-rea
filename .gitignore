@@ -16,3 +16,5 @@ tools/aire/out/
 tools/aire/bin/
 tools/aire/scripts/*
 !tools/aire/scripts/ReaderChain.java
+tools/rmgre/out/
+tools/camre/out/
