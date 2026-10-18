@@ -33,7 +33,10 @@ public sealed partial class Battle
         {
             if (!t.Alive) return;
             Emit(new AbilityTriggered(r.Id, Ab.LizardBite, t.Id));
-            Strike(r, t, new Hit { Kind = AttackKind.Ability, Multiplier = 0.5 }, pattern: false);
+            // ×0.5, and ×(1.2 + 0.01·level) more for the Riders specialisation (exe FUN_00a58de0, special 0xb5).
+            var rh = HeroOf(r);
+            double mult = 0.5 * (rh.Present && rh.Specialization == "HERO_SPEC_RIDERS" ? 1.2 + 0.01 * rh.Level : 1.0);
+            Strike(r, t, new Hit { Kind = AttackKind.Ability, Multiplier = mult }, pattern: false);
         }
     }
 

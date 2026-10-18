@@ -157,6 +157,17 @@ public sealed partial class Battle
         if (h.HasPerk(Sk.MasterLife) && id is "SPELL_MAGIC_FIST" or "SPELL_ANIMATE_DEAD") p += 4;
         if (h.HasPerk(Sk.MasterEarthblood) && id is "SPELL_LAND_MINE" or "SPELL_EARTHQUAKE") p += 4;
         if (h.HasPerk(Sk.MasterConjuration) && id is "SPELL_CONJURE_PHOENIX" or "SPELL_SUMMON_ELEMENTALS") p += 4;
+        // Master of Elements: +((level−1)/div)·per + base spell power for Summon Elementals / Conjure Phoenix
+        // (DefaultStats MasterOfElements_SpellpowerBonus; same level formula as its elemental count, exe FUN_00a5a5a0).
+        if (h.Specialization == "HERO_SPEC_MASTER_OF_ELEMENTS" && id is "SPELL_CONJURE_PHOENIX" or "SPELL_SUMMON_ELEMENTALS")
+        {
+            const string k = "combat/HeroSpecializations/Wizard/MasterOfElements_SpellpowerBonus/";
+            p += (h.Level - 1) / Math.Max(1, (int)Stats.Get(k + "LevelDivisor", 3)) * (int)Stats.Get(k + "PerDividedLevel", 1) + (int)Stats.Get(k + "Base", 1);
+        }
+        // Reanimator: Raise (Animate) Dead gets +((level−1)/divisor) + bonus spell power (exe FUN_009789b0).
+        if (h.Specialization == "HERO_SPEC_REANIMATOR" && id == "SPELL_ANIMATE_DEAD")
+            p += (h.Level - 1) / Math.Max(1, (int)Stats.Get("combat/HeroSpecializations/Necromancer/Reanimator_SpellpowerBonusLevelDivisor", 5))
+                 + Stats.Get("combat/HeroSpecializations/Necromancer/Reanimator_SpellpowerBonus", 1);
         if (h.HasPerk(Sk.RuneArmour) && id == "SPELL_CELESTIAL_SHIELD") p += Stats.Get("combat/HeroSkills/Runemage/RunicArmor_SpellpowerBonus", 4);
         var e = Enemy(h.Side);
         if (e.Present)
@@ -204,7 +215,7 @@ public sealed partial class Battle
         }
         if (sp.Id == "SPELL_TELEPORT" && h.Specialization == "HERO_SPEC_BEATER") c /= 2;
         if (h.Artifacts.Contains("RING_OF_MAGI")) c /= 2;
-        if (h.Specialization == "HERO_SPEC_POWER_BARGAIN")
+        if (h.Specialization == "HERO_SPEC_POWER_BARGAIN" && sp.Id.StartsWith("SPELL_EMPOWERED_"))   // empowered spells only
         {
             double f = 1 - Stats.Get("combat/HeroSpecializations/Warlock/PowerBargain_CostReduce", 0)
                          - h.Level * Stats.Get("combat/HeroSpecializations/Warlock/PowerBargain_CostReducePerLevel", 0);
@@ -622,7 +633,9 @@ public sealed partial class Battle
             }
             case "SPELL_SUMMON_ELEMENTALS":
             {
-                string kind = hero != null && hero.HasPerk("HERO_SKILL_FIRE_AFFINITY") ? "CREATURE_FIRE_ELEMENTAL" : "CREATURE_EARTH_ELEMENTAL";
+                // Fire Affinity always summons Fire Elementals; otherwise the kind comes from the battlefield terrain
+                // (exe FUN_00861630 → FUN_00861120).
+                string kind = hero != null && hero.HasPerk("HERO_SKILL_FIRE_AFFINITY") ? "CREATURE_FIRE_ELEMENTAL" : TerrainElemental();
                 double count = baseDef.DamageAt(m).Eval(power);
                 if (hero != null && hero.HasPerk("HERO_SKILL_FIRE_AFFINITY")) count *= 1.4;
                 SummonStack(side, kind, Math.Max(1, (int)count), sp.Id, atb: S.Rng.Next(6) * 0.05);
@@ -682,6 +695,15 @@ public sealed partial class Battle
                 {
                     affected.Add(target.Id);
                     if (hero != null && baseDef.School == "MAGIC_SCHOOL_LIGHT" && Controller(target) == side) SpecAfterFriendlyLightSpell(hero, target);
+                    // Disrupter: Vulnerability (base damage 0) also deals Disrupter_Damage + (level-1)·PerLevel/Divisor,
+                    // then the usual spell damage modifiers (exe FUN_00976db0, effect type 0xd).
+                    if (id == "SPELL_VULNERABILITY" && hero != null && Spec(hero, "HERO_SPEC_DISRUPTER") is var dl && dl >= 0 && target.Alive)
+                    {
+                        double div = Math.Max(1, ExeRound(Stats.Get("combat/HeroSpecializations/Wizard/Disrupter_DamageLevelDivisor", 3)));
+                        double dmg = ExeRound((dl - 1) * Stats.Get("combat/HeroSpecializations/Wizard/Disrupter_DamagePerLevel", 10) / div
+                                              + Stats.Get("combat/HeroSpecializations/Wizard/Disrupter_Damage", 10));
+                        DealSpellDamage(target, baseDef, dmg, side, ignoreResist: false, hero: hero, mastery: m);
+                    }
                 }
                 break;
         }
@@ -724,7 +746,10 @@ public sealed partial class Battle
             || id == "SPELL_BERSERK" && t.Has(Ab.ImmuneBerserk) || id == "SPELL_HYPNOTIZE" && t.Has(Ab.ImmuneHypnotize)
             || id == "SPELL_CURSE" && t.Has(Ab.ImmuneCurse))
         { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
-        if (hostile && Controller(t) != side && !physical)
+        // Stormcaller: the caster's Air (lightning) spells skip the resistance roll; immunities still apply
+        // (exe FUN_0097c9f0, element 1 = Air).
+        bool irresistible = hero != null && hero.Specialization == "HERO_SPEC_STORMCALLER" && sp.Element == Elements.Air;
+        if (hostile && Controller(t) != side && !physical && !irresistible)
         {
             double res = MagicResistanceOf(t);
             bool resisted = S.Rng.Chance(res) || HeroOf(t).HasPerk(Sk.DwarvenLuck) && S.Rng.Chance(res);
@@ -927,6 +952,25 @@ public sealed partial class Battle
         if (sp == null || !t.Alive) return;
         Emit(new AbilityTriggered(a.Id, spellId, t.Id));
         ApplyEffectSpell(a.Id, Controller(a), sp, m, power, t, a.Level, null);
+    }
+
+    /// <summary>
+    /// Elemental kind for the battlefield terrain (exe FUN_00861120): candidate list per terrain type, one picked
+    /// with the battle RNG. Dirt/subterranean: water or earth; grass: air or earth; sand: fire or air; snow: water
+    /// or air; lava: fire or earth; anything else: earth.
+    /// </summary>
+    internal string TerrainElemental()
+    {
+        string[] c = S.Terrain switch
+        {
+            0 or 5 => new[] { "CREATURE_WATER_ELEMENTAL", "CREATURE_EARTH_ELEMENTAL" },
+            1 => new[] { "CREATURE_AIR_ELEMENTAL", "CREATURE_EARTH_ELEMENTAL" },
+            2 => new[] { "CREATURE_FIRE_ELEMENTAL", "CREATURE_AIR_ELEMENTAL" },
+            3 => new[] { "CREATURE_WATER_ELEMENTAL", "CREATURE_AIR_ELEMENTAL" },
+            4 => new[] { "CREATURE_FIRE_ELEMENTAL", "CREATURE_EARTH_ELEMENTAL" },
+            _ => new[] { "CREATURE_EARTH_ELEMENTAL" },
+        };
+        return c[S.Rng.Next(c.Length)];
     }
 
     Unit? SummonStack(int side, string creature, int count, string by, double atb)

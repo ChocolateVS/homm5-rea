@@ -23,7 +23,7 @@ public static class UiLayout
             root.Rect = new UiRect(x, y, w, h);
         }
         else root.Rect = Place(root.Placement, screen);
-        foreach (var c in root.Children) Layout(c, root.Rect);
+        LayoutChildren(root);
     }
 
     static (int pos, int size) ScreenAxis(string? align, int authored, int screen) => align switch
@@ -37,7 +37,40 @@ public static class UiLayout
     static void Layout(UiWindow w, UiRect parent)
     {
         w.Rect = Place(w.Placement, parent);
-        foreach (var c in w.Children) Layout(c, w.Rect);
+        LayoutChildren(w);
+    }
+
+    /// <summary>
+    /// A WindowGathering (tooltips, info lists) stacks its visible children top to bottom in
+    /// list order, each in a slot as tall as the child, and takes the stacked height; other
+    /// windows place children against their own rectangle.
+    /// </summary>
+    static void LayoutChildren(UiWindow w)
+    {
+        if (w.Type != "WindowGathering")
+        {
+            foreach (var c in w.Children) Layout(c, w.Rect);
+            return;
+        }
+        int y = w.Rect.Y;
+        foreach (var c in w.Children)
+        {
+            if (!c.Visible) { Layout(c, new UiRect(w.Rect.X, y, w.Rect.W, 0)); continue; }
+            var slot = new UiRect(w.Rect.X, y, w.Rect.W, c.Placement.Size.Value.Y);
+            Layout(c, slot);
+            // The gathering positions its children itself: a child's own vertical Position offset
+            // is ignored (CommonInfo's Damage row carries a stray y=52 in the stock data).
+            if (c.Rect.Y != y) Shift(c, y - c.Rect.Y);
+            if (c.Type == "WindowGathering") y += c.Rect.H;
+            else y += Math.Max(c.Rect.H, c.Placement.Size.Value.Y);
+        }
+        w.Rect = new UiRect(w.Rect.X, w.Rect.Y, w.Rect.W, y - w.Rect.Y);
+    }
+
+    static void Shift(UiWindow w, int dy)
+    {
+        w.Rect = w.Rect with { Y = w.Rect.Y + dy };
+        foreach (var c in w.Children) Shift(c, dy);
     }
 
     /// <summary>

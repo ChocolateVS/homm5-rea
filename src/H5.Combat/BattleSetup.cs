@@ -37,6 +37,7 @@ public static class BattleSetup
             s.Obstacles = s.ObstaclePlacements.SelectMany(p => p.Cells).Distinct().ToList();
         }
 
+        if (s.Arena != null && TerrainOfArena(db, s.Arena) is int terrain) s.Terrain = terrain;
         if (siege != null) SiegeBuilder.Prepare(db, s, siege);
 
         // Tactics: a third deployment column, cancelled if both heroes have it (fan manual p.108).
@@ -107,6 +108,16 @@ public static class BattleSetup
     {
         var list = db.ArenaTable.ForBattle(terrain, size, kind).Where(db.Arenas.ContainsKey).ToList();
         return list.Count == 0 ? PickArena(db, rng) : list[rng.Next(list.Count)];
+    }
+
+    /// <summary>The terrain type whose arena lists contain the given arena, if any.</summary>
+    public static int? TerrainOfArena(GameDatabase db, string arena)
+    {
+        for (int terrain = 0; terrain < db.ArenaTable.TerrainCount; terrain++)
+            foreach (var size in new[] { CombatArenaTable.Size.Small, CombatArenaTable.Size.Average, CombatArenaTable.Size.Large })
+            foreach (var kind in new[] { CombatArenaTable.Kind.New, CombatArenaTable.Kind.Water, CombatArenaTable.Kind.DeepWater })
+                if (db.ArenaTable.Arenas(terrain, size, kind).Contains(arena)) return terrain;
+        return null;
     }
 
     /// <summary>A random open-field arena (one whose obstacles are placed randomly), chosen with the battle's RNG.</summary>

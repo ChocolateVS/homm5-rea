@@ -863,7 +863,43 @@ public sealed partial class Battle
         return killed;
     }
 
-    void Kill(Unit t, int source) => DealDamage(t, t.TotalHealth, source, AttackKind.Other, "KILL");
+    /// <summary>
+    /// Specialisation summons when a (non-summoned) stack dies (exe FUN_00a61310):
+    /// Master of Elements (the dead stack's hero, FUN_00a5a5a0) brings terrain elementals:
+    /// max(1, round(count·HP·0.25 / elementalHP)) + ((level−1)/div)·per + base;
+    /// Soulhunter (the opposing hero, FUN_00a5b440) raises min(count, round(level·perLevel + base)) Manes.
+    /// </summary>
+    void DeathSummons(Unit t)
+    {
+        var own = S.Heroes[t.Side];
+        if (own.Present && own.Specialization == "HERO_SPEC_MASTER_OF_ELEMENTS")
+        {
+            string kind = TerrainElemental();
+            double elemHp = Math.Max(1, Db.Creature(kind).Health);
+            int n = Math.Max(1, (int)Math.Round(t.InitialCount * (double)t.BaseHealth * 0.25 / elemHp, MidpointRounding.ToEven));
+            const string k = "combat/HeroSpecializations/Wizard/MasterOfElements_NumElementals/";
+            n += (own.Level - 1) / Math.Max(1, (int)Stats.Get(k + "LevelDivisor", 3)) * (int)Stats.Get(k + "PerDividedLevel", 1) + (int)Stats.Get(k + "Base", 1);
+            SummonStackNear(t, kind, n, "HERO_SPEC_MASTER_OF_ELEMENTS", 0);
+        }
+        var enemy = S.Heroes[1 - t.Side];
+        if (enemy.Present && enemy.Specialization == "HERO_SPEC_SOULHUNTER")
+        {
+            int n = (int)Math.Round(enemy.Level * Stats.Get("combat/HeroSpecializations/Necromancer/Soulhunter_ManesSummonedPerLevel", 1)
+                                    + Stats.Get("combat/HeroSpecializations/Necromancer/Soulhunter_ManesSummonedBase", 0), MidpointRounding.ToEven);
+            n = Math.Min(t.InitialCount, n);
+            if (n > 0)
+            {
+                var probe = new Unit { Size = Db.Creature("CREATURE_MANES").CombatSize };
+                if (NearestFree(probe, t.Pos) is Cell pos)
+                {
+                    var m = BattleSetup.AddCreature(Db, S, 1 - t.Side, "CREATURE_MANES", n, pos, summoned: true);
+                    Emit(new UnitSummoned(m.Id, m.CreatureId, n, m.Side, m.Pos, "HERO_SPEC_SOULHUNTER"));
+                }
+            }
+        }
+    }
+
+    internal void Kill(Unit t, int source) => DealDamage(t, t.TotalHealth, source, AttackKind.Other, "KILL");
 
     void OnDeath(Unit t, int source)
     {
@@ -875,6 +911,7 @@ public sealed partial class Battle
             foreach (var key in h.Links.Where(kv => kv.Value == t.Id).Select(kv => kv.Key).ToList())
                 h.Links.Remove(key);
         if (t.Kind != UnitKind.Creature) return;
+        if (!t.Summoned) DeathSummons(t);
         // Enraged: friendly Enraged stacks gain Attack (p.321).
         if (!t.Summoned)
         {

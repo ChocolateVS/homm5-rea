@@ -147,6 +147,15 @@ public sealed class UiMarkup
         return (parts.Length > 0 ? parts[0] : "", attrs);
     }
 
+    /// <summary>Named colours of the markup parser (H5_Game.exe 00cc3610); anything else is hex ARGB.</summary>
+    static readonly Dictionary<string, uint> NamedColors = new(StringComparer.Ordinal)
+    {
+        ["white"] = 0xFFFFFFFF, ["red"] = 0xFFFF0000, ["green"] = 0xFF00FF00, ["blue"] = 0xFF0000FF,
+        ["yellow"] = 0xFFFFFF00, ["cyan"] = 0xFF00FFFF, ["orange"] = 0xFFFF8040, ["pink"] = 0xFFFF80FF,
+        ["brown"] = 0xFF6E6E38, ["grey"] = 0xFFB4B4B4, ["black"] = 0xFF000000, ["darkyellow"] = 0xFFF2C011,
+        ["beige"] = 0xFFD1B7A7, ["lightblue"] = 0xFF0065D5,
+    };
+
     static bool TryArgb(string s, out uint argb) =>
-        uint.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out argb);
+        NamedColors.TryGetValue(s, out argb) || uint.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out argb);
 }

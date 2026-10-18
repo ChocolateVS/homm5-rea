@@ -310,7 +310,10 @@ public sealed partial class Battle
         u.Defending = false;
         u.FrenzyMultiplier = 1;
         RemoveEffect(u, H5.Combat.Fx.TakeRoots);
-        u.AbilityUses.Remove("SHOTS_THIS_TURN");
+        // Mountain King: the hero's creatures get MountainKing_ActiveRune (Rune of Thunderclap) refreshed at the
+        // start of each of their turns (exe FUN_008a6c40).
+        if (u.Kind == UnitKind.Creature && HeroOf(u) is { Present: true, Specialization: "HERO_SPEC_MOUNTAIN_KING" })
+            Rune(Stats.Str("combat/HeroSpecializations/Runemage/MountainKing_ActiveRune", "SPELL_RUNE_OF_STUNNING"), u);
 
         StartOfTurnDamage(u);
         if (!u.Alive) { CheckEnd(); return false; }

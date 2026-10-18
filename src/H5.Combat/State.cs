@@ -198,6 +198,9 @@ public sealed class BattleState
     public List<Cell> Obstacles = new();
     /// <summary>Combat arena scene name (Scenes/CombatArenas/&lt;Arena&gt;.xdb) the battle takes place on; null = none chosen.</summary>
     public string? Arena;
+    /// <summary>Terrain type of the battlefield (CombatArenaTable.Terrain*: 0 dirt, 1 grass, 2 sand, 3 snow, 4 lava,
+    /// 5 subterranean, 6 water, 7 dwarven, 8–9 orcish); drives terrain-dependent elementals.</summary>
+    public int Terrain = 1;
     /// <summary>Obstacle models and footprints produced by the original placement algorithm (for rendering).</summary>
     public List<ObstaclePlacement> ObstaclePlacements = new();
     public List<Unit> Units = new();

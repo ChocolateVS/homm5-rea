@@ -103,6 +103,12 @@ public partial class CombatScreen : Control
         RefreshAll();
         if (CombatLauncher.SkipTactics) CmdEndTactics();
         if (CombatLauncher.InfoUnit is int info && Session.Battle.State.Unit(info) is { } iu) Hud.ShowUnitInfo(iu);
+        if (CombatLauncher.TooltipUnit is { } tu && Session.Battle.State.Unit(tu.Unit) is { } tUnit)
+            Callable.From(() =>
+            {
+                var at = Arena.Camera.UnprojectPosition(Arena.Grid.StackCenter(new Vector2I(tUnit.Pos.X, tUnit.Pos.Y), tUnit.Size));
+                for (int i = 0; i < tu.Clicks; i++) ShowTooltip(tUnit, at);
+            }).CallDeferred();
         if (CombatLauncher.FakeMouse != null)
         {
             _fakeCursor = new TextureRect { MouseFilter = MouseFilterEnum.Ignore, ZIndex = 100 };
@@ -1133,12 +1139,17 @@ public partial class CombatScreen : Control
         if (_camera.HandleInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (e is InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Right } rel)
         {
-            // Right click (not a camera drag) opens the creature info window, like the original.
+            // Right click (not a camera drag) shows the small creature tooltip next to the cursor
+            // (exe 00575430); repeated right-clicks on the same stack cycle info → info → active
+            // effects (click count mod 3; fan manual p.304).
             if (!_camera.RightDragged && !_playing && _mode == InputMode.Normal && Arena.CellAtScreen(rel.Position) is { } rc
-                && Session.Battle.State.At(new Cell(rc.X, rc.Y)) is { } info) Hud.ShowUnitInfo(info);
+                && Session.Battle.State.At(new Cell(rc.X, rc.Y)) is { } info && !info.IsObject)
+                ShowTooltip(info, rel.Position);
             return;
         }
+        if (e is InputEventMouseMotion mm && _tooltip != null && CombatLauncher.TooltipUnit == null && mm.Position.DistanceTo(_tooltipAt) > 24) HideTooltip();
         if (e is not InputEventMouseButton { Pressed: true } mb) return;
+        if (mb.ButtonIndex == MouseButton.Left) HideTooltip();
         if (_playing) return;
         var cell = Arena.CellAtScreen(mb.Position);
         if (mb.ButtonIndex == MouseButton.Right)
@@ -1160,6 +1171,38 @@ public partial class CombatScreen : Control
         if (action == null) return;
         Submit(action.Command);
         GetViewport().SetInputAsHandled();
+    }
+
+    CreatureTooltip? _tooltip;
+    int _tooltipUnit = -1, _tooltipClicks;
+    Vector2 _tooltipAt;
+
+    void ShowTooltip(Unit u, Vector2 at)
+    {
+        _tooltipClicks = u.Id == _tooltipUnit && _tooltip != null ? _tooltipClicks + 1 : 0;
+        HideTooltip(keepCount: true);
+        _tooltipUnit = u.Id;
+        _tooltipAt = at;
+        _tooltip = CreatureTooltip.Build(Session.Battle, u, _tooltipClicks % 3, null);
+        Hud.AddChild(_tooltip);
+        // Placed beside the cursor and kept on screen (exact anchor of the stock tooltip not traced).
+        var view = GetViewportRect().Size;
+        Callable.From(() =>
+        {
+            if (_tooltip == null || !IsInstanceValid(_tooltip)) return;
+            var size = _tooltip.Size;
+            var pos = at + new Vector2(24, 8);
+            if (pos.X + size.X > view.X) pos.X = at.X - size.X - 8;
+            if (pos.Y + size.Y > view.Y) pos.Y = view.Y - size.Y;
+            _tooltip.Position = pos;
+        }).CallDeferred();
+    }
+
+    void HideTooltip(bool keepCount = false)
+    {
+        if (_tooltip != null && IsInstanceValid(_tooltip)) _tooltip.QueueFree();
+        _tooltip = null;
+        if (!keepCount) _tooltipUnit = -1;
     }
 
     public void Submit(BattleCommand cmd)

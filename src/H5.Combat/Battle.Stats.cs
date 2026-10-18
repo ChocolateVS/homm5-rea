@@ -132,6 +132,12 @@ public sealed partial class Battle
             mult -= Stats.Get("combat/HeroSkills/Ranger/StormWind_InitiativePenalty", 0.2);
         if (eh.Present && u.MaxShots > 0 && !u.IsWarMachine && (eh.HasPerk(Sk.FogVeil) || eh.HasPerk(Sk.BarbFogVeil)))
             mult -= Stats.Get("combat/HeroSkills/Ranger/FogVeil_InitiativePenalty", 0.1);
+        // Prudent / Master of Initiative: enemy creatures lose clamp(base + level·perLevel, 0, 1) initiative
+        // (exe FUN_008a4330); Master of Initiative also gives own creatures +1 % per level (spec description).
+        if (eh.Present && eh.Specialization is "HERO_SPEC_PRUDENT" or "HERO_SPEC_MASTER_OF_INITIATIVE")
+            mult -= Math.Clamp(Stats.Get("combat/HeroSpecializations/Warlock/Prudent_InitiativeDisbonusBase", 0)
+                               + eh.Level * Stats.Get("combat/HeroSpecializations/Warlock/Prudent_InitiativeDisbonusPerLevel", 0.01), 0, 1);
+        if (h.Present && h.Specialization == "HERO_SPEC_MASTER_OF_INITIATIVE") mult += 0.01 * h.Level;
         if (u.HasEffect(H5.Combat.Fx.Dash)) mult *= Stats.Get("combat/Creatures/Academy/Dash_InitiativeFactor", 2);
         if (u.HasEffect("SPELL_HYPNOTIZE")) mult *= Math.Min(1, Fx(u, "SPELL_HYPNOTIZE"));
         double init = u.BaseInitiative * Math.Max(0.1, mult);
@@ -151,6 +157,9 @@ public sealed partial class Battle
         var h = HeroOf(u);
         double sp = u.BaseSpeed;
         if (h.HasPerk(Sk.AuraOfSwiftness)) sp += 1;
+        // Death Tread: the siege attacker's troops get DeathTread/SpeedBonus (exe FUN_008a0ea0).
+        if (S.Siege != null && u.Side == 0 && h.HasPerk("HERO_SKILL_DEATH_TREAD"))
+            sp += Math.Max(0, Stats.Get("combat/HeroSkills/Necromancer/DeathTread/SpeedBonus", 4));
         if (u.HasEffect(H5.Combat.Fx.Battlecry)) sp += Stats.Get("combat/Spells/Warcries/Battlecry_SpeedBonus/Base", 1);
         sp += RageBonus(u, "DEMON_RAGE_BONUS_SPEED");
         var eh = Enemy(u.Side);

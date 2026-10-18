@@ -1,7 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\H5.Core\H5.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="H5.Combat.Tests" />
   </ItemGroup>
 
   <PropertyGroup>

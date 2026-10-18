@@ -160,6 +160,9 @@ public partial class UiScreen : Control
         return cur == null ? null : _nodes[cur];
     }
 
+    /// <summary>The node built for a window of this screen (null if it isn't part of it).</summary>
+    public UiNode? NodeOf(UiWindow w) => _nodes.GetValueOrDefault(w);
+
     public IEnumerable<UiNode> FindAll(string name) =>
         Root.Descendants().Where(w => Eq(w.Name, name)).Select(w => _nodes[w]);
 

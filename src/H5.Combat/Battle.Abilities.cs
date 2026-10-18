@@ -162,10 +162,22 @@ public sealed partial class Battle
             {
                 var corpse = t!;
                 int hp = corpse.InitialCount * corpse.BaseHealth;
-                int mana = (int)(hp / Stats.Get("combat/HeroSkills/DemonLord/ConsumeCorpseHPForOneMana", 30));
+                // Mana = round(max(1, HP / clamp(HPForOneMana, 0.1, 1000))), capped by the missing mana (exe FUN_0097b690).
+                double perMana = Math.Clamp(Stats.Get("combat/HeroSkills/DemonLord/ConsumeCorpseHPForOneMana", 30), 0.1, 1000);
+                int mana = (int)Math.Round(Math.Min(Math.Max(1.0, hp / perMana), Math.Max(0, h.MaxMana - h.Mana)), MidpointRounding.ToEven);
                 h.Mana = Math.Min(h.MaxMana, h.Mana + mana);
                 corpse.Removed = true;
                 Emit(new ManaChanged(actor, h.Mana));
+                // Exploding Corpses: the consumed corpse always explodes (FUN_0085eaa0, effect 0x11f) — a fire area
+                // attack hitting every unit next to it, friend or foe, for the spell's Base + PerPower·SpellPower.
+                if (h.HasPerk("HERO_SKILL_EXPLODING_CORPSES") && Db.Spell("SPELL_EFFECT_EXPLODING_CORPSES") is { } boom)
+                {
+                    var around = corpse.Cells().SelectMany(cc => Cell.Neighbours8.Select(d => cc + d)).Concat(corpse.Cells()).ToHashSet();
+                    double dmg = boom.DamageAt(Mastery.None).Eval(h.SpellPower);
+                    foreach (var v in S.Living.Where(v => v.Kind == UnitKind.Creature && v.Cells().Any(cell => around.Contains(cell))).ToList())
+                        DealSpellDamage(v, boom, dmg, c.Side, ignoreResist: false, hero: h);
+                    CheckEnd();
+                }
                 break;
             }
         }

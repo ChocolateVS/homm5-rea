@@ -57,6 +57,8 @@ public static class CombatLauncher
     public static string? HoverTarget;
     /// <summary>`--info-unit=ID`: opens the creature info screen for that unit at start.</summary>
     public static int? InfoUnit;
+    /// <summary>`--tooltip-unit=ID[:CLICKS]`: right-clicks that stack CLICKS times (creature tooltip screenshots).</summary>
+    public static (int Unit, int Clicks)? TooltipUnit;
 
     public static bool HandleArg(string arg)
     {
@@ -91,6 +93,12 @@ public static class CombatLauncher
         if (arg.StartsWith("--autoplay-turns=")) { AutoplayTurns = int.Parse(arg["--autoplay-turns=".Length..]); return true; }
         if (arg.StartsWith("--hover-target=")) { HoverTarget = arg["--hover-target=".Length..]; return true; }
         if (arg.StartsWith("--info-unit=")) { InfoUnit = int.Parse(arg["--info-unit=".Length..]); return true; }
+        if (arg.StartsWith("--tooltip-unit="))
+        {
+            var tp = arg["--tooltip-unit=".Length..].Split(':');
+            TooltipUnit = (int.Parse(tp[0]), tp.Length > 1 ? int.Parse(tp[1]) : 1);
+            return true;
+        }
         if (arg == "--skip-tactics") { SkipTactics = true; return true; }
         if (arg.StartsWith("--attack-screenshot="))
         {
