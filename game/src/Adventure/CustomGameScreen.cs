@@ -245,8 +245,11 @@ public static partial class AdventureLauncher
             _look = new Vector2I(int.Parse(p[0]), int.Parse(p[1]));
             return true;
         }
+        if (arg.StartsWith("--adventure-zoom=")) { _zoom = float.Parse(arg["--adventure-zoom=".Length..], System.Globalization.CultureInfo.InvariantCulture); return true; }
         return false;
     }
+
+    static float? _zoom;
 
     static void ScheduleTests(AdventureScreen screen)
     {
@@ -258,6 +261,7 @@ public static partial class AdventureLauncher
             if (_look is { } l) screen.World.Camera.CenterOn(new Tile(l.X, l.Y, screen.World.Floor));
             if (_yaw is float y) screen.World.Camera.SetYaw(y);
         }
+        if (_zoom is float z) screen.World.Camera.SetDistance(z);
         if (_testAttack) After(0.5).Timeout += screen.TestAttackNearest;
         if (_endTurn) After(0.5).Timeout += screen.EndTurn;
         if (_meetTest) After(0.5).Timeout += screen.MeetTest;

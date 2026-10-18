@@ -66,6 +66,13 @@ public partial class AdvCamera : Camera3D
         Apply();
     }
 
+    /// <summary>Sets the zoom distance (clamped to the current limits).</summary>
+    public void SetDistance(float distance)
+    {
+        _distance = distance;
+        Apply();
+    }
+
     public void ResetView()
     {
         _yaw = DefYaw;
@@ -74,16 +81,41 @@ public partial class AdvCamera : Camera3D
         Apply();
     }
 
+    /// <summary>
+    /// Profile variable of the "Extended map zoom" option — a user-requested H5Reborn extension,
+    /// on by default. The stock limits above stay the reference when it is off.
+    /// </summary>
+    public const string ExtendedZoomVar = "h5r_adv_extended_zoom";
+
+    /// <summary>Maximum distance with extended zoom (≈2.3× the stock 70).</summary>
+    public const float ExtendedMaxDistance = 160;
+
+    /// <summary>Extra pitch (degrees) reached at <see cref="ExtendedMaxDistance"/>, so a far view looks down more steeply and shows more map.</summary>
+    const float ExtendedPitchBoost = 15;
+
+    public static bool ExtendedZoom => H5Reborn.Options.OptionsStore.GetBool(ExtendedZoomVar, true);
+
+    /// <summary>Current maximum zoom-out distance.</summary>
+    public static float MaxZoom => ExtendedZoom ? ExtendedMaxDistance : MaxDistance;
+
+    public float Distance => _distance;
+
     void Apply()
     {
         var map = _world.Map;
         _target.X = Math.Clamp(_target.X, 0, map.TilesX);
         _target.Y = Math.Clamp(_target.Y, 0, map.TilesY);
-        _distance = Math.Clamp(_distance, MinDistance, MaxDistance);
+        _distance = Math.Clamp(_distance, MinDistance, MaxZoom);
+        // Beyond the stock limit the pitch range shifts steeper with distance (extension only).
+        float boost = _distance > MaxDistance ? ExtendedPitchBoost * (_distance - MaxDistance) / (ExtendedMaxDistance - MaxDistance) : 0;
         _pitch = Math.Clamp(_pitch, MinPitch, MaxPitch);
+        float shownPitch = Math.Min(_pitch + boost, 80);
+        // Keep everything inside the far plane and adapt fog/shadow range to the distance.
+        Far = Math.Max(500, _distance * 6);
+        _world.OnCameraDistance(_distance);
         float h = _world.HeightAt(_world.Floor, _target.X, _target.Y);
         var target = new Vector3(_target.X * AdvWorld.Unit, h, -_target.Y * AdvWorld.Unit);
-        float p = Mathf.DegToRad(_pitch), y = Mathf.DegToRad(_yaw);
+        float p = Mathf.DegToRad(shownPitch), y = Mathf.DegToRad(_yaw);
         var back = new Vector3(Mathf.Sin(y), 0, Mathf.Cos(y)) * (_distance * Mathf.Cos(p));
         LookAtFromPosition(target + back + new Vector3(0, _distance * Mathf.Sin(p), 0), target, Vector3.Up);
     }

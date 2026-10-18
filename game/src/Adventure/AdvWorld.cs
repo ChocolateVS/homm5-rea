@@ -82,6 +82,29 @@ public partial class AdvWorld : Node3D
 
     // ---------------------------------------------------------------- coordinates
 
+    float _lastCamDistance = -1;
+
+    /// <summary>
+    /// Keeps the far view usable when the camera pulls back past the stock 70 (extended zoom):
+    /// fog thins in proportion so distant terrain stays readable, and the sun's shadow range grows
+    /// with the view. At or below the stock distance the original values apply unchanged.
+    /// </summary>
+    public void OnCameraDistance(float distance)
+    {
+        if (Math.Abs(distance - _lastCamDistance) < 0.5f) return;
+        _lastCamDistance = distance;
+        float k = Math.Max(1f, distance / AdvCamera.MaxDistance);
+        for (int f = 0; f < 2; f++)
+        {
+            if (_envRes[f] is { } env && env.FogEnabled)
+            {
+                if (!env.HasMeta("baseFog")) env.SetMeta("baseFog", env.FogDensity);
+                env.FogDensity = (float)env.GetMeta("baseFog") / k;
+            }
+            if (_sun[f] is { } sun) sun.DirectionalShadowMaxDistance = 120 * k;
+        }
+    }
+
     public float HeightAt(int floor, float mapX, float mapY) =>
         Map.Floor(floor)?.Data is { } t ? t.SampleHeight(Math.Clamp(mapX, 0, t.TilesX), Math.Clamp(mapY, 0, t.TilesY)) : 0f;
 

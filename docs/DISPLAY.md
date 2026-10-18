@@ -38,3 +38,18 @@
 ## Testing
 - `--window-size=WxH` opens an exact borderless window (not clamped to the monitor) for screenshots;
   `--resolution`/`--position` keep the window as given and skip the saved window mode.
+
+## Extended adventure-map zoom (user-requested extension)
+
+The stock adventure camera (`profiles/autoexec_a2.cfg`: `mission_camera_limits 50 10 70 -55 -30 0 0`)
+zooms out to distance 70. At the user's request H5Reborn adds an **Extended map zoom** option
+(Options → Audio page → Display section, profile variable `h5r_adv_extended_zoom`, default **on**):
+
+* maximum distance 160 (≈2.3× the original); the stock limits apply unchanged when it is off;
+* past 70 the pitch range shifts steeper, up to +15° at 160, so a far view looks down onto more map;
+* the camera far plane is `max(500, distance × 6)`; exponential fog density is divided by
+  `distance / 70` and the sun's shadow range multiplied by it, so distant terrain stays readable and
+  shadowed (`AdvWorld.OnCameraDistance`); the minimap view frame follows automatically and is clipped
+  to the minimap.
+
+Dev switch for checks: `--adventure-zoom=<distance>`.
