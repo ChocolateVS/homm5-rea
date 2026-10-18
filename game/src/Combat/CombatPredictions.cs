@@ -108,9 +108,50 @@ public static class CombatPredictions
         return new Prediction(box, null);
     }
 
-    /// <summary>A creature ability: "Use: Name" / "Use: Name on unit X" (COMBAT_APPLY_ABILITY[_TARGETED]).</summary>
-    public static Prediction Ability(string abilityName, string? targetName) =>
-        new(targetName != null
+    /// <summary>
+    /// A creature or hero ability: "Use: Name. Damage: x (Kills: y)." when it damages the target
+    /// (COMBAT_PREDICTION_DIRECT_DAMAGE_ABILITY), else "Use: Name [on unit X]" (COMBAT_APPLY_ABILITY[_TARGETED]).
+    /// </summary>
+    public static Prediction Ability(Battle b, UseAbilityCmd cmd, string abilityName, string? targetName)
+    {
+        int damage = 0, killed = 0;
+        bool any = false;
+        try
+        {
+            var sim = new Battle(b.Db, b.State.Clone());
+            var r = sim.Apply(cmd);
+            if (r.Ok)
+                foreach (var e in r.Events)
+                    if (e is Damaged d && cmd.TargetId is int tid && d.Target == tid) { damage += d.Damage; killed += d.Killed; any = true; }
+        }
+        catch (Exception e) { GD.PushWarning($"[H5] ability prediction: {e.Message}"); }
+        if (any)
+        {
+            string dmg = Fill(Str("COMBAT_PREDICTION_DAMAGE_SIMPLE"), ("min_damage", damage.ToString()));
+            string kills = Fill(Str("COMBAT_PREDICTION_KILLS_SIMPLE"), ("min_kill", killed.ToString()));
+            return new Prediction(Fill(Str("COMBAT_PREDICTION_DIRECT_DAMAGE_ABILITY"), ("spell", abilityName), ("damage", dmg), ("kills", kills)),
+                Fill(UiText("UI/CombatScreen-Heavy/kills-cursor-prediction-1.txt"), ("kills", kills)));
+        }
+        return new(targetName != null
             ? Fill(Str("COMBAT_APPLY_ABILITY_TARGETED"), ("spell", abilityName), ("target", targetName))
             : Fill(Str("COMBAT_APPLY_ABILITY"), ("spell", abilityName)), null);
+    }
+
+    /// <summary>
+    /// Hero strike (exe 00a62e50): the hero kills a level- and tier-based number of creatures, so
+    /// the damage is a single value; heroes never draw retaliation.
+    /// </summary>
+    public static Prediction? HeroAttack(Battle b, int side, int target)
+    {
+        var h = b.State.Heroes[side];
+        if (b.State.Unit(target) is not { } t) return null;
+        int dmg = b.HeroStrikeDamage(h, t, 0);
+        int kills = Battle.KillsFor(dmg, t);
+        string damage = Fill(Str("COMBAT_PREDICTION_DAMAGE_SIMPLE"), ("min_damage", dmg.ToString()));
+        string k = Fill(Str("COMBAT_PREDICTION_KILLS_SIMPLE"), ("min_kill", kills.ToString()));
+        string box = Fill(Str("COMBAT_PREDICTION_NORMAL_ATTACK"), ("damage", damage), ("kills", k), ("retaliate", Str("COMBAT_NO_RETALIATE")));
+        string cursor = Fill(UiText("UI/CombatScreen-Heavy/kills-cursor-prediction-1.txt"), ("kills", k))
+                      + Fill(UiText("UI/CombatScreen-Heavy/retaliation-cursor-prediction.txt"), ("retaliate_cursor", Str("COMBAT_PREDICTION_NO")));
+        return new Prediction(box, cursor);
+    }
 }

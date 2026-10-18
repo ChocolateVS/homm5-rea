@@ -1003,7 +1003,8 @@ public partial class CombatScreen : Control
             {
                 cursor = CombatCursor.Ability;
                 hl.Add((cell, CellMark.Affected));
-                return new PlannedAction(new UseAbilityCmd(la.Actor, ab.Ability, null, cell) { Side = side }, ab.Ability, null);
+                var useC = new UseAbilityCmd(la.Actor, ab.Ability, null, cell) { Side = side };
+                return new PlannedAction(useC, ab.Ability, null, CombatPredictions.Ability(b, useC, CombatLogText.Escape(AbilityName(ab.Ability)), null));
             }
             var targetId = occupant?.Id ?? (ab.Targeting == Battle.AbilityTargeting.DeadFriend
                 ? s.Units.FirstOrDefault(u => !u.Alive && u.Pos == cell && ab.Targets.Contains(u.Id))?.Id : null);
@@ -1011,7 +1012,9 @@ public partial class CombatScreen : Control
             {
                 cursor = CombatCursor.Ability;
                 hl.Add((cell, CellMark.Affected));
-                return new PlannedAction(new UseAbilityCmd(la.Actor, ab.Ability, tid) { Side = side }, ab.Ability, tid);
+                var useT = new UseAbilityCmd(la.Actor, ab.Ability, tid) { Side = side };
+                return new PlannedAction(useT, ab.Ability, tid, CombatPredictions.Ability(b, useT, CombatLogText.Escape(AbilityName(ab.Ability)),
+                    CombatLogText.Escape(CombatLogText.UnitName(this, tid))));
             }
             cursor = CombatCursor.CantCast;
             return null;
@@ -1023,7 +1026,8 @@ public partial class CombatScreen : Control
             {
                 cursor = CombatCursor.AttackRight;
                 foreach (var c in occupant.Cells()) hl.Add((c, CellMark.Affected));
-                return new PlannedAction(new HeroAttackCmd(occupant.Id) { Side = side }, "Hero attack", occupant.Id);
+                return new PlannedAction(new HeroAttackCmd(occupant.Id) { Side = side }, "Hero attack", occupant.Id,
+                    CombatPredictions.HeroAttack(b, side, occupant.Id));
             }
             return null;
         }
@@ -1034,7 +1038,10 @@ public partial class CombatScreen : Control
             if (la.Shoot.Contains(occupant.Id))
             {
                 // Broken arrow: range penalty, or (sieges) the shot crosses the walls (Battle.WallsHalveShot).
-                bool far = (Distance(me, occupant) > s.Width / 2.0 && !me.Has("ABILITY_NO_RANGE_PENALTY")) || (s.Siege != null && b.WallsHalveShot(me, occupant));
+                // Same test as the damage code (exe 00a5c5a0): nearest-cell squared distance > (width/2)^2.
+                bool far = (Battle.NearestCellDistanceSq(me, occupant) > (s.Width / 2) * (s.Width / 2) && !me.IsWarMachine
+                            && !me.Has("ABILITY_NO_RANGE_PENALTY") && !me.Has("ABILITY_RANGE_PENALTY"))
+                           || (s.Siege != null && b.WallsHalveShot(me, occupant));
                 cursor = far ? CombatCursor.ShootPenalty : CombatCursor.Shoot;
                 foreach (var c in occupant.Cells()) hl.Add((c, CellMark.Affected));
                 return new PlannedAction(new ShootCmd(me.Id, occupant.Id) { Side = side }, "Shoot", occupant.Id,
@@ -1172,6 +1179,11 @@ public partial class CombatScreen : Control
         Submit(action.Command);
         GetViewport().SetInputAsHandled();
     }
+
+    /// <summary>Display name of a creature/hero ability id (CombatAbilities texts), the id if unnamed.</summary>
+    static string AbilityName(string id) =>
+        Game.Instance.Db.Abilities.GetValueOrDefault(id)?.Name is { Length: > 0 } n ? n
+        : Game.Instance.Db.Spells.GetValueOrDefault(id)?.Name is { Length: > 0 } sn ? sn : id;
 
     CreatureTooltip? _tooltip;
     int _tooltipUnit = -1, _tooltipClicks;
