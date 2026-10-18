@@ -12,6 +12,8 @@ public sealed partial class Battle
     internal const float ForceArrowPushTolerance = 1.0471976f;
     /// <summary>Paw Strike accepts any direction (exe FUN_00a5d520 passes 2π).</summary>
     internal const float PawStrikePushTolerance = 6.2831855f;
+    /// <summary>Harpoon Strike's pull tolerance (exe FUN_00a5d5f0 passes π/4 as a float, 0x3f490fdb).</summary>
+    internal const float HarpoonPullTolerance = 0.7853982f;
 
     /// <summary>
     /// Where a push moves <paramref name="target"/> (exe FUN_00a5ceb0). The push direction is the angle from the
@@ -20,12 +22,15 @@ public sealed partial class Battle
     /// <paramref name="tolerance"/> radians. An entangled target "succeeds" without moving (the exe returns its
     /// current position). Returns null when no candidate qualifies, in which case the ability does not trigger.
     /// </summary>
-    internal Cell? PushDestination(Unit attacker, Unit target, float tolerance)
+    internal Cell? PushDestination(Unit attacker, Unit target, float tolerance, bool towardAttacker = false)
     {
         if (IsEntangled(target)) return target.Pos;
         var (ax, ay) = attacker.Center;
         var (tx, ty) = target.Center;
-        float dir = MathF.Atan2((float)(ty - ay), (float)(tx - ax));
+        // The exe's first argument swaps the two centres: 0 = away from the attacker (push), 1 = towards it (pull).
+        float dir = towardAttacker
+            ? MathF.Atan2((float)(ay - ty), (float)(ax - tx))
+            : MathF.Atan2((float)(ty - ay), (float)(tx - ax));
         float best = 6.2831855f;
         Cell? result = null;
         foreach (var (dx, dy) in PushRing)
@@ -36,6 +41,19 @@ public sealed partial class Battle
             if (diff <= tolerance && diff < best) { best = diff; result = c; }
         }
         return result;
+    }
+
+    /// <summary>
+    /// Where Harpoon Strike drags its target (exe FUN_00a5d5f0, called from the strike in FUN_00a673c0): nowhere when
+    /// the target holds its ground (ABILITY_HOLD_GROUND) or is a large creature while HarpoonStrike_WorksOnLargeCreatures
+    /// is false; otherwise the free neighbouring cell whose direction is closest to "towards the harpooner", within π/4
+    /// (FUN_00a5ceb0 with its first argument set). Null = no pull.
+    /// </summary>
+    internal Cell? HarpoonPullDestination(Unit attacker, Unit target)
+    {
+        if (HasAbilityNow(target, Ab.HoldGround)) return null;
+        if (target.Size != 1 && !Stats.Bool("combat/Creatures/Fortress/HarpoonStrike_WorksOnLargeCreatures", true)) return null;
+        return PushDestination(attacker, target, HarpoonPullTolerance, towardAttacker: true);
     }
 
     /// <summary>Wraps an angle into [-π, π] like the exe's FUN_008b7750.</summary>

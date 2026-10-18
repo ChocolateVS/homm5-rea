@@ -1,0 +1,18 @@
+# Combat audit — creature abilities, part B (Academy, Dungeon, Fortress, Stronghold, neutrals)
+
+Per-ability rows merged into `docs/rules/AUDIT_COMBAT.md` by `tools/re/audit/ledger.py` (rows here override the
+computed status). Exe references are H5_Game.exe addresses (Ghidra 12.1.4). Abilities shared with Haven, Inferno,
+Necropolis or Sylvan creatures are in `combat_abilities.md` (part A); immunity/trait rows resolved by the spell
+immunity table (0097c9f0) belong to the spells audit.
+
+Attacker-stage damage specials (FUN_00a58de0, the special id is the strike's SPELL_ABILITY_*): 0x142 Incinerate
+×IncinerateCoef, 0x159 Flamestrike ×Flamestrike_DamageMultipiler, 0x14b Harpoon Strike ×(1 + HarpoonStrike_DamageBonus),
+0x15b Pack Dive finish ×PackDive_DamageMultiplier, 0x9b Battle Dive finish ×2, 0x9e Scatter Shot ×0.5,
+0xb5 Lizard Bite ×0.5 (×(1.2 + 0.01·level) with the Riders spec), 0x140 Leap ×(base + perCell·cells);
+retaliation strikes ×FierceRetaliationCoef for ABILITY_FIERCE_RETALIATION.
+
+| ID | Status | Exe | Original behaviour / note | Test |
+|---|---|---|---|---|
+| `ABILITY_HARPOON_STRIKE` | FIXED | 00a58de0, 00a5d5f0, 00a5ceb0, 00a673c0 | the shot's damage ×(1 + HarpoonStrike_DamageBonus) (special 0x14b); the pull needs a target without HOLD_GROUND (dynamic ability 0xa5) and, unless HarpoonStrike_WorksOnLargeCreatures, a 1×1 target; the destination is the free neighbouring cell closest to "towards the harpooner" within π/4 (FUN_00a5ceb0 with its first argument 1 swaps the centres), exe ring order on ties; no qualifying cell → no pull — engine stepped one cell straight towards the attacker and ignored the damage bonus and the large-creature flag | AuditAbilityBTests.HarpoonPullsTowardsTheHarpoonerWithinFortyFiveDegrees, HarpoonNeverPullsCreaturesThatHoldTheirGround |
+| `ABILITY_RIDE_BY_ATTACK` | FIXED | 00a66050, 00a5fa50, 00a61c50, 00b3d560 | skipped only on forced runs (Cowardice/Maneuver call 00a66050 with its last flag 1); victims = enemies (00b3d560) adjacent to path points 1 … N−1−RideByAttack_LastPointsToExclude (the start cell is not scanned), each attached to the point it is closest to and hit in path order as the rider passes; damage = base roll through FUN_00a5c790 with a fixed luck multiplier 1.0 (integer), × RideByAttack_DamageCoef in single precision, truncated (FISTP under chop, 00a61d42), dealt directly (no AttackStarted, no luck, no retaliation, no on-hit effects) — engine scanned the start cell, rolled luck and ran the full strike. Kept: the main target is not a victim (not traced) and ride-by only on attack moves (the ability text: "on its way to the main target") | AuditAbilityBTests.RideByAttackSkipsTheStartCellAndHitsWithoutRetaliation |
+| `ABILITY_FIERCE_RETALIATION` | MATCH | 00a58de0 | retaliation strikes (param_4) × FierceRetaliationCoef (2 in DefaultStats) in the attacker stage — same as the engine |  |

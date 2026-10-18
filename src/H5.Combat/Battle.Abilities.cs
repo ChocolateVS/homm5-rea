@@ -512,13 +512,11 @@ public sealed partial class Battle
             {
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
                 if (!HasAmmoCart(u.Side)) u.Shots--;
-                Strike(u, t, new Hit { Kind = AttackKind.Ranged }, pattern: false, rangedRetaliation: false);
-                if (t.Alive && !t.Has(Ab.HoldGround))
-                {
-                    var (dx, dy) = Dir(t, u);
-                    var pull = new Cell(t.Pos.X + dx, t.Pos.Y + dy);
-                    if (Fits(t, pull)) Teleport(t, pull);
-                }
+                // Damage: the attack special SPELL_ABILITY_HARPOON_STRIKE scales by 1 + HarpoonStrike_DamageBonus in the
+                // attacker stage (exe FUN_00a58de0, special 0x14b).
+                Strike(u, t, new Hit { Kind = AttackKind.Ranged, Multiplier = 1 + Stats.Get("combat/Creatures/Fortress/HarpoonStrike_DamageBonus", 0) },
+                    pattern: false, rangedRetaliation: false);
+                if (t.Alive && HarpoonPullDestination(u, t) is { } pull && pull != t.Pos) Teleport(t, pull);
                 break;
             }
             case Ab.Sabotage:

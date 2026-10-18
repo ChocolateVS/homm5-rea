@@ -42,21 +42,42 @@ public sealed partial class Battle
         }
     }
 
-    /// <summary>Wheeling Attack: enemies next to the route take 25% damage without retaliating (p.182).</summary>
+    /// <summary>
+    /// Wheeling Attack (exe FUN_00a5fa50 builds the victims, FUN_00a61c50 hits them as the rider passes): the path
+    /// points from index 1 (the start cell is skipped) up to, but not including, the last
+    /// RideByAttack_LastPointsToExclude points are scanned; every enemy next to one of them is a victim, attached to the
+    /// point it is closest to (first such point wins ties) and hit in path order. The damage is the base roll through the
+    /// attack/defence stage with a luck multiplier of exactly 1 (no luck roll), truncated, then ×RideByAttack_DamageCoef
+    /// truncated — dealt directly: no retaliation and no on-hit effects.
+    /// </summary>
     void RideByAttack(Unit u, List<Cell> path, Unit primary)
     {
         if (!HasAbilityNow(u, Ab.RideByAttack) || path.Count < 2) return;
         int exclude = (int)Stats.Get("combat/Creatures/Dungeon/RideByAttack_LastPointsToExclude", 1);
-        var route = path.Take(Math.Max(0, path.Count - exclude)).ToList();
-        var hit = new HashSet<int> { primary.Id };
-        foreach (var e in S.Living.Where(e => Controller(e) != Controller(u) && !e.IsObject).ToList())
+        double coef = Stats.Get("combat/Creatures/Dungeon/RideByAttack_DamageCoef", 0.25);
+        var victims = new Dictionary<int, (int Index, int Dist)>();
+        for (int i = 1; i < path.Count - exclude; i++)
         {
-            if (hit.Contains(e.Id) || !route.Any(p => Distance(u, p, e, e.Pos) <= 1)) continue;
-            hit.Add(e.Id);
-            Strike(u, e, new Hit { Kind = AttackKind.Ability, Multiplier = Stats.Get("combat/Creatures/Dungeon/RideByAttack_DamageCoef", 0.25) }, pattern: false);
-            if (!u.Alive) return;
+            foreach (var e in S.Living.Where(e => Controller(e) != Controller(u) && !e.IsObject && e.Id != primary.Id))
+            {
+                int d = Distance(u, path[i], e, e.Pos);
+                if (d > 1) continue;
+                if (!victims.TryGetValue(e.Id, out var v) || d < v.Dist) victims[e.Id] = (i, d);
+            }
+        }
+        foreach (var id in victims.OrderBy(kv => kv.Value.Index).ThenBy(kv => kv.Key).Select(kv => kv.Key).ToList())
+        {
+            var e = S.Unit(id);
+            if (e == null || !e.Alive) continue;
+            // FUN_00a5c790 is called with a fixed luck multiplier of 1.0 (no luck or favoured-enemy roll); its integer
+            // result is multiplied in single precision and truncated (FISTP under OR AH,0x0C at 00a61d42).
+            int full = ComputeDamage(u, e, new Hit { Kind = AttackKind.Ability, Secondary = true }, ranged: false, luckMult: 1);
+            int dmg = (int)(full * (float)coef);
+            Emit(new AbilityTriggered(u.Id, Ab.RideByAttack, e.Id));
+            if (dmg > 0) u.Frags += DealDamage(e, dmg, u.Id, AttackKind.Ability, Ab.RideByAttack) * e.Tier;
         }
     }
+
 
     void OnHitExtras(Unit a, Unit t, bool melee, bool retaliation, int dmg)
     {
