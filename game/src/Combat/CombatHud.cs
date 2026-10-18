@@ -59,8 +59,10 @@ public partial class CombatHud : Control
         bus.On("confirm_placement", _screen.CmdEndTactics);
         bus.On("switch_atb_log", ToggleLog);
         // ATB scroll buttons (ATBBar/ScrollLeft|Right → UISRunReaction atb_scroll_left|right).
-        bus.On("atb_scroll_left", () => { _atbScroll = Math.Max(0, _atbScroll - 1); UpdateAtb(); });
-        bus.On("atb_scroll_right", () => { _atbScroll = Math.Min(MaxAtbScroll, _atbScroll + 1); UpdateAtb(); });
+        bus.On("atb_scroll_left", () => AtbScrollMessage(true, false));
+        bus.On("atb_scroll_right", () => AtbScrollMessage(false, true));
+        bus.On("atb_scroll_left_reverse", () => AtbScrollMessage(false, false));
+        bus.On("atb_scroll_right_reverse", () => AtbScrollMessage(false, false));
         UiMessageBus.Unhandled += OnUnhandled;
 
         BuildAtbIcons();
@@ -71,8 +73,33 @@ public partial class CombatHud : Control
     int _retreatCode = -1;
     bool? _autoState;
 
+    double _devClock;
+    int _devHoldStage;
+
     public override void _Process(double delta)
     {
+        UpdateAtbScroll(delta);
+        if (CombatLauncher.AtbHold is { } hold && _devHoldStage < 2)
+        {
+            _devClock += delta;
+            if (Screen.Find(hold.Button) is { } btn)
+            {
+                var center = btn.GetGlobalRect().GetCenter();
+                if (_devHoldStage == 0 && _devClock >= hold.Start)
+                {
+                    _devHoldStage = 1;
+                    Input.ParseInputEvent(new InputEventMouseMotion { Position = center, GlobalPosition = center });
+                    Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = center, GlobalPosition = center });
+                    GD.Print($"[H5] atb-hold press {hold.Button} index={_atbScroll} max={_atbMaxScroll}");
+                }
+                else if (_devHoldStage == 1 && _devClock >= hold.Start + hold.Hold)
+                {
+                    _devHoldStage = 2;
+                    Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = center, GlobalPosition = center });
+                    GD.Print($"[H5] atb-hold release {hold.Button} index={_atbScroll} pos={_atbPos}");
+                }
+            }
+        }
         // Retreat button availability and tooltip (exe FUN_00540090 on FUN_0053feb0's code).
         int code = RetreatDialog.RefusalCode(_screen, _screen.IsPlaying);
         if (code != _retreatCode && Screen.Find("OnJog-Flee") is { } flee)
@@ -259,9 +286,52 @@ public partial class CombatHud : Control
         public Control? Blind;
     }
 
-    /// <summary>How many turns the ATB bar is scrolled ahead (atb_scroll_left/right reactions).</summary>
+    // ATB bar scrolling, as the exe's bar view (FUN_0055dce0 / FUN_0055f880 / FUN_0055f810):
+    // atb_scroll_left/right (the scroll buttons' Pushed sub-state reaction) set a continuous scroll flag,
+    // the *_reverse reaction on release clears it. The strip slides toward index × pitch at
+    // ATBBar_ScrollSpeed (4.0) × 0.001 × pitch pixels per ms, i.e. 4 icons a second; whenever it reaches
+    // (or is within one step of) the target while a flag is still set, the index advances again, so
+    // holding a button scrolls continuously. Left is enabled from index 1, right while icons remain hidden.
+    /// <summary>How many icons the ATB bar is scrolled ahead (the exe's view index, +0x48).</summary>
     int _atbScroll;
+    /// <summary>Current strip offset in pixels (the exe's +0x44), sliding toward _atbScroll × IconStep.</summary>
+    float _atbPos;
+    bool _scrollLeft, _scrollRight;
+    /// <summary>Upcoming icons available beyond the first (prediction length minus the visible ones).</summary>
+    int _atbMaxScroll;
     const int MaxAtbScroll = 20;
+    const float AtbScrollSpeed = 4.0f;   // exe DAT_00f32c28 "ATBBar_ScrollSpeed" default (FUN_00561f80)
+    Control? _atbClip;
+    Vector2 _atbIconOrigin;
+    List<int> _atbUpcoming = new();
+
+    void AtbScrollMessage(bool left, bool right) { _scrollLeft = left; _scrollRight = right; }
+
+    void UpdateAtbScroll(double delta)
+    {
+        float target = _atbScroll * IconStep;
+        int before = _atbScroll;
+        if (_atbPos == target)
+        {
+            if (_scrollLeft) { if (_atbScroll > 0) _atbScroll--; }
+            else if (_scrollRight && _atbScroll < _atbMaxScroll) _atbScroll++;
+        }
+        else
+        {
+            float step = (float)(delta * 1000.0) * IconStep * AtbScrollSpeed * 0.001f;
+            if (Math.Abs(_atbPos - target) <= step)
+            {
+                if (_scrollLeft) { if (_atbScroll > 0) _atbScroll--; }
+                else if (_scrollRight && _atbScroll < _atbMaxScroll) _atbScroll++;
+                target = _atbScroll * IconStep;
+            }
+            _atbPos = _atbPos <= target ? Math.Min(target, _atbPos + step) : Math.Max(target, _atbPos - step);
+        }
+        if (_atbScroll != before) UpdateAtb();
+        else LayoutAtbIcons();
+        if (Screen.Find("ScrollLeft") is { } l) l.Enabled = _atbScroll >= 1;
+        if (Screen.Find("ScrollRight") is { } r) r.Enabled = _atbScroll < _atbMaxScroll;
+    }
 
     void BuildAtbIcons()
     {
@@ -271,12 +341,23 @@ public partial class CombatHud : Control
         var protoTex = UiResources.Instance.Texture("UI/CombatArena-Heavy/ATBBar/IconPrototype.(Texture).dds");
         var selTex = UiResources.Instance.Texture("UI/CombatArena-Heavy/ATBBar/Selection.(Texture).dds");
         container.ClipContents = false;
-        for (int i = 0; i < IconCount; i++)
+        // The strip (IconContainer) slides inside the IconView window, which clips it (FUN_0055df40 binds
+        // "IconView"/"IconContainer"; the scroll buttons draw over its ends at Priority 2).
+        var view = Screen.Find("IconView")?.Window.Rect ?? containerRect;
+        _atbClip = new Control
+        {
+            Name = "AtbClip", ClipContents = true, MouseFilter = MouseFilterEnum.Ignore,
+            Position = new Vector2(view.X - containerRect.X, view.Y - containerRect.Y), Size = new Vector2(view.W, view.H),
+        };
+        container.AddChild(_atbClip);
+        _atbIconOrigin = new Vector2(protoRect.X - view.X, protoRect.Y - view.Y);
+        // One extra icon so a partly scrolled strip has no gap at its right edge.
+        for (int i = 0; i < IconCount + 1; i++)
         {
             var icon = new AtbIcon();
             icon.Root = new Control
             {
-                Position = new Vector2(protoRect.X - containerRect.X + i * IconStep, protoRect.Y - containerRect.Y),
+                Position = _atbIconOrigin + new Vector2(i * IconStep, 0),
                 Size = new Vector2(protoRect.W, protoRect.H), MouseFilter = MouseFilterEnum.Ignore,
             };
             icon.Root.AddChild(new TextureRect { Texture = protoTex, Size = icon.Root.Size, MouseFilter = MouseFilterEnum.Ignore });
@@ -304,7 +385,7 @@ public partial class CombatHud : Control
                 icon.Root.AddChild(icon.Blind);
             }
             catch (Exception e) { GD.PushWarning($"[H5] ATB blind marker: {e.Message}"); }
-            container.AddChild(icon.Root);
+            _atbClip.AddChild(icon.Root);
             _icons.Add(icon);
         }
     }
@@ -316,21 +397,35 @@ public partial class CombatHud : Control
     {
         _activeActor = actor;
         _atbScroll = 0;
+        _atbPos = 0;
         Refresh();
     }
 
     void UpdateAtb()
     {
         var b = _screen.Session.Battle;
-        var order = TurnOrder.Predict(b, IconCount + 1 + _atbScroll);
+        var order = TurnOrder.Predict(b, IconCount + 1 + MaxAtbScroll);
         int current = b.State.Active ?? (order.Count > 0 ? order[0] : int.MinValue);
         SetLarge(current);
-        var upcoming = (order.Count > 0 && order[0] == current ? order.Skip(1) : order).Skip(_atbScroll).ToList();
+        _atbUpcoming = (order.Count > 0 && order[0] == current ? order.Skip(1) : order).ToList();
+        _atbMaxScroll = Math.Max(0, _atbUpcoming.Count - IconCount);
+        if (_atbScroll > _atbMaxScroll) { _atbScroll = _atbMaxScroll; _atbPos = Math.Min(_atbPos, _atbScroll * IconStep); }
+        LayoutAtbIcons();
+    }
+
+    /// <summary>Places the icon strip at the current scroll offset and fills each slot from the prediction.</summary>
+    void LayoutAtbIcons()
+    {
+        var b = _screen.Session.Battle;
+        int first = (int)Math.Floor(_atbPos / IconStep);
+        float frac = _atbPos - first * IconStep;
         for (int i = 0; i < _icons.Count; i++)
         {
             var icon = _icons[i];
-            if (i >= upcoming.Count) { icon.Root.Visible = false; continue; }
-            int a = upcoming[i];
+            int k = first + i;
+            icon.Root.Position = _atbIconOrigin + new Vector2(i * IconStep - frac, 0);
+            if (k < 0 || k >= _atbUpcoming.Count) { icon.Root.Visible = false; continue; }
+            int a = _atbUpcoming[k];
             icon.Root.Visible = true;
             icon.Background.Texture = SideBackground(SideOf(a), false);
             icon.Person.Texture = Portrait(a, large: false);

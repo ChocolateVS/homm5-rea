@@ -128,6 +128,10 @@ public sealed class UiVisualState
     public UiDrawable? Background, Foreground;
     public UiText? Text;
     public string? TextFormatPath;
+    /// <summary>OnEnterSubState commands, run when the button enters this visual sub-state.</summary>
+    public List<UiCommand> OnEnter = new();
+    /// <summary>Reverse commands (Reversable sub-states, e.g. UISRunReaction szReactionBack), run on leaving it.</summary>
+    public List<UiCommand> OnLeave = new();
 }
 
 /// <summary>A logical button state (WindowMSButton ButtonStates entry) and its UI commands.</summary>

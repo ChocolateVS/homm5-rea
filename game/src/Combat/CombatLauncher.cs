@@ -21,6 +21,8 @@ public static class CombatLauncher
     public static Vector2? FakeMouse;
     /// <summary>`--skip-tactics`: the local player ends the tactics phase immediately.</summary>
     public static bool SkipTactics;
+    /// <summary>`--atb-hold=R|L,start,hold`: dev check of the ATB scroll buttons with a held mouse press.</summary>
+    public static (string Button, double Start, double Hold)? AtbHold;
     /// <summary>`--attack-screenshot=N:PATH`: saves the screen at the hit moment of the Nth attack.</summary>
     public static (int N, string Path)? AttackScreenshot;
     /// <summary>`--sign-screenshot=N:path`: capture 0.4 s after the Nth casualty sign appears.</summary>
@@ -111,6 +113,15 @@ public static class CombatLauncher
             return true;
         }
         if (arg == "--skip-tactics") { SkipTactics = true; return true; }
+        if (arg.StartsWith("--atb-hold="))
+        {
+            // "--atb-hold=R,3.0,1.5": press and hold the ATB ScrollRight (or L = ScrollLeft) button with
+            // synthetic mouse events at t = 3.0 s for 1.5 s (exercises the Pushed sub-state reactions).
+            var p = arg["--atb-hold=".Length..].Split(',');
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            AtbHold = (p[0] == "L" ? "ScrollLeft" : "ScrollRight", double.Parse(p[1], inv), double.Parse(p[2], inv));
+            return true;
+        }
         if (arg.StartsWith("--attack-screenshot="))
         {
             var v = arg["--attack-screenshot=".Length..];

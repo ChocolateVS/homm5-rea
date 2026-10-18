@@ -278,6 +278,7 @@ public partial class UiNode : Control
                 break;
             case NotificationMouseExit when IsButton:
                 _hover = false; QueueRedraw();
+                LeavePushed();
                 break;
             case NotificationResized:
                 InvalidateText();
@@ -295,11 +296,13 @@ public partial class UiNode : Control
             if (mb.Pressed)
             {
                 _pressed = true; QueueRedraw();
+                EnterPushed();
                 if (onPush) Activate();
             }
             else if (_pressed)
             {
                 _pressed = false; QueueRedraw();
+                LeavePushed();
                 if (!onPush && _hover) Activate();
             }
             AcceptEvent();
@@ -309,6 +312,24 @@ public partial class UiNode : Control
             Fire(Window.ButtonStates[State].OnRightClick);
             AcceptEvent();
         }
+    }
+
+    // Visual sub-state commands (OnEnterSubState of "Pushed", e.g. the ATB scroll buttons' UISRunReaction):
+    // entering the pushed look runs them, leaving it (release or mouse exit) runs the reversable back reactions.
+    bool _inPushed;
+
+    void EnterPushed()
+    {
+        if (_inPushed || State >= Window.ButtonStates.Count || !Window.ButtonStates[State].Visuals.TryGetValue("Pushed", out var v)) return;
+        _inPushed = true;
+        Fire(v.OnEnter);
+    }
+
+    void LeavePushed()
+    {
+        if (!_inPushed) return;
+        _inPushed = false;
+        if (State < Window.ButtonStates.Count && Window.ButtonStates[State].Visuals.TryGetValue("Pushed", out var v)) Fire(v.OnLeave);
     }
 
     /// <summary>Simulates a click: advances multi-state buttons and runs the entered state's commands.</summary>

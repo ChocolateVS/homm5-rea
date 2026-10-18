@@ -229,6 +229,11 @@ public sealed class UiLoader
                 };
                 var (tf, tfFile) = Deref(sub.Element("TextFormat"), file);
                 if (tf != null) v.TextFormatPath = Path(tf.Element("FormatStringFileRef"), tfFile);
+                var enterBlock = sub.Element("OnEnterSubState");
+                v.OnEnter.AddRange(Commands(enterBlock, file));
+                if ((string?)enterBlock?.Element("Reversable") == "true")
+                    foreach (var item in enterBlock!.Element("Commands")?.Elements("Item") ?? Enumerable.Empty<XElement>())
+                        v.OnLeave.AddRange(ReverseReaction(item, file));
                 bs.Visuals[sub.Name.LocalName] = v;
             }
         }
@@ -267,6 +272,14 @@ public sealed class UiLoader
                 yield return new UiCommand(e.Name.LocalName, "", 0, f);
                 break;
         }
+    }
+
+    /// <summary>The reverse of a reversable reaction: UISRunReaction's szReactionBack.</summary>
+    IEnumerable<UiCommand> ReverseReaction(XElement refEl, string file)
+    {
+        var (e, f) = Deref(refEl, file);
+        if (e?.Name.LocalName == "UISRunReaction" && (string?)e.Element("szReactionBack")?.Element("First") is { Length: > 0 } back)
+            yield return new UiCommand("RunReaction", back, 0, f);
     }
 
     void ReadRelated(UiWindow w, XElement? refEl, string file, string listName, string keyName, string valueName, Dictionary<string, string> into)
