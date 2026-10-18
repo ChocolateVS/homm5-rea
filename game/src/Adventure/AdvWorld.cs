@@ -475,11 +475,20 @@ public partial class AdvWorld : Node3D
                     return (Href(ar, "Model", ash), Href(ar, "AnimSet", ash));
                 break;
             }
-            case ObjectKind.Town when shared.Raw?.Element("Exterior") is { } ext:
+            case ObjectKind.Town:
             {
+                // A random town (TOWN_RANDOM_TYPE) shows the faction town the engine rolled for it.
+                var file = shared.Path;
+                var raw = shared.Raw;
+                if (_session.S.Town(o.Index) is { } rolled && rolled.Type != shared.TownType
+                    && TownSharedFiles.TryGetValue(rolled.Type, out var stock) && TryLoad(stock)?.Root is { } sr)
+                    (file, raw) = (stock, sr);
+                // AdvMapTownExterior is inline or a separate file (Orc_Stronghold).
+                var exterior = raw?.Element("Exterior") is not { } ext ? null
+                    : ext.Elements().FirstOrDefault() ?? (Href(raw, "Exterior", file) is { } ef ? TryLoad(ef)?.Root : null);
                 // AdvMapTownExterior upgrades: town, +fort, +citadel, then the same with a mage guild,
                 // then city and capital variants (order as authored in the stock towns).
-                var upgrades = ext.Elements().FirstOrDefault()?.Element("upgrades")?.Elements("Item").ToList();
+                var upgrades = exterior?.Element("upgrades")?.Elements("Item").ToList();
                 if (upgrades is { Count: > 0 })
                 {
                     var t = _session.S.Town(o.Index);
@@ -487,14 +496,28 @@ public partial class AdvWorld : Node3D
                     bool guild = (t?.Level("TB_MAGIC_GUILD") ?? 0) > 0;
                     int i = hall >= 4 ? 9 : hall >= 3 ? 6 + fort : (guild ? 3 : 0) + fort;
                     var item = upgrades[Math.Clamp(i, 0, upgrades.Count - 1)];
-                    var file = shared.Path;
-                    return (Href(item, "Model", file), null);
+                    var exteriorFile = exterior!.Document?.Root == raw ? file : Href(raw, "Exterior", file) ?? file;
+                    return (Href(item, "Model", exteriorFile), null);
                 }
+                if (!ReferenceEquals(raw, shared.Raw)) return (Href(raw, "Model", file), Href(raw, "AnimSet", file));
                 break;
             }
         }
         return (shared.ModelPath, Href(shared.Raw, "AnimSet", shared.Path));
     }
+
+    /// <summary>Stock town object per faction (MapObjects/*.(AdvMapTownShared).xdb).</summary>
+    static readonly Dictionary<string, string> TownSharedFiles = new()
+    {
+        ["TOWN_HEAVEN"] = "MapObjects/Heaven.(AdvMapTownShared).xdb",
+        ["TOWN_PRESERVE"] = "MapObjects/Preserve.(AdvMapTownShared).xdb",
+        ["TOWN_ACADEMY"] = "MapObjects/Academy.(AdvMapTownShared).xdb",
+        ["TOWN_DUNGEON"] = "MapObjects/Dungeon.(AdvMapTownShared).xdb",
+        ["TOWN_NECROMANCY"] = "MapObjects/Necromancy.(AdvMapTownShared).xdb",
+        ["TOWN_INFERNO"] = "MapObjects/Inferno.(AdvMapTownShared).xdb",
+        ["TOWN_FORTRESS"] = "MapObjects/Fortress.(AdvMapTownShared).xdb",
+        ["TOWN_STRONGHOLD"] = "MapObjects/Orc_Stronghold.(AdvMapTownShared).xdb",
+    };
 
     static readonly Dictionary<string, string?> _monsterShared = new(StringComparer.OrdinalIgnoreCase);
 
