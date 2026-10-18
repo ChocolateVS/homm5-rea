@@ -22,10 +22,49 @@
      `Shared` → `(AdvMapStaticShared)` (model, footprint). These are the scenery around the field.
    * `GroundAmbientLights` → `AmbientLight` (below), `ReflectiveWater`.
 
-The battlefield itself is a 12×10 grid of 1-tile cells (14×14 for sieges with a fort). **Open
-question:** whether `MountPoint` is the grid corner or centre, and which axis is 12 long. On
-Grass_Small_01 the object-free area around (15,15) fits both readings; resolve with an in-game
-screenshot or the exe (search the `MountPoint` consumer).
+### Combat grid placement (resolved)
+
+The playable battlefield is a 12×10 grid of 1-tile cells (14×14 sieges not yet examined).
+**Cell (cx, cy), cx ∈ [0,12), cy ∈ [0,10), is map tile (Mount.x + cx, Mount.y − 11 + cy)**, i.e. the
+grid covers tiles x ∈ [Mount.x, Mount.x+12), y ∈ [Mount.y−11, Mount.y−1). The long axis (12) is map
++X; the armies face each other along it (attacker at cx = 0). Implemented in
+`game/src/Arena/ArenaGrid.cs`. Evidence (all 63 `Scenes/CombatArenas/*.xdb`):
+
+* **Axis/extent — fixed obstacles.** `ArenaObjects/BoatArena/BoatArenaBlocked.xdb` blocks cells
+  x 6..9 × y {1,2,5,6,9,10}; `AbyssArena` blocks x 5..10 × y 1..4, 7..10. Both are symmetric about
+  x = 7.5, y = 5.5, so the engine's internal grid is 16×12 with playable cells x 2..13, y 1..10
+  (internal = playable + (2, 1)); the 4/6 blocked middle columns are the water/abyss between two
+  armies standing on the left and right. Hence 12 along X.
+* **Position — terrain flatness.** The playable area is flattened in every arena. Scanning 13×11
+  vertex windows at offsets from MountPoint, the summed height std-dev over all arenas is minimal at
+  window origin (Mount.x, Mount.y−11): 0.09 total, vs 0.15/0.20 at x∓1 and ≥0.89 elsewhere.
+* **Position — scenery.** Counting `AdvMapStatic` blocked tiles inside candidate rectangles: corner
+  hypotheses extending +X/−Y score 4–15 blocked tiles over all arenas; centred or other-direction
+  rectangles score 1769–2937.
+
+### Scenery placement
+
+`AdvMapStatic.Pos` is in tiles (70% integers, the rest free placement). A model's origin sits at the
+centre of footprint tile (0,0) of its `blockedTiles`: footprint centroid vs model bounding-box centre
+over 473 objects has median error 0.49 for "origin at tile centre" and 1.0 for the alternatives.
+So world position = (Pos.x + 0.5, Pos.y + 0.5, terrain height + Pos.z); `Rot` is radians about +Z.
+
+### Combat camera
+
+`Cameras/CombatArena/CombatArena.xdb` is the only combat-arena camera (others are cinematics):
+`Pos (−5.68, −5.09, 9.81)`, `Rot (−30, −66.8, 0)`, `Rod 50`, `FOV 70`. Current reading: Pos is the eye
+offset from the battlefield centre (map space) looking at the centre, FOV vertical. This gives an
+angled view at ~52° with the whole grid in frame and clear sightlines on all arenas tested (an eye
+offset from the internal grid origin instead lands inside the treeline). **Unreconciled:** the Rot
+angles don't match this look direction, and the main-menu camera (below) uses Pos-as-eye with an
+explicit yaw. Needs a screenshot of the original battle screen to settle.
+
+### Grid overlay
+
+`UI/CombatArena/Grid/{Inactive,Select,affected,aimable}[_2].xdb` are `AM_OVERLAY` materials
+(256² cell textures with a bright border and ~0.73 alpha fill). `AM_OVERLAY` (also 239 model
+materials: ground decals) is rendered as an overlay blend of the texture over the framebuffer,
+weighted by alpha (`game/src/Render/Overlay.gdshader`).
 
 ## Lighting — `Lights/_(AmbientLight)/**`
 
@@ -57,8 +96,13 @@ use `ArenaDesc`:
   `AmbientLights`, `AmbientSound`, `Music`, `Wind`.
 
 The main menu backdrop is `Arenas/Interface/MainMenu/MainMenu.(ArenaDesc).xdb` (35 objects,
-13 effects, `Rampart_Sky` light). It needs the geometry and Granny decoders from the other
-workstreams to render.
+13 effects, `Rampart_Sky` light), rendered statically by `game/src/Arena/MainMenuBackground.cs`.
+
+**ArenaDesc frame:** placement matrices and `initialCamPos` are in mesh space with **Y negated**
+(objects with all-zero placement are exported in place). `initialCamPos.Pos` is the eye; the
+horizontal view direction is (sin yaw, −cos yaw) in that frame with yaw = `Rot.y`, pitch = `Rot.x`.
+With this reading the camera stands in front of the troops facing them and the far `Background`
+card lies behind them; without the Y flip the camera faces away from every object.
 
 ## Engine root table
 

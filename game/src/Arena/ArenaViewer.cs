@@ -37,6 +37,19 @@ public partial class ArenaViewer : Node3D
             }).CallDeferred();
             return true;
         }
+        if (arg.StartsWith("--test-sound="))
+        {
+            // Loads a sound descriptor, reports the decoded stream, plays it briefly.
+            var href = arg["--test-sound=".Length..];
+            Callable.From(() =>
+            {
+                var def = Audio.SoundLibrary.Load(href);
+                GD.Print(def == null ? $"[H5] sound {href}: not found"
+                    : $"[H5] sound {href}: {def.Stream.GetType().Name} {def.Stream.GetLength():F2}s 3D={def.Is3D} loop={def.Loop}");
+                Audio.SoundLibrary.Play(href, ((SceneTree)Engine.GetMainLoop()).Root);
+            }).CallDeferred();
+            return true;
+        }
         if (arg == "--arena-units") { ShowUnits = true; return true; }
         if (arg == "--arena-grid") { ShowGrid = true; return true; }
         return false;

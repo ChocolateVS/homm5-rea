@@ -30,3 +30,10 @@ Match is by uid string, case-insensitive (pak paths are upper-case, descriptors 
   standard IMA step/index tables) and feed `AudioStreamWav { Format = Format16Bits }`. ~60 lines;
   can also be done once into the `cache/`.
 * `Is3D` sounds → `AudioStreamPlayer3D` with `UnitSize/MaxDistance` from Min/MaxDistance.
+
+## Decoder (implemented)
+
+`src/H5.Assets/Audio/ImaAdpcm.cs` decodes every WAVE in `bin/Sounds`: MS IMA ADPCM (0x0011, nearly
+all), **MS ADPCM (0x0002, 5 files)** and PCM. `game/src/Audio/SoundLibrary.cs` resolves a Sound xdb by
+`uid` (bin/Sounds, then bin/SoundsLoc), builds an `AudioStreamWav`/`AudioStreamOggVorbis` and plays it
+with the descriptor's volume/pitch variation (3D sounds via `AudioStreamPlayer3D`).
