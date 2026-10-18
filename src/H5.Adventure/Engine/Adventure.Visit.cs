@@ -274,6 +274,10 @@ public sealed partial class Adventure
                 Capture(o, os, p);
                 break;
 
+            case "BUILDING_OBELISK":
+                VisitObelisk(h, p, o);
+                break;
+
             // Teleports.
             case "BUILDING_SUBTERRA_GATE":
             case "BUILDING_MONOLITH_ONE_WAY_ENTRANCE":

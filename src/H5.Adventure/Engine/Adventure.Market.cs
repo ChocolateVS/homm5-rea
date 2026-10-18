@@ -101,7 +101,7 @@ public sealed partial class Adventure
         {
             var o = Map.Objects.ElementAtOrDefault(marketObject);
             if (o == null || o.Shared.Type != "BUILDING_TRADING_POST" || S.Obj(marketObject).Removed) { error = "not a trading post"; return 0; }
-            if (!S.Heroes.Any(h => h.Alive && h.Owner == p.Index && h.Pos == o.Pos)) { error = "no hero at the trading post"; return 0; }
+            if (!S.Heroes.Any(h => h.Alive && h.Owner == p.Index && HeroAt(h, o))) { error = "no hero at the trading post"; return 0; }
             return 3;
         }
         int n = MarketplaceCount(p);

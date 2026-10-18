@@ -27,6 +27,9 @@ namespace H5.Adventure.Engine;
 [JsonDerivedType(typeof(BuildShipCmd), "build_ship")]
 [JsonDerivedType(typeof(ExchangeResourcesCmd), "exchange")]
 [JsonDerivedType(typeof(SellArtifactCmd), "sell_artifact")]
+[JsonDerivedType(typeof(UpgradeCreatureCmd), "upgrade_creature")]
+[JsonDerivedType(typeof(BuyFactoryWarMachineCmd), "buy_factory_war_machine")]
+[JsonDerivedType(typeof(BuyCartographerMapCmd), "buy_cartographer_map")]
 public abstract record AdvCommand
 {
     /// <summary>Issuing player; the session layer fills it from the connection.</summary>
@@ -71,6 +74,7 @@ public sealed record MoveArtifactCmd(int HeroId, string Artifact, bool FromBackp
 [JsonDerivedType(typeof(HeroStatChanged), "hero_stat")]
 [JsonDerivedType(typeof(ArtifactGained), "artifact")]
 [JsonDerivedType(typeof(ArtifactSold), "artifact_sold")]
+[JsonDerivedType(typeof(CreatureUpgraded), "creature_upgraded")]
 [JsonDerivedType(typeof(SpellLearned), "spell")]
 [JsonDerivedType(typeof(ExperienceGained), "experience")]
 [JsonDerivedType(typeof(LevelUpOffered), "level_up")]
