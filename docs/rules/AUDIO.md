@@ -47,3 +47,49 @@ Project for re-running: `tools/audiore/ghidra.sh` (copy of the analysed adventur
 The original has only `sound_musicvolume`, `sound_sfxvolume` and `sound_ambient_enable`. H5Reborn
 keeps that: Music bus = music volume; SFX bus = sound volume; `Ambient` and `Speech` buses send into
 SFX (ambient muted by the switch). Localised voice (`bin/SoundsLoc`) goes to Speech.
+
+## Event sounds and positional sound (pass 2)
+
+UIGameRoot `sounds` / `musics` are looked up **by name at their use sites**, so string
+cross-references give the exact triggers (all in `game/src/Audio/AdventureEventAudio.cs` unless noted):
+
+| Sound / music | Trigger (exe) |
+|---|---|
+| NEW_WEEK_NEUTRAL/GOOD/BAD_SOUND | start-of-week notice, by the moon week's `Type` (WEEKTYPE_NEUTRAL=0/GOOD=1/BAD=2) — 009946e0 |
+| HERO_LEVEL_UP_SOUND (HERO_RELEARNING_SOUND when relearning; same file) | level-up dialog — 006a8f50 |
+| OBJECTIVE_ACTIVE/COMPLETED/FAILED_SOUND | objective state 2/3/4 with its notice, only when the notice is shown (visible objective, own player) — 00c5fec0; client: `ScriptUiBridge` `objective_state` |
+| TUTORIAL_SOUND | tutorial message box opens — 00770df0; client: `ScriptUiBridge` |
+| HERO_JOIN_FLEE_SOUND | neutrals offer to join / flee — 005a5d90 |
+| HERO_FIND_GRAIL_MUSIC, BUILD_GRAIL_MUSIC | one-shot music (CNonLoopMusicPlayer) when the grail is found / the grail building is built — 005a5d90 + 0076db30, 00615230 |
+| HIRE_CREATURES_SOUND, HIRE_HERO_SOUND, BUY_WAR_MACHINE_SOUND | recruit (006d8ba0), tavern hire (006350b0), blacksmith (006ece20) |
+| CHAT_GET_MESSAGE_SOUND | new chat lines — 00726630 (DuelWaitScreen, AdvNetScreens) |
+| WHOOSH_SOUND | combat: leaving a cinematic camera back to the battle camera — 0054a9e0 → 0053e980 (CinematicCameras.End) |
+| CREDITS_SCREEN_MUSIC_ID | credits screen (00793d20), pushed over the paused menu theme |
+
+Not wired (no matching feature yet): HERO_DIG_HOLE_SOUND, MARKET_EXCHANGE_SOUND, BUY_ARTIFACT/SPELL/RUMORS/THIEVES_SOUND,
+MAIL_SEND_SOUND, FORTHILL_UPGRADE_CREATURES/NO_RESOURCES_SOUND, MICROARTIFACT_UPGRADED_SOUND — `AudioSystem.PlayNamed(id)`
+is the hook for those screens.
+
+*Inferred from data names (use sites not traced):*
+* Object visits play the shared descriptor's `SoundEffect` (294 descriptors; the Stables one is the same Stabels sound as
+  STABLES_VISIT_SOUND, which plays only for a Stables without one). Town buildings: the race's TableRaceMusic
+  `MagicGuildSound` / `MarketplaceSound` / `BlacksmithSound` / `TownHallSound` when that building's screen opens and
+  `UpgradeTownBuildingSound` when a building is finished (fields read at 0053a6f0; no shipyard screen yet).
+* Dialog scenes: scene `Music` (× `MusicVolume`%) is pushed on the music stack; per sentence `MusicVolumePercent`
+  (0 = unchanged), `MusicFadeOutDuration` ms (fade to silence), `MusicOverride` (Music, StartTime s into the track,
+  after TimeShift s), `StopMusic`, `StopAmbient` (never set in stock data) — field names from the serializer 00b31280.
+* Campaign `WinMissionMusic` / `LoseMissionMusic` (serializer 00c49eb0) play once over the mission results window.
+* Adventure-map dialogs: `BackgroundMusicVolume` / `BackgroundAmbientVolume` / `SpeechVolume` (percent, per
+  `dialogs/Item`, serializer 00a0da40; all 100 in stock maps) scale music/ambience/voice while the dialog runs.
+
+**Positional sounds** (`MapSoundEmitters`): descriptors with an `AdventureSoundEffect` (37: mines, waterwheels,
+arenas, monoliths, whirlpools…) loop a 3D sound at the object, on its own floor only; a walking hero runs its
+AdvMapAnimSet `move` clip Sound (looping 3D, e.g. Heroes/DemonLord/Move — there are no per-terrain footstep sounds in
+the data). 3D sounds use the Sound descriptor's MinDistance/MaxDistance as FMOD does: full volume inside Min, then
+Min/distance (Godot inverse distance, UnitSize = Min, MaxDb = 0).
+
+**Still not confirmed from the exe:** the FMOD-level fade/pause timing (CMusicPlayer vtable 00e47b4c; the Music
+descriptor reader 00b13360 only names the fields) and the race arguments of the wait/combat music calculators.
+**Combat sound coverage:** anim-set clip sounds (attack/hit/death/move…: UnitView), ability and spell
+`SpellVisual` `SoundEffect`s (effects runtime), siege `HitSound`s (SiegeView), luck/morale effects; Shot
+descriptors carry no sound fields (projectile sounds come from the shooter's attack clip).

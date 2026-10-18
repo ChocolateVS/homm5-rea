@@ -60,7 +60,7 @@ public partial class AmbientPlayer : Node
         {
             var l = _layers[i];
             l.Gain = l.Gain < l.Target ? Math.Min(l.Target, l.Gain + rate * (float)delta) : Math.Max(l.Target, l.Gain - rate * (float)delta);
-            float db = Mathf.LinearToDb(Math.Max(l.Gain, 0.0001f));
+            float db = Mathf.LinearToDb(Math.Max(l.Gain * AudioSystem.AmbientScale, 0.0001f));
             if (l.Loop != null) l.Loop.VolumeDb = db;
             if (l.OneShot != null) l.OneShot.VolumeDb = db + OneShotDb(l);
             if (l != _current && l.Gain <= 0.0001f)

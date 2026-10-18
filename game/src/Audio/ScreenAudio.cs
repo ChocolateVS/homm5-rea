@@ -15,14 +15,28 @@ namespace H5Reborn.Audio;
 public partial class MenuAudio : Node
 {
     string _id = "";
+    bool _overlay;
+    MusicManager.Handle? _handle;
 
+    /// <summary>A front-end root screen: replaces whatever was playing.</summary>
     public static void Attach(Node host, string musicId) => host.AddChild(new MenuAudio { _id = musicId, Name = "MenuAudio" });
+
+    /// <summary>
+    /// A screen opened over the menu (credits, 00793d20): its music is pushed on the player
+    /// stack and popped when the screen closes, so the menu theme resumes where it paused.
+    /// </summary>
+    public static void AttachOverlay(Node host, string musicId) =>
+        host.AddChild(new MenuAudio { _id = musicId, _overlay = true, Name = "MenuAudio" });
 
     public override void _Ready()
     {
         AudioSystem.EnsureInstalled();
-        MusicManager.SetRoot(_id, new ConstantMusicCalculator(AudioSystem.Data.UiMusic(_id)));
+        var calc = new ConstantMusicCalculator(AudioSystem.Data.UiMusic(_id));
+        if (_overlay) _handle = MusicManager.Push(_id, calc);
+        else MusicManager.SetRoot(_id, calc);
     }
+
+    public override void _ExitTree() => MusicManager.Pop(_handle);
 }
 
 /// <summary>
@@ -67,6 +81,8 @@ public partial class AdventureAudio : Node
         AddChild(_ambient);
     }
 
+    bool _emitters;
+
     public override void _ExitTree()
     {
         MusicManager.Pop(_wait);
@@ -103,6 +119,9 @@ public partial class AdventureAudio : Node
 
     public override void _Process(double delta)
     {
+        // Positional object sounds and hero footsteps live in the 3D world (the camera listens);
+        // the screen builds its world after this node is attached.
+        if (!_emitters && _screen.World is { } w && w.IsInsideTree()) { _emitters = true; w.AddChild(new MapSoundEmitters(_screen)); }
         UpdateWaitMusic();
         _ambientTimer -= delta;
         if (_ambientTimer > 0) return;
@@ -207,7 +226,7 @@ public partial class TownAudio : Node
 {
     Town.TownScreen _screen = null!;
     MusicManager.Handle? _music, _sub;
-    string? _subKind;
+    string? _subKind, _buildingSound;
     RaceMusic? _race;
     double _poll;
 
@@ -227,11 +246,26 @@ public partial class TownAudio : Node
     {
         if ((_poll -= delta) > 0) return;
         _poll = 0.25;
-        string? kind = null;
+        string? kind = null, building = null;
         foreach (var n in _screen.FindChildren("*", "", recursive: true, owned: false))
         {
             if (n is Town.TavernScreen) { kind = "tavern"; break; }
             if (n is Town.FortScreen) { kind = "dwelling"; break; }
+            building ??= n switch
+            {
+                Town.MageGuildScreen => _race?.MagicGuildSound,
+                Town.MarketScreen => _race?.MarketplaceSound,
+                Town.BlacksmithScreen => _race?.BlacksmithSound,
+                Town.TownBuildScreen => _race?.TownHallSound,
+                _ => null,
+            };
+        }
+        // Opening a building's screen plays the race's building sound once (TableRaceMusic
+        // MagicGuildSound / MarketplaceSound / BlacksmithSound / TownHallSound, read at 0053a6f0).
+        if (building != _buildingSound)
+        {
+            _buildingSound = building;
+            if (building != null) { AudioSystem.Trace($"town building sound {building}"); SoundLibrary.PlayUi(building); }
         }
         if (kind == _subKind) return;
         MusicManager.Pop(_sub);

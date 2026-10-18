@@ -93,7 +93,35 @@ public static class AudioSystem
     static void ApplyAmbientSwitch()
     {
         int i = AudioServer.GetBusIndex(AmbientBus);
-        if (i >= 0) AudioServer.SetBusMute(i, !OptionsStore.GetBool("sound_ambient_enable", true));
+        if (i >= 0) AudioServer.SetBusMute(i, _ambientStops > 0 || !OptionsStore.GetBool("sound_ambient_enable", true));
+    }
+
+    /// <summary>
+    /// Background music / ambience volume factors while an adventure-map dialog runs
+    /// (map.xdb dialogs/Item BackgroundMusicVolume / BackgroundAmbientVolume, percent; the
+    /// dialog serializer at 00a0da40). 1 outside dialogs.
+    /// </summary>
+    public static float MusicScale = 1f, AmbientScale = 1f;
+
+    static int _ambientStops;
+
+    /// <summary>
+    /// Silences ambience while a dialog-scene sentence with StopAmbient is in force (nested
+    /// requests count); <see cref="ReleaseAmbient"/> undoes one request.
+    /// </summary>
+    public static void StopAmbient() { EnsureInstalled(); _ambientStops++; ApplyAmbientSwitch(); }
+
+    public static void ReleaseAmbient() { _ambientStops = Math.Max(0, _ambientStops - 1); ApplyAmbientSwitch(); }
+
+    /// <summary>
+    /// Plays a UIGameRoot named music once over the current music (CNonLoopMusicPlayer:
+    /// HERO_FIND_GRAIL_MUSIC, BUILD_GRAIL_MUSIC — FUN_005a5d90, FUN_00615230).
+    /// </summary>
+    public static void PlayNamedMusicOnce(string id)
+    {
+        EnsureInstalled();
+        Trace($"music once {id}");
+        MusicManager.PlayOnce(id, Data.UiMusic(id));
     }
 
     /// <summary>Plays a UIGameRoot named sound (HERO_LEVEL_UP_SOUND, NEW_WEEK_GOOD_SOUND…).</summary>

@@ -307,6 +307,7 @@ public partial class AdvWaitScreen : UiScreen
             case Chat c:
                 var from = LobbyService.Instance.Room?.Players.FirstOrDefault(p => p.PlayerId == c.FromPlayerId)?.Name ?? $"#{c.FromPlayerId}";
                 _log.AddChat(from, c.Text);
+                H5Reborn.Audio.AudioSystem.PlayNamed("CHAT_GET_MESSAGE_SOUND"); // new chat line (00726630)
                 break;
             case ErrorMsg e: _log.AddSystem(e.Text); break;
             case GameStarted:

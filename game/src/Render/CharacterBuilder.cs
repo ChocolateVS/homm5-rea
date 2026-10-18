@@ -45,6 +45,9 @@ public partial class Character : Node3D
     /// <summary>The kind most recently started with <see cref="Play(string, bool, float)"/>.</summary>
     public string? CurrentKind { get; private set; }
 
+    /// <summary>The (AnimSet) the clips came from (for each kind's Sound/Effect refs), if any.</summary>
+    public string? AnimSetPath { get; internal set; }
+
     internal const string Lib = "h5/";
 }
 
@@ -72,7 +75,7 @@ public static class CharacterBuilder
         var skeleton = Anims.LoadSkeletonForModel(modelPath);
         var animations = setPath != null ? Anims.LoadAnimSet(setPath) : new();
 
-        var node = new Character { Name = name ?? System.IO.Path.GetFileNameWithoutExtension(modelPath) };
+        var node = new Character { Name = name ?? System.IO.Path.GetFileNameWithoutExtension(modelPath), AnimSetPath = setPath };
         if (skeleton == null || skeleton.Bones.Count == 0)
         {
             // Rigid model with no skeleton: static mesh, empty player so callers needn't special-case.

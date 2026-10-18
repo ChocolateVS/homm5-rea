@@ -112,9 +112,11 @@ public static class SoundLibrary
         Node player;
         if (def.Is3D && parent is Node3D)
         {
+            // FMOD 3D: full volume inside MinDistance, inverse rolloff (Min/distance) out to
+            // MaxDistance — Godot's inverse-distance model with UnitSize = Min, capped at 0 dB.
             var p3 = new AudioStreamPlayer3D
             {
-                Stream = def.Stream, VolumeDb = Mathf.LinearToDb(volume), PitchScale = pitch,
+                Stream = def.Stream, VolumeDb = Mathf.LinearToDb(volume), PitchScale = pitch, MaxDb = 0,
                 UnitSize = def.MinDistance, MaxDistance = def.MaxDistance, Autoplay = true,
                 Bus = bus,
             };

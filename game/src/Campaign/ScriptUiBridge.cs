@@ -152,6 +152,13 @@ public partial class ScriptUiBridge : Node
                     : Screen.Session.Game.HeroByName(V("object")) is { } sh ? sh.Pos : (Tile?)null;
                 if (at is { } t) Screen.Message("", text); // stock signs float over the object; shown as a box until the screen exposes its fly-text layer
                 break;
+            case "objective_state":
+                // The objective notice and its sound are for the objective's own player, and only
+                // for objectives the player can see (00c5fec0: ACTIVE/COMPLETED/FAILED_SOUND).
+                if ((int)F("player") - 1 == Screen.Session.Human.Index
+                    && Host.World.Objectives.TryGetValue(ScriptWorld.ObjectiveKey(V("name"), (int)F("player") - 1), out var ob) && ob.Visible)
+                    Audio.AdventureEventAudio.ObjectiveState((int)F("state"));
+                break;
         }
     }
 
@@ -196,6 +203,8 @@ public partial class ScriptUiBridge : Node
                 break;
             case "message_box":
             case "tutorial_message":
+                // Tutorial boxes play UIGameRoot TUTORIAL_SOUND as they open (00770df0).
+                if (req.Kind == "tutorial_message") Audio.AudioSystem.PlayNamed("TUTORIAL_SOUND");
                 AdvDialogs.Message(Screen.DialogLayer, "", ResolveText(req.Resource, req.Values), null, () => answer(true));
                 break;
             case "talk_box":
@@ -306,7 +315,26 @@ public partial class AdvMapDialogPlayer : Control
         _hudWasVisible = _screen.Hud.Visible;
         _screen.Hud.Visible = false;
         if (_camera is { } c) ApplyCamera(c);
+        ApplyDialogVolumes();
         Next();
+    }
+
+    float _speechScale = 1f;
+
+    /// <summary>
+    /// map.xdb dialogs/Item BackgroundMusicVolume / BackgroundAmbientVolume / SpeechVolume
+    /// (percent, read by the dialog serializer at 00a0da40): the music and ambience levels
+    /// under the dialog and its voice level, restored when it closes.
+    /// </summary>
+    void ApplyDialogVolumes()
+    {
+        var files = _screen.Session.Files;
+        var item = files.LoadXml(files.MapXdbPath).Root?.Element("dialogs")?.Elements("Item").ElementAtOrDefault(_dialog.Index);
+        float Pct(string name) => float.TryParse((string?)item?.Element(name), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) ? Math.Max(0, v) / 100f : 1f;
+        AudioSystem.MusicScale = Pct("BackgroundMusicVolume");
+        AudioSystem.AmbientScale = Pct("BackgroundAmbientVolume");
+        _speechScale = Pct("SpeechVolume");
     }
 
     void ApplyCamera(CameraPos c)
@@ -338,6 +366,7 @@ public partial class AdvMapDialogPlayer : Control
             var href = Rooted(sound);
             voice = VoiceLength.Of(href);
             _voice = SoundLibrary.Play(href, this);
+            if (_voice is AudioStreamPlayer vp && _speechScale < 1f) vp.VolumeDb += Mathf.LinearToDb(Math.Max(_speechScale, 0.0001f));
         }
         _time = 0;
         _length = voice + pause;
@@ -379,6 +408,7 @@ public partial class AdvMapDialogPlayer : Control
         cam.SetProcess(true);
         cam.InputEnabled = true;
         _screen.Hud.Visible = _hudWasVisible;
+        AudioSystem.MusicScale = AudioSystem.AmbientScale = 1f;
         QueueFree();
         _onFinished();
     }

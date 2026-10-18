@@ -162,6 +162,7 @@ public sealed class AdventureSession
         var c = cmd with { Player = Game.Current.Index };
         var r = Game.CommandSink?.Invoke(c) ?? Game.Apply(c);
         if (!r.Ok) GD.Print($"[H5] adventure command rejected: {cmd.GetType().Name}: {r.Error}");
+        else H5Reborn.Audio.AdventureEventAudio.OnHumanCommand(c);
         return r;
     }
 

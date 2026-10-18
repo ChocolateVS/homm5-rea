@@ -50,6 +50,8 @@ public partial class CreditsScreen : UiScreen
     {
         Bus.On("close", Close);
         Bus.On("esc_pressed", Close);
+        // UIGameRoot CREDITS_SCREEN_MUSIC_ID (read at 00793d20), over the paused menu theme.
+        Audio.MenuAudio.AttachOverlay(this, "CREDITS_SCREEN_MUSIC_ID");
         foreach (var file in new[] { "UI/Credits/Credits.txt", "UI/Credits/Nival.txt" })
             if (UiResources.Instance.Text(file) is { } text)
                 foreach (var line in text.Split('\n'))

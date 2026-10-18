@@ -493,6 +493,7 @@ public partial class AdventureScreen : Control
 
     async Task PlayEvent(AdvEvent ev, int player)
     {
+        Audio.AdventureEventAudio.OnEvent(this, ev, player);
         var s = Session.S;
         switch (ev)
         {

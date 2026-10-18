@@ -37,6 +37,12 @@ public partial class MusicManager : Node
         internal float Gain, Target;       // linear volume and where it's heading
         internal float Rate;               // gain per second
         internal bool Started, Finished;
+        /// <summary>Extra volume factor (dialog scene MusicVolume, map BackgroundMusicVolume).</summary>
+        public float Volume = 1f;
+        /// <summary>Seconds into the first track to start from (dialog MusicOverride StartTime).</summary>
+        internal float StartAt;
+        /// <summary>Fade used when this context is popped or suspended, overriding the track's FadeOut (ms).</summary>
+        internal int? FadeOutOverrideMs;
         public bool Active => Instance?._stack.Count > 0 && Instance._stack[^1] == this;
     }
 
@@ -63,6 +69,35 @@ public partial class MusicManager : Node
         var h = new Handle(name, new ConstantMusicCalculator(track), once: true, done);
         Instance!.PushHandle(h);
         return h;
+    }
+
+    /// <summary>A looping single track with its own volume and start offset (dialog scene music).</summary>
+    public static Handle PushTrack(string name, MusicTrack? track, float volume = 1f, float startAt = 0f)
+    {
+        AudioSystem.EnsureInstalled();
+        var h = new Handle(name, new ConstantMusicCalculator(track), once: false, done: null) { Volume = volume, StartAt = startAt };
+        Instance!.PushHandle(h);
+        return h;
+    }
+
+    /// <summary>
+    /// Silence over the current music: the context underneath fades out over
+    /// <paramref name="fadeOutMs"/> (or its track's FadeOut) and stays paused until this is popped.
+    /// </summary>
+    public static Handle PushSilence(string name, int? fadeOutMs = null)
+    {
+        AudioSystem.EnsureInstalled();
+        var m = Instance!;
+        if (fadeOutMs != null && m._stack.Count > 0) m._stack[^1].FadeOutOverrideMs = fadeOutMs;
+        var h = new Handle(name, new ConstantMusicCalculator(null), once: false, done: null);
+        m.PushHandle(h);
+        return h;
+    }
+
+    /// <summary>Changes a context's volume factor (takes effect immediately).</summary>
+    public static void SetVolume(Handle? h, float volume)
+    {
+        if (h != null) h.Volume = Math.Max(0f, volume);
     }
 
     /// <summary>Removes a context wherever it is in the stack; the new top resumes.</summary>
@@ -103,10 +138,17 @@ public partial class MusicManager : Node
     }
 
     /// <summary>Fades the context's track out, then pauses it in place.</summary>
+    static int FadeOutMs(Handle h)
+    {
+        var ms = h.FadeOutOverrideMs ?? h.Track?.FadeOutMs ?? 0;
+        h.FadeOutOverrideMs = null;
+        return ms;
+    }
+
     void Suspend(Handle h)
     {
         if (h.Player == null) return;
-        FadeTo(h, 0f, h.Track?.FadeOutMs ?? 0);
+        FadeTo(h, 0f, FadeOutMs(h));
     }
 
     void Resume(Handle h)
@@ -123,7 +165,7 @@ public partial class MusicManager : Node
     void Stop(Handle h)
     {
         if (h.Player == null) return;
-        FadeTo(h, 0f, h.Track?.FadeOutMs ?? 0);
+        FadeTo(h, 0f, FadeOutMs(h));
         _fadingOut.Add(h);
     }
 
@@ -149,7 +191,8 @@ public partial class MusicManager : Node
         h.Finished = false;
         h.Gain = 0;
         p.Finished += () => OnTrackFinished(h);
-        p.Play();
+        p.Play(h.StartAt);
+        h.StartAt = 0;
         FadeTo(h, h.Active ? 1f : 0f, track.FadeInMs);
         if (!h.Active) p.StreamPaused = true;
         AudioSystem.Trace($"play {h.Name}: {track.Path} ({track.FileName})");
@@ -198,7 +241,7 @@ public partial class MusicManager : Node
             float step = float.IsInfinity(h.Rate) ? 1f : h.Rate * dt;
             h.Gain = h.Gain < h.Target ? Math.Min(h.Target, h.Gain + step) : Math.Max(h.Target, h.Gain - step);
         }
-        h.Player.VolumeDb = Mathf.LinearToDb(Math.Max(h.Gain, 0.0001f));
+        h.Player.VolumeDb = Mathf.LinearToDb(Math.Max(h.Gain * h.Volume * AudioSystem.MusicScale, 0.0001f));
         // A suspended context stays paused at its position once faded out.
         if (h.Target <= 0 && h.Gain <= 0.0001f && !h.Active) h.Player.StreamPaused = true;
     }

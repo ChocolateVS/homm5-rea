@@ -39,7 +39,12 @@ public partial class DialogScenePlayer : Control
     double _time, _length;
     readonly List<(double At, Action Fire)> _cues = new();
     Node? _voice;
-    AudioStreamPlayer? _music;
+    // Scene music lives on the shared music stack (the adventure theme underneath pauses and
+    // resumes after the scene); every context the scene pushed is popped when it ends.
+    readonly List<Audio.MusicManager.Handle> _musicHandles = new();
+    Audio.MusicManager.Handle? _music;
+    float _musicVolume = 1f;
+    int _ambientStops;
     bool _finished;
 
     /// <summary>World units per map tile (docs/formats/arena.md).</summary>
@@ -107,7 +112,11 @@ public partial class DialogScenePlayer : Control
         AddChild(_ui);
         _ui.Bus.On("skip_scene", Finish);
 
-        if (Def.Music != null) _music = MusicPlayer.Play(this, Def.Music, Def.MusicVolume / 100f);
+        if (Def.Music != null)
+        {
+            _musicVolume = Def.MusicVolume / 100f;
+            PushMusic(Audio.MusicManager.PushTrack("dialog", Audio.AudioSystem.Data.Track(Def.Music), _musicVolume));
+        }
         NextSentence();
     }
 
@@ -247,7 +256,7 @@ public partial class DialogScenePlayer : Control
         _length = voiceLength + Math.Max(0, s.Duration);
         if (_length <= 0) _length = 3; // nothing to time the line by: keep it readable
 
-        if (s.StopMusic && _music != null) { _music.Stop(); _music = null; }
+        ApplySentenceAudio(s);
 
         if (speaker?.Character is { } sc && s.AnimName.Length > 0)
             _cues.Add((s.AnimationDelay, () => PlayOnce(speaker, s.AnimName)));
@@ -400,12 +409,48 @@ public partial class DialogScenePlayer : Control
         _voice = null;
     }
 
+    void PushMusic(Audio.MusicManager.Handle h)
+    {
+        _musicHandles.Add(h);
+        _music = h;
+    }
+
+    /// <summary>
+    /// Per-line music and ambience controls of a sentence (DialogScene sentences; field names
+    /// from the serializer at 00b31280): StopMusic / StopAmbient, MusicFadeOutDuration (ms),
+    /// MusicVolumePercent (0 = unchanged) and MusicOverride (Music, StartTime s, TimeShift s).
+    /// </summary>
+    void ApplySentenceAudio(SceneSentence s)
+    {
+        if (s.StopAmbient) { _ambientStops++; Audio.AudioSystem.StopAmbient(); }
+        if (s.StopMusic || s.MusicFadeOutDuration > 0)
+            PushMusic(Audio.MusicManager.PushSilence("dialog-stop", s.StopMusic && s.MusicFadeOutDuration <= 0 ? null : (int)s.MusicFadeOutDuration));
+        if (s.MusicVolumePercent > 0)
+        {
+            _musicVolume = Def.MusicVolume / 100f * (s.MusicVolumePercent / 100f);
+            Audio.MusicManager.SetVolume(_music, _musicVolume);
+        }
+        if (s.OverrideMusic is { } href)
+        {
+            void Switch()
+            {
+                if (_finished) return;
+                PushMusic(Audio.MusicManager.PushTrack("dialog-override", Audio.AudioSystem.Data.Track(href), _musicVolume, s.OverrideStartTime));
+            }
+            if (s.OverrideTimeShift > 0) _cues.Add((s.OverrideTimeShift, Switch));
+            else Switch();
+        }
+    }
+
     public void Finish()
     {
         if (_finished) return;
         _finished = true;
         StopVoice();
-        _music?.Stop();
+        for (int i = _musicHandles.Count - 1; i >= 0; i--) Audio.MusicManager.Pop(_musicHandles[i]);
+        _musicHandles.Clear();
+        _music = null;
+        for (; _ambientStops > 0; _ambientStops--) Audio.AudioSystem.ReleaseAmbient();
         QueueFree();
         _onFinished();
     }

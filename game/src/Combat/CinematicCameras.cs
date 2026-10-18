@@ -260,6 +260,7 @@ public sealed class CinematicCameras
         if (_active == null) return;
         _active = null;
         _camera.EndCinematic();
+        H5Reborn.Audio.AudioSystem.PlayNamed("WHOOSH_SOUND"); // back to the battle camera (0054a9e0 → 0053e980)
     }
 
     public bool Playing => _active != null;

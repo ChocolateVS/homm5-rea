@@ -55,6 +55,13 @@ public sealed class SceneSentence
     public string CustomName = "";
     public SceneCameraSet? Camera;
     public bool DynamicCamera = true, StopAmbient, StopMusic;
+    /// <summary>Scene music volume from this line on, percent of full (0 = unchanged).</summary>
+    public float MusicVolumePercent;
+    /// <summary>Fade the music out over this many milliseconds from this line on (0 = no fade).</summary>
+    public float MusicFadeOutDuration;
+    /// <summary>MusicOverride: switch to this Music after <see cref="OverrideTimeShift"/> s, starting <see cref="OverrideStartTime"/> s into it.</summary>
+    public string? OverrideMusic;
+    public float OverrideStartTime, OverrideTimeShift;
     /// <summary>Seconds; for voiced lines the time added after the voice.</summary>
     public float Duration, SoundDuration;
     public string? CustomAmbientLight;
@@ -161,6 +168,11 @@ public static class DialogSceneLoader
                 ActorAnimationIndex = (int)F(s.Element("ActorAnimationIndex"), -1),
                 AnimName = (string?)s.Element("AnimName") ?? "",
                 AnimationDelay = F(s.Element("AnimationDelay"), 0),
+                MusicVolumePercent = F(s.Element("MusicVolumePercent"), 0),
+                MusicFadeOutDuration = F(s.Element("MusicFadeOutDuration"), 0),
+                OverrideMusic = CampaignLoader.Href(s.Element("MusicOverride")?.Element("Music"), path),
+                OverrideStartTime = F(s.Element("MusicOverride")?.Element("StartTime"), 0),
+                OverrideTimeShift = F(s.Element("MusicOverride")?.Element("TimeShift"), 0),
             };
             var camHref = CampaignLoader.Href(s.Element("NewCameraSet"), path) ?? CampaignLoader.Href(s.Element("cameraSet"), path);
             if (camHref != null && xdb.FileSystem.Exists(camHref)) sentence.Camera = LoadCameraSet(xdb, camHref);
