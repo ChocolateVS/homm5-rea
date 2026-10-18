@@ -1,0 +1,111 @@
+using H5.Core.Data;
+
+namespace H5.Combat;
+
+// Spell hit resolution details recovered from H5_Game.exe by the combat spell audit
+// (docs/rules/audit/combat_spells.md): the integer magic-resistance chance, the protection percentage and
+// elemental artifact modifiers.
+public sealed partial class Battle
+{
+    /// <summary>
+    /// Magic resistance as an integer percent (exe FUN_0097c9f0, tail 0097cfab..0097d0bf):
+    /// +15 Resistance skill effect, Impregnable +5+level, Plate Mail of Stability +20, Boots of Interference +10;
+    /// with an Aura of Magic Resistance (own or adjacent) the sum becomes trunc(clamp(Aura+0.0001, 0, 1)·100 + sum).
+    /// Clamped to 0..100; 100 means the spell always fails.
+    /// </summary>
+    internal int MagicResistanceChance(Unit t)
+    {
+        int r = 0;
+        var h = HeroOf(t);
+        if (h.HasPerk(Sk.MagicResistance)) r += 15;
+        if (Spec(h, "HERO_SPEC_IMPREGNABLE") is var l && l >= 0) r += l + 5;
+        if (h.Present && h.Artifacts.Contains("PLATE_MAIL_OF_STABILITY")) r += 20;
+        if (h.Present && h.Artifacts.Contains("BOOTS_OF_INTERFERENCE")) r += 10;
+        if (t.Has(Ab.AuraMagicResistance) || Adjacent(t).Any(o => o.Side == t.Side && o.Has(Ab.AuraMagicResistance)))
+            r = ExeChop(Math.Clamp((double)(float)Stats.Get("combat/Creatures/Sylvan/AuraOfMagicResistance", 0.3) + 1e-4, 0, 1) * 100 + r);
+        return Math.Clamp(r, 0, 100);
+    }
+
+    /// <summary>
+    /// The resistance roll (exe FUN_0097d2a0): a chance of 100 always resists; otherwise rng(1,100) &lt; chance
+    /// resists (so a 15 % chance resists 14 times in 100), with a second roll for Dwarven Luck.
+    /// </summary>
+    bool RollResistance(Unit t, int chance)
+    {
+        if (chance >= 100) return true;
+        if (chance <= 0) return false;
+        if (S.Rng.Range(1, 100) < chance) return true;
+        return HeroOf(t).HasPerk(Sk.DwarvenLuck) && S.Rng.Range(1, 100) < chance;
+    }
+
+    /// <summary>Caster artifacts that let the target's resistance be skipped (0097cf89: artifact 0x2d Staff of Magi).</summary>
+    static bool IgnoresResistance(HeroState? caster) => caster != null && caster.Present && caster.Artifacts.Contains("STAFF_OF_MAGI");
+
+    /// <summary>
+    /// Elemental damage artifacts of the casting hero (exe FUN_00976db0): ×1.5 (truncated) for Titan's Trident
+    /// (air), Phoenix Feather Cape (fire), Evercold Icicle (water), Earthsliders (earth).
+    /// </summary>
+    double ElementArtifactDamage(HeroState? caster, string element, double dmg)
+    {
+        if (caster == null || !caster.Present) return dmg;
+        string? art = element switch
+        {
+            Elements.Air => "TITANS_TRIDENT", Elements.Fire => "PHOENIX_FEATHER_CAPE",
+            Elements.Water => "EVERCOLD_ICICLE", Elements.Earth => "ARTIFACT_EARTHSLIDERS", _ => null,
+        };
+        return art != null && caster.Artifacts.Contains(art) ? ExeChop(dmg * 1.5) : dmg;
+    }
+
+    /// <summary>
+    /// Elemental protection artifacts of the target's hero (exe FUN_0097af50): air — Ring of Lightning Protection ×0.5;
+    /// fire — Iceberg Shield ×0.5, Dwarven Smithy Hammer ×0.75; water — Dragon Flame Tongue ×0.5, Bearhide Wraps ×0.75;
+    /// earth — Rigid Mantle ×0.5. Returned as a multiplier on the damage share.
+    /// </summary>
+    double ElementProtectionArtifacts(Unit t, string element)
+    {
+        var h = HeroOf(t);
+        if (!h.Present) return 1;
+        double m = 1;
+        bool Has(string a) => h.Artifacts.Contains(a);
+        switch (element)
+        {
+            case Elements.Air: if (Has("RING_OF_LIGHTING_PROTECTION")) m *= 0.5; break;
+            case Elements.Fire:
+                if (Has("ICEBERG_SHIELD")) m *= 0.5;
+                if (Has("ARTIFACT_DWARVEN_SMITHY_HUMMER")) m *= 0.75;
+                break;
+            case Elements.Water:
+                if (Has("DRAGON_FLAME_TONGUE")) m *= 0.5;
+                if (Has("ARTIFACT_BEARHIDE_WRAPS")) m *= 0.75;
+                break;
+            case Elements.Earth: if (Has("ARTIFACT_RIGID_MANTLE")) m *= 0.5; break;
+        }
+        return m;
+    }
+
+    /// <summary>
+    /// Damage after protection (exe FUN_0097d600 → FUN_0097d2a0): the protection share P = 1 − clamp(product, 0, 1)
+    /// (1 for an immune or resisted target), reduced by the caster's Irresistible Magic to P·(1 − t/100) with
+    /// t = {0, 20, 40, 50, 75}[mastery] (table 00f46f18); P is converted to a whole percent by truncation and the
+    /// damage becomes trunc((1 − percent/100) · damage).
+    /// </summary>
+    internal static double ApplyProtectionPercent(double dmg, double damageMultiplier, bool fullProtection, Mastery invocation)
+    {
+        // Single precision like the exe's float locals: Protection alone (0.85f) gives 1 − 0.85f = 0.14999998f, so
+        // the advertised 15 % truncates to 14 % (fan manual p.321 "Nival rounding").
+        float prot = fullProtection ? 1f : 1f - Math.Clamp((float)damageMultiplier, 0f, 1f);
+        int[] table = { 0, 20, 40, 50, 75 };
+        prot = (1f - table[Math.Clamp((int)invocation, 0, 4)] * 0.01f) * prot;
+        int pct = Math.Clamp((int)(prot * 100f), 0, 100);
+        return ExeChop((1 - pct * (double)0.01f) * dmg);
+    }
+
+    /// <summary>The four elementals (creature ids 85..88, exe FUN_008a08c0) cast spells at reduced damage.</summary>
+    static bool IsElementalCaster(Unit? u) =>
+        u != null && u.CreatureId is "CREATURE_FIRE_ELEMENTAL" or "CREATURE_WATER_ELEMENTAL" or "CREATURE_EARTH_ELEMENTAL" or "CREATURE_AIR_ELEMENTAL";
+
+    /// <summary>The creature currently casting (set by DoCast), for caster-dependent damage rules.</summary>
+    Unit? _castingCreature;
+    /// <summary>Set by SpellHits when a damage spell was resisted but Irresistible Magic still lets a share through.</summary>
+    bool _resistedFullProtection;
+}

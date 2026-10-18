@@ -153,24 +153,21 @@ public sealed partial class Battle
 
     public double InitiativeOf(Unit u)
     {
+        // Exe FUN_008a4330: the base initiative is MULTIPLIED by each modifier in turn — enemy Prudent /
+        // Master of Initiative, one factor per active effect (FUN_004e4270), Storm Wind, Fog Veil — and the
+        // flat bonuses are added afterwards.
         var h = HeroOf(u);
-        double mult = 1 + Fx(u, "SPELL_HASTE") - Fx(u, "SPELL_SLOW");
-        if (u.HasEffect(H5.Combat.Fx.Benediction)) mult += Stats.Get("combat/HeroSkills/Knight/Prayer_InitiativeBonus", 0.1);
-        if (u.HasEffect(H5.Combat.Fx.Wound)) mult -= Stats.Get("combat/Creatures/Fortress/Wound_InitiativeDecrease", 0.2);
-        if (u.HasEffect(H5.Combat.Fx.BansheeHowl)) mult -= Stats.Get("combat/HeroSkills/Necromancer/DeathScream_InitiativePenalty", 0.1);
         var eh = Enemy(u.Side);
-        if (eh.Present && u.Flying && (eh.HasPerk(Sk.StormWind) || eh.HasPerk(Sk.BarbStormWind)))
-            mult -= Stats.Get("combat/HeroSkills/Ranger/StormWind_InitiativePenalty", 0.2);
-        if (eh.Present && u.MaxShots > 0 && !u.IsWarMachine && (eh.HasPerk(Sk.FogVeil) || eh.HasPerk(Sk.BarbFogVeil)))
-            mult -= Stats.Get("combat/HeroSkills/Ranger/FogVeil_InitiativePenalty", 0.1);
-        // Prudent / Master of Initiative: enemy creatures lose clamp(base + level·perLevel, 0, 1) initiative
-        // (exe FUN_008a4330); Master of Initiative also gives own creatures +1 % per level (spec description).
+        double mult = 1;
         if (eh.Present && eh.Specialization is "HERO_SPEC_PRUDENT" or "HERO_SPEC_MASTER_OF_INITIATIVE")
-            mult -= Math.Clamp(Stats.Get("combat/HeroSpecializations/Warlock/Prudent_InitiativeDisbonusBase", 0)
-                               + eh.Level * Stats.Get("combat/HeroSpecializations/Warlock/Prudent_InitiativeDisbonusPerLevel", 0.01), 0, 1);
-        if (h.Present && h.Specialization == "HERO_SPEC_MASTER_OF_INITIATIVE") mult += 0.01 * h.Level;
-        if (u.HasEffect(H5.Combat.Fx.Dash)) mult *= Stats.Get("combat/Creatures/Academy/Dash_InitiativeFactor", 2);
-        if (u.HasEffect("SPELL_HYPNOTIZE")) mult *= Math.Min(1, Fx(u, "SPELL_HYPNOTIZE"));
+            mult *= 1 - Math.Clamp(Stats.Get("combat/HeroSpecializations/Warlock/Prudent_InitiativeDisbonusBase", 0)
+                                   + eh.Level * Stats.Get("combat/HeroSpecializations/Warlock/Prudent_InitiativeDisbonusPerLevel", 0.01), 0, 1);
+        mult *= EffectInitiativeFactors(u, h);
+        if (h.Present && h.Specialization == "HERO_SPEC_MASTER_OF_INITIATIVE") mult *= 1 + 0.01 * h.Level;   // spec description (not in 008a4330)
+        if (eh.Present && u.Flying && (eh.HasPerk(Sk.StormWind) || eh.HasPerk(Sk.BarbStormWind)))
+            mult *= 1 - Stats.Get("combat/HeroSkills/Ranger/StormWind_InitiativePenalty", 0.2);
+        if (eh.Present && u.MaxShots > 0 && !u.IsWarMachine && (eh.HasPerk(Sk.FogVeil) || eh.HasPerk(Sk.BarbFogVeil)))
+            mult *= 1 - Stats.Get("combat/HeroSkills/Ranger/FogVeil_InitiativePenalty", 0.1);
         double init = u.BaseInitiative * Math.Max(0.1, mult);
         init += Fx(u, H5.Combat.Fx.BattleRage) > 0 ? Stats.Get("combat/Creatures/Fortress/BattleRage_InitiativeBonus", 2) : 0;
         if (u.HasEffect(H5.Combat.Fx.RageOfForest)) init += Stats.Get("combat/Creatures/Sylvan/RageOfTheForestInitiativeInc", 5);
@@ -178,6 +175,36 @@ public sealed partial class Battle
         init += RageBonus(u, "DEMON_RAGE_BONUS_INITIATIVE");
         if (u.HasEffect(H5.Combat.Fx.Frozen) || u.HasEffect(FxSeducing)) return 0;   // a seducing stack's ATB is frozen (p.181)
         return Math.Max(0.1, init);
+    }
+
+    /// <summary>
+    /// Product of the per-effect initiative factors (exe FUN_004e4270, keyed by the effect's spell id):
+    /// Slow 1−clamp(v,0,1); Haste 1+max(v,0), plus Expediter (own hero spec HERO_SPEC_HASTE) clamp(perLevel,0,100)·level;
+    /// Hypnotize clamp(v,0,1); Prayer 1+Prayer_InitiativeBonus (×WhiteKnight_PrayerMultiplier for White Knight);
+    /// Dash Dash_InitiativeFactor; Wound 1−clamp(Wound_InitiativeDecrease,0,1); Death Scream 1−DeathScream_InitiativePenalty.
+    /// </summary>
+    internal double EffectInitiativeFactors(Unit u, HeroState h)
+    {
+        double f = 1;
+        if (u.GetEffect("SPELL_SLOW") is { } slow) f *= 1 - Math.Clamp(slow.Value, 0, 1);
+        if (u.GetEffect("SPELL_HASTE") is { } haste)
+        {
+            double hf = 1 + Math.Max(0, haste.Value);
+            if (h.Present && h.Specialization == "HERO_SPEC_HASTE")
+                hf += h.Level * Math.Clamp(Stats.Get("combat/HeroSpecializations/Knight/Expediter_HasteBonusPerLevel", 0.01), 0, 100);
+            f *= hf;
+        }
+        if (u.GetEffect("SPELL_HYPNOTIZE") is { } hyp) f *= Math.Clamp(hyp.Value, 0, 1);
+        if (u.HasEffect(H5.Combat.Fx.Benediction))
+        {
+            double bonus = Stats.Get("combat/HeroSkills/Knight/Prayer_InitiativeBonus", 0.1);
+            if (h.Present && h.Specialization == "HERO_SPEC_WHITE_KNIGHT") bonus *= Stats.Get("combat/HeroSkills/Knight/WhiteKnight_PrayerMultiplier", 2);
+            f *= 1 + bonus;
+        }
+        if (u.HasEffect(H5.Combat.Fx.Dash)) f *= Stats.Get("combat/Creatures/Academy/Dash_InitiativeFactor", 2);
+        if (u.HasEffect(H5.Combat.Fx.Wound)) f *= 1 - Math.Clamp(Stats.Get("combat/Creatures/Fortress/Wound_InitiativeDecrease", 0.2), 0, 1);
+        if (u.HasEffect(H5.Combat.Fx.BansheeHowl)) f *= 1 - Stats.Get("combat/HeroSkills/Necromancer/DeathScream_InitiativePenalty", 0.1);
+        return f;
     }
 
     double HeroInitiative(int side) => Stats.Get("HeroInitiative", 10) * HeroInitiativeMultiplier(S.Heroes[side]);

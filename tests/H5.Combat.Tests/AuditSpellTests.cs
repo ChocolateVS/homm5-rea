@@ -1,0 +1,131 @@
+using H5.Core.Data;
+
+namespace H5.Combat.Tests;
+
+/// <summary>Combat spell rules confirmed against H5_Game.exe (docs/rules/audit/combat_spells.md).</summary>
+[Collection("game")]
+public class AuditSpellTests(GameDataFixture f)
+{
+    BattleState Setup((string id, int count)[] mine, (string id, int count)[] theirs)
+    {
+        var s = BattleSetup.Create(f.Db,
+            new ArmySetup { Hero = f.Db.DuelPresets[0].Hero, Army = mine.Select(a => new ArmySlot(a.id, a.count)).ToList() },
+            new ArmySetup { Hero = f.Db.DuelPresets[3].Hero, Army = theirs.Select(a => new ArmySlot(a.id, a.count)).ToList() },
+            7, skipTactics: true, arena: "Grass_Big_01");
+        foreach (var h in s.Heroes) { h.Specialization = ""; h.Artifacts.Clear(); h.Perks.Clear(); }
+        return s;
+    }
+
+    // exe FUN_008a4330 multiplies the base initiative by one factor per effect (FUN_004e4270): Haste 1+v,
+    // Wound 1−Wound_InitiativeDecrease — so Expert Haste (0.4) with a Wound gives ×1.4×0.8, not ×(1+0.4−0.2).
+    [Fact]
+    public void InitiativeEffectFactorsMultiply()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        var b = new Battle(f.Db, s);
+        var u = s.Units.Single(x => x.Side == 0 && x.CreatureId == "CREATURE_FOOTMAN");
+        double baseIni = b.InitiativeOf(u);
+        b.AddEffect(u, new Effect { Id = "SPELL_HASTE", Value = 0.4, Remaining = 5, Positive = true });
+        b.AddEffect(u, new Effect { Id = Fx.Wound, Remaining = 2 });
+        Assert.Equal(baseIni * 1.4 * 0.8, b.InitiativeOf(u), 6);
+    }
+
+    // exe FUN_004e4270 case 0x18: Expediter (own hero spec HERO_SPEC_HASTE) adds level·Expediter_HasteBonusPerLevel to Haste.
+    [Fact]
+    public void ExpediterBoostsHaste()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        var b = new Battle(f.Db, s);
+        var u = s.Units.Single(x => x.Side == 0 && x.CreatureId == "CREATURE_FOOTMAN");
+        double baseIni = b.InitiativeOf(u);
+        b.AddEffect(u, new Effect { Id = "SPELL_HASTE", Value = 0.2, Remaining = 5, Positive = true });
+        s.Heroes[0].Specialization = "HERO_SPEC_HASTE";
+        s.Heroes[0].Level = 10;
+        Assert.Equal(baseIni * (1 + 0.2 + 10 * 0.01), b.InitiativeOf(u), 5);
+    }
+
+    // exe 00976c0d / 00976c53: spell base damage and the empowered ×1.5 are converted in chop mode (truncated).
+    [Fact]
+    public void SpellBaseDamageTruncates()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        var b = new Battle(f.Db, s);
+        var arrow = f.Db.Spell("SPELL_MAGIC_ARROW")!;
+        var emp = f.Db.Spell("SPELL_EMPOWERED_MAGIC_ARROW") ?? arrow;
+        Assert.Equal(133, b.SpellBaseDamage(arrow, arrow, Mastery.Expert, 7.7));      // 72 + 8·7.7 = 133.6
+        if (emp != arrow) Assert.Equal(199, b.SpellBaseDamage(arrow, emp, Mastery.Expert, 7.625));   // 133·1.5 = 199.5
+    }
+
+    // exe FUN_0097d600 / 0097d2a0: protection becomes a truncated whole percent of a float share — Protection alone
+    // (0.85f) gives 14 %, so 100 damage becomes 86 (fan manual p.321).
+    [Fact]
+    public void ProtectionPercentIsTruncated()
+    {
+        Assert.Equal(86, Battle.ApplyProtectionPercent(100, 0.85, false, Mastery.None));
+        Assert.Equal(50, Battle.ApplyProtectionPercent(100, 0.5, false, Mastery.None));
+        // Irresistible Magic: immune / resisted targets take (table 00f46f18) 20/40/50/75 %.
+        Assert.Equal(50, Battle.ApplyProtectionPercent(100, 1, true, Mastery.Expert));
+        Assert.Equal(20, Battle.ApplyProtectionPercent(100, 1, true, Mastery.Basic));
+        // 72 % protection with Expert Irresistible Magic → 36 % → 64 damage (fan manual p.322 example).
+        Assert.Equal(64, Battle.ApplyProtectionPercent(100, 0.28, false, Mastery.Expert));
+    }
+
+    // exe FUN_0097c9f0 tail: Resistance +15, Impregnable level+5, Plate Mail of Stability +20, Boots of Interference +10,
+    // Aura of Magic Resistance → trunc(clamp(0.3+1e-4)·100 + sum); clamped to 100.
+    [Fact]
+    public void MagicResistanceChanceSumsLikeTheExe()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        var b = new Battle(f.Db, s);
+        var u = s.Units.Single(x => x.Side == 0 && x.CreatureId == "CREATURE_FOOTMAN");
+        Assert.Equal(0, b.MagicResistanceChance(u));
+        s.Heroes[0].Perks.Add("HERO_SKILL_RESISTANCE");
+        s.Heroes[0].Artifacts.Add("PLATE_MAIL_OF_STABILITY");
+        s.Heroes[0].Artifacts.Add("BOOTS_OF_INTERFERENCE");
+        Assert.Equal(45, b.MagicResistanceChance(u));
+        s.Heroes[0].Specialization = "HERO_SPEC_IMPREGNABLE";
+        s.Heroes[0].Level = 60;
+        Assert.Equal(100, b.MagicResistanceChance(u));
+    }
+
+    // exe FUN_00976db0 (spell 0xd, spec 0x2a): the Disrupter bonus applies to SPELL_DISRUPTING_RAY ("Vulnerability").
+    [Fact]
+    public void DisrupterDamagesWithDisruptingRay()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 200) });
+        s.Heroes[0].Specialization = "HERO_SPEC_DISRUPTER";
+        s.Heroes[0].Level = 10;
+        s.Heroes[0].Spells.Add("SPELL_DISRUPTING_RAY");
+        s.Heroes[0].Mana = 100;
+        var b = new Battle(f.Db, s);
+        b.Begin();
+        var target = s.Units.Single(x => x.Side == 1 && x.CreatureId == "CREATURE_PEASANT");
+        // Everyone else defends until the hero's turn comes up.
+        for (int i = 0; i < 40 && s.Active != Actor.Hero(0) && s.Active is not null; i++)
+        {
+            int a = s.Active!.Value;
+            int side = Actor.IsHero(a) ? Actor.HeroSide(a) : s.Unit(a)!.Side;
+            Assert.True(b.Apply(new DefendCmd(a) { Side = side }).Ok);
+        }
+        Assert.Equal(Actor.Hero(0), s.Active);
+        int hpBefore = target.TotalHealth;
+        var r = b.Apply(new CastSpellCmd(Actor.Hero(0), "SPELL_DISRUPTING_RAY", target.Id) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        int expected = (int)((10 - 1) * 10 / 3.0 + 10);   // trunc((lvl−1)·PerLevel/trunc(Div) + Base) = 40
+        int dealt = hpBefore - target.TotalHealth;
+        // The peasants' own resistance/protection (none here) is the only thing between the formula and the result.
+        Assert.True(r.Events.OfType<SpellResisted>().Any() || dealt == expected, $"dealt {dealt}, expected {expected}");
+    }
+
+    // exe 00a34836: Arcane Training min(cost·0.8, cost−1) is truncated — a 7-mana spell costs 5, not 6.
+    [Fact]
+    public void ArcaneTrainingCostTruncates()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        var b = new Battle(f.Db, s);
+        var h = s.Heroes[0];
+        h.Perks.Add("HERO_SKILL_ARCANE_TRAINING");
+        var sp = f.Db.Spells.Values.First(x => x.ManaCost == 7 && x.School is "MAGIC_SCHOOL_DARK" or "MAGIC_SCHOOL_LIGHT" or "MAGIC_SCHOOL_DESTRUCTIVE" or "MAGIC_SCHOOL_SUMMONING");
+        Assert.Equal(5, b.HeroManaCost(h, sp));
+    }
+}

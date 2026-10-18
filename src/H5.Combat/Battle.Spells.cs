@@ -188,6 +188,9 @@ public sealed partial class Battle
 
     // Rounding helpers matching the x87 code: ROUND is round-half-even, int division truncates.
     static int ExeRound(double v) => (int)Math.Round(v, MidpointRounding.ToEven);
+    // The spell code converts float → int with the FPU in chop mode (FNSTCW; OR AH,0x0C; FLDCW; FISTP — exe
+    // 00976c0d, 0097d6ad, 0097d5c4, 00a34836, 00978290), i.e. truncation toward zero, not round-to-nearest.
+    static int ExeChop(double v) => (int)Math.Truncate(v);
 
     /// <summary>
     /// Hero spell cost: base cost (exe FUN_00a34740) then combat modifiers (FUN_009781e0).
@@ -204,7 +207,7 @@ public sealed partial class Battle
         if (sp.School == "MAGIC_SCHOOL_WARCRIES")
         {
             if (h.HasPerk(Sk.ShoutTraining))
-                c = ExeRound(Math.Min((1.001 - Stats.Get("combat/HeroSkills/Barbarian/VoiceTraining_WarcryCostDiscount", 0.2)) * c, c - 1.0));
+                c = ExeChop(Math.Min((1.001 - Stats.Get("combat/HeroSkills/Barbarian/VoiceTraining_WarcryCostDiscount", 0.2)) * c, c - 1.0));
             if (h.Specialization == "HERO_SPEC_WAR_LEADER")
             {
                 int div = Math.Max(1, (int)Stats.Get("combat/HeroSpecializations/Barbarian/WarLeader_WarcryCostReducePerHeroLevel/LevelDivisor", 1));
@@ -219,15 +222,15 @@ public sealed partial class Battle
         {
             double f = 1 - Stats.Get("combat/HeroSpecializations/Warlock/PowerBargain_CostReduce", 0)
                          - h.Level * Stats.Get("combat/HeroSpecializations/Warlock/PowerBargain_CostReducePerLevel", 0);
-            c = ExeRound(Math.Clamp(f, 0.5, 1.0) * c);
+            c = ExeChop(Math.Clamp(f, 0.5, 1.0) * c);
         }
-        if (h.HasPerk(Sk.ArcaneTraining)) c = ExeRound(Math.Min(c * 0.8, c - 1.0));
+        if (h.HasPerk(Sk.ArcaneTraining)) c = ExeChop(Math.Min(c * (double)0.8f, c - 1.0));
         c = Math.Max(0, c);
 
         int adjust = 0;
         if (S.LivingOf(h.Side).Any(u => u.Has(Ab.EnergyChannel)))
         {
-            int r = ExeRound(c * 0.75);
+            int r = ExeChop(c * 0.75);
             adjust = r != c ? 0 : -1;    // guarantees at least one point of discount
             c = r;
         }
@@ -239,7 +242,7 @@ public sealed partial class Battle
         }
         if (sp.School == "MAGIC_SCHOOL_LIGHT" && h.Specialization == "HERO_SPEC_WHITE_KNIGHT") c -= 1;
         if (e.Present && CorruptPerk(sp.School) is { Length: > 0 } corrupt && e.HasPerk(corrupt))
-            c = ExeRound((1 + Stats.Get("combat/HeroSkills/Barbarian/CorruptMagic_SpellCostIncrease", 0.5)) * c);
+            c = ExeChop((1 + Stats.Get("combat/HeroSkills/Barbarian/CorruptMagic_SpellCostIncrease", 0.5)) * c);
         return Math.Max(0, c + adjust);
     }
 
@@ -263,7 +266,7 @@ public sealed partial class Battle
         var h = HeroOf(u);
         if (h.HasPerk(Sk.RefinedMana) || h.HasPerk(Sk.BarbRefinedMana)) c /= 2;
         if (e.Present && CorruptPerk(sp.School) is { Length: > 0 } corrupt && e.HasPerk(corrupt))
-            c = ExeRound((1 + Stats.Get("combat/HeroSkills/Barbarian/CorruptMagic_SpellCostIncrease", 0.5)) * c);
+            c = ExeChop((1 + Stats.Get("combat/HeroSkills/Barbarian/CorruptMagic_SpellCostIncrease", 0.5)) * c);
         return Math.Max(0, c + adjust);
     }
 
@@ -336,7 +339,9 @@ public sealed partial class Battle
         Emit(new ManaChanged(u.Id, u.Mana));
         RageEvent(u, "CastSpellRP");
         if (defile == 1) { Emit(new SpellResisted(castTarget?.Id ?? u.Id, sp.Id)); EndAction(u.Id, 0); return null; }
-        ResolveSpell(u.Id, Controller(u), sp, known.Mastery, cp, castTarget, castCell, fromHero: false);
+        _castingCreature = u;
+        try { ResolveSpell(u.Id, Controller(u), sp, known.Mastery, cp, castTarget, castCell, fromHero: false); }
+        finally { _castingCreature = null; }
         ManaBurst(u);
         EndAction(u.Id, 0);
         return null;
@@ -442,13 +447,14 @@ public sealed partial class Battle
     }
 
     /// <summary>
-    /// Base damage of a damaging spell (exe 00976b90): round(max(1, Base + PerPower·SP)) for the mastery,
-    /// then round(×1.5) for an empowered variant. Rounding is to nearest (x87 default mode).
+    /// Base damage of a damaging spell (exe 00976b90): trunc(max(1, Base + PerPower·SP)) for the mastery,
+    /// then trunc(×1.5) for an empowered variant. Both conversions run with the FPU in chop mode
+    /// (00976c0d / 00976c53), so they truncate.
     /// </summary>
-    double SpellBaseDamage(SpellDef baseDef, SpellDef cast, Mastery m, double power)
+    internal double SpellBaseDamage(SpellDef baseDef, SpellDef cast, Mastery m, double power)
     {
-        double dmg = Math.Round(Math.Max(1, baseDef.DamageAt(m).Eval(power)), MidpointRounding.ToEven);
-        if (cast.Id.StartsWith("SPELL_EMPOWERED_")) dmg = Math.Round(dmg * 1.5, MidpointRounding.ToEven);
+        double dmg = ExeChop(Math.Max(1, baseDef.DamageAt(m).Eval(power)));
+        if (cast.Id.StartsWith("SPELL_EMPOWERED_")) dmg = ExeChop(dmg * 1.5);
         return dmg;
     }
 
@@ -489,8 +495,9 @@ public sealed partial class Battle
                 if (target == null) return;
                 double dmg = SpellBaseDamage(baseDef, sp, m, power);
                 if (id == "SPELL_DIVINE_VENGEANCE") dmg *= Math.Sqrt(target.Frags);                        // p.191
+                // Call of the Wasp (exe 00976db0, spec 0x1a): trunc((level·perLevel + 1) · damage).
                 if (id == "SPELL_WASP_SWARM" && hero != null && Spec(hero, "HERO_SPEC_CALL_OF_THE_WASP") is var wl && wl >= 0)
-                    dmg *= 1 + Stats.Get("combat/HeroSpecializations/Ranger/CallOfTheWasp_DamageBonusPerLevel", 0.05) * wl;
+                    dmg = ExeChop((wl * (double)(float)Stats.Get("combat/HeroSpecializations/Ranger/CallOfTheWasp_DamageBonusPerLevel", 0.05) + 1) * dmg);
                 if (SpellHits(side, baseDef, target, hostile: true, hero))
                 {
                     affected.Add(target.Id);
@@ -695,12 +702,13 @@ public sealed partial class Battle
                 {
                     affected.Add(target.Id);
                     if (hero != null && baseDef.School == "MAGIC_SCHOOL_LIGHT" && Controller(target) == side) SpecAfterFriendlyLightSpell(hero, target);
-                    // Disrupter: Vulnerability (base damage 0) also deals Disrupter_Damage + (level-1)·PerLevel/Divisor,
-                    // then the usual spell damage modifiers (exe FUN_00976db0, effect type 0xd).
-                    if (id == "SPELL_VULNERABILITY" && hero != null && Spec(hero, "HERO_SPEC_DISRUPTER") is var dl && dl >= 0 && target.Alive)
+                    // Disrupter: Vulnerability (SPELL_DISRUPTING_RAY, id 0xd — its in-game name; base damage 0) also deals
+                    // trunc((level−1)·PerLevel / trunc(Divisor) + Disrupter_Damage), then the usual spell damage
+                    // modifiers (exe FUN_00976db0, spell 0xd + spec 0x2a; chop-mode conversions).
+                    if (id == "SPELL_DISRUPTING_RAY" && hero != null && Spec(hero, "HERO_SPEC_DISRUPTER") is var dl && dl >= 0 && target.Alive)
                     {
-                        double div = Math.Max(1, ExeRound(Stats.Get("combat/HeroSpecializations/Wizard/Disrupter_DamageLevelDivisor", 3)));
-                        double dmg = ExeRound((dl - 1) * Stats.Get("combat/HeroSpecializations/Wizard/Disrupter_DamagePerLevel", 10) / div
+                        double div = Math.Max(1, ExeChop(Stats.Get("combat/HeroSpecializations/Wizard/Disrupter_DamageLevelDivisor", 3)));
+                        double dmg = ExeChop((dl - 1) * Stats.Get("combat/HeroSpecializations/Wizard/Disrupter_DamagePerLevel", 10) / div
                                               + Stats.Get("combat/HeroSpecializations/Wizard/Disrupter_Damage", 10));
                         DealSpellDamage(target, baseDef, dmg, side, ignoreResist: false, hero: hero, mastery: m);
                     }
@@ -747,13 +755,16 @@ public sealed partial class Battle
             || id == "SPELL_CURSE" && t.Has(Ab.ImmuneCurse))
         { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
         // Stormcaller: the caster's Air (lightning) spells skip the resistance roll; immunities still apply
-        // (exe FUN_0097c9f0, element 1 = Air).
-        bool irresistible = hero != null && hero.Specialization == "HERO_SPEC_STORMCALLER" && sp.Element == Elements.Air;
-        if (hostile && Controller(t) != side && !physical && !irresistible)
+        // (exe FUN_0097c9f0, element 1 = Air). Staff of Magi on the caster skips it too (0097cf89).
+        bool irresistible = hero != null && hero.Specialization == "HERO_SPEC_STORMCALLER" && sp.Element == Elements.Air
+                            || IgnoresResistance(hero);
+        if (hostile && Controller(t) != side && !physical && !irresistible && RollResistance(t, MagicResistanceChance(t)))
         {
-            double res = MagicResistanceOf(t);
-            bool resisted = S.Rng.Chance(res) || HeroOf(t).HasPerk(Sk.DwarvenLuck) && S.Rng.Chance(res);
-            if (resisted) { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
+            // A resisted damage spell is 100 % protection; Irresistible Magic still lets its share through (0097d2a0,
+            // fan manual p.322).
+            if (IsDamageSpell(id) && hero != null && hero.SkillLevel(Sk.Invocation) > Mastery.None) { _resistedFullProtection = true; return true; }
+            Emit(new SpellResisted(t.Id, sp.Id));
+            return false;
         }
         return true;
     }
@@ -768,21 +779,23 @@ public sealed partial class Battle
     {
         if (!t.Alive) return 0;
         string id = BaseSpell(sp.Id);
+        bool fullProtection = _resistedFullProtection;
+        _resistedFullProtection = false;
         dmg *= _spellDamageScale;
         dmg += ElementalChainBonus(hero, sp, t, dmg);
+        // Caster-side modifiers before protection (exe FUN_00976db0): elemental artifacts ×1.5, and spells cast by
+        // elementals ×Neutral/SpellDamageMultiplier.
+        dmg = ElementArtifactDamage(hero, sp.Element, dmg);
+        if (IsElementalCaster(_castingCreature))
+            dmg = ExeChop(dmg * (double)(float)Stats.Get("combat/Creatures/Neutral/SpellDamageMultiplier", 0.3));
         if (!ignoreResist)
         {
-            double mult = SpellDamageMultiplier(t, sp, side);
+            double mult = SpellDamageMultiplier(t, sp, side) * ElementProtectionArtifacts(t, sp.Element);
             bool immune = (sp.Element != Elements.None && ElementImmune(t, sp.Element)) || t.Has(Ab.ImmuneMagic);
-            if (hero != null && hero.SkillLevel(Sk.Invocation) is var inv && inv > Mastery.None)
-            {
-                // Irresistible Magic (p.140, p.322): reduces protection, and immune targets still take a share.
-                double red = inv switch { Mastery.Basic => 0.2, Mastery.Advanced => 0.4, Mastery.Expert => 0.5, _ => 0.75 };
-                if (immune) mult = red;
-                else mult = 1 - (1 - mult) * (1 - red);
-            }
-            else if (immune) return 0;
-            dmg *= mult;
+            var inv = hero != null ? hero.SkillLevel(Sk.Invocation) : Mastery.None;
+            if ((immune || fullProtection) && inv == Mastery.None) return 0;
+            // Irresistible Magic (p.140, p.322): reduces protection, and immune / resisted targets still take a share.
+            dmg = ApplyProtectionPercent(dmg, mult, immune || fullProtection, inv);
         }
         if (hero != null)
         {
