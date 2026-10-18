@@ -32,7 +32,10 @@ public sealed partial class Battle
         if (t.HasEffect(H5.Combat.Fx.Invisible)) return "target is invisible";
         if (t.CreatureId == "BLADE_BARRIER") return "blade barrier cannot be hit by the hero";
         HeroStrike(h, t, levelBonus: 0, friendly: false);
-        EndAction(Actor.Hero(c.Side), 0, false);
+        // Will of Urgash (Ogres) set: the Barbarian loses 30% less ATB when attacking.
+        double reset = h.Class == "HERO_CLASS_BARBARIAN" && Specials.Pieces(h, Specials.Ogres) >= 2
+            ? Stats.Get("ArtifactsSetsEffectsConsts/Ogres_2Barbarian_HeroAttack_ATBLessPercents", 30) / 100.0 : 0;
+        EndAction(Actor.Hero(c.Side), reset, false);
         return null;
     }
 
@@ -75,7 +78,9 @@ public sealed partial class Battle
         var h = S.Heroes[target.Side];
         if (!attacker.Alive || !h.Present || !h.Links.TryGetValue(Sk.RetaliationStrike, out var id) || id != target.Id) return;
         Emit(new AbilityTriggered(Actor.Hero(h.Side), Sk.RetaliationStrike, attacker.Id));
-        HeroStrike(h, attacker, levelBonus: 3, friendly: false, extraMult: h.HasPerk(Sk.UnstoppableCharge) ? 3 : 1);
+        double mult = h.HasPerk(Sk.UnstoppableCharge) ? 3 : 1;
+        if (h.Specialization == "HERO_SPEC_JOUSTING") mult *= 1 + Stats.Get("combat/HeroSpecializations/Knight/CavalryCommander_HolyChargeBonus", 0.01) * h.Level;
+        HeroStrike(h, attacker, levelBonus: 3, friendly: false, extraMult: mult);
     }
 
     /// <summary>Powerful Blow: the hero follows up the linked creature's attacks (p.139).</summary>
@@ -127,9 +132,15 @@ public sealed partial class Battle
                 break;
             case "BANSHEE_HOWL":
                 h.AbilityUses["BANSHEE_HOWL"] = 1;
+            {
+                double howl = 1;
+                if (h.Specialization == "HERO_SPEC_DARK_EMISSARY") howl *= Stats.Get("combat/HeroSkills/Necromancer/DarkEissary_DeathScreamMultiplier", 2);
+                if (Specials.Pieces(h, Specials.Necromancers) >= 2) howl = Math.Max(howl, 2);
                 foreach (var u in S.LivingOf(1 - c.Side).Where(IsLiving).ToList())
-                    AddEffect(u, new Effect { Id = H5.Combat.Fx.BansheeHowl, Value = 1 + (h.HasPerk(Sk.HowlOfTerror) ? 6 : 0),
-                        Remaining = 2 + 0.25 * h.Level, SourceSide = c.Side, Dispellable = false });
+                    AddEffect(u, new Effect { Id = H5.Combat.Fx.BansheeHowl, Value = howl + (h.HasPerk(Sk.HowlOfTerror) ? 6 : 0), Value2 = howl,
+                        Remaining = 2 + Stats.Get("combat/HeroSkills/DeathScreamLevelMultiplier", 0.25) * h.Level, SourceSide = c.Side, Dispellable = false });
+                if (Specials.Pieces(h, Specials.Necromancers) >= 2) reset = 0.5;
+            }
                 break;
             case "RAIN_OF_ARROWS":
                 foreach (var u in S.LivingOf(1 - c.Side).Where(u => IsFavoredEnemy(h, u)).ToList())
@@ -456,7 +467,9 @@ public sealed partial class Battle
                 int lvl = Math.Clamp((int)h.SkillLevel(Sk.Gating) - 1, 0, Math.Max(0, portions.Length - 1));
                 double portion = portions.Length > 0 ? portions[lvl] : 0.3;
                 if (h.HasPerk(Sk.GateMaster)) portion += Stats.Get("combat/HeroSkills/DemonLord/Gating/GatingMasteryPortionBonus", 0.2);
+                if (h.Specialization == "HERO_SPEC_GATE_KEEPER") portion += Stats.Get("combat/HeroSkills/DemonLord/Gating/GatekeeperHeroSpecPerLevelPortionBonus", 0.01) * h.Level;
                 if (h.HasPerk(Sk.SwarmingGate) && S.Rng.Chance(0.1 + Math.Max(0, h.Luck) * 0.05)) portion *= 2;
+                if (Specials.Pieces(h, Specials.Demonic) >= 2) portion *= 1 + Stats.Get("ArtifactsSetsEffectsConsts/Demonic_2DemonLord_GatingBonusPercents", 25) / 100.0;
                 int n = Math.Max(1, (int)(u.Count * portion));
                 Emit(new AbilityTriggered(u.Id, c.Ability));
                 var g = SummonStackNear(u, u.CreatureId, n, c.Ability, Stats.Get("combat/HeroSkills/DemonLord/Gating/GatedStartATB", 0));

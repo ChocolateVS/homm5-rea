@@ -19,6 +19,8 @@ public sealed class GameDatabase
     public Dictionary<string, WarMachineDef> WarMachines { get; } = new();
     public Dictionary<string, HeroDef> Heroes { get; } = new(StringComparer.OrdinalIgnoreCase);
     public List<DuelPreset> DuelPresets { get; } = new();
+    /// <summary>Artifact set effect id (ARTFSET_EFFECT_*) → member artifacts (DefaultStats ArtifactSets).</summary>
+    public Dictionary<string, List<string>> ArtifactSets { get; } = new();
     public RpgStats Stats { get; private set; } = null!;
     public ExperienceTable Experience { get; } = new();
     public List<string> Warnings { get; } = new();
@@ -48,6 +50,7 @@ public sealed class GameDatabase
         db.LoadWarMachines();
         db.LoadHeroes(fs);
         db.LoadDuelPresets();
+        db.LoadArtifactSets();
         db._x = null!;
         return db;
     }
@@ -221,6 +224,8 @@ public sealed class GameDatabase
                 Id = root.Str("InternalName"), SourcePath = path, Class = root.Str("Class"),
                 Specialization = root.Str("Specialization"), Town = root.Str("TownType"),
                 Name = Text(ed, "NameFileRef", path),
+                SpecializationName = Text(root, "SpecializationNameFileRef", path),
+                SpecializationDescription = Text(root, "SpecializationDescFileRef", path),
             };
             var ps = root.Element("PrimarySkill");
             if (ps != null && ps.Str("SkillID") is { Length: > 0 } psId && psId != "HERO_SKILL_NONE")
@@ -253,6 +258,7 @@ public sealed class GameDatabase
             Experience = root.Int("Experience"),
         };
         hi.Level = Experience.LevelFor(hi.Experience);
+        hi.FavoriteEnemies.AddRange(root.Element("Editable").Items("FavoriteEnemies").Select(e => e.Value.Trim()).Where(v => v.StartsWith("CREATURE_")));
         foreach (var s in root.Items("armySlots"))
             if (s.Str("Creature") is { Length: > 0 } cr && cr != "CREATURE_UNKNOWN" && s.Int("Count") > 0)
                 hi.Army.Add(new ArmySlot(cr, s.Int("Count")));
@@ -263,6 +269,12 @@ public sealed class GameDatabase
         if (shared?.PrimarySkill is { } primary && hi.Skills.All(s => s.SkillId != primary.SkillId))
             hi.Skills.Insert(0, primary);
         return hi;
+    }
+
+    void LoadArtifactSets()
+    {
+        foreach (var set in Stats.Node("ArtifactSets/Sets")?.Elements("Item") ?? Enumerable.Empty<XElement>())
+            ArtifactSets[set.Str("Effect")] = set.Items("Artifacts").Select(a => a.Str("Artifact")).Where(a => a.Length > 0).ToList();
     }
 
     void LoadDuelPresets()

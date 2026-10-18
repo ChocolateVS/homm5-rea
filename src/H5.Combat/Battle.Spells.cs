@@ -239,6 +239,7 @@ public sealed partial class Battle
         int ucost = CreatureManaCost(u, sp);
         if (u.Mana < ucost) return "not enough mana";
         int cp = CreatureSpellPower(u.Count, Math.Max(1, u.WeeklyGrowth));
+        if (Specials.Pieces(HeroOf(u), Specials.Magis) >= 2) cp *= (int)Stats.Get("ArtifactsSetsEffectsConsts/Magis_2_Casters_SpellpowerMultiplier", 2);
         if (ValidateSpellTarget(u.Id, Controller(u), sp, known.Mastery, c.TargetId, c.Cell) is { } te2) return te2;
         u.Mana -= ucost;
         Emit(new ManaChanged(u.Id, u.Mana));
@@ -275,6 +276,8 @@ public sealed partial class Battle
             var mastery = sp.School == "MAGIC_SCHOOL_WARCRIES" ? h.SkillLevel(Sk.Shout) : h.SkillLevel(Sk.Sorcery);
             reset = Math.Min(3, (int)mastery) * 0.1;                                           // p.312
         }
+        if (h.Class == "HERO_CLASS_WIZARD" && Specials.Pieces(h, Specials.Magis) >= 2)
+            reset += Stats.Get("ArtifactsSetsEffectsConsts/Magis_4_2Wizard_AfterCastATBLessPercents", 10) / 100.0;
         var e = Enemy(h.Side);
         if (e.Present && (e.HasPerk(Sk.Distract) || e.HasPerk(Sk.BarbDistract))) reset -= Stats.Get("combat/HeroSkills/Runemage/Distract_EnemyHeroInitiativeDrop", 0.15);
         string detain = sp.School switch
@@ -310,6 +313,7 @@ public sealed partial class Battle
             if (target == "TARGET_HOSTILE" && friendly && sp.Id != "SPELL_DISPEL") return "spell must target an enemy";
             if (target == "TARGET_FRIEND" && !friendly) return "spell must target a friendly stack";
             if (t.IsObject) return "invalid target";
+            if (t.IsWarMachine && !IsDamageSpell(BaseSpell(sp.Id))) return "war machines can only be hit by damage spells";
             if (t.HasEffect(H5.Combat.Fx.Invisible) && !friendly) return "target is invisible";
             if (!t.Alive && sp.Id is not ("SPELL_RESURRECT" or "SPELL_ANIMATE_DEAD")) return "target is dead";
             if (sp.Id == "SPELL_RESURRECT" && (t.Has(Ab.Elemental) || t.Has(Ab.Mechanical) || IsUndeadLike(t))) return "cannot resurrect this creature";
@@ -368,6 +372,8 @@ public sealed partial class Battle
                 if (target == null) return;
                 double dmg = baseDef.DamageAt(m).Eval(power);
                 if (id == "SPELL_DIVINE_VENGEANCE") dmg *= Math.Sqrt(target.Frags);                        // p.191
+                if (id == "SPELL_WASP_SWARM" && hero != null && Spec(hero, "HERO_SPEC_CALL_OF_THE_WASP") is var wl && wl >= 0)
+                    dmg *= 1 + Stats.Get("combat/HeroSpecializations/Ranger/CallOfTheWasp_DamageBonusPerLevel", 0.05) * wl;
                 if (SpellHits(side, baseDef, target, hostile: true, hero))
                 {
                     affected.Add(target.Id);
@@ -565,7 +571,11 @@ public sealed partial class Battle
                         AddEffect(target, new Effect { Id = H5.Combat.Fx.RunicAttunement, Remaining = Stats.Get("combat/HeroSkills/Runemage/RunicAttunement_EffectDurationInRounds", 1), Positive = true });
                     break;
                 }
-                if (target != null && ApplyEffectSpell(caster, side, baseDef, m, power, target, casterLevel, hero)) affected.Add(target.Id);
+                if (target != null && ApplyEffectSpell(caster, side, baseDef, m, power, target, casterLevel, hero))
+                {
+                    affected.Add(target.Id);
+                    if (hero != null && baseDef.School == "MAGIC_SCHOOL_LIGHT" && Controller(target) == side) SpecAfterFriendlyLightSpell(hero, target);
+                }
                 break;
         }
     }
@@ -672,6 +682,8 @@ public sealed partial class Battle
         {
             var sp = Db.Spell(id)!;
             double drop = sp.DurationAt(m).Base;
+            if (hero != null && Spec(hero, "HERO_SPEC_CALL_OF_THE_WASP") is var wl && wl >= 0)
+                drop += Stats.Get("combat/HeroSpecializations/Ranger/CallOfTheWasp_ATBReducePerLevel3", 0.02) * (wl / 3);
             if (drop > 0) SetAtb(t.Id, GetAtb(t.Id) - drop);
         }
         if (id == "SPELL_DEEP_FREEZE")
@@ -771,7 +783,9 @@ public sealed partial class Battle
             RemoveEffect(t, opp);
         }
         bool positive = sp.Target == "TARGET_FRIEND";
-        AddEffect(t, MakeSpellEffect(id, sp, m, power, side, casterLevel, value, duration, positive));
+        var eff = MakeSpellEffect(id, sp, m, power, side, casterLevel, value, duration, positive);
+        if (id == "SPELL_CURSE" && hero != null && Spec(hero, "HERO_SPEC_MALEDICTOR") is var ml && ml >= 0) eff.Value2 = (ml + 2) / 3;
+        AddEffect(t, eff);
         if (!positive) RageEvent(t, "ReceiveCurseRP");
         return true;
     }

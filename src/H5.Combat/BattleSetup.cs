@@ -68,12 +68,27 @@ public static class BattleSetup
         h.Perks = hi.Perks.ToList();
         h.Spells = hi.Spells.ToList();
         h.Artifacts = hi.Artifacts.ToList();
+        h.FavoriteEnemies = hi.FavoriteEnemies.ToList();
         foreach (var aid in hi.Artifacts)
             if (db.Artifacts.TryGetValue(aid, out var a))
             {
                 h.Attack += a.Attack; h.Defence += a.Defence; h.SpellPower += a.SpellPower; h.Knowledge += a.Knowledge;
                 h.Morale += a.Morale; h.Luck += a.Luck;
             }
+        // Artifact sets (DefaultStats ArtifactSets / ArtifactsSetsEffectsConsts, set descriptions).
+        foreach (var (set, members) in db.ArtifactSets)
+        {
+            int pieces = members.Count(hi.Artifacts.Contains);
+            if (pieces > 0) h.SetPieces[set] = pieces;
+        }
+        int all = 0;
+        int dragon = Specials.Pieces(h, Specials.Dragonish);
+        if (dragon >= 2) all += (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Dragonish_2_AllStats", 1);
+        if (dragon >= 6) all += (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Dragonish_6_AllStats", 3);
+        if (Specials.Pieces(h, Specials.Runic) >= 2) all += (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Runic_2_AllStats", 1);
+        h.Attack += all; h.Defence += all; h.SpellPower += all; h.Knowledge += all;
+        if (Specials.Pieces(h, Specials.Demonic) >= 2) h.Attack += (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Demonic_2_Attack", 5);
+        if (hi.Shared != null) h.SpecFamily = Specials.FamilyFromDescription(db, hi.Shared.SpecializationDescription);
         // Leadership and Luck skills (fan manual p.118, p.124).
         h.Morale += (int)h.SkillLevel(Sk.Leadership);
         h.Luck += (int)h.SkillLevel(Sk.Luck);
@@ -112,6 +127,22 @@ public static class BattleSetup
             if (h.HasPerk(Sk.NaturesWrath) && u.Town == Towns.Sylvan) u.BaseMaxDamage += 1;
             // March of the Golems: golems +2 speed/initiative (p.122).
             if (h.HasPerk(Sk.MarchOfGolems) && u.Has(Ab.Mechanical)) { u.BaseSpeed += 2; u.BaseInitiative += 2; }
+            // Creature specialisations: +1 Attack/Defense per two levels, starting on first level.
+            if (h.SpecFamily.Contains(u.CreatureId)) { u.BaseAttack += (h.Level + 1) / 2; u.BaseDefence += (h.Level + 1) / 2; }
+            if (h.Specialization == "HERO_SPEC_WYVERN_TAMER" && (u.CreatureId.Contains("WYVERN") || u.CreatureId.Contains("PAOKAI")))
+                u.BaseHealth += (int)Specials.LevelFormula(db.Stats, "combat/HeroSpecializations/Barbarian/WyvernTamer_HealthBonus", h.Level, 1, 1, 2);
+            if (Specials.Pieces(h, Specials.Ogres) >= 2)
+            {
+                u.BaseAttack += (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Ogres_2_Creature_Attack", 3);
+                u.BaseHealth += (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Ogres_2_Creature_HitPoints", 2);
+            }
+            if (Specials.Pieces(h, Specials.Dragonish) >= 4 && u.Tier == (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Dragonish_4_Creature_Tier", 7))
+            {
+                u.BaseAttack += (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Dragonish_4_Creature_Attack", 5);
+                u.BaseDefence += (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Dragonish_4_Creature_Defence", 5);
+                u.BaseHealth += (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Dragonish_4_Creature_HitPoints", 20);
+            }
+            if (Specials.Pieces(h, Specials.Magis) >= 2) u.Mana = u.MaxMana = u.MaxMana * (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Magis_2_Casters_SpellpowerMultiplier", 2);
         }
         u.MaxHealthCache = u.BaseHealth;
         u.TopHealth = u.BaseHealth;
@@ -134,6 +165,7 @@ public static class BattleSetup
         };
         if (h.HasPerk(perk)) hp = (int)(hp * perkMult);
         int att = wm != null && wm.Offense.Length > 0 ? wm.Offense[Math.Min(m, wm.Offense.Length - 1)] : 0;
+        if (machineId == "WAR_MACHINE_BALLISTA" && h.Specialization == "HERO_SPEC_WAR_MACHINES") att += h.Level;   // +1 Attack per level
         int def = wm != null && wm.Defense.Length > 0 ? wm.Defense[Math.Min(m, wm.Defense.Length - 1)] : 0;
         // Ballista damage is (min..max factor) x (hero Attack + Knowledge) (fan manual p.307).
         double mult = h.Attack + h.Knowledge;

@@ -49,7 +49,9 @@ public sealed partial class Battle
         RageEvent(u, "RangedAttackRP");
         PerformRangedAttack(u, t);
         if (u.IsWarMachine && u.Alive && MoreBallistaShots(u)) return null;    // Ballista perk extra shots: same turn
-        EndAction(u.Id, 0);
+        // Archer's Dream set: shooters lose 30% less ATB when shooting.
+        double reset = !u.IsWarMachine && Specials.Pieces(HeroOf(u), Specials.Hunters) >= 2 ? Stats.Get("ArtifactsSetsEffectsConsts/Hunters_2_ShootersATBLessPercents", 30) / 100.0 : 0;
+        EndAction(u.Id, reset);
         return null;
     }
 
@@ -191,6 +193,7 @@ public sealed partial class Battle
                 Emit(new AbilityTriggered(u.Id, Ab.WardingArrows, t.Id));
                 SetAtb(t.Id, GetAtb(t.Id) - Stats.Get("combat/Creatures/Sylvan/WardingArrowsATBAffect", 0.2));
             }
+            if (u.IsWarMachine && u.Alive && t.Alive) SpecBallistaShot(u, t);
             if (u.IsWarMachine && u.Alive)
             {
                 if (HeroOf(u).HasPerk("HERO_SKILL_WILDFIRE") && t.Alive)
@@ -783,6 +786,7 @@ public sealed partial class Battle
                 Emit(new AbilityTriggered(f.Id, Ab.Enraged));
             }
             foreach (var f in S.LivingOf(t.Side)) RageEvent(f, "FriendlyStackKilledRP");
+            SpecOnEnemyStackKilled(1 - t.Side);
             foreach (var f in S.LivingOf(1 - t.Side)) RageEvent(f, "EnemyStackKilledRP");
         }
         // Guardian Angel: when all the knight's troops die, resurrect the strongest stack (p.120).

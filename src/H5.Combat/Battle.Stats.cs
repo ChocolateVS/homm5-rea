@@ -35,6 +35,7 @@ public sealed partial class Battle
         a -= Fx(u, H5.Combat.Fx.WeakeningStrike);
         a += Fx(u, H5.Combat.Fx.RageOfForest);
         a += Fx(u, H5.Combat.Fx.BerserkerRage);
+        a += Fx(u, "FX_BLOODDRINKER");
         a += RageBonus(u, "DEMON_RAGE_BONUS_ATTACK");
         // Festering Aura of adjacent Rot Zombies: -2 attack (p.174 / DefaultStats WeakeningAuraOffenceDec).
         if (!IsUndeadLike(u) && Adjacent(u).Any(o => o.Has(Ab.WeakeningAura)))
@@ -90,6 +91,7 @@ public sealed partial class Battle
         if (!u.Has(Ab.Armored))
         {
             d -= Fx(u, "SPELL_DISRUPTING_RAY");
+            d -= u.GetEffect("SPELL_CURSE")?.Value2 ?? 0;      // Maledictor: Weakness also lowers Defense
             d -= Fx(u, H5.Combat.Fx.WeakeningStrike);
             if (!IsUndeadLike(u) && Adjacent(u).Any(o => o.Has(Ab.WeakeningAura)))
                 d -= Stats.Get("combat/Creatures/Necropolis/WeakeningAuraDeffenceDec", 2);
@@ -128,7 +130,7 @@ public sealed partial class Battle
         return Math.Max(0.1, init);
     }
 
-    double HeroInitiative(int side) => Stats.Get("HeroInitiative", 10);
+    double HeroInitiative(int side) => Stats.Get("HeroInitiative", 10) * HeroInitiativeMultiplier(S.Heroes[side]);
 
     public int SpeedOf(Unit u)
     {
@@ -141,6 +143,7 @@ public sealed partial class Battle
         var eh = Enemy(u.Side);
         if (eh.Present && u.Flying && (eh.HasPerk(Sk.StormWind) || eh.HasPerk(Sk.BarbStormWind)))
             sp -= 1;   // fan manual p.121 says -1 Speed; DefaultStats StormWind_SpeedPenalty is 2 (unconfirmed which applies)
+        if (eh.Present && Specials.Pieces(eh, Specials.Necromancers) >= 2) sp -= (int)Stats.Get("ArtifactsSetsEffectsConsts/Necromancers_2_EnemyCreature_DeSpeed", 1);
         if (u.HasEffect(H5.Combat.Fx.RuneCharge)) sp *= 2;
         if (u.HasEffect(H5.Combat.Fx.Wound)) sp *= 1 - Stats.Get("combat/Creatures/Fortress/Wound_SpeedDecrease", 0.4);
         return Math.Max(1, (int)Math.Floor(sp));
@@ -251,6 +254,7 @@ public sealed partial class Battle
         if (HeroOf(u).HasPerk(Sk.MagicResistance)) r += 0.15;
         if (u.Has(Ab.AuraMagicResistance) || Adjacent(u).Any(o => o.Side == u.Side && o.Has(Ab.AuraMagicResistance)))
             r += Stats.Get("combat/Creatures/Sylvan/AuraOfMagicResistance", 0.3);
+        r += SpecMagicResistance(u);
         return Math.Min(0.95, r);
     }
 
@@ -265,6 +269,7 @@ public sealed partial class Battle
         if (spell.Element == Elements.Fire && target.Has(Ab.FireProof50)) m *= 0.5;
         var th = HeroOf(target);
         if (th.HasPerk(Sk.Protection)) m *= 0.85;                                                // p.112
+        if (Specials.Pieces(th, Specials.Dwarven) >= 2) m *= 1 - Stats.Get("ArtifactsSetsEffectsConsts/Dwarven_2_Creature_MagicProofPercents", 40) / 100.0;
         if (th.HasPerk(Sk.SapMagic)) m *= 0.8;                                                   // p.114
         if (th.HasPerk(Sk.Boneward) && spell.School == "MAGIC_SCHOOL_DESTRUCTIVE" && IsUndeadLike(target)) m *= 0.8;
         if ((th.HasPerk(Sk.FireResistance) || th.HasPerk(Sk.BarbFireResistance)) && spell.Element == Elements.Fire) m *= 0.5;

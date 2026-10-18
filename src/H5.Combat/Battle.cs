@@ -135,6 +135,7 @@ public sealed partial class Battle
             if (h.HasPerk(Sk.SwiftMind)) h.Atb += Stats.Get("combat/HeroSkills/Runemage/QuicknessOfMind_InitiativeBonus", 0.25);
         }
         CombatStartEffects();
+        SpecCombatStart();
         AdvanceUntilDecision();
     }
 

@@ -123,6 +123,8 @@ public sealed class HeroDef
     public string Name = "";
     public string Class = "";
     public string Specialization = "";
+    public string SpecializationName = "";
+    public string SpecializationDescription = "";
     public string Town = "";
     public SkillEntry? PrimarySkill;
     public int Attack, Defence, SpellPower, Knowledge;
@@ -142,6 +144,7 @@ public sealed class HeroInstance
     public int Level;
     public List<ArmySlot> Army = new();
     public List<string> Artifacts = new();
+    public List<string> FavoriteEnemies = new();
     public int Attack, Defence, SpellPower, Knowledge;
     public List<SkillEntry> Skills = new();
     public List<string> Perks = new();

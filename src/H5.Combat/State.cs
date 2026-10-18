@@ -140,6 +140,10 @@ public sealed class HeroState
     public List<string> Spells = new();
     public List<string> Artifacts = new();
     public List<string> FavoriteEnemies = new();
+    /// <summary>Equipped pieces per artifact set effect id.</summary>
+    public Dictionary<string, int> SetPieces = new();
+    /// <summary>Creatures boosted by the hero's "+1 Attack/Defense per two levels" specialisation.</summary>
+    public List<string> SpecFamily = new();
     public Dictionary<string, int> AbilityUses = new();
     /// <summary>Unit targeted by Retaliation Strike / Mark of the Damned / Mark of the Necromancer etc. (per ability id).</summary>
     public Dictionary<string, int> Links = new();
