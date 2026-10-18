@@ -72,7 +72,7 @@ public partial class AdvCamera : Camera3D
         _distance = Math.Clamp(_distance, MinDistance, MaxDistance);
         _pitch = Math.Clamp(_pitch, MinPitch, MaxPitch);
         float h = _world.HeightAt(_world.Floor, _target.X, _target.Y);
-        var target = new Vector3(_target.X, h, -_target.Y);
+        var target = new Vector3(_target.X * AdvWorld.Unit, h, -_target.Y * AdvWorld.Unit);
         float p = Mathf.DegToRad(_pitch), y = Mathf.DegToRad(_yaw);
         var back = new Vector3(Mathf.Sin(y), 0, Mathf.Cos(y)) * (_distance * Mathf.Cos(p));
         LookAtFromPosition(target + back + new Vector3(0, _distance * Mathf.Sin(p), 0), target, Vector3.Up);
@@ -85,7 +85,8 @@ public partial class AdvCamera : Camera3D
         // Forward (screen up) is towards increasing map y when yaw is 0.
         var fwd = new Vector2(-Mathf.Sin(y), Mathf.Cos(y));
         var rgt = new Vector2(Mathf.Cos(y), Mathf.Sin(y));
-        _target += rgt * right + fwd * forward;
+        // Pan amounts arrive in world units; the target is kept in tiles.
+        _target += (rgt * right + fwd * forward) / AdvWorld.Unit;
         Apply();
     }
 

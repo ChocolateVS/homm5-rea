@@ -86,7 +86,16 @@ public partial class AdvWorld : Node3D
         Map.Floor(floor)?.Data is { } t ? t.SampleHeight(Math.Clamp(mapX, 0, t.TilesX), Math.Clamp(mapY, 0, t.TilesY)) : 0f;
 
     /// <summary>World position of a tile centre on the terrain.</summary>
-    public Vector3 TileCenter(Tile t) => new(t.X + 0.5f, HeightAt(t.Floor, t.X + 0.5f, t.Y + 0.5f), -(t.Y + 0.5f));
+    /// <summary>
+    /// World units per map tile. Models, the original cameras (Rod 50, siege/town models) and the exe's
+    /// camera anchors all use 2 units per tile; terrain heights are already world units.
+    /// </summary>
+    public const float Unit = 2f;
+
+    public Vector3 TileCenter(Tile t) => new((t.X + 0.5f) * Unit, HeightAt(t.Floor, t.X + 0.5f, t.Y + 0.5f), -(t.Y + 0.5f) * Unit);
+
+    /// <summary>World position of a fractional map position (tile units) on the terrain.</summary>
+    public Vector3 MapToWorld(float mapX, float mapY) => new(mapX * Unit, HeightAt(Floor, mapX, mapY), -mapY * Unit);
 
     /// <summary>Highest walkable surface above the terrain a hero stands on (town plazas and gates).</summary>
     const float MaxStepUp = 1.6f;
@@ -127,7 +136,7 @@ public partial class AdvWorld : Node3D
         node.AddChild(body);
     }
 
-    public static Vector2 WorldToMap(Vector3 w) => new(w.X, -w.Z);
+    public static Vector2 WorldToMap(Vector3 w) => new(w.X / Unit, -w.Z / Unit);
 
     /// <summary>The tile under a ray on the current floor (heightfield ray march), or null.</summary>
     public Tile? TileAtRay(Vector3 origin, Vector3 dir)
@@ -135,7 +144,7 @@ public partial class AdvWorld : Node3D
         if (Map.Floor(Floor)?.Data is not { } t) return null;
         dir = dir.Normalized();
         Vector3? prev = null;
-        for (float s = 0; s < 400; s += 0.2f)
+        for (float s = 0; s < 800; s += 0.3f)
         {
             var p = origin + dir * s;
             var m = WorldToMap(p);
@@ -255,7 +264,7 @@ public partial class AdvWorld : Node3D
                 mesh.SurfaceSetMaterial(i, m);
             }
             var dome = new MeshInstance3D { Name = "SkyDome", Mesh = mesh, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
-            dome.Position = new Vector3(Map.TilesX * 0.5f, 0, -Map.TilesY * 0.5f);
+            dome.Position = new Vector3(Map.TilesX * 0.5f * Unit, 0, -Map.TilesY * 0.5f * Unit);
             _floors[f].AddChild(dome);
         }
     }
@@ -600,7 +609,7 @@ public partial class AdvWorld : Node3D
     void BuildShroud()
     {
         _shroudMaterial = new ShaderMaterial { Shader = GD.Load<Shader>("res://src/Adventure/AdvShroud.gdshader") };
-        _shroudMaterial.SetShaderParameter("map_size", new Vector2(Map.TilesX, Map.TilesY));
+        _shroudMaterial.SetShaderParameter("map_size", new Vector2(Map.TilesX, Map.TilesY) * Unit);
         var quad = new MeshInstance3D
         {
             Name = "Shroud",

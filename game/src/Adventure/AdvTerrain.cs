@@ -56,7 +56,7 @@ public static class AdvTerrain
         for (int x = 0; x < vw; x++)
         {
             int i = y * vw + x;
-            verts[i] = new Vector3(x, t.Heights.Data[i], -y);
+            verts[i] = new Vector3(x * AdvWorld.Unit, t.Heights.Data[i], -y * AdvWorld.Unit);
             var n = normals[i];
             norms[i] = new Vector3(n.X, n.Z, -n.Y);
             uv[i] = new Vector2(x, y);
