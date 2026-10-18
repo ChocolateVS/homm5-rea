@@ -45,6 +45,13 @@ edit(w, '''        RefreshShroud();
 
     // ---------------------------------------------------------------- lighting''')
 
+edit(w, '''        for (int i = 0; i < 2; i++) await ToSignal(GetTree(), SceneTree.SignalName.PhysicsFrame);
+        foreach (var h in _session.S.Heroes) SyncHero(h);
+    }''', '''        for (int i = 0; i < 2; i++) await ToSignal(GetTree(), SceneTree.SignalName.PhysicsFrame);
+        foreach (var h in _session.S.Heroes) SyncHero(h);
+        Boats?.Sync();
+    }''')
+
 edit(a, '''            AdvCursors.Set(AdvCursor.Use, days);
         else AdvCursors.Set(AdvCursor.Move, days);''', '''            AdvCursors.Set(AdvCursor.Use, days);
         else AdvCursors.Set(Water.BoatLayer.MoveCursor(Session.Game, hero, t), days);''')

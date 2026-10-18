@@ -84,6 +84,7 @@ public partial class AdvWorld : Node3D
     {
         for (int i = 0; i < 2; i++) await ToSignal(GetTree(), SceneTree.SignalName.PhysicsFrame);
         foreach (var h in _session.S.Heroes) SyncHero(h);
+        Boats?.Sync();
     }
 
     // ---------------------------------------------------------------- coordinates
