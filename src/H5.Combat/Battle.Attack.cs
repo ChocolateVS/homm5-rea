@@ -1285,8 +1285,10 @@ public sealed partial class Battle
             }
             if (u.Has(Ab.DemonRaged))
             {
-                if (mine.HasPerk(Sk.MemoryOfBlood)) AddRage(u, 10 * S.Rng.Range(5, 10));
+                // Battle start (exe FUN_008aaec0): Absolute Rage gives AbsoluteRageRP and then Memory of our Blood does
+                // nothing; otherwise Memory of our Blood gives Range(MinRP/Step, MaxRP/Step)·Step.
                 if (mine.HasPerk(Sk.AbsoluteRage)) AddRage(u, (int)Stats.Get("combat/Creatures/Stronghold/DemonRage/AbsoluteRageRP", 500));
+                else if (mine.HasPerk(Sk.MemoryOfBlood)) AddRage(u, MemoryOfBloodRage());
             }
         }
     }

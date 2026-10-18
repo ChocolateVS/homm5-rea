@@ -74,4 +74,15 @@ public sealed partial class Battle
         if (hero.HasPerk(Sk.Exorcism) && t.Summoned && sp.School == "MAGIC_SCHOOL_DESTRUCTIVE") dmg *= 2;
         return dmg;
     }
+
+    /// <summary>
+    /// Memory of our Blood's battle-start rage (exe FUN_008aaec0): RNG Range(MinRP/Step, MaxRP/Step) (inclusive) times
+    /// Step, from DemonRage/MemoryOfOurBlood_* (50..100 in steps of 10 in the stock data).
+    /// </summary>
+    internal int MemoryOfBloodRage()
+    {
+        const string k = "combat/Creatures/Stronghold/DemonRage/MemoryOfOurBlood_";
+        int step = Math.Max(1, (int)Stats.Get(k + "RPStep", 10));
+        return S.Rng.Range((int)Stats.Get(k + "MinRP", 50) / step, (int)Stats.Get(k + "MaxRP", 100) / step) * step;
+    }
 }

@@ -118,6 +118,32 @@ public class AuditSkillTests(GameDataFixture f)
         Assert.Equal(baseSpeed, b.SpeedOf(footman));
     }
 
+    // exe FUN_008aaec0: at battle start Absolute Rage gives AbsoluteRageRP and Memory of our Blood then gives nothing;
+    // Memory alone gives Range(MinRP/Step, MaxRP/Step)·Step.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AbsoluteRageReplacesMemoryOfOurBlood(bool absolute)
+    {
+        var (b, s) = Setup(new[] { ("CREATURE_GOBLIN", 20) }, new[] { ("CREATURE_PEASANT", 20) });
+        var gob = Of(s, "CREATURE_GOBLIN");
+        if (!gob.Abilities.Contains("ABILITY_DEMON_RAGED")) gob.Abilities.Add("ABILITY_DEMON_RAGED");
+        var h = s.Heroes[0];
+        h.Specialization = "";
+        h.Perks.RemoveAll(p => p is "HERO_SKILL_POWER_OF_BLOOD" or "HERO_SKILL_ABSOLUTE_RAGE" or "HERO_SKILL_MEMORY_OF_OUR_BLOOD");
+        h.Perks.Add("HERO_SKILL_MEMORY_OF_OUR_BLOOD");
+        if (absolute) h.Perks.Add("HERO_SKILL_ABSOLUTE_RAGE");
+        gob.RagePoints = 0;
+        b.Begin();
+        if (absolute)
+            Assert.Equal((int)f.Db.Stats.Get("combat/Creatures/Stronghold/DemonRage/AbsoluteRageRP", 500), gob.RagePoints);
+        else
+        {
+            Assert.InRange(gob.RagePoints, 50, 100);
+            Assert.Equal(0, gob.RagePoints % 10);
+        }
+    }
+
     // exe FUN_0097d740 (FPU chop, +0.5 at 0097d784): the perks' extra elemental damage rounds half up.
     [Fact]
     public void ChillingPerkDamageRoundsHalfUp()

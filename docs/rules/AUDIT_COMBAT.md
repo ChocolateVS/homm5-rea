@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 147 |
+| FIXED | 149 |
 | MATCH | 100 |
 | GAP | 9 |
-| UNVERIFIED | 275 |
+| UNVERIFIED | 273 |
 | N/A | 57 |
 
 ## Core mechanics
@@ -365,9 +365,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_PREPARATION` | UNVERIFIED | 008a65e0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DEMONIC_RAGE` | UNVERIFIED | 008a16b0 0097f610 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MIGHT_OVER_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_MEMORY_OF_OUR_BLOOD` | UNVERIFIED | 008aaec0 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_MEMORY_OF_OUR_BLOOD` | FIXED | 008aaec0 | battle start (without Absolute Rage): rage += RNG Range(MinRP/Step, MaxRP/Step)·Step from DemonRage/MemoryOfOurBlood_* (engine hard-coded 10·Range(5,10) and also stacked it with Absolute Rage) | AuditSkillTests.AbsoluteRageReplacesMemoryOfOurBlood |
 | `HERO_SKILL_POWERFULL_BLOW` | FIXED | 00bc1b90, 008cf42b | the follow-up strike (SPELL_EFFECT_POWERFULL_BLOW) always gets +3 levels (engine: melee only) and adds PowerfullBlow_ChanceToCritical (10) to the critical chance (engine rolled 10 % × 4 separately) | AuditHeroStrikeTests.CriticalChanceComposesCriticalStrikeAndPowerfulBlow |
-| `HERO_SKILL_ABSOLUTE_RAGE` | UNVERIFIED | 008aaec0 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ABSOLUTE_RAGE` | FIXED | 008aaec0 | battle start: rage += AbsoluteRageRP (rage vfunc 0x7c) and Memory of our Blood is then skipped (if/else in the exe). Engine applied both perks | AuditSkillTests.AbsoluteRageReplacesMemoryOfOurBlood |
 | `HERO_SKILL_BATTLE_ELATION` | MATCH | 008a0db0 | on good morale, the stack's rage gains BattleElation_RPOnGoodMorale when its hero has the perk (rage vfunc 0x7c) |  |
 | `HERO_SKILL_LUCK_OF_THE_BARBARIAN` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_STUNNING_BLOW` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
