@@ -239,13 +239,21 @@ public partial class AdvWorld : Node3D
         {
             var mesh = (ArrayMesh)sky.Mesh.Duplicate();
             for (int i = 0; i < mesh.GetSurfaceCount(); i++)
-                if (mesh.SurfaceGetMaterial(i)?.Duplicate() is StandardMaterial3D m)
+            {
+                // Cloud layers use M_CLOUDS_H5, which ModelBuilder builds as a drifting ShaderMaterial
+                // (opaque, culled, depth-writing); as a dome it must be a plain unshaded sky backdrop.
+                StandardMaterial3D? m = mesh.SurfaceGetMaterial(i) switch
                 {
-                    m.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-                    m.DisableFog = true;
-                    m.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
-                    mesh.SurfaceSetMaterial(i, m);
-                }
+                    StandardMaterial3D std => (StandardMaterial3D)std.Duplicate(),
+                    ShaderMaterial sm => new StandardMaterial3D { AlbedoTexture = sm.GetShaderParameter("tex").As<Texture2D>() },
+                    _ => null,
+                };
+                if (m == null) continue;
+                m.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+                m.DisableFog = true;
+                m.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+                mesh.SurfaceSetMaterial(i, m);
+            }
             var dome = new MeshInstance3D { Name = "SkyDome", Mesh = mesh, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
             dome.Position = new Vector3(Map.TilesX * 0.5f, 0, -Map.TilesY * 0.5f);
             _floors[f].AddChild(dome);
