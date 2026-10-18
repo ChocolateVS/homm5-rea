@@ -86,13 +86,16 @@ public sealed partial class Battle
     {
         var origin = u.Pos;
         int walked = 0;
+        var path = new List<Cell>();
         if (from != u.Pos)
         {
-            MoveUnit(u, from);
+            path = MoveUnit(u, from);
             walked = u.CellsWalked;
             if (!u.Alive) return;
         }
         else u.CellsWalked = 0;
+        RideByAttack(u, path, t);
+        if (!u.Alive || !t.Alive) return;
         RemoveEffect(u, H5.Combat.Fx.Invisible);
         MarkOfTheDamnedTrigger(u);
         if (!u.Alive) return;
@@ -119,6 +122,12 @@ public sealed partial class Battle
             var r = Strike(u, t, hit, pattern: true, extraAdjacentAll: runeBattleRage);
             stunned |= r.Stunned;
             killedTotal += r.Killed;
+            // Assault (Brutality): chance of another blow, rolled before retaliation (p.171).
+            if (i == strikes - 1 && HasAbilityNow(u, Ab.Brutality) && t.Alive && u.Alive && RollProc(u, ProcChance(u, t)))
+            {
+                Emit(new AbilityTriggered(u.Id, Ab.Brutality, t.Id));
+                Strike(u, t, new Hit { Kind = AttackKind.Melee, CellsWalked = walked }, pattern: true);
+            }
             // Cleave: an extra strike once a creature is killed (p.172).
             if (i == strikes - 1 && r.Killed > 0 && HasAbilityNow(u, Ab.Cleave) && t.Alive && u.Alive)
             {
@@ -130,7 +139,9 @@ public sealed partial class Battle
         if (u.HasEffect(H5.Combat.Fx.RuneBerserking) && t.Alive) RemoveEffect(u, H5.Combat.Fx.RuneBerserking);
         if (runeBattleRage) RemoveEffect(u, H5.Combat.Fx.RuneBattleRage);
 
-        bool noRet = HasAbilityNow(u, Ab.NoEnemyRetaliation) || runeBattleRage || stunned;
+        if (u.Alive && t.Alive) LizardBites(u, t);
+        bool fled = u.Alive && ReactiveRetreat(u, t);
+        bool noRet = HasAbilityNow(u, Ab.NoEnemyRetaliation) || runeBattleRage || stunned || fled;
         if (u.Alive && t.Alive && !noRet && !(preparation && retaliated && !HasAbilityNow(t, Ab.UnlimitedRetaliation)) && CanRetaliate(t, u))
             Retaliate(t, u);
 
@@ -251,6 +262,7 @@ public sealed partial class Battle
             a.Frags += killed * target.Tier;
             if (primary) { primaryDamage = dmg; primaryKilled = killed; }
             AfterHitOnTarget(a, target, hit, ranged, dmg, killed, primary, hpBefore, targetHpBefore, ref stunned);
+            if (primary) OnHitExtras(a, target, !ranged, hit.Kind == AttackKind.Retaliation, dmg);
             if (!a.Alive) break;
         }
         return new StrikeResult(primaryDamage, primaryKilled, stunned);
@@ -758,7 +770,7 @@ public sealed partial class Battle
                 Emit(new ManaChanged(Actor.Hero(h.Side), h.Mana));
             }
         if (kind is AttackKind.Melee) RageEvent(t, "RecevieMeleeAttackRP");
-        if (t.Count <= 0) OnDeath(t, source);
+        if (t.Count <= 0 && !TryRebirth(t)) OnDeath(t, source);
         return killed;
     }
 

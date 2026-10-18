@@ -43,9 +43,7 @@ public sealed partial class Battle
         if (vs != null && u.Has(Ab.AntiGiant) && vs.IsLarge) a += Stats.Get("combat/Creatures/Fortress/AntiGiantAttackInc", 4);
         if (u.IsWarMachine && u.CreatureId == "WAR_MACHINE_BALLISTA" || (u.MaxShots > 0 && !u.IsWarMachine))
             a += AmmoCartAttackBonus(u.Side);
-        if (h.HasPerk(Sk.OffensiveFormation) && u.Town == Towns.Fortress)
-            a += Math.Min(Stats.Get("combat/HeroSkills/Runemage/Offensive_MaxOffenseBonus", 10),
-                Adjacent(u).Count(o => o.Side == u.Side && o.Town == Towns.Fortress) * 2);
+        if (h.HasPerk(Sk.OffensiveFormation)) a += FormationBonus(u, Stats.Get("combat/HeroSkills/Runemage/Offensive_MaxOffenseBonus", 10));
         return Math.Max(0, (int)Math.Floor(a));
     }
 
@@ -70,9 +68,7 @@ public sealed partial class Battle
         if (u.Has(Ab.PreparedPosition) && !u.HasMovedFromStart) d += Stats.Get("combat/Creatures/Fortress/PreparedPosition_DefenceBonus", 5);
         if (u.Has(Ab.Agility)) d += Stats.Get("combat/Creatures/Sylvan/AgilityDefenceBoostPerCell", 2) * AgilityCells(u);
         if (vs != null && u.Has(Ab.AntiGiant) && vs.IsLarge) d += Stats.Get("combat/Creatures/Fortress/AntiGiantDefenceInc", 4);
-        if (h.HasPerk(Sk.DefensiveFormation) && u.Town == Towns.Fortress)
-            d += Math.Min(Stats.Get("combat/HeroSkills/Runemage/Defensive_MaxDefenseBonus", 10),
-                Adjacent(u).Count(o => o.Side == u.Side && o.Town == Towns.Fortress) * 2);
+        if (h.HasPerk(Sk.DefensiveFormation)) d += FormationBonus(u, Stats.Get("combat/HeroSkills/Runemage/Defensive_MaxDefenseBonus", 10));
         double mult = 1;
         if (u.Defending)
         {
@@ -103,6 +99,16 @@ public sealed partial class Battle
                 d *= Math.Max(0, 1 - Stats.Get("combat/Creatures/Dungeon/RiderCharge_DefenceReducePerPathCell", 0.2) * attackerCellsWalked);
         }
         return Math.Max(0, (int)Math.Floor(d));
+    }
+
+    /// <summary>Dwarven formations (p.323): floor(10*log10(adjacent dwarven power / own power)), capped.</summary>
+    double FormationBonus(Unit u, double cap)
+    {
+        if (u.Town != Towns.Fortress || u.Kind != UnitKind.Creature) return 0;
+        double own = (double)u.Count * u.Power;
+        double adj = Adjacent(u).Where(o => o.Side == u.Side && o.Town == Towns.Fortress && o.Kind == UnitKind.Creature).Sum(o => (double)o.Count * o.Power);
+        if (adj <= own || own <= 0) return 0;
+        return Math.Min(cap, Math.Floor(10 * Math.Log10(adj / own) + 1e-9));
     }
 
     int AgilityCells(Unit u) => u.HasActed ? u.CellsWalked : u.BaseSpeed;   // first turn counts as full move (p.171)
@@ -224,6 +230,8 @@ public sealed partial class Battle
         if (u.HasEffect(H5.Combat.Fx.BansheeHowl)) m -= (int)Fx(u, H5.Combat.Fx.BansheeHowl);
         if (u.HasEffect(H5.Combat.Fx.Sacrifice)) m += (int)Fx(u, H5.Combat.Fx.Sacrifice);
         if (Adjacent(u).Any(o => o.Side != u.Side && o.Has(Ab.FrightAura))) m -= 3;             // Frightful Aura (p.175)
+        if (S.Living.Any(o => o.Side != u.Side && o.Has(Ab.HorrorOfDeath)))                    // Death Stare (p.173)
+            m -= (int)Stats.Get("combat/Creatures/Necropolis/HorrorOfDeath_MoraleDecrease", 1);
         if (!IsUndeadLike(u) && Adjacent(u).Any(o => o.Has(Ab.WeakeningAura)))
             m -= (int)Stats.Get("combat/Creatures/Necropolis/WeakeningAuraMoraleDec", 1);
         // Minimum-morale effects come last.

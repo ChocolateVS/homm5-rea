@@ -210,6 +210,7 @@ public sealed partial class Battle
         if (u.Has(Ab.SwallowGoblin)) yield return new(Ab.SwallowGoblin, AbilityTargeting.Friend, NeedsAdjacency: true);
         if (u.Has(Ab.SacrificeGoblin)) yield return new(Ab.SacrificeGoblin, AbilityTargeting.Friend, NeedsAdjacency: true);
         if (h.Present && Once(Ab.Gating) && CanGate(u)) yield return new(Ab.Gating, AbilityTargeting.None);
+        foreach (var extra in MoreUnitAbilities(u)) yield return extra;
     }
 
     /// <summary>Demon Lord Gating eligibility by mastery (p.141).</summary>
@@ -243,6 +244,8 @@ public sealed partial class Battle
         if (info.Targeting == AbilityTargeting.Cell && (c.Cell is not Cell cc || !S.InBounds(cc))) return "needs a target cell";
         double reset = 0;
         bool allowMorale = true;
+        if (DoMoreAbilities(u, c, t, out bool handledExtra) is { } extraErr) return extraErr;
+        if (handledExtra) { EndAction(u.Id, 0); return null; }
         switch (c.Ability)
         {
             case "FIRST_AID":

@@ -101,6 +101,50 @@ sealed class DuelSimCommand : ICommand
     }
 }
 
+sealed class DuelMatrixCommand : ICommand
+{
+    public string Name => "duel-matrix";
+    public string Help => "duel-matrix [seed] [--stride N]  - AI vs AI for every preset pair (robustness + win rates)";
+
+    public int Run(ToolContext ctx, string[] args)
+    {
+        var db = Db.Get(ctx);
+        ulong seed = args.Length > 0 && !args[0].StartsWith("--") ? ulong.Parse(args[0]) : 1;
+        int stride = 1;
+        int si = Array.IndexOf(args, "--stride");
+        if (si >= 0 && si + 1 < args.Length) stride = int.Parse(args[si + 1]);
+        int n = db.DuelPresets.Count, games = 0, errors = 0;
+        var wins = new int[n];
+        var played = new int[n];
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        for (int a = 0; a < n; a++)
+        for (int b = 0; b < n; b += stride)
+        {
+            if (a == b) continue;
+            try
+            {
+                var s = H5.Combat.BattleSetup.CreateDuel(db, a, b, seed + (ulong)(a * n + b));
+                var battle = new H5.Combat.Battle(db, s);
+                var ai = new H5.Combat.GreedyBattleAI();
+                H5.Combat.BattleRunner.RunToEnd(battle, ai, ai);
+                games++;
+                played[a]++; played[b]++;
+                if (s.Winner == 0) wins[a]++; else if (s.Winner == 1) wins[b]++;
+                if (s.EndReason != "army destroyed") Console.WriteLine($"  {a} vs {b}: ended by {s.EndReason}");
+            }
+            catch (Exception e)
+            {
+                errors++;
+                Console.WriteLine($"  {a} vs {b}: {e.GetType().Name}: {e.Message}\n{e.StackTrace?.Split('\n').FirstOrDefault()}");
+            }
+        }
+        Console.WriteLine($"{games} games, {errors} errors, {sw.Elapsed.TotalSeconds:F0}s");
+        for (int i = 0; i < n; i++)
+            Console.WriteLine($"  [{i,2}] {db.DuelPresets[i].Name,-26} {db.DuelPresets[i].Hero.Class,-24} win {100.0 * wins[i] / Math.Max(1, played[i]),5:F1}%");
+        return errors == 0 ? 0 : 1;
+    }
+}
+
 sealed class DbCheckCommand : ICommand
 {
     public string Name => "db-check";

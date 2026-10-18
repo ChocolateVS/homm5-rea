@@ -120,10 +120,10 @@ public sealed partial class Battle
         path.Count < 2 ? 0 : flying ? Math.Max(Math.Abs(path[0].X - path[^1].X), Math.Abs(path[0].Y - path[^1].Y)) : path.Count - 1;
 
     /// <summary>Moves a unit along a validated path, applying mines/firewalls, and records walked cells.</summary>
-    void MoveUnit(Unit u, Cell to)
+    List<Cell> MoveUnit(Unit u, Cell to)
     {
         var path = PathTo(u, to);
-        if (path.Count < 2) return;
+        if (path.Count < 2) return path;
         int steps = Steps(path, u.Flying);
         var from = u.Pos;
         u.Pos = to;
@@ -152,6 +152,7 @@ public sealed partial class Battle
         }
         if (u.HasEffect(H5.Combat.Fx.Invisible) && S.LivingOf(1 - u.Side).Any(e => AreAdjacent(u, e)))
             RemoveEffect(u, H5.Combat.Fx.Invisible);
+        return path;
     }
 
     string? DoMove(MoveCmd c)

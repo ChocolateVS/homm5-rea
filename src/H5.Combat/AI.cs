@@ -106,8 +106,8 @@ public sealed class GreedyBattleAI : IBattleAI
         foreach (var t in la.Shoot) list.Add((new ShootCmd(u0.Id, t) { Side = side }, 0));
         foreach (var (tid, cells) in la.Melee)
         {
-            // Strike from the cell that keeps the unit closest to where it is (fewest new threats).
-            var from = cells.OrderBy(c => Battle.Octile(c, u0.Pos)).First();
+            // Strike from the cell exposed to the fewest enemy counter-attacks next turn.
+            var from = cells.OrderBy(c => Threat(b, u0, c, side)).ThenBy(c => Battle.Octile(c, u0.Pos)).First();
             list.Add((new AttackCmd(u0.Id, tid, from == u0.Pos ? null : from) { Side = side }, 0));
         }
         foreach (var sp in la.Spells)
@@ -133,25 +133,52 @@ public sealed class GreedyBattleAI : IBattleAI
                 foreach (var t in ab.Targets.Select(s.Unit).OrderByDescending(u => StackValue(u!)).Take(2))
                     list.Add((new UseAbilityCmd(u0.Id, ab.Ability, t!.Id) { Side = side }, ab.Ability == "FIRST_AID" ? 20 : 0));
         }
-        // Positional moves when nothing better: approach the most valuable reachable-soon enemy.
+        // Positional moves when nothing better: approach while weighing the damage enemies could deal there next turn.
         if (la.Moves.Count > 0 && la.Melee.Count == 0 && la.Shoot.Count == 0)
         {
             var enemies = s.Living.Where(e => b.Controller(e) != side && !e.IsObject && !e.IsWarMachine).ToList();
             if (enemies.Count > 0)
             {
                 bool shooter = u0.MaxShots > 0;
+                double here = Threat(b, u0, u0.Pos, side);
+                double aggression = Math.Min(1, s.Time / 6.0);   // later in the battle, stop holding back
+                double dHere = enemies.Min(e => Battle.Distance(u0, u0.Pos, e, e.Pos));
                 var scored = la.Moves.Select(c =>
                 {
                     double d = enemies.Min(e => Battle.Distance(u0, c, e, e.Pos));
-                    return (c, score: shooter ? d : -d);
+                    double progress = shooter ? d - dHere : dHere - d;
+                    double threat = Threat(b, u0, c, side) - here;
+                    return (c, score: progress * 40 - threat * (1 - aggression));
                 }).OrderByDescending(x => x.score).ThenBy(x => x.c.X).ThenBy(x => x.c.Y).Take(3);
                 foreach (var (c, score) in scored)
-                    list.Add((new MoveCmd(u0.Id, c) { Side = side }, 5 + score));
+                    list.Add((new MoveCmd(u0.Id, c) { Side = side }, score));
             }
         }
         if (la.CanDefend) list.Add((new DefendCmd(u0.Id) { Side = side }, 1));
         list.Add((new WaitCmd(u0.Id) { Side = side }, la.Melee.Count == 0 && la.Shoot.Count == 0 && !u0.HasActed ? 2 : -5));
         return list;
+    }
+
+    /// <summary>
+    /// Expected army value the unit could lose standing at <paramref name="cell"/>: every enemy melee stack able to
+    /// reach it next turn strikes with average damage (no luck). Shooters are ignored since position barely matters to them.
+    /// </summary>
+    static double Threat(Battle b, Unit u, Cell cell, int side)
+    {
+        var s = b.State;
+        double total = 0;
+        var saved = u.Pos;
+        u.Pos = cell;
+        foreach (var e in s.Living)
+        {
+            if (b.Controller(e) == side || e.IsObject || e.IsWarMachine || b.CanShoot(e)) continue;
+            int reach = b.SpeedOf(e) * 100 + Battle.DiagCost;
+            if (Battle.Octile(e.Pos, cell) > reach + 100 * (e.Size + u.Size - 2)) continue;
+            int dmg = b.ComputeDamage(e, u, new Battle.Hit { Kind = AttackKind.Melee, FixedRoll = -1 }, ranged: false);
+            total += Math.Min(dmg, u.TotalHealth) * (u.Power / (double)Math.Max(1, u.MaxHealthCache));
+        }
+        u.Pos = saved;
+        return total;
     }
 
     /// <summary>Value of non-damage spell effects that simulation alone cannot see.</summary>

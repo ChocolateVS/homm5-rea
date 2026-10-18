@@ -51,7 +51,9 @@ public static class Ab
         SyphonMana = "ABILITY_SYPHON_MANA", Scavenger = "ABILITY_SCAVENGER", PackDive = "ABILITY_PACK_DIVE", BattleDive = "ABILITY_BATTLE_DIVE",
         GoblinThrower = "ABILITY_GOBLIN_THROWER", Maneure = "ABILITY_MANEURE", SetSnares = "ABILITY_SET_SNARES", ChainShotAbility = "ABILITY_CHAIN_SHOT",
         RideByAttack = "ABILITY_RIDE_BY_ATTACK", TreeantUnion = "ABILITY_TREEANT_UNION", PowerFeed = "ABILITY_POWER_FEED",
-        DefileMagic = "ABILITY_DEFILE_MAGIC", Treachery = "ABILITY_TREACHERY", LizardBite = "ABILITY_LIZARD_BITE";
+        DefileMagic = "ABILITY_DEFILE_MAGIC", Treachery = "ABILITY_TREACHERY", LizardBite = "ABILITY_LIZARD_BITE",
+        HorrorOfDeath = "ABILITY_HORROR_OF_THE_DEATH", Brutality = "ABILITY_BRUTALITY", RandomCaster = "ABILITY_RANDOM_CASTER",
+        RandomCasterBless = "ABILITY_RANDOM_CASTER_BLESS";
 
     /// <summary>Gating, available through the Demon Lord's Gating skill (not a data ability).</summary>
     public const string Gating = "GATING";
