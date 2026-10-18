@@ -180,6 +180,9 @@ internal partial class ParticleInstanceNode : MeshInstance3D, EffectPlayer.IEffe
         _quads.Clear();
         float intensity = owner.Fade; // L_LIT instances would also scale by scene lighting
         ParticleSystem.BuildQuads(_bake, _def, cycles, world, right, up, fwd, camLocal, intensity, _quads, _stopFrame, _def.Textures.Length);
+        // Quads on empty texture slots draw nothing; drop them first so an all-empty frame never
+        // opens a surface (ImmediateMesh logs "No vertices were added" for empty surfaces).
+        _quads.RemoveAll(q => _atlas.Slots[q.TextureSlot] == null);
         if (_quads.Count == 0) return finished;
         // Back to front.
         _quads.Sort((a, b) => b.Depth.CompareTo(a.Depth));
@@ -187,7 +190,7 @@ internal partial class ParticleInstanceNode : MeshInstance3D, EffectPlayer.IEffe
         _mesh.SurfaceBegin(Mesh.PrimitiveType.Triangles, _material);
         foreach (var q in _quads)
         {
-            if (_atlas.Slots[q.TextureSlot] is not { } uv) continue;
+            var uv = _atlas.Slots[q.TextureSlot]!.Value;
             var col = new Color(((q.Color >> 16) & 0xff) / 255f, ((q.Color >> 8) & 0xff) / 255f, (q.Color & 0xff) / 255f, (q.Color >> 24) / 255f);
             void Vtx(SN.Vector3 p, float u, float v) { _mesh.SurfaceSetColor(col); _mesh.SurfaceSetUV(new Vector2(u, v)); _mesh.SurfaceAddVertex(new Vector3(p.X, p.Y, p.Z)); }
             // Corners: 0 bottom-left, 1 bottom-right, 2 top-right, 3 top-left.
