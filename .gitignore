@@ -19,3 +19,5 @@ tools/aire/scripts/*
 tools/rmgre/out/
 tools/camre/out/
 tools/cam/out/
+
+tools/saveres/out/
