@@ -57,6 +57,15 @@ public partial class Game : Node
                 Dev.ModelViewer.ModelPath = arg["--view-model=".Length..];
                 CallDeferred(MethodName.OpenModelViewer);
             }
+            else if (arg.StartsWith("--view-character="))
+            {
+                Dev.ModelViewer.CharacterPath = arg["--view-character=".Length..];
+                CallDeferred(MethodName.OpenModelViewer);
+            }
+            else if (Arena.ArenaViewer.HandleArg(arg)) { }
+            else if (arg.StartsWith("--anim=")) Dev.ModelViewer.Anim = arg["--anim=".Length..];
+            else if (arg.StartsWith("--anim-time="))
+                Dev.ModelViewer.AnimTime = float.Parse(arg["--anim-time=".Length..], System.Globalization.CultureInfo.InvariantCulture);
         }
         SetProcess(_screenshotPath != null);
     }

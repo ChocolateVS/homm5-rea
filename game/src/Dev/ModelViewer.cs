@@ -11,6 +11,11 @@ namespace H5Reborn.Dev;
 public partial class ModelViewer : Node3D
 {
     public static string ModelPath = "_(Model)/Creatures/Haven/Footman.(Model).xdb";
+    /// <summary>When set (`--view-character=`), shows an animated (Character) instead of a bare model.</summary>
+    public static string? CharacterPath;
+    /// <summary>`--anim=attack00` plays that kind; `--anim-time=0.7` freezes it at that time.</summary>
+    public static string? Anim;
+    public static float? AnimTime;
 
     Camera3D _camera = null!;
     float _yaw = 0.6f, _pitch = 0.25f, _distance = 5f;
@@ -30,20 +35,36 @@ public partial class ModelViewer : Node3D
         AddChild(sun);
         sun.LookAt(new Vector3(-1, -2, -1.5f));
 
-        var model = new ModelLoader(Game.Instance.Xdb).Load(ModelPath);
-        var node = ModelBuilder.Build(model);
-        AddChild(node);
-
-        var min = ModelBuilder.ToGodot(model.Mesh.BoundsMin);
-        var max = ModelBuilder.ToGodot(model.Mesh.BoundsMax);
-        var aabb = new Aabb(min, Vector3.Zero).Expand(max);
+        Aabb aabb;
+        if (CharacterPath != null)
+        {
+            var character = CharacterBuilder.Build(CharacterPath);
+            AddChild(character);
+            if (Anim != null && character.Has(Anim))
+            {
+                character.Play(Anim, loop: AnimTime == null);
+                if (AnimTime is { } t) { character.Player.Seek(t, update: true); character.Player.Pause(); }
+            }
+            var mesh = character.FindChild("Mesh", recursive: true, owned: false) as MeshInstance3D;
+            aabb = mesh?.GetAabb() ?? new Aabb(-Vector3.One, Vector3.One * 2);
+            var anims = string.Join(" ", character.Player.GetAnimationList().Select(a => a.Replace(Character.Lib, "")));
+            AddChild(new Label { Text = $"{CharacterPath}\n{anims}", Position = new Vector2(8, 8) });
+        }
+        else
+        {
+            var model = new ModelLoader(Game.Instance.Xdb).Load(ModelPath);
+            AddChild(ModelBuilder.Build(model));
+            var min = ModelBuilder.ToGodot(model.Mesh.BoundsMin);
+            var max = ModelBuilder.ToGodot(model.Mesh.BoundsMax);
+            aabb = new Aabb(min, Vector3.Zero).Expand(max);
+            AddChild(new Label { Text = ModelPath, Position = new Vector2(8, 8) });
+        }
         _target = aabb.GetCenter();
         _distance = Math.Max(2f, aabb.Size.Length() * 1.3f);
 
         _camera = new Camera3D { Fov = 40 };
         AddChild(_camera);
         UpdateCamera();
-        AddChild(new Label { Text = ModelPath, Position = new Vector2(8, 8) });
     }
 
     void UpdateCamera()
