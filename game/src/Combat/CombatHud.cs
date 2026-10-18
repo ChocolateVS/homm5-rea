@@ -54,7 +54,8 @@ public partial class CombatHud : Control
         bus.On("Combat_AutoCombat", _screen.CmdAutoCombat);
         bus.On("Combat_OptionsMenu", ShowOptions);
         bus.On("Combat_SpecialAbility", _screen.CmdSpecial);
-        bus.On("autoplace_army", _screen.CmdEndTactics);
+        bus.On("autoplace_army", _screen.CmdAutoplace);   // OnJog-StartCombat: "Auto place creatures"
+        bus.On("autoplace_army_force", _screen.CmdAutoplace);
         bus.On("confirm_placement", _screen.CmdEndTactics);
         bus.On("switch_atb_log", ToggleLog);
         // ATB scroll buttons (ATBBar/ScrollLeft|Right → UISRunReaction atb_scroll_left|right).

@@ -300,6 +300,18 @@ public static class BattleSetup
         return u;
     }
 
+    /// <summary>
+    /// Tactics "auto place creatures" (exe autoplace_army → FUN_00578510 re-runs the start placement):
+    /// cells for the side's placeable stacks, in unit order, by the same rule as the battle start.
+    /// </summary>
+    public static List<(int UnitId, Cell Cell)> AutoPlacement(GameDatabase db, BattleState s, int side)
+    {
+        var units = s.Units.Where(u => u.Side == side && u.Alive && !u.IsWarMachine && !u.IsObject).ToList();
+        var probe = new BattleState { Width = s.Width, Height = s.Height, Obstacles = s.Obstacles.ToList() };
+        var cells = DefaultPlacement(db, probe, side, units.Select(u => new ArmySlot(u.CreatureId, u.Count)).ToList());
+        return units.Select((u, i) => (u.Id, cells[i])).ToList();
+    }
+
     /// <summary>Spreads stacks along the deployment edge, large creatures on even rows.</summary>
     static List<Cell> DefaultPlacement(GameDatabase db, BattleState s, int side, List<ArmySlot> slots)
     {

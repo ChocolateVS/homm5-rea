@@ -1140,7 +1140,7 @@ public partial class CombatScreen : Control
             case Key.Escape or Key.F4 or Key.F10: Hud.ShowOptions(); return true;
             case Key.Tab when !tactics: Hud.ToggleLogPublic(); return true;
             case Key.Enter or Key.KpEnter or Key.Space when tactics: CmdEndTactics(); return true;
-            case Key.A or Key.V when tactics: CmdEndTactics(); return true;
+            case Key.A or Key.V when tactics: CmdAutoplace(); return true;   // input_autoplace_army
             case Key.Enter or Key.KpEnter or Key.Space or Key.D when !tactics: CmdDefend(); return true;
             case Key.W when !tactics: CmdWait(); return true;
             case Key.A or Key.V when !tactics: CmdAutoCombat(); return true;
@@ -1264,6 +1264,30 @@ public partial class CombatScreen : Control
         }
     }
 
+    /// <summary>
+    /// Tactics "Auto place creatures" (OnJog-StartCombat → autoplace_army, keys A/V; exe FUN_0053e510 →
+    /// FUN_00578510 re-runs the start placement for the deploying side).
+    /// </summary>
+    internal void CmdAutoplace()
+    {
+        var s = Session.Battle.State;
+        if (s.Phase != BattlePhase.Tactics) return;
+        foreach (var side in Session.LocalSides)
+        {
+            if (s.TacticsDone[side]) continue;
+            foreach (var (id, cell) in BattleSetup.AutoPlacement(Game.Instance.Db, s, side))
+                if (s.Unit(id) is { } u && u.Pos != cell) Session.Submit(new DeployCmd(id, cell) { Side = side });
+            break;
+        }
+        _deploySelected = null;
+        _lastHover = null;
+    }
+
+    /// <summary>
+    /// Confirm placement and start combat (OnJog-NextCreature → confirm_placement, keys Enter/Space; exe
+    /// FUN_00545260). The exe first asks T_NOT_ALL_CREATURES_PLACED when a stack was left off the field;
+    /// every stack is placed in this engine, so the confirmation never arises.
+    /// </summary>
     internal void CmdEndTactics()
     {
         var s = Session.Battle.State;
