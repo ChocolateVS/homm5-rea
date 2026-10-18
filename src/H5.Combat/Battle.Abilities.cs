@@ -397,12 +397,21 @@ public sealed partial class Battle
             case Ab.DeathWail:
             {
                 Emit(new AbilityTriggered(u.Id, c.Ability));
+                // exe: area = stacks at Chebyshev gap 1..DeathWailRange from the banshees (spell 0x13c in the area
+                // switch FUN_0097a530), skipping Undead (dynamic HasAbility, so Vampirism too) and Mechanical — elementals
+                // are hit. Damage FUN_0085e610 (FPU in chop mode): trunc(trunc(N · (DeathWailDamageConst − morale) ·
+                // DeathWailDamageCoef) / DeathWailDamageArgument^(gap − 1)). The 3.1 patch data sets Coef = 2 (3.0: 1, the
+                // manual's p.173 base), so the old fixed 1 / ½ / ¼ factors halved the damage.
                 int range = (int)Stats.Get("combat/Creatures/Necropolis/DeathWailRange", 3);
-                foreach (var v in S.Living.Where(o => Controller(o) != Controller(u) && IsLiving(o) && Distance(u, o) <= range).ToList())
+                float wailConst = (float)Stats.Get("combat/Creatures/Necropolis/DeathWailDamageConst", 10);
+                float wailCoef = (float)Stats.Get("combat/Creatures/Necropolis/DeathWailDamageCoef", 2);
+                float wailArg = (float)Stats.Get("combat/Creatures/Necropolis/DeathWailDamageArgument", 2);
+                foreach (var v in S.Living.Where(o => Controller(o) != Controller(u) && !o.IsObject && !o.IsWarMachine
+                             && !IsUndeadLike(o) && !o.Has(Ab.Mechanical) && Distance(u, o) >= 1 && Distance(u, o) <= range).ToList())
                 {
                     int d = Distance(u, v);
-                    double factor = d <= 1 ? 1 : d == 2 ? 0.5 : 0.25;          // p.173
-                    DealDamage(v, (int)((10 - MoraleOf(v)) * u.Count * factor), u.Id, AttackKind.Ability, c.Ability);
+                    int baseDamage = (int)((float)u.Count * (wailConst - MoraleOf(v)) * wailCoef);
+                    DealDamage(v, (int)(baseDamage / MathF.Pow(wailArg, d - 1)), u.Id, AttackKind.Ability, c.Ability);
                 }
                 break;
             }

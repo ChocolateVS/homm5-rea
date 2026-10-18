@@ -194,11 +194,11 @@ public sealed partial class Battle
         }
     }
 
-    bool CanRetaliate(Unit t, Unit attacker, bool ignoreNoRetaliation = false)
+    bool CanRetaliate(Unit t, Unit attacker, bool ignoreNoRetaliation = false, bool ranged = false)
     {
         if (!t.Alive || !attacker.Alive || t.IsWarMachine || t.IsObject) return false;
         if (t.RetaliationsLeft <= 0) return false;
-        if (!AreAdjacent(t, attacker)) return false;
+        if (!ranged && !AreAdjacent(t, attacker)) return false;
         if (!ignoreNoRetaliation && HasAbilityNow(attacker, Ab.NoEnemyRetaliation)) return false;
         if (t.HasEffect(H5.Combat.Fx.Sleep) || t.HasEffect(H5.Combat.Fx.Stunned) || t.HasEffect(H5.Combat.Fx.Frozen)) return false;
         if (HypnotizeBlocksRetaliation(t, attacker)) return false;
@@ -231,6 +231,13 @@ public sealed partial class Battle
         // Strikes per action (vtable slot 0x1c0): Double Shot for creatures, perks/ring for the Ballista.
         int shots = u.IsWarMachine ? WarMachineShotsPerAction(u) : HasAbilityNow(u, Ab.DoubleShot) ? 2 : 1;
         int targetHpBefore = t.TotalHealth;
+        // Ranged Retaliation (succubi, p.179). exe FUN_00a5fee0: a shot is answered only by a creature with
+        // RANGED_RETALIATE that can shoot, and then every other retaliation rule applies (Hypnotize, Gating, Expert
+        // Blind, No Enemy Retaliation, invisible attacker, Swift Attack vs Slow, sleep/stun/freeze) — only the
+        // adjacency test is skipped. As for melee, the verdict is taken before the blow (a shot that removes an
+        // Expert Blind is still not answered).
+        bool rangedRetaliation = HasAbilityNow(t, Ab.RangedRetaliate) && CanShoot(t) && !u.IsObject
+                                 && CanRetaliate(t, u, ranged: true);
         for (int i = 0; i < shots && u.Alive && t.Alive; i++)
         {
             if (u.Shots <= 0 && !HasAmmoCart(u.Side)) break;
@@ -253,8 +260,7 @@ public sealed partial class Battle
                     DealElementalDamage(t, 50, Elements.Fire, u.Id, "FLAMING_ARROWS");
             }
         }
-        // Ranged Retaliation (succubi, p.179).
-        if (t.Alive && u.Alive && HasAbilityNow(t, Ab.RangedRetaliate) && t.RetaliationsLeft > 0 && CanShoot(t) && !u.IsObject)
+        if (rangedRetaliation && t.Alive && u.Alive && t.RetaliationsLeft > 0 && CanShoot(t))
         {
             if (t.RetaliationsLeft != int.MaxValue) t.RetaliationsLeft--;
             if (!HasAmmoCart(t.Side)) t.Shots--;

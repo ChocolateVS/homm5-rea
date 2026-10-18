@@ -148,4 +148,52 @@ public class AuditAbilityTestsA(GameDataFixture f)
             Assert.False(Damaged(b, r, new Cell(7, 4)));   // two cells behind: no random radius for Acid Breath
         }
     }
+
+    static bool ShotIsAnswered(Battle b, Unit shooter, Unit succubi)
+    {
+        b.State.Active = shooter.Id;
+        var r = b.Apply(new ShootCmd(shooter.Id, succubi.Id) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        return r.Events.OfType<AttackStarted>().Any(e => e.Kind == AttackKind.Retaliation && e.Attacker == succubi.Id);
+    }
+
+    [Fact]
+    public void RangedRetaliationObeysTheOtherRetaliationRules()   // FUN_00a5fee0: shooter test, then Blind/sleep/... still apply
+    {
+        var b = f.Duel("CREATURE_ARCHER", 30, "CREATURE_SUCCUBUS", 20, 1, new Cell(1, 2), new Cell(10, 7));
+        b.Begin();
+        Assert.True(ShotIsAnswered(b, b.State.Units[0], b.State.Units[1]));
+
+        b = f.Duel("CREATURE_ARCHER", 30, "CREATURE_SUCCUBUS", 20, 1, new Cell(1, 2), new Cell(10, 7));
+        b.Begin();
+        b.AddEffect(b.State.Units[1], new Effect { Id = "SPELL_BLIND", Remaining = 3, Mastery = Mastery.Expert });
+        Assert.False(ShotIsAnswered(b, b.State.Units[0], b.State.Units[1]), "expert blind");   // COMBAT_NO_BLIND_RETALIATE
+
+        b = f.Duel("CREATURE_ARCHER", 30, "CREATURE_SUCCUBUS", 20, 1, new Cell(1, 2), new Cell(10, 7));
+        b.Begin();
+        b.AddEffect(b.State.Units[1], new Effect { Id = Fx.Sleep, Remaining = 3 });
+        Assert.False(ShotIsAnswered(b, b.State.Units[0], b.State.Units[1]), "sleep");   // a sleeping stack cannot retaliate
+    }
+
+    [Fact]
+    public void DeathWailUsesTheDataCoefficientAndGapExponent()   // FUN_0085e610 damage, FUN_0097a530 case 0x13c area
+    {
+        var b = f.Duel("CREATURE_BANSHEE", 5, "CREATURE_PEASANT", 500, 1, new Cell(4, 4), new Cell(6, 4));   // banshees 2x2: gap 1
+        var far = BattleSetup.AddCreature(b.Db, b.State, 1, "CREATURE_PEASANT", 500, new Cell(4, 7), summoned: false);   // gap 2
+        var golems = BattleSetup.AddCreature(b.Db, b.State, 1, "CREATURE_IRON_GOLEM", 50, new Cell(2, 4), summoned: false);   // mechanical
+        b.Begin();
+        var w = b.State.Units[0];
+        var near = b.State.Units[1];
+        float coef = (float)b.Db.Stats.Get("combat/Creatures/Necropolis/DeathWailDamageCoef", 2);
+        int expectNear = (int)((float)w.Count * (10 - b.MoraleOf(near)) * coef);
+        int expectFar = (int)((int)((float)w.Count * (10 - b.MoraleOf(far)) * coef) / 2f);
+        int hpNear = near.TotalHealth, hpFar = far.TotalHealth, hpGolems = golems.TotalHealth;
+        b.State.Active = w.Id;
+        var r = b.Apply(new UseAbilityCmd(w.Id, Ab.DeathWail) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(expectNear, hpNear - near.TotalHealth);
+        Assert.Equal(expectFar, hpFar - far.TotalHealth);
+        Assert.Equal(hpGolems, golems.TotalHealth);   // Mechanical is skipped
+        Assert.Equal(2f, coef);                         // the 3.1 patch value (a2p1-data.pak)
+    }
 }
