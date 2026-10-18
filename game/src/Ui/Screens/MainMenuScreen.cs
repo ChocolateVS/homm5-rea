@@ -24,6 +24,8 @@ public partial class MainMenuScreen : UiScreen
         Bus.On("lan", () => UiNavigator.Goto("lobby"));
         Bus.On("ubi_com", () => UiNavigator.Goto("lobby"));
         Bus.On("options", () => UiNavigator.Goto("options"));
+        // Credits roll (CCreditsScreen): its own screen with the Magic Guild backdrop; Esc returns here.
+        Bus.On("credits", () => UiNavigator.Goto("credits"));
         Bus.On("main_menu_exit", () => Cinematics.AfterGameSplash.ShowAndQuit(GetTree()));
         Campaign.CampaignMenu.Attach(this); // Single Player → Campaign / mission selection
         Bus.On("hot_seat", () => ShowOnly("HotSeatSubMenu", Panels));

@@ -44,6 +44,7 @@ public partial class MainMenu : Control
         UiNavigator.Register("lobby", () => new DuelLobbyScreen());
         UiNavigator.Register("wait", () => new DuelWaitScreen());
         UiNavigator.Register("options", () => new OptionsScreen());
+        UiNavigator.Register("credits", () => new FrontEnd.CreditsScreen());
         UiNavigator.Register("hotseatduel", () => new Combat.HotseatDuelScreen());
 
         DevArgs.Parse();

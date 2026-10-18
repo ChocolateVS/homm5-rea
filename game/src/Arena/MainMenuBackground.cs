@@ -134,33 +134,7 @@ public partial class MainMenuBackground : Node3D
         ApplyProjection();
     }
 
-    /// <summary>
-    /// The exe's projection (00cf7c30): with H/W ≤ 0.75 the FOV is horizontal; taller screens keep
-    /// the vertical extent of 4:3. Extension (user-requested ultrawide support, same rule as the
-    /// combat camera): screens wider than 16:9 keep the vertical extent of 16:9 and show more at
-    /// the sides (Hor+), so 4:3 to 16:9 frame exactly like the original.
-    /// </summary>
-    void ApplyProjection()
-    {
-        var size = GetViewport().GetVisibleRect().Size;
-        float hw = size.X > 0 ? size.Y / size.X : 0.75f;
-        float half = Mathf.DegToRad(_fovDeg) * 0.5f;
-        if (hw < 0.5625f)
-        {
-            Camera.KeepAspect = Camera3D.KeepAspectEnum.Height;
-            Camera.Fov = Mathf.RadToDeg(2f * Mathf.Atan(0.5625f * Mathf.Tan(half)));
-        }
-        else if (hw <= 0.75f)
-        {
-            Camera.KeepAspect = Camera3D.KeepAspectEnum.Width;
-            Camera.Fov = _fovDeg;
-        }
-        else
-        {
-            Camera.KeepAspect = Camera3D.KeepAspectEnum.Height;
-            Camera.Fov = Mathf.RadToDeg(2f * Mathf.Atan(0.75f * Mathf.Tan(half)));
-        }
-    }
+    void ApplyProjection() => FrontEnd.ExeProjection.Apply(Camera, _fovDeg, GetViewport().GetVisibleRect().Size);
 
     /// <summary>64-byte hex: a 4×4 float row-vector matrix in mesh space; all zeros means identity.</summary>
     static Transform3D ParsePlacement(string? hex)
