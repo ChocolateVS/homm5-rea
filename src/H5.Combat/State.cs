@@ -217,6 +217,8 @@ public sealed class BattleState
     public Rng Rng = new(1);
     public BattlePhase Phase = BattlePhase.Tactics;
     public bool[] TacticsDone = { false, false };
+    /// <summary>Retreat (flee and surrender) forbidden for a side in this battle (exe CCombatArmy reason 7), e.g. by a map script.</summary>
+    public bool[] RetreatDenied = { false, false };
     public int DeployColumns0 = 2, DeployColumns1 = 2;
     public double Time;
     /// <summary>Current actor (unit id, or Actor.Hero(side)); null while no one is acting.</summary>

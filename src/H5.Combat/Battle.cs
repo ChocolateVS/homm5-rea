@@ -142,6 +142,8 @@ public sealed partial class Battle
 
     string? DoSurrender(SurrenderCmd c)
     {
+        // H5_Game.exe CCombatArmy::CanRetreat (FUN_004d9e20) gates both flee and surrender.
+        if (RetreatRefusal(c.Side, c.PayRansom) is var refusal && refusal != 0) return $"cannot retreat (reason {refusal})";
         S.Heroes[c.Side].Fled = true;
         EndBattle(1 - c.Side, c.PayRansom ? "surrender" : "fled");
         return null;

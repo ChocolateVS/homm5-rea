@@ -21,8 +21,17 @@ public sealed partial class Battle
         return a + (b - a) * (level - 1) / 30.0;
     }
 
-    public int HeroStrikeDamage(HeroState h, Unit t, int levelBonus) =>
-        Math.Max(1, (int)Math.Floor(HeroKills(h.Level + levelBonus, t.IsObject ? 8 : t.Tier) * MaxHealthOf(t)));
+    /// <summary>
+    /// Hero strike base damage (exe FUN_00bc1b90): kills fraction for (level + bonus) x target health, then the
+    /// Offender specialisation trunc((level x Offender_HeroAttackDamageBonusPerLevel + 1) x damage); at least 1.
+    /// </summary>
+    public int HeroStrikeDamage(HeroState h, Unit t, int levelBonus)
+    {
+        int dmg = Math.Max(1, (int)Math.Floor(HeroKills(h.Level + levelBonus, t.IsObject ? 8 : t.Tier) * MaxHealthOf(t)));
+        if (h.Specialization == "HERO_SPEC_OFFENDER")
+            dmg = (int)(((float)h.Level * (float)Stats.Get("combat/HeroSpecializations/Barbarian/Offender_HeroAttackDamageBonusPerLevel", 0.05) + 1f) * dmg);
+        return Math.Max(1, dmg);
+    }
 
     string? DoHeroAttack(HeroAttackCmd c)
     {
@@ -31,7 +40,8 @@ public sealed partial class Battle
         if (t == null || !t.Alive || Controller(t) == c.Side || IsSiegeTower(t)) return "invalid target";
         if (t.HasEffect(H5.Combat.Fx.Invisible)) return "target is invisible";
         if (t.CreatureId == "BLADE_BARRIER") return "blade barrier cannot be hit by the hero";
-        HeroStrike(h, t, levelBonus: 0, friendly: false);
+        // exe FUN_00bc1b90: Deadeye Shot (HERO_SKILL_SNIPE_DEAD) raises the plain strike's level by 3.
+        HeroStrike(h, t, levelBonus: h.HasPerk(Sk.DeadeyeShot) ? 3 : 0, friendly: false, plain: true);
         // Will of Urgash (Ogres) set: the Barbarian loses 30% less ATB when attacking.
         double reset = h.Class == "HERO_CLASS_BARBARIAN" && Specials.Pieces(h, Specials.Ogres) >= 2
             ? Stats.Get("ArtifactsSetsEffectsConsts/Ogres_2Barbarian_HeroAttack_ATBLessPercents", 30) / 100.0 : 0;
@@ -39,17 +49,40 @@ public sealed partial class Battle
         return null;
     }
 
-    void HeroStrike(HeroState h, Unit t, int levelBonus, bool friendly, double extraMult = 1)
+    /// <summary>Critical chance of a hero strike in percent (exe 008cf406-008cf443), capped at 100.</summary>
+    internal int HeroCritChance(HeroState h, bool powerfulBlow) => Math.Min(100,
+        (h.HasPerk(Sk.ExcruciatingStrike) ? (int)Stats.Get("combat/HeroSkills/DemonLord/CriticalStrike_ChanceToWork", 30) : 0)
+        + (powerfulBlow ? (int)Stats.Get("combat/HeroSkills/Barbarian/PowerfullBlow_ChanceToCritical", 10) : 0));
+
+    /// <summary>The exe's ability roll with no attacker (FUN_00a5a170(0, …)): ≥100 always, ≤0 never, else Range(0,100) &lt; chance.</summary>
+    bool HeroRoll(int chance) => chance >= 100 || (chance > 0 && ObstacleGenerator.RandInclusive(S.Rng, 0, 100) < chance);
+
+    /// <summary>
+    /// A hero strike (exe FUN_008cf270). <paramref name="plain"/> = the hero's normal attack (no strike spell);
+    /// <paramref name="powerfulBlow"/> = the Powerful Blow follow-up (SPELL_EFFECT_POWERFULL_BLOW).
+    /// </summary>
+    void HeroStrike(HeroState h, Unit t, int levelBonus, bool friendly, double extraMult = 1, bool plain = false, bool powerfulBlow = false)
     {
         int actor = Actor.Hero(h.Side);
         Emit(new AttackStarted(actor, t.Id, AttackKind.Hero));
         double dmg = HeroStrikeDamage(h, t, levelBonus) * extraMult;
         if (!friendly)
         {
-            if (h.HasPerk(Sk.ExcruciatingStrike) && S.Rng.Chance(Stats.Get("combat/HeroSkills/DemonLord/CriticalStrike_ChanceToWork", 30) / 100.0))
-            { dmg *= 2; Emit(new AbilityTriggered(actor, Sk.ExcruciatingStrike, t.Id)); }
-            if (h.FavoriteEnemies.Count > 0 && IsFavoredEnemy(h, t) && h.HasPerk(Sk.DeadeyeShot))
-                dmg = Math.Max(dmg * 2, MaxHealthOf(t));
+            // exe 008cf3f8-008cf470: one critical roll, chance = Critical Strike's CriticalStrike_ChanceToWork (if
+            // known) + PowerfullBlow_ChanceToCritical (Powerful Blow strikes), capped at 100 → damage x2.
+            if (HeroRoll(HeroCritChance(h, powerfulBlow)))
+            { dmg *= 2; if (h.HasPerk(Sk.ExcruciatingStrike)) Emit(new AbilityTriggered(actor, Sk.ExcruciatingStrike, t.Id)); }
+            if (plain && h.FavoriteEnemies.Count > 0 && IsFavoredEnemy(h, t))
+            {
+                // exe FUN_00bc1b90 tail: Deadeye Shot's guaranteed critical applies to the plain strike only
+                // (fan manual p.138: doubled, always kills at least one).
+                if (h.HasPerk(Sk.DeadeyeShot))
+                    dmg = Math.Max(dmg * 2, MaxHealthOf(t));
+                // exe 008cf48d-008cf511: a plain strike without Deadeye Shot doubles against a favoured enemy on a
+                // fixed 40% (EDX = 0x28) ability roll.
+                else if (HeroRoll(40))
+                    dmg *= 2;
+            }
         }
         DealDamage(t, (int)dmg, actor, AttackKind.Hero, null);
         if (!friendly) ImbuedCast(h, t);
@@ -89,8 +122,9 @@ public sealed partial class Battle
     {
         var h = HeroOf(u);
         if (!t.Alive || !h.Links.TryGetValue(Sk.PowerfulBlow, out var id) || id != u.Id) return;
-        double mult = S.Rng.Chance(Stats.Get("combat/HeroSkills/Barbarian/PowerfullBlow_ChanceToCritical", 10) / 100.0 * 4) ? 2 : 1;
-        HeroStrike(h, t, levelBonus: melee ? 3 : 0, friendly: false, extraMult: mult);
+        // exe FUN_00bc1b90: SPELL_EFFECT_POWERFULL_BLOW strikes always get +3 levels; the critical chance is
+        // rolled inside HeroStrike (FUN_008cf270).
+        HeroStrike(h, t, levelBonus: 3, friendly: false, powerfulBlow: true);
     }
 
     /// <summary>Hero special abilities available now (each id is used with UseAbilityCmd and ActorId = hero).</summary>
