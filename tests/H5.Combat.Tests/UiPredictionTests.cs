@@ -27,7 +27,8 @@ public class UiPredictionTests(GameDataFixture f)
     {
         var b = Adjacent();
         var (a, t) = (b.State.Units[0], b.State.Units[1]);
-        b.AddEffect(t, new Effect { Id = "SPELL_HYPNOTIZE", SourceSide = t.Side, Remaining = 10 });
+        // exe 00a5fee0 @ 00a5ffbb: only a strike back at the hypnotized stack's controller is suppressed.
+        b.AddEffect(t, new Effect { Id = "SPELL_HYPNOTIZE", SourceSide = a.Side, Remaining = 10 });
         Assert.Equal("COMBAT_NO_HYPNOTIZE_RETALIATE", b.PredictAttack(a.Id, t.Id, null, ranged: false)!.RetaliateKey);
     }
 

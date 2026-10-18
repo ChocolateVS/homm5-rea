@@ -30,7 +30,7 @@ decompiler's `ROUND` is a truncation toward zero there.
 |---|---|---|---|---|
 | `SPELL_HASTE` | FIXED | 004e4270 (case 0x18), 008a4330 | initiative ×(1+max(v,0)) [+ level·Expediter_HasteBonusPerLevel for an Expediter hero], multiplied with the other factors | InitiativeEffectFactorsMultiply, ExpediterBoostsHaste |
 | `SPELL_SLOW` | FIXED | 004e4270 (case 0xc), 0097c9f0 | initiative ×(1−clamp(v,0,1)); immune: ABILITY_IMMUNITY_TO_SLOW, Dwarven Mithral Greaves | InitiativeEffectFactorsMultiply, ArtifactsGrantSpellImmunities |
-| `SPELL_HYPNOTIZE` | MATCH | 004e4270 (case 0x14), 0097c9f0 | initiative ×clamp(v,0,1); immune: mind immunity / IMMUNITY_TO_HYPNOTIZE; tier ≥ 7 needs Expert (caster mastery < 3 → 100) | |
+| `SPELL_HYPNOTIZE` | FIXED | 004e4270 (case 0x14), 0097c9f0, 00a5fee0 @ 00a5ffbb | initiative ×clamp(v,0,1); immune: mind immunity / IMMUNITY_TO_HYPNOTIZE; tier ≥ 7 needs Expert (caster mastery < 3 → 100). Retaliation is suppressed only when attacker vf+0x18 (controller) equals the hypnotized defender's ("COMBAT_NO_HYPNOTIZE_RETALIATE"); the engine blocked every retaliation | HypnotizedStackOnlySparesItsController |
 | `SPELL_BLESS` | MATCH | 008a2630 | min += (max−min)·clamp(v,0,1) | |
 | `SPELL_CURSE` | MATCH | 008a2630, 0097c9f0 | (only without Bless) max = min + (max−min)·clamp(v,0,1) if lower; immune: IMMUNITY_TO_CURSE | |
 | `SPELL_BERSERK` | FIXED | 008a2630, 0097c9f0 | damage ×max(1+v,0); immune: mind immunity / IMMUNITY_TO_BERSERK / Dwarven Mithral Shield (added). Exe checks only the IMMUNITY_TO_MIND_CONTROL ability (008a34c0 never grants it to undead) while the engine also treats undead/elemental/mechanical as mind-immune — open question (another targeting layer may block them) | ArtifactsGrantSpellImmunities |

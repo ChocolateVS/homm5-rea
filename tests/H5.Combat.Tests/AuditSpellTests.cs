@@ -182,6 +182,20 @@ public class AuditSpellTests(GameDataFixture f)
         Assert.Equal("cannot raise this creature", b.ValidateSpellTarget(Actor.Hero(0), 0, raise, Mastery.Expert, golem.Id, null));
     }
 
+    // FUN_00a5fee0 @ 00a5ffbb: a hypnotized stack keeps retaliating, except against a stack of its controller.
+    [Fact]
+    public void HypnotizedStackOnlySparesItsController()
+    {
+        var s = ChainSetup((0, "CREATURE_FOOTMAN", 4, 4), (1, "CREATURE_PEASANT", 5, 4), (1, "CREATURE_PEASANT", 5, 5));
+        var b = new Battle(f.Db, s);
+        var hypnotist = s.Units.Single(u => u.Side == 0);
+        var (t, owner) = (s.Units.First(u => u.Side == 1), s.Units.Last(u => u.Side == 1));
+        b.AddEffect(t, new Effect { Id = "SPELL_HYPNOTIZE", SourceSide = 0, Remaining = 3 });
+        Assert.True(b.HypnotizeBlocksRetaliation(t, hypnotist));
+        Assert.False(b.HypnotizeBlocksRetaliation(t, owner));
+        Assert.False(b.HypnotizeBlocksRetaliation(owner, hypnotist));
+    }
+
     // ---- Chain Lightning (exe FUN_0085edb0 / FUN_00a5dbb0) and Elemental Chains (FUN_00977e60 / FUN_004b0d80)
 
     BattleState ChainSetup(params (int side, string id, int x, int y)[] units)

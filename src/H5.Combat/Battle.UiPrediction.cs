@@ -65,8 +65,7 @@ public sealed partial class Battle
     {
         if (!t.Alive || t.IsWarMachine || t.IsObject) return (false, "COMBAT_NO_RETALIATE");
         if (a.HasEffect(H5.Combat.Fx.RuneBattleRage)) return (false, "COMBAT_NO_RETALIATE");
-        // A hypnotized stack never retaliates (engine CanRetaliate; exe 00a5fee0 reports it with this string).
-        if (t.HasEffect("SPELL_HYPNOTIZE")) return (false, "COMBAT_NO_HYPNOTIZE_RETALIATE");
+        if (HypnotizeBlocksRetaliation(t, a)) return (false, "COMBAT_NO_HYPNOTIZE_RETALIATE");
         if (t.HasEffect("SPELL_ABILITY_GATING")) return (false, "COMBAT_NO_GATING_RETALIATE");
         if (ranged && !(HasAbilityNow(t, "ABILITY_RANGED_RETALIATE") && t.MaxShots > 0))
             return (false, "COMBAT_NO_SHOOTER_RETALIATE");

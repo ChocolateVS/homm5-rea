@@ -200,6 +200,14 @@ public sealed partial class Battle
     }
 
     /// <summary>
+    /// Hypnotize only stops a retaliation aimed at the hypnotized stack's controller (exe 00a5fee0 @ 00a5ffbb:
+    /// effect 0x14 on the defender and attacker vf+0x18 == defender vf+0x18 → "COMBAT_NO_HYPNOTIZE_RETALIATE");
+    /// any other attacker is struck back as usual.
+    /// </summary>
+    internal bool HypnotizeBlocksRetaliation(Unit t, Unit attacker)
+        => t.HasEffect("SPELL_HYPNOTIZE") && Controller(attacker) == Controller(t);
+
+    /// <summary>
     /// Set Afire's damage per turn (exe 004e68ca..004e694b): D = the spell damage dealt to the target, divided back by
     /// clamp(MarkOfFire_FireDamageMultiplier, 0, 1000) when the target carries Mark of Fire (both truncated), then
     /// trunc(D · SetAfire_DamageMultiplier).

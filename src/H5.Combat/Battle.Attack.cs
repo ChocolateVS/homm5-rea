@@ -197,7 +197,8 @@ public sealed partial class Battle
         if (t.RetaliationsLeft <= 0) return false;
         if (!AreAdjacent(t, attacker)) return false;
         if (!ignoreNoRetaliation && HasAbilityNow(attacker, Ab.NoEnemyRetaliation)) return false;
-        if (t.HasEffect(H5.Combat.Fx.Sleep) || t.HasEffect(H5.Combat.Fx.Stunned) || t.HasEffect("SPELL_HYPNOTIZE") || t.HasEffect(H5.Combat.Fx.Frozen)) return false;
+        if (t.HasEffect(H5.Combat.Fx.Sleep) || t.HasEffect(H5.Combat.Fx.Stunned) || t.HasEffect(H5.Combat.Fx.Frozen)) return false;
+        if (HypnotizeBlocksRetaliation(t, attacker)) return false;
         // Only Expert Blind stops retaliation (exe FUN_00a5fee0: blind effect level > 2; manual p.186).
         if (t.GetEffect("SPELL_BLIND") is { Mastery: >= Mastery.Expert }) return false;
         if (t.HasEffect(GatedEffect)) return false;   // exe FUN_00a5fee0: "COMBAT_NO_GATING_RETALIATE"
