@@ -10,3 +10,5 @@ game/.godot/
 tools/ghidra_*/
 tools/ghidra_projects/
 tools/re/out/
+tools/ghidra-projects/
+tools/advre/out/
