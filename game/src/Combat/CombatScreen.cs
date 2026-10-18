@@ -519,12 +519,12 @@ public partial class CombatScreen : Control
             var to = Arena.Grid.StackCenter(new Vector2I(path[^1].X, path[^1].Y), v.Size);
             v.FaceTowards(to);
             float dist = from.DistanceTo(to);
-            float t = Math.Max(0.4f, dist / (cellsPerSecond * 1.6f));
+            float t = Math.Max(0.4f, dist / ArenaGrid.TileSize / (cellsPerSecond * 1.6f));
             var tw = CreateTween();
             tw.TweenMethod(Callable.From<float>(k =>
             {
                 var p = from.Lerp(to, k);
-                p.Y += Mathf.Sin(k * Mathf.Pi) * Math.Min(2.5f, dist * 0.3f);
+                p.Y += Mathf.Sin(k * Mathf.Pi) * Math.Min(2.5f * ArenaGrid.TileSize, dist * 0.3f);
                 v.Position = p;
             }), 0f, 1f, t);
             await ToSignal(tw, Tween.SignalName.Finished);
@@ -537,7 +537,7 @@ public partial class CombatScreen : Control
                 if (to.DistanceTo(v.Position) < 0.01f) continue;
                 v.FaceTowards(to);
                 var tw = CreateTween();
-                tw.TweenProperty(v, "position", to, v.Position.DistanceTo(to) / cellsPerSecond);
+                tw.TweenProperty(v, "position", to, v.Position.DistanceTo(to) / ArenaGrid.TileSize / cellsPerSecond);
                 await ToSignal(tw, Tween.SignalName.Finished);
             }
         }

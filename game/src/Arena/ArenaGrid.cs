@@ -14,7 +14,12 @@ namespace H5Reborn.Arena;
 /// </summary>
 public sealed class ArenaGrid
 {
-    public const int Width = 12, Height = 10;
+    /// <summary>
+    /// Field size of the current battle: 12×10, or 14×14 for sieges with fortifications.
+    /// Only one battle is shown at a time, so this is set by the grid being built.
+    /// </summary>
+    public static int Width { get; private set; } = 12;
+    public static int Height { get; private set; } = 10;
     /// <summary>
     /// The engine's internal grid is 16×12: fixed obstacle data (ArenaObjects/BoatArena,
     /// AbyssArena) addresses cells x 2..13, y 1..10 symmetrically. Internal (ix, iy) = (cx+2, cy+1).
@@ -28,13 +33,16 @@ public sealed class ArenaGrid
     public readonly int OriginTileX, OriginTileY;
     public readonly float AdditionalHeight;
 
-    public ArenaGrid(ArenaDefinition def) : this(def.Terrain, def.MountX, def.MountY, def.AdditionalHeight) { }
+    public ArenaGrid(ArenaDefinition def) : this(def.Terrain, def.MountX, def.MountY, def.AdditionalHeight, def.FieldWidth, def.FieldHeight) { }
 
-    public ArenaGrid(TerrainData terrain, int mountX, int mountY, float additionalHeight = 0)
+    /// <summary>Cell (cx, cy) is map tile (Mount.x + cx, Mount.y − (H + 1) + cy) (12×10: Mount.y − 11).</summary>
+    public ArenaGrid(TerrainData terrain, int mountX, int mountY, float additionalHeight = 0, int width = 12, int height = 10)
     {
         _terrain = terrain;
+        Width = width;
+        Height = height;
         OriginTileX = mountX;
-        OriginTileY = mountY - 11;
+        OriginTileY = mountY - (height + 1);
         AdditionalHeight = additionalHeight;
     }
 
@@ -43,8 +51,16 @@ public sealed class ArenaGrid
     /// <summary>Terrain height in world units at a map position (tile units).</summary>
     public float HeightAt(float mapX, float mapY) => _terrain.SampleHeight(mapX, mapY) + AdditionalHeight;
 
-    public static Vector3 MapToWorld(float mapX, float mapY, float height) => new(mapX, height, -mapY);
-    public static Vector2 WorldToMap(Vector3 w) => new(w.X, -w.Z);
+    /// <summary>
+    /// World units per map tile. Nival models are authored at 2 units per tile: siege building
+    /// models span exactly 2 units per footprint tile (towers 2×2 → ~4.7 units, gate 2×4 → ~8.7),
+    /// and the combat camera's Rod (50) equals the camera distance fitted to the manual's combat
+    /// screenshots (24.8 cells × 2). Terrain heights are already in world units.
+    /// </summary>
+    public const float TileSize = 2f;
+
+    public static Vector3 MapToWorld(float mapX, float mapY, float height) => new(mapX * TileSize, height, -mapY * TileSize);
+    public static Vector2 WorldToMap(Vector3 w) => new(w.X / TileSize, -w.Z / TileSize);
 
     /// <summary>World position of a cell's centre on the terrain.</summary>
     public Vector3 CellCenter(Vector2I cell) => CellCenter(cell.X + 0.5f, cell.Y + 0.5f);

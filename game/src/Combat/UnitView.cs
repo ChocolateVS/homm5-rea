@@ -110,7 +110,7 @@ public partial class UnitView : Node3D
         if (Dead || !Visible) { Plaque.Visible = false; return; }
         // Stock places the plaque at the stack's front-bottom corner; we use the footprint
         // corner nearest the camera, slightly above the ground.
-        var basePos = GlobalPosition + new Vector3(0, 0.05f, 0) + (cam.GlobalPosition - GlobalPosition).Normalized() * (0.45f * Size);
+        var basePos = GlobalPosition + new Vector3(0, 0.05f, 0) + (cam.GlobalPosition - GlobalPosition).Normalized() * (0.45f * Size * ArenaGrid.TileSize);
         if (cam.IsPositionBehind(basePos)) { Plaque.Visible = false; return; }
         var screen = cam.UnprojectPosition(basePos);
         Plaque.Position = (screen - Plaque.Size / 2).Round();

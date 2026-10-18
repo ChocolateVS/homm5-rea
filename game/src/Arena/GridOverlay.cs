@@ -28,6 +28,7 @@ public partial class GridOverlay : Node3D
     readonly ArenaGrid _grid;
     readonly MeshInstance3D[,] _cells = new MeshInstance3D[ArenaGrid.Width, ArenaGrid.Height];
     readonly CellMark[,] _marks = new CellMark[ArenaGrid.Width, ArenaGrid.Height];
+    // Sized when created, i.e. after the battle's ArenaGrid set the field size.
     readonly Dictionary<CellMark, Material?> _materials = new();
     bool _showGrid;
 

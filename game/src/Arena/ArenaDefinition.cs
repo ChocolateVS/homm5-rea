@@ -25,6 +25,8 @@ public sealed class ArenaLight
 public sealed class ArenaDefinition
 {
     public string ScenePath = "", MapPath = "";
+    /// <summary>Battlefield size in cells (14×14 for sieges with fortifications).</summary>
+    public int FieldWidth = 12, FieldHeight = 10;
     /// <summary>Map floor the battle takes place on (0 surface, 1 underground).</summary>
     public int Floor;
     public int MountX, MountY;

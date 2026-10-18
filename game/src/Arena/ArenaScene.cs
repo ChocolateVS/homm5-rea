@@ -231,8 +231,9 @@ public partial class ArenaScene : Node3D
         var target = Grid.CellCenter(gridTarget.X, gridTarget.Y);
         float p = Mathf.DegToRad(pitchDeg), y = Mathf.DegToRad(yawDeg);
         // North is Godot −Z; the eye sits south of the target (+Z) rotated by yaw about Up.
-        var back = new Vector3(Mathf.Sin(y), 0, Mathf.Cos(y)) * (distance * Mathf.Cos(p));
-        var eye = target + back + new Vector3(0, distance * Mathf.Sin(p), 0);
+        float d = distance * ArenaGrid.TileSize;   // cells → world units
+        var back = new Vector3(Mathf.Sin(y), 0, Mathf.Cos(y)) * (d * Mathf.Cos(p));
+        var eye = target + back + new Vector3(0, d * Mathf.Sin(p), 0);
         cam.LookAtFromPosition(eye, target, Vector3.Up);
     }
 

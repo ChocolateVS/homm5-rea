@@ -49,6 +49,15 @@ centre of footprint tile (0,0) of its `blockedTiles`: footprint centroid vs mode
 over 473 objects has median error 0.49 for "origin at tile centre" and 1.0 for the alternatives.
 So world position = (Pos.x + 0.5, Pos.y + 0.5, terrain height + Pos.z); `Rot` is radians about +Z.
 
+### World scale (2 units per tile)
+
+Models are authored at **2 world units per map tile**: siege building models span exactly 2 units
+per footprint tile (towers 2×2 → ~4.7 units, gate 2×4 → ~8.7; the two side towers, 14 tiles apart, are
+26.6 units apart), and the combat camera's `Rod` (50) equals the camera distance fitted to the manual's
+combat screenshots (24.8 cells × 2). Terrain heights are in world units. The client maps tiles with
+`ArenaGrid.TileSize = 2`; at 1 unit per tile creatures and scenery came out twice too large relative to
+the grid (the manual shows creatures about 0.6 of a cell tall).
+
 ### Combat camera
 
 `Cameras/CombatArena/CombatArena.xdb` is the only combat-arena camera (others are cinematics):
