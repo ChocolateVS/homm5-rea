@@ -12,11 +12,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 106 |
+| FIXED | 110 |
 | MATCH | 77 |
 | GAP | 7 |
-| UNVERIFIED | 339 |
-| N/A | 58 |
+| UNVERIFIED | 337 |
+| N/A | 57 |
 
 ## Core mechanics
 
@@ -276,7 +276,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_DEMONIC_STRIKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DEATH_SCREAM` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MULTISHOT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_SNIPE_DEAD` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_SNIPE_DEAD` | FIXED | 00bc1b90, 008cf48d | Deadeye Shot: plain strike level +3 (was missing); vs a favoured enemy the plain strike crits for sure (kills ≥ 1) and skips the generic 40 % favoured-enemy roll | AuditHeroStrikeTests.DeadeyeShotAddsThreeLevelsToThePlainStrike |
 | `HERO_SKILL_IMBUE_ARROW` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MAGIC_BOND` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MELT_ARTIFACT` | MATCH | see EXE_FINDINGS | verified in EXE_FINDINGS.md |  |
@@ -297,7 +297,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_TRIPLE_CATAPULT` | FIXED | 00a75bf0, 00b3bb50 | shots per action set to 2 (+1 Catapult) | tests/H5.Combat.Tests/WarMachineAuditTests |
 | `HERO_SKILL_GATING_MASTERY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_CRITICAL_GATING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_CRITICAL_STRIKE` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_CRITICAL_STRIKE` | FIXED | 008cf406-008cf470 | hero strikes ×2 on CriticalStrike_ChanceToWork % using the exe ability roll (Range(0,100) < chance, no Soldier's Luck reroll); combined with Powerful Blow's 10 % into one roll | AuditHeroStrikeTests.CriticalChanceComposesCriticalStrikeAndPowerfulBlow |
 | `HERO_SKILL_DEMONIC_RETALIATION` | UNVERIFIED | 00a5ed90 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_EXPLODING_CORPSES` | FIXED | 0097b690, 0085eaa0 | consumed corpse explodes: fire 1+SP to all adjacent units | (UseAbility CONSUME_CORPSE) |
 | `HERO_SKILL_DEMONIC_FLAME` | UNVERIFIED | 00a5ed90 | implemented; not yet compared with the exe |  |
@@ -365,7 +365,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_DEMONIC_RAGE` | UNVERIFIED | 008a16b0 0097f610 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MIGHT_OVER_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MEMORY_OF_OUR_BLOOD` | UNVERIFIED | 008aaec0 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_POWERFULL_BLOW` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_POWERFULL_BLOW` | FIXED | 00bc1b90, 008cf42b | the follow-up strike (SPELL_EFFECT_POWERFULL_BLOW) always gets +3 levels (engine: melee only) and adds PowerfullBlow_ChanceToCritical (10) to the critical chance (engine rolled 10 % × 4 separately) | AuditHeroStrikeTests.CriticalChanceComposesCriticalStrikeAndPowerfulBlow |
 | `HERO_SKILL_ABSOLUTE_RAGE` | UNVERIFIED | 008aaec0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_BATTLE_ELATION` | UNVERIFIED | 008a0db0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_LUCK_OF_THE_BARBARIAN` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -482,7 +482,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_GRIM_FIGHTER` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_RASH` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_CENTAUR_MISTRESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SPEC_OFFENDER` | N/A |  | no combat use found in exe or engine |  |
+| `HERO_SPEC_OFFENDER` | FIXED | 00bc1b90 (00bc1d20-00bc1d7f) | hero strike ×(level·Offender_HeroAttackDamageBonusPerLevel + 1), x87 truncation — was missing | AuditHeroStrikeTests.OffenderScalesTheStrikeByLevel |
 | `HERO_SPEC_WAR_LEADER` | FIXED | 00a34740 | warcry cost −(lvl/4·1+1) | (HeroManaCost) |
 | `HERO_SPEC_WYVERN_TAMER` | FIXED | 004bc470 | creatures whose base creature is Wyvern (Wyvern, Foul Wyvern, Paokai): +((level−1)/LevelDivisor)·PerDividedLevel + Base HP — engine used level/LevelDivisor (+2 HP too many) | AuditHeroTests.WyvernTamerHealthUsesLevelMinusOne |
 | `HERO_SPEC_BLOODDRINKER` | UNVERIFIED | 00a5c300 | implemented; not yet compared with the exe |  |
