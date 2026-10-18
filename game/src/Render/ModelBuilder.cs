@@ -100,9 +100,9 @@ public static class ModelBuilder
     }
 
     /// <summary>Per-material Effect and FloatParam from the (Model) xdb (not carried by MaterialData).</summary>
-    static List<(string? Effect, float Param)> MaterialEffects(ModelAsset model)
+    static List<(string? Effect, float Param, bool AddPlaced)> MaterialEffects(ModelAsset model)
     {
-        var list = new List<(string?, float)>();
+        var list = new List<(string?, float, bool)>();
         try
         {
             if (string.IsNullOrEmpty(model.SourcePath) || !Game.Instance.Fs.Exists(model.SourcePath)) return list;
@@ -111,50 +111,60 @@ public static class ModelBuilder
             {
                 var mat = xdb.Resolve(item, model.SourcePath);
                 float.TryParse((string?)mat?.Element("FloatParam"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var param);
-                list.Add(((string?)mat?.Element("Effect"), param));
+                list.Add(((string?)mat?.Element("Effect"), param, (string?)mat?.Element("AddPlaced") == "true"));
             }
         }
         catch (Exception e) { GD.PushWarning($"[H5] material effects {model.SourcePath}: {e.Message}"); }
         return list;
     }
 
-    static Shader? _cloudsShader;
+    static readonly Dictionary<string, Shader> _cloudsShaders = new();
 
     /// <summary>
-    /// M_CLOUDS_H5 (lava, cloud layers): a self-illuminated texture drifting over the surface.
+    /// M_CLOUDS_H5 (lava, cloud layers, sun rays): a self-illuminated texture drifting over the surface.
     /// FloatParam drives the drift speed; the exact original shader wasn't traced (exe FUN_00c76410
-    /// registers the effect), so direction and rate here are an approximation.
+    /// registers the effect), so direction and rate here are an approximation. The material's own
+    /// alpha mode still applies: AM_TRANSPARENT surfaces blend by texture alpha (AddPlaced ones
+    /// additively, e.g. the Rays_* sunbeam cards) and don't write depth; Is2Sided disables culling.
     /// </summary>
-    static Material CloudsMaterial(Texture2D? tex, float param, bool selfIllum)
+    static Material CloudsMaterial(Texture2D? tex, float param, bool selfIllum, bool transparent, bool additive, bool twoSided)
     {
-        _cloudsShader ??= new Shader
+        var modes = new List<string> { twoSided ? "cull_disabled" : "cull_back" };
+        if (transparent) { modes.Add(additive ? "blend_add" : "blend_mix"); modes.Add("depth_draw_never"); }
+        if (selfIllum) modes.Add("unshaded");
+        var key = string.Join(",", modes);
+        if (!_cloudsShaders.TryGetValue(key, out var shader))
         {
-            Code = """
-                shader_type spatial;
-                render_mode cull_back;
-                uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_enable;
-                uniform float speed = 0.3;
-                uniform bool self_illum = true;
-                void fragment() {
-                    vec2 drift = vec2(1.0, 0.6) * speed * 0.05 * TIME;
-                    vec3 a = texture(tex, UV + drift).rgb;
-                    vec3 b = texture(tex, UV * 0.9 - drift * 0.7).rgb;
-                    vec3 c = (a + b) * 0.5;
-                    if (self_illum) { ALBEDO = vec3(0.0); EMISSION = c; } else { ALBEDO = c; }
-                }
-                """,
-        };
-        var m = new ShaderMaterial { Shader = _cloudsShader };
+            shader = new Shader
+            {
+                Code = $$"""
+                    shader_type spatial;
+                    render_mode {{key}};
+                    uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_enable;
+                    uniform float speed = 0.3;
+                    void fragment() {
+                        vec2 drift = vec2(1.0, 0.6) * speed * 0.05 * TIME;
+                        vec4 a = texture(tex, UV + drift);
+                        vec4 b = texture(tex, UV * 0.9 - drift * 0.7);
+                        vec4 c = (a + b) * 0.5;
+                        ALBEDO = c.rgb;
+                        {{(transparent ? "ALPHA = c.a;" : "")}}
+                    }
+                    """,
+            };
+            _cloudsShaders[key] = shader;
+        }
+        var m = new ShaderMaterial { Shader = shader };
         m.SetShaderParameter("tex", tex);
         m.SetShaderParameter("speed", param);
-        m.SetShaderParameter("self_illum", selfIllum);
         return m;
     }
 
-    static Material BuildMaterial(MaterialData m, (string? Effect, float Param) fx)
+    static Material BuildMaterial(MaterialData m, (string? Effect, float Param, bool AddPlaced) fx)
     {
         if (fx.Effect == "M_CLOUDS_H5")
-            return CloudsMaterial(m.DiffuseTexture != null ? Game.Instance.LoadTexture(m.DiffuseTexture) : null, fx.Param, m.LightingMode == "L_SELFILLUM");
+            return CloudsMaterial(m.DiffuseTexture != null ? Game.Instance.LoadTexture(m.DiffuseTexture) : null, fx.Param,
+                m.LightingMode == "L_SELFILLUM", m.AlphaMode is "AM_TRANSPARENT" or "AM_ALPHA_BLEND", fx.AddPlaced, m.TwoSided);
 
         var mat = new StandardMaterial3D
         {
