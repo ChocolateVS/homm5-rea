@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 136 |
-| MATCH | 91 |
+| FIXED | 137 |
+| MATCH | 96 |
 | GAP | 9 |
-| UNVERIFIED | 295 |
+| UNVERIFIED | 289 |
 | N/A | 57 |
 
 ## Core mechanics
@@ -57,7 +57,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_DOUBLE_SHOT` | N/A | 008a0f90 | not used by shipped data |  |
 | `ABILITY_MECHANICAL` | UNVERIFIED | 008a4b70 0097a530 0097b410 0097c9f0 | implemented; not yet compared with the exe |  |
 | `ABILITY_UNDEAD` | FIXED | 008a34c0 | Vampirism grants Undead | tests/H5.Combat.Tests/AuditSpecTests.DynamicAbilitiesFollowTheOriginal |
-| `ABILITY_DEMONIC` | UNVERIFIED | 00977600 | implemented; not yet compared with the exe |  |
+| `ABILITY_DEMONIC` | MATCH | 00977600 | only tested for Holy/Unholy Word: Unholy Word skips Undead or Demonic targets; Holy Word skips everything that is neither Demon-Raged, Undead nor Demonic (Undead via the dynamic HasAbility, e.g. Vampirism) — as Battle.Spells.cs. Chain Shot's Demonic exclusion is a separate row |  |
 | `ABILITY_ELEMENTAL` | UNVERIFIED | 0097b410 0097c9f0 0097f610 00a59c60 | implemented; not yet compared with the exe |  |
 | `ABILITY_CURSING_ATTACK` | FIXED | 00a5df30, 00982010 | SPELL_CURSE at BASIC mastery (a5ddb0 mastery arg 1) with the creature spell power, after the spell hit check — engine cast it at Advanced | AuditAbilityTests.CursingAttackCastsBasicCurse |
 | `ABILITY_FLESH_AND_BLOOD` | FIXED | 008a34c0 | Phantom images lose Flesh and Blood | tests/H5.Combat.Tests/AuditSpecTests.DynamicAbilitiesFollowTheOriginal |
@@ -82,7 +82,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_EXPLOSION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_RANGED_RETALIATE` | UNVERIFIED | 00a5fee0 00bfb4b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_FEAR` | FIXED | 00a629b0, 00a5e1b0, 00a5d790 | only on the attacker's own strike (never a retaliation, +0x21) and only while the target would retaliate; mind-immunity check (00a5e1b0); the target flees instead of retaliating — engine could trigger on retaliations / when no retaliation was pending | AuditAbilityTests.FearNeverTriggersOnRetaliation |
-| `ABILITY_FRIGHT_AURA` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
+| `ABILITY_FRIGHT_AURA` | MATCH | 008a4b70, 00989fd0 | a stack that is neither Undead nor Mechanical gets morale flag 4 when an adjacent enemy stack has the aura; flag 4 = morale −3 (00989fd0) |  |
 | `ABILITY_VORPAL_SWORD` | FIXED | 00a673c0, 00a63020 | +1 creature killed on the strike, only vs creature targets without CRYSTAL_SCALES — engine ignored both conditions | AuditAbilityTests.VorpalSwordDoesNotWorkOnCrystalScales |
 | `ABILITY_CHAIN_SHOT` | UNVERIFIED | 00a673c0 | implemented; not yet compared with the exe |  |
 | `ABILITY_WEAKENING_STRIKE` | UNVERIFIED | 00a629b0 → 00a5deb0 → 00a5ddb0 → 00bbf160 | on every strike (incl. ranged/retaliation as far as 00a629b0's helper list shows), with power ZombieWeakeningStrike (0 if < 1), applied through the spell-effect pipeline (00a5ddb0 → 00bbf160 → 00988df0 cast record → 00bbf000); a successful application also feeds the Demon Rage/Blood Rage counter (army vf 0x7c, field +0x80 of 008a18b0). Whether re-application stacks (engine: adds ZombieWeakeningStrike per hit) depends on 00bbf000, not yet decoded; the engine also limits it to melee |  |
@@ -93,7 +93,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_ELVES_DOUBLE_SHOT` | MATCH | 00a673c0 | second shot re-rolls luck (EXE_FINDINGS) |  |
 | `ABILITY_WARDING_ARROWS` | FIXED | 00a5b000 | every ranged shot, WardingArrows_ProcFactor (flag 0, second roll); ATB = max(0, ATB − clamp(WardingArrowsATBAffect,0,1)); no damage requirement — engine required damage > 0 and could go below 0 | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
 | `ABILITY_BLINDING_ATTACK` | MATCH | 00a629b0, 00a5e440 | BlindingAttack_ProcFactor on the strike; Blind at basic mastery with BlindingAttackSpellPower (creature power if <1) via the spell application (immunities by spell rules, FUN_00a5ddb0 not compared); a blinded target doesn't retaliate |  |
-| `ABILITY_AURA_OF_MAGIC_RESISTANCE` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
+| `ABILITY_AURA_OF_MAGIC_RESISTANCE` | MATCH | 008a4b70 | the stack itself or an adjacent allied stack with the aura sets flag 8 (the resistance value is applied in the spell-resistance code, spells audit) |  |
 | `ABILITY_TAKE_ROOTS` | UNVERIFIED | 008a22f0 008a34c0 008a65e0 008a6910 | implemented; not yet compared with the exe |  |
 | `ABILITY_ENTANGLING_ROOTS` | FIXED | 008a34c0 | suppressed by Rage of the Forest | (Unit.Has) |
 | `ABILITY_ACID_BREATH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -143,7 +143,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_MAGMA_SHIELD` | FIXED | 00a5bdd0 | same as Fire Shield with MagmaShield_Damage_Multiplier | AuditAbilityTests.FireShieldIgnoresOverkill |
 | `ABILITY_PACK_HUNTER` | UNVERIFIED | 00a64120 | implemented; not yet compared with the exe |  |
 | `ABILITY_HOWL` | GAP | 00a5cbc0 (00a5cbe6, called from the strike loop 00a65260) | the exe's only HasAbility(HOWL) test is inside the attack pipeline: when the wolves attack, a friendly stack is created next to the target cell (FUN_00b3fac0 / FUN_00c558b0 cell search, army vtable +0x1c) with ATB = Range(0, HowlMaxATBValueAtStart) — i.e. it triggers automatically on attack, not as an activated ability. The engine offers it as a once-per-battle activated ability. Summoned count/slot (army vf 0x2c − 1), the once-only check (FUN_004e9280) and the cell search are not decoded yet |  |
-| `ABILITY_AGILITY` | UNVERIFIED | 008a6c40 008aaec0 00a66050 | implemented; not yet compared with the exe |  |
+| `ABILITY_AGILITY` | FIXED | 008aaec0, 008a6c40, 00a66050 | SPELL_ABILITY_AGILITY: added at battle start with value = the creature's speed (vf 0x48 > 0); removed at the start of each of its turns (008a6c40, vtable +0x270); after a move set to the path cells walked when > 0 (00a66050); defence + AgilityDefenceBoostPerCell × value. The engine kept the previous turn's walked distance through a turn without movement | AuditAbilityTestsA.AgilityIsClearedEachTurnAndSetByTheMove |
 | `ABILITY_HEXING_ATTACK` | FIXED | 00a5e000, stats +0x3ec | walks HexingAttackSpells in data order (Curse, Slow, Weakness, Disrupting Ray, all Expert) and casts the first the target lacks and doesn't resist — engine picked one at random | AuditAbilityTests.HexingAttackCastsTheFirstMissingSpellInDataOrder |
 | `ABILITY_CLEAVE` | FIXED | 00a65260 (00a657e2) | checked only after the FIRST strike of the attack (`strike == 0`), when that strike killed at least one creature: the strike loop's count and last index grow by one, so the extra blow is a normal loop iteration (pattern attack, retaliation rules, Rune of Berserking last-strike rule). The engine checked the LAST strike and dealt a pattern-less side blow | AuditAbilityTestsA.CleaveAddsAFullStrikeAfterTheFirstBlow |
 | `ABILITY_BATTLE_FRENZY` | FIXED | 00a629b0 (00a62a2b), 00a58de0 | after a RETALIATION strike (+0x21) by a creature with the ability, it gains SPELL_EFFECT_BATTLE_FRENZY for 0x7ffffffe (the whole battle, one stack per retaliation); every retaliation's damage is ×BattleFrenzyBoostFactor^stacks (00a58de0, GetSpellEffect(0x112) field +0x20). The engine reset the multiplier at the creature's own turn | AuditAbilityTestsA.BattleFrenzyLastsTheWholeBattle |
@@ -179,11 +179,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_SEDUCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_LEAP` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_DEATH_WAIL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_WEAKENING_AURA` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
+| `ABILITY_WEAKENING_AURA` | MATCH | 008a4b70, 00989fd0 | non-Undead stacks next to any stack (either side) with the aura get flag 0x20 = morale −WeakeningAuraMoraleDec |  |
 | `ABILITY_AMMO_STEAL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_SLEEPING_STRIKE` | FIXED | 00a629b0, 00a5e4f0 | proc SleepingStrike_ProcFactor on any strike; immune: IMMUNITY_TO_BLIND, MECHANICAL, ELEMENTAL (undead NOT immune); target then doesn't retaliate — engine excluded undead and ignored blind immunity | AuditAbilityTests.SleepingStrikeImmunityIsBlindMechanicalElementalNotUndead |
 | `ABILITY_SORROW_STRIKE` | FIXED | 00a5e690 | SPELL_SORROW at mastery SorrowStrike_SpellTrained (3 = Expert) with the creature spell power — engine used Basic (duration term FUN_00a2d700 × power not compared) | AuditAbilityTests.SorrowStrikeUsesTheTrainedMastery |
-| `ABILITY_HORROR_OF_THE_DEATH` | UNVERIFIED | 008a5570 | implemented; not yet compared with the exe |  |
+| `ABILITY_HORROR_OF_THE_DEATH` | MATCH | 008a5570, 00989fd0 | non-Undead stacks get flag 0x2000 while an opposing creature with the ability is in the battle; flag = morale −HorrorOfDeath_MoraleDecrease |  |
 | `ABILITY_PIERCING_ARROW` | FIXED | 00a5d420, 00a5ceb0, 00b3d010, 00a5a900 | Force Arrow: −50 % defence; extra proc (PiercingArrow_ProcFactor, flag 0, no second roll, not HOLD_GROUND); push cell = the free neighbour (exe ring order (+1,0),(+1,+1),(0,+1),(−1,+1),(−1,0),(−1,−1),(0,−1),(+1,−1)) whose direction from the target is closest to attacker→target, within π/3 (strict <, first wins ties); an entangled target "succeeds" in place; no qualifying cell → no trigger (no stun) | AuditAbilityTests.ForceArrowPushPicksClosestFreeCellWithinSixtyDegrees, PushOfEntangledTargetSucceedsWithoutMoving |
 | `ABILITY_TREEANT_UNION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_RAGE_OF_THE_FOREST` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
