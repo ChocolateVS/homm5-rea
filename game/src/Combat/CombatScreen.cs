@@ -27,6 +27,7 @@ public partial class CombatScreen : Control
     readonly Dictionary<int, UnitView> _units = new();
     readonly Dictionary<int, Node3D> _heroes = new();
     Control _plaqueLayer = null!;
+    FlyingSigns _signs = null!;
     readonly Queue<BattleEvent> _queue = new();
     bool _playing;
     double _attackRemainderUntil;
@@ -68,6 +69,9 @@ public partial class CombatScreen : Control
 
         _plaqueLayer = new Control { Name = "Plaques", AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore };
         AddChild(_plaqueLayer);
+        _signs = new FlyingSigns();
+        AddChild(_signs);
+        _signs.Attach(Arena.Camera);
 
         foreach (var u in Session.Battle.State.Units)
             if (!u.IsObject && (u.Alive || u.IsWarMachine)) AddUnitView(u);
@@ -333,7 +337,7 @@ public partial class CombatScreen : Control
                 break;
 
             case Missed mi when View(mi.Target) is { } missed:
-                FloatText(missed, "Miss", new Color(0.9f, 0.9f, 0.9f));
+                _signs.Event(missed, missed.SignAnchor, "Miss");
                 break;
 
             case Healed h when View(h.Target) is { } hv:
@@ -341,7 +345,7 @@ public partial class CombatScreen : Control
                 hv.Dead = false;
                 hv.Visible = true;
                 hv.UpdatePlaque();
-                FloatText(hv, $"+{h.Amount}", new Color(0.4f, 1f, 0.4f));
+                if (h.Resurrected > 0) _signs.Casualty(hv, hv.SignAnchor, h.Resurrected);
                 break;
 
             case UnitDied ud when View(ud.UnitId) is { } dead:
@@ -372,15 +376,14 @@ public partial class CombatScreen : Control
 
             case SpellResisted sr:
                 Hud.Log.AddLine(CombatLogText.Resisted(this, sr));
+                if (View(sr.Target) is { } rv) _signs.Event(rv, rv.SignAnchor, "SpellResisted");
                 break;
 
             case MoraleProc mp:
                 Hud.Log.AddLine(CombatLogText.Morale(this, mp));
-                if (View(mp.UnitId) is { } mpv) FloatText(mpv, mp.Good ? "Morale!" : "Bad morale", mp.Good ? new Color(1, 0.85f, 0.3f) : new Color(0.6f, 0.6f, 1f));
                 break;
 
             case LuckProc lp:
-                if (View(lp.UnitId) is { } lpv) FloatText(lpv, lp.Good ? "Lucky!" : "Unlucky", lp.Good ? new Color(1, 0.85f, 0.3f) : new Color(0.6f, 0.6f, 1f));
                 Hud.PendingLuck = lp.Good ? 1 : -1;
                 break;
 
@@ -398,6 +401,7 @@ public partial class CombatScreen : Control
 
             case AbilityTriggered at:
                 Hud.Log.AddLine(CombatLogText.Ability(this, at));
+                if (at.Ability == "ABILITY_DEADLY_STRIKE" && View(at.Target ?? at.UnitId) is { } dsv) _signs.Event(dsv, dsv.SignAnchor, "DeadlyStrike");
                 break;
 
             case EffectAdded or EffectRemoved:
@@ -511,7 +515,7 @@ public partial class CombatScreen : Control
             PlayAnimSound(v, "hit");
         }
         v.UpdatePlaque();
-        FloatText(v, d.Killed > 0 ? $"-{d.Killed}" : $"{d.Damage}", new Color(1f, 0.35f, 0.25f));
+        if (d.Killed > 0) _signs.Casualty(v, v.SignAnchor, -d.Killed);
         Hud.Log.AddLine(CombatLogText.Damage(this, d, Hud.PendingLuck));
         Hud.PendingLuck = 0;
     }
@@ -551,20 +555,6 @@ public partial class CombatScreen : Control
             if (entry?.SoundHref is { } snd) Audio.SoundLibrary.Play(snd, v);
         }
         catch (Exception e) { GD.PushWarning($"[H5] sound {kind}: {e.Message}"); }
-    }
-
-    void FloatText(UnitView v, string text, Color color)
-    {
-        var label = new Label3D
-        {
-            Text = text, Modulate = color, FontSize = 48, OutlineSize = 10, Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
-            NoDepthTest = true, PixelSize = 0.01f, Position = v.GlobalPosition + new Vector3(0, 2.0f, 0),
-        };
-        Arena.AddChild(label);
-        var tw = CreateTween();
-        tw.TweenProperty(label, "position:y", label.Position.Y + 1.0f, 1.2f);
-        tw.Parallel().TweenProperty(label, "modulate:a", 0f, 1.2f).SetDelay(0.5f);
-        tw.TweenCallback(Callable.From(label.QueueFree));
     }
 
     /// <summary>After a batch, snap views to the authoritative state (positions, counts, deaths).</summary>

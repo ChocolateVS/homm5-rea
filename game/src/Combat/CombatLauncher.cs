@@ -22,6 +22,8 @@ public static class CombatLauncher
     public static bool SkipTactics;
     /// <summary>`--attack-screenshot=N:PATH`: saves the screen at the hit moment of the Nth attack.</summary>
     public static (int N, string Path)? AttackScreenshot;
+    /// <summary>`--sign-screenshot=N:path`: capture 0.4 s after the Nth casualty sign appears.</summary>
+    public static (int N, string Path)? SignScreenshot;
     /// <summary>`--autoplay-turns=N`: the AI plays the local side's first N commands, then hands over.</summary>
     public static int AutoplayTurns;
     /// <summary>`--hover-target=melee|shoot`: point the simulated mouse at the first such legal target.</summary>
@@ -55,6 +57,13 @@ public static class CombatLauncher
             var v = arg["--attack-screenshot=".Length..];
             int colon = v.IndexOf(':');
             AttackScreenshot = (int.Parse(v[..colon]), v[(colon + 1)..]);
+            return true;
+        }
+        if (arg.StartsWith("--sign-screenshot="))
+        {
+            var v = arg["--sign-screenshot=".Length..];
+            int colon = v.IndexOf(':');
+            SignScreenshot = (int.Parse(v[..colon]), v[(colon + 1)..]);
             return true;
         }
         if (arg.StartsWith("--results-screenshot=")) { ResultsScreenshot = arg["--results-screenshot=".Length..]; return true; }

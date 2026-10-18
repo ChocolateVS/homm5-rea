@@ -116,6 +116,23 @@ public partial class UnitView : Node3D
         Plaque.Visible = Count > 0;
     }
 
+    float _height = -1;
+
+    /// <summary>Where flying signs start: above the creature's head (bind-pose mesh top).</summary>
+    public Vector3 SignAnchor()
+    {
+        if (_height < 0)
+        {
+            _height = 1.8f;
+            if (Model.FindChild("Mesh", recursive: true, owned: false) is MeshInstance3D mi && mi.Mesh != null)
+            {
+                var aabb = mi.GetAabb();
+                _height = Math.Max(0.6f, aabb.End.Y);
+            }
+        }
+        return GlobalPosition + new Vector3(0, _height, 0);
+    }
+
     public void Play(string kind, bool loop = false)
     {
         if (Character is { } c && c.Has(kind)) c.Play(kind, loop);
