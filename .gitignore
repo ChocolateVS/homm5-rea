@@ -1,0 +1,9 @@
+bin/
+obj/
+.vs/
+*.user
+tools/godot/
+tools/*.zip
+tools/SHA512-SUMS.txt
+cache/
+game/.godot/
