@@ -79,7 +79,12 @@ public sealed partial class Adventure
 
     void SetupObjects()
     {
-        foreach (var o in Map.Objects)
+        foreach (var o in Map.Objects) SetupObject(o);
+    }
+
+    /// <summary>Rolls the dynamic state of one placed object (also used for script-created objects).</summary>
+    void SetupObject(MapObject o)
+    {
         {
             switch (o.Kind)
             {
@@ -160,6 +165,17 @@ public sealed partial class Adventure
             var h = HeroFromInstance(o.Hero, owner, o.Pos);
             if (TownAt(o.Pos) is { } t && t.Owner == owner) h.InTown = t.Object;
             S.Heroes.Add(h);
+        }
+        // Heroes the editor placed in town garrisons (AdvMapTown/GarrisonHero) belong to the town's owner.
+        foreach (var o in Map.OfKind(ObjectKind.Town))
+        {
+            if (o.GarrisonHero == null || S.Town(o.Index) is not { } town || PlayerByIndex(town.Owner) == null) continue;
+            if (S.Heroes.Any(x => x.DefId == o.GarrisonHero.Shared?.Id)) continue;
+            var h = HeroFromInstance(o.GarrisonHero, town.Owner, EntranceOf(town));
+            h.InTown = town.Object;
+            h.Garrisoned = true;
+            S.Heroes.Add(h);
+            S.HeroPool.Remove(h.DefId);
         }
         // Players without a hero start with one in their main town (map "HeroInTown"), drawn from their race.
         foreach (var p in S.Players)

@@ -14,10 +14,21 @@ public sealed partial class Adventure
     bool VisitTile(HeroState h, Tile t)
     {
         bool any = false;
-        if (TownAt(t) is { } town) { VisitTown(h, town); any = true; }
+        if (TownAt(t) is { } town)
+        {
+            if (ScriptHooks != null && ScriptHooks.InterceptVisit(h, O(town.Object))) Emit(new ObjectVisited(h.Id, town.Object, "script"));
+            else VisitTown(h, town);
+            any = true;
+        }
         foreach (var o in ObjectsAt(t).ToList())
         {
             if (o.Kind == ObjectKind.Town) continue;
+            if (ScriptHooks != null && ScriptHooks.InterceptVisit(h, o))
+            {
+                Emit(new ObjectVisited(h.Id, o.Index, "script"));
+                any = true;
+                continue;
+            }
             Visit(h, o);
             any = true;
             if (S.Battle != null || S.Choice != null) break;

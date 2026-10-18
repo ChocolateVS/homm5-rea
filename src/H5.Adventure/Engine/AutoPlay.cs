@@ -31,6 +31,9 @@ public static class QuickCombat
 /// </summary>
 public sealed class SimpleAdventureBot
 {
+    /// <summary>Routes commands through the game's command sink (e.g. the map-script host) when one is set.</summary>
+    static AdvResult Send(Adventure g, AdvCommand c) => g.CommandSink?.Invoke(c) ?? g.Apply(c);
+
     public int MaxActionsPerTurn { get; init; } = 60;
 
     public void PlayTurn(Adventure g, ulong battleSeedBase)
@@ -47,22 +50,22 @@ public sealed class SimpleAdventureBot
             for (int step = 0; step < 6 && actions < MaxActionsPerTurn && h.Alive && !g.S.Finished; step++)
             {
                 ResolvePending(g, battleSeedBase + (ulong)actions);
-                while (h.PendingLevelUps.Count > 0) g.Apply(new ChooseLevelUpCmd(h.Id, 0) { Player = me });
+                while (h.PendingLevelUps.Count > 0) Send(g, new ChooseLevelUpCmd(h.Id, 0) { Player = me });
                 var target = PickTarget(g, h);
                 if (target == null) break;
-                var r = g.Apply(new MoveHeroCmd(h.Id, target.Value) { Player = me });
+                var r = Send(g, new MoveHeroCmd(h.Id, target.Value) { Player = me });
                 actions++;
                 if (!r.Ok) break;
                 ResolvePending(g, battleSeedBase + (ulong)actions);
-                while (h.Alive && h.PendingLevelUps.Count > 0) g.Apply(new ChooseLevelUpCmd(h.Id, 0) { Player = me });
+                while (h.Alive && h.PendingLevelUps.Count > 0) Send(g, new ChooseLevelUpCmd(h.Id, 0) { Player = me });
                 if (h.InTown >= 0 && g.S.Town(h.InTown) is { } home && home.Owner == me) TakeGarrison(g, h, home);
                 if (h.MovePoints < 100) break;
             }
         }
         ResolvePending(g, battleSeedBase + 999);
         foreach (var h in g.S.Heroes.Where(h => h.Alive && h.Owner == me))
-            while (h.PendingLevelUps.Count > 0) g.Apply(new ChooseLevelUpCmd(h.Id, 0) { Player = me });
-        if (!g.S.Finished) g.Apply(new EndTurnCmd { Player = me });
+            while (h.PendingLevelUps.Count > 0) Send(g, new ChooseLevelUpCmd(h.Id, 0) { Player = me });
+        if (!g.S.Finished) Send(g, new EndTurnCmd { Player = me });
     }
 
     static void TakeGarrison(Adventure g, HeroState h, TownState t)
@@ -73,7 +76,7 @@ public sealed class SimpleAdventureBot
             int to = Array.FindIndex(h.Army, x => x is { Count: > 0 } && x.Creature == s.Creature);
             if (to < 0) to = Array.FindIndex(h.Army, x => x is not { Count: > 0 });
             if (to < 0) break;
-            g.Apply(new TransferStackCmd(-1, t.Object, from, h.Id, -1, to, s.Count) { Player = h.Owner });
+            Send(g, new TransferStackCmd(-1, t.Object, from, h.Id, -1, to, s.Count) { Player = h.Owner });
         }
     }
 
@@ -81,9 +84,9 @@ public sealed class SimpleAdventureBot
     {
         for (int guard = 0; guard < 8 && (g.S.Battle != null || g.S.Choice != null); guard++)
         {
-            if (g.S.Battle != null) g.Apply(QuickCombat.Resolve(g, seed + (ulong)guard));
+            if (g.S.Battle != null) Send(g, QuickCombat.Resolve(g, seed + (ulong)guard));
             else if (g.S.Choice is { } c)
-                g.Apply(new AnswerChoiceCmd(Accept: c.Kind != "join_paid" || g.Current.Purse[Purse.Gold] >= c.Gold * 2, Option: c.Kind == "chest" ? 0 : 0) { Player = g.Current.Index });
+                Send(g, new AnswerChoiceCmd(Accept: c.Kind != "join_paid" || g.Current.Purse[Purse.Gold] >= c.Gold * 2, Option: c.Kind == "chest" ? 0 : 0) { Player = g.Current.Index });
         }
     }
 
@@ -95,7 +98,7 @@ public sealed class SimpleAdventureBot
         for (int i = 1; i <= 7; i++) order.Add($"TB_DWELLING_{i}");
         order.AddRange(new[] { "TB_FORT", "TB_MAGIC_GUILD", "TB_TAVERN", "TB_MARKETPLACE", "TB_BLACKSMITH" });
         foreach (var b in order.Concat(t.MaxLevel.Keys.Except(order).OrderBy(k => k, StringComparer.Ordinal)))
-            if (g.Apply(new BuildCmd(t.Object, b) { Player = t.Owner }).Ok) return;
+            if (Send(g, new BuildCmd(t.Object, b) { Player = t.Owner }).Ok) return;
     }
 
     static void RecruitAll(Adventure g, TownState t)
@@ -107,7 +110,7 @@ public sealed class SimpleAdventureBot
             if (cr == null || !g.Core.Creatures.TryGetValue(cr, out var cd) || t.Available[tier - 1] <= 0) continue;
             int gold = Math.Max(1, cd.Cost.Gold);
             int n = Math.Min(t.Available[tier - 1], g.Current.Purse[Purse.Gold] / gold);
-            while (n > 0 && !g.Apply(new RecruitCmd(t.Object, tier, n, variant) { Player = t.Owner }).Ok) n /= 2;
+            while (n > 0 && !Send(g, new RecruitCmd(t.Object, tier, n, variant) { Player = t.Owner }).Ok) n /= 2;
         }
     }
 

@@ -301,6 +301,8 @@ public sealed class MapLoader
                 foreach (var b in e.Items("buildings"))
                     o.Buildings.Add(new TownBuildingInit(b.Str("Type"), UpgradeLevel(b.Str("InitialUpgrade")), UpgradeLevel(b.Str("MaxUpgrade"))));
                 o.TownSpells = e.StrItems("spellIDs");
+                if (e.Element("GarrisonHero")?.Element("AdvMapHero") is { } gh && gh.Element("Shared") != null)
+                    o.GarrisonHero = LoadHero(gh, files);
                 break;
             case ObjectKind.Hero:
             case ObjectKind.Prison:

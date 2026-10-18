@@ -101,6 +101,7 @@ public sealed partial class Adventure
         var f = Map.Floor(t.Floor);
         if (f == null || !f.InBounds(t.X, t.Y)) return false;
         if (f.IsBlocked(t.X, t.Y)) return false;
+        if (ScriptHooks != null && ScriptHooks.IsTileBlocked(h.Owner, t)) return false;
         bool water = f.IsWater(t.X, t.Y);
         if (water != h.InBoat && t != target) return false;
         if (t == target) return true;
@@ -186,6 +187,11 @@ public sealed partial class Adventure
             if (h.InTown >= 0 && TownAt(next)?.Object != h.InTown) h.InTown = -1;
             RevealAround(h);
 
+            if (!isTarget && ScriptHooks != null && ScriptHooks.StopMovementAt(h, path[i - 1], next))
+            {
+                MoveStep(h, walked);
+                return null;
+            }
             if (GuardingMonster(next) is { } guard)
             {
                 MoveStep(h, walked);

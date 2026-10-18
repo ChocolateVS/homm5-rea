@@ -121,6 +121,8 @@ public sealed class MapObject
     public string? Specialization;
     public List<TownBuildingInit> Buildings = new();
     public List<string> TownSpells = new();
+    /// <summary>Hero placed in the town's garrison in the editor (&lt;GarrisonHero&gt;), if any.</summary>
+    public HeroInstance? GarrisonHero;
 
     // Hero
     public HeroInstance? Hero;

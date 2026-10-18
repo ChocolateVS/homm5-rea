@@ -109,6 +109,8 @@ public sealed class HeroState
     public bool Garrisoned;
     /// <summary>Morale/luck bonuses that last until the next battle (fan manual p.261-264).</summary>
     public int NextBattleMorale, NextBattleLuck;
+    /// <summary>Permanent morale/luck changes made by map scripts (ChangeHeroStat STAT_MORALE/STAT_LUCK).</summary>
+    public int ScriptMorale, ScriptLuck;
     /// <summary>Objects that may be visited once per hero (Mercenary Camp, Dolmen…).</summary>
     public HashSet<int> VisitedOnce = new();
     /// <summary>Objects visited this week / today (Stables, Eldritch Well…), cleared by the turn cycle.</summary>

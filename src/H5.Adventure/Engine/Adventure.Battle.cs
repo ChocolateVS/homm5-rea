@@ -29,11 +29,11 @@ public sealed partial class Adventure
     }
 
     int HeroMorale(HeroState h) =>
-        (int)h.MasteryOf("HERO_SKILL_LEADERSHIP") + h.NextBattleMorale +
+        (int)h.MasteryOf("HERO_SKILL_LEADERSHIP") + h.NextBattleMorale + h.ScriptMorale +
         h.Artifacts.Sum(a => Core.Artifacts.TryGetValue(a, out var d) ? d.Morale : 0);
 
     int HeroLuck(HeroState h) =>
-        (int)h.MasteryOf("HERO_SKILL_LUCK") + h.NextBattleLuck +
+        (int)h.MasteryOf("HERO_SKILL_LUCK") + h.NextBattleLuck + h.ScriptLuck +
         h.Artifacts.Sum(a => Core.Artifacts.TryGetValue(a, out var d) ? d.Luck : 0);
 
     // ------------------------------------------------------------------ neutral encounters
