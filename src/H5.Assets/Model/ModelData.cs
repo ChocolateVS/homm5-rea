@@ -73,6 +73,33 @@ public sealed class AnimationClip
     public string Name = "";
     public float Duration;
     public List<BoneTrack> Tracks = new();
+    /// <summary>
+    /// One-dimensional animated attributes (Granny vector tracks), keyed by their Maya name:
+    /// "Transparency" (whole model) or "&lt;MeshShape&gt;.Transparency" (one mesh), plus a few
+    /// scene markers (Mark, Start, End…). Transparency follows Maya: 1 = invisible.
+    /// </summary>
+    public Dictionary<string, ScalarTrack> Scalars = new(StringComparer.Ordinal);
+}
+
+/// <summary>A baked scalar curve: linear interpolation between keys.</summary>
+public sealed class ScalarTrack
+{
+    public float[] Times = Array.Empty<float>();
+    public float[] Values = Array.Empty<float>();
+
+    public float Sample(float t)
+    {
+        if (Values.Length == 0) return 0f;
+        if (Values.Length == 1 || t <= Times[0]) return Values[0];
+        if (t >= Times[^1]) return Values[^1];
+        int lo = 0, hi = Times.Length - 1;
+        while (hi - lo > 1) { int mid = (lo + hi) / 2; if (Times[mid] <= t) lo = mid; else hi = mid; }
+        float span = Times[hi] - Times[lo];
+        return span > 0 ? Values[lo] + (Values[hi] - Values[lo]) * ((t - Times[lo]) / span) : Values[lo];
+    }
+
+    public float Min => Values.Length == 0 ? 0f : Values.Min();
+    public float Max => Values.Length == 0 ? 0f : Values.Max();
 }
 
 /// <summary>Material parameters taken from the (Material) xdb; textures are pak paths.</summary>

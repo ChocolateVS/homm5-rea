@@ -209,6 +209,11 @@ internal partial class ModelInstanceNode : Node3D, EffectPlayer.IEffectInstance
     AnimationPlayer? _player;
     Animation? _anim;
     bool _stopped;
+    // Animated per-mesh transparency (weapon trails flash in and fade out this way).
+    AnimationClip? _clip;
+    SurfaceOpacity? _opacity;
+    MeshInstance3D? _mesh;
+    float[] _opacityBuf = Array.Empty<float>();
 
     static AnimSetLoader? _anims;
     static AnimSetLoader Anims => _anims ??= new AnimSetLoader(Game.Instance.Xdb);
@@ -261,6 +266,7 @@ internal partial class ModelInstanceNode : Node3D, EffectPlayer.IEffectInstance
             // Driven manually from Update so timing follows the effect clock exactly.
             node._player.CallbackModeProcess = AnimationMixer.AnimationCallbackModeProcess.Manual;
             node._player.Play("fx");
+            node.SetupOpacity(asset, mesh, clip);
         }
         else
         {
@@ -289,8 +295,40 @@ internal partial class ModelInstanceNode : Node3D, EffectPlayer.IEffectInstance
         {
             float animTime = Math.Min(local - cycle * period, length);
             _player.Seek(animTime, update: true);
+            ApplyOpacity(animTime);
         }
         return false;
+    }
+
+    void SetupOpacity(ModelAsset asset, MeshInstance3D mesh, AnimationClip clip)
+    {
+        if (!SurfaceOpacity.Animates(clip)) return;
+        _clip = clip;
+        _mesh = mesh;
+        _opacity = new SurfaceOpacity(asset);
+        _opacityBuf = new float[_opacity.SurfaceCount];
+        // Each surface gets its own material so meshes can fade independently.
+        for (int s = 0; s < _opacity.SurfaceCount && s < mesh.GetSurfaceOverrideMaterialCount(); s++)
+        {
+            var m = mesh.GetSurfaceOverrideMaterial(s) ?? mesh.Mesh.SurfaceGetMaterial(s);
+            if (m != null) mesh.SetSurfaceOverrideMaterial(s, (Material)m.Duplicate());
+        }
+        ApplyOpacity(0f);
+    }
+
+    void ApplyOpacity(float t)
+    {
+        if (_opacity == null || _clip == null || _mesh == null) return;
+        _opacity.Evaluate(_clip, t, _opacityBuf);
+        for (int s = 0; s < _opacityBuf.Length; s++)
+            switch (_mesh.GetSurfaceOverrideMaterial(s))
+            {
+                case ShaderMaterial sm: sm.SetShaderParameter("opacity", _opacityBuf[s]); break;
+                case BaseMaterial3D bm:
+                    bm.Transparency = _opacityBuf[s] < 0.999f ? BaseMaterial3D.TransparencyEnum.Alpha : bm.Transparency;
+                    bm.AlbedoColor = new Color(bm.AlbedoColor, _opacityBuf[s]);
+                    break;
+            }
     }
 
     static string SafeName(string name, int index) =>

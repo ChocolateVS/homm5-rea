@@ -131,6 +131,15 @@ public static class GrannyConvert
             }).ToArray();
             clip.Tracks.Add(track);
         }
+        foreach (var (name, curve) in a.VectorTracks)
+        {
+            if (curve.Dimension != 1 || curve.IsEmpty) continue;
+            var times = KeyTimes(curve, a.Duration, sampleRate);
+            var values = new float[times.Length];
+            Span<float> v = stackalloc float[1];
+            for (int i = 0; i < times.Length; i++) { curve.Evaluate(times[i], v); values[i] = v[0]; }
+            clip.Scalars[name] = new ScalarTrack { Times = times, Values = values };
+        }
         return clip;
     }
 

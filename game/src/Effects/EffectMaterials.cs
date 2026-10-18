@@ -24,10 +24,12 @@ public static class EffectMaterials
             render_mode {{(lit ? "" : "unshaded, ")}}blend_premul_alpha, cull_back, depth_draw_never, shadows_disabled;
             uniform sampler2D tex : source_color, filter_linear_mipmap;
             uniform bool two_sided = false;
+            // Animated object opacity (Granny "Transparency" tracks); premultiplied, so it scales colour too.
+            uniform float opacity = 1.0;
             void fragment() {
                 vec4 t = texture(tex, UV);
-                ALBEDO = t.rgb;
-                ALPHA = t.a;
+                ALBEDO = t.rgb * opacity;
+                ALPHA = t.a * opacity;
             }
             """,
     };
