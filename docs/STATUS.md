@@ -19,7 +19,8 @@ _Last updated: 2026-10-19 morning (demo refreshed to commit 566974a; builds, mai
 | "Not sure all combat mechanics are implemented" | **Audit pass 1 done, honest coverage:** of 585 items, 59 fixed, 40 confirmed matching, 5 gaps, 61 not applicable, **420 not yet verified line-by-line**. Fixes include retaliation timing on double attacks, spell cost order/rounding, 14 missing specialisations, terrain-based Summon Elementals. Three parallel audits now cover the remaining spells, creature abilities and hero skills/artifacts. |
 | Hero movement on the map | In progress (adventure workstream). |
 | Animated sword slash trail | **Fixed** — effect models now play their original transparency tracks (Footman slash appears at 0.63 s, flashes at 0.8 s, gone by 1.5 s). |
-| Minimap view box outside the minimap | In progress (adventure workstream). |
+| Minimap view box outside the minimap | In progress (adventure workstream). Note: the minimap itself works — at the A2M1 start only the south-west corner is explored, a small patch in the minimap's bottom-left, half under the minimize button. |
+| (found in testing) "RANDOM TOWN" placeholder | **Fixed** — random towns show the rolled faction's town. The orange ring under the hero is the original selected-hero symbol (kept). |
 | Hero/town bar full of empty slots | **Fixed** — the bar now shows only your heroes/towns. |
 | Adventure lighting / no fog | **Fixed per exe** — gamma-space lighting and the original distance+height fog, for adventure, combat, towns and the menu. One output constant inferred (see rendering notes). A grey-object regression on A2M1 found during verification is being fixed. |
 | Zoom out further on the adventure map | In progress — "Extended zoom" option, on by default. |
@@ -41,7 +42,7 @@ _Last updated: 2026-10-19 morning (demo refreshed to commit 566974a; builds, mai
 - Plus exe findings: `docs/rules/EXE_FINDINGS.md`, `CAMERA.md`, `AI.md`, `AUDIO.md`, `BOATS.md`, `SAVE.md`, `RMG.md`
 
 ## Known gaps (not yet like the original)
-- Market exchange rates, kingdom overview, town info, artifact merchant, faction special buildings, Witch Hut / Hill Fort / Seer Huts / Sphinx / grail.
+- Market exchange rates, kingdom overview, town info, artifact merchant, faction special buildings, Witch Hut / Seer Huts / Sphinx / grail. (Done since: creature upgrades in towns/Hill Fort, War Machine Factory, Cartographer, Obelisk visits.)
 - Coastline is jagged; no shore foam. Some arenas too dark; lava glow; underground lighting.
 - Ghost Mode: a few effect details not traced in the exe; possessed stacks are AI-played.
 - Map editor not rebuilt (separate project — ask if wanted). Web port: after parity.
