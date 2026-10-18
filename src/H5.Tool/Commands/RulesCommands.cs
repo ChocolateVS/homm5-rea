@@ -40,7 +40,7 @@ sealed class CreatureCommand : ICommand
 sealed class DuelSimCommand : ICommand
 {
     public string Name => "duel-sim";
-    public string Help => "duel-sim <presetA> <presetB> [seed] [--games N] [--quiet]  - AI vs AI duel from duel presets";
+    public string Help => "duel-sim <presetA> <presetB> [seed] [--games N] [--quiet] [--ai=original|greedy] [--ai0=..] [--ai1=..] [--difficulty=Normal]  - AI vs AI duel from duel presets";
 
     public int Run(ToolContext ctx, string[] args)
     {
@@ -62,8 +62,8 @@ sealed class DuelSimCommand : ICommand
         {
             var state = H5.Combat.BattleSetup.CreateDuel(db, a, b, seed + (ulong)g);
             var battle = new H5.Combat.Battle(db, state);
-            var ai = new H5.Combat.GreedyBattleAI();
-            var events = H5.Combat.BattleRunner.RunToEnd(battle, ai, ai);
+            var (ai0, ai1) = AiArgs.Create(args);
+            var events = H5.Combat.BattleRunner.RunToEnd(battle, ai0, ai1);
             totalCmds += events.Count;
             wins[state.Winner is int w ? w : 2]++;
             if (!quiet) foreach (var e in events) Console.WriteLine(Describe(battle, e));
@@ -104,7 +104,7 @@ sealed class DuelSimCommand : ICommand
 sealed class DuelMatrixCommand : ICommand
 {
     public string Name => "duel-matrix";
-    public string Help => "duel-matrix [seed] [--stride N]  - AI vs AI for every preset pair (robustness + win rates)";
+    public string Help => "duel-matrix [seed] [--stride N] [--ai=..] [--ai0=..] [--ai1=..] [--difficulty=..]  - AI vs AI for every preset pair (robustness + win rates; with different AIs per side, also reports AI-vs-AI results)";
 
     public int Run(ToolContext ctx, string[] args)
     {
@@ -116,6 +116,7 @@ sealed class DuelMatrixCommand : ICommand
         int n = db.DuelPresets.Count, games = 0, errors = 0;
         var wins = new int[n];
         var played = new int[n];
+        var aiWins = new int[3];
         var sw = System.Diagnostics.Stopwatch.StartNew();
         for (int a = 0; a < n; a++)
         for (int b = 0; b < n; b += stride)
@@ -125,11 +126,12 @@ sealed class DuelMatrixCommand : ICommand
             {
                 var s = H5.Combat.BattleSetup.CreateDuel(db, a, b, seed + (ulong)(a * n + b));
                 var battle = new H5.Combat.Battle(db, s);
-                var ai = new H5.Combat.GreedyBattleAI();
-                H5.Combat.BattleRunner.RunToEnd(battle, ai, ai);
+                var (ai0, ai1) = AiArgs.Create(args);
+                H5.Combat.BattleRunner.RunToEnd(battle, ai0, ai1);
                 games++;
                 played[a]++; played[b]++;
                 if (s.Winner == 0) wins[a]++; else if (s.Winner == 1) wins[b]++;
+                aiWins[s.Winner is int ws ? ws : 2]++;
                 if (s.EndReason != "army destroyed") Console.WriteLine($"  {a} vs {b}: ended by {s.EndReason}");
             }
             catch (Exception e)
@@ -139,6 +141,8 @@ sealed class DuelMatrixCommand : ICommand
             }
         }
         Console.WriteLine($"{games} games, {errors} errors, {sw.Elapsed.TotalSeconds:F0}s");
+        var (n0, n1) = AiArgs.Names(args);
+        Console.WriteLine($"  side 0 AI '{n0}' won {aiWins[0]}, side 1 AI '{n1}' won {aiWins[1]}, unfinished {aiWins[2]}");
         for (int i = 0; i < n; i++)
             Console.WriteLine($"  [{i,2}] {db.DuelPresets[i].Name,-26} {db.DuelPresets[i].Hero.Class,-24} win {100.0 * wins[i] / Math.Max(1, played[i]),5:F1}%");
         return errors == 0 ? 0 : 1;
@@ -163,5 +167,25 @@ sealed class DbCheckCommand : ICommand
         foreach (var w in db.Warnings.Take(30)) Console.WriteLine("warn: " + w);
         if (db.Warnings.Count > 30) Console.WriteLine($"... {db.Warnings.Count - 30} more warnings");
         return 0;
+    }
+}
+
+/// <summary>Shared --ai/--ai0/--ai1/--difficulty parsing for the duel commands.</summary>
+static class AiArgs
+{
+    static string? Opt(string[] args, string name) =>
+        args.FirstOrDefault(a => a.StartsWith(name + "=", StringComparison.OrdinalIgnoreCase))?[(name.Length + 1)..];
+
+    public static (string, string) Names(string[] args)
+    {
+        var both = Opt(args, "--ai") ?? H5.Combat.AI.BattleAiRegistry.Greedy;
+        return (Opt(args, "--ai0") ?? both, Opt(args, "--ai1") ?? both);
+    }
+
+    public static (H5.Combat.IBattleAI, H5.Combat.IBattleAI) Create(string[] args)
+    {
+        var d = H5.Combat.AI.BattleAiRegistry.ParseDifficulty(Opt(args, "--difficulty"));
+        var (n0, n1) = Names(args);
+        return (H5.Combat.AI.BattleAiRegistry.Create(n0, d), H5.Combat.AI.BattleAiRegistry.Create(n1, d));
     }
 }

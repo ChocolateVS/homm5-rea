@@ -12,3 +12,7 @@ tools/ghidra_projects/
 tools/re/out/
 tools/ghidra-projects/
 tools/advre/out/
+tools/aire/out/
+tools/aire/bin/
+tools/aire/scripts/*
+!tools/aire/scripts/ReaderChain.java

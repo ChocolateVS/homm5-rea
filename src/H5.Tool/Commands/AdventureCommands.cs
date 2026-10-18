@@ -145,7 +145,7 @@ sealed class AdvFootprintCheckCommand : ICommand
 sealed class AdvSimCommand : ICommand
 {
     public string Name => "adv-sim";
-    public string Help => "adv-sim <map> [days=14] [seed=1] [--trace]  - play a map with the simple bot for every player (quick combat)";
+    public string Help => "adv-sim <map> [days=14] [seed=1] [--trace] [--ai=simple|original|mixed] [--difficulty=Normal]  - play a map with AI for every player (quick combat); mixed = odd players original, even simple";
 
     public int Run(ToolContext ctx, string[] args)
     {
@@ -153,14 +153,19 @@ sealed class AdvSimCommand : ICommand
         var mapRef = MapCatalog.Find(ctx.Fs, ctx.Install, args[0]);
         if (mapRef == null) { Console.WriteLine($"no map matches '{args[0]}'"); return 1; }
         bool trace = args.Contains("--trace");
-        args = args.Where(a => a != "--trace").ToArray();
+        string aiName = args.FirstOrDefault(a => a.StartsWith("--ai="))?[5..] ?? "simple";
+        string? diffName = args.FirstOrDefault(a => a.StartsWith("--difficulty="))?[13..];
+        args = args.Where(a => !a.StartsWith("--")).ToArray();
         int days = args.Length > 1 ? int.Parse(args[1]) : 14;
         ulong seed = args.Length > 2 ? ulong.Parse(args[2]) : 1;
         var core = GameDatabase.Load(ctx.Fs);
         var db = H5.Adventure.Data.AdventureDb.Load(core, ctx.Fs);
         var map = new MapLoader(core, ctx.Fs).Load(mapRef);
         var (g, _) = H5.Adventure.Engine.Adventure.NewGame(db, map, H5.Adventure.Engine.GameSetup.AllPlayers(map, humans: 0, seed));
-        var bot = new H5.Adventure.Engine.SimpleAdventureBot();
+        if (diffName != null) g.S.Difficulty = (int)H5.Combat.AI.BattleAiRegistry.ParseDifficulty(diffName);
+        var simple = new H5.Adventure.Engine.SimpleAdventureBot();
+        var original = new H5.Adventure.AI.OriginalAdventureAI();
+        bool UseOriginal(int player) => aiName switch { "original" => true, "mixed" => player % 2 == 0, _ => false };
         if (trace) g.Observer = (cmd, res) =>
         {
             Console.WriteLine($"[d{g.S.Day} p{cmd.Player + 1}] {cmd.GetType().Name} {(res.Ok ? "" : "REJECTED: " + res.Error)}");
@@ -170,14 +175,15 @@ sealed class AdvSimCommand : ICommand
         int turns = 0;
         while (!g.S.Finished && g.S.Day <= days && turns < days * 16)
         {
-            bot.PlayTurn(g, seed * 1000003UL + (ulong)turns);
+            ulong bs = seed * 1000003UL + (ulong)turns;
+            if (UseOriginal(g.Current.Index)) original.PlayTurn(g, bs); else simple.PlayTurn(g, bs);
             turns++;
         }
         Console.WriteLine($"{map.Id}: day {g.S.Day} ({g.S.MoonWeek}), {turns} turns in {sw.ElapsedMilliseconds} ms, hash {g.S.ComputeHash()}");
         foreach (var p in g.S.Players)
         {
             var heroes = g.S.Heroes.Where(h => h.Alive && h.Owner == p.Index).ToList();
-            Console.WriteLine($"  p{p.Index + 1} {p.Race,-16} {(p.Alive ? "alive" : "OUT"),-5} towns {g.S.Towns.Count(t => t.Owner == p.Index)} " +
+            Console.WriteLine($"  p{p.Index + 1} {(UseOriginal(p.Index) ? "orig" : "simple"),-6} {p.Race,-16} {(p.Alive ? "alive" : "OUT"),-5} towns {g.S.Towns.Count(t => t.Owner == p.Index)} " +
                               $"mines {g.S.Objects.Values.Count(o => o.Owner == p.Index)} heroes {heroes.Count} gold {p.Purse[6]}");
             foreach (var h in heroes)
                 Console.WriteLine($"     {h.Name,-14} L{h.Level} exp {h.Experience} A{h.Attack} D{h.Defence} S{h.SpellPower} K{h.Knowledge} army {string.Join(", ", h.Army.Where(s => s != null).Select(s => s!.ToString()))}");
