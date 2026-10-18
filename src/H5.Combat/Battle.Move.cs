@@ -149,9 +149,9 @@ public sealed partial class Battle
         Emit(new Moved(u.Id, path, u.Flying));
         RageEvent(u, "MoveRP");
         var eh = Enemy(u.Side);
-        // Corrupted Soil: damage each time an enemy stack moves (p.109).
-        if (eh.Present && (eh.HasPerk(Sk.CorruptedSoil) || eh.HasPerk(Sk.BarbCorruptedSoil)))
-            DealDamage(u, (int)(Stats.Get("combat/HeroSkills/Ranger/SoilBurnDamagePerHeroLevel", 3) * eh.Level), Actor.Hero(1 - u.Side), AttackKind.Spell, "SOIL_BURN");
+        // Corrupted Soil: damage each time an enemy stack moves (p.109); flyers are exempt (exe FUN_00a61a60).
+        if (SoilBurnDamage(u) is > 0 and var soil)
+            DealDamage(u, soil, Actor.Hero(1 - u.Side), AttackKind.Spell, "SOIL_BURN");
         // Fields entered along the way (flyers only touch the landing cells).
         var touched = u.Flying ? u.CellsAt(to).ToList() : path.Skip(1).SelectMany(p => u.CellsAt(p)).Distinct().ToList();
         foreach (var f in S.Fields.ToList())

@@ -657,7 +657,7 @@ public sealed partial class Battle
             if (t.Alive && (ah.HasPerk(Sk.FieryWrath) || ah.HasPerk(Sk.BarbFieryWrath)) && !a.IsWarMachine)
                 DealElementalDamage(t, (int)(dmg * 0.1), Elements.Fire, a.Id, "FIERY_WRATH");
             if (t.Alive && ah.HasPerk(Sk.ColdSteel) && !a.IsWarMachine)
-                DealElementalDamage(t, (int)(dmg * 0.1), Elements.Water, a.Id, "COLD_STEEL");
+                DealElementalDamage(t, SpellLikeAmount(dmg * (double)0.1f), Elements.Water, a.Id, "COLD_STEEL");   // exe FUN_00a5c000
             if (t.Alive && ah.HasPerk(Sk.Hellfire) && !a.IsWarMachine && (!retaliation || ah.HasPerk(Sk.Hellwrath)) && ah.Mana >= 5
                 && S.Rng.Chance(Stats.Get("combat/HeroSkills/DemonLord/CriticalStrike_ChanceToWork", 30) / 100.0))
             {
@@ -684,7 +684,7 @@ public sealed partial class Battle
                 if (t.Has(Ab.FireShield)) DealElementalDamage(a, (int)(taken * Math.Clamp(Stats.Get("combat/Creatures/Abilities/FireShield_Damage_Multiplier", 0.2), 0, 10)), Elements.Fire, t.Id, Ab.FireShield);
                 if (t.Has(Ab.MagmaShield) && a.Alive) DealElementalDamage(a, (int)(taken * Math.Clamp(Stats.Get("combat/Creatures/Abilities/MagmaShield_Damage_Multiplier", 0.4), 0, 10)), Elements.Fire, t.Id, Ab.MagmaShield);
                 var th = HeroOf(t);
-                if (th.HasPerk(Sk.ChillingBones) && IsUndeadLike(t) && a.Alive) DealElementalDamage(a, (int)(dmg * 0.05), Elements.Water, t.Id, "CHILLING_BONES");
+                if (th.HasPerk(Sk.ChillingBones) && IsUndeadLike(t) && a.Alive) DealElementalDamage(a, SpellLikeAmount(dmg * (double)0.05f), Elements.Water, t.Id, "CHILLING_BONES");   // exe FUN_00a5bc50
                 if (t.Has(Ab.AcidBlood) && a.Alive && !retaliation)
                 {
                     Emit(new AbilityTriggered(t.Id, Ab.AcidBlood, a.Id));
@@ -938,10 +938,11 @@ public sealed partial class Battle
         }
         int before = t.Count;
         int total = t.TotalHealth - amount;
-        // Last Stand: a stack of 2+ survives a lethal blow with 1 HP, once (p.111).
-        if (total <= 0 && before >= 2 && HeroOf(t).HasPerk(Sk.LastStand) && !t.AbilityUses.ContainsKey("LAST_STAND") && t.Kind == UnitKind.Creature)
+        // Last Stand (exe FUN_00a59490, applied by the damage pipeline FUN_00a61600 → FUN_00a594f0): a stack of
+        // 2+ creatures hit for at least its total HP keeps 1 HP. There is no once-per-combat flag — it triggers
+        // again whenever the stack is back to 2+ creatures (fan manual p.111 "for each stack ... before the last blow").
+        if (total <= 0 && before >= 2 && HeroOf(t).HasPerk(Sk.LastStand) && t.Kind == UnitKind.Creature)
         {
-            t.AbilityUses["LAST_STAND"] = 1;
             total = 1;
             Emit(new AbilityTriggered(t.Id, "LAST_STAND"));
         }

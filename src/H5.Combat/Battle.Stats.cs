@@ -338,7 +338,7 @@ public sealed partial class Battle
         l -= (int)Fx(u, "SPELL_SORROW");
         l -= (int)Fx(u, H5.Combat.Fx.EvilEye);
         l += (int)Fx(u, "FX_WHEEL_OF_FORTUNE");
-        if (u.HasEffect(H5.Combat.Fx.BansheeHowl)) l -= 1;
+        if (u.GetEffect(H5.Combat.Fx.BansheeHowl) is { } howl) l -= DeathScreamLuckPenalty(howl);
         return l;
     }
 
