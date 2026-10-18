@@ -82,7 +82,7 @@ Defender stage `FUN_00a5a900` (A, D are ints):
 ## Luck and ability rolls (resolved)
 
 * `FUN_00a6b820`: luck clamped to [−5, 5]; chance = 10·|luck| percent.
-* `FUN_00a5a170` ("combat ability roll"): success iff `rand(0..99) < chance`; chance ≥ 100 always,
+* `FUN_00a5a170` ("combat ability roll"): success iff `Range(0,100) < chance` (inclusive, 101 outcomes; RNG slot 0x0c called with 0, 100); chance ≥ 100 always,
   ≤ 0 never. If it fails and the call names an attacker whose hero has HERO_SKILL_LUCKY_STRIKE
   (Soldier's Luck) a second roll is made — the luck roll passes no attacker, so Soldier's Luck
   never affects luck.
@@ -91,6 +91,13 @@ Defender stage `FUN_00a5a900` (A, D are ints):
 * Multipliers: `LuckAndMorale/GoodLuck_DamageMultiplier` (or `ElvenLuck_DamageMultiplier` with
   Elven Luck) and `BadLuck_DamageMultiplier`; morale sets ATB to `GoodMorale_ATBValue` /
   `BadMorale_ATBValue` (0x00a6cf90 / 0x00a6cd80).
+
+* `FUN_00a59990` (ability trigger chance, whole percent): A/T = attacker/target total HP; base = min(75, 25 + ⌊3A/T⌋)
+  if A > T else max(5, 25 − ⌊3T/A⌋) (integer division); the ProcFactor is an exponent on the failure chance:
+  chance = 100 − ⌊100·(0.01·(100 − base))^factor + 0.5⌋. A first argument of 1 (Bash, Brutality, Crushing Blow,
+  Flamewave, Taunt, Paw Strike, Bear Roar) doubles the factor when the hero has Soldier's Luck; those callers mostly pass
+  no attacker to the roll (no second chance). Paw Strike (`FUN_00a5d1b0`) compounds the failure over every tile walked.
+  See docs/rules/audit/combat_abilities.md.
 
 ## Retaliation (resolved)
 

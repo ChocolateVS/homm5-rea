@@ -60,11 +60,63 @@ public class AuditAbilityTests(GameDataFixture f)
     }
 
     [Fact]
+    public void CrushingBlowCanStunTheTarget()   // FUN_00a5af70: CrushingBlow_ProcFactor, then like Bash (ATB 0, no retaliation)
+    {
+        Assert.Contains(Attacks("CREATURE_CYCLOP_UNTAMED", 10, "CREATURE_PEASANT", 400, L, R),
+            x => x.r.Events.OfType<AbilityTriggered>().Any(e => e.Ability == Ab.CrushingBlow)
+                 && !x.r.Events.OfType<AttackStarted>().Any(e => e.Kind == AttackKind.Retaliation));
+    }
+
+    [Fact]
+    public void ForceArrowCanPushAndStun()   // FUN_00a5d420: PiercingArrow_ProcFactor on a shot; not HOLD_GROUND targets
+    {
+        Assert.Contains(Attacks("CREATURE_SHARP_SHOOTER", 30, "CREATURE_PEASANT", 400, new Cell(1, 5), new Cell(8, 5),
+            cmd: b => new ShootCmd(b.State.Units[0].Id, b.State.Units[1].Id) { Side = 0 }),
+            x => x.r.Events.OfType<AbilityTriggered>().Any(e => e.Ability == Ab.PiercingArrow) && x.b.State.Units[1].Pos == new Cell(9, 5));
+    }
+
+    [Fact]
     public void FearNeverTriggersOnRetaliation()   // FUN_00a629b0: Fear requires !retaliation (+0x21) and a pending retaliation
     {
         foreach (var (b, r) in Attacks("CREATURE_PEASANT", 30, "CREATURE_NIGHTMARE", 40, L, R))
             Assert.DoesNotContain(r.Events.OfType<AbilityTriggered>(), e => e.Ability == Ab.Fear);
         Assert.Contains(Attacks("CREATURE_NIGHTMARE", 20, "CREATURE_PEASANT", 300, L, R),
             x => x.r.Events.OfType<AbilityTriggered>().Any(e => e.Ability == Ab.Fear));
+    }
+}
+
+/// <summary>The ability trigger chance and roll, exe FUN_00a59990 / FUN_00a5d1b0 / FUN_00a5a170.</summary>
+[Collection("game")]
+public class AuditProcChanceTests(GameDataFixture f)
+{
+    Battle Peasants(int a, int t) { var b = f.Duel("CREATURE_PEASANT", a, "CREATURE_PEASANT", t); b.Begin(); return b; }
+
+    [Fact]
+    public void ChanceUsesIntegerRatioAndFactorAsExponent()
+    {
+        var b = Peasants(650, 100);                  // 3A/T = 19.5 → 19: base 44 (the manual's float formula says 44.5)
+        var (a, t) = (b.State.Units[0], b.State.Units[1]);
+        Assert.Equal(44, b.ProcPercent(a, t, 1));
+        var even = Peasants(100, 100);               // A = T: base 25 − 3 = 22
+        Assert.Equal(22, even.ProcPercent(even.State.Units[0], even.State.Units[1], 1));
+        var w = Peasants(100, 300);                  // A < T: 25 − ⌊3·3⌋ = 16
+        Assert.Equal(16, w.ProcPercent(w.State.Units[0], w.State.Units[1], 1));
+        // factor is an exponent on the failure chance: 100 − ⌊100·0.84^2 + 0.5⌋ = 100 − 71 = 29 (a multiplier would give 32)
+        Assert.Equal(29, w.ProcPercent(w.State.Units[0], w.State.Units[1], 2));
+        Assert.Equal(75, Peasants(10000, 10).ProcPercent(Peasants(10000, 10).State.Units[0], Peasants(10000, 10).State.Units[1], 1));
+        Assert.Equal(5, Peasants(10, 10000).ProcPercent(Peasants(10, 10000).State.Units[0], Peasants(10, 10000).State.Units[1], 1));
+    }
+
+    [Fact]
+    public void PawStrikeRollsOncePerTileWalked()   // fail = Π (100 − p)·0.01 in floats; round-to-nearest((1 − fail)·100 + 0.5)
+    {
+        var b = Peasants(100, 300);
+        var (a, t) = (b.State.Units[0], b.State.Units[1]);
+        Assert.Equal(0, b.PawStrikePercent(a, t, 0));
+        int p = b.ProcPercent(a, t, f.Db.Stats.Get("combat/Creatures/Fortress/PawStrike_ProcFactor", 1), soldiersLuckDoubles: true);
+        float fail = 1f;
+        for (int i = 0; i < 3; i++) fail = (100f - p) * fail * 0.01f;
+        Assert.Equal((int)Math.Round((double)((1f - fail) * 100f + 0.5f), MidpointRounding.ToEven), b.PawStrikePercent(a, t, 3));
+        Assert.True(b.PawStrikePercent(a, t, 3) > b.PawStrikePercent(a, t, 1));
     }
 }

@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 64 |
-| MATCH | 41 |
-| GAP | 5 |
-| UNVERIFIED | 415 |
+| FIXED | 75 |
+| MATCH | 48 |
+| GAP | 6 |
+| UNVERIFIED | 397 |
 | N/A | 60 |
 
 ## Core mechanics
@@ -26,6 +26,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | Range penalty (squared distance vs (width/2)²) | MATCH | 00a5c5a0, 00b3c690 | EXE_FINDINGS |
 | Luck: clamp ±5, 10 %/point, once per attack | MATCH | 00a6b820, 008a3ef0, 00a5a170 | EXE_FINDINGS |
 | Morale: clamp ±5 (00a6bd10), 10 %/point, ATB 0.5 good/bad (00a6cf90/00a6cd80) | MATCH | 00a6bd10, 00a6cf90, 00a6cd80 | this audit |
+| Ability trigger chance: integer ratio, ProcFactor as exponent, Range(0,100) roll, Soldier's Luck double/second roll | FIXED | 00a59990, 00a5a170, 00a5d1b0 | AuditProcChanceTests |
 | Retaliation reset at own turn start / Wait / Defend | MATCH | 008aa960, 008a1990, 008a6be0 | EXE_FINDINGS |
 | Retaliation timing inside the strike loop | FIXED | 00a65260, 00a64e90, 00a646b0 | AuditStrikeTests |
 | Strikes per action (Double Attack, Berserking, Double Shot) | FIXED | 008a0f90 | AuditStrikeTests |
@@ -73,7 +74,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_LARGE_SHIELD` | MATCH | 00a5a900 | ranged damage ×0.5 (own or adjacent Shield Other aura) |  |
 | `ABILITY_SHIELD_OTHER` | MATCH | 00a5a900 | aura type 2 gives adjacent allies the Large Shield reduction |  |
 | `ABILITY_JOUSTING` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
-| `ABILITY_BASH` | MATCH | 00a59a90 | proc via ability roll with Bash_ProcFactor |  |
+| `ABILITY_BASH` | FIXED | 00a675e6, 00a59a90, 00a59990 | chance base min(75, 25+⌊3A/T⌋) / max(5, 25−⌊3T/A⌋) with HP before the hit; Bash_ProcFactor as an exponent; Soldier's Luck doubles the factor (flag 1) and gives NO second roll; never on a retaliation unless Rune of Stunning; target not mechanical | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
 | `ABILITY_BATTLE_DIVE` | UNVERIFIED | 008aaec0 008d0ec0 008d5eb0 | implemented; not yet compared with the exe |  |
 | `ABILITY_MANA_DESTROYER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
 | `ABILITY_MANA_STEALER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
@@ -89,7 +90,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_LIFE_DRAIN` | MATCH | 00a59c60 | LifeDrainIntensity of damage |  |
 | `ABILITY_DEATH_CLOUD` | UNVERIFIED | 00a2fd40 00a64830 00b3b330 | implemented; not yet compared with the exe |  |
 | `ABILITY_ELVES_DOUBLE_SHOT` | MATCH | 00a673c0 | second shot re-rolls luck (EXE_FINDINGS) |  |
-| `ABILITY_WARDING_ARROWS` | UNVERIFIED | 00a5b000 00a673c0 | implemented; not yet compared with the exe |  |
+| `ABILITY_WARDING_ARROWS` | FIXED | 00a5b000 | every ranged shot, WardingArrows_ProcFactor (flag 0, second roll); ATB = max(0, ATB − clamp(WardingArrowsATBAffect,0,1)); no damage requirement — engine required damage > 0 and could go below 0 | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
 | `ABILITY_BLINDING_ATTACK` | MATCH | 00a629b0, 00a5e440 | BlindingAttack_ProcFactor on the strike; Blind at basic mastery with BlindingAttackSpellPower (creature power if <1) via the spell application (immunities by spell rules, FUN_00a5ddb0 not compared); a blinded target doesn't retaliate |  |
 | `ABILITY_AURA_OF_MAGIC_RESISTANCE` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
 | `ABILITY_TAKE_ROOTS` | UNVERIFIED | 008a22f0 008a34c0 008a65e0 008a6910 | implemented; not yet compared with the exe |  |
@@ -132,7 +133,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_ARMORED` | MATCH | 00a5a900 | ignores Piercing Arrow / Rider Charge defence reduction |  |
 | `ABILITY_SHIELD_WALL` | MATCH | 00a5a900 | clamp(cells·perCell, 0, max) reduction |  |
 | `ABILITY_WOUND` | FIXED | 00a629b0, 00a5e590 | proc (Wound_ProcFactor) on any strike incl. ranged/retaliation; target must be a creature, not MECHANICAL, not ELEMENTAL; duration = round(f·clamp(Wound_EffectDurationInRounds,0,100)) — engine lacked the mechanical/elemental immunity | AuditAbilityTests.WoundNeverAffectsElementals |
-| `ABILITY_PAW_STRIKE` | UNVERIFIED | 00a5d1b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_PAW_STRIKE` | FIXED | 00a5d1b0 | one roll per tile walked: fail = Π(100−p)·0.01 in floats, chance = round-to-nearest((1−fail)·100+0.5); none when standing still or vs HOLD_GROUND; flag 1 — engine used p·tiles/2 | AuditProcChanceTests.PawStrikeRollsOncePerTileWalked |
 | `ABILITY_BERSERKER_RAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_STORMBOLT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_STORMSTRIKE` | UNVERIFIED | 00a608d0 00a641c0 | implemented; not yet compared with the exe |  |
@@ -147,7 +148,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_BATTLE_FRENZY` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_PACK_DIVE` | UNVERIFIED | 00a2fd40 | implemented; not yet compared with the exe |  |
 | `ABILITY_CHAMPION_CHARGE` | UNVERIFIED | 008aa990 | implemented; not yet compared with the exe |  |
-| `ABILITY_PURGER` | UNVERIFIED | 00a629b0, 00a5d690 | trigger verified (any strike, Purger_ProcFactor); the dispel itself (00a5d690 → 004e6470) not yet compared |  |
+| `ABILITY_PURGER` | UNVERIFIED | 00a629b0, 00a5d690 | trigger verified (any strike, Purger_ProcFactor, chance on post-hit HP, second roll); the dispel itself (00a5d690 → 004e6470) not yet compared |  |
 | `ABILITY_BLADE_BARRIER` | N/A | 0097af50 00a5a900 00a5beb0 00a5fee0 | not used by shipped data |  |
 | `ABILITY_DEMON_RAGED` | MATCH | 008a2c20, 008a3b90 | rage events and coefficients per exe (see AddRage) |  |
 | `ABILITY_COWARDICE` | UNVERIFIED | 00a629b0, 00a5d790 | exe: melee only, while the target would retaliate; the stack runs (00a5d790(0)) and, if it can't, gains UseCowardiceRP rage; engine models the run after the whole attack — order not yet confirmed |  |
@@ -155,8 +156,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_SET_SNARES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_DEFILE_MAGIC` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
 | `ABILITY_MANEURE` | UNVERIFIED | 00a629b0, 00a5d790, 00b3d3f0 | exe: melee only, attacker without NO_ENEMY_RETALIATION, not a retaliation; runs (00a5d790(1)) then shoots back (00b3d3f0) unless blocked — half-damage factor not yet confirmed |  |
-| `ABILITY_BRUTALITY` | FIXED | 00a65260 | proc after the first strike extends the strike loop | (PerformMeleeAttack) |
-| `ABILITY_TAUNT` | UNVERIFIED | 00a65d50 | implemented; not yet compared with the exe |  |
+| `ABILITY_BRUTALITY` | FIXED | 00a65260 (00a657a0) | Assault proc after the first strike uses Brutality_ProcFactor (engine used 1), flag 1, second roll | AuditStrikeTests |
+| `ABILITY_TAUNT` | FIXED | 00a65d50 (00a65e0a) | Taunt_ProcFactor with flag 1 (Soldier's Luck doubles) and no second roll | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
 | `ABILITY_FIERCE_RETALIATION` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
 | `ABILITY_SACRIFICE_GOBLIN` | UNVERIFIED | 008d03a0 | implemented; not yet compared with the exe |  |
 | `ABILITY_FAST_ATTACK` | UNVERIFIED | 00a5fee0 | implemented; not yet compared with the exe |  |
@@ -167,7 +168,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_LIGHTNING_BREATH` | UNVERIFIED | 00a62030 00a63020 00a673c0 | implemented; not yet compared with the exe |  |
 | `ABILITY_SWALLOW_GOBLIN` | UNVERIFIED | 008d03a0 | implemented; not yet compared with the exe |  |
 | `ABILITY_GOBLIN_THROWER` | UNVERIFIED | 008a4b70 008d03a0 00a65260 00a6fef0 | implemented; not yet compared with the exe |  |
-| `ABILITY_CRUSHING_BLOW` | UNVERIFIED | 00a5af70 00a5c790 00a62030 | implemented; not yet compared with the exe |  |
+| `ABILITY_CRUSHING_BLOW` | FIXED | 00a5af70 | 2×2 area (unchanged) PLUS a Bash-like chance (CrushingBlow_ProcFactor, flag 1, no second roll, never on a retaliation, creature targets): ATB 0 and no retaliation — the stun was missing | AuditAbilityTests.CrushingBlowCanStunTheTarget |
 | `ABILITY_EVIL_EYE` | UNVERIFIED | 00a5e770 | implemented; not yet compared with the exe |  |
 | `ABILITY_RANDOM_CASTER_BLESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_SYPHON_MANA` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -182,7 +183,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_SLEEPING_STRIKE` | FIXED | 00a629b0, 00a5e4f0 | proc SleepingStrike_ProcFactor on any strike; immune: IMMUNITY_TO_BLIND, MECHANICAL, ELEMENTAL (undead NOT immune); target then doesn't retaliate — engine excluded undead and ignored blind immunity | AuditAbilityTests.SleepingStrikeImmunityIsBlindMechanicalElementalNotUndead |
 | `ABILITY_SORROW_STRIKE` | UNVERIFIED | 00a5e690 | implemented; not yet compared with the exe |  |
 | `ABILITY_HORROR_OF_THE_DEATH` | UNVERIFIED | 008a5570 | implemented; not yet compared with the exe |  |
-| `ABILITY_PIERCING_ARROW` | UNVERIFIED | 00a5a900 00a5d420 | implemented; not yet compared with the exe |  |
+| `ABILITY_PIERCING_ARROW` | GAP | 00a5d420, 00a5a900 | Force Arrow: −50 % defence verified; the extra proc (PiercingArrow_ProcFactor, flag 0, no second roll, not HOLD_GROUND) pushing the target one tile and stunning it is now implemented, but the exe's push-cell search (FUN_00a5ceb0, angle π/3) is approximated as straight away from the shooter | AuditAbilityTests.ForceArrowCanPushAndStun |
 | `ABILITY_TREEANT_UNION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_RAGE_OF_THE_FOREST` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_POWER_FEED` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -208,9 +209,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_PREPARED_POSITION` | UNVERIFIED | 008aaec0 | implemented; not yet compared with the exe |  |
 | `ABILITY_BATTLE_RAGE` | UNVERIFIED | 008a6e20 | implemented; not yet compared with the exe |  |
 | `ABILITY_HARPOON_STRIKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_BEAR_ROAR` | UNVERIFIED | 00a5e800 | implemented; not yet compared with the exe |  |
+| `ABILITY_BEAR_ROAR` | UNVERIFIED | 00a5e800 | factor flag 1 + second roll verified; the per-victim size multiplier / victim set (stats +0x354 block) not yet compared |  |
 | `ABILITY_HOLD_GROUND` | FIXED | 008a34c0 | rooted Take Roots creature holds ground | (Unit.Has) |
-| `ABILITY_FLAMEWAVE` | UNVERIFIED | 00a62030 00a66b60 00a673c0 | implemented; not yet compared with the exe |  |
+| `ABILITY_FLAMEWAVE` | FIXED | 00a62030 (00a62397) | FlameWave_ProcFactor with flag 1 and no second roll | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
 | `ABILITY_FLAMESTRIKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_LIQUID_FLAME_BREATH` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_IMMUNITY_TO_CURSE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -229,14 +230,14 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_LEARNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_LEADERSHIP` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_LUCK` | MATCH | see EXE_FINDINGS | verified in EXE_FINDINGS.md |  |
-| `HERO_SKILL_OFFENCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_DEFENCE` | MATCH | 00a5a900 | melee damage reduce Basic/Advanced/Expert from data |  |
+| `HERO_SKILL_OFFENCE` | FIXED | 00a58de0 | melee ×(1+clamp(SkillOffence Basic/Advanced/Expert DamageBonus,0,10)) by mastery 1/2/3; any other mastery value gives nothing — engine gave the Expert bonus to mastery 4 | AuditHeroTests.OffenceBonusOnlyForMasteriesOneToThree |
+| `HERO_SKILL_DEFENCE` | FIXED | 00a5a900 | melee damage ×(1−clamp(SkillDefence reduce,0,1)) for mastery 1/2/3 only (mastery 4: none) — engine gave Expert to mastery 4 | (DefenceReduction) |
 | `HERO_SKILL_SORCERY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DESTRUCTIVE_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DARK_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_LIGHT_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SUMMONING_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_TRAINING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_TRAINING` | MATCH | 00a58de0 | retaliation strikes ×(1+clamp(Training Basic/Advanced/Expert/ExtraExpert DamageBonus,0,10)) by mastery 1..4 |  |
 | `HERO_SKILL_GATING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_NECROMANCY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_AVENGER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -247,9 +248,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_CATAPULT` | FIXED | 00a75bf0, 00b3bb50 | catapult shots fired in one action at the aimed building | tests/H5.Combat.Tests/WarMachineAuditTests |
 | `HERO_SKILL_INTELLIGENCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_RESISTANCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_LUCKY_STRIKE` | MATCH | 00a5a170 | second ability roll, never luck |  |
+| `HERO_SKILL_LUCKY_STRIKE` | FIXED | 00a59990, 00a5a170 | Soldier's Luck works two ways by caller: flag-1 abilities (Bash, Brutality, Crushing Blow, Flamewave, Taunt, Paw Strike, Bear Roar) double their ProcFactor; callers that name the attacker (on-hit group, Brutality, Warding Arrows, Bear Roar) get a second Range(0,100) roll | AuditProcChanceTests |
 | `HERO_SKILL_TACTICS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_ARCHERY` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ARCHERY` | MATCH | 00a58de0 | ranged strikes ×(1+clamp(SkillOffence/Archery_DamageBonus,0,10)) when HasSkill(0x23) |  |
 | `HERO_SKILL_FRENZY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_PROTECTION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_EVASION` | MATCH | 00a5a900 | ranged ×(1−clamp(Evasion_DamageReduce,0,1)) |  |
@@ -284,8 +285,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_ROAD_HOME` | UNVERIFIED | 008a0e30 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_TRIPLE_BALLISTA` | FIXED | 00a75bf0, 00a65260 | shots per action set to 2 (+1 Ballista = 3) — no extra actions | tests/H5.Combat.Tests/WarMachineAuditTests.TripleBallistaFiresThreeShotsInOneActionThenEndsItsTurn |
 | `HERO_SKILL_ENCOURAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_RETRIBUTION` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_HOLD_GROUND` | UNVERIFIED | 008a22f0 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_RETRIBUTION` | MATCH | 00a58de0 | non-retaliation strikes ×(1+clamp(max(0,morale)·Retribution_DamageBonusPerMorale,0,10)) |  |
+| `HERO_SKILL_HOLD_GROUND` | FIXED | 008a22f0 | multiplies the defend factor by HoldGround_DefendBonusMultiplier, or the Take Roots factor by HoldGround_TakeRootsBonusMultiplier (see Defend posture) | AuditHeroTests.TakeRootsReplacesTheDefendFactor |
 | `HERO_SKILL_GUARDIAN_ANGEL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ANCIENT_SMITHY` | UNVERIFIED | 00a5ed90 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_PARIAH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -314,17 +315,17 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_ABSOLUTE_FEAR` | UNVERIFIED | 00989fd0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_IMBUE_BALLISTA` | UNVERIFIED | 00a59be0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_CUNNING_OF_THE_WOODS` | UNVERIFIED | 00a5ae40 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_ELVEN_LUCK` | UNVERIFIED | 00a6a680 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ELVEN_LUCK` | MATCH | 00a6a680, 00a6b820 | good-luck multiplier = ElvenLuck_DamageMultiplier instead of GoodLuck_DamageMultiplier |  |
 | `HERO_SKILL_FOREST_RAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_LAST_STAND` | UNVERIFIED | 00a59490 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SUN_FIRE` | UNVERIFIED | 00983790 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SOIL_BURN` | UNVERIFIED | 00a61a60 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_STORM_WIND` | UNVERIFIED | 008a1e50 008a4330 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_FOG_VEIL` | UNVERIFIED | 008a2630 008a4330 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_ABSOLUTE_LUCK` | UNVERIFIED | 008a3ef0 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ABSOLUTE_LUCK` | MATCH | 008a3ef0, 00a6a680 | every strike is lucky (good-luck multiplier) unless the target's hero has Absolute Protection (then a normal roll) |  |
 | `HERO_SKILL_MARCH_OF_THE_MACHINES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_REMOTE_CONTROL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_ARTIFICIAL_GLORY` | UNVERIFIED | 00a6acd0 00a751a0 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ARTIFICIAL_GLORY` | MATCH | 00a751a0, 00a6acd0, 004ba9d0, 004bae10 | mechanical creatures of a hero with the perk get army morale clamped to ≥ 0 and roll only good morale (00a6ba00); without it their morale is 0 |  |
 | `HERO_SKILL_WILDFIRE` | UNVERIFIED | 00a5a900 00a5ed90 00a75b00 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_COUNTERSPELL` | GAP |  | exe 00978670: 2× cost and single use match; ATB after a counter is set to 0.2+0.1·Sorcery (and a Payback branch) — owner of that ATB change not confirmed, engine uses the normal cast reset |  |
 | `HERO_SKILL_MAGIC_CUSHION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -350,14 +351,14 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_TAP_RUNES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_RUNIC_ATTUNEMENT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DWARVEN_LUCK` | UNVERIFIED | 00977790 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_OFFENSIVE_FORMATION` | UNVERIFIED | 008a4800 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_DEFENSIVE_FORMATION` | UNVERIFIED | 008a22f0 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_OFFENSIVE_FORMATION` | MATCH | 008a4800 | same formula with Offensive_MaxOffenseBonus |  |
+| `HERO_SKILL_DEFENSIVE_FORMATION` | MATCH | 008a22f0 | Fortress race (9) only: += clamp(trunc(10·log10(A/B)), 0, Defensive_MaxDefenseBonus) — trunc matches the manual's floor; operands A (unit+0xf0) / B (unit+0xa0 vf 0x24) taken as adjacent dwarven power / own power per manual p.323 (not traced further) |  |
 | `HERO_SKILL_DISTRACT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SET_AFIRE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SHRUG_DARKNESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ETERNAL_LIGHT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_RUNIC_ARMOR` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_ABSOLUTE_PROTECTION` | UNVERIFIED | 008a3ef0 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ABSOLUTE_PROTECTION` | MATCH | 008a3ef0 | enemy rolls normally; a lucky result becomes normal, anything else becomes BadLuck_DamageMultiplier — unless the attacker's hero has Absolute Luck |  |
 | `HERO_SKILL_EMPATHY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_PREPARATION` | UNVERIFIED | 008a65e0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DEMONIC_RAGE` | UNVERIFIED | 008a16b0 0097f610 | implemented; not yet compared with the exe |  |
@@ -391,7 +392,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_CORRUPT_SUMMONING` | FIXED | 009781e0, 004e6000 | rounded ×(1+increase) | (HeroManaCost) |
 | `HERO_SKILL_WEAKEN_SUMMONING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DETAIN_SUMMONING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_DEATH_TO_NONEXISTENT` | UNVERIFIED | 00a5a900 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_DEATH_TO_NONEXISTENT` | MATCH | 00a5a900 (00a5adc6) | damage ×DeathToNonexistent_DamageToSummonsMult when the target has a summoner link (vf 0x6c → 0x58) |  |
 | `HERO_SKILL_BARBARIAN_ANCIENT_SMITHY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_BARBARIAN_WEAKENING_STRIKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_BARBARIAN_SOIL_BURN` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -409,7 +410,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 |---|---|---|---|---|
 | `HERO_SPEC_SUZERAIN` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_WHITE_KNIGHT` | FIXED | 009781e0, 00989fd0, 00989790, 0098a430 | Light spells −1 mana; Prayer bonus ×2 | tests/H5.Combat.Tests/AuditSpecTests.WhiteKnightDoublesPrayer |
-| `HERO_SPEC_JOUSTING` | MATCH | 00a58de0 | verified in EXE_FINDINGS.md |  |
+| `HERO_SPEC_JOUSTING` | MATCH | 00a58de0, 0094aee0 | Jousting factor (1+clamp(clamp(perCell,0,10),0,100)·cells) × (1+clamp(CavalryCommander_JoustingBonus,0,1000)+clamp(…PerLevel,0,1000)·level) (struct fields +4/+8) |  |
 | `HERO_SPEC_PEASANTS` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_ARCHERS` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_FOOTMEN` | N/A |  | no combat use found in exe or engine |  |

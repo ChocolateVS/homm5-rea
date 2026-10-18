@@ -151,7 +151,8 @@ public sealed partial class Battle
                 retaliated = true;
             }
             // Assault (Brutality): after the first strike, a proc adds one more strike to the loop (FUN_00a65260).
-            if (i == 0 && HasAbilityNow(u, Ab.Brutality) && t.Alive && u.Alive && RollProc(u, ProcChance(u, t)))
+            if (i == 0 && HasAbilityNow(u, Ab.Brutality) && t.Alive && u.Alive
+                && ProcRoll(u, t, Stats.Get("combat/Creatures/Stronghold/Brutality_ProcFactor", 1), soldiersLuckDoubles: true))
             {
                 Emit(new AbilityTriggered(u.Id, Ab.Brutality, t.Id));
                 strikes++;
@@ -228,11 +229,12 @@ public sealed partial class Battle
             var hit = new Hit { Kind = AttackKind.Ranged };
             var r = Strike(u, t, hit, pattern: true);
             // Warding Arrows: -0.2 ATB on shot (p.181).
-            if (t.Alive && r.Damage > 0 && HasAbilityNow(u, Ab.WardingArrows)
-                && RollProc(u, ProcChance(u, t, Stats.Get("combat/Creatures/Sylvan/WardingArrows_ProcFactor", 1), targetHpBefore)))
+            // exe FUN_00a5b000: every shot, ATB = max(0, ATB − clamp(WardingArrowsATBAffect, 0, 1)).
+            if (t.Alive && HasAbilityNow(u, Ab.WardingArrows)
+                && ProcRoll(u, t, Stats.Get("combat/Creatures/Sylvan/WardingArrows_ProcFactor", 1), targetHpBefore))
             {
                 Emit(new AbilityTriggered(u.Id, Ab.WardingArrows, t.Id));
-                SetAtb(t.Id, GetAtb(t.Id) - Stats.Get("combat/Creatures/Sylvan/WardingArrowsATBAffect", 0.2));
+                SetAtb(t.Id, Math.Max(0, GetAtb(t.Id) - Math.Clamp(Stats.Get("combat/Creatures/Sylvan/WardingArrowsATBAffect", 0.2), 0, 1)));
             }
             if (u.IsWarMachine && u.Alive && t.Alive) SpecBallistaShot(u, t);
             if (u.IsWarMachine && u.Alive && t.Alive && HeroOf(u).HasPerk("HERO_SKILL_IMBUE_BALLISTA")) ImbuedCast(HeroOf(u), t);
@@ -678,17 +680,38 @@ public sealed partial class Battle
         bool living = IsLiving(t);
 
         if (melee && !retaliation && HasAbilityNow(a, Ab.Bash) && !t.Has(Ab.Mechanical) && !t.IsWarMachine
-            && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Haven/Bash_ProcFactor", 1.5), primaryHpBefore)))
+            && ProcRoll(a, t, Stats.Get("combat/Creatures/Haven/Bash_ProcFactor", 1.5), primaryHpBefore, soldiersLuckDoubles: true, secondRoll: false))
         {
             Emit(new AbilityTriggered(a.Id, Ab.Bash, t.Id));
             SetAtb(t.Id, 0);
             stunned = true;
             RageEvent(t, "ReceiveBashRP");
         }
+        // Crushing Blow (exe FUN_00a5af70): besides its 2x2 area, a Bash-like chance (CrushingBlow_ProcFactor, never on a
+        // retaliation, no Soldier's Luck second roll) to zero the target's ATB and cancel its retaliation.
+        if (melee && !retaliation && HasAbilityNow(a, Ab.CrushingBlow) && !t.IsWarMachine && !t.IsObject
+            && ProcRoll(a, t, Stats.Get("combat/Creatures/Stronghold/CrushingBlow_ProcFactor", 1), primaryHpBefore, soldiersLuckDoubles: true, secondRoll: false))
+        {
+            Emit(new AbilityTriggered(a.Id, Ab.CrushingBlow, t.Id));
+            SetAtb(t.Id, 0);
+            stunned = true;
+        }
+        // Force Arrow (ABILITY_PIERCING_ARROW, exe FUN_00a5d420): ranged chance (PiercingArrow_ProcFactor, no second roll)
+        // to push a non-HOLD_GROUND creature back one tile and stun it (ATB 0).
+        if (ranged && !retaliation && HasAbilityNow(a, Ab.PiercingArrow) && !t.IsWarMachine && !t.IsObject && !t.Has(Ab.HoldGround)
+            && ProcRoll(a, t, Stats.Get("combat/Creatures/Sylvan/PiercingArrow_ProcFactor", 1), secondRoll: false))
+        {
+            Emit(new AbilityTriggered(a.Id, Ab.PiercingArrow, t.Id));
+            SetAtb(t.Id, 0);
+            stunned = true;
+            var (fx, fy) = Dir(a, t);
+            var back = new Cell(t.Pos.X + fx, t.Pos.Y + fy);
+            if (!IsEntangled(t) && Fits(t, back)) Teleport(t, back);
+        }
         // Fear (exe FUN_00a629b0): only on the attacker's own strike (never a retaliation) and only while the target would
         // still retaliate; the target runs instead of retaliating.
         if (!retaliation && melee && HasAbilityNow(a, Ab.Fear) && !MindImmune(t) && CanRetaliate(t, a)
-            && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Inferno/Fear_ProcFactor", 0.8), primaryHpBefore)))
+            && ProcRoll(a, t, Stats.Get("combat/Creatures/Inferno/Fear_ProcFactor", 0.8)))
         {
             Emit(new AbilityTriggered(a.Id, Ab.Fear, t.Id));
             SetAtb(t.Id, 0);
@@ -697,7 +720,7 @@ public sealed partial class Battle
         }
         if (!t.Alive) return;
         if (melee && HasAbilityNow(a, Ab.BlindingAttack) && living && !t.Has(Ab.ImmuneBlind)
-            && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Sylvan/BlindingAttack_ProcFactor", 1), primaryHpBefore)))
+            && ProcRoll(a, t, Stats.Get("combat/Creatures/Sylvan/BlindingAttack_ProcFactor", 1)))
         {
             Emit(new AbilityTriggered(a.Id, Ab.BlindingAttack, t.Id));
             ApplySpellEffectFromCreature(a, t, "SPELL_BLIND", Mastery.Basic, (int)Stats.Get("combat/Creatures/Sylvan/BlindingAttackSpellPower", 8));
@@ -724,7 +747,7 @@ public sealed partial class Battle
             ApplySpellEffectFromCreature(a, t, hex[S.Rng.Next(hex.Length)], Mastery.Expert, CreatureSpellPower(a.Count, Math.Max(1, a.WeeklyGrowth)));
         }
         if (melee && HasAbilityNow(a, Ab.WhipStrike) && living
-            && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Dungeon/WhipStrike_ProcFactor", 1.5), primaryHpBefore)))
+            && ProcRoll(a, t, Stats.Get("combat/Creatures/Dungeon/WhipStrike_ProcFactor", 1.5)))
         {
             // exe FUN_00a5e2c0: r = Rng(100); r < 40 → Slow, r < 75 → Weakness, else Berserk.
             int r = S.Rng.Next(100);
@@ -732,13 +755,13 @@ public sealed partial class Battle
             ApplySpellEffectFromCreature(a, t, whip, Mastery.Basic, (int)Stats.Get("combat/Creatures/Dungeon/WhipStrikeSpellPower", 3));
         }
         // Wound (exe FUN_00a629b0): creature targets only, never mechanical or elemental.
-        if (HasAbilityNow(a, Ab.Wound) && !t.IsWarMachine && !t.IsObject && !t.Has(Ab.Mechanical) && !t.Has(Ab.Elemental) && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Fortress/Wound_ProcFactor", 0.7), primaryHpBefore)))
+        if (HasAbilityNow(a, Ab.Wound) && !t.IsWarMachine && !t.IsObject && !t.Has(Ab.Mechanical) && !t.Has(Ab.Elemental) && ProcRoll(a, t, Stats.Get("combat/Creatures/Fortress/Wound_ProcFactor", 0.7)))
         {
             Emit(new AbilityTriggered(a.Id, Ab.Wound, t.Id));
             AddEffect(t, new Effect { Id = H5.Combat.Fx.Wound, Remaining = Stats.Get("combat/Creatures/Fortress/Wound_EffectDurationInRounds", 2), SourceSide = a.Side });
         }
         // Mark of Fire (exe FUN_00a629b0): ranged strikes only.
-        if (ranged && HasAbilityNow(a, Ab.MarkOfFire) && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Fortress/MarkOfFire_ProcFactor", 1), primaryHpBefore)))
+        if (ranged && HasAbilityNow(a, Ab.MarkOfFire) && ProcRoll(a, t, Stats.Get("combat/Creatures/Fortress/MarkOfFire_ProcFactor", 1)))
         {
             Emit(new AbilityTriggered(a.Id, Ab.MarkOfFire, t.Id));
             AddEffect(t, new Effect { Id = H5.Combat.Fx.MarkOfFire, Remaining = Stats.Get("combat/Creatures/Fortress/MarkOfFire_EffectDurationInRounds", 2), SourceSide = a.Side });
@@ -751,13 +774,14 @@ public sealed partial class Battle
         // (undead are NOT immune); no melee/ranged restriction.
         if (HasAbilityNow(a, Ab.SleepingStrike) && !t.Has(Ab.ImmuneBlind) && !t.Has(Ab.Mechanical) && !t.Has(Ab.Elemental)
             && !t.IsWarMachine && !t.IsObject
-            && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Necropolis/SleepingStrike_ProcFactor", 3), primaryHpBefore)))
+            && ProcRoll(a, t, Stats.Get("combat/Creatures/Necropolis/SleepingStrike_ProcFactor", 3)))
         {
             Emit(new AbilityTriggered(a.Id, Ab.SleepingStrike, t.Id));
             AddEffect(t, new Effect { Id = H5.Combat.Fx.Sleep, Remaining = Stats.Get("combat/Creatures/Necropolis/SleepingStrike_Duration", 2), SourceSide = a.Side });
         }
-        if (melee && !retaliation && HasAbilityNow(a, Ab.PawStrike)
-            && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Fortress/PawStrike_ProcFactor", 1), primaryHpBefore) * Math.Max(1, hit.CellsWalked) / 2.0))
+        // Paw Strike (exe FUN_00a5d1b0): one roll per tile walked, none when standing still or on HOLD_GROUND targets.
+        if (melee && !retaliation && HasAbilityNow(a, Ab.PawStrike) && !t.Has(Ab.HoldGround)
+            && RollPercent(a, PawStrikePercent(a, t, hit.CellsWalked, primaryHpBefore), secondRoll: true))
         {
             Emit(new AbilityTriggered(a.Id, Ab.PawStrike, t.Id));
             SetAtb(t.Id, 0);
@@ -767,7 +791,7 @@ public sealed partial class Battle
         }
         if (HasAbilityNow(a, Ab.EntanglingRoots) && melee && !t.Flying && !a.HasEffect(H5.Combat.Fx.RageOfForest))
             AddEffect(t, new Effect { Id = H5.Combat.Fx.Entangled, SourceUnit = a.Id, SourceSide = a.Side });
-        if (HasAbilityNow(a, Ab.Purger) && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Haven/Purger_ProcFactor", 2), primaryHpBefore)))
+        if (HasAbilityNow(a, Ab.Purger) && ProcRoll(a, t, Stats.Get("combat/Creatures/Haven/Purger_ProcFactor", 2)))
         {
             var pos = t.Effects.Where(e => e.Positive && e.Dispellable).ToList();
             if (pos.Count > 0) { Emit(new AbilityTriggered(a.Id, Ab.Purger, t.Id)); RemoveEffect(t, pos[S.Rng.Next(pos.Count)].Id); }
@@ -799,7 +823,7 @@ public sealed partial class Battle
             {
                 if (MindImmune(victim)) continue;
                 double mult = victim.IsLarge ? 1 : Stats.Get("combat/Creatures/Fortress/BearRoar_SmallCreaturesChanceMult", 2);
-                if (RollProc(a, ProcChance(a, victim, Stats.Get("combat/Creatures/Fortress/BearRoar_ProcFactor", 0.9) * mult)))
+                if (ProcRoll(a, victim, Stats.Get("combat/Creatures/Fortress/BearRoar_ProcFactor", 0.9) * mult, soldiersLuckDoubles: true))
                 {
                     any = true;
                     Emit(new AbilityTriggered(a.Id, Ab.BearRoar, victim.Id));

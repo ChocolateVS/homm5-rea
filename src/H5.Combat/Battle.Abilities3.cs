@@ -150,7 +150,7 @@ public sealed partial class Battle
         foreach (var o in S.Living.Where(o => o.Id != target.Id && Controller(o) == Controller(target) && o.Has(Ab.Taunt)
                      && AdjacentAt(attacker, from, o)).ToList())
         {
-            if (RollProc(o, ProcChance(o, attacker, Stats.Get("combat/Creatures/Stronghold/Taunt_ProcFactor", 1.2))))
+            if (ProcRoll(o, attacker, Stats.Get("combat/Creatures/Stronghold/Taunt_ProcFactor", 1.2), soldiersLuckDoubles: true, secondRoll: false))
             {
                 Emit(new AbilityTriggered(o.Id, Ab.Taunt, attacker.Id));
                 result = o;
@@ -282,7 +282,7 @@ public sealed partial class Battle
     /// </summary>
     void Flamewave(Unit a, Unit t)
     {
-        if (!HasAbilityNow(a, Ab.Flamewave) || !a.Alive || !RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Fortress/FlameWave_ProcFactor", 2))))
+        if (!HasAbilityNow(a, Ab.Flamewave) || !a.Alive || !ProcRoll(a, t, Stats.Get("combat/Creatures/Fortress/FlameWave_ProcFactor", 2), soldiersLuckDoubles: true, secondRoll: false))
             return;
         Emit(new AbilityTriggered(a.Id, Ab.Flamewave, t.Id));
         int dx = Math.Sign(t.Pos.X - a.Pos.X), dy = Math.Sign(t.Pos.Y - a.Pos.Y);
