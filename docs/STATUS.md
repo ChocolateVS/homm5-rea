@@ -51,5 +51,10 @@ _Last updated: 2026-10-19 morning (demo refreshed to commit 566974a; builds, mai
 - `G:\H5Reborn-input-test` is a leftover scratch folder (copies of committed scripts only, no links). A safety check stopped me deleting it automatically — you can delete it.
 - `G:\H5Reborn-audio2` is another leftover. **Careful:** it contains a junction `tools\godot` pointing at the real Godot install. Remove the junction first, in PowerShell: `(Get-Item 'G:\H5Reborn-audio2\tools\godot').Delete()` — then delete the folder. (Deleting the folder recursively before removing the junction could delete the real Godot files.)
 
+## Paused (2026-10-19, at the user's request)
+All helpers stopped; no background processes left running. Combat audit ledger at pause (committed): **189 fixed, 117 matching, 9 gaps, 59 N/A, 224 unverified**.
+In-progress, uncommitted work is left in the working tree (adventure Seer Huts/building screens, combat log text, a few combat ability hunks) — it is unverified and was deliberately NOT committed; it will be picked up or discarded on resume. Stray untracked files `0089c720`, `00a59340` in the repo root are Ghidra dumps from a helper and can be deleted.
+Open workstreams to resume: spells (runes/warcries/creature-cast; school spells), abilities part A and B, hero skills (might, magic), combat hard leftovers (battle-context ×1.5 / weeks, HP multiplier, artifacts), combat UI pass 3, adventure (kingdom overview, market, faction buildings, Seer Huts, Sphinx, grail).
+
 ## Interruptions
 The overnight run hit the account usage limit once (all helpers paused until it reset at 4:10 am); they were resumed from where they stopped, with no work lost.
