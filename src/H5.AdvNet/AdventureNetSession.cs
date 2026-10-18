@@ -333,6 +333,10 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
 
         var now = _clock();
         var state = _g.CreatePendingBattle(NextSeed());
+        // Ghost Mode: a possessed neutral stack may be taken over by the ghosts when attacked.
+        if (_ghosts != null && pb.DefenderHero < 0 && pb.DefenderObject >= 0 && pb.DefenderArmy.Count > 0
+            && _ghosts.RollPossession(pb.DefenderObject, pb.DefenderArmy[0].Creature, _g.Core, _g.S.Rng) >= 0)
+            GhostMode.ApplyPossession(state, 1);
         _battle = new NetBattle(_g.Core, state, new[] { SideOf(atk), SideOf(def) }, atk, _battleAi, now);
         _battleStartMs = now;
         foreach (var (side, start) in _battle.Start()) Out(side).Add(start);

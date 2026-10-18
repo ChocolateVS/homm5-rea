@@ -27,3 +27,5 @@ tools/cuia/bin/
 tools/re/audit/out/
 tools/audiore/out/
 tools/audiore/scripts/
+tools/ghost/out/
+tools/ghost/scripts/
