@@ -57,6 +57,9 @@ public partial class CombatHud : Control
         bus.On("autoplace_army", _screen.CmdEndTactics);
         bus.On("confirm_placement", _screen.CmdEndTactics);
         bus.On("switch_atb_log", ToggleLog);
+        // ATB scroll buttons (ATBBar/ScrollLeft|Right → UISRunReaction atb_scroll_left|right).
+        bus.On("atb_scroll_left", () => { _atbScroll = Math.Max(0, _atbScroll - 1); UpdateAtb(); });
+        bus.On("atb_scroll_right", () => { _atbScroll = Math.Min(MaxAtbScroll, _atbScroll + 1); UpdateAtb(); });
         UiMessageBus.Unhandled += OnUnhandled;
 
         BuildAtbIcons();
@@ -142,7 +145,13 @@ public partial class CombatHud : Control
         public Control Root = null!;
         public TextureRect Background = null!, Person = null!, Selection = null!;
         public BitmapText Count = null!;
+        /// <summary>Original "Blind" marker window (UI/CombatArena-Heavy/ATBBar/Icon_Blind).</summary>
+        public Control? Blind;
     }
+
+    /// <summary>How many turns the ATB bar is scrolled ahead (atb_scroll_left/right reactions).</summary>
+    int _atbScroll;
+    const int MaxAtbScroll = 20;
 
     void BuildAtbIcons()
     {
@@ -177,6 +186,14 @@ public partial class CombatHud : Control
             icon.Root.AddChild(icon.Person);
             icon.Root.AddChild(icon.Count);
             icon.Root.AddChild(icon.Selection);
+            try
+            {
+                var blind = UiResources.Instance.LoadWindow("UI/CombatArena-Heavy/ATBBar/Icon_Blind.(WindowSimple).xdb");
+                UiLayout.Apply(blind);
+                icon.Blind = new UiNode(blind) { MouseFilter = MouseFilterEnum.Ignore, Position = new Vector2(blind.Rect.X, blind.Rect.Y), Size = new Vector2(blind.Rect.W, blind.Rect.H), Visible = false };
+                icon.Root.AddChild(icon.Blind);
+            }
+            catch (Exception e) { GD.PushWarning($"[H5] ATB blind marker: {e.Message}"); }
             container.AddChild(icon.Root);
             _icons.Add(icon);
         }
@@ -188,16 +205,17 @@ public partial class CombatHud : Control
     public void OnTurnStarted(int actor)
     {
         _activeActor = actor;
+        _atbScroll = 0;
         Refresh();
     }
 
     void UpdateAtb()
     {
         var b = _screen.Session.Battle;
-        var order = TurnOrder.Predict(b, IconCount + 1);
+        var order = TurnOrder.Predict(b, IconCount + 1 + _atbScroll);
         int current = b.State.Active ?? (order.Count > 0 ? order[0] : int.MinValue);
         SetLarge(current);
-        var upcoming = order.Count > 0 && order[0] == current ? order.Skip(1).ToList() : order;
+        var upcoming = (order.Count > 0 && order[0] == current ? order.Skip(1) : order).Skip(_atbScroll).ToList();
         for (int i = 0; i < _icons.Count; i++)
         {
             var icon = _icons[i];
@@ -207,6 +225,7 @@ public partial class CombatHud : Control
             icon.Background.Texture = SideBackground(SideOf(a), false);
             icon.Person.Texture = Portrait(a, large: false);
             icon.Count.Markup = Actor.IsHero(a) ? "" : $"<creatures_count>{CountOf(a)}";
+            if (icon.Blind != null) icon.Blind.Visible = !Actor.IsHero(a) && b.State.Unit(a)?.HasEffect("SPELL_BLIND") == true;
         }
     }
 
@@ -356,27 +375,30 @@ public partial class CombatHud : Control
 
         string Single(double v, double baseV) => Fmt("single_value", ("value_normal", Math.Abs(v - baseV) < 1e-6 ? Num(v) : ""),
             ("value_red", v < baseV - 1e-6 ? Num(v) : ""), ("value_green", v > baseV + 1e-6 ? Num(v) : ""));
-        string Double(int a, int bb) => Fmt("double_value", ("value1_normal", a.ToString()), ("value1_red", ""), ("value1_green", ""),
-            ("value2_normal", bb.ToString()), ("value2_red", ""), ("value2_green", ""));
+        string Pair(double a, double baseA, double bb, double baseB) => Fmt("double_value",
+            ("value1_normal", Math.Abs(a - baseA) < 1e-6 ? Num(a) : ""), ("value1_red", a < baseA - 1e-6 ? Num(a) : ""), ("value1_green", a > baseA + 1e-6 ? Num(a) : ""),
+            ("value2_normal", Math.Abs(bb - baseB) < 1e-6 ? Num(bb) : ""), ("value2_red", bb < baseB - 1e-6 ? Num(bb) : ""), ("value2_green", bb > baseB + 1e-6 ? Num(bb) : ""));
+        string Double(int a, int bb) => Pair(a, a, bb, bb);
+        // Effective values (spells, hero, artifacts, auras) coloured against the creature's base
+        // stats, as the stock info window does: green above base, red below.
+        var (minDmg, maxDmg) = b.DamageRangeOf(u);
         var rows = new (int Slot, string Value)[]
         {
-            (0, Single(u.BaseAttack, u.BaseAttack)),
-            (1, Single(u.BaseDefence, u.BaseDefence)),
-            (2, Double(u.BaseMinDamage, u.BaseMaxDamage)),
+            (0, Single(b.AttackOf(u), u.BaseAttack)),
+            (1, Single(b.DefenceOf(u), u.BaseDefence)),
+            (2, Pair(Math.Round(minDmg, 1), u.BaseMinDamage, Math.Round(maxDmg, 1), u.BaseMaxDamage)),
             (3, Double(u.TopHealth, u.MaxHealthCache)),
-            (4, Single(u.BaseSpeed, u.BaseSpeed)),
+            (4, Single(b.SpeedOf(u), u.BaseSpeed)),
             (5, Single(Math.Round(b.InitiativeOf(u), 1), u.BaseInitiative)),
+            (6, Single(b.MoraleOf(u), 0)),
+            (7, Single(b.LuckOf(u), 0)),
         };
+        // Stat icons: the stock param icon window has no texture (Param/Icon/Back is empty)
+        // and the manual's info screenshots show text rows only, so they stay hidden.
         foreach (var (slot, value) in rows)
         {
             info.Find($"param_{slot}/name")?.SetText(UiResources.Instance.Text(InfoTexts + $"param_{slot}.txt"));
             info.Find($"param_{slot}/value")?.SetText(value);
-            info.SetVisible($"param_{slot}/icon", false);
-        }
-        // Morale and luck need the engine's per-stack modifiers, which it does not expose yet.
-        foreach (var slot in new[] { 6, 7 })
-        {
-            info.Find($"param_{slot}/name")?.SetText(UiResources.Instance.Text(InfoTexts + $"param_{slot}.txt"));
             info.SetVisible($"param_{slot}/icon", false);
         }
         if (u.MaxShots > 0)

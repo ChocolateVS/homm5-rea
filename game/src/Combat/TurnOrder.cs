@@ -3,16 +3,18 @@ using H5.Combat;
 namespace H5Reborn.Combat;
 
 /// <summary>
-/// Predicts the upcoming turn order for the ATB bar by advancing copies of the ATB
-/// values with each actor's current initiative (fan manual p.309: an actor's gauge
-/// fills at Initiative/10 per time unit and resets to 0 after acting). Effects that
-/// expire or morale rolls can change the real order; the original bar has the same
-/// limitation and re-sorts after every action.
+/// Upcoming turn order for the ATB bar. In combat this is the engine's prediction
+/// (Battle.PredictTurnOrder: simulated ATB advance including effect expiries and the
+/// original tie-breaking); during tactics, before any ATB has advanced, it orders the
+/// actors by their starting ATB and initiative the same way.
 /// </summary>
 public static class TurnOrder
 {
     public static List<int> Predict(Battle b, int count)
     {
+        if (b.State.Phase == BattlePhase.Combat)
+            return b.PredictTurnOrder(count).Select(p => p.Actor).ToList();
+
         var s = b.State;
         var actors = new List<(int Id, double Atb, double Rate)>();
         foreach (var u in s.Units)
@@ -23,31 +25,8 @@ public static class TurnOrder
             }
         for (int side = 0; side < 2; side++)
             if (s.Heroes[side].Present && !s.Heroes[side].Fled)
-                actors.Add((Actor.Hero(side), s.Heroes[side].Atb, 1.0));
-
-        var result = new List<int>();
-        if (s.Active is int active)
-        {
-            result.Add(active);
-            int i = actors.FindIndex(a => a.Id == active);
-            if (i >= 0) actors[i] = (active, 0, actors[i].Rate);
-        }
-        for (int guard = 0; result.Count < count && actors.Count > 0 && guard < 200; guard++)
-        {
-            int best = -1;
-            double bestT = double.PositiveInfinity;
-            for (int i = 0; i < actors.Count; i++)
-            {
-                var (id, atb, rate) = actors[i];
-                double t = Math.Max(0, (1 - atb) / rate);
-                if (t < bestT - 1e-9 || (Math.Abs(t - bestT) <= 1e-9 && best >= 0 && rate > actors[best].Rate))
-                { best = i; bestT = t; }
-            }
-            for (int i = 0; i < actors.Count; i++)
-                actors[i] = (actors[i].Id, actors[i].Atb + actors[i].Rate * bestT, actors[i].Rate);
-            result.Add(actors[best].Id);
-            actors[best] = (actors[best].Id, 0, actors[best].Rate);
-        }
-        return result;
+                actors.Add((Actor.Hero(side), s.Heroes[side].Atb, b.HeroInitiativeOf(side) / 10.0));
+        return actors.OrderBy(a => Math.Max(0, (1 - a.Atb) / a.Rate)).ThenByDescending(a => a.Rate)
+            .Take(count).Select(a => a.Id).ToList();
     }
 }
