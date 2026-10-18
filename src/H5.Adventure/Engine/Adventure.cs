@@ -86,6 +86,7 @@ public sealed partial class Adventure
             UpgradeCreatureCmd c => DoUpgradeCreature(c),
             BuyFactoryWarMachineCmd c => DoBuyFactoryWarMachine(c),
             BuyCartographerMapCmd c => DoBuyCartographerMap(c),
+            UseTreeOfKnowledgeCmd c => DoUseTreeOfKnowledge(c),
             _ => "unknown command",
         };
         var result = err != null ? AdvResult.Reject(err) : new AdvResult { Ok = true, Events = _ev };

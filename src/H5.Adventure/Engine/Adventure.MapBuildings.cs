@@ -15,6 +15,9 @@ public sealed record BuyFactoryWarMachineCmd(int HeroId, int Factory, string Mac
 /// <summary>Accept a Cartographer's offer (exe CAcceptCartographerCmd, execute 0x42ef10).</summary>
 public sealed record BuyCartographerMapCmd(int HeroId, int Cartographer) : AdvCommand;
 
+/// <summary>Pay a Tree of Knowledge (Sylanna's Ancients) its price for one level (exe CUseTreeOfKnowledgeCmd, execute 0x427cc0).</summary>
+public sealed record UseTreeOfKnowledgeCmd(int HeroId, int Tree) : AdvCommand;
+
 public sealed record CreatureUpgraded(int HeroId, int TownObject, int Slot, string From, string To) : AdvEvent;
 
 // Hill Fort, War Machine Factory, Cartographer, Obelisk.
@@ -28,6 +31,9 @@ public sealed partial class Adventure
 
     /// <summary>Gold cost a Cartographer asks when the map instance does not set one (fan manual p.266).</summary>
     const int DefaultCartographerCost = 1000;
+
+    /// <summary>The hero visits the object as if it had stepped on it (Lua MakeHeroInteractWithObject; tests).</summary>
+    public void InteractWithObject(HeroState h, int obj) => Visit(h, O(obj));
 
     bool HeroAt(HeroState h, MapObject o) => h.Pos == o.Pos || o.ActiveTiles.Contains(h.Pos);
 
@@ -196,5 +202,103 @@ public sealed partial class Adventure
     {
         p.VisitedObjects.Add(o.Index);
         Emit(new ObjectVisited(h.Id, o.Index, "BUILDING_OBELISK"));
+    }
+
+    // ------------------------------------------------------------------ Witch Hut
+
+    /// <summary>
+    /// Secondary skills a Witch Hut can teach: the common skills, i.e. those more than two hero classes can
+    /// learn (racial skills and the Stronghold shatter skills belong to one faction's two classes).
+    /// TODO(exe): the hut's roll (CAdvMapBuilding slot +0x1c8, not traced) — uniform over this list.
+    /// </summary>
+    public IReadOnlyList<string> WitchHutSkills =>
+        Db.SkillProbs.Values.SelectMany(list => list.Where(x => x.Prob > 0).Select(x => x.Skill).Distinct())
+            .GroupBy(x => x).Where(gr => gr.Count() > 2).Select(gr => gr.Key)
+            .Where(id => Db.Perks.TryGetValue(id, out var d) && d.IsSkill)
+            .OrderBy(id => id, StringComparer.Ordinal).ToList();
+
+    /// <summary>The skill a Witch Hut teaches, rolled once per hut on first visit.</summary>
+    public string? WitchHutSkill(int hut) => S.Objects.TryGetValue(hut, out var os) ? os.SkillId : null;
+
+    /// <summary>
+    /// Witch Hut: teaches its skill, once per hero: a new skill at Basic if a skill slot is free, or one
+    /// mastery level more of a known one (stock texts Text/Game/Buildings/WitchHut: Description,
+    /// FirstVisit, Visited = "already known", NoLinesForSkill = no free slot). The player remembers the
+    /// hut's skill after the visit.
+    /// </summary>
+    void VisitWitchHut(HeroState h, PlayerState p, MapObject o, ObjState os)
+    {
+        if (os.SkillId == null)
+        {
+            var pool = WitchHutSkills;
+            if (pool.Count > 0) os.SkillId = pool[S.Rng.Next(pool.Count)];
+        }
+        p.VisitedObjects.Add(o.Index);
+        string? skill = os.SkillId;
+        var mastery = skill == null ? Mastery.None : h.MasteryOf(skill);
+        string result;
+        if (skill == null || h.VisitedOnce.Contains(o.Index) || mastery >= Mastery.Expert) result = "known";
+        else if (mastery == Mastery.None && h.Skills.Count(x => x.Mastery > Mastery.None) >= MaxSkills) result = "full";
+        else
+        {
+            h.VisitedOnce.Add(o.Index);
+            var learned = mastery + 1;
+            h.Skills.RemoveAll(x => x.SkillId == skill);
+            h.Skills.Add(new SkillEntry(skill, learned));
+            Emit(new SkillLearned(h.Id, skill, learned));
+            result = "learned";
+        }
+        Emit(new ObjectVisited(h.Id, o.Index, $"BUILDING_WITCH_HUT:{result}:{skill}"));
+    }
+
+    // ------------------------------------------------------------------ Tree of Knowledge
+
+    /// <summary>
+    /// A tree's price, rolled once per tree on first visit: free, 2000 gold or 10 gems (the three offers of
+    /// Text/Interface/TreeOfKnowledge desc_free/desc_gold/desc_gems). TODO(exe): the odds are not traced
+    /// (the command carries the price, +0x18); one in three each.
+    /// </summary>
+    public Resources TreeOfKnowledgePrice(int tree)
+    {
+        var os = S.Obj(tree);
+        return os.Variant switch
+        {
+            1 => new Resources(0, 0, 0, 0, 0, 0, 2000),
+            2 => new Resources(0, 0, 0, 0, 0, 10, 0),
+            _ => new Resources(0, 0, 0, 0, 0, 0, 0),
+        };
+    }
+
+    void VisitTreeOfKnowledge(HeroState h, MapObject o)
+    {
+        var os = S.Obj(o.Index);
+        if (os.Variant < 0) os.Variant = S.Rng.Next(3);
+        Emit(new ObjectVisited(h.Id, o.Index, h.VisitedOnce.Contains(o.Index) ? "BUILDING_TREE_OF_KNOWLEDGE:visited" : "BUILDING_TREE_OF_KNOWLEDGE"));
+    }
+
+    /// <summary>Pays the price and grants exactly the experience to the next level (FUN_00b4c6b0 difference), once per hero.</summary>
+    string? DoUseTreeOfKnowledge(UseTreeOfKnowledgeCmd c)
+    {
+        var p = Current;
+        var h = S.Hero(c.HeroId);
+        var o = Map.Objects.ElementAtOrDefault(c.Tree);
+        if (o == null || o.Shared.Type != "BUILDING_TREE_OF_KNOWLEDGE") return "not a tree of knowledge";
+        if (h == null || !h.Alive || h.Owner != p.Index || !HeroAt(h, o)) return "hero must visit the tree";
+        if (h.VisitedOnce.Contains(c.Tree)) return "already visited";
+        int maxLevel = Map.HeroMaxLevel > 0 ? Map.HeroMaxLevel : 40;
+        if (h.Level >= maxLevel) return "maximum level reached";
+        if (S.Obj(c.Tree).Variant < 0) return "visit the tree first";
+        var price = TreeOfKnowledgePrice(c.Tree);
+        if (!p.Purse.CanAfford(price)) return "not enough resources";
+        Give(p, Purse.Scale(price, -1));
+        h.VisitedOnce.Add(c.Tree);
+        long need = Core.Experience.For(h.Level + 1) - h.Experience;
+        if (need > 0)
+        {
+            h.Experience += need;
+            Emit(new ExperienceGained(h.Id, need, h.Experience));
+        }
+        LevelUp(h);
+        return null;
     }
 }

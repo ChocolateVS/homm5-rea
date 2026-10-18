@@ -61,3 +61,57 @@ public class MapBuildingTests(Fixture f)
         Assert.Equal(99999 - cost.Gold, p.Purse[Purse.Gold]);
     }
 }
+
+/// <summary>Witch Hut and Tree of Knowledge on A2M1 (both stock objects).</summary>
+[Collection("adv")]
+public class WitchHutAndTreeTests(Fixture f)
+{
+    [Fact]
+    public void WitchHutTeachesItsSkillOnce()
+    {
+        var g = f.NewGame("A2M1");
+        var p = g.Current;
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
+        var hut = g.Map.Objects.First(o => o.Shared.Type == "BUILDING_WITCH_HUT");
+        Assert.Equal(12, g.WitchHutSkills.Count);
+        Assert.DoesNotContain("HERO_SKILL_NECROMANCY", g.WitchHutSkills);
+        h.Skills.Clear();
+        g.InteractWithObject(h, hut.Index);
+        var skill = g.WitchHutSkill(hut.Index);
+        Assert.NotNull(skill);
+        Assert.Contains(g.WitchHutSkills, s => s == skill);
+        Assert.Equal(Mastery.Basic, h.MasteryOf(skill!));
+        Assert.Contains(hut.Index, p.VisitedObjects);
+        // Once per hero.
+        g.InteractWithObject(h, hut.Index);
+        Assert.Equal(Mastery.Basic, h.MasteryOf(skill!));
+        // Another hero who knows the skill improves it by one level.
+        var other = new HeroState { Id = 999, Owner = p.Index, Alive = true, Pos = h.Pos };
+        other.Skills.Add(new SkillEntry(skill!, Mastery.Advanced));
+        g.S.Heroes.Add(other);
+        g.InteractWithObject(other, hut.Index);
+        Assert.Equal(Mastery.Expert, other.MasteryOf(skill!));
+        Assert.Equal(skill, g.WitchHutSkill(hut.Index));
+    }
+
+    [Fact]
+    public void TreeOfKnowledgeGrantsOneLevelOncePerHero()
+    {
+        var g = f.NewGame("A2M1");
+        var p = g.Current;
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
+        var tree = g.Map.Objects.First(o => o.Shared.Type == "BUILDING_TREE_OF_KNOWLEDGE");
+        h.Pos = tree.ActiveTiles.FirstOrDefault(tree.Pos);
+        Assert.False(g.Apply(new UseTreeOfKnowledgeCmd(h.Id, tree.Index) { Player = p.Index }).Ok);   // not visited yet
+        g.InteractWithObject(h, tree.Index);
+        p.Purse = new Purse(new Resources(0, 0, 0, 0, 0, 20, 5000));
+        var price = g.TreeOfKnowledgePrice(tree.Index);
+        int level = h.Level;
+        var r = g.Apply(new UseTreeOfKnowledgeCmd(h.Id, tree.Index) { Player = p.Index });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(level + 1, h.Level);
+        Assert.Equal(5000 - price.Gold, p.Purse[Purse.Gold]);
+        Assert.Equal(20 - price.Gem, p.Purse[Purse.Gem]);
+        Assert.False(g.Apply(new UseTreeOfKnowledgeCmd(h.Id, tree.Index) { Player = p.Index }).Ok);
+    }
+}

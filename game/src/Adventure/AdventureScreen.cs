@@ -529,6 +529,54 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 break;
             }
+            case ObjectVisited wv when wv.What.StartsWith("BUILDING_WITCH_HUT:") && HumanCaused(player) && !Autoplay:
+            {
+                // BUILDING_WITCH_HUT:<learned|known|full>:<skill>, told with the hut's stock texts.
+                var parts = wv.What.Split(':');
+                var msgs = Session.Map.Objects[wv.Object].Shared.Messages;
+                string Msg(int i, string fallback) => i < msgs.Count && UiResources.Instance.Text(msgs[i]) is { Length: > 0 } t ? t.Trim() : fallback;
+                var skill = parts.Length > 2 ? parts[2] : "";
+                var mastery = s.Hero(wv.HeroId)?.MasteryOf(skill) ?? H5.Core.Data.Mastery.None;
+                var text = parts[1] switch
+                {
+                    "learned" => Msg(2, "The witch teaches you %s.").Replace("%s", AdvDialogs.SkillName(skill, (int)mastery)),
+                    "full" => Msg(4, "You cannot learn any more skills."),
+                    _ => Msg(3, "The Skill is already known"),
+                };
+                var icon = skill.Length > 0 ? AdvDialogs.SkillIcon(skill, Math.Max(1, (int)mastery)) : null;
+                await Dialog(done => AdvDialogs.Message(_dialogLayer, ObjectName(wv.Object), text, icon, done));
+                Hud.Refresh();
+                break;
+            }
+            case ObjectVisited tk when tk.What.StartsWith("BUILDING_TREE_OF_KNOWLEDGE") && HumanCaused(player) && !Autoplay && s.Hero(tk.HeroId) is { } learner:
+            {
+                string T(string file) => AdvTexts.Get($"Text/Interface/TreeOfKnowledge/{file}");
+                var title = T("Title_Text.txt") is { Length: > 0 } tt ? tt : ObjectName(tk.Object);
+                if (tk.What.EndsWith(":visited"))
+                {
+                    var msgs = Session.Map.Objects[tk.Object].Shared.Messages;
+                    var already = msgs.Count > 3 && UiResources.Instance.Text(msgs[3]) is { Length: > 0 } av ? av.Trim() : "Already visited.";
+                    await Dialog(done => AdvDialogs.Message(_dialogLayer, title, already, null, done));
+                    break;
+                }
+                var price = Session.Game.TreeOfKnowledgePrice(tk.Object);
+                var me = Session.Human;
+                bool afford = me.Purse.CanAfford(price);
+                int maxLevel = Session.Map.HeroMaxLevel > 0 ? Session.Map.HeroMaxLevel : 40;
+                var desc = T(price.Gold > 0 ? "desc_gold_text.txt" : price.Gem > 0 ? "desc_gems_text.txt" : "desc_free_text.txt");
+                if (!afford) desc += "<br>" + T(price.Gold > 0 ? "NoGold_Text.txt" : "NoGems_Text.txt");
+                if (learner.Level >= maxLevel) desc += "<br>" + T("level-cap-reached.txt");
+                Texture2D? Tex(string path) => Game.Instance.LoadTexture(path);
+                int pick = 1;
+                await Dialog(done => AdvDialogs.Choose2(_dialogLayer, title, desc, null,
+                    (Tex("Textures/Interface/TreeOfKnowledge/exp_texture.xdb"), T("Accept_Text.txt")),
+                    (Tex("Textures/Interface/TreeOfKnowledge/Decline_Texture.xdb"), T("Decline_Text.txt")),
+                    c => { pick = c; done(); }));
+                if (pick != 0 || !afford || learner.Level >= maxLevel) break;
+                Session.Apply(new UseTreeOfKnowledgeCmd(learner.Id, tk.Object) { Player = me.Index });
+                Hud.Refresh();
+                break;
+            }
             case ObjectVisited { What: "BUILDING_CARTOGRAPHER" } cv when HumanCaused(player) && !Autoplay && s.Hero(cv.HeroId) is { } buyer:
             {
                 var me = Session.Human;
@@ -943,17 +991,28 @@ public partial class AdventureScreen : Control
         var hero = Selected ?? MyHeroes().FirstOrDefault();
         var o = Session.Map.Objects.FirstOrDefault(x => x.Shared.Type == type && !(s.Objects.TryGetValue(x.Index, out var os) && os.Removed));
         if (hero == null || o == null) { GD.PushWarning($"[H5] visit test: no hero or no {type} on this map"); return; }
-        hero.Pos = o.ActiveTiles.FirstOrDefault(o.Pos);
+        var target = o.ActiveTiles.FirstOrDefault(o.Pos);
         // A varied army so upgrade prices show for several tiers.
         var db = Game.Instance.Db;
         for (int tier = 1; tier <= 7; tier++)
             if (db.Creatures.Values.Where(c => c.Town == hero.Town && c.Tier == tier && !c.Upgrade && c.Upgrades.Count > 0).OrderBy(c => c.Id, StringComparer.Ordinal).FirstOrDefault() is { } cd)
                 hero.Army[tier - 1] = new Stack(cd.Id, 8 - tier);
         Session.Human.Purse = new Purse(new H5.Core.Data.Resources(50, 50, 50, 50, 50, 50, 60000));
-        World.SyncHero(hero);
-        World.Camera.CenterOn(hero.Pos);
-        Hud.Refresh();
-        Play(new ObjectVisited(hero.Id, o.Index, type), Session.Human.Index);
+        // Step onto the object from a free neighbouring tile, so the engine runs the real visit.
+        hero.MovePoints = 5000;
+        foreach (var (dx, dy) in new[] { (0, -1), (0, 1), (-1, 0), (1, 0), (-1, -1), (1, -1), (-1, 1), (1, 1) })
+        {
+            var from = new Tile(target.X + dx, target.Y + dy, target.Floor);
+            var floor = Session.Map.Floor(from.Floor);
+            if (floor == null || from.X < 0 || from.Y < 0 || from.X >= floor.Width || from.Y >= floor.Height || floor.IsBlocked(from.X, from.Y)) continue;
+            hero.Pos = from;
+            World.SyncHero(hero);
+            World.Camera.CenterOn(from);
+            Hud.Refresh();
+            Session.Apply(new MoveHeroCmd(hero.Id, target) { Player = Session.Human.Index });
+            return;
+        }
+        GD.PushWarning($"[H5] visit test: no free tile next to {type}");
     }
 
     public void MeetTest()

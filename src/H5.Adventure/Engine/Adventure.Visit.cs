@@ -274,6 +274,12 @@ public sealed partial class Adventure
                 Capture(o, os, p);
                 break;
 
+            case "BUILDING_WITCH_HUT":
+                VisitWitchHut(h, p, o, os);
+                break;
+            case "BUILDING_TREE_OF_KNOWLEDGE":
+                VisitTreeOfKnowledge(h, o);
+                break;
             case "BUILDING_OBELISK":
                 VisitObelisk(h, p, o);
                 break;

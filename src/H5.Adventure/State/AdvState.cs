@@ -191,6 +191,8 @@ public sealed class ObjState
     public string? ArtifactId;
     public string? SpellId;
     public string? Creature;
+    /// <summary>Skill a Witch Hut teaches (rolled on first visit).</summary>
+    public string? SkillId;
 }
 
 /// <summary>A battle the engine is waiting for (run by H5.Combat, reported back with ResolveBattleCmd).</summary>
