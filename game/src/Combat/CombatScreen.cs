@@ -293,6 +293,7 @@ public partial class CombatScreen : Control
             }
             AimDevMouse();
             UpdateHover();
+            Hud.UpdateCursorPrediction(MousePos);
         }
         Hud.SetDesync(Session.Desynced);
     }
@@ -884,7 +885,8 @@ public partial class CombatScreen : Control
         CombatCursors.Set(cursor);
         DrawFakeCursor(cursor);
         ShowStaticHighlights(hl);
-        Hud.SetPrediction(action?.Describe(this));
+        // Moves show no prediction in the original; attacks, shots, spells and abilities do.
+        Hud.SetPrediction(action?.Pred);
     }
 
     void ClearHighlights() => Arena.Overlay.ClearMarks();
@@ -924,10 +926,7 @@ public partial class CombatScreen : Control
     }
 
     /// <summary>A command the player would issue by clicking, with a description for the prediction box.</summary>
-    sealed record PlannedAction(BattleCommand Command, string Kind, int? Target)
-    {
-        public string Describe(CombatScreen s) => Kind + (Target is int t ? $": {CombatLogText.UnitName(s, t)}" : "");
-    }
+    sealed record PlannedAction(BattleCommand Command, string Kind, int? Target, CombatPredictions.Prediction? Pred = null);
 
     PlannedAction? Resolve(Vector2I? hoverCell, Vector2 mouse, out CombatCursor cursor, out List<(Cell, CellMark)> hl)
     {
@@ -966,14 +965,17 @@ public partial class CombatScreen : Control
                     {
                         cursor = CombatCursor.Cast;
                         foreach (var c in occupant.Cells()) hl.Add((c, CellMark.Affected));
-                        return new PlannedAction(new CastSpellCmd(la.Actor, sp.Spell, occupant.Id, sp.Targeting == Battle.SpellTargeting.UnitAndCell ? occupant.Pos : null) { Side = side }, SpellName(sp.Spell), occupant.Id);
+                        var castU = new CastSpellCmd(la.Actor, sp.Spell, occupant.Id, sp.Targeting == Battle.SpellTargeting.UnitAndCell ? occupant.Pos : null) { Side = side };
+                        return new PlannedAction(castU, SpellName(sp.Spell), occupant.Id,
+                            CombatPredictions.Spell(b, castU, CombatLogText.Escape(SpellName(sp.Spell)), CombatLogText.Escape(CombatLogText.UnitName(this, occupant.Id))));
                     }
                     cursor = CombatCursor.CantCast;
                     return null;
                 case Battle.SpellTargeting.Cell:
                     cursor = CombatCursor.Cast;
                     hl.Add((cell, CellMark.Affected));
-                    return new PlannedAction(new CastSpellCmd(la.Actor, sp.Spell, null, cell) { Side = side }, SpellName(sp.Spell), null);
+                    var castC = new CastSpellCmd(la.Actor, sp.Spell, null, cell) { Side = side };
+                    return new PlannedAction(castC, SpellName(sp.Spell), null, CombatPredictions.Spell(b, castC, CombatLogText.Escape(SpellName(sp.Spell)), null));
             }
         }
         if (_mode == InputMode.Ability && _pendingAbility is { } ab)
@@ -1028,7 +1030,8 @@ public partial class CombatScreen : Control
                 bool far = (Distance(me, occupant) > s.Width / 2.0 && !me.Has("ABILITY_NO_RANGE_PENALTY")) || (s.Siege != null && b.WallsHalveShot(me, occupant));
                 cursor = far ? CombatCursor.ShootPenalty : CombatCursor.Shoot;
                 foreach (var c in occupant.Cells()) hl.Add((c, CellMark.Affected));
-                return new PlannedAction(new ShootCmd(me.Id, occupant.Id) { Side = side }, "Shoot", occupant.Id);
+                return new PlannedAction(new ShootCmd(me.Id, occupant.Id) { Side = side }, "Shoot", occupant.Id,
+                    CombatPredictions.Attack(b, me.Id, occupant.Id, null, ranged: true));
             }
             if (la.Melee.TryGetValue(occupant.Id, out var froms) && froms.Count > 0)
             {
@@ -1036,7 +1039,8 @@ public partial class CombatScreen : Control
                 cursor = AttackCursor(from, me.Size, occupant);
                 foreach (var c in me.CellsAt(from)) hl.Add((c, CellMark.Select));
                 foreach (var c in occupant.Cells()) hl.Add((c, CellMark.Affected));
-                return new PlannedAction(new AttackCmd(me.Id, occupant.Id, from == me.Pos ? null : from) { Side = side }, "Attack", occupant.Id);
+                return new PlannedAction(new AttackCmd(me.Id, occupant.Id, from == me.Pos ? null : from) { Side = side }, "Attack", occupant.Id,
+                    CombatPredictions.Attack(b, me.Id, occupant.Id, from, ranged: false));
             }
             cursor = CombatCursor.Default;
             return null;

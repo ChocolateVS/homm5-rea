@@ -145,10 +145,55 @@ public partial class CombatHud : Control
         return false;
     }
 
-    public void SetPrediction(string? text)
+    /// <summary>
+    /// Hover prediction (exe 00545ae0): the PredictionBox line in PredictionFormat
+    /// (UI/CombatArena-Heavy/PredictionFormat.txt, "&lt;body_bright&gt;") — or the last log line
+    /// when nothing is predicted — and the cursor_prediction label next to the cursor.
+    /// </summary>
+    public void SetPrediction(CombatPredictions.Prediction? p)
     {
-        var line = text != null ? $"<body_bright>{CombatLogText.Escape(text)}" : Log.Last ?? "";
+        string format = UiResources.Instance.Text("UI/CombatArena-Heavy/PredictionFormat.txt")?.Trim() ?? "<body_bright>";
+        var line = p != null ? format + p.BoxMarkup : Log.Last ?? "";
         Screen.Find("PredictionText")?.SetText(line);
+        SetCursorPrediction(p?.CursorMarkup);
+    }
+
+    BitmapText? _cursorPrediction;
+
+    /// <summary>
+    /// The cursor_prediction window (UI/CombatArena-Heavy/CursorPrediction.(WindowTextView).xdb:
+    /// 200 px wide, grows with its text, cursor-prediction.txt markup). It sits centred under the
+    /// cursor (placement relative to the cursor inferred; the exe positions it at run time).
+    /// </summary>
+    void SetCursorPrediction(string? markup)
+    {
+        if (markup == null)
+        {
+            if (_cursorPrediction != null) _cursorPrediction.Visible = false;
+            return;
+        }
+        if (_cursorPrediction == null)
+        {
+            _cursorPrediction = new BitmapText { Wrap = false, ZIndex = 50 };
+            AddChild(_cursorPrediction);
+        }
+        string template = UiResources.Instance.Text("UI/CombatArena-Heavy/cursor-prediction.txt")?.Trim()
+                          ?? "<center><system><font size=14><color_white><outline><value=prediction>";
+        _cursorPrediction.Markup = template.Replace("<value=prediction>", markup);
+        _cursorPrediction.Visible = true;
+        UpdateCursorPrediction();
+    }
+
+    Vector2 _cursorPos;
+
+    public void UpdateCursorPrediction(Vector2? mouse = null)
+    {
+        if (mouse is { } m) _cursorPos = m;
+        if (_cursorPrediction is not { Visible: true } cp) return;
+        float s = Screen.UiScale;
+        cp.Scale = new Vector2(s, s);
+        cp.Size = new Vector2(200, 48);
+        cp.Position = _cursorPos + new Vector2(-100 * s, 32 * s);
     }
 
     public void SetDesync(bool desynced)
