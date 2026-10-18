@@ -30,10 +30,16 @@ public sealed class NetClient : IAsyncDisposable
 
     public void Send(Message m) => _conn?.Send(m);
 
+    readonly HashSet<int> _pending = new();
+
+    /// <summary>Commands sent but not yet answered by a GameUpdate or CommandRejected.</summary>
+    public int PendingCommands => _pending.Count;
+
     /// <summary>Sends a gameplay command; returns its sequence number for matching rejections.</summary>
     public int SendCommand(System.Text.Json.Nodes.JsonNode command)
     {
         var seq = ++_clientSeq;
+        _pending.Add(seq);
         Send(new GameCommand(seq, command));
         return seq;
     }
@@ -42,7 +48,13 @@ public sealed class NetClient : IAsyncDisposable
     {
         while (_inbox.TryDequeue(out var m))
         {
-            if (m is Welcome w) PlayerId = w.PlayerId;
+            switch (m)
+            {
+                case Welcome w: PlayerId = w.PlayerId; break;
+                case GameUpdate { ClientSeq: { } seq }: _pending.Remove(seq); break;
+                case CommandRejected rej: _pending.Remove(rej.ClientSeq); break;
+                case GameEnded or GameStarted: _pending.Clear(); break;
+            }
             MessageReceived?.Invoke(m);
         }
         if (_disconnectReason is { } reason)

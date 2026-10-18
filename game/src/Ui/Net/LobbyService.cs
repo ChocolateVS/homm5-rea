@@ -51,7 +51,7 @@ public partial class LobbyService : Node
     {
         await DisconnectAsync();
         var install = Game.Instance.Install;
-        _server = new LobbyServer(new IGameSessionFactory[] { new StubDuelSessionFactory() },
+        _server = new LobbyServer(new IGameSessionFactory[] { new H5.Duel.DuelSessionFactory(Game.Instance.Db) },
             $"{PlayerName}'s server", install.DataFingerprint(), s => GD.Print($"[server] {s}"));
         _server.Start(port, IPAddress.Any);
         await ConnectAsync("127.0.0.1", _server.Port);
@@ -122,47 +122,5 @@ public partial class LobbyService : Node
     public override void _ExitTree()
     {
         _ = DisconnectAsync();
-    }
-}
-
-// TODO(duel-session): temporary stand-in until the rules workstream provides the authoritative
-// combat session (H5.Combat). It accepts the lobby flow up to GameStarted, hands every side the
-// seed and chosen presets, and rejects all gameplay commands.
-sealed class StubDuelSessionFactory : IGameSessionFactory
-{
-    public string Mode => "duel";
-    public int MinPlayers => 2;
-    public int MaxPlayers => 2;
-
-    public string? ValidatePlayerOptions(JsonObject? options)
-    {
-        if (options?["preset"] is not { } p) return null;
-        return p.GetValueKind() == System.Text.Json.JsonValueKind.Number && p.GetValue<int>() is >= 0 and < 64
-            ? null : "invalid preset";
-    }
-
-    public IGameSession Create() => new StubDuelSession();
-
-    sealed class StubDuelSession : IGameSession
-    {
-        int _sides;
-        public IReadOnlyList<JsonNode> Start(IReadOnlyList<RoomPlayer> playersBySide, JsonObject? roomSettings, ulong seed)
-        {
-            _sides = playersBySide.Count;
-            var presets = new JsonArray(playersBySide.Select(p => (JsonNode?)JsonValue.Create(p.Options?["preset"]?.GetValue<int>() ?? 0)).ToArray());
-            return playersBySide.Select((_, side) => (JsonNode)new JsonObject
-            {
-                ["mode"] = "duel",
-                ["seed"] = seed.ToString(),
-                ["side"] = side,
-                ["presets"] = presets.DeepClone(),
-            }).ToList();
-        }
-
-        public SessionResult Apply(int side, JsonNode command) =>
-            new SessionResult.Rejected("Combat is not implemented yet");
-
-        public GameEnded? OnSideLeft(int side) =>
-            _sides == 2 ? new GameEnded(1 - side, "opponent left") : new GameEnded(null, "player left");
     }
 }

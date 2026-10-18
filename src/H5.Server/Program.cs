@@ -44,8 +44,12 @@ public static class Program
     }
 }
 
-/// <summary>Game modes offered by this server. Duel mode is registered once the combat session lands.</summary>
+/// <summary>Game modes offered by this server.</summary>
 public static class SessionFactories
 {
-    public static IEnumerable<IGameSessionFactory> All(GameInstall install) => Array.Empty<IGameSessionFactory>();
+    public static IEnumerable<IGameSessionFactory> All(GameInstall install)
+    {
+        var db = H5.Core.Data.GameDatabase.Load(PakFileSystem.OpenInstall(install));
+        yield return new H5.Duel.DuelSessionFactory(db);
+    }
 }

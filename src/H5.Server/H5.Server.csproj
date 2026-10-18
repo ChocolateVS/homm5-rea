@@ -4,6 +4,7 @@
     <ProjectReference Include="..\H5.Core\H5.Core.csproj" />
     <ProjectReference Include="..\H5.Combat\H5.Combat.csproj" />
     <ProjectReference Include="..\H5.Net\H5.Net.csproj" />
+    <ProjectReference Include="..\H5.Duel\H5.Duel.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

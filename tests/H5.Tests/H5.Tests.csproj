@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\H5.Combat\H5.Combat.csproj" />
     <ProjectReference Include="..\..\src\H5.Assets\H5.Assets.csproj" />
     <ProjectReference Include="..\..\src\H5.Net\H5.Net.csproj" />
+    <ProjectReference Include="..\..\src\H5.Duel\H5.Duel.csproj" />
   </ItemGroup>
 
 </Project>

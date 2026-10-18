@@ -18,6 +18,10 @@ public partial class Game : Node
     public XdbLoader Xdb { get; private set; } = null!;
     public string? StartupError { get; private set; }
 
+    H5.Core.Data.GameDatabase? _db;
+    /// <summary>Typed rules data (creatures, spells, presets…), loaded on first use.</summary>
+    public H5.Core.Data.GameDatabase Db => _db ??= H5.Core.Data.GameDatabase.Load(Fs);
+
     readonly Dictionary<string, Texture2D> _textures = new(StringComparer.OrdinalIgnoreCase);
 
     public override void _EnterTree()
