@@ -15,6 +15,24 @@ namespace H5Reborn.Town;
 /// </summary>
 public partial class TownScreen
 {
+    public override void _EnterTree()
+    {
+        // After _Ready's WireHud: the exe's click_pointer handler (@00613130) does nothing; dblclick_pointer
+        // (@00619a30) opens the hero screen when the pointer is on the visiting (List_0 top) or garrison
+        // (List_0 bottom) hero portrait (FUN_00619320). Stack double clicks open creature info (ArmySlots).
+        Callable.From(() =>
+        {
+            _hud.Bus.On("click_pointer", () => { });
+            _hud.Bus.On("dblclick_pointer", (_, src) =>
+            {
+                var list0 = _hud.Find("ListBase/List_0");
+                if (src == null || list0 == null || !list0.IsAncestorOf(src)) return;
+                var h = src.Name == "Hero" ? VisitingHero() : src.Name == "Town" ? GarrisonHero() : null;
+                if (h != null) OpenHero(h);
+            });
+        }).CallDeferred();
+    }
+
     public override void _UnhandledInput(InputEvent e)
     {
         if (e is not InputEventKey { Pressed: true, Echo: false } k) return;

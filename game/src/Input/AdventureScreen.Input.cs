@@ -58,6 +58,7 @@ public partial class AdventureScreen
         bus.On("adv_show_town", ShowSelectedHeroTown);
         bus.On("sleep_wake_hero", ToggleSleepSelected);
         Hud.RegisterInputAudit();
+        AddChild(new Interaction.AdvTooltip(this));
     }
 
     /// <summary>

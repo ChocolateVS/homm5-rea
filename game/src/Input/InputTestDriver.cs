@@ -61,6 +61,11 @@ public partial class InputTestDriver : Node
                 Mouse(Pos(arg), MouseButton.Left, dbl: true);
                 break;
             case "rclick": Mouse(Pos(arg), MouseButton.Right, dbl: false); break;
+            case "move":
+                var mp = Pos(arg);
+                Godot.Input.ParseInputEvent(new InputEventMouseMotion { Position = mp, GlobalPosition = mp });
+                GetViewport().WarpMouse(mp);
+                break;
             case "key": Key(arg); break;
             case "shot":
                 var img = GetViewport().GetTexture().GetImage();
@@ -85,6 +90,13 @@ public partial class InputTestDriver : Node
             case "town":
                 var t = _adv.MyTowns().First();
                 return cam.UnprojectPosition(_adv.World.TileCenter(t.Pos) + Vector3.Up * 1.5f);
+            case "monster":
+                var hh = _adv.Session.S.Hero(_adv.SelectedHeroId) ?? _adv.MyHeroes().First();
+                var mon = _adv.Session.Map.Objects.Where(o => o.Kind == H5.Adventure.Map.ObjectKind.Monster && o.Pos.Floor == hh.Pos.Floor
+                        && !(_adv.Session.S.Objects.TryGetValue(o.Index, out var os) && os.Removed))
+                    .OrderBy(o => Math.Abs(o.Pos.X - hh.Pos.X) + Math.Abs(o.Pos.Y - hh.Pos.Y)).First();
+                _adv.World.Camera.CenterOn(mon.Pos);
+                return cam.UnprojectPosition(_adv.World.TileCenter(mon.Pos) + Vector3.Up * 0.8f);
             case var s when s.StartsWith("herolist") || s.StartsWith("townlist"):
                 int i = int.Parse(s[8..]);
                 var col = _adv.Hud.Screen.Find($"TownHeroPanel/Item_{i + 1:00}");
