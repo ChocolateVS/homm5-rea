@@ -34,7 +34,7 @@ exe yet). Addresses are H5_Game.exe virtual addresses.
 | Repeated right-clicks | variant = click count mod 3; 2 = active-effects panel (00574790; fan manual p.304) | same cycle | FIXED |
 | Tooltip rows | 00572880: current value coloured against base (Raised/LowedAttributeColor), optional second value after Separator1/Separator2, AbsentAttribute "-" | same | FIXED |
 | WindowGathering layout | stacks visible children, ignores their own offsets | UiLayout | FIXED |
-| Effect rows: turns "x/y" | maxval = original duration | engine keeps only remaining time, so x/x | GAP |
+| Effect rows: turns "x/y" | maxval = original duration | `Effect.Duration` (additive engine field, set when the effect is applied) gives maxval | FIXED |
 | Prediction appended under the tooltip | 00573dd0 adds the "Prediction" child | not appended on right-click | GAP |
 | Tooltip anchor | placed by the tooltip system | beside the cursor, kept on screen | GAP (not traced) |
 | Full CreatureInfo screen in combat | opened from elsewhere (not right-click) | still built, no entry point | UNVERIFIED |
@@ -67,18 +67,26 @@ exe yet). Addresses are H5_Game.exe virtual addresses.
 | Element | Original | Ours | Status |
 |---|---|---|---|
 | Tooltips on HUD buttons | UI/Tooltips/Main.(TooltipContext).xdb: TextTooltip window, 300 ms delay, 223 px line, text.txt markup | StockTooltip (shrinks one-line tooltips to their text) | FIXED |
-| `<hotkey=…>` in tooltips ("Wait (W)") | rendered by the markup parser from the key bindings | tag dropped | GAP |
-| Auto-combat feedback | no log line; jog button state | invented "Auto combat on/off" log line removed; button state not toggled | FIXED / GAP (button state) |
-| Flee/Surrender | choice dialog built in code (exe 00570cf0) from UIGameRoot ID_RETREAT_FACE_TEXTURE, _TITLE_TEXT, _HEADER_TEXT, _DESCRIPTION[_FLEE], _NOGOLD_TOOLTIP/_TEXT, ID_SURRENDER_TEXTURE, _SURRENDER_TOOLTIP/_TEXT, ID_FLEE_TEXT/_TEXTURE, ID_COMBAT_RETREAT T_HEADER/T_FLEE/T_SURRENDER tooltips; close key input_Combat_Retreat_Close; CANT_RETREAT_* refusals | submits SurrenderCmd at once | GAP |
-| Tactics: "not all creatures placed" confirm | NotAllCreaturesPlacedHeader/Question (UI/CombatScreen-Heavy) | none | GAP |
-| Tactics: split stack | SplitStackHeader/Question | none | GAP |
+| `<hotkey=…>` in tooltips | tag handler 0066a570 registers FUN_0066db50: when the action has bindings, `<hotkeys_prefix>` + per binding `<hotkey_prefix>` keys `<hotkey_postfix>` joined by `<hotkeys_delimiter>` + `<hotkeys_postfix>` (UI/Consts/mlTags: ". 'W'"), keys of a chord joined by UIGameRoot T_HOTKEY_CONTROLS_DELIMITER | UiMarkup "hotkey" + KeyBindings.HotkeyTexts (all input_a2.cfg sections): "Wait. 'W'", "Auto place creatures: . 'A', 'V'" | FIXED (key names are the cfg tokens; the exe's localised key-name lookup FUN_00666060 not traced) |
+| Auto-combat feedback | no log line; OnJog-AutoCombat is a two-state button (Combat_AutoCombat in both states) | no log line; button state follows auto-combat | FIXED |
+| Flee/Surrender box | exe 00570cf0 on the choice base 00676de0 (Box2p: Title, HeaderMain, MsgText via `<value=text>`, ButtonLeft/Right icon+text, OK; confirm/cancel/left/right messages): ID_RETREAT_FACE_TEXTURE, _TITLE_TEXT, _HEADER_TEXT, _DESCRIPTION (`<value=cost>`) when surrender is possible else _DESCRIPTION_FLEE; left ID_FLEE_TEXTURE/_TEXT; right ID_SURRENDER_TEXTURE with _SURRENDER_TEXT, or _NOGOLD_TEXT (disabled) without gold; ID_COMBAT_RETREAT T_HEADER/T_FLEE/T_SURRENDER tooltips; close input_Combat_Retreat_Close | RetreatDialog: same window, texts, textures and tooltips; OK submits `SurrenderCmd { PayRansom }` (engine EndReason "fled" / "surrender"); ransom from engine `Battle.SurrenderCost` (half the army gold value, exe FUN_004da9a0, heroes audit) | FIXED (enable indices 2/3 of 00675760 not fully decoded; OK always enabled) |
+| Retreat button state | FUN_00540090: enabled only when FUN_0053feb0 returns 0; tooltip by code from OnJog-Flee-Tooltips: 5 tactics, 2/7 army not ready, 3 auto-combat, 4 duel mode ("Can't retreat. (Duel Mode)"), army reasons from CCombatArmy::CanRetreat (in town, no hero, Shackles of War) and no tavern town; 1/6/8 disabled with RETREAT_NORMAL | RetreatDialog.RefusalCode in that order; army reasons from engine `Battle.RetreatRefusal`; R key and Esc-menu Surrender open the box only when allowed | FIXED (no-tavern-town needs the adventure host's HasTavernTown) |
+| Tactics buttons | OnJog-StartCombat sends autoplace_army (tooltip StartCombat.txt "Auto place creatures"), handler 0053e510 → 00578510 re-runs the start placement; OnJog-NextCreature sends confirm_placement ("Confirm placement and start combat"), handler 00545260; keys A/V = input_autoplace_army, Enter/Space = input_start_combat | both buttons started the combat | FIXED (auto placement re-runs our start placement rule, which itself is not exe-traced) |
+| Tactics: "not all creatures placed" confirm | 00545260 asks T_NOT_ALL_CREATURES_PLACED_QUESTION/_HEADER (Yes/No, 00679150) when FUN_00576170 finds an unplaced stack | the engine places every stack and has no "leave a stack out" command, so the case cannot arise | GAP (needs engine support for unplaced stacks) |
+| Tactics: split stack | SplitStackHeader/Question: "Split Stack microartifacts - are you sure?" (asked when splitting a stack carrying micro-artifacts) | no stack splitting in tactics | GAP (needs engine support) |
 | War machines: Ballista / Triple Ballista | one targeting action per turn fires every shot at the chosen target, stopping if it dies (engine 8b48870, exe 00a75bf0) | one ShootCmd, no follow-up shot commands; prediction shows "x N" from `Battle.WarMachineShotsPerAction` (NORMAL_ATTACK_MULTIPLE); each shot emits its own attack event, so N shot animations + projectiles play in sequence | MATCH |
 | First Aid Tent / Catapult targeting | manual with the perks | prior agent (CATAPULT_SHOT targets) | UNVERIFIED |
-| Esc menu | UI/EscMenu | stock window (prior agent) | MATCH (prior agent) |
-| Keyboard shortcuts | profiles/default_profile/input_a2.cfg combat sections | mapped by the prior agent | MATCH (prior agent; not re-checked key by key) |
+| Esc menu | UI/EscMenu; esc_menu bindsection close_menu 'ESC'/'E'; Options opens the game options | stock window; ESC/E close it; Options opens the stock data-driven GameOptionsScreen (as on the adventure map) | FIXED |
+| Keyboard shortcuts | input_a2.cfg combat_screen: options ESC/F4/F10, Defend ENTER/NUM_ENTER/SPACE/D, Wait W, AutoCombat A/V, Retreat R, Cast C/S, switch_atb_log TAB, camera lift INS/DEL; combat_screen_tactic: start combat ENTER/NUM_ENTER/SPACE, autoplace A/V | all mapped; tactics A/V corrected from "start combat" to auto place | FIXED (chat keys BACKSPACE/CTRL+ENTER/CTRL+A/T/R not implemented in combat: GAP) |
+| Results screen text | FUN_005836a0: DescriptionHeader Victory/Defeat; DescriptionText_Format = outcome (type 1 defeated / 2 fled / 3 surrendered; Hero*/Enemy*/Ghost* texts) + `<value=no_army>` WINNER_HAS_NO_ARMY when the winner kept no troops; `<value=player_hint>` ResultForPlayer in multi-human games; DescriptionExp_Format HeroExp (own victory) / EnemyExp with the winner's experience | outcome text, no-army note, experience line (CombatSession.WinnerExperience: slain creatures' Exp + 500 for a defeated hero; the adventure host can override) | FIXED (player_hint and Ghost texts not produced: GAP) |
+| Results lists | Lost / Destroyed units, 7 icons each with Left/Right scroll buttons | lists filled; scroll buttons hidden (more than 7 kinds not scrollable) | GAP (scrolling) |
+| Retaliation in predictions | engine rules: only Expert Blind stops retaliation, any Hypnotize does | prediction treated any Blind as "no retaliation" and Hypnotize only for the same controller | FIXED (UiPredictionTests) |
+| ATB bar scrolling | FUN_0055dce0: atb_scroll_left/right set continuous scroll-left/right flags while held; atb_scroll_left_reverse or any other message stops | one turn per click | GAP (scroll speed not traced) |
+| White glowing Griffin (reported by pass 1) | (no original counterpart) | not reproduced in four samples of the seed-7 AI battle; the white puff seen there is Raise Dead's own effect | UNVERIFIED (not reproduced) |
+| "Playback can only happen when a node is inside the scene tree" log line | AudioStreamPlayer.Play on a node outside the tree | not reproduced in a full AI battle run | UNVERIFIED (not reproduced) |
 
 ## Not yet audited
 
-ATB bar (hover, click, scroll, markers), spellbook targeting flow (mass spells, cast on cell,
-invalid-target messages: the SpellStrings texts exist but are not shown), creature ability
-activation flows, combat log behaviour (scrolling, hover), results screen details: **UNVERIFIED**.
+ATB bar hover/click (IconContainer is used by 0055df40 / 007af660 / 007afe50; handlers not traced),
+spellbook targeting flow (mass spells, cast on cell, invalid-target messages: the SpellStrings texts exist
+but are not shown), creature ability activation flows, combat log behaviour (scrolling, hover): **UNVERIFIED**.
