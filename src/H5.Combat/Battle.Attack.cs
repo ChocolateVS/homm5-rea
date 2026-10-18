@@ -702,13 +702,14 @@ public sealed partial class Battle
                 Emit(new ManaChanged(Actor.Hero(a.Side), ah.Mana));
                 DealElementalDamage(t, (int)dmgH, Elements.Fire, a.Id, "HELLFIRE");
             }
-            // Life Drain: heals half the damage dealt, resurrecting (p.178).
+            // Life Drain / Vampirism (exe FUN_00a59c60): heal = trunc(frac·damage + 0.5), resurrecting; frac = LifeDrainIntensity
+            // for the ability + Vampirism value (·0.01); Undead, Mechanical and Elemental targets give nothing.
             if (HasAbilityNow(a, Ab.LifeDrain) || a.GetEffect("SPELL_VAMPIRISM") is { })
             {
                 double frac = HasAbilityNow(a, Ab.LifeDrain) ? Stats.Get("combat/Creatures/Necropolis/LifeDrainIntensity", 0.5) : 0;
                 if (a.GetEffect("SPELL_VAMPIRISM") is { } vamp) frac += vamp.Value;
-                if (!t.Has(Ab.Elemental) && !t.Has(Ab.Mechanical) && !t.IsWarMachine && !t.IsObject)
-                    Heal(a, (int)(Math.Min(dmg, hpBefore) * frac), resurrect: true, "LIFE_DRAIN");
+                if (CanBeDrained(t))
+                    Heal(a, DrainHeal(Math.Min(dmg, hpBefore), frac), resurrect: true, "LIFE_DRAIN");
             }
             // Fire/Magma Shield on melee (p.174, p.177).
             if (!ranged && a.Alive)
@@ -1087,6 +1088,13 @@ public sealed partial class Battle
     }
 
     /// <summary>Heals a stack. With resurrect, dead creatures come back up to the stack's initial size.</summary>
+    /// <summary>Drain heal (exe 00a59d4e..00a59d6e): (frac·damage + 0.5) truncated in chop mode, i.e. rounded half up.</summary>
+    internal static int DrainHeal(int damage, double frac) => (int)((float)Math.Max(0, frac) * damage + 0.5f);
+
+    /// <summary>Exe FUN_00a59c60: no drain from Undead (0xa, dynamic — Vampirism counts), Mechanical (9) or Elemental (0xc) targets.</summary>
+    internal bool CanBeDrained(Unit t) =>
+        !t.Has(Ab.Elemental) && !t.Has(Ab.Mechanical) && !t.Has(Ab.Undead) && !t.IsWarMachine && !t.IsObject;
+
     public int Heal(Unit u, int amount, bool resurrect, string by)
     {
         if (amount <= 0 || u.Removed) return 0;

@@ -336,4 +336,17 @@ public class AuditSpellTests(GameDataFixture f)
         Assert.Equal(100, Battle.DispelPercent(1.0, 13, 10, false));
         Assert.Equal(60, Battle.DispelPercent(0.6, 10, 10, false));
     }
+
+    // exe FUN_00a59c60: Life Drain / Vampirism heal = trunc(frac·damage + 0.5); no drain from Undead / Mechanical / Elemental.
+    [Fact]
+    public void DrainRoundsHalfUpAndSkipsUndead()
+    {
+        Assert.Equal(8, Battle.DrainHeal(15, 0.5));      // 7.5 + 0.5 → 8 (engine truncated to 7)
+        Assert.Equal(7, Battle.DrainHeal(14, 0.5));
+        Assert.Equal(3, Battle.DrainHeal(10, 0.25));     // 2.5 + 0.5 → 3
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_SKELETON", 10), ("CREATURE_PEASANT", 10) });
+        var b = new Battle(f.Db, s);
+        Assert.False(b.CanBeDrained(s.Units.Single(x => x.CreatureId == "CREATURE_SKELETON")));
+        Assert.True(b.CanBeDrained(s.Units.Single(x => x.CreatureId == "CREATURE_PEASANT")));
+    }
 }
