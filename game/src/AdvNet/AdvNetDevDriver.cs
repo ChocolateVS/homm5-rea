@@ -20,7 +20,7 @@ namespace H5Reborn.AdvNet;
 public partial class AdvNetDevDriver : Node
 {
     static string? _mode, _shots, _map = "Maps/Multiplayer/A2M1";
-    static bool _battle, _hotSeat;
+    static bool _battle, _hotSeat, _ghost;
     static int _port = 27631;
     static double _quitAfter = 240;
 
@@ -29,6 +29,7 @@ public partial class AdvNetDevDriver : Node
         string V(string p) => arg[p.Length..];
         if (arg.StartsWith("--advnet-test=")) { _mode = V("--advnet-test="); Schedule(); return true; }
         if (arg == "--advnet-battle") { _battle = true; return true; }
+        if (arg == "--advnet-ghost") { _ghost = true; return true; }
         if (arg == "--advnet-hotseat") { _hotSeat = true; _mode ??= "hotseat"; Schedule(); return true; }
         if (arg.StartsWith("--advnet-map=")) { _map = V("--advnet-map="); return true; }
         if (arg.StartsWith("--advnet-shots=")) { _shots = V("--advnet-shots="); return true; }
@@ -56,9 +57,27 @@ public partial class AdvNetDevDriver : Node
         Log($"driver started as {_mode} (battle={_battle}, hotseat={_hotSeat}) on {_map}");
         CombatScreen.Autoplay = true;
         if (_mode == "hotseat") { StartHotSeat(); return; }
-        if (_mode == "host") _ = LobbyService.Instance.HostAsync(_port);
-        else _ = LobbyService.Instance.ConnectAsync("127.0.0.1", _port);
+        _ = Connect();
         LobbyService.Instance.MessageReceived += OnMessage;
+    }
+
+    async System.Threading.Tasks.Task Connect()
+    {
+        for (int attempt = 1; attempt <= 10; attempt++)
+        {
+            try
+            {
+                if (_mode == "host") await LobbyService.Instance.HostAsync(_port);
+                else await LobbyService.Instance.ConnectAsync("127.0.0.1", _port);
+                Log($"{_mode} connected on port {_port}");
+                return;
+            }
+            catch (Exception e)
+            {
+                Log($"connect attempt {attempt} failed: {e.Message}");
+                await ToSignal(GetTree().CreateTimer(2.0), SceneTreeTimer.SignalName.Timeout);
+            }
+        }
     }
 
     void StartHotSeat()
@@ -89,6 +108,7 @@ public partial class AdvNetDevDriver : Node
     {
         _t += delta;
         _stepT += delta;
+        if (_step == Step.Done) return;
         if (_t > _quitAfter) { Log("time limit reached"); Finish(); return; }
         var lobby = LobbyService.Instance;
         switch (_step)
@@ -96,7 +116,7 @@ public partial class AdvNetDevDriver : Node
             case Step.Connect when lobby.Connected:
                 if (_mode == "host")
                 {
-                    var settings = new H5.AdvNet.AdvNetSettings { Map = _map, DevStartAdjacent = _battle }.ToJson();
+                    var settings = new H5.AdvNet.AdvNetSettings { Map = _map, DevStartAdjacent = _battle, GhostMode = _ghost }.ToJson();
                     lobby.Send(new CreateRoom("advnet test", "adventure", 2, null, settings));
                     _step = Step.Room;
                 }
@@ -165,6 +185,7 @@ public partial class AdvNetDevDriver : Node
             }
             return;
         }
+        if (_ghost) { GhostStep(); return; }
         if (_mode != "host" || !_battle || _attacked || _stepT < 6) return;
         if (LobbyService.Instance.Adventure is not { } game || !game.Replica.IsMyTurn || game.Busy) return;
         var v = game.Replica.View;
@@ -176,6 +197,35 @@ public partial class AdvNetDevDriver : Node
         Log($"hero {mine.Name} attacks {enemy.Name} at {enemy.Pos}");
         game.Send(new MoveHeroCmd(mine.Id, enemy.Pos) { Player = game.Replica.MyPlayer });
         _attacked = true;
+    }
+
+    int _ghostPhase;
+
+    /// <summary>Ghost Mode check: the waiting client moves its ghost and opens the GhostInfo screen.</summary>
+    void GhostStep()
+    {
+        var gc = GetTree().CurrentScene?.FindChild("GhostController", true, false) as GhostController;
+        if (gc == null || !gc.IsActive) { if (_stepT > 40 && _ghostPhase == 0) { Log($"ghost mode not active for this client ({_mode})"); Finish(); } return; }
+        var g = LobbyService.Instance.Adventure?.Replica.Ghosts;
+        switch (_ghostPhase)
+        {
+            case 0 when _stepT > 8:
+                Log($"ghosts: {g?["ghosts"]?.ToJsonString()}");
+                Shot("ghost_map");
+                gc.DevMove(2, 0);
+                _ghostPhase = 1; _stepT = 0;
+                break;
+            case 1 when _stepT > 4:
+                Log($"after move: {g?["ghosts"]?.ToJsonString()}");
+                Shot("ghost_moved");
+                gc.DevToggleInfo();
+                _ghostPhase = 2; _stepT = 0;
+                break;
+            case 2 when _stepT > 3:
+                Shot("ghost_info");
+                Finish();
+                break;
+        }
     }
 
     void Shot(string name)

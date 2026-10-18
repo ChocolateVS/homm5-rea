@@ -116,6 +116,17 @@ public partial class GhostController : Node
         }
     }
 
+    /// <summary>Test hook: moves the selected ghost by an offset (as a map click would).</summary>
+    public void DevMove(int dx, int dy)
+    {
+        if (Selected is { } g) ClickTile(new Tile((int)g["x"]! + dx, (int)g["y"]! + dy, (int)g["floor"]!));
+    }
+
+    /// <summary>Test hook: opens/closes the GhostInfo screen.</summary>
+    public void DevToggleInfo() => ToggleInfo();
+
+    public bool IsActive => Active;
+
     void CycleGhost()
     {
         var mine = MyGhosts().Select(g => (int)g["hero"]!).ToList();
