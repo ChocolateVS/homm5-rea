@@ -40,6 +40,9 @@ public partial class LobbyService : Node
     public RoomState? Room { get; private set; }
     public GameStarted? Started { get; private set; }
 
+    /// <summary>The running networked combat, created as soon as GameStarted arrives so no update is missed.</summary>
+    public Combat.NetCombatSession? Combat { get; private set; }
+
     public event Action<Message>? MessageReceived;
     public event Action<string>? StatusChanged;
     public event Action<string>? Disconnected;
@@ -87,10 +90,15 @@ public partial class LobbyService : Node
             case Welcome w: StatusChanged?.Invoke($"Connected to {w.ServerName}"); Send(new ListRooms()); break;
             case RoomList rl: Rooms = rl; break;
             case RoomState rs: Room = rs; break;
-            case GameStarted gs: Started = gs; break;
+            case GameStarted gs:
+                Started = gs;
+                Combat = new Combat.NetCombatSession(Game.Instance.Db, gs,
+                    cmd => _client?.SendCommand(cmd) ?? 0, () => _client?.PendingCommands ?? 0);
+                break;
             case GameEnded: Started = null; break;
             case ErrorMsg e: StatusChanged?.Invoke(e.Text); break;
         }
+        Combat?.OnMessage(m);
         MessageReceived?.Invoke(m);
     }
 

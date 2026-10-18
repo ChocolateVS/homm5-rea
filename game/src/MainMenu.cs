@@ -48,6 +48,8 @@ public partial class MainMenu : Control
 
     static void Click(Vector2 pos)
     {
+        // Buttons fire only while hovered; move there first (the window may be off-screen in tests).
+        Input.ParseInputEvent(new InputEventMouseMotion { Position = pos, GlobalPosition = pos });
         foreach (var pressed in new[] { true, false })
             Input.ParseInputEvent(new InputEventMouseButton { Position = pos, GlobalPosition = pos, ButtonIndex = MouseButton.Left, Pressed = pressed });
     }

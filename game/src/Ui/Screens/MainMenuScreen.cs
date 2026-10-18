@@ -24,6 +24,10 @@ public partial class MainMenuScreen : UiScreen
         Bus.On("lan", () => UiNavigator.Goto("lobby"));
         Bus.On("ubi_com", () => UiNavigator.Goto("lobby"));
         Bus.On("main_menu_exit", () => GetTree().Quit());
+        Bus.On("hot_seat", () => ShowOnly("HotSeatSubMenu", Panels));
+        Bus.On("duel_mode_hotseat", () => Combat.CombatLauncher.StartHotseat());
+        // TODO(custom-game): custom maps are not implemented yet; until then this starts a duel against the AI.
+        Bus.On("custom_game", () => Combat.CombatLauncher.StartVsAiRandom());
         Bus.On("change_profile", () => SetVisible("SinglePlayer/ChangeProfile", true));
         Bus.On("profile_select", () => SetVisible("SinglePlayer/ChangeProfile", false));
     }

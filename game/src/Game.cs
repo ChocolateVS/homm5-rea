@@ -67,6 +67,7 @@ public partial class Game : Node
                 CallDeferred(MethodName.OpenModelViewer);
             }
             else if (Arena.ArenaViewer.HandleArg(arg)) { }
+            else if (Combat.CombatLauncher.HandleArg(arg)) { }
             else if (arg.StartsWith("--anim=")) Dev.ModelViewer.Anim = arg["--anim=".Length..];
             else if (arg.StartsWith("--anim-time="))
                 Dev.ModelViewer.AnimTime = float.Parse(arg["--anim-time=".Length..], System.Globalization.CultureInfo.InvariantCulture);

@@ -91,9 +91,9 @@ public partial class DuelWaitScreen : UiScreen
                 break;
             case ErrorMsg e: _log.AddSystem(e.Text); break;
             case GameStarted gs:
-                // TODO(duel-session): hand over to the combat screen once the duel session exists.
-                _log.AddSystem($"Duel started: you are side {gs.YourSide}, seed {gs.Setup["seed"]}. Combat screen not implemented yet.");
-                GD.Print($"[UI] GameStarted side={gs.YourSide} setup={gs.Setup.ToJsonString()}");
+                GD.Print($"[UI] GameStarted side={gs.YourSide} presets={gs.Setup["presets"]?.ToJsonString()}");
+                if (LobbyService.Instance.Combat is { } combat)
+                    Callable.From(() => Combat.CombatScreen.Open(combat)).CallDeferred();
                 break;
             case GameEnded ge: _log.AddSystem($"Game ended: {ge.Reason}"); break;
         }

@@ -58,7 +58,7 @@ public static class CharacterBuilder
         var skel = new Skeleton3D { Name = "Skeleton3D" };
         foreach (var b in skeleton.Bones)
         {
-            int i = skel.AddBone(b.Name);
+            int i = skel.AddBone(SafeBoneName(b.Name, skel.GetBoneCount()));
             skel.SetBoneParent(i, b.Parent);
             skel.SetBoneRest(i, new Transform3D(new Basis(ModelBuilder.ToGodot(b.Rotation)).Scaled(ModelBuilder.ScaleToGodot(b.Scale)),
                 ModelBuilder.ToGodot(b.Translation)));
@@ -71,7 +71,7 @@ public static class CharacterBuilder
         // pose, which differs for some skeletons — see docs/formats/granny.md).
         var skin = new Skin();
         for (int i = 0; i < skeleton.Bones.Count; i++)
-            skin.AddNamedBind(skeleton.Bones[i].Name, ModelBuilder.ToGodot(skeleton.Bones[i].InverseBind));
+            skin.AddNamedBind(skel.GetBoneName(i), ModelBuilder.ToGodot(skeleton.Bones[i].InverseBind));
 
         var mesh = new MeshInstance3D { Name = "Mesh", Mesh = ModelBuilder.BuildMesh(asset, skinned: true), Skin = skin };
         skel.AddChild(mesh);
@@ -92,14 +92,22 @@ public static class CharacterBuilder
         return node;
     }
 
+    /// <summary>
+    /// Godot bone names may not be empty or contain ':' or '/'; some original skeletons use
+    /// Maya namespaces ("Horse:Spine"). Map them consistently for bones, binds and tracks.
+    /// </summary>
+    static string SafeBoneName(string name, int index) =>
+        string.IsNullOrEmpty(name) ? $"bone{index}" : name.Replace(':', '_').Replace('/', '_');
+
     static Animation ToGodot(AnimationClip clip, SkeletonData skeleton)
     {
         var anim = new Animation { Length = Math.Max(clip.Duration, 1f / 30f) };
         var bones = new HashSet<string>(skeleton.Bones.Select(b => b.Name));
+        var safe = skeleton.Bones.Select((b, i) => (b.Name, Safe: SafeBoneName(b.Name, i))).GroupBy(x => x.Name).ToDictionary(g => g.Key, g => g.First().Safe);
         foreach (var tr in clip.Tracks)
         {
             if (!bones.Contains(tr.BoneName)) continue;
-            var path = new NodePath($"Skeleton3D:{tr.BoneName}");
+            var path = new NodePath($"Skeleton3D:{safe[tr.BoneName]}");
 
             // A track channel with no keys is identity in Granny, not "keep rest pose",
             // so every channel of a present track gets at least one explicit key.

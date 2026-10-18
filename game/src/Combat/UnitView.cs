@@ -1,0 +1,154 @@
+using Godot;
+using H5.Combat;
+using H5.Core.Ui;
+using H5Reborn.Arena;
+using H5Reborn.Render;
+using H5Reborn.Ui;
+
+namespace H5Reborn.Combat;
+
+/// <summary>
+/// On-screen presentation of one battle unit: the animated original character plus
+/// the stack-count plaque (UI/CombatArena-FPP-2/StackInfo, whose visual state shows
+/// whether the stack carries positive, negative or mixed spell effects).
+/// The view keeps its own "displayed" position/count so playback can lag the state.
+/// </summary>
+public partial class UnitView : Node3D
+{
+    public int UnitId { get; }
+    public int Side { get; private set; }
+    public int Size { get; }
+    public string CreatureId { get; }
+    public Node3D Model { get; private set; } = null!;
+    public Character? Character => Model as Character;
+    public Cell Cell { get; set; }
+    public int Count { get; set; }
+    public bool Dead { get; set; }
+    public bool IsWarMachine { get; }
+    public UiNode? Plaque { get; private set; }
+    UiNode? _plaqueText;
+
+    public UnitView(Unit u)
+    {
+        UnitId = u.Id;
+        Side = u.Side;
+        Size = u.Size;
+        CreatureId = u.CreatureId;
+        Cell = u.Pos;
+        Count = u.Count;
+        IsWarMachine = u.IsWarMachine;
+        Name = $"Unit{u.Id}_{u.CreatureId}";
+    }
+
+    public void Build(ArenaScene arena, Control plaqueLayer)
+    {
+        Model = BuildModel(arena);
+        AddChild(Model);
+        Position = arena.Grid.StackCenter(new Vector2I(Cell.X, Cell.Y), Size);
+        Rotation = new Vector3(0, ArenaGrid.FacingYaw(Side), 0);
+
+        if (!IsWarMachine)
+        {
+            var w = UiResources.Instance.LoadWindow("UI/CombatArena-FPP-2/StackInfo.(WindowMSButton).xdb");
+            UiLayout.Apply(w);
+            Plaque = new UiNode(w) { MouseFilter = Control.MouseFilterEnum.Ignore, Size = new Vector2(44, 18) };
+            foreach (var child in w.Children)
+            {
+                var n = new UiNode(child) { Size = Plaque.Size, MouseFilter = Control.MouseFilterEnum.Ignore };
+                Plaque.AddChild(n);
+                _plaqueText = n;
+            }
+            plaqueLayer.AddChild(Plaque);
+            UpdatePlaque();
+        }
+    }
+
+    Node3D BuildModel(ArenaScene arena)
+    {
+        string? characterPath = IsWarMachine ? WarMachineCharacter(CreatureId) : CreatureModels.CharacterPathFor(CreatureId);
+        if (characterPath != null && Game.Instance.Fs.Exists(characterPath))
+        {
+            try { return CharacterBuilder.Build(characterPath); }
+            catch (Exception e) { GD.PushWarning($"[H5] unit model {characterPath}: {e.Message}"); }
+        }
+        return new Node3D();
+    }
+
+    static string? WarMachineCharacter(string id)
+    {
+        var name = id switch
+        {
+            "WAR_MACHINE_BALLISTA" => "Ballista", "WAR_MACHINE_FIRST_AID_TENT" => "FirstAidTent",
+            "WAR_MACHINE_AMMO_CART" => "AmmoCart", "WAR_MACHINE_CATAPULT" => "Catapult", _ => null,
+        };
+        if (name == null) return null;
+        var visual = $"GameMechanics/CreatureVisual/WarMachines/{name}.xdb";
+        if (!Game.Instance.Fs.Exists(visual)) return null;
+        var r = H5.Core.Xdb.XdbRef.Parse((string?)Game.Instance.Xdb.Load(visual).Root!.Element("AnimCharacter")?.Attribute("href"), visual);
+        return r.IsEmpty ? null : r.Path;
+    }
+
+    /// <summary>0 normal, 1 negative, 2 positive, 3 mixed (matches the StackInfo button states).</summary>
+    public int EffectState { get; set; }
+
+    public void UpdatePlaque()
+    {
+        if (Plaque == null) return;
+        Plaque.SetState(EffectState);
+        var text = Count.ToString();
+        _plaqueText?.SetText(text);
+        Plaque.Size = new Vector2(Math.Max(28, 9 * text.Length + 14), 18);
+        if (_plaqueText != null) _plaqueText.Size = Plaque.Size;
+        Plaque.Visible = !Dead && Count > 0 && Visible;
+    }
+
+    /// <summary>Keeps the plaque under the creature's feet, on the camera's side.</summary>
+    public void PositionPlaque(Camera3D cam)
+    {
+        if (Plaque == null) return;
+        if (Dead || !Visible) { Plaque.Visible = false; return; }
+        // Stock places the plaque at the stack's front-bottom corner; we use the footprint
+        // corner nearest the camera, slightly above the ground.
+        var basePos = GlobalPosition + new Vector3(0, 0.05f, 0) + (cam.GlobalPosition - GlobalPosition).Normalized() * (0.45f * Size);
+        if (cam.IsPositionBehind(basePos)) { Plaque.Visible = false; return; }
+        var screen = cam.UnprojectPosition(basePos);
+        Plaque.Position = (screen - Plaque.Size / 2).Round();
+        Plaque.Visible = Count > 0;
+    }
+
+    public void Play(string kind, bool loop = false)
+    {
+        if (Character is { } c && c.Has(kind)) c.Play(kind, loop);
+    }
+
+    public bool Has(string kind) => Character?.Has(kind) ?? false;
+
+    public float Length(string kind) =>
+        Character is { } c && c.Has(kind) ? (float)c.Player.GetAnimation(Render.Character.Lib + kind).Length : 0f;
+
+    /// <summary>Time of the animator's "action" event (the hit moment), or a fraction of the clip.</summary>
+    public float ActionTime(string kind)
+    {
+        if (Character is { } c && c.Events.TryGetValue(kind, out var evs))
+            foreach (var (name, time) in evs)
+                if (name.Contains("action", StringComparison.OrdinalIgnoreCase) || name.Contains("hit", StringComparison.OrdinalIgnoreCase))
+                    return time;
+        return Length(kind) * 0.55f;
+    }
+
+    public void Idle()
+    {
+        if (!Dead) Play("idle00", loop: true);
+    }
+
+    public void FaceTowards(Vector3 worldTarget)
+    {
+        var d = worldTarget - GlobalPosition;
+        d.Y = 0;
+        if (d.LengthSquared() < 1e-4f) return;
+        // Models face Godot +Z at yaw 0 (see ArenaGrid.FacingYaw).
+        Rotation = new Vector3(0, Mathf.Atan2(d.X, d.Z), 0);
+    }
+
+    public override void _ExitTree() => Plaque?.QueueFree();
+}
