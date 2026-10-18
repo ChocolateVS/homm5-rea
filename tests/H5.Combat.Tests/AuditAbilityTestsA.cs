@@ -81,4 +81,22 @@ public class AuditAbilityTestsA(GameDataFixture f)
         Assert.True(r.Ok, r.Error);
         Assert.Equal(before, ally.TotalHealth);   // exactly ChampionChargeMinimalDistance (2): no charge pattern
     }
+
+    [Fact]
+    public void AgilityIsClearedEachTurnAndSetByTheMove()   // FUN_008aaec0 (start = speed), FUN_008a6c40 (turn start), FUN_00a66050 (move)
+    {
+        var b = f.Duel("CREATURE_BLADE_SINGER", 10, "CREATURE_PEASANT", 10, 1, new Cell(1, 5), new Cell(11, 5));
+        var u = b.State.Units[0];
+        int per = (int)b.Db.Stats.Get("combat/Creatures/Sylvan/AgilityDefenceBoostPerCell", 2);
+        int start = b.DefenceOf(u);   // before the battle's first turn
+        b.Begin();
+        BeginTurn(b, u.Id);
+        int bare = b.DefenceOf(u);                                         // the turn start removes the bonus
+        Assert.Equal(per * u.BaseSpeed, start - bare);                     // before its first turn: worth its speed
+        b.State.Active = u.Id;
+        Assert.True(b.Apply(new MoveCmd(u.Id, new Cell(4, 5)) { Side = 0 }).Ok);
+        Assert.Equal(per * 3, b.DefenceOf(u) - bare);                      // 3 cells walked
+        BeginTurn(b, u.Id);
+        Assert.Equal(bare, b.DefenceOf(u));                                // a turn without moving keeps no bonus
+    }
 }

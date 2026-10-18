@@ -78,6 +78,9 @@ public sealed class Unit
     public bool Summoned;
     public bool IsClone;
     public int CellsWalked;
+    /// <summary>Agility (exe SPELL_ABILITY_AGILITY): -1 until the creature's first turn (worth its speed, FUN_008aaec0),
+    /// then 0 at each of its turn starts (FUN_008a6c40) and the cells walked after a move (FUN_00a66050).</summary>
+    public int AgilityCells = -1;
     public bool HasMovedFromStart;
     public int Frags;
     public double FrenzyMultiplier = 1;

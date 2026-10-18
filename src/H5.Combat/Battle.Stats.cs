@@ -149,7 +149,7 @@ public sealed partial class Battle
         return Math.Min(cap, Math.Floor(10 * Math.Log10(adj / own) + 1e-9));
     }
 
-    int AgilityCells(Unit u) => u.HasActed ? u.CellsWalked : u.BaseSpeed;   // first turn counts as full move (p.171)
+    int AgilityCells(Unit u) => u.AgilityCells < 0 ? u.BaseSpeed : u.AgilityCells;   // exe effect 0x10f value (see Unit.AgilityCells)
 
     public double InitiativeOf(Unit u)
     {

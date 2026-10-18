@@ -145,6 +145,7 @@ public sealed partial class Battle
         var from = u.Pos;
         u.Pos = to;
         u.CellsWalked = steps;
+        if (steps > 0) u.AgilityCells = steps;   // exe FUN_00a66050: SPELL_ABILITY_AGILITY = path cells walked
         u.HasMovedFromStart = true;
         Emit(new Moved(u.Id, path, u.Flying));
         RageEvent(u, "MoveRP");
