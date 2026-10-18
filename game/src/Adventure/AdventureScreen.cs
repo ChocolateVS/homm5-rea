@@ -516,6 +516,42 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 break;
             }
+            case ObjectVisited { What: "BUILDING_HILL_FORT" or "BUILDING_WARMACHINE_FACTORY" } bv when HumanCaused(player) && !Autoplay && s.Hero(bv.HeroId) is { } visitor:
+            {
+                // Hill Fort / War Machine Factory: their stock windows while the hero stands at the object.
+                Hud.Visible = false;
+                Control screen = bv.What == "BUILDING_HILL_FORT"
+                    ? new HillFortScreen(this, visitor.Id, bv.Object)
+                    : new WarMachineFactoryScreen(this, visitor.Id, bv.Object);
+                AddChild(screen);
+                await ToSignal(screen, Node.SignalName.TreeExited);
+                Hud.Visible = true;
+                Hud.Refresh();
+                break;
+            }
+            case ObjectVisited { What: "BUILDING_CARTOGRAPHER" } cv when HumanCaused(player) && !Autoplay && s.Hero(cv.HeroId) is { } buyer:
+            {
+                var me = Session.Human;
+                var msgs = Session.Map.Objects[cv.Object].Shared.Messages;
+                string Msg(int i, string fallback) => i < msgs.Count && UiResources.Instance.Text(msgs[i]) is { Length: > 0 } t ? t.Trim() : fallback;
+                if (Session.Game.CartographerBought(me, cv.Object))
+                {
+                    await Dialog(done => AdvDialogs.Message(_dialogLayer, ObjectName(cv.Object), Msg(3, "Already visited."), null, done));
+                    break;
+                }
+                int cost = Session.Game.CartographerCost(cv.Object);
+                // The stock offer text names the default price.
+                var offer = Msg(2, $"Would you like to buy a map for {cost} gold?").Replace("1000", cost.ToString());
+                bool yes = false;
+                await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(cv.Object), offer, null, y => { yes = y; done(); }));
+                if (!yes) break;
+                var r = Session.Apply(new BuyCartographerMapCmd(buyer.Id, cv.Object) { Player = me.Index });
+                if (!r.Ok) await Dialog(done => AdvDialogs.Message(_dialogLayer, ObjectName(cv.Object), AdvTexts.Get("Text/Game/BuildingsCommon/NotEnoughGold.txt") is { Length: > 0 } ng ? ng : "Not enough gold.", null, done));
+                World.RefreshShroud();
+                Hud.Refresh();
+                Hud.UpdateMinimap();
+                break;
+            }
             case ObjectVisited { Object: -1 } mv when HumanCaused(player) && !Autoplay && mv.What.StartsWith("meet:")
                                                     && int.TryParse(mv.What[5..], out var metId)
                                                     && s.Hero(mv.HeroId) is { } visitor && s.Hero(metId) is { } met
@@ -897,6 +933,29 @@ public partial class AdventureScreen : Control
         }
     }
 
+    /// <summary>
+    /// Dev switch `--adventure-visit-test=TYPE`: puts the selected hero on the first object of that shared type
+    /// (e.g. BUILDING_HILL_FORT) and plays its visit, for screenshots of the building windows.
+    /// </summary>
+    public void DevVisit(string type)
+    {
+        var s = Session.S;
+        var hero = Selected ?? MyHeroes().FirstOrDefault();
+        var o = Session.Map.Objects.FirstOrDefault(x => x.Shared.Type == type && !(s.Objects.TryGetValue(x.Index, out var os) && os.Removed));
+        if (hero == null || o == null) { GD.PushWarning($"[H5] visit test: no hero or no {type} on this map"); return; }
+        hero.Pos = o.ActiveTiles.FirstOrDefault(o.Pos);
+        // A varied army so upgrade prices show for several tiers.
+        var db = Game.Instance.Db;
+        for (int tier = 1; tier <= 7; tier++)
+            if (db.Creatures.Values.Where(c => c.Town == hero.Town && c.Tier == tier && !c.Upgrade && c.Upgrades.Count > 0).OrderBy(c => c.Id, StringComparer.Ordinal).FirstOrDefault() is { } cd)
+                hero.Army[tier - 1] = new Stack(cd.Id, 8 - tier);
+        Session.Human.Purse = new Purse(new H5.Core.Data.Resources(50, 50, 50, 50, 50, 50, 60000));
+        World.SyncHero(hero);
+        World.Camera.CenterOn(hero.Pos);
+        Hud.Refresh();
+        Play(new ObjectVisited(hero.Id, o.Index, type), Session.Human.Index);
+    }
+
     public void MeetTest()
     {
         var s = Session.S;
@@ -949,6 +1008,9 @@ public partial class AdventureScreen : Control
     }
 
     // ---------------------------------------------------------------- texts
+
+    /// <summary>The object's stock name (first messagesFileRef entry), for building windows.</summary>
+    public string ObjectTitle(int index) => ObjectName(index);
 
     string ObjectName(int index)
     {

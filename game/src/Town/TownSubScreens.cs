@@ -379,7 +379,7 @@ public sealed partial class BlacksmithScreen : TownSubScreen
     }
 
     /// <summary>Name and description from the machine's CreatureVisual (GameMechanics/CreatureVisual/WarMachines).</summary>
-    static (string Name, string Description) MachineTexts(string id)
+    internal static (string Name, string Description) MachineTexts(string id)
     {
         var file = id switch
         {
