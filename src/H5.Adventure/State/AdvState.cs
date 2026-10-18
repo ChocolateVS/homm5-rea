@@ -106,6 +106,8 @@ public sealed class HeroState
     public bool Ballista, FirstAidTent, AmmoCart;
     public int Mana, MovePoints, MaxMovePoints;
     public bool InBoat;
+    /// <summary>The boat (<see cref="AdvState.Boats"/>) the hero is sailing, -1 on land.</summary>
+    public int BoatId = -1;
     /// <summary>Town (map object index) the hero is currently visiting or garrisoned in, -1 if none.</summary>
     public int InTown = -1;
     public bool Garrisoned;
@@ -236,6 +238,9 @@ public sealed class AdvState
     public int NextHeroId = 1;
     public bool Finished;
     public int? WinnerTeam;
+    /// <summary>Ships on the map: pre-placed by the editor, built at shipyards, or summoned.</summary>
+    public List<BoatState> Boats = new();
+    public int NextBoatId = 1;
 
     [JsonIgnore] public int DayOfWeek => (Day - 1) % 7 + 1;
     [JsonIgnore] public int Week => (Day - 1) / 7 + 1;

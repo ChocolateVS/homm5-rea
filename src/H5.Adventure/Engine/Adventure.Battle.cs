@@ -177,7 +177,8 @@ public sealed partial class Adventure
             (defBonus, attBonus) = TownBonuses(town);
             if (defenderSetup.Hero is { } dh) { dh.SpellPower += defBonus.HeroSpellPower; dh.Knowledge += defBonus.HeroKnowledge; }
         }
-        var state = BattleSetup.Create(Core, attackerSetup, defenderSetup, seed, siege: town != null ? SiegeFor(town) : null);
+        var state = BattleSetup.Create(Core, attackerSetup, defenderSetup, seed, siege: town != null ? SiegeFor(town) : null,
+            arena: town == null ? SeaBattleArena(att, pb, seed) : null);
         state.Heroes[0].Morale += att.NextBattleMorale; state.Heroes[0].Luck += att.NextBattleLuck;
         if (defHero != null) { state.Heroes[1].Morale += defHero.NextBattleMorale; state.Heroes[1].Luck += defHero.NextBattleLuck; }
         if (defBonus != null) AddSide(state.SideBonuses[1], defBonus);

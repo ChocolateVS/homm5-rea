@@ -103,8 +103,10 @@ public sealed partial class Adventure
         if (f.IsBlocked(t.X, t.Y)) return false;
         if (ScriptHooks != null && ScriptHooks.IsTileBlocked(h.Owner, t)) return false;
         bool water = f.IsWater(t.X, t.Y);
-        if (water != h.InBoat && t != target) return false;
+        if (water != h.InBoat && (t != target || !CanCrossShoreTo(h, t))) return false;
         if (t == target) return true;
+        // Ships block the way like heroes do (boarding one is only possible as the final step).
+        if (BoatAt(t) != null) return false;
         // Intermediate tiles must be free of heroes, monsters and visitable objects.
         if (HeroAt(t, h.Id) != null) return false;
         if (ObjectsAt(t).Any()) return false;
@@ -174,6 +176,8 @@ public sealed partial class Adventure
                 MoveStep(h, walked);
                 return MeetHero(h, other);
             }
+            if (isTarget && IsWaterTile(next) != h.InBoat && TryShoreStep(h, next, walked, cost))
+                return null;
             if (isTarget && MonsterAt(next) is { } mon)
             {
                 MoveStep(h, walked);
@@ -183,6 +187,7 @@ public sealed partial class Adventure
 
             h.MovePoints -= cost;
             h.Pos = next;
+            SyncBoat(h);
             walked.Add(next);
             if (h.InTown >= 0 && TownAt(next)?.Object != h.InTown) h.InTown = -1;
             RevealAround(h);

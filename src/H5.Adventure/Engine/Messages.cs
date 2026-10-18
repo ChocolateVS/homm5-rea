@@ -24,6 +24,7 @@ namespace H5.Adventure.Engine;
 [JsonDerivedType(typeof(GarrisonHeroCmd), "garrison")]
 [JsonDerivedType(typeof(MoveArtifactCmd), "move_artifact")]
 [JsonDerivedType(typeof(CastAdventureSpellCmd), "cast_adventure_spell")]
+[JsonDerivedType(typeof(BuildShipCmd), "build_ship")]
 public abstract record AdvCommand
 {
     /// <summary>Issuing player; the session layer fills it from the connection.</summary>
@@ -84,6 +85,10 @@ public sealed record MoveArtifactCmd(int HeroId, string Artifact, bool FromBackp
 [JsonDerivedType(typeof(GameEnded), "ended")]
 [JsonDerivedType(typeof(Message), "message")]
 [JsonDerivedType(typeof(AdventureSpellCast), "adventure_spell")]
+[JsonDerivedType(typeof(BoatCreated), "boat_created")]
+[JsonDerivedType(typeof(HeroEmbarked), "embarked")]
+[JsonDerivedType(typeof(HeroDisembarked), "disembarked")]
+[JsonDerivedType(typeof(BoatMoved), "boat_moved")]
 public abstract record AdvEvent;
 
 public sealed record TurnStarted(int Player, int Day) : AdvEvent;

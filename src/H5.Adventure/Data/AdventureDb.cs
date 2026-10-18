@@ -289,7 +289,9 @@ public sealed class AdventureDb
         "BUILDING_NAGA_BANK" => "BankMagiVault",
         "BUILDING_DRAGON_UTOPIA" => "BankDragonUtopia",
         "BUILDING_CYCLOPS_STOCKPILE" => "BankElementalsStockpile",
-        "BUILDING_SHIP_GALEON" => "BankDemolish",
+        // Wrecked ships (MapObjects/Water/Damaged_Boats_2); BUILDING_SHIP_GALEON is a boardable ship, not a bank.
+        "BUILDING_DEMOLISH" => "BankDemolish",
+        "BUILDING_UNKEMPT" => "BankUnkempt",
         "BUILDING_DWARVEN_TREASURE" => "BankDwarvenTreasure",
         "BUILDING_BLOOD_TEMPLE" => "BankBloodTemple",
         "BUILDING_TREANT_THICKET" => "BankTreantThicket",

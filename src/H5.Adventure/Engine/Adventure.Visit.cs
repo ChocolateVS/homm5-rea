@@ -58,8 +58,11 @@ public sealed partial class Adventure
             case ObjectKind.DwarvenWarren:
             case ObjectKind.AbandonedMine:
             case ObjectKind.Dwelling:
+                Capture(o, os, p);
+                break;
             case ObjectKind.Shipyard:
                 Capture(o, os, p);
+                VisitShipyard(h, o);
                 break;
             case ObjectKind.Shrine:
                 if (os.SpellId != null) LearnSpell(h, os.SpellId, force: false);
@@ -128,6 +131,11 @@ public sealed partial class Adventure
                 break;
             case "TREASURE_SEA_CHEST":
                 if (os.Variant > 0) GiveOne(p, Purse.Gold, 1500);
+                RemoveObject(o.Index);
+                break;
+            case "TREASURE_SHIPWRECK":
+                if (os.ArtifactId != null) GiveArtifact(h, os.ArtifactId);
+                else if (os.Amount > 0) GiveOne(p, Purse.Gold, os.Amount);
                 RemoveObject(o.Index);
                 break;
             default:
@@ -338,7 +346,9 @@ public sealed partial class Adventure
         if (exits.Count == 0) { Emit(new Message("teleport_none", "Nothing happens.")); return; }
         var dest = exits[S.Rng.Next(exits.Count)];
         var to = dest.ActiveTiles.FirstOrDefault(dest.Pos);
+        if (o.Shared.Type == "BUILDING_WHIRLPOOL") ApplyWhirlpoolLoss(h);
         h.Pos = to;
+        SyncBoat(h);
         Emit(new HeroMoved(h.Id, new[] { o.ActiveTiles.FirstOrDefault(o.Pos), to }, h.MovePoints));
         RevealAround(h);
     }
@@ -485,6 +495,13 @@ public sealed partial class Adventure
             case "attack_or_defence_2": AddStat(h, c.Option == 1 ? "Defence" : "Attack", 2); break;
             case "attack_or_defence_1": AddStat(h, c.Option == 1 ? "Defence" : "Attack", 1); break;
             case "spellpower_or_knowledge_1": AddStat(h, c.Option == 1 ? "Knowledge" : "SpellPower", 1); break;
+            case "shipyard":
+                if (c.Accept)
+                {
+                    var err = BuildShipAt(O(ch.Object), p);
+                    if (err != null) Emit(new Message("shipyard_no_money", "You do not have enough gold and wood to build another boat."));
+                }
+                break;
             case "join_free":
                 if (c.Accept) JoinArmy(h, ch.Creatures);
                 RemoveObject(ch.Object);

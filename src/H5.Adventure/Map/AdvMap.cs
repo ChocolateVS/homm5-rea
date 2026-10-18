@@ -138,6 +138,12 @@ public sealed class MapObject
     public bool TreasureCustom;
     public int TreasureAmount;
 
+    /// <summary>
+    /// Shipyards and towns: the slipway where a newly built ship appears (&lt;ShipTile&gt;),
+    /// as an offset from <see cref="Pos"/>. Null when the object defines none.
+    /// </summary>
+    public (int X, int Y)? ShipTile;
+
     /// <summary>Scalar fields not modelled above (kept for scripts and later rules).</summary>
     public Dictionary<string, string> Props = new(StringComparer.Ordinal);
 

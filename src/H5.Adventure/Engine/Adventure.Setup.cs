@@ -22,6 +22,7 @@ public sealed partial class Adventure
         g.SetupTowns();
         g.SetupObjects();
         g.SetupHeroes();
+        g.SetupBoats();
         g.SetupHeroPool();
         foreach (var p in s.Players) g.RollTavern(p);
         g.ChooseMoonWeek();
@@ -370,6 +371,7 @@ public sealed partial class Adventure
             case "TREASURE_FLOATSAM": os.Variant = S.Rng.Range(Math.Max(1, min), Math.Max(1, max)) - 1; break;
             // TODO(exe): sea chest variants 1..4; the manual only documents "may provide 1500 gold".
             case "TREASURE_SEA_CHEST": os.Variant = S.Rng.Range(Math.Max(1, min), Math.Max(1, max)) - 1; break;
+            case "TREASURE_SHIPWRECK": RollShipwreck(os, footman: min == 1); break;
             default: os.Amount = Roll(); break;
         }
     }

@@ -12,7 +12,8 @@ namespace H5.Adventure.Engine;
 //   Town Portal (SPELL_TOWN_PORTAL, 20 mana): to the nearest friendly town; all movement points are lost.
 //   Summon Creatures (SPELL_SUMMON_CREATURES, 0 + 1 mana per creature): chosen stacks from the nearest own
 //     town's garrison; takes 75% of the hero's starting movement points.
-//   Vessel of Shalassa (SPELL_SUMMON_BOAT, 4 mana): needs boats, not implemented yet.
+//   Vessel of Shalassa (SPELL_SUMMON_BOAT, 4 mana): brings the nearest empty ship next to the hero
+//     (see Adventure.Boats.cs for the exe evidence).
 // TODO(exe): exact tie-breaks for "nearest" (straight-line distance across floors is assumed here) and
 // whether a spell may be cast with fewer movement points than it costs (rejected here).
 
@@ -78,6 +79,7 @@ public sealed partial class Adventure
                 h.Mana -= mana;
                 h.MovePoints -= move;
                 h.Pos = to;
+                SyncBoat(h);
                 Emit(new AdventureSpellCast(h.Id, c.Spell, from, to));
                 Emit(new HeroMoved(h.Id, new[] { from, to }, h.MovePoints));
                 RevealAround(h);
@@ -128,7 +130,7 @@ public sealed partial class Adventure
                 return null;
             }
             case SpellSummonBoat:
-                return "boats are not implemented yet";
+                return CastSummonBoat(h, mana);
             default:
                 return "not an adventure spell";
         }

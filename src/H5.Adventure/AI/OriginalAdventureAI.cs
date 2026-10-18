@@ -21,7 +21,7 @@ namespace H5.Adventure.AI;
 /// Determinism: random choices use a private generator seeded from the game seed, day, player and hero, so the
 /// game's own RNG stream is never consumed and every peer reproduces the same decisions.
 /// </summary>
-public sealed class OriginalAdventureAI
+public sealed partial class OriginalAdventureAI
 {
     /// <summary>Routes commands through the game's command sink (e.g. the map-script host) when one is set.</summary>
     static AdvResult Send(Engine.Adventure g, AdvCommand c) => g.CommandSink?.Invoke(c) ?? g.Apply(c);
@@ -132,7 +132,7 @@ public sealed class OriginalAdventureAI
             score *= 1 + (rng.NextDouble() * 2 - 1) * st.SearchBestPositionRandomFactor / 100.0;
             if (best == null || score > best.Value.Score) best = new Destination(o.Index, tile, score);
         }
-        if (best == null || g.FindPath(h, best.Value.Tile) == null) return null;
+        if (best == null || g.FindPath(h, best.Value.Tile) == null) return SeaTravel(g, h, myPower, diff, st, claimed);
         return best;
     }
 

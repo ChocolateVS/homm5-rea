@@ -84,6 +84,8 @@ public static class ViewFilter
 
         v.Heroes = v.Heroes.Where(h => Ally(h.Owner) || (h.Alive && Explored(mine, h.Pos))).Select(h => Ally(h.Owner) ? h : RedactHero(h)).ToList();
         v.OffMapHeroes = v.OffMapHeroes.Where(h => h.Owner == me).ToList();
+        // Ships are seen like map objects: on explored tiles, or carrying an allied hero.
+        v.Boats = v.Boats.Where(b => Explored(mine, b.Pos) || (b.HeroId >= 0 && v.Heroes.Any(h => h.Id == b.HeroId && Ally(h.Owner)))).ToList();
 
         foreach (var t in v.Towns)
         {
@@ -136,7 +138,7 @@ public static class ViewFilter
     static HeroState RedactHero(HeroState h) => new()
     {
         Id = h.Id, DefId = h.DefId, Name = h.Name, Owner = h.Owner, Pos = h.Pos, Class = h.Class, Town = h.Town,
-        Specialization = h.Specialization, Level = h.Level, Army = BandArmy(h.Army), InBoat = h.InBoat,
+        Specialization = h.Specialization, Level = h.Level, Army = BandArmy(h.Army), InBoat = h.InBoat, BoatId = h.BoatId,
         InTown = h.InTown, Garrisoned = h.Garrisoned, Alive = h.Alive,
     };
 
@@ -194,6 +196,10 @@ public static class ViewFilter
                 HeroRemoved hr => HeroSeen(hr.HeroId) ? hr : null,
                 ArmyChanged ac => (ac.HeroId >= 0 && HeroMine(ac.HeroId)) || (ac.TownObject >= 0 && TownMine(ac.TownObject)) ? ac : null,
                 TilesRevealed tr => tr.Player == me ? tr : null,
+                BoatCreated bc => Explored(mine, bc.Pos) ? bc : null,
+                BoatMoved bm => Explored(mine, bm.From) || Explored(mine, bm.To) ? bm : null,
+                HeroEmbarked he => HeroSeen(he.HeroId) ? he : null,
+                HeroDisembarked hd => HeroSeen(hd.HeroId) ? hd : null,
                 H5.Adventure.Engine.Message => actor == me || actor < 0 ? e : null,
                 _ => actor == me ? e : null,
             };
