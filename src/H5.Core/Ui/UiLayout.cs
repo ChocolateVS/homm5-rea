@@ -1,9 +1,12 @@
 namespace H5.Core.Ui;
 
 /// <summary>
-/// Computes absolute window rectangles. Screens are authored for 1024×768
-/// (WindowScreen Size); HorAlign/VerAlign = ALIGN_SCREEN screens stretch to the
-/// actual resolution and children re-anchor via their alignments.
+/// Computes absolute window rectangles. Screens are authored for 1024x768
+/// (WindowScreen Size). Each WindowScreen positions that canvas on the real screen
+/// per axis with HorAlign/VerAlign (set on most screens by the 3.1 patch archive):
+/// ALIGN_SCREEN (or unset) stretches it to the screen so children re-anchor by their
+/// own alignments; ALIGN_CENTER centres the authored canvas (modal dialogs, result
+/// windows); ALIGN_LOW_END / ALIGN_HIGH_END pin it to the left/top or right/bottom.
 /// </summary>
 public static class UiLayout
 {
@@ -12,12 +15,24 @@ public static class UiLayout
     public static void Apply(UiWindow root, int screenW = DesignWidth, int screenH = DesignHeight)
     {
         var screen = new UiRect(0, 0, screenW, screenH);
-        // A WindowScreen with ALIGN_SCREEN fills the screen regardless of its authored size.
-        bool fills = root.Type == "WindowScreen" &&
-                     (string?)root.RawInstance?.Element("HorAlign") is null or "ALIGN_SCREEN";
-        root.Rect = fills ? screen : Place(root.Placement, screen);
+        if (root.Type == "WindowScreen")
+        {
+            var size = root.Placement.Size.Value;
+            var (x, w) = ScreenAxis((string?)root.RawInstance?.Element("HorAlign"), size.X > 0 ? size.X : DesignWidth, screenW);
+            var (y, h) = ScreenAxis((string?)root.RawInstance?.Element("VerAlign"), size.Y > 0 ? size.Y : DesignHeight, screenH);
+            root.Rect = new UiRect(x, y, w, h);
+        }
+        else root.Rect = Place(root.Placement, screen);
         foreach (var c in root.Children) Layout(c, root.Rect);
     }
+
+    static (int pos, int size) ScreenAxis(string? align, int authored, int screen) => align switch
+    {
+        "ALIGN_CENTER" => ((screen - authored) / 2, authored),
+        "ALIGN_LOW_END" => (0, authored),
+        "ALIGN_HIGH_END" => (screen - authored, authored),
+        _ => (0, screen), // ALIGN_SCREEN
+    };
 
     static void Layout(UiWindow w, UiRect parent)
     {

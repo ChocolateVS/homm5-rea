@@ -60,10 +60,10 @@ public partial class UiNode : Control
     }
 
     /// <summary>Replaces the window's text markup (format prefix from the visual state is still applied).</summary>
-    public void SetText(string? markup) { _textOverride = markup; InvalidateText(); }
+    public void SetText(string? markup) { _textOverride = markup; InvalidateText(); if (ResizesOnText) Screen?.QueueRelayout(); }
 
     /// <summary>Sets a &lt;value=name&gt; placeholder used by this window's text.</summary>
-    public void SetValue(string name, string value) { _values[name] = value; InvalidateText(); }
+    public void SetValue(string name, string value) { _values[name] = value; InvalidateText(); if (ResizesOnText) Screen?.QueueRelayout(); }
 
     public void SetState(int state, bool fireCommands = false)
     {
@@ -206,22 +206,42 @@ public partial class UiNode : Control
         }
     }
 
+    string CurrentMarkup(UiVisualState? visual)
+    {
+        var t = Window.Text;
+        if (t == null && _textOverride == null) return "";
+        string body = _textOverride ?? t?.Raw ?? "";
+        string format = t?.Format ?? UiResources.Instance.Text(visual?.TextFormatPath) ?? "";
+        return format + body;
+    }
+
+    /// <summary>WindowTextView ResizeOnTextSet: the window takes its text's height (and width if ResizeWidthOnTextSet).</summary>
+    public bool ResizesOnText => (bool?)Window.RawInstance?.Element("ResizeOnTextSet") == true;
+    public bool ResizesWidthOnText => (bool?)Window.RawInstance?.Element("ResizeWidthOnTextSet") == true;
+
+    /// <summary>Size of the laid-out text when wrapped to <paramref name="width"/> (0 = no wrapping).</summary>
+    public Vector2 MeasureText(float width)
+    {
+        var markup = CurrentMarkup(CurrentVisual());
+        if (markup.Length == 0) return Vector2.Zero;
+        return BitmapTextLayout.Build(markup, _values, new Rect2(0, 0, width > 0 ? width : 100000, 0), wrap: width > 0).Size;
+    }
+
     void DrawText(UiVisualState? visual)
     {
         var t = Window.Text;
-        if (t == null && _textOverride == null) return;
-        string body = _textOverride ?? t?.Raw ?? "";
-        string format = t?.Format ?? UiResources.Instance.Text(visual?.TextFormatPath) ?? "";
-        string markup = format + body;
+        string markup = CurrentMarkup(visual);
         if (markup.Length == 0) return;
         var key = markup + "|" + Size + "|" + string.Join(";", _values.Select(kv => kv.Key + "=" + kv.Value));
         if (_textLayout == null || _textLayoutKey != key)
         {
-            // The text area placement is relative to the window, so lay out in local space.
+            // The text area placement is relative to the window, so lay out in local space. An
+            // unset (zero) extent spans the window on that axis but keeps its alignment.
             var self = new UiRect(0, 0, (int)Size.X, (int)Size.Y);
             var area = t?.Placement != null ? UiLayout.Place(t.Placement, self) : self;
-            if (area.W <= 0 || area.H < 0) area = self;
-            _textLayout = BitmapTextLayout.Build(markup, _values, new Rect2(area.X, area.Y, area.W, area.H),
+            if (area.W <= 0) area = area with { X = 0, W = self.W };
+            if (area.H <= 0 && (t?.Placement?.VerAlign.Value ?? UiAlign.LowEnd) == UiAlign.LowEnd) area = area with { Y = 0, H = self.H };
+            _textLayout = BitmapTextLayout.Build(markup, _values, new Rect2(area.X, area.Y, area.W, Math.Max(0, area.H)),
                 t?.Placement?.VerAlign.Value ?? UiAlign.LowEnd);
             _textLayoutKey = key;
         }

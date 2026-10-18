@@ -37,9 +37,16 @@ Instance fields that are set override the shared ones.
 | `HorAllign` / `VerAllign` | `EPA_LOW_END` (from left/top), `EPA_HIGH_END` (right/bottom edge at parent edge + Position), `EPA_CENTER`/`ERA_CENTER` (centred + Position), `EPA_MARGIN` (stretch) |
 | `LowerMargin` / `UpperMargin` | for `EPA_MARGIN`: left/top and right/bottom insets |
 
-Screens are authored for **1024×768**; `WindowScreen` with `HorAlign/VerAlign = ALIGN_SCREEN` fills
-the real screen and children re-anchor through their alignments (so higher resolutions keep panels
-in the corners, as in the original).
+Screens are authored for **1024×768**. Each `WindowScreen` places that canvas on the real screen per
+axis with `HorAlign`/`VerAlign` (instance fields, set on ~70 screens by the 3.1 archive `a2p1-data.pak`):
+`ALIGN_SCREEN` (or unset) stretches it to the screen so children re-anchor through their own
+alignments (panels stay in the corners at higher resolutions); `ALIGN_CENTER` centres the authored
+canvas (modal dialogs such as `MPDMCreate`, `CombatResults`, `ExitGameQuestion`); `ALIGN_LOW_END` /
+`ALIGN_HIGH_END` pin it to the left/top or right/bottom.
+
+`WindowTextView` with `ResizeOnTextSet=true` takes the height of its laid-out text (and the width with
+`ResizeWidthOnTextSet`) and is then re-placed by its own alignment: a zero-height, centre-aligned
+header ends up vertically centred on its slot.
 
 Verified example: `MainMenu2/Menu` = HIGH_END/HIGH_END, pos (-8,-24), size 327×289 → `[689,455]`.
 
@@ -100,9 +107,11 @@ on them rather than hard-wiring buttons.
 
 ### Markup (`UiMarkup`)
 
-Built-in tags: `<font face= size= outlinecolor= outlinesize= forcefontsize=>`, `<color=AARRGGBB>`,
-`<left> <center> <middle> <right> <justify>`, `<br>`, `<tab>`, `<push>`/`<pop>` (style stack),
-`<value=x>`, wrap hints `<nowrap> <forcewrap> <wrapdots=...> <wrapright>`.
+Built-in tags (the parser's registry, H5_Game.exe `FUN_00cc1190`): `br`, `left`, `right`, `center`,
+`nowrap`, `forcewrap`, `wrapdots`, `justify`, `wrapleft`, `wrapright`, `top`, `bottom`, `middle`,
+`tab`, `font` (`face= size= outlinecolor= outlinesize= forcefontsize=`), `color=AARRGGBB`, `image`,
+`minfontsize`, `push`, `pop`, plus `<value=x>`. **`top`/`middle`/`bottom` are vertical alignment**
+(they override the text area's own vertical alignment); `center` is horizontal.
 
 All other tags are macros defined by files in `UI/Consts/mlTags/` and its `Fonts/`, `Colors/`,
 `Styles/`, `Special/` subfolders, expanded recursively. E.g. `menu` → `<h2><color_menu>`,
@@ -120,7 +129,7 @@ System, Button), `Height`, source `FaceName` (Monotype Corsiva, Century Gothic, 
 ```
 [4] version  [1]{[1] type id}  [0] ...  [2]{[1]{[0] type id, [1] fields}}  [5]
 fields: [10] cell height  [11] ?  [12] descent  [13] line spacing  [14] ?  [15] default char (31)
-        [16] ?  [17] ?(≈ ascent-ish)
+        [16] ?  [17] ascent (baseline offset from the cell top)
         [1] hash_map<u16 char, Glyph>: [3] count, [4] buckets, then ALL keys (id 1, 2 bytes)
             followed by ALL values (id 2, 28 bytes) in the same order
         [2] kerning hash_map (empty in stock fonts)
@@ -149,8 +158,12 @@ confirm the exact rule against the exe if text metrics differ in screenshots.
 
 ## Unknowns
 
-* Exact meaning of font header fields 11, 14, 16, 17; nearest-size font rule.
+* Exact meaning of font header fields 11, 14, 16; nearest-size font rule.
 * `ActiveArea`/`ActiveMask` (hit masks), `WindowScrollableContainer` scrolling metrics,
   `WindowListCtrl` column specs — loaded raw (`UiWindow.RawInstance/RawShared`), not modelled.
 * `BackgroundTiledTexture` `Rect` and `Rotate` are parsed but unused (all stock `Rect` = 0).
-* Text vertical metrics are approximate (line height = font field 13).
+* Text vertical metrics: glyph atlas rects are exactly `CellHeight` (field 10) tall, so the cell is the
+  visual line box; field 13 is the line-to-line advance (Button_16: cell 19, advance 37) and field 17
+  the ascent. A block is `(lines − 1) × advance + cell`, centred inside the text area for
+  `ERA_CENTER`/`<middle>` (e.g. button labels: `UI/CommonBoxes/Button_ForegroundTextStringShared.xdb`
+  sets `VerAllign = ERA_CENTER` with an unset size, i.e. centred on the whole button).

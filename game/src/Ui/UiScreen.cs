@@ -49,10 +49,45 @@ public partial class UiScreen : Control
 
     public void Relayout()
     {
+        _relayoutQueued = false;
         var size = Size;
         if (size.X <= 0 || size.Y <= 0) size = GetViewportRect().Size;
         UiLayout.Apply(Root, (int)size.X, (int)size.Y);
+        if (ApplyTextSizes()) UiLayout.Apply(Root, (int)size.X, (int)size.Y);
         Place(Root, new UiRect(0, 0, 0, 0));
+    }
+
+    /// <summary>
+    /// WindowTextView ResizeOnTextSet: the window's height becomes its text block's height
+    /// (width too with ResizeWidthOnTextSet) and it is then re-placed by its own alignment,
+    /// so e.g. a zero-height, centre-aligned header ends up vertically centred on its slot.
+    /// </summary>
+    bool ApplyTextSizes()
+    {
+        bool changed = false;
+        foreach (var (w, node) in _nodes)
+        {
+            if (!node.ResizesOnText) continue;
+            _authoredSize.TryAdd(w, w.Placement.Size);
+            var authored = _authoredSize[w];
+            var text = node.MeasureText(node.ResizesWidthOnText ? 0 : w.Rect.W);
+            if (text == Vector2.Zero) continue;
+            var resized = new Int2(node.ResizesWidthOnText ? (int)Math.Ceiling(text.X) : authored.Value.X, (int)Math.Ceiling(text.Y));
+            w.Placement = w.Placement.MergedWith(new UiPlacement { Size = (resized, true) });
+            changed = true;
+        }
+        return changed;
+    }
+
+    readonly Dictionary<UiWindow, (Int2 Value, bool Set)> _authoredSize = new();
+    bool _relayoutQueued;
+
+    /// <summary>Relayout at the end of the frame (text changes on ResizeOnTextSet windows).</summary>
+    public void QueueRelayout()
+    {
+        if (_relayoutQueued || !IsInsideTree()) return;
+        _relayoutQueued = true;
+        CallDeferred(MethodName.Relayout);
     }
 
     void Place(UiWindow w, UiRect parent)

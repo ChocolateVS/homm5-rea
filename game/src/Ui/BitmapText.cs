@@ -52,12 +52,27 @@ public sealed class BitmapTextLayout
             }
         }
 
-        static int LineH(List<(string s, UiTextStyle st, UiFont f)> l) =>
-            l.Count == 0 ? 16 : l.Max(p => Math.Max(p.f.LineHeight, p.f.CellHeight));
-        int total = lines.Sum(LineH);
-        float y = verticalAlign switch
+        // Line boxes: glyph rects are CellHeight tall; consecutive lines are LineAdvance apart,
+        // so a block is (lines - 1) advances plus the last line's cell. Mixed fonts on a line
+        // share a baseline (font ascent).
+        static int Advance(List<(string s, UiTextStyle st, UiFont f)> l) => l.Count == 0 ? 16 : l.Max(p => p.f.LineAdvance);
+        static int Cell(List<(string s, UiTextStyle st, UiFont f)> l) => l.Count == 0 ? 16 : l.Max(p => p.f.CellHeight);
+        static int Ascent(List<(string s, UiTextStyle st, UiFont f)> l) => l.Count == 0 ? 0 : l.Max(p => p.f.Ascent);
+        int total = 0;
+        for (int i = 0; i < lines.Count; i++) total += i < lines.Count - 1 ? Advance(lines[i]) : Cell(lines[i]);
+
+        // A <top>/<middle>/<bottom> tag overrides the text area's own vertical alignment.
+        var tagged = runs.Select(r => r.Style.VAlign).FirstOrDefault(v => v != UiTextVAlign.Default);
+        var v = tagged switch
         {
-            UiAlign.Center => area.Position.Y + (area.Size.Y - total) / 2,
+            UiTextVAlign.Top => UiAlign.LowEnd,
+            UiTextVAlign.Middle => UiAlign.Center,
+            UiTextVAlign.Bottom => UiAlign.HighEnd,
+            _ => verticalAlign,
+        };
+        float y = v switch
+        {
+            UiAlign.Center => area.Position.Y + Mathf.Floor((area.Size.Y - total) / 2),
             UiAlign.HighEnd => area.End.Y - total,
             _ => area.Position.Y,
         };
@@ -73,6 +88,7 @@ public sealed class BitmapTextLayout
                 _ => area.Position.X,
             };
             maxW = Math.Max(maxW, widths[i]);
+            int baseline = Ascent(line);
             foreach (var (s, st, f) in line)
             {
                 if (s.StartsWith('\t')) { x += float.Parse(s[1..], System.Globalization.CultureInfo.InvariantCulture); continue; }
@@ -82,12 +98,12 @@ public sealed class BitmapTextLayout
                     if (f.Glyph(ch) is not { } g) continue;
                     if (atlas != null && g.Width > 0)
                         layout.Glyphs.Add(new Glyph(atlas, new Rect2(g.X1, g.Y1, g.Width, g.Height),
-                            new Vector2(Mathf.Round(x + g.A), Mathf.Round(y)), UiResources.ToColor(st.Color),
+                            new Vector2(Mathf.Round(x + g.A), Mathf.Round(y + baseline - f.Ascent)), UiResources.ToColor(st.Color),
                             st.Outline, UiResources.ToColor(st.OutlineColor)));
                     x += g.Advance;
                 }
             }
-            y += LineH(line);
+            y += Advance(line);
         }
         layout.Size = new Vector2(maxW, total);
         return layout;

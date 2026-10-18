@@ -30,6 +30,8 @@ public sealed class UiFont
     public string Uid = "";
     /// <summary>Header fields from the glyph blob (ids 10..17). See docs/formats/ui.md.</summary>
     public int CellHeight, Ascent, Descent, LineHeight, DefaultChar;
+    /// <summary>Distance between consecutive line tops (field 13, never less than the cell).</summary>
+    public int LineAdvance => Math.Max(LineHeight, CellHeight);
     public Dictionary<int, int> HeaderFields = new();
     public Dictionary<char, UiGlyph> Glyphs = new();
 
@@ -95,7 +97,10 @@ public sealed class UiFont
         f.HeaderFields.TryGetValue(12, out f.Descent);
         f.HeaderFields.TryGetValue(13, out f.LineHeight);
         f.HeaderFields.TryGetValue(15, out f.DefaultChar);
-        f.Ascent = f.CellHeight - f.Descent;
+        // Glyph rects are exactly CellHeight tall (the visual line box); field 13 is the
+        // line-to-line advance (Button_16: cell 19, advance 37) and field 17 the ascent
+        // (baseline offset from the cell top), used to align mixed fonts on one line.
+        f.Ascent = f.HeaderFields.TryGetValue(17, out var asc) && asc > 0 ? asc : f.CellHeight - f.Descent;
     }
 }
 

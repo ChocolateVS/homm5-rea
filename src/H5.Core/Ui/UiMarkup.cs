@@ -6,12 +6,16 @@ namespace H5.Core.Ui;
 
 public enum UiTextAlign { Left, Center, Right, Justify }
 
+/// <summary>Vertical placement tags &lt;top&gt; &lt;middle&gt; &lt;bottom&gt; (Default = use the text area's own alignment).</summary>
+public enum UiTextVAlign { Default, Top, Middle, Bottom }
+
 public sealed record UiTextStyle
 {
     public string Face { get; init; } = "Default";
     public int Size { get; init; } = 18;
     public uint Color { get; init; } = 0xFFC5BEA1; // color_default
     public UiTextAlign Align { get; init; } = UiTextAlign.Left;
+    public UiTextVAlign VAlign { get; init; } = UiTextVAlign.Default;
     public bool Outline { get; init; }
     public uint OutlineColor { get; init; } = 0xFF000000;
     public int OutlineSize { get; init; } = 1;
@@ -23,7 +27,7 @@ public sealed record UiTextRun(string Text, UiTextStyle Style, bool LineBreak = 
 /// <summary>
 /// Parser for the H5 UI text markup. Built-in tags: <c>&lt;font face= size= outlinecolor=
 /// outlinesize= forcefontsize=&gt;</c>, <c>&lt;color=AARRGGBB&gt;</c>, <c>&lt;left|center|right|justify&gt;</c>,
-/// <c>&lt;br&gt;</c>, <c>&lt;push&gt;/&lt;pop&gt;</c> (style stack), <c>&lt;value=name&gt;</c> (runtime
+/// <c>&lt;top|middle|bottom&gt;</c> (vertical), <c>&lt;br&gt;</c>, <c>&lt;push&gt;/&lt;pop&gt;</c> (style stack), <c>&lt;value=name&gt;</c> (runtime
 /// substitution), <c>&lt;tab&gt;</c>, wrap hints (<c>nowrap, forcewrap, wrapdots=, wrapright</c>).
 /// Every other tag is a macro: the text of
 /// <c>UI/Consts/mlTags[/Fonts|/Colors|/Styles|/Special]/&lt;tag&gt;.txt</c>, expanded recursively
@@ -87,7 +91,11 @@ public sealed class UiMarkup
                     case "push": Flush(); stack.Push(style); break;
                     case "pop": Flush(); if (stack.Count > 0) style = stack.Pop(); break;
                     case "left": Flush(); style = style with { Align = UiTextAlign.Left }; break;
-                    case "center": case "middle": Flush(); style = style with { Align = UiTextAlign.Center }; break;
+                    case "center": Flush(); style = style with { Align = UiTextAlign.Center }; break;
+                    // Vertical alignment tags, registered by the exe's markup parser (H5_Game.exe FUN_00cc1190).
+                    case "top": Flush(); style = style with { VAlign = UiTextVAlign.Top }; break;
+                    case "middle": Flush(); style = style with { VAlign = UiTextVAlign.Middle }; break;
+                    case "bottom": Flush(); style = style with { VAlign = UiTextVAlign.Bottom }; break;
                     case "right": Flush(); style = style with { Align = UiTextAlign.Right }; break;
                     case "justify": Flush(); style = style with { Align = UiTextAlign.Justify }; break;
                     case "color":
@@ -106,7 +114,8 @@ public sealed class UiMarkup
                         attrs.TryGetValue("", out var vname);
                         runs.Add(new UiTextRun(values != null && vname != null && values.TryGetValue(vname, out var v) ? v : "", style, false, vname));
                         break;
-                    case "nowrap": case "forcewrap": case "wrapdots": case "wrapright": case "dots": break;
+                    case "nowrap": case "forcewrap": case "wrapdots": case "wrapright": case "wrapleft": case "dots":
+                    case "image": case "minfontsize": break;
                     default:
                         var macro = Macro(name);
                         if (macro != null) Expand(macro, depth + 1);
