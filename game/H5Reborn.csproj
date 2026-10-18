@@ -10,5 +10,6 @@
   <ItemGroup>
     <ProjectReference Include="..\src\H5.Core\H5.Core.csproj" />
     <ProjectReference Include="..\src\H5.Assets\H5.Assets.csproj" />
+    <ProjectReference Include="..\src\H5.Net\H5.Net.csproj" />
   </ItemGroup>
 </Project>
