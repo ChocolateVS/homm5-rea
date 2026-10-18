@@ -559,6 +559,7 @@ public sealed partial class Battle
                 reset = h.HasPerk(Sk.QuickGating) ? Stats.Get("combat/HeroSkills/DemonLord/Gating/QuickGatingStartATB", 0.75)
                                                    : Stats.Get("combat/HeroSkills/DemonLord/Gating/CallerStartATB", 0.5);
                 if (g == null) return null;
+                AddEffect(g, new Effect { Id = GatedEffect, Positive = true, Dispellable = false });
                 break;
             }
             default: return "ability not implemented";

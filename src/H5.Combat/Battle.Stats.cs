@@ -156,6 +156,7 @@ public sealed partial class Battle
         // Exe FUN_008a4330: the base initiative is MULTIPLIED by each modifier in turn — enemy Prudent /
         // Master of Initiative, one factor per active effect (FUN_004e4270), Storm Wind, Fog Veil — and the
         // flat bonuses are added afterwards.
+        if (u.HasEffect(GatedEffect) && !u.HasEffect(H5.Combat.Fx.Frozen) && !u.HasEffect(FxSeducing)) return GatedInitiative(u);
         var h = HeroOf(u);
         var eh = Enemy(u.Side);
         double mult = 1;

@@ -200,6 +200,7 @@ public sealed partial class Battle
         if (t.HasEffect(H5.Combat.Fx.Sleep) || t.HasEffect(H5.Combat.Fx.Stunned) || t.HasEffect("SPELL_HYPNOTIZE") || t.HasEffect(H5.Combat.Fx.Frozen)) return false;
         // Only Expert Blind stops retaliation (exe FUN_00a5fee0: blind effect level > 2; manual p.186).
         if (t.GetEffect("SPELL_BLIND") is { Mastery: >= Mastery.Expert }) return false;
+        if (t.HasEffect(GatedEffect)) return false;   // exe FUN_00a5fee0: "COMBAT_NO_GATING_RETALIATE"
         if (attacker.HasEffect(H5.Combat.Fx.Invisible)) return false;
         if (HasAbilityNow(attacker, Ab.FastAttack) && t.HasEffect("SPELL_SLOW")) return false;    // Swift Attack (p.181)
         return true;

@@ -61,6 +61,16 @@ public sealed partial class Battle
         return (int)(100f - (100 - p) / (float)Stats.Get("combat/Creatures/Fortress/BearRoar_SmallCreaturesChanceMult", 2));
     }
 
+    /// <summary>The effect a gated stack carries for the rest of the battle (exe spell id 0x9f).</summary>
+    internal const string GatedEffect = "SPELL_ABILITY_GATING";
+
+    /// <summary>
+    /// A gated stack ignores every initiative modifier (exe FUN_008a4330 returns early on effect 0x9f): base initiative ×
+    /// max(0, Gating/InitiativeFactor).
+    /// </summary>
+    double GatedInitiative(Unit u) =>
+        Math.Max(0.1, u.BaseInitiative * Math.Max(0, Stats.Get("combat/HeroSkills/DemonLord/Gating/InitiativeFactor", 1)));
+
     /// <summary>Chance + roll in one call.</summary>
     bool ProcRoll(Unit attacker, Unit target, double procFactor, int? targetHpOverride = null, bool soldiersLuckDoubles = false, bool secondRoll = true) =>
         RollPercent(attacker, ProcPercent(attacker, target, procFactor, targetHpOverride, soldiersLuckDoubles), secondRoll);

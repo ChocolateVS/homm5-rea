@@ -139,6 +139,30 @@ public class AuditAbilityTests(GameDataFixture f)
     }
 
     [Fact]
+    public void GatedStacksIgnoreInitiativeModifiers()   // FUN_008a4330: effect 0x9f → base × Gating/InitiativeFactor
+    {
+        var b = f.Duel("CREATURE_IMP", 20, "CREATURE_PEASANT", 20, 1, L, R);
+        var imp = b.State.Units[0];
+        imp.Effects.Add(new Effect { Id = "SPELL_SLOW", Value = 0.5, Remaining = 5 });
+        Assert.True(b.InitiativeOf(imp) < imp.BaseInitiative);
+        imp.Effects.Add(new Effect { Id = Battle.GatedEffect, Positive = true, Dispellable = false });
+        Assert.Equal(imp.BaseInitiative, b.InitiativeOf(imp), 6);
+    }
+
+    [Fact]
+    public void GatedStacksNeverRetaliate()   // FUN_00a5fee0: effect 0x9f → COMBAT_NO_GATING_RETALIATE
+    {
+        var b = f.Duel("CREATURE_PEASANT", 20, "CREATURE_IMP", 50, 1, L, R);
+        b.Begin();
+        var (a, imp) = (b.State.Units[0], b.State.Units[1]);
+        imp.Effects.Add(new Effect { Id = Battle.GatedEffect, Positive = true, Dispellable = false });
+        b.State.Active = a.Id;
+        var r = b.Apply(new AttackCmd(a.Id, imp.Id) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        Assert.DoesNotContain(r.Events.OfType<AttackStarted>(), e => e.Kind == AttackKind.Retaliation);
+    }
+
+    [Fact]
     public void PurgerNeverRemovesPrayer()   // FUN_004e4000: SPELL_PRAYER (0x36), DEATH_SCREAM (0x3b), SEDUCE_CASTED excluded
     {
         bool removedPrayer = false, removedBless = false;
