@@ -112,6 +112,7 @@ public sealed class MapLoader
         {
             var g = obj.Element(group);
             if (g == null) continue;
+            if (primary) m.DieInWeekWithoutTowns = g.Element("Common").Bool("DieInWeekWithoutTowns");
             foreach (var o in g.Element("Common").Items("Objectives"))
                 m.Objectives.Add(ReadObjective(o, primary, -1, files));
             int player = 0;

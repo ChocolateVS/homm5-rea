@@ -36,6 +36,8 @@ public sealed class AdvMap
     public int HeroMaxLevel;
     public bool CustomTeams;
     public bool RandomMoons;
+    /// <summary>Objectives/Primary/Common/DieInWeekWithoutTowns: losing all towns eliminates after 7 days.</summary>
+    public bool DieInWeekWithoutTowns;
     public List<MapPlayer> Players = new();
     public List<MapObject> Objects = new();
     public List<MapObjective> Objectives = new();
