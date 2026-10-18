@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\H5.Core\H5.Core.csproj" />
+    <ProjectReference Include="..\H5.Combat\H5.Combat.csproj" />
+    <ProjectReference Include="..\H5.Net\H5.Net.csproj" />
+    <ProjectReference Include="..\H5.Adventure\H5.Adventure.csproj" />
+    <ProjectReference Include="..\H5.Rmg\H5.Rmg.csproj" />
+    <ProjectReference Include="..\H5.Scripting\H5.Scripting.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+</Project>

@@ -22,6 +22,24 @@ public abstract record SessionResult
 {
     public sealed record Accepted(JsonNode Events, string StateHash, GameEnded? Ended = null) : SessionResult;
     public sealed record Rejected(string Reason) : SessionResult;
+    /// <summary>
+    /// Accepted, but each side receives its own payload and hash (hidden-information games:
+    /// every player only learns what their side may see). Index = side.
+    /// </summary>
+    public sealed record AcceptedPerSide(IReadOnlyList<JsonNode> EventsBySide, IReadOnlyList<string> HashBySide, GameEnded? Ended = null) : SessionResult;
+}
+
+/// <summary>Optional: sessions with timers (turn time limits, real-time energy) are ticked by the server.</summary>
+public interface ITickableSession
+{
+    /// <summary>Called about twice a second under the server lock. Returns an update to broadcast, or null.</summary>
+    SessionResult? Tick(long nowMs);
+}
+
+/// <summary>Optional: validates host-chosen room settings (map, options) when a room is created or changed.</summary>
+public interface IRoomSettingsValidator
+{
+    string? ValidateRoomSettings(JsonObject? settings);
 }
 
 public interface IGameSessionFactory

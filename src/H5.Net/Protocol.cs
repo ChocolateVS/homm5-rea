@@ -38,6 +38,7 @@ public static class ProtocolInfo
 [JsonDerivedType(typeof(CommandRejected), "command_rejected")]
 [JsonDerivedType(typeof(GameEnded), "game_ended")]
 [JsonDerivedType(typeof(Resumed), "resumed")]
+[JsonDerivedType(typeof(SetRoomSettings), "set_room_settings")]
 public abstract record Message;
 
 /// <summary>
@@ -72,6 +73,8 @@ public sealed record SetPlayerOptions(JsonObject Options) : Message;
 public sealed record Chat(int FromPlayerId, string Text) : Message;
 /// <summary>Host only; the server validates everyone is ready.</summary>
 public sealed record StartGame : Message;
+/// <summary>Host only, before the game starts: replaces the room settings (e.g. the chosen map). Clears everyone's ready flag.</summary>
+public sealed record SetRoomSettings(JsonObject Settings) : Message;
 
 /// <summary>Sent to each player when the session starts; Setup is mode-specific (seed, armies, side assignment).</summary>
 public sealed record GameStarted(int YourSide, JsonNode Setup) : Message;

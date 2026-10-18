@@ -41,14 +41,15 @@ public sealed class LobbyServer : IAsyncDisposable
         public readonly IGameSessionFactory Factory = factory;
         public readonly int MaxPlayers = maxPlayers;
         public readonly string? Password = password;
-        public readonly JsonObject? Settings = settings;
+        public JsonObject? Settings = settings;
         public readonly List<Player> Players = new();
         public Player? Host => Players.FirstOrDefault(p => p.DroppedAt == null) ?? Players.FirstOrDefault();
         public IGameSession? Session;
         public int Seq;
         public readonly Dictionary<int, int> SideOf = new();
         public IReadOnlyList<JsonNode>? Setups;
-        public readonly List<GameUpdate> Log = new();
+        /// <summary>Every update sent, with the side it was addressed to (null = everyone), for reconnect replay.</summary>
+        public readonly List<(int? Side, GameUpdate Update)> Log = new();
     }
 
     readonly object _lock = new();
@@ -198,6 +199,12 @@ public sealed class LobbyServer : IAsyncDisposable
                 foreach (var q in r.Players) q.Send(new Chat(p.Id, text));
                 break;
             case StartGame when p.Room is { Session: null } r && r.Host == p: StartRoomGame(r); break;
+            case SetRoomSettings srs when p.Room is { Session: null } r && r.Host == p:
+                if (r.Factory is IRoomSettingsValidator v && v.ValidateRoomSettings(srs.Settings) is { } serr) { p.Send(new ErrorMsg("settings", serr)); break; }
+                r.Settings = srs.Settings;
+                foreach (var q in r.Players) q.Ready = false;
+                BroadcastRoom(r);
+                break;
             case GameCommand gc when p.Room is { Session: not null } r: ApplyCommand(r, p, gc); break;
             default: p.Send(new ErrorMsg("unexpected", $"Not allowed now: {m.GetType().Name}")); break;
         }
@@ -224,7 +231,7 @@ public sealed class LobbyServer : IAsyncDisposable
         {
             int from = hello.LastSeq ?? -1;
             if (from < 0) seat.Send(new GameStarted(side, room.Setups[side]));
-            foreach (var u in room.Log.Where(u => u.Seq > from))
+            foreach (var (to, u) in room.Log.Where(e => e.Update.Seq > from && (e.Side == null || e.Side == side)))
                 seat.Send(u with { ClientSeq = null });
         }
         BroadcastRoom(room);
@@ -237,6 +244,7 @@ public sealed class LobbyServer : IAsyncDisposable
     void CreateRoomFor(Player p, CreateRoom cr)
     {
         if (!_factories.TryGetValue(cr.Mode, out var factory)) { p.Send(new ErrorMsg("mode", $"Unknown mode {cr.Mode}")); return; }
+        if (factory is IRoomSettingsValidator rv && rv.ValidateRoomSettings(cr.Settings) is { } serr) { p.Send(new ErrorMsg("settings", serr)); return; }
         LeaveCurrentRoom(p);
         var max = Math.Clamp(cr.MaxPlayers, factory.MinPlayers, factory.MaxPlayers);
         var name = string.IsNullOrWhiteSpace(cr.Name) ? $"{p.Name}'s game" : cr.Name.Trim();
@@ -289,8 +297,15 @@ public sealed class LobbyServer : IAsyncDisposable
 
         var seed = BitConverter.ToUInt64(RandomNumberGenerator.GetBytes(8));
         var bySide = room.Players.Select((q, i) => new RoomPlayer(q.Id, q.Name, i, q.Ready, q == host, q.Options)).ToList();
-        room.Session = room.Factory.Create();
-        room.Setups = room.Session.Start(bySide, room.Settings, seed);
+        var session = room.Factory.Create();
+        try { room.Setups = session.Start(bySide, room.Settings, seed); }
+        catch (Exception e)
+        {
+            _log($"room {room.Id} failed to start: {e}");
+            host.Send(new ErrorMsg("start", e is InvalidOperationException or FileNotFoundException ? e.Message : "The game could not be started."));
+            return;
+        }
+        room.Session = session;
         room.Log.Clear();
         room.Seq = 0;
         room.SideOf.Clear();
@@ -306,19 +321,52 @@ public sealed class LobbyServer : IAsyncDisposable
     void ApplyCommand(Room room, Player p, GameCommand gc)
     {
         if (!room.SideOf.TryGetValue(p.Id, out var side)) return;
-        switch (room.Session!.Apply(side, gc.Command))
+        var result = room.Session!.Apply(side, gc.Command);
+        if (result is SessionResult.Rejected rej) { p.Send(new CommandRejected(gc.ClientSeq, rej.Reason)); return; }
+        Publish(room, result, side, p, gc.ClientSeq);
+    }
+
+    /// <summary>Sends an accepted result to the room (per side when the session asks for it) and logs it for replay.</summary>
+    void Publish(Room room, SessionResult result, int fromSide, Player? origin, int? clientSeq)
+    {
+        switch (result)
         {
-            case SessionResult.Rejected rej:
-                p.Send(new CommandRejected(gc.ClientSeq, rej.Reason));
-                break;
             case SessionResult.Accepted acc:
-                var seq = ++room.Seq;
-                var update = new GameUpdate(seq, null, side, acc.Events, acc.StateHash);
-                room.Log.Add(update);
+            {
+                var update = new GameUpdate(++room.Seq, null, fromSide, acc.Events, acc.StateHash);
+                room.Log.Add((null, update));
                 foreach (var q in room.Players)
-                    q.Send(q == p ? update with { ClientSeq = gc.ClientSeq } : update);
+                    q.Send(q == origin ? update with { ClientSeq = clientSeq } : update);
                 if (acc.Ended != null) EndGame(room, acc.Ended);
                 break;
+            }
+            case SessionResult.AcceptedPerSide per:
+            {
+                var seq = ++room.Seq;
+                foreach (var q in room.Players)
+                {
+                    if (!room.SideOf.TryGetValue(q.Id, out var s) || s >= per.EventsBySide.Count) continue;
+                    var update = new GameUpdate(seq, null, fromSide, per.EventsBySide[s], per.HashBySide[s]);
+                    room.Log.Add((s, update));
+                    q.Send(q == origin ? update with { ClientSeq = clientSeq } : update);
+                }
+                if (per.Ended != null) EndGame(room, per.Ended);
+                break;
+            }
+        }
+    }
+
+    /// <summary>Advances timers of tickable sessions (turn limits, ghost energy).</summary>
+    void TickSessions()
+    {
+        var now = Environment.TickCount64;
+        foreach (var room in _rooms.Values.ToList())
+        {
+            if (room.Session is not ITickableSession ts) continue;
+            SessionResult? r;
+            try { r = ts.Tick(now); }
+            catch (Exception e) { _log($"room {room.Id} tick failed: {e}"); continue; }
+            if (r != null && r is not SessionResult.Rejected) Publish(room, r, -1, null, null);
         }
     }
 
@@ -378,6 +426,7 @@ public sealed class LobbyServer : IAsyncDisposable
             List<Connection> idle = new();
             lock (_lock)
             {
+                TickSessions();
                 var now = DateTime.UtcNow;
                 foreach (var p in _players.Values.ToList())
                 {

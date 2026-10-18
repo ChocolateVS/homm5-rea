@@ -40,6 +40,12 @@ public sealed partial class Adventure
         CheckEliminations();
     }
 
+    /// <summary>
+    /// Optional: adjusts a mine's daily yield (object index, owner, resource kind, amount) → amount.
+    /// Used by multiplayer Ghost Mode (haunted mines).
+    /// </summary>
+    public Func<int, int, int, int, int>? MineIncomeHook { get; set; }
+
     /// <summary>Gold from town halls, resources from silos and mines (fan manual p.224, p.269).</summary>
     void DailyIncome(PlayerState p)
     {
@@ -57,6 +63,7 @@ public sealed partial class Adventure
             {
                 case ObjectKind.Mine:
                     var (kind, amount) = MineYield(o.Shared.Type);
+                    if (kind >= 0 && MineIncomeHook != null) amount = MineIncomeHook(idx, p.Index, kind, amount);
                     if (kind >= 0) inc[kind] += amount;
                     break;
                 case ObjectKind.DwarvenWarren:
