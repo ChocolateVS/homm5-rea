@@ -66,6 +66,11 @@ public partial class InputTestDriver : Node
                 Godot.Input.ParseInputEvent(new InputEventMouseMotion { Position = mp, GlobalPosition = mp });
                 GetViewport().WarpMouse(mp);
                 break;
+            case "rdown":
+            case "rup":
+                var rp = Pos(arg);
+                Godot.Input.ParseInputEvent(new InputEventMouseButton { Position = rp, GlobalPosition = rp, ButtonIndex = MouseButton.Right, Pressed = op == "rdown", ButtonMask = op == "rdown" ? MouseButtonMask.Right : 0 });
+                break;
             case "key": Key(arg); break;
             case "shot":
                 var img = GetViewport().GetTexture().GetImage();

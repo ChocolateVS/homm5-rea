@@ -46,8 +46,15 @@ public partial class AdvHud
     /// <summary>Applies the input toggles after a refresh (mana bar visibility).</summary>
     void ApplyInputAuditToggles()
     {
-        if (ShowHeroesMana) return;
+        var heroes = _screen.MyHeroes();
         for (int i = 0; i < Columns; i++)
-            if (Column(i)?.FindChild("ManaPanel", true, false) is Godot.Control c) c.Visible = false;
+        {
+            var col = Column(i);
+            if (!ShowHeroesMana && col?.FindChild("ManaPanel", true, false) is Godot.Control c) c.Visible = false;
+            // Zzz (HeroSleeping) marks heroes put to sleep with Z / sleep_wake_hero.
+            int h = _heroScroll + i;
+            if (col?.FindChild("HeroSleeping", true, false) is Godot.Control z)
+                z.Visible = h < heroes.Count && _screen.IsHeroSleeping(heroes[h].Id);
+        }
     }
 }

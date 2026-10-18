@@ -54,7 +54,7 @@ Status: **MATCH** (already right), **FIXED** (changed in this audit), **GAP** (n
 | T | adv_show_town (town of the selected hero, @0058c320) **and** flip_floor (both bound in the file) | FIXED (both dispatched; exact precedence not traced — GAP) |
 | U | flip_floor | MATCH |
 | M | show_heroes_mana (toggle mana bars in the hero list, @0058deb0) | FIXED |
-| Z | sleep_wake_hero (@0058c3a0) | FIXED — not saved with the game; Zzz marker on the list not drawn (list owner) — GAP |
+| Z | sleep_wake_hero (@0058c3a0) | FIXED (Zzz marker on the hero list, Next Hero skips) — sleep state is not saved with the game: GAP |
 | G | adv_dig | GAP (no dig rule in the engine yet; key dispatched by name) |
 | K | input_adv_show_kingdom_overview | GAP (screen not built; key dispatched by name) |
 | P | input_open_puzzle_map | GAP (screen not built; key dispatched by name) |
@@ -81,7 +81,7 @@ Status: **MATCH** (already right), **FIXED** (changed in this audit), **GAP** (n
 | Double click a stack | Creature info (manual p.10) | FIXED (`CreatureInfoWindow`, stock UI/CreatureInfo) |
 | Drag / Shift-drag stacks | Move/merge / Split Army | MATCH |
 | Keys B R G T M Q X Y Z F, N/P, U, Space, A/I/S/V/H, Esc/Enter/E | town_screen section | FIXED (were missing) — Space swaps only when one hero is present (engine has no two-hero swap: GAP) |
-| Right click building | Building tooltip (ID_TOWN_HALL_TOOLTIP) | GAP |
+| Right click building | Building tooltip while held (UIGameRoot ID_TOWN_HALL_TOOLTIP = Tooltips/TownHall/BuildingToolTip, nameDesc.txt) | FIXED (name + description; the cost/prerequisite rows of that window are a GAP) |
 | Sub-screens (fort, guild, tavern, market, blacksmith, hall) | Close with their section keys / Esc (jd_button_0); right click does **not** close | FIXED (right click used to close them) |
 
 ## Hero screen

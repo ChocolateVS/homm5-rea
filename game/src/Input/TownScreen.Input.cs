@@ -30,7 +30,33 @@ public partial class TownScreen
                 var h = src.Name == "Hero" ? VisitingHero() : src.Name == "Town" ? GarrisonHero() : null;
                 if (h != null) OpenHero(h);
             });
+            _vpc.GuiInput += OnBuildingTooltipInput;
         }).CallDeferred();
+    }
+
+    Ui.UiNode? _buildingTip;
+
+    /// <summary>
+    /// Right button held over a building shows its tooltip (UIGameRoot ID_TOWN_HALL_TOOLTIP =
+    /// UI/Tooltips/TownHall/BuildingToolTip, text UI/Tooltips/TownHall/nameDesc.txt: name + description).
+    /// </summary>
+    void OnBuildingTooltipInput(InputEvent e)
+    {
+        if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Right } rb) return;
+        _buildingTip?.QueueFree();
+        _buildingTip = null;
+        if (!rb.Pressed || _hoverBuilding == null || ViewFor(_hoverBuilding) is not { } view) return;
+        // Name and description are original markup texts: inserted as is, height measured with the stock fonts.
+        var markup = (Ui.UiResources.Instance.Text("UI/Tooltips/TownHall/nameDesc.txt") ?? "")
+            .Replace("<value=name>", view.Name).Replace("<value=desc>", view.Description);
+        var text = Interaction.AdvTooltip.Text(markup, 200);
+        _buildingTip = Interaction.AdvTooltip.Frame("UI/Tooltips/TownHall/BuildingToolTip.(WindowGathering).xdb", text);
+        AddChild(_buildingTip);
+        var vp = GetViewportRect().Size;
+        var p = rb.GlobalPosition + new Vector2(16, 16);
+        if (p.X + _buildingTip.Size.X > vp.X) p.X = rb.GlobalPosition.X - _buildingTip.Size.X - 4;
+        if (p.Y + _buildingTip.Size.Y > vp.Y) p.Y = rb.GlobalPosition.Y - _buildingTip.Size.Y - 4;
+        _buildingTip.Position = p;
     }
 
     public override void _UnhandledInput(InputEvent e)

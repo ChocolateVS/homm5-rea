@@ -93,14 +93,20 @@ public partial class AdvTooltip : Control
     void Show(Control? content, Vector2 mouse)
     {
         if (content == null) return;
-        var root = UiResources.Instance.LoadWindow(Common + "MainWnd.(WindowGathering).xdb");
-        _frame = new UiNode(root) { MouseFilter = MouseFilterEnum.Ignore };
+        _frame = Frame(Common + "MainWnd.(WindowGathering).xdb", content);
         _content = content;
-        _frame.AddChild(content);
         AddChild(_frame);
-        _frame.Size = content.CustomMinimumSize + new Vector2(26, 24);
-        content.Position = new Vector2(13, 12);
         Place(mouse);
+    }
+
+    /// <summary>A stock tooltip window (its tiled background) sized around <paramref name="content"/> with the 13/12 px margins.</summary>
+    public static UiNode Frame(string windowXdb, Control content)
+    {
+        var frame = new UiNode(UiResources.Instance.LoadWindow(windowXdb)) { MouseFilter = MouseFilterEnum.Ignore };
+        frame.AddChild(content);
+        frame.Size = content.CustomMinimumSize + new Vector2(26, 24);
+        content.Position = new Vector2(13, 12);
+        return frame;
     }
 
     void Place(Vector2 mouse)
@@ -131,6 +137,13 @@ public partial class AdvTooltip : Control
             && !(s.Objects.TryGetValue(o.Index, out var st) && st.Removed) && o.Shared.Messages.Count > 0);
         if (obj != null) return ($"o{obj.Index}", full => ObjectContent(obj));
         return (null, null);
+    }
+
+    /// <summary>A text block of the given width whose height is measured with the stock bitmap fonts.</summary>
+    public static BitmapText Text(string markup, float width)
+    {
+        var size = BitmapTextLayout.Build(markup, null, new Rect2(0, 0, width, 4000)).Size;
+        return new BitmapText { Markup = markup, CustomMinimumSize = new Vector2(width, Mathf.Ceil(size.Y) + 2), MouseFilter = MouseFilterEnum.Ignore };
     }
 
     static string T(string path) => UiResources.Instance.Text(path) ?? "";
@@ -220,10 +233,7 @@ public partial class AdvTooltip : Control
         var name = T(o.Shared.Messages[0]);
         l.AddTitle(Fill(T(Common + "name.txt"), ("name", Esc(name))));
         if (o.Shared.Messages.Count > 1 && T(o.Shared.Messages[1]) is { Length: > 0 } desc)
-        {
-            var bt = new BitmapText { Markup = Fill(T(Common + "object_info.txt"), ("object_info", Esc(desc))), CustomMinimumSize = new Vector2(197, 16 * Math.Max(1, (desc.Length + 33) / 34)), MouseFilter = MouseFilterEnum.Ignore };
-            l.AddChild(bt);
-        }
+            l.AddChild(Text(Fill(T(Common + "object_info.txt"), ("object_info", desc)), 197));
         if (o.Owner >= 0 || (_adv.Session.S.Objects.TryGetValue(o.Index, out var st) && st.Owner >= 0))
             l.Add(OwnerName(_adv.Session.S.Objects.TryGetValue(o.Index, out var st2) && st2.Owner >= 0 ? st2.Owner : o.Owner));
         l.Finish();
