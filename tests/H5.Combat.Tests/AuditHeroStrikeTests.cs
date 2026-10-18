@@ -97,4 +97,37 @@ public class AuditHeroStrikeTests(GameDataFixture f)
         }
         finally { hi.Artifacts.Clear(); hi.Artifacts.AddRange(saved); }
     }
+
+    // exe 00978670 / FUN_00977260: when the enemy hero's armed Counterspell negates a spell, a caster with Dark Renewal
+    // (HERO_SKILL_PAYBACK) and a non-mass spell is set to ATB 0.2 + 0.1·Sorcery mastery (resolves the ATB-owner GAP).
+    [Fact]
+    public void CounteredCasterWithDarkRenewalKeepsPaybackAtb()
+    {
+        var (b, s) = Setup();
+        var h = s.Heroes[0];
+        var enemy = s.Heroes[1];
+        h.Perks.Add("HERO_SKILL_PAYBACK");
+        h.Skills.RemoveAll(x => x.SkillId == "HERO_SKILL_SORCERY");
+        h.Skills.Add(new H5.Core.Data.SkillEntry("HERO_SKILL_SORCERY", H5.Core.Data.Mastery.Advanced));
+        if (!h.Spells.Contains("SPELL_MAGIC_ARROW")) h.Spells.Add("SPELL_MAGIC_ARROW");
+        h.Mana = 500;
+        enemy.Mana = 500;
+        enemy.Links["COUNTERSPELL"] = 1;
+        b.Begin();
+        for (int i = 0; i < 50 && b.State.Active != Actor.Hero(0); i++)
+        {
+            var la = b.GetLegalActions();
+            if (la == null) break;
+            b.Apply(la.IsHero ? new WaitCmd(la.Actor) { Side = b.SideToAct!.Value } : new DefendCmd(la.Actor) { Side = b.SideToAct!.Value });
+        }
+        Assert.Equal(Actor.Hero(0), b.State.Active);
+        enemy.Links["COUNTERSPELL"] = 1;
+        var imp = s.Units.First(u => u.CreatureId == "CREATURE_IMP" && u.Alive);
+        var r = b.Apply(new CastSpellCmd(Actor.Hero(0), "SPELL_MAGIC_ARROW", imp.Id) { Side = 0 });
+        Assert.True(r.Ok);
+        Assert.False(enemy.Links.ContainsKey("COUNTERSPELL"));
+        // The end-of-action reset (time then advances to the next actor).
+        var reset = r.Events.OfType<AtbChanged>().First(e => e.Actor == Actor.Hero(0));
+        Assert.Equal((double)(0.2f + 0.1f * 2), reset.Atb, 6);
+    }
 }
