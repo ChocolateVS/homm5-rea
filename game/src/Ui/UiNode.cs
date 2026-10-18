@@ -40,6 +40,7 @@ public partial class UiNode : Control
         if (window.TooltipPath != null && UiResources.Instance.Text(window.TooltipPath) is { Length: > 0 } tip)
         {
             TooltipText = UiResources.StripMarkup(tip);
+            _tooltipMarkup = tip.Trim();
             if (MouseFilter == MouseFilterEnum.Ignore) MouseFilter = MouseFilterEnum.Pass;
         }
         SetProcess(HasFrameSequence());
@@ -60,6 +61,15 @@ public partial class UiNode : Control
     }
 
     /// <summary>Replaces the window's text markup (format prefix from the visual state is still applied).</summary>
+    string? _tooltipMarkup;
+
+    /// <summary>Tooltips use the stock TextTooltip window and delay (StockTooltip), not Godot's plain panel.</summary>
+    public override GodotObject? _MakeCustomTooltip(string forText)
+    {
+        StockTooltip.EnsureInit();
+        return StockTooltip.Build(_tooltipMarkup ?? forText, Screen?.UiScale ?? 1f);
+    }
+
     public void SetText(string? markup) { _textOverride = markup; InvalidateText(); if (ResizesOnText) Screen?.QueueRelayout(); }
 
     /// <summary>Sets a &lt;value=name&gt; placeholder used by this window's text.</summary>

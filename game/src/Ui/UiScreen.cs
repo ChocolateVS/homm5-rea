@@ -19,6 +19,7 @@ public partial class UiScreen : Control
 
     public UiScreen(string screenXdb, UiMessageBus? parentBus = null)
     {
+        StockTooltip.EnsureInit();
         Root = UiResources.Instance.LoadWindow(screenXdb);
         Bus = new UiMessageBus(parentBus ?? UiMessageBus.Global);
         Name = System.IO.Path.GetFileNameWithoutExtension(screenXdb);

@@ -103,6 +103,15 @@ public partial class CombatScreen : Control
         RefreshAll();
         if (CombatLauncher.SkipTactics) CmdEndTactics();
         if (CombatLauncher.InfoUnit is int info && Session.Battle.State.Unit(info) is { } iu) Hud.ShowUnitInfo(iu);
+        if (CombatLauncher.HudTooltip is { } ht)
+            Callable.From(() =>
+            {
+                if (Hud.Screen.Find(ht) is { } n && n._MakeCustomTooltip(n.TooltipText) is Control tip)
+                {
+                    Hud.AddChild(tip);
+                    tip.Position = n.GetGlobalRect().Position + new Vector2(0, -60);
+                }
+            }).CallDeferred();
         if (CombatLauncher.TooltipUnit is { } tu && Session.Battle.State.Unit(tu.Unit) is { } tUnit)
             Callable.From(() =>
             {

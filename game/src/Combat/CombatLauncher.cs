@@ -59,6 +59,8 @@ public static class CombatLauncher
     public static int? InfoUnit;
     /// <summary>`--tooltip-unit=ID[:CLICKS]`: right-clicks that stack CLICKS times (creature tooltip screenshots).</summary>
     public static (int Unit, int Clicks)? TooltipUnit;
+    /// <summary>`--hud-tooltip=WINDOW`: shows the stock tooltip of a HUD window (screenshots; real hover needs a mouse).</summary>
+    public static string? HudTooltip;
 
     public static bool HandleArg(string arg)
     {
@@ -93,6 +95,7 @@ public static class CombatLauncher
         if (arg.StartsWith("--autoplay-turns=")) { AutoplayTurns = int.Parse(arg["--autoplay-turns=".Length..]); return true; }
         if (arg.StartsWith("--hover-target=")) { HoverTarget = arg["--hover-target=".Length..]; return true; }
         if (arg.StartsWith("--info-unit=")) { InfoUnit = int.Parse(arg["--info-unit=".Length..]); return true; }
+        if (arg.StartsWith("--hud-tooltip=")) { HudTooltip = arg["--hud-tooltip=".Length..]; return true; }
         if (arg.StartsWith("--tooltip-unit="))
         {
             var tp = arg["--tooltip-unit=".Length..].Split(':');
