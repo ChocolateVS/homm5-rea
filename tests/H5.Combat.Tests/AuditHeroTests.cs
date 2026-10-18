@@ -120,4 +120,37 @@ public class AuditHeroTests(GameDataFixture f)
         for (int i = 0; i < n; i++) if (b.MoraleRoll(1)) hits++;
         Assert.InRange(hits / (double)n, 0.075, 0.105);   // 9 %
     }
+
+    // exe FUN_004bc470: Wyvern Tamer gives creatures whose base creature is CREATURE_WYVERN
+    // +((level−1)/LevelDivisor)·PerDividedLevel + Base HP (data 1/1/2 → 2·level − 1).
+    [Fact]
+    public void WyvernTamerHealthUsesLevelMinusOne()
+    {
+        var s = Setup(new[] { ("CREATURE_PEASANT", 10) }, new[] { ("CREATURE_IMP", 10) }, heroes: true);
+        s.Heroes[0].Specialization = "HERO_SPEC_WYVERN_TAMER";
+        s.Heroes[0].Level = 10;
+        foreach (var id in new[] { "CREATURE_WYVERN", "CREATURE_WYVERN_POISONOUS", "CREATURE_WYVERN_PAOKAI" })
+        {
+            var u = BattleSetup.AddCreature(f.Db, s, 0, id, 3, new Cell(0, 0), summoned: false);
+            int extra = s.Heroes[0].HasPerk(Sk.Toughness) ? 2 : 0;
+            Assert.Equal(f.Db.Creature(id).Health + 2 * 10 - 1 + extra, u.BaseHealth);
+        }
+    }
+
+    // exe FUN_004bc470: the Defender specialisation adds level/5 HP to Defenders and their upgrades.
+    [Fact]
+    public void DefenderSpecialisationAddsLevelOverFiveHealth()
+    {
+        var s = Setup(new[] { ("CREATURE_PEASANT", 10) }, new[] { ("CREATURE_IMP", 10) }, heroes: true);
+        s.Heroes[0].Specialization = "HERO_SPEC_DEFENDER";
+        s.Heroes[0].Level = 14;
+        int extra = s.Heroes[0].HasPerk(Sk.Toughness) ? 2 : 0;
+        foreach (var id in new[] { "CREATURE_DEFENDER", "CREATURE_STOUT_DEFENDER" })
+        {
+            var u = BattleSetup.AddCreature(f.Db, s, 0, id, 3, new Cell(0, 0), summoned: false);
+            Assert.Equal(f.Db.Creature(id).Health + 14 / 5 + extra, u.BaseHealth);
+        }
+        var other = BattleSetup.AddCreature(f.Db, s, 0, "CREATURE_BEAR_RIDER", 3, new Cell(0, 0), summoned: false);
+        Assert.Equal(f.Db.Creature("CREATURE_BEAR_RIDER").Health + extra, other.BaseHealth);
+    }
 }

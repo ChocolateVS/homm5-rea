@@ -214,8 +214,16 @@ public static class BattleSetup
                 GrantAbility(u, Ab.Enraged);
             // Unicorn Horn Bow (artifact 4): every shooter in the army has No Range Penalty (FUN_008a34c0).
             if (h.Artifacts.Contains("UNICORN_HORN_BOW") && u.MaxShots > 0) GrantAbility(u, Ab.NoRangePenalty);
-            if (h.Specialization == "HERO_SPEC_WYVERN_TAMER" && (u.CreatureId.Contains("WYVERN") || u.CreatureId.Contains("PAOKAI")))
-                u.BaseHealth += (int)Specials.LevelFormula(db.Stats, "combat/HeroSpecializations/Barbarian/WyvernTamer_HealthBonus", h.Level, 1, 1, 2);
+            // Creature HP specialisations (exe FUN_004bc470, keyed on the base creature): Wyvern Tamer
+            // +((level−1)/LevelDivisor)·PerDividedLevel + Base for Wyverns; Defender +level/5 for Defenders.
+            string hpBase = c.BaseCreature is { Length: > 0 } bc && bc != "CREATURE_UNKNOWN" ? bc : c.Id;
+            if (h.Specialization == "HERO_SPEC_WYVERN_TAMER" && hpBase == "CREATURE_WYVERN")
+            {
+                const string w = "combat/HeroSpecializations/Barbarian/WyvernTamer_HealthBonus";
+                int div = Math.Max(1, (int)db.Stats.Get(w + "/LevelDivisor", 1));
+                u.BaseHealth += (h.Level - 1) / div * (int)db.Stats.Get(w + "/PerDividedLevel", 2) + (int)db.Stats.Get(w + "/Base", 1);
+            }
+            if (h.Specialization == "HERO_SPEC_DEFENDER" && hpBase == "CREATURE_DEFENDER") u.BaseHealth += h.Level / 5;
             if (Specials.Pieces(h, Specials.Ogres) >= 2)
             {
                 u.BaseAttack += (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Ogres_2_Creature_Attack", 3);
