@@ -4,6 +4,7 @@ using H5.Adventure.State;
 using H5.Core.Ui;
 using H5.Core.Xdb;
 using H5Reborn.Ui;
+using TownBuildState = H5.Adventure.Engine.Adventure.TownBuildState;
 
 namespace H5Reborn.Adventure;
 
@@ -122,6 +123,9 @@ public partial class AdvHud : Control
     static void SetBar(Control bar, float fraction)
     {
         if (bar.GetParent() is not Control host) return;
+        // The fill keeps the host's full size and is cropped by the clip; hosts can still be
+        // zero-sized when the bar is created, so size the fill on every update.
+        if (bar.GetChildCount() > 0 && bar.GetChild(0) is TextureRect fill) fill.Size = host.Size;
         bar.Size = new Vector2(host.Size.X * Math.Clamp(fraction, 0, 1), host.Size.Y);
     }
 
@@ -138,6 +142,8 @@ public partial class AdvHud : Control
         var towns = _screen.MyTowns();
         _heroScroll = Math.Clamp(_heroScroll, 0, Math.Max(0, heroes.Count - Columns));
         _townScroll = Math.Clamp(_townScroll, 0, Math.Max(0, towns.Count - Columns));
+        LayoutList(Math.Max(heroes.Count, towns.Count));
+        var game = _screen.Session.Game;
         for (int i = 0; i < Columns; i++)
         {
             var col = Column(i);
@@ -148,18 +154,54 @@ public partial class AdvHud : Control
             SetBar(_mpBars[i], hero != null && hero.MaxMovePoints > 0 ? (float)hero.MovePoints / hero.MaxMovePoints : 0);
             SetBar(_manaBars[i], hero != null ? (float)hero.Mana / Math.Max(1, hero.Knowledge * 10) : 0);
             Show(col, "HeroSelect", hero != null && hero.Id == _screen.SelectedHeroId);
-            Show(col, "HeroSleeping", hero == null);
+            // Zzz marks a hero the player put to sleep; the engine has no sleep order yet, so it never
+            // shows — and an empty slot shows nothing at all, like the original.
+            Show(col, "HeroSleeping", false);
             Show(col, "MPPanel", hero != null);
             Show(col, "ManaPanel", hero != null);
             Show(col, "HeroBtn", hero != null);
             Show(col, "TownBtn", town != null);
-            Show(col, "NothingBuild", town == null);
-            Show(col, "BuildDone", town != null && town.BuiltToday);
-            Show(col, "BuildNoResources", false);
-            Show(col, "BuildAllComplete", false);
+            // Town marker (textures): yellow hammer NothingBuild = can build today, red house
+            // BuildDone = built today, red hammer BuildNoResources = nothing affordable or allowed,
+            // yellow house BuildAllComplete = everything built.
+            var state = town != null ? game.BuildState(town) : (TownBuildState?)null;
+            Show(col, "NothingBuild", state == TownBuildState.CanBuild);
+            Show(col, "BuildDone", state == TownBuildState.BuiltToday);
+            Show(col, "BuildNoResources", state == TownBuildState.NoResources);
+            Show(col, "BuildAllComplete", state == TownBuildState.AllComplete);
         }
         UpdateMinimap();
         ApplyInputAuditToggles();
+    }
+
+    /// <summary>
+    /// The list shows max(heroes, towns) columns — at least one, at most eight — and the end cap
+    /// follows the last column: FUN_005eb570(count) is called with clamp(max(heroes, towns), 1, slots)
+    /// (exe 005ee573..005ee5b0); it hides columns ≥ count, makes the panel count·61 + 13 + 14 wide
+    /// (item width + Item_end width + Item_01's extra left edge) and puts Item_end at count·61 + 14.
+    /// The scroll arrows start hidden (FUN_005ec980) and are shown here only when there are more
+    /// than eight entries.
+    /// </summary>
+    void LayoutList(int entries)
+    {
+        int count = Math.Clamp(entries, 1, Columns);
+        var panel = Screen.Find("TownHeroPanel");
+        var first = Column(0);
+        var second = Column(1);
+        var end = Screen.Find("TownHeroPanel/Item_end");
+        if (panel == null || first == null || second == null) return;
+        float item = second.Size.X, firstExtra = first.Size.X - second.Size.X, endW = end?.Size.X ?? 0;
+        for (int i = 0; i < Columns; i++)
+            if (Column(i) is { } c) c.Visible = i < count;
+        if (end != null) end.Position = new Vector2(first.Position.X + count * item + firstExtra, end.Position.Y);
+        panel.Size = new Vector2(count * item + endW + firstExtra, panel.Size.Y);
+        bool overflow = entries > Columns;
+        if (Screen.Find("TownHeroPanel/LeftBtn") is { } left) left.Visible = overflow;
+        if (Screen.Find("TownHeroPanel/RightBtn") is { } right)
+        {
+            right.Visible = overflow;
+            right.Position = new Vector2(panel.Size.X - right.Size.X, right.Position.Y);
+        }
     }
 
     static void Show(UiNode? col, string name, bool visible)
@@ -223,6 +265,7 @@ public partial class AdvHud : Control
             Name = "MinimapImage", Position = inner.Position, Size = inner.Size,
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale,
             TextureFilter = TextureFilterEnum.Linear, MouseFilter = MouseFilterEnum.Stop, ShowBehindParent = true,
+            ClipContents = true,
         };
         frame.AddChild(_minimap);
         _minimapOverlay = new MinimapOverlay(this) { Name = "View", AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore };
@@ -335,12 +378,43 @@ public partial class AdvHud : Control
                 float groundY = world.HeightAt(world.Floor, cam.Target.X, cam.Target.Y);
                 if (Math.Abs(d.Y) < 1e-4f) return;
                 float t = (groundY - o.Y) / d.Y;
-                if (t < 0) t = 300;
+                // Rays at or above the horizon never meet the ground: stop them at the far plane.
+                if (t < 0 || t > cam.Far) t = cam.Far;
                 var p = AdvWorld.WorldToMap(o + d * t);
                 pts.Add(new Vector2(p.X / map.TilesX * Size.X, (1 - p.Y / map.TilesY) * Size.Y));
             }
-            pts.Add(pts[0]);
-            DrawPolyline(pts.ToArray(), new Color(1, 1, 1, 0.9f), 1f);
+            // The view footprint is a trapezoid that can reach past the map edge; only the part
+            // over the minimap is drawn, so the frame never spills onto the HUD around it.
+            var clipped = ClipToRect(pts, new Rect2(Vector2.Zero, Size));
+            if (clipped.Count < 2) return;
+            clipped.Add(clipped[0]);
+            DrawPolyline(clipped.ToArray(), new Color(1, 1, 1, 0.9f), 1f);
+        }
+
+        /// <summary>Sutherland–Hodgman clip of a convex polygon to an axis-aligned rectangle.</summary>
+        static List<Vector2> ClipToRect(List<Vector2> poly, Rect2 r)
+        {
+            static List<Vector2> Clip(List<Vector2> input, Func<Vector2, bool> inside, Func<Vector2, Vector2, Vector2> cross)
+            {
+                var output = new List<Vector2>();
+                for (int i = 0; i < input.Count; i++)
+                {
+                    var cur = input[i];
+                    var prev = input[(i + input.Count - 1) % input.Count];
+                    bool ci = inside(cur), pi = inside(prev);
+                    if (ci) { if (!pi) output.Add(cross(prev, cur)); output.Add(cur); }
+                    else if (pi) output.Add(cross(prev, cur));
+                }
+                return output;
+            }
+            static Vector2 AtX(Vector2 a, Vector2 b, float x) => a + (b - a) * ((x - a.X) / (b.X - a.X));
+            static Vector2 AtY(Vector2 a, Vector2 b, float y) => a + (b - a) * ((y - a.Y) / (b.Y - a.Y));
+            float l = r.Position.X, t = r.Position.Y, rt = r.End.X, b = r.End.Y;
+            var res = Clip(poly, p => p.X >= l, (a, c) => AtX(a, c, l));
+            if (res.Count > 0) res = Clip(res, p => p.X <= rt, (a, c) => AtX(a, c, rt));
+            if (res.Count > 0) res = Clip(res, p => p.Y >= t, (a, c) => AtY(a, c, t));
+            if (res.Count > 0) res = Clip(res, p => p.Y <= b, (a, c) => AtY(a, c, b));
+            return res;
         }
     }
 }

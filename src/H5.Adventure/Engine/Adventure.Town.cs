@@ -76,6 +76,33 @@ public sealed partial class Adventure
         return null;
     }
 
+    /// <summary>Town state shown by the hero/town list marker (UI TownHeroPanel: BuildDone, BuildAllComplete, NothingBuild, BuildNoResources).</summary>
+    public enum TownBuildState { BuiltToday, AllComplete, CanBuild, NoResources }
+
+    /// <summary>
+    /// What the adventure HUD marker shows for a town: already built today, every building at its
+    /// maximum level, something affordable and allowed today, or nothing that can be built now.
+    /// Uses the same checks as <see cref="DoBuild"/> against the owner's purse.
+    /// </summary>
+    public TownBuildState BuildState(TownState t)
+    {
+        if (t.BuiltToday) return TownBuildState.BuiltToday;
+        var purse = PlayerByIndex(t.Owner)?.Purse;
+        bool anyLeft = false;
+        foreach (var (building, max) in t.MaxLevel)
+        {
+            int next = t.Level(building) + 1;
+            if (next > max) continue;
+            var def = Db.Building(t.Type, building, next);
+            if (def == null) continue;
+            anyLeft = true;
+            if (t.DevLevel < def.DevLevelNeeded) continue;
+            if (def.Dependencies.Any(d => t.Level(d.Type) < d.Level)) continue;
+            if (purse != null && purse.CanAfford(def.Cost)) return TownBuildState.CanBuild;
+        }
+        return anyLeft ? TownBuildState.NoResources : TownBuildState.AllComplete;
+    }
+
     /// <summary>Creature offered by a town dwelling tier: variant 0 base, 1 upgrade, 2 alternative upgrade (TotE).</summary>
     public string? DwellingCreature(TownState t, int tier, int variant)
     {

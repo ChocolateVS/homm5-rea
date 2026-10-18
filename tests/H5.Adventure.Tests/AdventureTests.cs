@@ -216,6 +216,29 @@ public class RulesTests(Fixture f)
     }
 
     [Fact]
+    public void TownBuildStateDrivesTheListMarker()
+    {
+        var g = f.NewGame();
+        var t = g.S.Towns.First(x => x.Owner == g.Current.Index);
+        var p = g.Current;
+        p.Purse = new Purse(new Resources(0, 0, 0, 0, 0, 0, 0));
+        // An empty purse still allows any free building that is otherwise available.
+        bool freeAvailable = t.MaxLevel.Any(kv => t.Level(kv.Key) < kv.Value
+            && f.Db.Building(t.Type, kv.Key, t.Level(kv.Key) + 1) is { } d
+            && t.DevLevel >= d.DevLevelNeeded && d.Dependencies.All(x => t.Level(x.Type) >= x.Level)
+            && p.Purse.CanAfford(d.Cost));
+        Assert.Equal(freeAvailable ? H5.Adventure.Engine.Adventure.TownBuildState.CanBuild : H5.Adventure.Engine.Adventure.TownBuildState.NoResources, g.BuildState(t));
+        p.Purse = new Purse(new Resources(999, 999, 999, 999, 999, 999, 999999));
+        Assert.Equal(H5.Adventure.Engine.Adventure.TownBuildState.CanBuild, g.BuildState(t));
+        foreach (var b in t.MaxLevel.Keys.OrderBy(k => k))
+            if (g.Apply(new BuildCmd(t.Object, b) { Player = p.Index }).Ok) break;
+        Assert.Equal(H5.Adventure.Engine.Adventure.TownBuildState.BuiltToday, g.BuildState(t));
+        t.BuiltToday = false;
+        foreach (var (b, max) in t.MaxLevel) t.Built[b] = max;
+        Assert.Equal(H5.Adventure.Engine.Adventure.TownBuildState.AllComplete, g.BuildState(t));
+    }
+
+    [Fact]
     public void DailyIncomeComesFromTownHall()
     {
         var g = f.NewGame();
