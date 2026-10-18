@@ -24,6 +24,7 @@ public partial class CombatScreen : Control
     public ArenaScene Arena { get; private set; } = null!;
     public CombatHud Hud { get; private set; } = null!;
     CombatCamera _camera = null!;
+    SiegeView? _siege;
 
     readonly Dictionary<int, UnitView> _units = new();
     readonly Dictionary<int, Node3D> _heroes = new();
@@ -67,11 +68,17 @@ public partial class CombatScreen : Control
         // The authoritative battle state names its arena (engine-picked, seeded); older states
         // without one fall back to the duel rule below.
         var stateArena = Session.Battle.State.Arena;
-        var definition = !string.IsNullOrEmpty(stateArena) ? ArenaDefinition.Load(stateArena) : ArenaDefinition.Load(PickArena(Session.Seed));
+        var st = Session.Battle.State;
+        ArenaDefinition definition;
+        if (st.Siege is { } siege && Game.Instance.Db.TownCombat.TryGetValue(siege.Town, out var layout))
+            definition = ArenaDefinition.FromScenery(siege.Scenery ?? layout.Scenery!, layout.MountX, layout.MountY, st.Width, st.Height);
+        else
+            definition = !string.IsNullOrEmpty(stateArena) ? ArenaDefinition.Load(stateArena) : ArenaDefinition.Load(PickArena(Session.Seed));
         GD.Print($"[H5] combat arena: {definition.ScenePath} mount ({definition.MountX},{definition.MountY})");
         Arena = ArenaScene.Create(definition);
         AddChild(Arena);
         PlaceObstacles();
+        if (st.Siege != null) { _siege = new SiegeView(Arena, st); Arena.AddChild(_siege); }
         _camera = new CombatCamera(Arena);
 
         _plaqueLayer = new Control { Name = "Plaques", AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore };
@@ -81,7 +88,7 @@ public partial class CombatScreen : Control
         _signs.Attach(Arena.Camera);
 
         foreach (var u in Session.Battle.State.Units)
-            if (!u.IsObject && (u.Alive || u.IsWarMachine)) AddUnitView(u);
+            if (!u.IsObject && !IsTowerUnit(u) && (u.Alive || u.IsWarMachine)) AddUnitView(u);
         for (int side = 0; side < 2; side++) AddHeroView(side);
 
         Hud = new CombatHud(this);
@@ -174,6 +181,9 @@ public partial class CombatScreen : Control
             });
         }
     }
+
+    /// <summary>Siege tower actors (CreatureId SIEGE_*) are drawn as the archer on their tower.</summary>
+    static bool IsTowerUnit(Unit u) => u.CreatureId.StartsWith("SIEGE_", StringComparison.Ordinal);
 
     UnitView AddUnitView(Unit u)
     {
@@ -468,11 +478,18 @@ public partial class CombatScreen : Control
             case AbilityTriggered at:
                 Hud.Log.AddLine(CombatLogText.Ability(this, at));
                 if (at.Ability == "ABILITY_DEADLY_STRIKE" && View(at.Target ?? at.UnitId) is { } dsv) _signs.Event(dsv, dsv.SignAnchor, "DeadlyStrike");
+                if (at.Ability == "CATAPULT_SHOT" && View(at.UnitId) is { } cat) await AnimateCatapult(cat);
                 break;
 
             case EffectAdded or EffectRemoved:
                 if (e is EffectAdded ea && View(ea.UnitId) is { } eav) UpdateEffectState(eav);
                 if (e is EffectRemoved er && View(er.UnitId) is { } erv) UpdateEffectState(erv);
+                break;
+
+            case BuildingDamaged bd:
+                await FinishAttack();
+                _siege?.OnDamaged(bd);
+                await Delay(0.3);
                 break;
 
             case BattleEnded be:
@@ -585,6 +602,21 @@ public partial class CombatScreen : Control
                 while (!arrived && Now < deadline) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             }
         }
+        else if (_siege?.ShooterFor(a.Attacker) is { } archer && target != null)
+        {
+            // A tower shoots: its archer plays the ranged attack and fires the tower's (Shot).
+            var shootKind = archer.Has("rangeattack") ? "rangeattack" : "attack00";
+            archer.Play(shootKind);
+            await Delay(0.5);
+            if (_siege.ShotFor(a.Attacker) is { } towerShot)
+            {
+                var arrived = false;
+                var p = Effects.ProjectilePlayer.Fire(towerShot, Arena, archer, (target.GlobalPosition + target.SignAnchor()) * 0.5f, () => arrived = true);
+                double deadline = Now + Math.Min(3.0, (p?.FlightTime ?? 0) + 0.2);
+                while (!arrived && Now < deadline) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            }
+            if (archer.Has("idle00")) archer.Play("idle00", loop: true);
+        }
         else if (attackerNode is Character hero)
         {
             var heroKind = hero.Has("cast") ? "cast" : "attack00";
@@ -607,6 +639,34 @@ public partial class CombatScreen : Control
     }
 
     int _shotCount, _spellCount;
+
+    /// <summary>The catapult hurls its boulder at the building hit next (the following BuildingDamaged event).</summary>
+    async Task AnimateCatapult(UnitView cat)
+    {
+        await FinishAttack();
+        var kind = cat.Has("rangeattack") ? "rangeattack" : "attack00";
+        cat.PlayAction(kind);
+        await Delay(Math.Max(0.2f, cat.ActionTime(kind)));
+        var next = _queue.OfType<BuildingDamaged>().FirstOrDefault();
+        if (next != null && _siege != null && Session.Battle.State.Siege?.Building(next.Building) is { } b)
+        {
+            const string catapultVisual = "GameMechanics/CreatureVisual/WarMachines/Catapult.xdb";
+            string? shot = null;
+            if (Game.Instance.Fs.Exists(catapultVisual))
+            {
+                var r = H5.Core.Xdb.XdbRef.Parse((string?)Game.Instance.Xdb.Load(catapultVisual).Root?.Element("AnimShot")?.Attribute("href"), catapultVisual);
+                if (!r.IsEmpty && Game.Instance.Fs.Exists(r.Path)) shot = r.Path;
+            }
+            if (shot != null)
+            {
+                var arrived = false;
+                var p = Effects.ProjectilePlayer.Fire(shot, Arena, cat, _siege.Center(b) + new Vector3(0, 2f, 0), () => arrived = true);
+                double deadline = Now + Math.Min(4.0, (p?.FlightTime ?? 0) + 0.2);
+                while (!arrived && Now < deadline) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            }
+        }
+        _attackRemainderUntil = Now + Math.Max(0, cat.Length(kind) - cat.ActionTime(kind));
+    }
 
     /// <summary>Morale/luck proc: the stock Effects/_(Effect)/Spells/{Morale,Luck}{Good,Bad} effect and sound on the stack.</summary>
     void ProcVisual(UnitView v, string effect, string sound)
@@ -663,6 +723,7 @@ public partial class CombatScreen : Control
         foreach (var u in s.Units)
         {
             if (u.IsObject) continue;
+            if (IsTowerUnit(u)) continue;
             if (!_units.TryGetValue(u.Id, out var v))
             {
                 if (u.Alive) AddUnitView(u);
@@ -818,6 +879,18 @@ public partial class CombatScreen : Control
         }
         if (_mode == InputMode.Ability && _pendingAbility is { } ab)
         {
+            if (ab.Ability == "CATAPULT_SHOT")
+            {
+                // Manual catapult aiming (Catapult perk): only fortification cells are targets.
+                if (s.Siege != null && b.CatapultTargets().Find(t => t.Blocked.Contains(cell)) is { } bt)
+                {
+                    cursor = CombatCursor.Ability;
+                    foreach (var c in bt.Blocked) hl.Add((c, CellMark.Affected));
+                    return new PlannedAction(new UseAbilityCmd(la.Actor, ab.Ability, null, cell) { Side = side }, "Catapult", null);
+                }
+                cursor = CombatCursor.CantCast;
+                return null;
+            }
             if (ab.Targeting == Battle.AbilityTargeting.Cell)
             {
                 cursor = CombatCursor.Ability;
@@ -852,7 +925,8 @@ public partial class CombatScreen : Control
         {
             if (la.Shoot.Contains(occupant.Id))
             {
-                bool far = Distance(me, occupant) > s.Width / 2.0 && !me.Has("ABILITY_NO_RANGE_PENALTY");
+                // Broken arrow: range penalty, or (sieges) the shot crosses the walls (Battle.WallsHalveShot).
+                bool far = (Distance(me, occupant) > s.Width / 2.0 && !me.Has("ABILITY_NO_RANGE_PENALTY")) || (s.Siege != null && b.WallsHalveShot(me, occupant));
                 cursor = far ? CombatCursor.ShootPenalty : CombatCursor.Shoot;
                 foreach (var c in occupant.Cells()) hl.Add((c, CellMark.Affected));
                 return new PlannedAction(new ShootCmd(me.Id, occupant.Id) { Side = side }, "Shoot", occupant.Id);

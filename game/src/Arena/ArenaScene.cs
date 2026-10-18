@@ -207,6 +207,10 @@ public partial class ArenaScene : Node3D
     // supplies only the clip planes here: its Rot (-30, -66.8) gives no axis-aligned yaw under
     // any reading, and the exe's Pos/Rot/Rod → view conversion hasn't been traced yet.
     public const float DefaultYawDeg = 0f;
+
+    /// <summary>Default framing scaled from the 12×10 fit to the current field (14×14 sieges; not verified on screen).</summary>
+    public static float DefaultDistanceForField => DefaultDistance * Math.Max(ArenaGrid.Width / 12f, ArenaGrid.Height / 10f);
+    public static Vector2 DefaultTarget => new(ArenaGrid.Width * 0.5f, DefaultTargetDepth * ArenaGrid.Height / 10f);
     public const float DefaultPitchDeg = 46.2f, DefaultFovDeg = 31.2f, DefaultDistance = 24.8f, DefaultTargetDepth = 4.27f;
 
     Camera3D BuildCamera()
@@ -218,7 +222,7 @@ public partial class ArenaScene : Node3D
             cam.Near = float.Parse(c.Element("ClipDistanceMin")!.Value, CultureInfo.InvariantCulture);
             cam.Far = float.Parse(c.Element("ClipDistanceMax")!.Value, CultureInfo.InvariantCulture);
         }
-        PlaceCamera(cam, DefaultPitchDeg, DefaultYawDeg, DefaultDistance, new Vector2(ArenaGrid.Width * 0.5f, DefaultTargetDepth));
+        PlaceCamera(cam, DefaultPitchDeg, DefaultYawDeg, DefaultDistanceForField, DefaultTarget);
         return cam;
     }
 

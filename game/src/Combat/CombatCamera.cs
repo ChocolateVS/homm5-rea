@@ -21,8 +21,8 @@ public sealed class CombatCamera
     const float PitchDegPerSecond = 40f, YawDegPerSecond = 60f, LiftPerSecond = 4f;
 
     readonly ArenaScene _arena;
-    float _yaw = ArenaScene.DefaultYawDeg, _pitch = ArenaScene.DefaultPitchDeg, _distance = ArenaScene.DefaultDistance, _lift;
-    Vector2 _target = new(ArenaGrid.Width * 0.5f, ArenaScene.DefaultTargetDepth);
+    float _yaw = ArenaScene.DefaultYawDeg, _pitch = ArenaScene.DefaultPitchDeg, _distance = ArenaScene.DefaultDistanceForField, _lift;
+    Vector2 _target = ArenaScene.DefaultTarget;
     float _held;
 
     public CombatCamera(ArenaScene arena) => _arena = arena;

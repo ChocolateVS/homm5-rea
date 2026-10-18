@@ -1,4 +1,5 @@
 using Godot;
+using H5.Combat;
 
 namespace H5Reborn.Combat;
 
@@ -28,6 +29,20 @@ public static class CombatLauncher
     public static (int N, string Path)? ShotScreenshot, SpellScreenshot;
     /// <summary>`--open-spellbook`: autoplay the local side until its hero acts, then open the spellbook.</summary>
     public static bool OpenSpellbook;
+    static string SiegeTown = "TOWN_HEAVEN";
+    static int SiegeFort = 3;
+    static (int A, int B) SiegePresets = (0, 3);
+
+    static void StartSiegeFromArgs()
+    {
+        var db = Game.Instance.Db;
+        var seed = _seed ?? 1UL;
+        var (a, b) = SiegePresets;
+        var state = BattleSetup.Create(db, ArmySetup.FromHero(db.DuelPresets[a].Hero), ArmySetup.FromHero(db.DuelPresets[b].Hero), seed,
+            siege: new SiegeSetup { Town = SiegeTown, FortLevel = SiegeFort, TownLevel = 20, TownMaxLevel = 36 });
+        GD.Print($"[H5] siege {SiegeTown} fort {SiegeFort}, presets {a} vs {b}, seed {seed}");
+        CombatScreen.Open(new LocalCombatSession(db, state, a, b, seed, CombatScreen.Autoplay ? Array.Empty<int>() : new[] { 0 }));
+    }
 
     static (int, string) ParseShot(string v)
     {
@@ -67,6 +82,16 @@ public static class CombatLauncher
             var v = arg["--attack-screenshot=".Length..];
             int colon = v.IndexOf(':');
             AttackScreenshot = (int.Parse(v[..colon]), v[(colon + 1)..]);
+            return true;
+        }
+        if (arg.StartsWith("--combat-siege="))
+        {
+            // --combat-siege=TOWN_HEAVEN,3[,presetA,presetB]: local siege, attacker = player.
+            var parts = arg["--combat-siege=".Length..].Split(',');
+            SiegeTown = parts[0];
+            SiegeFort = parts.Length > 1 ? int.Parse(parts[1]) : 3;
+            if (parts.Length > 3) { SiegePresets = (int.Parse(parts[2]), int.Parse(parts[3])); }
+            Callable.From(StartSiegeFromArgs).CallDeferred();
             return true;
         }
         if (arg == "--open-spellbook") { OpenSpellbook = true; return true; }

@@ -59,10 +59,14 @@ public sealed class LocalCombatSession : CombatSession
     readonly ulong _seed;
 
     public LocalCombatSession(GameDatabase db, int presetA, int presetB, ulong seed, IEnumerable<int> humanSides)
+        : this(db, BattleSetup.CreateDuel(db, presetA, presetB, seed), presetA, presetB, seed, humanSides) { }
+
+    /// <summary>A local battle on a prepared state (e.g. a siege built with BattleSetup.Create(..., siege:)).</summary>
+    public LocalCombatSession(GameDatabase db, BattleState state, int presetA, int presetB, ulong seed, IEnumerable<int> humanSides)
     {
         _presets = new[] { presetA, presetB };
         _seed = seed;
-        _battle = new Battle(db, BattleSetup.CreateDuel(db, presetA, presetB, seed));
+        _battle = new Battle(db, state);
         _humanSides = humanSides.ToArray();
         _aiSides = new HashSet<int>(new[] { 0, 1 }.Except(_humanSides));
         _battle.State.AiControlled = new[] { _aiSides.Contains(0), _aiSides.Contains(1) };

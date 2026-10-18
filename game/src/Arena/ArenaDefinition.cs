@@ -85,6 +85,28 @@ public sealed class ArenaDefinition
         def.CamerasSet = Href(scene.Element("CamerasSet"), def.ScenePath);
 
         def.MapPath = XdbRef.Parse((string?)scene.Element("Scenery")?.Attribute("href"), def.ScenePath).Path;
+        LoadMap(def);
+        return def;
+    }
+
+    /// <summary>
+    /// A siege battlefield: the town's siege terrain (TownCombatDef.Scenery) with its mount point
+    /// and a 14×14 field; the fortifications themselves come from the siege ArenaDesc.
+    /// </summary>
+    public static ArenaDefinition FromScenery(string mapPath, int mountX, int mountY, int width, int height)
+    {
+        var def = new ArenaDefinition
+        {
+            ScenePath = mapPath, MapPath = XdbRef.Parse(mapPath, null).Path,
+            MountX = mountX, MountY = mountY, FieldWidth = width, FieldHeight = height,
+        };
+        LoadMap(def);
+        return def;
+    }
+
+    static void LoadMap(ArenaDefinition def)
+    {
+        var xdb = Game.Instance.Xdb;
         var map = xdb.Load(def.MapPath).Root!;
         // Subterranean arenas play on the map's underground floor (InitialFloor 1, objects on
         // Floor 1, UndergroundTerrain.bin); the surface terrain there is an unused grass plane.
@@ -121,7 +143,6 @@ public sealed class ArenaDefinition
             def.Statics.Add(new ArenaStatic(model, F(pos.Element("x")), F(pos.Element("y")), F(pos.Element("z")),
                 F(o.Element("Rot")), (string?)shared.Element("TerrainAligned") == "true"));
         }
-        return def;
     }
 
     static ArenaLight ReadLight(XElement e, string file) => new()
