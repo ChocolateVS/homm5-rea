@@ -12,11 +12,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 59 |
-| MATCH | 40 |
+| FIXED | 64 |
+| MATCH | 41 |
 | GAP | 5 |
-| UNVERIFIED | 420 |
-| N/A | 61 |
+| UNVERIFIED | 415 |
+| N/A | 60 |
 
 ## Core mechanics
 
@@ -79,7 +79,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_MANA_STEALER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
 | `ABILITY_EXPLOSION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_RANGED_RETALIATE` | UNVERIFIED | 00a5fee0 00bfb4b0 | implemented; not yet compared with the exe |  |
-| `ABILITY_FEAR` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_FEAR` | FIXED | 00a629b0, 00a5e1b0, 00a5d790 | only on the attacker's own strike (never a retaliation, +0x21) and only while the target would retaliate; mind-immunity check (00a5e1b0); the target flees instead of retaliating — engine could trigger on retaliations / when no retaliation was pending | AuditAbilityTests.FearNeverTriggersOnRetaliation |
 | `ABILITY_FRIGHT_AURA` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
 | `ABILITY_VORPAL_SWORD` | UNVERIFIED | 00a63020 00a673c0 | implemented; not yet compared with the exe |  |
 | `ABILITY_CHAIN_SHOT` | UNVERIFIED | 00a673c0 | implemented; not yet compared with the exe |  |
@@ -90,7 +90,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_DEATH_CLOUD` | UNVERIFIED | 00a2fd40 00a64830 00b3b330 | implemented; not yet compared with the exe |  |
 | `ABILITY_ELVES_DOUBLE_SHOT` | MATCH | 00a673c0 | second shot re-rolls luck (EXE_FINDINGS) |  |
 | `ABILITY_WARDING_ARROWS` | UNVERIFIED | 00a5b000 00a673c0 | implemented; not yet compared with the exe |  |
-| `ABILITY_BLINDING_ATTACK` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_BLINDING_ATTACK` | MATCH | 00a629b0, 00a5e440 | BlindingAttack_ProcFactor on the strike; Blind at basic mastery with BlindingAttackSpellPower (creature power if <1) via the spell application (immunities by spell rules, FUN_00a5ddb0 not compared); a blinded target doesn't retaliate |  |
 | `ABILITY_AURA_OF_MAGIC_RESISTANCE` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
 | `ABILITY_TAKE_ROOTS` | UNVERIFIED | 008a22f0 008a34c0 008a65e0 008a6910 | implemented; not yet compared with the exe |  |
 | `ABILITY_ENTANGLING_ROOTS` | FIXED | 008a34c0 | suppressed by Rage of the Forest | (Unit.Has) |
@@ -105,7 +105,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_LIZARD_BITE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_SIX_HEADED_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_REGENERATION` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
-| `ABILITY_WHIP_STRIKE` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_WHIP_STRIKE` | FIXED | 00a629b0, 00a5e2c0 | melee only (incl. retaliation); r = Rng(100): r<40 Slow, r<75 Weakness, else Berserk; power WhipStrikeSpellPower (creature power if <1) — engine cast Slow/Curse/Berserk uniformly | AuditAbilityTests.WhipStrikeCastsSlowWeaknessOrBerserk |
 | `ABILITY_FIRE_SHIELD` | UNVERIFIED | 00a5bcf0 | implemented; not yet compared with the exe |  |
 | `ABILITY_DEADLY_STRIKE` | UNVERIFIED | 00a5bf60 | implemented; not yet compared with the exe |  |
 | `ABILITY_REBIRTH` | UNVERIFIED | 00a58bb0 | implemented; not yet compared with the exe |  |
@@ -131,12 +131,12 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_THREE_HEADED_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_ARMORED` | MATCH | 00a5a900 | ignores Piercing Arrow / Rider Charge defence reduction |  |
 | `ABILITY_SHIELD_WALL` | MATCH | 00a5a900 | clamp(cells·perCell, 0, max) reduction |  |
-| `ABILITY_WOUND` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_WOUND` | FIXED | 00a629b0, 00a5e590 | proc (Wound_ProcFactor) on any strike incl. ranged/retaliation; target must be a creature, not MECHANICAL, not ELEMENTAL; duration = round(f·clamp(Wound_EffectDurationInRounds,0,100)) — engine lacked the mechanical/elemental immunity | AuditAbilityTests.WoundNeverAffectsElementals |
 | `ABILITY_PAW_STRIKE` | UNVERIFIED | 00a5d1b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_BERSERKER_RAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_STORMBOLT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_STORMSTRIKE` | UNVERIFIED | 00a608d0 00a641c0 | implemented; not yet compared with the exe |  |
-| `ABILITY_MARK_OF_FIRE` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_MARK_OF_FIRE` | FIXED | 00a629b0, 00a5e610 | only on RANGED strikes (+0x14), MarkOfFire_ProcFactor — engine also applied it in melee | AuditAbilityTests.MarkOfFireOnlyOnRangedStrikes |
 | `ABILITY_CROSS_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_MAGMA_SHIELD` | UNVERIFIED | 00a5bdd0 | implemented; not yet compared with the exe |  |
 | `ABILITY_PACK_HUNTER` | UNVERIFIED | 00a64120 | implemented; not yet compared with the exe |  |
@@ -147,14 +147,14 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_BATTLE_FRENZY` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_PACK_DIVE` | UNVERIFIED | 00a2fd40 | implemented; not yet compared with the exe |  |
 | `ABILITY_CHAMPION_CHARGE` | UNVERIFIED | 008aa990 | implemented; not yet compared with the exe |  |
-| `ABILITY_PURGER` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_PURGER` | UNVERIFIED | 00a629b0, 00a5d690 | trigger verified (any strike, Purger_ProcFactor); the dispel itself (00a5d690 → 004e6470) not yet compared |  |
 | `ABILITY_BLADE_BARRIER` | N/A | 0097af50 00a5a900 00a5beb0 00a5fee0 | not used by shipped data |  |
 | `ABILITY_DEMON_RAGED` | MATCH | 008a2c20, 008a3b90 | rage events and coefficients per exe (see AddRage) |  |
-| `ABILITY_COWARDICE` | UNVERIFIED | 00a5fee0 00a629b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_COWARDICE` | UNVERIFIED | 00a629b0, 00a5d790 | exe: melee only, while the target would retaliate; the stack runs (00a5d790(0)) and, if it can't, gains UseCowardiceRP rage; engine models the run after the whole attack — order not yet confirmed |  |
 | `ABILITY_TREACHERY` | UNVERIFIED | 008a0b60 | implemented; not yet compared with the exe |  |
 | `ABILITY_SET_SNARES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_DEFILE_MAGIC` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
-| `ABILITY_MANEURE` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_MANEURE` | UNVERIFIED | 00a629b0, 00a5d790, 00b3d3f0 | exe: melee only, attacker without NO_ENEMY_RETALIATION, not a retaliation; runs (00a5d790(1)) then shoots back (00b3d3f0) unless blocked — half-damage factor not yet confirmed |  |
 | `ABILITY_BRUTALITY` | FIXED | 00a65260 | proc after the first strike extends the strike loop | (PerformMeleeAttack) |
 | `ABILITY_TAUNT` | UNVERIFIED | 00a65d50 | implemented; not yet compared with the exe |  |
 | `ABILITY_FIERCE_RETALIATION` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
@@ -179,7 +179,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_DEATH_WAIL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_WEAKENING_AURA` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
 | `ABILITY_AMMO_STEAL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_SLEEPING_STRIKE` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_SLEEPING_STRIKE` | FIXED | 00a629b0, 00a5e4f0 | proc SleepingStrike_ProcFactor on any strike; immune: IMMUNITY_TO_BLIND, MECHANICAL, ELEMENTAL (undead NOT immune); target then doesn't retaliate — engine excluded undead and ignored blind immunity | AuditAbilityTests.SleepingStrikeImmunityIsBlindMechanicalElementalNotUndead |
 | `ABILITY_SORROW_STRIKE` | UNVERIFIED | 00a5e690 | implemented; not yet compared with the exe |  |
 | `ABILITY_HORROR_OF_THE_DEATH` | UNVERIFIED | 008a5570 | implemented; not yet compared with the exe |  |
 | `ABILITY_PIERCING_ARROW` | UNVERIFIED | 00a5a900 00a5d420 | implemented; not yet compared with the exe |  |
@@ -416,7 +416,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_GRIFFINS` | FIXED | 008a34c0 | basic Griffins (creature 7) gain Battle Dive | tests/H5.Combat.Tests/AuditSpecTests.GriffonCommanderGivesGriffinsBattleDive |
 | `HERO_SPEC_WAR_MACHINES` | MATCH | 00b3b7d0 | verified in EXE_FINDINGS.md |  |
 | `HERO_SPEC_LOGISTICS` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_HASTE` | N/A |  | no combat use found in exe or engine |  |
+| `HERO_SPEC_HASTE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SPEC_FURIOUS` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_GATE_KEEPER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SPEC_BEATER` | FIXED | 00a34740 | Teleport costs half (Rusher) | (HeroManaCost) |

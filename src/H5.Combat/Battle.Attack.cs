@@ -684,7 +684,9 @@ public sealed partial class Battle
             stunned = true;
             RageEvent(t, "ReceiveBashRP");
         }
-        if (melee && HasAbilityNow(a, Ab.Fear) && !MindImmune(t)
+        // Fear (exe FUN_00a629b0): only on the attacker's own strike (never a retaliation) and only while the target would
+        // still retaliate; the target runs instead of retaliating.
+        if (!retaliation && melee && HasAbilityNow(a, Ab.Fear) && !MindImmune(t) && CanRetaliate(t, a)
             && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Inferno/Fear_ProcFactor", 0.8), primaryHpBefore)))
         {
             Emit(new AbilityTriggered(a.Id, Ab.Fear, t.Id));
@@ -723,15 +725,19 @@ public sealed partial class Battle
         if (melee && HasAbilityNow(a, Ab.WhipStrike) && living
             && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Dungeon/WhipStrike_ProcFactor", 1.5), primaryHpBefore)))
         {
-            string[] whip = { "SPELL_SLOW", "SPELL_CURSE", "SPELL_BERSERK" };
-            ApplySpellEffectFromCreature(a, t, whip[S.Rng.Next(whip.Length)], Mastery.Basic, (int)Stats.Get("combat/Creatures/Dungeon/WhipStrikeSpellPower", 3));
+            // exe FUN_00a5e2c0: r = Rng(100); r < 40 → Slow, r < 75 → Weakness, else Berserk.
+            int r = S.Rng.Next(100);
+            string whip = r < 40 ? "SPELL_SLOW" : r < 75 ? "SPELL_WEAKNESS" : "SPELL_BERSERK";
+            ApplySpellEffectFromCreature(a, t, whip, Mastery.Basic, (int)Stats.Get("combat/Creatures/Dungeon/WhipStrikeSpellPower", 3));
         }
-        if (HasAbilityNow(a, Ab.Wound) && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Fortress/Wound_ProcFactor", 0.7), primaryHpBefore)))
+        // Wound (exe FUN_00a629b0): creature targets only, never mechanical or elemental.
+        if (HasAbilityNow(a, Ab.Wound) && !t.IsWarMachine && !t.IsObject && !t.Has(Ab.Mechanical) && !t.Has(Ab.Elemental) && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Fortress/Wound_ProcFactor", 0.7), primaryHpBefore)))
         {
             Emit(new AbilityTriggered(a.Id, Ab.Wound, t.Id));
             AddEffect(t, new Effect { Id = H5.Combat.Fx.Wound, Remaining = Stats.Get("combat/Creatures/Fortress/Wound_EffectDurationInRounds", 2), SourceSide = a.Side });
         }
-        if (HasAbilityNow(a, Ab.MarkOfFire) && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Fortress/MarkOfFire_ProcFactor", 1), primaryHpBefore)))
+        // Mark of Fire (exe FUN_00a629b0): ranged strikes only.
+        if (ranged && HasAbilityNow(a, Ab.MarkOfFire) && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Fortress/MarkOfFire_ProcFactor", 1), primaryHpBefore)))
         {
             Emit(new AbilityTriggered(a.Id, Ab.MarkOfFire, t.Id));
             AddEffect(t, new Effect { Id = H5.Combat.Fx.MarkOfFire, Remaining = Stats.Get("combat/Creatures/Fortress/MarkOfFire_EffectDurationInRounds", 2), SourceSide = a.Side });
@@ -740,7 +746,10 @@ public sealed partial class Battle
             AddEffect(t, new Effect { Id = H5.Combat.Fx.EvilEye, Value = 3, SourceSide = a.Side });
         if (HasAbilityNow(a, Ab.SorrowStrike))
             ApplySpellEffectFromCreature(a, t, "SPELL_SORROW", Mastery.Basic, CreatureSpellPower(a.Count, Math.Max(1, a.WeeklyGrowth)));
-        if (melee && HasAbilityNow(a, Ab.SleepingStrike) && living
+        // Sleeping Strike (exe FUN_00a629b0 → FUN_00a5e4f0): immune are IMMUNITY_TO_BLIND, mechanical and elemental
+        // (undead are NOT immune); no melee/ranged restriction.
+        if (HasAbilityNow(a, Ab.SleepingStrike) && !t.Has(Ab.ImmuneBlind) && !t.Has(Ab.Mechanical) && !t.Has(Ab.Elemental)
+            && !t.IsWarMachine && !t.IsObject
             && RollProc(a, ProcChance(a, t, Stats.Get("combat/Creatures/Necropolis/SleepingStrike_ProcFactor", 3), primaryHpBefore)))
         {
             Emit(new AbilityTriggered(a.Id, Ab.SleepingStrike, t.Id));

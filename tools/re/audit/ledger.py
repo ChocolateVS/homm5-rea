@@ -181,7 +181,17 @@ def alias_refs(ident):
         if ident.startswith('SPELL_ARTFSET_'): n += src.count('ARTFSET_EFFECT_' + c.split('_')[0])
     return n
 
+# Per-category audit fragments (docs/rules/audit/*.md, written by the parallel audit workstreams):
+# rows "| `ID` | STATUS | exe | note | test |" override the computed status for that ID.
+FRAG = {}
+for _f in sorted(glob.glob(f'{ROOT}/docs/rules/audit/*.md')):
+    for _line in open(_f, encoding='utf-8'):
+        _p = [x.strip() for x in _line.split('|')]
+        if len(_p) >= 7 and _p[1].startswith('`') and _p[2] in ('FIXED', 'MATCH', 'GAP', 'UNVERIFIED', 'N/A'):
+            FRAG[_p[1].strip('`')] = (_p[2], _p[3], _p[4], _p[5])
+
 def status(ident, kind, exe_sites, refs, used):
+    if ident in FRAG: return FRAG[ident]
     if kind == 'spell' and ident not in FIXED and ident not in MATCH and ident not in GAP:
         if any(v in ident for v in VISUAL): return 'N/A', ' '.join(exe_sites[:4]), 'visual effect only (client)', ''
         if ident in ADVENTURE_SPELLS: return 'N/A', ' '.join(exe_sites[:4]), 'adventure-map spell (H5.Adventure)', ''
