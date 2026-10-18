@@ -12,9 +12,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 105 |
+| FIXED | 106 |
 | MATCH | 77 |
-| GAP | 8 |
+| GAP | 7 |
 | UNVERIFIED | 339 |
 | N/A | 58 |
 
@@ -134,7 +134,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_ARMORED` | MATCH | 00a5a900 | ignores Piercing Arrow / Rider Charge defence reduction |  |
 | `ABILITY_SHIELD_WALL` | MATCH | 00a5a900 | clamp(cells·perCell, 0, max) reduction |  |
 | `ABILITY_WOUND` | FIXED | 00a629b0, 00a5e590 | proc (Wound_ProcFactor) on any strike incl. ranged/retaliation; target must be a creature, not MECHANICAL, not ELEMENTAL; duration = round(f·clamp(Wound_EffectDurationInRounds,0,100)) — engine lacked the mechanical/elemental immunity | AuditAbilityTests.WoundNeverAffectsElementals |
-| `ABILITY_PAW_STRIKE` | FIXED | 00a5d1b0 | one roll per tile walked: fail = Π(100−p)·0.01 in floats, chance = round-to-nearest((1−fail)·100+0.5); none when standing still or vs HOLD_GROUND; flag 1 — engine used p·tiles/2 | AuditProcChanceTests.PawStrikeRollsOncePerTileWalked |
+| `ABILITY_PAW_STRIKE` | FIXED | 00a5d1b0 | one roll per tile walked: fail = Π(100−p)·0.01 in floats, chance = round-to-nearest((1−fail)·100+0.5); none when standing still or vs HOLD_GROUND; flag 1 — engine used p·tiles/2; push via 00a5d520 → 00a5ceb0 with tolerance 2π (any free neighbour, closest to "away"), no free cell → no trigger | AuditProcChanceTests.PawStrikeRollsOncePerTileWalked |
 | `ABILITY_BERSERKER_RAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_STORMBOLT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_STORMSTRIKE` | UNVERIFIED | 00a608d0 00a641c0 | implemented; not yet compared with the exe |  |
@@ -184,7 +184,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_SLEEPING_STRIKE` | FIXED | 00a629b0, 00a5e4f0 | proc SleepingStrike_ProcFactor on any strike; immune: IMMUNITY_TO_BLIND, MECHANICAL, ELEMENTAL (undead NOT immune); target then doesn't retaliate — engine excluded undead and ignored blind immunity | AuditAbilityTests.SleepingStrikeImmunityIsBlindMechanicalElementalNotUndead |
 | `ABILITY_SORROW_STRIKE` | UNVERIFIED | 00a5e690 | implemented; not yet compared with the exe |  |
 | `ABILITY_HORROR_OF_THE_DEATH` | UNVERIFIED | 008a5570 | implemented; not yet compared with the exe |  |
-| `ABILITY_PIERCING_ARROW` | GAP | 00a5d420, 00a5a900 | Force Arrow: −50 % defence verified; the extra proc (PiercingArrow_ProcFactor, flag 0, no second roll, not HOLD_GROUND) pushing the target one tile and stunning it is now implemented, but the exe's push-cell search (FUN_00a5ceb0, angle π/3) is approximated as straight away from the shooter | AuditAbilityTests.ForceArrowCanPushAndStun |
+| `ABILITY_PIERCING_ARROW` | FIXED | 00a5d420, 00a5ceb0, 00b3d010, 00a5a900 | Force Arrow: −50 % defence; extra proc (PiercingArrow_ProcFactor, flag 0, no second roll, not HOLD_GROUND); push cell = the free neighbour (exe ring order (+1,0),(+1,+1),(0,+1),(−1,+1),(−1,0),(−1,−1),(0,−1),(+1,−1)) whose direction from the target is closest to attacker→target, within π/3 (strict <, first wins ties); an entangled target "succeeds" in place; no qualifying cell → no trigger (no stun) | AuditAbilityTests.ForceArrowPushPicksClosestFreeCellWithinSixtyDegrees, PushOfEntangledTargetSucceedsWithoutMoving |
 | `ABILITY_TREEANT_UNION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_RAGE_OF_THE_FOREST` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_POWER_FEED` | UNVERIFIED |  | implemented; not yet compared with the exe |  |

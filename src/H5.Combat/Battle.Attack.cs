@@ -705,16 +705,16 @@ public sealed partial class Battle
             stunned = true;
         }
         // Force Arrow (ABILITY_PIERCING_ARROW, exe FUN_00a5d420): ranged chance (PiercingArrow_ProcFactor, no second roll)
-        // to push a non-HOLD_GROUND creature back one tile and stun it (ATB 0).
+        // to push a non-HOLD_GROUND creature back one tile and stun it (ATB 0). The destination is the exe's cell search
+        // (FUN_00a5ceb0, ±π/3 around "away from the shooter"); with no free cell the ability doesn't trigger.
         if (ranged && !retaliation && HasAbilityNow(a, Ab.PiercingArrow) && !t.IsWarMachine && !t.IsObject && !t.Has(Ab.HoldGround)
-            && ProcRoll(a, t, Stats.Get("combat/Creatures/Sylvan/PiercingArrow_ProcFactor", 1), secondRoll: false))
+            && ProcRoll(a, t, Stats.Get("combat/Creatures/Sylvan/PiercingArrow_ProcFactor", 1), secondRoll: false)
+            && PushDestination(a, t, ForceArrowPushTolerance) is { } back)
         {
             Emit(new AbilityTriggered(a.Id, Ab.PiercingArrow, t.Id));
             SetAtb(t.Id, 0);
             stunned = true;
-            var (fx, fy) = Dir(a, t);
-            var back = new Cell(t.Pos.X + fx, t.Pos.Y + fy);
-            if (!IsEntangled(t) && Fits(t, back)) Teleport(t, back);
+            if (back != t.Pos) Teleport(t, back);
         }
         // Fear (exe FUN_00a629b0): only on the attacker's own strike (never a retaliation) and only while the target would
         // still retaliate; the target runs instead of retaliating.
@@ -787,15 +787,16 @@ public sealed partial class Battle
             Emit(new AbilityTriggered(a.Id, Ab.SleepingStrike, t.Id));
             AddEffect(t, new Effect { Id = H5.Combat.Fx.Sleep, Remaining = Stats.Get("combat/Creatures/Necropolis/SleepingStrike_Duration", 2), SourceSide = a.Side });
         }
-        // Paw Strike (exe FUN_00a5d1b0): one roll per tile walked, none when standing still or on HOLD_GROUND targets.
+        // Paw Strike (exe FUN_00a5d1b0 chance, FUN_00a5d520 push): one roll per tile walked, none when standing still or
+        // on HOLD_GROUND targets; the push takes the free neighbour closest to "away from the attacker" in any direction
+        // (FUN_00a5ceb0 with 2π) and the ability doesn't trigger when there is none.
         if (melee && !retaliation && HasAbilityNow(a, Ab.PawStrike) && !t.Has(Ab.HoldGround)
-            && RollPercent(a, PawStrikePercent(a, t, hit.CellsWalked, primaryHpBefore), secondRoll: true))
+            && RollPercent(a, PawStrikePercent(a, t, hit.CellsWalked, primaryHpBefore), secondRoll: true)
+            && PushDestination(a, t, PawStrikePushTolerance) is { } push)
         {
             Emit(new AbilityTriggered(a.Id, Ab.PawStrike, t.Id));
             SetAtb(t.Id, 0);
-            var (dx, dy) = Dir(a, t);
-            var push = new Cell(t.Pos.X + dx, t.Pos.Y + dy);
-            if (!IsEntangled(t) && !t.Has(Ab.HoldGround) && Fits(t, push)) Teleport(t, push);
+            if (push != t.Pos) Teleport(t, push);
         }
         if (HasAbilityNow(a, Ab.EntanglingRoots) && melee && !t.Flying && !a.HasEffect(H5.Combat.Fx.RageOfForest))
             AddEffect(t, new Effect { Id = H5.Combat.Fx.Entangled, SourceUnit = a.Id, SourceSide = a.Side });

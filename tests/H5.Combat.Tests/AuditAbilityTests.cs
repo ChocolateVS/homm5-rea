@@ -77,6 +77,37 @@ public class AuditAbilityTests(GameDataFixture f)
             x => x.r.Events.OfType<AbilityTriggered>().Any(e => e.Ability == Ab.PiercingArrow) && x.b.State.Units[1].Pos == new Cell(9, 5));
     }
 
+    [Fact]
+    public void ForceArrowPushPicksClosestFreeCellWithinSixtyDegrees()   // FUN_00a5ceb0 with π/3 (called from FUN_00a5d420)
+    {
+        var b = f.Duel("CREATURE_SHARP_SHOOTER", 30, "CREATURE_PEASANT", 400, 1, new Cell(1, 5), new Cell(8, 5));
+        b.State.Obstacles.Clear();
+        var (a, t) = (b.State.Units[0], b.State.Units[1]);
+        Assert.Equal(new Cell(9, 5), b.PushDestination(a, t, Battle.ForceArrowPushTolerance));
+        // Straight back blocked: the two 45° cells tie and the exe's ring order (FUN_00b3d010) lists (+1,+1) first.
+        b.State.Obstacles.Add(new Cell(9, 5));
+        Assert.Equal(new Cell(9, 6), b.PushDestination(a, t, Battle.ForceArrowPushTolerance));
+        // Everything within ±60° of "away" blocked: no push, so the ability does not trigger.
+        b.State.Obstacles.Add(new Cell(9, 6));
+        b.State.Obstacles.Add(new Cell(9, 4));
+        Assert.Null(b.PushDestination(a, t, Battle.ForceArrowPushTolerance));
+        // Paw Strike accepts any direction (2π): the closest remaining free cell is straight up/down (90°).
+        Assert.Equal(new Cell(8, 6), b.PushDestination(a, t, Battle.PawStrikePushTolerance));
+    }
+
+    [Fact]
+    public void PushOfEntangledTargetSucceedsWithoutMoving()   // FUN_00a5ceb0: SPELL_ABILITY_ENTANGLING_ROOTS → current position
+    {
+        var b = f.Duel("CREATURE_SHARP_SHOOTER", 30, "CREATURE_TREANT", 5, 1, new Cell(1, 5), new Cell(7, 5));
+        var root = b.State.Units[1];
+        var victim = b.State.Units[0];
+        b.State.Obstacles.Clear();
+        // Entangle the shooter (adjacent to the treant) and push it away from the treant.
+        victim.Pos = new Cell(6, 5);
+        victim.Effects.Add(new Effect { Id = Fx.Entangled, SourceUnit = root.Id, SourceSide = root.Side });
+        Assert.Equal(victim.Pos, b.PushDestination(root, victim, Battle.ForceArrowPushTolerance));
+    }
+
     [Theory]
     [InlineData(Mastery.Basic, true)]
     [InlineData(Mastery.Advanced, true)]
