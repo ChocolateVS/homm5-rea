@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 137 |
-| MATCH | 96 |
+| FIXED | 147 |
+| MATCH | 100 |
 | GAP | 9 |
-| UNVERIFIED | 289 |
+| UNVERIFIED | 275 |
 | N/A | 57 |
 
 ## Core mechanics
@@ -96,7 +96,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_AURA_OF_MAGIC_RESISTANCE` | MATCH | 008a4b70 | the stack itself or an adjacent allied stack with the aura sets flag 8 (the resistance value is applied in the spell-resistance code, spells audit) |  |
 | `ABILITY_TAKE_ROOTS` | UNVERIFIED | 008a22f0 008a34c0 008a65e0 008a6910 | implemented; not yet compared with the exe |  |
 | `ABILITY_ENTANGLING_ROOTS` | FIXED | 008a34c0 | suppressed by Rage of the Forest | (Unit.Has) |
-| `ABILITY_ACID_BREATH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `ABILITY_ACID_BREATH` | FIXED | Gold_Dragon.xdb / Green_Dragon.xdb PatternAttack, 00a62030 | only the dragons' pattern: attack cell + the cell behind it (12 rotations, RotateToMainTarget = true), coefficient 1, DamageAll = true. The random 1..5-cell radius exists in the exe only for RAINBOW_BREATH (00a62030); the engine applied it to Acid Breath too (the in-game text "random radius" is not what the code does) | AuditAbilityTestsA.AcidBreathHitsOnlyTheCellBehindTheTargetIncludingAllies |
 | `ABILITY_MAGIC_ATTACK` | UNVERIFIED | 00a62030 00a66b60 00a6b710 00b3b330 | implemented; not yet compared with the exe |  |
 | `ABILITY_ENERGY_CHANNEL` | FIXED | 009781e0, 00978120 | ×0.75 rounded, at least −1 | (HeroManaCost) |
 | `ABILITY_MAGIC_PROOF_75` | MATCH | 0097af50 (0097b265) | independent ×0.25 |  |
@@ -120,17 +120,17 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_SCATTER_SHOT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_RESURRECT_ALLIES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_BALOR_SUMMONIG` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_SPRAY_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `ABILITY_SPRAY_ATTACK` | FIXED | Sprite.xdb / Pixie.xdb PatternAttack | same three-cell pattern as Three-Headed Attack, coefficient 1, enemies only (same engine fix) | AuditAbilityTestsA.ThreeHeadedHitsTheCellsBesideTheTargetNotBesideTheAttacker |
 | `ABILITY_MANA_FEED` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_FIRE_BREATH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `ABILITY_FIRE_BREATH` | FIXED | FirebreatherHound.xdb PatternAttack | for the Firebreather Hound (the only Haven/Inferno/Necropolis/Sylvan creature with it) the breath IS its pattern: the three-headed cells plus the same three cells two steps out, DamageToOtherTargetsCoefficient 0.75 for every secondary target, DamageAll = false (own stacks are not burnt). The engine added the generic "one cell behind, ×1, allies too" breath on top. The generic breath used by dragons (part B) is unchanged | AuditAbilityTestsA.FirebreatherHoundUsesItsOwnPattern |
 | `ABILITY_HARM_TOUCH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_WAR_DANCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `ABILITY_WAR_DANCE` | MATCH | War_Dancer.xdb PatternAttack | all 8 neighbours of the attacker, DamageToOtherTargetsCoefficient 0.5, DamageAll = false — as the engine |  |
 | `ABILITY_REPAIR` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_RANDOM_CASTER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_DASH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_CALL_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_LAY_HANDS` | MATCH | see EXE_FINDINGS | verified in EXE_FINDINGS.md |  |
-| `ABILITY_THREE_HEADED_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `ABILITY_THREE_HEADED_ATTACK` | FIXED | Cerberius.xdb / FirebreatherHound.xdb PatternAttack | data pattern, 8 rotations (RotateToMainTarget = false), DamageAll = false: attack cell + the two cells beside it (straight: target ± perpendicular; diagonal: the two orthogonal neighbours), coefficient 1 (Hound 0.75). The engine hit every enemy adjacent to both attacker and target, i.e. also the two cells beside the ATTACKER on straight attacks | AuditAbilityTestsA.ThreeHeadedHitsTheCellsBesideTheTargetNotBesideTheAttacker |
 | `ABILITY_ARMORED` | MATCH | 00a5a900 | ignores Piercing Arrow / Rider Charge defence reduction |  |
 | `ABILITY_SHIELD_WALL` | MATCH | 00a5a900 | clamp(cells·perCell, 0, max) reduction |  |
 | `ABILITY_WOUND` | FIXED | 00a629b0, 00a5e590 | proc (Wound_ProcFactor) on any strike incl. ranged/retaliation; target must be a creature, not MECHANICAL, not ELEMENTAL; duration = round(f·clamp(Wound_EffectDurationInRounds,0,100)) — engine lacked the mechanical/elemental immunity | AuditAbilityTests.WoundNeverAffectsElementals |
@@ -155,7 +155,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_COWARDICE` | FIXED | 00a629b0, 00a5d790, 008a0520 | melee only, and only while the target would retaliate (after Fear / Bear Roar have had their say); runs inside the hit (before the retaliation and before any further strike of the attack — a double attack's second blow no longer lands); a successful run cancels the retaliation and costs UseCowardiceRP rage; if it can't move it retaliates normally — engine reacted after the whole attack and ran without a pending retaliation. Destination search (008a0250) not compared | AuditAbilityTests.CowardiceRunsInsideTheFirstStrike, CowardiceNeedsAPendingRetaliation |
 | `ABILITY_TREACHERY` | UNVERIFIED | 008a0b60 | implemented; not yet compared with the exe |  |
 | `ABILITY_SET_SNARES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_DEFILE_MAGIC` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
+| `ABILITY_DEFILE_MAGIC` | FIXED | 008a3340, 00a6a7e0, 008a11c0 | the defile state is SPELL_ABILITY_DEFILE_MAGIC (0x146) with value 1–4 on the caster; state 2: spell power = trunc(power·DefileMagicSpellPowerCoef) with no floor (chop FISTP at 00a6a8eb); state 3: the cast only needs the BASE cost, then mana = max(0, trunc((mana − cost) − (DefileMagicManaCoef − 1)·cost)) in single precision (chop at 008a12a8) — engine demanded 2× the cost (cancelling the cast otherwise) and floored the halved power at 1. Outcome roll (008a3340) and state 4 (backfire) not compared | AuditAbilityBTests.DefileMagicExtraCostOnlyNeedsTheBaseCostAndClampsAtZero |
 | `ABILITY_MANEURE` | UNVERIFIED | 00a629b0, 00a5d790, 008a0520, 00b3d3f0 | timing now matches the exe (inside the retaliated hit, attacker without NO_ENEMY_RETALIATION, melee, not a retaliation; shot from the new place via FUN_00a66050 during the move); the half-damage factor and the destination search (008a0250) are not yet confirmed | AuditAbilityTests.CowardiceRunsInsideTheFirstStrike (shared path) |
 | `ABILITY_BRUTALITY` | FIXED | 00a65260 (00a657a0) | Assault proc after the first strike uses Brutality_ProcFactor (engine used 1), flag 1, second roll | AuditStrikeTests |
 | `ABILITY_TAUNT` | FIXED | 00a65d50 (00a65e0a) | Taunt_ProcFactor with flag 1 (Soldier's Luck doubles) and no second roll | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
@@ -188,7 +188,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_TREEANT_UNION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_RAGE_OF_THE_FOREST` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_POWER_FEED` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_RAINBOW_BREATH` | UNVERIFIED | 00a62030 00a66b60 | implemented; not yet compared with the exe |  |
+| `ABILITY_RAINBOW_BREATH` | UNVERIFIED | 00a62030, 00b3ea30 | radius = clamp((vf 0x1ac [luck] + Range(1,10)) / 2 + 1, 1, 5) — the engine now clamps at 1 too; the hit area is built by 00b3ea30 as a random walk of cells from the target, while the engine still uses a straight line of `radius` cells behind the target |  |
 | `ABILITY_BOND_OF_LIGHT` | UNVERIFIED | 00983790 | implemented; not yet compared with the exe |  |
 | `ABILITY_WHIRLWIND` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_ELDRITCH_AURA` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
@@ -208,7 +208,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_ANTI_GIANT` | MATCH | 00a5a900 | AntiGiantDefenceInc vs large |  |
 | `ABILITY_AVENGING_FLAME` | N/A | 00a61090 | not used by shipped data |  |
 | `ABILITY_PREPARED_POSITION` | UNVERIFIED | 008aaec0 | implemented; not yet compared with the exe |  |
-| `ABILITY_BATTLE_RAGE` | UNVERIFIED | 008a6e20 | implemented; not yet compared with the exe |  |
+| `ABILITY_BATTLE_RAGE` | FIXED | 008a6e20, 0098a430, 008a4330 | the creature's take-damage virtual runs for ANY damage (spells, fields, abilities): if the creature has BATTLE_RAGE (0xa2) it re-applies SPELL_EFFECT_BATTLE_RAGE for round(f·BattleRage_EffectDuration), refreshing the duration every time; the effect gives +BattleRage_AttackBonus attack (0098a430 case 0x152) and initiative (008a4330) — engine applied it only from strikes and only when absent (no refresh). The same handler ends SPELL_BLIND and SPELL_EFFECT_SLEEPING_STRIKE on any damage (engine: strikes only) | AuditAbilityBTests.BattleRageIsReappliedOnEveryDamageIncludingSpells, AnyDamageEndsBlindAndSleepingStrike |
 | `ABILITY_HARPOON_STRIKE` | FIXED | 00a58de0, 00a5d5f0, 00a5ceb0, 00a673c0 | the shot's damage ×(1 + HarpoonStrike_DamageBonus) (special 0x14b); the pull needs a target without HOLD_GROUND (dynamic ability 0xa5) and, unless HarpoonStrike_WorksOnLargeCreatures, a 1×1 target; the destination is the free neighbouring cell closest to "towards the harpooner" within π/4 (FUN_00a5ceb0 with its first argument 1 swaps the centres), exe ring order on ties; no qualifying cell → no pull — engine stepped one cell straight towards the attacker and ignored the damage bonus and the large-creature flag | AuditAbilityBTests.HarpoonPullsTowardsTheHarpoonerWithinFortyFiveDegrees, HarpoonNeverPullsCreaturesThatHoldTheirGround |
 | `ABILITY_BEAR_ROAR` | FIXED | 00a5e800 | only while the struck target would retaliate, melee, not a retaliation; victims = enemies next to the bear (target and its neighbours), not fully spell-immune; per victim p = ProcPercent(BearRoar_ProcFactor, flag 1), and for a 1×1 victim p = trunc(100 − (100 − p)/BearRoar_SmallCreaturesChanceMult); attacker's second roll; a frightened victim runs like Fear (FUN_0089ffc0 mode 2, ATB 0) and the target no longer retaliates; the bear gets SPELL_ABILITY_BEAR_ROAR — engine multiplied the ProcFactor exponent by the size factor and only reset ATB | AuditAbilityTests.BearRoarHalvesTheFailureOfSmallVictims |
 | `ABILITY_HOLD_GROUND` | FIXED | 008a34c0 | rooted Take Roots creature holds ground | (Unit.Has) |
@@ -280,16 +280,16 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_IMBUE_ARROW` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MAGIC_BOND` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MELT_ARTIFACT` | MATCH | see EXE_FINDINGS | verified in EXE_FINDINGS.md |  |
-| `HERO_SKILL_MAGIC_MIRROR` | UNVERIFIED | 00983150 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_MAGIC_MIRROR` | MATCH | 00983150 | chance round(level · MagicMirrorLevelMultiplier + 10), ability roll FUN_00a5a170 (Range(0,100) < chance); Spell Twister second roll round((Radiant_MirrorProb + level·Radiant_MirrorProbPerLevel)·100) |  |
 | `HERO_SKILL_EMPOWERED_SPELLS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ELEMENTAL_VISION` | FIXED | 00977e60, 004b12c0, 004b0ef0, 004b0d40, 004b0d80, 004b0e90 | Elemental Chains on damage spells: Warlock (class 6) with Elemental Vision; spell element opposite to the target's; m = 1 + Invocation·0.1 + altars·0.1 (float), ×2 Absolute Chains, ×Runic_2Warlock_ElementalVisionMultiplier with ≥ 2 Runic pieces; extra = trunc(D·m − D) of the damage after protection; target element re-rolled. Engine: any class, Destructive school only, bonus before protection, no altars/Absolute Chains/Runic. Creature-attack chaining (Altar of Elements, 004b13e0 path) not implemented; re-roll picker (004b0e90 → 00877220) not traced | ElementalChainsUseTheExeMultiplier |
-| `HERO_SKILL_ROAD_HOME` | UNVERIFIED | 008a0e30 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ROAD_HOME` | FIXED | 008a0e30, 008a1e50 | Familiar Ground: speed += max(0, RoadHome/SpeedBonus) when the battlefield terrain (battle vfunc 0x60) equals RoadHome/NativeTerrain (TT_GRASS). Engine had no implementation | AuditSkillTests.FamiliarGroundAddsSpeedOnGrassOnly |
 | `HERO_SKILL_TRIPLE_BALLISTA` | FIXED | 00a75bf0, 00a65260 | shots per action set to 2 (+1 Ballista = 3) — no extra actions | tests/H5.Combat.Tests/WarMachineAuditTests.TripleBallistaFiresThreeShotsInOneActionThenEndsItsTurn |
 | `HERO_SKILL_ENCOURAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_RETRIBUTION` | MATCH | 00a58de0 | non-retaliation strikes ×(1+clamp(max(0,morale)·Retribution_DamageBonusPerMorale,0,10)) |  |
 | `HERO_SKILL_HOLD_GROUND` | FIXED | 008a22f0 | multiplies the defend factor by HoldGround_DefendBonusMultiplier, or the Take Roots factor by HoldGround_TakeRootsBonusMultiplier (see Defend posture) | AuditHeroTests.TakeRootsReplacesTheDefendFactor |
 | `HERO_SKILL_GUARDIAN_ANGEL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_ANCIENT_SMITHY` | UNVERIFIED | 00a5ed90 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ANCIENT_SMITHY` | FIXED | 00a5ed90 | Fiery Wrath: creature (unit vfunc 0 == 1, so not war machines) strikes add fire damage 0.1 × the damage dealt via FUN_0097d740 (rounded half up after protection). Engine truncated. Same function also handles Hellfire and Flaming Arrows | AuditSkillTests.ChillingPerkDamageRoundsHalfUp |
 | `HERO_SKILL_PARIAH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ELEMENTAL_BALANCE` | GAP |  | enemy counter-summon on Summon Elementals (00861630): count/placement not ported |  |
 | `HERO_SKILL_ABSOLUTE_CHARGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -310,7 +310,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_CHILLING_STEEL` | FIXED | 00a5c000 | strikes add cold damage 0.1 × the damage dealt (Last-Stand clamped, capped at the target's HP), dealt via FUN_0097d740 (rounded half up after protection). Engine truncated (9 damage → 0 instead of 1). The protection percent FUN_0097d2a0 for this call is not modelled | AuditSkillTests.ChillingPerkDamageRoundsHalfUp |
 | `HERO_SKILL_CHILLING_BONES` | FIXED | 00a5bc50 | melee hit on an ABILITY_UNDEAD stack whose hero has the perk: the attacker takes 0.05 × the damage dealt as cold damage when ≥ 0.5, via FUN_0097d740 (rounded half up). Engine truncated | AuditSkillTests.ChillingPerkDamageRoundsHalfUp |
 | `HERO_SKILL_SPELLPROOF_BONES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_DEADLY_COLD` | UNVERIFIED | 00977a80 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_DEADLY_COLD` | FIXED | 00977a80, 0097d600 | Cold Death: Ice Bolt (4), Circle of Winter (6), Deep Freeze (0x117) add one creature's HP (vfunc 0x1a8) to the raw spell damage BEFORE protection (FUN_0097d600 applies FUN_0097d2a0 to the sum). Engine added the HP after protection, pre-scaled by the protection share | AuditSkillTests.ColdDeathAndExorcismActBeforeProtection |
 | `HERO_SKILL_SPIRIT_LINK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_TWILIGHT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ABSOLUTE_FEAR` | MATCH | 00989fd0 | under Death Scream (effect 0x3b) morale −6 more when the screaming (enemy) hero has the perk (constant 6 in code) |  |
@@ -327,7 +327,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_MARCH_OF_THE_MACHINES` | MATCH | 004bc0b0, 004bc190 | +2 speed for mechanical creatures; +2 initiative for Iron/Steel/Obsidian Golems (creatures 61/62/161) |  |
 | `HERO_SKILL_REMOTE_CONTROL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ARTIFICIAL_GLORY` | MATCH | 00a751a0, 00a6acd0, 004ba9d0, 004bae10 | mechanical creatures of a hero with the perk get army morale clamped to ≥ 0 and roll only good morale (00a6ba00); without it their morale is 0 |  |
-| `HERO_SKILL_WILDFIRE` | UNVERIFIED | 00a5a900 00a5ed90 00a75b00 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_WILDFIRE` | MATCH | 00a5ed90, 00a5a900 (00a5aa76), 00a75b00 | Flaming Arrows: the Ballista (war machine id 1) deals 50 extra fire damage (float 50.0 via FUN_0097d740) and the target's defence is halved (SAR 1 at 00a5aa7d) — the manual's "defence 0" is wrong; 00a75b00 only picks the FIRE_BALLISTA visual |  |
 | `HERO_SKILL_COUNTERSPELL` | FIXED | 00978670, 00977260 | the armed enemy pays 2× the spell cost and the effect is single use; the countered caster's ATB: with Dark Renewal (HERO_SKILL_PAYBACK) and a non-mass spell (spell record +0xcc flag) it becomes 0.2 + 0.1·Sorcery mastery ("Payback!" log), otherwise the normal end-of-action reset (caster vf 0x224) — the GAP's ATB owner is the CASTER | AuditHeroStrikeTests.CounteredCasterWithDarkRenewalKeepsPaybackAtb |
 | `HERO_SKILL_MAGIC_CUSHION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SUPRESS_DARK` | FIXED | 009781e0 | enemy Dark spells ×2 | (HeroManaCost) |
@@ -343,7 +343,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_SECRETS_OF_DESTRUCTION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_PAYBACK` | UNVERIFIED | 00977260 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ELITE_CASTERS` | FIXED | 009781e0 | creature casters: integer half | (CreatureManaCost) |
-| `HERO_SKILL_ELEMENTAL_OVERKILL` | UNVERIFIED | 00977a80 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ELEMENTAL_OVERKILL` | FIXED | 00977a80 | Exorcism: ×2 against summoned targets (vfunc 0x70 summoner, its vfunc 0x58), applied after Cold Death and before protection. Engine doubled after protection. The exe has no school check in this function (FUN_00977a80 serves every damage spell); the engine keeps its Destructive-only condition — not changed | AuditSkillTests.ColdDeathAndExorcismActBeforeProtection |
 | `HERO_SKILL_ABSOLUTE_CHAINS` | FIXED | 004b0d80 (skill 0x96) | doubles the Elemental Chains fraction x | ElementalChainsUseTheExeMultiplier |
 | `HERO_SKILL_RUNELORE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_STRONG_RUNE` | UNVERIFIED | 00984a00 | implemented; not yet compared with the exe |  |
@@ -352,7 +352,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_RUNIC_MACHINES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_TAP_RUNES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_RUNIC_ATTUNEMENT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_DWARVEN_LUCK` | UNVERIFIED | 00977790 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_DWARVEN_LUCK` | MATCH | 00977790, 0097d2a0 | a failed resistance roll by a stack whose hero has the perk is re-rolled once (Range(1,100) < chance) |  |
 | `HERO_SKILL_OFFENSIVE_FORMATION` | MATCH | 008a4800 | same formula with Offensive_MaxOffenseBonus |  |
 | `HERO_SKILL_DEFENSIVE_FORMATION` | MATCH | 008a22f0 | Fortress race (9) only: += clamp(trunc(10·log10(A/B)), 0, Defensive_MaxDefenseBonus) — trunc matches the manual's floor; operands A (unit+0xf0) / B (unit+0xa0 vf 0x24) taken as adjacent dwarven power / own power per manual p.323 (not traced further) |  |
 | `HERO_SKILL_DISTRACT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
