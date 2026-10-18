@@ -129,7 +129,7 @@ public partial class TownScreen : Control
         bus.On("prev_town", () => CycleTown(-1));
         bus.On("enter_hall", () => OpenSub("hall"));
         bus.On("enter_fort", () => OpenSub("fort"));
-        bus.On("upgrade_creatures", () => OpenSub("fort"));
+        bus.On("upgrade_creatures", () => OpenSub("upgrade"));
         bus.On("enter_tavern", () => OpenSub("tavern"));
         bus.On("enter_market", () => OpenSub("market"));
         bus.On("enter_magic_guild", () => OpenSub("guild"));
@@ -137,7 +137,7 @@ public partial class TownScreen : Control
         bus.On("enter_shipyard", OpenShipyard);
         bus.On("enter_special", () => OpenSub("special"));
         bus.On("buy_artifacts", () => Notice("Artifact Merchant", "The artifact merchant is not open yet."));
-        bus.On("show_town_info", ShowTownInfo);
+        bus.On("show_town_info", () => OpenSub("info"));
         bus.On("click_pointer", (_, src) => { if (src?.Name == "Hero" && VisitingHero() is { } h) OpenHero(h); });
         // The dndicon template is only used by the original drag code.
         _hud.SetVisible("dndicon", false);
@@ -153,8 +153,8 @@ public partial class TownScreen : Control
         }
     }
 
-    HeroState? VisitingHero() => Session.S.Heroes.FirstOrDefault(h => h.Alive && h.InTown == Town.Object && !h.Garrisoned);
-    HeroState? GarrisonHero() => Session.S.Heroes.FirstOrDefault(h => h.Alive && h.InTown == Town.Object && h.Garrisoned);
+    internal HeroState? VisitingHero() => Session.S.Heroes.FirstOrDefault(h => h.Alive && h.InTown == Town.Object && !h.Garrisoned);
+    internal HeroState? GarrisonHero() => Session.S.Heroes.FirstOrDefault(h => h.Alive && h.InTown == Town.Object && h.Garrisoned);
 
     bool Apply(AdvCommand cmd)
     {
@@ -198,7 +198,7 @@ public partial class TownScreen : Control
         foreach (var v in _army.Views.Where(v => v.Node == node)) { v.Hero = hero; v.Town = town; v.Slot = slot; }
     }
 
-    Texture2D? TownIcon()
+    internal Texture2D? TownIcon()
     {
         const string table = "GameMechanics/RefTables/TownTypesInfo.xdb";
         var item = Game.Instance.Xdb.Load(table).Root?.Element("objects")?.Elements("Item")
@@ -216,19 +216,6 @@ public partial class TownScreen : Control
         if (towns.Count < 2) return;
         int i = towns.IndexOf(Town);
         LoadTown(towns[((i + dir) % towns.Count + towns.Count) % towns.Count]);
-    }
-
-    void ShowTownInfo()
-    {
-        var lines = new List<string>
-        {
-            $"{TownTypeName()}<br>Town level: {Town.DevLevel}",
-            "Recruitable this week:",
-        };
-        for (int tier = 1; tier <= 7; tier++)
-            if (Session.Game.DwellingCreature(Town, tier, 0) is { } c)
-                lines.Add($"{Game.Instance.Db.Creatures[c].Name}: {Town.Available[tier - 1]}");
-        Notice(Town.Name, string.Join("<br>", lines));
     }
 
     string TownTypeName() => TownUi.Text($"Text/Game/Towns/Types/{Town.Type.Replace("TOWN_", "").ToLowerInvariant()}.txt", Town.Type);
@@ -268,6 +255,8 @@ public partial class TownScreen : Control
             "blacksmith" => Town.Level("TB_BLACKSMITH") > 0 ? new BlacksmithScreen(this) : null,
             "market" => Town.Level("TB_MARKETPLACE") > 0 ? new MarketScreen(this) : null,
             "hero" => VisitingHero() is { } h ? new HeroScreen(Adv, h, this) : GarrisonHero() is { } g ? new HeroScreen(Adv, g, this) : null,
+            "upgrade" => new UpgradeCreaturesScreen(this),
+            "info" => new TownInfoScreen(this),
             "special" => null,
             _ => null,
         };

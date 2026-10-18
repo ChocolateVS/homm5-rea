@@ -47,12 +47,15 @@ public sealed partial class Adventure
     public Func<int, int, int, int, int>? MineIncomeHook { get; set; }
 
     /// <summary>Gold from town halls, resources from silos and mines (fan manual p.224, p.269).</summary>
+    /// <summary>Daily gold of a town's hall (Town Info "Income").</summary>
+    public static int TownGoldIncome(TownState t) => t.Level("TB_TOWN_HALL") switch { 1 => 500, 2 => 1000, 3 => 2000, >= 4 => 4000, _ => 0 };
+
     void DailyIncome(PlayerState p)
     {
         var inc = new Purse();
         foreach (var t in S.Towns.Where(t => t.Owner == p.Index))
         {
-            inc[Purse.Gold] += t.Level("TB_TOWN_HALL") switch { 1 => 500, 2 => 1000, 3 => 2000, >= 4 => 4000, _ => 0 };
+            inc[Purse.Gold] += TownGoldIncome(t);
             if (t.Level("TB_MARKETPLACE") >= 2) inc.Add(SiloIncome(t.Type));
         }
         foreach (var (idx, os) in S.Objects)

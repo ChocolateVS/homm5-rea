@@ -119,37 +119,15 @@ public sealed partial class HillFortScreen : MapBuildingScreen
     void OpenChoice(int slot)
     {
         _choose?.QueueFree();
+        _choose = null;
         var s = Hero.Army[slot];
-        if (s is not { Count: > 0 }) return;
-        var game = Adv.Session.Game;
-        _choose = new UiScreen("UI/UpgradeCreatures/AlternativeUpgrade/ChooseUpgradeItem.(WindowSimple).xdb");
-        AddChild(_choose);
-        // The item pops up over the stack it upgrades (authored at 0,0).
-        if (Ui.Find($"FortHill/creaturesholder/creature{slot + 1}") is { } cell && _choose.NodeOf(_choose.Root) is { } item)
-            item.GlobalPosition = cell.GlobalPosition + new Vector2((cell.Size.X - item.Size.X) / 2, -item.Size.Y);
-        string[] icons = { "norm_upg_icon", "alt_upg_icon" }, buttons = { "upg_button", "alt_upg_button" };
-        for (int u = 1; u <= 2; u++)
+        if (s is not { Count: > 0 } || Ui.Find($"FortHill/creaturesholder/creature{slot + 1}") is not { } cell) return;
+        _choose = UpgradeChooser.Open(this, cell, Adv.Session.Game, Me, s.Creature, s.Count, hillFort: true, _ => true, upgrade =>
         {
-            var (target, cost) = game.UpgradeQuote(s.Creature, u, s.Count, hillFort: true);
-            TownUi.SetPicture(_choose.Find(icons[u - 1]), target != null ? TownUi.CreatureIcon(target) : null);
-            if (_choose.Find(buttons[u - 1]) is not { } b) continue;
-            b.Enabled = target != null && Me.Purse.CanAfford(cost);
-            if (target == null) continue;
-            string name = Game.Instance.Db.Creatures.TryGetValue(target, out var td) ? td.Name : target;
-            b.SetTooltip($"{name}<br>{CostText(cost)}");
-            int upgrade = u;
-            b.Clicked += _ =>
-            {
-                _choose?.QueueFree();
-                _choose = null;
-                var text = TownUi.Text("UI/UpgradeCreatures/AlternativeUpgradeBox/TDescription.txt", "Choose the upgrade for this creature.<br><br>Upgrade cost:");
-                AdvDialogs.YesNo(this, name, $"{text} {CostText(cost)}", TownUi.CreatureIcon(target), yes =>
-                {
-                    if (yes && Apply(new UpgradeCreatureCmd(HeroId, -1, slot, upgrade, Object)))
-                        Audio.AudioSystem.PlayNamed("FORTHILL_UPGRADE_CREATURES_SOUND");
-                });
-            };
-        }
+            _choose = null;
+            if (Apply(new UpgradeCreatureCmd(HeroId, -1, slot, upgrade, Object)))
+                Audio.AudioSystem.PlayNamed("FORTHILL_UPGRADE_CREATURES_SOUND");
+        });
     }
 
     public override void _GuiInput(InputEvent e)
@@ -189,5 +167,42 @@ public sealed partial class WarMachineFactoryScreen : MapBuildingScreen
         var (name, desc) = BlacksmithScreen.MachineTexts(Machines[_choice]);
         Ui.Find("DescriptionHeader")?.SetValue("Value", name);
         Ui.Find("DescriptionText")?.SetValue("Value", UiResources.StripMarkup(desc));
+    }
+}
+
+/// <summary>
+/// The stock choose-upgrade item (UI/UpgradeCreatures/AlternativeUpgrade/ChooseUpgradeItem): pops up over a
+/// stack with its normal and alternative upgrade; a choice asks for confirmation with the price
+/// (AlternativeUpgradeBox TDescription "Upgrade cost:").
+/// </summary>
+public static class UpgradeChooser
+{
+    public static UiScreen Open(Control host, Control cell, H5.Adventure.Engine.Adventure game, PlayerState me, string creature, int count,
+        bool hillFort, Func<string, bool> allowed, Action<int> confirmed)
+    {
+        var choose = new UiScreen("UI/UpgradeCreatures/AlternativeUpgrade/ChooseUpgradeItem.(WindowSimple).xdb");
+        host.AddChild(choose);
+        // The item pops up over the stack it upgrades (authored at 0,0).
+        if (choose.NodeOf(choose.Root) is { } item)
+            item.GlobalPosition = cell.GlobalPosition + new Vector2((cell.Size.X - item.Size.X) / 2, -item.Size.Y);
+        string[] icons = { "norm_upg_icon", "alt_upg_icon" }, buttons = { "upg_button", "alt_upg_button" };
+        for (int u = 1; u <= 2; u++)
+        {
+            var (target, cost) = game.UpgradeQuote(creature, u, count, hillFort);
+            TownUi.SetPicture(choose.Find(icons[u - 1]), target != null ? TownUi.CreatureIcon(target) : null);
+            if (choose.Find(buttons[u - 1]) is not { } b) continue;
+            b.Enabled = target != null && allowed(target) && me.Purse.CanAfford(cost);
+            if (target == null) continue;
+            string name = Game.Instance.Db.Creatures.TryGetValue(target, out var td) ? td.Name : target;
+            b.SetTooltip($"{name}<br>{MapBuildingScreen.CostText(cost)}");
+            int upgrade = u;
+            b.Clicked += _ =>
+            {
+                choose.QueueFree();
+                var text = TownUi.Text("UI/UpgradeCreatures/AlternativeUpgradeBox/TDescription.txt", "Choose the upgrade for this creature.<br><br>Upgrade cost:");
+                AdvDialogs.YesNo(host, name, $"{text} {MapBuildingScreen.CostText(cost)}", TownUi.CreatureIcon(target), yes => { if (yes) confirmed(upgrade); });
+            };
+        }
+        return choose;
     }
 }
