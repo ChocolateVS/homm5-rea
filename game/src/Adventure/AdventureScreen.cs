@@ -430,7 +430,7 @@ public partial class AdventureScreen : Control
         else if (Session.Game.TownAt(t) is { } town) AdvCursors.Set(town.Owner == hero.Owner ? AdvCursor.Town : AdvCursor.Attack, days);
         else if (Session.Map.Objects.Any(o => o.Kind != ObjectKind.Static && o.ActiveTiles.Contains(t) && !(s.Objects.TryGetValue(o.Index, out var os) && os.Removed)))
             AdvCursors.Set(AdvCursor.Use, days);
-        else AdvCursors.Set(AdvCursor.Move, days);
+        else AdvCursors.Set(Water.BoatLayer.MoveCursor(Session.Game, hero, t), days);
     }
 
     // ---------------------------------------------------------------- frame loop / playback
@@ -517,7 +517,26 @@ public partial class AdventureScreen : Control
             case HeroMoved m:
                 await AnimateMove(m, player);
                 if (s.Hero(m.HeroId) is { } hm) World.SyncHero(hm);
+                World.Boats?.Sync();
                 Hud.Refresh();
+                break;
+            case HeroEmbarked he:
+                // The boarding step: walk onto the ship, then the ship takes the hero aboard.
+                await AnimateMove(new HeroMoved(he.HeroId, new[] { he.From, he.To }, he.MovePointsLeft), player);
+                if (s.Hero(he.HeroId) is { } hb) World.SyncHero(hb);
+                World.Boats?.Sync();
+                Hud.Refresh();
+                break;
+            case HeroDisembarked hd:
+                World.Boats?.Sync();
+                await AnimateMove(new HeroMoved(hd.HeroId, new[] { hd.From, hd.To }, hd.MovePointsLeft), player);
+                if (s.Hero(hd.HeroId) is { } hl) World.SyncHero(hl);
+                World.Boats?.Sync();
+                Hud.Refresh();
+                break;
+            case BoatCreated or BoatMoved:
+                World.Boats?.Sync();
+                Hud.UpdateMinimap();
                 break;
             case TilesRevealed tr when tr.Player == Session.Human.Index:
                 World.RefreshShroud();
@@ -762,6 +781,9 @@ public partial class AdventureScreen : Control
                     break;
                 case "join_free":
                     await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), AdvTexts.Get(AdvTexts.CreaturesJoin), null, y => { accept = y; done(); }));
+                    break;
+                case "shipyard":
+                    await Dialog(done => Water.BoatLayer.ShipyardOffer(_dialogLayer, Session.S.Players.First(p => p.Index == Session.S.Hero(c.Hero)!.Owner), y => { accept = y; done(); }));
                     break;
                 case "join_paid":
                     await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), AdvTexts.Get(AdvTexts.CreaturesJoinMoney) + $"<br>{c.Gold}", null, y => { accept = y; done(); }));

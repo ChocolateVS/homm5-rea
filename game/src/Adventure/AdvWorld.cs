@@ -34,6 +34,8 @@ public partial class AdvWorld : Node3D
     Node3D? _selection;
 
     public AdvCamera Camera { get; private set; } = null!;
+    /// <summary>Ships (see <see cref="Water.BoatLayer"/>).</summary>
+    public Water.BoatLayer? Boats { get; private set; }
     /// <summary>Dev (`--adventure-reveal`): no fog of war.</summary>
     public static bool RevealAll;
     public int Floor { get; private set; }
@@ -55,12 +57,16 @@ public partial class AdvWorld : Node3D
             if (floor?.Data == null) continue;
             _terrain[f] = AdvTerrain.Build(floor.Data);
             _floors[f].AddChild(_terrain[f]);
+            if (Water.SeaPlane.Build(floor, Unit) is { } sea) { _floors[f].AddChild(sea); _seaLevel[f] = Water.SeaPlane.Level; }
             BuildLighting(f);
         }
         BuildStatics();
         foreach (var o in Map.Objects)
             if (o.Kind != ObjectKind.Static && o.Kind != ObjectKind.Hero) SyncObject(o.Index);
         foreach (var h in _session.S.Heroes) SyncHero(h);
+        Boats = new Water.BoatLayer(this, _session);
+        AddChild(Boats);
+        Boats.Sync();
 
         _pathRoot = new Node3D { Name = "Path" };
         AddChild(_pathRoot);
@@ -129,7 +135,13 @@ public partial class AdvWorld : Node3D
     /// within <see cref="MaxStepUp"/> above the ground — roofs and arches above are ignored.
     /// Uses the collision shapes added for towns (see <see cref="AddWalkable"/>).
     /// </summary>
-    public Vector3 StandPoint(Tile t) => StandPointAt(TileCenter(t));
+    public Vector3 StandPoint(Tile t) => AboveSea(StandPointAt(TileCenter(t)), t.Floor);
+
+    /// <summary>Sea surface height per floor (see <see cref="Water.SeaPlane"/>), -inf without sea.</summary>
+    readonly float[] _seaLevel = { float.NegativeInfinity, float.NegativeInfinity };
+
+    /// <summary>Heroes, ships, path markers and sea objects stay on the water surface, not the sea bed.</summary>
+    public Vector3 AboveSea(Vector3 p, int floor) => floor is >= 0 and < 2 && p.Y < _seaLevel[floor] ? new Vector3(p.X, _seaLevel[floor], p.Z) : p;
 
     /// <summary>
     /// <see cref="StandPoint(Tile)"/> for any point on the map, used while a hero walks between tile
@@ -137,7 +149,7 @@ public partial class AdvWorld : Node3D
     /// lines between centre heights.
     /// </summary>
     public Vector3 StandPointAt(float mapX, float mapY, int floor) =>
-        StandPointAt(new Vector3(mapX * Unit, HeightAt(floor, mapX, mapY), -mapY * Unit));
+        AboveSea(StandPointAt(new Vector3(mapX * Unit, HeightAt(floor, mapX, mapY), -mapY * Unit)), floor);
 
     Vector3 StandPointAt(Vector3 p)
     {
@@ -212,6 +224,7 @@ public partial class AdvWorld : Node3D
         }
         if (_shroudMaterial != null && _shroudTex[floor] != null) _shroudMaterial.SetShaderParameter("shroud", _shroudTex[floor]);
         RefreshShroud();
+        Boats?.OnFloorChanged();
     }
 
     // ---------------------------------------------------------------- lighting
@@ -348,7 +361,7 @@ public partial class AdvWorld : Node3D
 
     Transform3D ObjectTransform(MapObject o)
     {
-        var pos = TileCenter(o.Pos);
+        var pos = o.Shared.WaterBased ? AboveSea(TileCenter(o.Pos), o.Pos.Floor) : TileCenter(o.Pos);
         return new Transform3D(new Basis(Vector3.Up, o.Rot), pos);
     }
 
