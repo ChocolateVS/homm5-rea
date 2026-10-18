@@ -30,4 +30,13 @@ public class UiPredictionTests(GameDataFixture f)
         b.AddEffect(t, new Effect { Id = "SPELL_HYPNOTIZE", SourceSide = t.Side, Remaining = 10 });
         Assert.Equal("COMBAT_NO_HYPNOTIZE_RETALIATE", b.PredictAttack(a.Id, t.Id, null, ranged: false)!.RetaliateKey);
     }
+
+    [Fact]
+    public void RuneOfBerserkingAddsOneStrikeInPrediction()
+    {
+        var b = Adjacent();
+        var (a, t) = (b.State.Units[0], b.State.Units[1]);
+        b.AddEffect(a, new Effect { Id = H5.Combat.Fx.RuneBerserking, Remaining = 10 });
+        Assert.Equal(2, b.PredictAttack(a.Id, t.Id, null, ranged: false)!.Strikes);
+    }
 }

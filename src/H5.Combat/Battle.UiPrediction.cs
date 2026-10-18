@@ -34,7 +34,7 @@ public sealed partial class Battle
 
         int strikes = ranged
             ? (a.IsWarMachine ? WarMachineShotsPerAction(a) : HasAbilityNow(a, Ab.DoubleShot) ? 2 : 1)
-            : (HasAbilityNow(a, Ab.DoubleAttack) ? 2 : 1) * (a.HasEffect(H5.Combat.Fx.RuneBerserking) ? 2 : 1);
+            : (HasAbilityNow(a, Ab.DoubleAttack) ? 2 : 1) + (a.HasEffect(H5.Combat.Fx.RuneBerserking) ? 1 : 0);   // FUN_008a0f90: Berserking +1
 
         int kMin = KillsFor(dMin, t), kMax = KillsFor(dMax, t);
         // Vorpal Sword always takes one more creature unless the target has Crystal Scales (exe 00a63020).
