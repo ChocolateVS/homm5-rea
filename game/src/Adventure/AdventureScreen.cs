@@ -234,6 +234,32 @@ public partial class AdventureScreen : Control
 
     AdvNet.HotSeatController? _hotSeat;
 
+    static readonly string[] MapSizeEnums =
+        { "E_MAP_TINY_SIZE", "E_MAP_SMALL_SIZE", "E_MAP_MEDIUM_SIZE", "E_MAP_LARGE_SIZE", "E_MAP_EXTRALARGE_SIZE", "E_MAP_HUGE_SIZE", "E_MAP_IMPOSSIBLE_SIZE" };
+
+    /// <summary>
+    /// Single-player (non-campaign, non-network, single human) victories enter the Hall of Fame. The map size
+    /// (from its width, RMG size table 72..320) and difficulty factors come from UI/UIGameRoot. TODO(exe): the
+    /// original base score was not recovered from H5_Game.exe (only the HallOfFame data readers at
+    /// 0051dd20/0051fdc0/005194a0 were located); a fixed base of 1000 is used, so ranking follows size and difficulty.
+    /// </summary>
+    void RecordHallOfFame()
+    {
+        if (Session.IsRemote || Session.IsHotSeat || Campaign.CampaignFlow.Active != null) return;
+        var tiles = H5.Rmg.RmgSizes.Tiles;
+        int idx = Array.FindIndex(tiles, t => Session.Map.TilesX <= t);
+        var size = MapSizeEnums[idx < 0 ? MapSizeEnums.Length - 1 : idx];
+        var hof = Profiles.HallOfFame.Data;
+        int points = hof.Score(1000, size, Session.S.Difficulty);
+        Profiles.HallOfFame.Record(new Profiles.HallOfFame.Entry
+        {
+            Name = Profiles.ProfileManager.CurrentName,
+            Days = Session.S.Day,
+            Points = points,
+            Scenario = $"{(hof.MapSizes.TryGetValue(size, out var s) ? s.Short : size)} - {Session.Map.Name}",
+        });
+    }
+
     /// <summary>An aimed adventure spell waiting for its target tile (Instant Travel).</summary>
     string? _pendingSpell;
 
@@ -578,6 +604,7 @@ public partial class AdventureScreen : Control
                 break;
             case H5.Adventure.Engine.GameEnded ge:
                 bool won = ge.WinnerTeam == Session.Human.Team;
+                if (won) RecordHallOfFame();
                 await Dialog(done => Message("", AdvTexts.Get(won ? AdvTexts.Victory : AdvTexts.Defeat), null, () => { done(); ReturnToMainMenu(); }));
                 break;
             case BattleRequested:
