@@ -136,7 +136,71 @@ public partial class UnitView : Node3D
 
     public void Play(string kind, bool loop = false)
     {
-        if (Character is { } c && c.Has(kind)) c.Play(kind, loop);
+        if (Character is { } c && c.Has(kind)) c.Play(kind, loop, BlendSeconds(c.CurrentKind, kind));
+    }
+
+    /// <summary>combat_anim_blend setvar default (exe 0054ed50: 300 ms).</summary>
+    public const float AnimBlendMs = 300f;
+
+    /// <summary>
+    /// Cross-fade between two clips, exe 0054d700: the combat_anim_blend time when going from an
+    /// idle (idle00/01/02) into stir00/stir01/move, or from any non-idle clip into an idle;
+    /// every other change is an immediate cut (attacks, hits and deaths start at once).
+    /// </summary>
+    public static float BlendSeconds(string? from, string to)
+    {
+        static bool IsIdle(string? k) => k is "idle00" or "idle01" or "idle02";
+        static bool IsStirOrMove(string k) => k is "stir00" or "stir01" or "move";
+        if (from == null || from == to) return 0f;
+        if (IsStirOrMove(to) && IsIdle(from)) return AnimBlendMs / 1000f;
+        if (IsIdle(to) && !IsIdle(from)) return AnimBlendMs / 1000f;
+        return 0f;
+    }
+
+    /// <summary>
+    /// Locomotion speed in world units per second, exe 008b85e0: the move clip's (BasicSkelAnim)
+    /// MovementSpeed × SpeedFactor × 0.001 units/ms, or the default 0.003 units/ms when the clip
+    /// has no MovementSpeed; times combat_time_factor (1.0).
+    /// </summary>
+    public float LocomotionSpeed => (MoveSpeed > 0 ? MoveSpeed : 3.0f) * CombatTimeFactor;
+
+    public const float CombatTimeFactor = 1.0f;
+
+    /// <summary>
+    /// Time to turn in place through <paramref name="angle"/> radians, exe 00a44030:
+    /// (1/speed[units/ms]) × angle/π ms, or 300 ms × angle/π when the speed is unknown.
+    /// </summary>
+    public float TurnSeconds(float angle)
+    {
+        float a = Math.Abs(angle);
+        float speedPerMs = LocomotionSpeed / 1000f;
+        float ms = speedPerMs > 0 ? 1f / speedPerMs * a / Mathf.Pi : 300f * a / Mathf.Pi;
+        return ms / 1000f;
+    }
+
+    /// <summary>Shortest signed yaw difference (radians), wrapped into ±π like the exe's fmod by 2π.</summary>
+    public static float YawDelta(float from, float to) => Mathf.Wrap(to - from, -Mathf.Pi, Mathf.Pi);
+
+    public float YawTowards(Vector3 worldTarget)
+    {
+        var d = worldTarget - GlobalPosition;
+        return Mathf.Atan2(d.X, d.Z);
+    }
+
+    /// <summary>
+    /// Turns in place to <paramref name="yaw"/> the way the original does (exe 008b88b0): the move
+    /// clip plays during the turn, which lasts <see cref="TurnSeconds"/> for the angle.
+    /// </summary>
+    public async Task TurnTo(float yaw, bool playMoveClip = true)
+    {
+        float delta = YawDelta(Rotation.Y, yaw);
+        if (Math.Abs(delta) < 0.01f) { Rotation = new Vector3(0, yaw, 0); return; }
+        float secs = TurnSeconds(delta);
+        if (playMoveClip && Has("move")) Play("move", loop: true);
+        float start = Rotation.Y;
+        var tw = CreateTween();
+        tw.TweenMethod(Callable.From<float>(k => Rotation = new Vector3(0, start + delta * k, 0)), 0f, 1f, Math.Max(0.016f, secs));
+        await ToSignal(tw, Tween.SignalName.Finished);
     }
 
     Dictionary<string, AnimSetEntry>? _animEntries;

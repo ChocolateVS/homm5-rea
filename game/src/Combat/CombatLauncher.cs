@@ -30,7 +30,7 @@ public static class CombatLauncher
     /// <summary>`--open-spellbook`: autoplay the local side until its hero acts, then open the spellbook.</summary>
     public static bool OpenSpellbook;
     /// <summary>`--move-frames=N:PREFIX`: frame sequence from the start of the Nth move.</summary>
-    public static (int N, string Prefix)? MoveFrames;
+    public static (int N, string Prefix, int Count, double Interval)? MoveFrames;
     static string SiegeTown = "TOWN_HEAVEN";
     static int SiegeFort = 3;
     static (int A, int B) SiegePresets = (0, 3);
@@ -72,11 +72,15 @@ public static class CombatLauncher
         if (arg == "--no-cinematic") { CinematicCameras.Enabled = false; return true; }
         if (arg.StartsWith("--move-frames="))
         {
-            // --move-frames=N:PREFIX : 8 frames, 0.1 s apart, from the start of the Nth move.
+            // --move-frames=N:PREFIX : frames from the start of the Nth move (count/interval below).
             var parts = arg["--move-frames=".Length..].Split(':', 2);
-            MoveFrames = (int.Parse(parts[0]), parts[1]);
+            MoveFrames = (int.Parse(parts[0]), parts[1], MoveFrames?.Count ?? 8, MoveFrames?.Interval ?? 0.1);
             return true;
         }
+        if (arg.StartsWith("--move-frames-count=") && MoveFrames is { } mfc)
+        { MoveFrames = mfc with { Count = int.Parse(arg["--move-frames-count=".Length..]) }; return true; }
+        if (arg.StartsWith("--move-frames-interval=") && MoveFrames is { } mfi)
+        { MoveFrames = mfi with { Interval = double.Parse(arg["--move-frames-interval=".Length..], System.Globalization.CultureInfo.InvariantCulture) }; return true; }
         if (arg == "--autoplay") { CombatScreen.Autoplay = true; return true; }
         if (arg.StartsWith("--fake-mouse="))
         {

@@ -29,14 +29,21 @@ public partial class Character : Node3D
 
     public float SpeedFactor(string kind) => SpeedFactors.TryGetValue(kind, out var f) && f > 0 ? f : 1f;
 
-    public void Play(string kind, bool loop = false)
+    public void Play(string kind, bool loop = false) => Play(kind, loop, 0f);
+
+    /// <summary>Plays a clip, cross-fading from the current one over <paramref name="blendSeconds"/> (0 = cut).</summary>
+    public void Play(string kind, bool loop, float blendSeconds)
     {
         if (!Has(kind)) return;
         var anim = Player.GetAnimation(Lib + kind);
         anim.LoopMode = loop ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
         Player.SpeedScale = SpeedFactor(kind);
-        Player.Play(Lib + kind);
+        Player.Play(Lib + kind, blendSeconds > 0 ? blendSeconds : 0);
+        CurrentKind = kind;
     }
+
+    /// <summary>The kind most recently started with <see cref="Play(string, bool, float)"/>.</summary>
+    public string? CurrentKind { get; private set; }
 
     internal const string Lib = "h5/";
 }

@@ -521,10 +521,9 @@ public partial class CombatScreen : Control
     async Task AnimateMove(UnitView v, IReadOnlyList<Cell> path, bool flying)
     {
         if (path.Count == 0) return;
-        // Ground speed from the move clip ((BasicSkelAnim) MovementSpeed × SpeedFactor, world units/s);
+        // Ground speed per exe 008b85e0 (move clip MovementSpeed × SpeedFactor, default 3 units/s);
         // the clip's own forward travel is extracted (CharacterBuilder.ExtractRootMotion).
-        float unitsPerSecond = v.MoveSpeed > 0 ? v.MoveSpeed : 3.2f * ArenaGrid.TileSize;
-        float cellsPerSecond = unitsPerSecond / ArenaGrid.TileSize;
+        float unitsPerSecond = v.LocomotionSpeed;
         if (v.Has("moveStart") && v.Has("moveEnd"))
         {
             // Teleporting movers (Devils, Vampire Lords): vanish with moveStart, appear at the
@@ -540,65 +539,68 @@ public partial class CombatScreen : Control
             v.Idle();
             return;
         }
-        v.Play(v.Has("move") ? "move" : "idle00", loop: true);
         if (CombatLauncher.MoveFrames is { } mf && ++_moveCount == mf.N)
-            for (int i = 0; i < 8; i++)
+            for (int i = 0; i < mf.Count; i++)
             {
                 int frame = i;
-                GetTree().CreateTimer(0.1 * i).Timeout += () =>
+                GetTree().CreateTimer(mf.Interval * i).Timeout += () =>
                 {
-                    var path = $"{mf.Prefix}{frame}.png";
-                    GetViewport().GetTexture().GetImage().SavePng(path);
-                    GD.Print($"[H5] move frame {path}");
+                    var file = $"{mf.Prefix}{frame:D2}.png";
+                    GetViewport().GetTexture().GetImage().SavePng(file);
+                    GD.Print($"[H5] move frame {file}");
                 };
             }
-        if (flying)
+
+        // The original moves every creature, walker or flyer, with one routine (exe 00a733a0 →
+        // 008b8a70): turn in place to the first segment playing the move clip (008b88b0), follow
+        // the path at constant speed, and keep facing along the last segment at the end. Flyers
+        // fly the straight line to the destination at their normal height (their idle and move
+        // clips are already airborne); there is no take-off arc.
+        var points = new List<Vector3> { v.Position };
+        var cells = flying ? new[] { path[^1] } : path;
+        foreach (var c in cells)
         {
-            // Flyers lift off, travel straight, land (the original uses flyby sequences).
-            var from = v.Position;
-            var to = Arena.Grid.StackCenter(new Vector2I(path[^1].X, path[^1].Y), v.Size);
-            v.FaceTowards(to);
-            float dist = from.DistanceTo(to);
-            float t = Math.Max(0.4f, dist / ArenaGrid.TileSize / (cellsPerSecond * 1.6f));
-            var tw = CreateTween();
-            tw.TweenMethod(Callable.From<float>(k =>
-            {
-                var p = from.Lerp(to, k);
-                p.Y += Mathf.Sin(k * Mathf.Pi) * Math.Min(2.5f * ArenaGrid.TileSize, dist * 0.3f);
-                v.Position = p;
-            }), 0f, 1f, t);
-            await ToSignal(tw, Tween.SignalName.Finished);
+            var p = Arena.Grid.StackCenter(new Vector2I(c.X, c.Y), v.Size);
+            if (p.DistanceTo(points[^1]) > 0.01f) points.Add(p);
         }
-        else
+        var lengths = new float[points.Count];
+        for (int i = 1; i < points.Count; i++) lengths[i] = lengths[i - 1] + points[i - 1].DistanceTo(points[i]);
+        float total = lengths[^1];
+        if (total > 0.01f)
         {
-            // One continuous walk along the path polyline at constant speed (no per-cell restarts).
-            var points = new List<Vector3> { v.Position };
-            foreach (var c in path)
+            static float SegYaw(Vector3 a, Vector3 b) => Mathf.Atan2(b.X - a.X, b.Z - a.Z);
+            await v.TurnTo(SegYaw(points[0], points[1]));
+            if (v.Has("move")) v.Play("move", loop: true);
+
+            // Along the path the facing follows each segment; at a corner the unit turns toward the
+            // next segment at the in-place turn rate while it keeps walking (inferred from the turn
+            // routine; the path track's own corner handling was not traced).
+            int seg = 0;
+            float yaw = v.Rotation.Y, targetYaw = yaw;
+            double last = 0;
+            var tw = CreateTween();
+            tw.TweenMethod(Callable.From<float>(dist =>
             {
-                var p = Arena.Grid.StackCenter(new Vector2I(c.X, c.Y), v.Size);
-                if (p.DistanceTo(points[^1]) > 0.01f) points.Add(p);
-            }
-            var lengths = new float[points.Count];
-            for (int i = 1; i < points.Count; i++) lengths[i] = lengths[i - 1] + points[i - 1].DistanceTo(points[i]);
-            float total = lengths[^1];
-            if (total > 0.01f)
-            {
-                int seg = 0;
-                v.FaceTowards(points[1]);
-                var tw = CreateTween();
-                tw.TweenMethod(Callable.From<float>(dist =>
+                while (seg < points.Count - 2 && dist > lengths[seg + 1])
                 {
-                    while (seg < points.Count - 2 && dist > lengths[seg + 1])
-                    {
-                        seg++;
-                        v.FaceTowards(points[seg + 1]);
-                    }
-                    float segLen = lengths[seg + 1] - lengths[seg];
-                    float k = segLen > 0 ? (dist - lengths[seg]) / segLen : 1f;
-                    v.Position = points[seg].Lerp(points[seg + 1], Mathf.Clamp(k, 0f, 1f));
-                }), 0f, total, total / unitsPerSecond);
-                await ToSignal(tw, Tween.SignalName.Finished);
-            }
+                    seg++;
+                    targetYaw = SegYaw(points[seg], points[seg + 1]);
+                }
+                float segLen = lengths[seg + 1] - lengths[seg];
+                float k = segLen > 0 ? (dist - lengths[seg]) / segLen : 1f;
+                v.Position = points[seg].Lerp(points[seg + 1], Mathf.Clamp(k, 0f, 1f));
+
+                double now = Time.GetTicksMsec() / 1000.0;
+                float dt = last == 0 ? 0f : (float)(now - last);
+                last = now;
+                float delta = UnitView.YawDelta(yaw, targetYaw);
+                float fullTurn = v.TurnSeconds(Mathf.Pi);
+                float maxStep = fullTurn > 0 ? Mathf.Pi / fullTurn * dt : Mathf.Pi;
+                yaw += Mathf.Clamp(delta, -maxStep, maxStep);
+                v.Rotation = new Vector3(0, yaw, 0);
+            }), 0f, total, total / unitsPerSecond);
+            await ToSignal(tw, Tween.SignalName.Finished);
+            v.Rotation = new Vector3(0, SegYaw(points[^2], points[^1]), 0);
         }
         v.Cell = path[^1];
         v.Idle();
@@ -624,8 +626,10 @@ public partial class CombatScreen : Control
         Node3D? attackerNode = Actor.IsHero(a.Attacker) ? _heroes.GetValueOrDefault(Actor.HeroSide(a.Attacker)) : View(a.Attacker);
         if (attackerNode is UnitView av && target != null)
         {
-            av.FaceTowards(target.GlobalPosition);
-            if (a.Kind != AttackKind.Ranged) target.FaceTowards(av.GlobalPosition);
+            // Both sides turn with the in-place turn routine (exe 008b88b0) rather than snapping;
+            // the defender's turn runs while the attacker turns.
+            if (a.Kind != AttackKind.Ranged) _ = target.TurnTo(target.YawTowards(av.GlobalPosition), playMoveClip: false);
+            await av.TurnTo(av.YawTowards(target.GlobalPosition));
         }
         // A fight event may switch to a track camera (retaliations belong to the same fight).
         if (a.Kind is AttackKind.Melee or AttackKind.Ranged && Participant(attackerNode) is { } actor)
