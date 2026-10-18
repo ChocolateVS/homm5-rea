@@ -37,6 +37,70 @@ sealed class CreatureCommand : ICommand
     }
 }
 
+sealed class DuelSimCommand : ICommand
+{
+    public string Name => "duel-sim";
+    public string Help => "duel-sim <presetA> <presetB> [seed] [--games N] [--quiet]  - AI vs AI duel from duel presets";
+
+    public int Run(ToolContext ctx, string[] args)
+    {
+        var pos = args.Where(a => !a.StartsWith("--")).ToList();
+        if (pos.Count < 2) { Console.WriteLine(Help); return 1; }
+        int a = int.Parse(pos[0]), b = int.Parse(pos[1]);
+        ulong seed = pos.Count > 2 ? ulong.Parse(pos[2]) : 1;
+        int games = 1;
+        int gi = Array.IndexOf(args, "--games");
+        if (gi >= 0 && gi + 1 < args.Length) games = int.Parse(args[gi + 1]);
+        bool quiet = args.Contains("--quiet") || games > 1;
+        var db = Db.Get(ctx);
+        var pa = db.DuelPresets[a]; var pb = db.DuelPresets[b];
+        Console.WriteLine($"{pa.Name} ({pa.Hero.Shared?.Id}) vs {pb.Name} ({pb.Hero.Shared?.Id}), {games} game(s) from seed {seed}");
+        int[] wins = new int[3];
+        long totalCmds = 0;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        for (int g = 0; g < games; g++)
+        {
+            var state = H5.Combat.BattleSetup.CreateDuel(db, a, b, seed + (ulong)g);
+            var battle = new H5.Combat.Battle(db, state);
+            var ai = new H5.Combat.GreedyBattleAI();
+            var events = H5.Combat.BattleRunner.RunToEnd(battle, ai, ai);
+            totalCmds += events.Count;
+            wins[state.Winner is int w ? w : 2]++;
+            if (!quiet) foreach (var e in events) Console.WriteLine(Describe(battle, e));
+            var survivors = string.Join(", ", state.Units.Where(u => u.Alive && u.Kind == H5.Combat.UnitKind.Creature).Select(u => $"s{u.Side}:{u.Count} {u.Name}"));
+            Console.WriteLine($"game {g + 1}: winner side {state.Winner?.ToString() ?? "none"} ({state.EndReason}), time {state.Time:F1}, turns {state.TurnCounter}, hash {state.ComputeHash()}  survivors: {survivors}");
+        }
+        Console.WriteLine($"wins: {pa.Name} {wins[0]}, {pb.Name} {wins[1]}, none {wins[2]}  ({sw.ElapsedMilliseconds} ms, {totalCmds} events)");
+        return 0;
+    }
+
+    static string Describe(H5.Combat.Battle b, H5.Combat.BattleEvent e)
+    {
+        string N(int id) => id < 0 ? $"Hero{-1 - id}" : b.State.Unit(id) is { } u ? $"{u.Name}#{u.Id}(s{u.Side})" : $"#{id}";
+        return e switch
+        {
+            H5.Combat.TurnStarted t => $"[{t.Time,6:F2}] turn: {N(t.Actor)}",
+            H5.Combat.Moved m => $"    {N(m.UnitId)} moves to {m.Path[^1]}",
+            H5.Combat.AttackStarted at => $"    {N(at.Attacker)} {at.Kind} -> {N(at.Target)}",
+            H5.Combat.Damaged d => $"      {N(d.Target)} takes {d.Damage}{(d.By != null ? $" ({d.By})" : "")}, {d.Killed} killed, {d.CountLeft} left",
+            H5.Combat.SpellCast sc => $"    {N(sc.Caster)} casts {sc.Spell}{(sc.Target is int t2 ? " on " + N(t2) : "")}{(sc.Cell is { } c ? " at " + c : "")}",
+            H5.Combat.EffectAdded ea => $"      +{ea.Effect} on {N(ea.UnitId)} ({ea.Duration:F1})",
+            H5.Combat.MoraleProc mp => $"    {(mp.Good ? "good" : "bad")} morale: {N(mp.UnitId)}",
+            H5.Combat.LuckProc lp => $"    {(lp.Good ? "lucky" : "unlucky")} strike: {N(lp.UnitId)}",
+            H5.Combat.AbilityTriggered ab => $"    {N(ab.UnitId)} uses {ab.Ability}{(ab.Target is int t3 ? " on " + N(t3) : "")}",
+            H5.Combat.UnitDied ud => $"      {N(ud.UnitId)} dies",
+            H5.Combat.Waited w => $"    {N(w.Actor)} waits",
+            H5.Combat.Defended df => $"    {N(df.Actor)} defends",
+            H5.Combat.UnitSummoned su => $"    summoned {su.Count} {su.CreatureId} for side {su.Side}",
+            H5.Combat.Healed h => $"      {N(h.Target)} healed {h.Amount} (+{h.Resurrected})",
+            H5.Combat.SpellResisted r => $"      {N(r.Target)} resists {r.Spell}",
+            H5.Combat.TurnSkipped ts => $"    {N(ts.Actor)} skips turn ({ts.Reason})",
+            H5.Combat.BattleEnded be => $"== battle ended: winner {be.Winner?.ToString() ?? "none"} ({be.Reason})",
+            _ => $"    {e.GetType().Name}",
+        };
+    }
+}
+
 sealed class DbCheckCommand : ICommand
 {
     public string Name => "db-check";

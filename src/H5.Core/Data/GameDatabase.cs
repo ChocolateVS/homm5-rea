@@ -70,7 +70,8 @@ public sealed class GameDatabase
             var href = (string?)objRef.Attribute("href");
             if (string.IsNullOrEmpty(href) && !objRef.HasElements) continue;
             XElement? obj; string file;
-            if (string.IsNullOrEmpty(href) || href.StartsWith("#n:inline")) { obj = objRef.Elements().FirstOrDefault() ?? objRef; file = table; }
+            if (string.IsNullOrEmpty(href)) { obj = objRef; file = table; }   // fields written directly under <obj>
+            else if (href.StartsWith("#n:inline")) { obj = objRef.Elements().FirstOrDefault() ?? objRef; file = table; } // <Obj><Type>…</Type></Obj>
             else
             {
                 var r = XdbRef.Parse(href, table);
