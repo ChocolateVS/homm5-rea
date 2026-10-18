@@ -20,6 +20,9 @@ namespace H5.Adventure.Engine;
 [JsonDerivedType(typeof(DismissHeroCmd), "dismiss")]
 [JsonDerivedType(typeof(BuyWarMachineCmd), "buy_war_machine")]
 [JsonDerivedType(typeof(TransferStackCmd), "transfer")]
+[JsonDerivedType(typeof(SwapStacksCmd), "swap")]
+[JsonDerivedType(typeof(GarrisonHeroCmd), "garrison")]
+[JsonDerivedType(typeof(MoveArtifactCmd), "move_artifact")]
 public abstract record AdvCommand
 {
     /// <summary>Issuing player; the session layer fills it from the connection.</summary>
@@ -42,6 +45,15 @@ public sealed record DismissHeroCmd(int HeroId) : AdvCommand;
 public sealed record BuyWarMachineCmd(int TownObject, int HeroId, string Machine) : AdvCommand;
 /// <summary>Move/split creatures between two armies at the same place (hero ↔ hero, hero ↔ town garrison).</summary>
 public sealed record TransferStackCmd(int FromHero, int FromTown, int FromSlot, int ToHero, int ToTown, int ToSlot, int Count) : AdvCommand;
+/// <summary>Exchanges two whole slots (possibly empty, possibly different creatures) of armies at the same place.</summary>
+public sealed record SwapStacksCmd(int FromHero, int FromTown, int FromSlot, int ToHero, int ToTown, int ToSlot) : AdvCommand;
+/// <summary>Moves a hero into a town's garrison row (Garrison = true) or out to the visiting row.</summary>
+public sealed record GarrisonHeroCmd(int TownObject, int HeroId, bool Garrison) : AdvCommand;
+/// <summary>
+/// Moves an artifact a hero carries: between worn and backpack (ToHero = same hero) or to another hero
+/// standing next to it (hero meeting). Worn artifacts must fit their slot (ring slot holds two).
+/// </summary>
+public sealed record MoveArtifactCmd(int HeroId, string Artifact, bool FromBackpack, int ToHero, bool ToBackpack) : AdvCommand;
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$t")]
 [JsonDerivedType(typeof(TurnStarted), "turn")]

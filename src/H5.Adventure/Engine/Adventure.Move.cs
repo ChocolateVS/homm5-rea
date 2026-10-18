@@ -33,7 +33,7 @@ public sealed partial class Adventure
 
     public TownState? TownAt(Tile t) => S.Towns.Find(tn => O(tn.Object).ActiveTiles.Contains(t) || tn.Pos == t);
 
-    Tile EntranceOf(TownState t) => O(t.Object).ActiveTiles.FirstOrDefault(t.Pos);
+    public Tile EntranceOf(TownState t) => O(t.Object).ActiveTiles.FirstOrDefault(t.Pos);
 
     HeroState? HeroAt(Tile t, int exceptId = -1) =>
         S.Heroes.Find(h => h.Alive && h.Id != exceptId && h.Pos == t && !(h.InTown >= 0 && h.Garrisoned));

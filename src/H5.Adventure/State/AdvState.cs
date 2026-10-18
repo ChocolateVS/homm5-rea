@@ -100,6 +100,8 @@ public sealed class HeroState
     public List<string> Perks = new();
     public List<string> Spells = new();
     public List<string> Artifacts = new();
+    /// <summary>Carried but not worn (hero screen backpack); worn ones are <see cref="Artifacts"/>.</summary>
+    public List<string> Backpack = new();
     public Stack?[] Army = State.Army.Empty();
     public bool Ballista, FirstAidTent, AmmoCart;
     public int Mana, MovePoints, MaxMovePoints;
