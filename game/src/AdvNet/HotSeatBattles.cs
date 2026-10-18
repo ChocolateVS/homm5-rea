@@ -16,7 +16,7 @@ public static class HotSeatHandOver
     {
         // The stock colour text files are named crosswise: blue_player.txt says "Teal player" and
         // dark_blue_player.txt says "Blue player" (brown is "Tan").
-        var colour = Adventure.AdvColors.TextName(p.Colour) switch { "blue" => "dark_blue", "teal" => "blue", var c => c };
+        var colour = Adventure.AdvColors.TextName(p.Colour); // PlayerColourSchemes.xdb mapping (handles the blue/teal cross-naming)
         var name = Adventure.AdvTexts.Get($"Text/Game/Player/Colors/{colour}_player.txt");
         if (string.IsNullOrWhiteSpace(name)) name = $"Player {p.Index + 1}";
         var text = Adventure.AdvTexts.Get("UI/AdventureScreen-heavy/hotseat_player_turn_text.txt", ("playername", name));

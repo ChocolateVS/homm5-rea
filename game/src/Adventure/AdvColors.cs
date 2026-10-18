@@ -21,12 +21,39 @@ public static class AdvColors
         return i < 0 ? 0 : i;
     }
 
-    /// <summary>The Text/Game/Player/Colors/&lt;name&gt;*.txt base name for a PCOLOR_* value ("red", "dark_blue"…).</summary>
-    public static string TextName(string pcolor) => pcolor.Replace("PCOLOR_", "").ToLowerInvariant() switch
+    /// <summary>
+    /// The Text/Game/Player/Colors/&lt;name&gt;*.txt base name for a PCOLOR_* value, from the stock table
+    /// UI/RefTables/PlayerColourSchemes.xdb (&lt;text&gt; href). The files are cross-named in the original:
+    /// PCOLOR_BLUE uses dark_blue*.txt ("Blue") and PCOLOR_TEAL uses blue*.txt ("Teal").
+    /// </summary>
+    public static string TextName(string pcolor)
     {
-        "" or "neutral" or "none" => "neutral",
-        var n => n,
-    };
+        var id = string.IsNullOrEmpty(pcolor) || pcolor.Equals("none", StringComparison.OrdinalIgnoreCase) ? "PCOLOR_NEUTRAL"
+            : pcolor.StartsWith("PCOLOR_", StringComparison.OrdinalIgnoreCase) ? pcolor.ToUpperInvariant() : "PCOLOR_" + pcolor.ToUpperInvariant();
+        return SchemeTextNames.TryGetValue(id, out var n) ? n : id["PCOLOR_".Length..].ToLowerInvariant();
+    }
+
+    static Dictionary<string, string>? _schemeTextNames;
+    static Dictionary<string, string> SchemeTextNames => _schemeTextNames ??= LoadSchemeTextNames();
+
+    static Dictionary<string, string> LoadSchemeTextNames()
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        const string table = "UI/RefTables/PlayerColourSchemes.xdb";
+        try
+        {
+            if (!Game.Instance.Fs.Exists(table)) return map;
+            foreach (var item in Game.Instance.Xdb.Load(table).Root?.Element("objects")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+            {
+                var id = (string?)item.Element("ID");
+                var href = (string?)item.Element("obj")?.Element("text")?.Attribute("href");
+                if (id == null || string.IsNullOrEmpty(href)) continue;
+                map[id] = System.IO.Path.GetFileNameWithoutExtension(href);
+            }
+        }
+        catch { /* no data: fall back to the enum name */ }
+        return map;
+    }
 
     public static Color Rgb(string pcolor) => ColourModelIndex(pcolor) switch
     {

@@ -112,7 +112,14 @@ public sealed class UiMarkup
                     case "value":
                         Flush();
                         attrs.TryGetValue("", out var vname);
-                        runs.Add(new UiTextRun(values != null && vname != null && values.TryGetValue(vname, out var v) ? v : "", style, false, vname));
+                        var inserted = values != null && vname != null && values.TryGetValue(vname, out var v) ? v : "";
+                        // Inserted values are markup too: stock texts insert formatted strings (building
+                        // descriptions with <color_default>/<br> into <value=desc>, colour tags into
+                        // <value=who>, message bodies), and the original parses them in place. Style
+                        // changes inside a value carry on after it, as with plain concatenation; the
+                        // stock templates reset the style after values where they need to.
+                        if (inserted.IndexOf('<') >= 0) Expand(inserted, depth + 1);
+                        else runs.Add(new UiTextRun(inserted, style, false, vname));
                         break;
                     case "nowrap": case "forcewrap": case "wrapdots": case "wrapright": case "wrapleft": case "dots":
                     case "image": case "minfontsize": break;
