@@ -149,6 +149,7 @@ public partial class SpellBook3D : Control
 
         BuildSlots();
         RefreshPage();
+        if (Game.Instance.Fs.Exists("Sounds/_(Sound)/Interface/spellbook.xdb")) Audio.SoundLibrary.Play("Sounds/_(Sound)/Interface/spellbook.xdb", this);
     }
 
     (Vector3 Min, Vector3 Max) Bounds(IEnumerable<int> parts)

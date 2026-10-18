@@ -441,9 +441,15 @@ public partial class CombatScreen : Control
 
             case MoraleProc mp:
                 Hud.Log.AddLine(CombatLogText.Morale(this, mp));
+                if (View(mp.UnitId) is { } moraleView)
+                    ProcVisual(moraleView, mp.Good ? "Effects/_(Effect)/Spells/MoraleGood.xdb" : "Effects/_(Effect)/Spells/MoraleBad.xdb",
+                        mp.Good ? "Sounds/_(Sound)/Spells/GoodMoral.xdb" : "Sounds/_(Sound)/Spells/BadMoral.xdb");
                 break;
 
             case LuckProc lp:
+                if (View(lp.UnitId) is { } lv)
+                    ProcVisual(lv, lp.Good ? "Effects/_(Effect)/Spells/LuckGood.xdb" : "Effects/_(Effect)/Spells/LuckBad.xdb",
+                        lp.Good ? "Sounds/_(Sound)/Spells/LuckGood.xdb" : "Sounds/_(Sound)/Spells/LuckBad.xdb");
                 Hud.PendingLuck = lp.Good ? 1 : -1;
                 break;
 
@@ -490,6 +496,21 @@ public partial class CombatScreen : Control
     {
         if (path.Count == 0) return;
         const float cellsPerSecond = 3.2f;
+        if (v.Has("moveStart") && v.Has("moveEnd"))
+        {
+            // Teleporting movers (Devils, Vampire Lords): vanish with moveStart, appear at the
+            // destination with moveEnd, as their arena anim sets are authored.
+            var dest = Arena.Grid.StackCenter(new Vector2I(path[^1].X, path[^1].Y), v.Size);
+            v.FaceTowards(dest);
+            v.PlayAction("moveStart");
+            await Delay(Math.Max(0.2f, v.Length("moveStart")));
+            v.Position = dest;
+            v.PlayAction("moveEnd");
+            await Delay(Math.Max(0.2f, v.Length("moveEnd")));
+            v.Cell = path[^1];
+            v.Idle();
+            return;
+        }
         v.Play(v.Has("move") ? "move" : "idle00", loop: true);
         if (flying)
         {
@@ -586,6 +607,13 @@ public partial class CombatScreen : Control
     }
 
     int _shotCount, _spellCount;
+
+    /// <summary>Morale/luck proc: the stock Effects/_(Effect)/Spells/{Morale,Luck}{Good,Bad} effect and sound on the stack.</summary>
+    void ProcVisual(UnitView v, string effect, string sound)
+    {
+        if (Game.Instance.Fs.Exists(effect) && v.Model is { } m) Effects.EffectPlayer.Play(effect, m);
+        if (Game.Instance.Fs.Exists(sound)) Audio.SoundLibrary.Play(sound, v);
+    }
 
     void MaybeCapture(ref int counter, (int N, string Path)? shot, double after)
     {
