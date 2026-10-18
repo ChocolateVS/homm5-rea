@@ -16,11 +16,12 @@ _Last updated: 2026-10-19 (overnight run). Demo build: `G:\H5Reborn-play` (launc
 | Troop movement "cooked" | **Fixed per exe** — anim blends, turn-in-place, exe move speeds; walker/flyer frame sequences checked. |
 | Triple Ballista usable 3 times | In progress (combat mechanics audit). |
 | Hero movement on the map | In progress (adventure workstream). |
-| Animated sword slash trail | In progress (rendering workstream). |
-| Minimap view box outside the minimap; empty hero/town slots | In progress (adventure workstream). |
-| Adventure lighting/fog | In progress (rendering workstream). |
+| Animated sword slash trail | **Fixed** — effect models now play their original transparency tracks (Footman slash appears at 0.63 s, flashes at 0.8 s, gone by 1.5 s). |
+| Minimap view box outside the minimap | In progress (adventure workstream). |
+| Hero/town bar full of empty slots | **Fixed** — the bar now shows only your heroes/towns. |
+| Adventure lighting / no fog | **Fixed per exe** — gamma-space lighting and the original distance+height fog, for adventure, combat, towns and the menu. One output constant inferred (see rendering notes). A grey-object regression on A2M1 found during verification is being fixed. |
 | Zoom out further on the adventure map | In progress — "Extended zoom" option, on by default. |
-| All double-click / click interactions | In progress — interaction audit (ledger `docs/rules/AUDIT_INPUT.md`). |
+| All double-click / click interactions | **Audited** — 61 interactions: 20 matched, 32 fixed, 7 gaps (`docs/rules/AUDIT_INPUT.md`). Double-click hero/town (map and lists), stacks → creature info, building double-click, object tooltips (300 ms / 2 s expand), all `input_a2.cfg` hotkeys. Gaps: dig / kingdom overview / puzzle map screens not built yet. |
 
 ## New features since your last session
 - **Music & ambience** from the original systems (menu, adventure per hero/terrain/campaign, towns incl. tavern/recruit, combat incl. sieges, win/lose stings, ambient sets, UI click sounds).
@@ -41,6 +42,9 @@ _Last updated: 2026-10-19 (overnight run). Demo build: `G:\H5Reborn-play` (launc
 - Coastline is jagged; no shore foam. Some arenas too dark; lava glow; underground lighting.
 - Ghost Mode: a few effect details not traced in the exe; possessed stacks are AI-played.
 - Map editor not rebuilt (separate project — ask if wanted). Web port: after parity.
+
+## Housekeeping for you
+- `G:\H5Reborn-input-test` is a leftover scratch folder (copies of committed scripts only, no links). A safety check stopped me deleting it automatically — you can delete it.
 
 ## Interruptions
 The overnight run hit the account usage limit once (all helpers paused until it reset at 4:10 am); they were resumed from where they stopped, with no work lost.
