@@ -186,19 +186,38 @@ public partial class AdvWorld : Node3D
 
     readonly Godot.Environment?[] _envRes = new Godot.Environment?[2];
 
+    static readonly string[] RmgGroundLights =
+    {
+        "Lights/_(AmbientLight)/0_Default_AmbientLight.xdb",
+        "Lights/_(AmbientLight)/AdvMap/C1M1.xdb",
+        "Lights/_(AmbientLight)/Day_light_AdvMap01(EugeneTest).xdb",
+        "Lights/_(AmbientLight)/Arena/mausoleum/Day_light_AdvMap01(EugeneTest).xdb",
+        "Lights/_(AmbientLight)/Arena/inferno/DesertArena01.xdb",
+    };
+
     void BuildLighting(int f)
     {
         var files = _session.Files;
-        var mapXdb = files.LoadXml(files.MapXdbPath);
-        var listName = f == 1 ? "UndergroundAmbientLights" : "GroundAmbientLights";
-        var single = f == 1 ? "UndergroundAmbientLight" : "AmbientLight";
-        var lightRef = mapXdb.Root?.Element(listName)?.Elements("Item").FirstOrDefault(i => !string.IsNullOrEmpty((string?)i.Attribute("href")))
-                       ?? mapXdb.Root?.Element(single);
         XElement? light = null;
         string lightFile = files.MapXdbPath;
-        if (lightRef != null && (string?)lightRef.Attribute("href") is { Length: > 0 } href)
+        if (files.Exists(files.MapXdbPath))
         {
-            lightFile = files.Resolve(href, files.MapXdbPath);
+            var mapXdb = files.LoadXml(files.MapXdbPath);
+            var listName = f == 1 ? "UndergroundAmbientLights" : "GroundAmbientLights";
+            var single = f == 1 ? "UndergroundAmbientLight" : "AmbientLight";
+            var lightRef = mapXdb.Root?.Element(listName)?.Elements("Item").FirstOrDefault(i => !string.IsNullOrEmpty((string?)i.Attribute("href")))
+                           ?? mapXdb.Root?.Element(single);
+            if (lightRef != null && (string?)lightRef.Attribute("href") is { Length: > 0 } href)
+            {
+                lightFile = files.Resolve(href, files.MapXdbPath);
+                if (files.Exists(lightFile)) light = files.LoadXml(lightFile).Root;
+            }
+        }
+        else if (f == 0)
+        {
+            // Generated map (no descriptor): the stock generator gives the surface one of these lights
+            // (as seen in the RMG maps it saved); chosen by the game seed so every peer agrees.
+            lightFile = RmgGroundLights[(int)(_session.Seed % (ulong)RmgGroundLights.Length)];
             if (files.Exists(lightFile)) light = files.LoadXml(lightFile).Root;
         }
         Vector3 V(string n, float d)

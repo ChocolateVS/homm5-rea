@@ -24,7 +24,7 @@ public partial class CustomGameScreen : UiScreen
     public CustomGameScreen() : base("UI/CustomGameCreate.(WindowScreen).xdb")
     {
         _maps = LoadEntries();
-        foreach (var n in new[] { "selectionname", "selectionplayers", "selectiongoal", "selectionmapsize", "RMGFilterBtn", "RMGFilterView", "screenshoot1", "screenshoot2", "LoadBtn", "RMG" })
+        foreach (var n in new[] { "selectionname", "selectionplayers", "selectiongoal", "selectionmapsize", "RMGFilterBtn", "RMGFilterView", "screenshoot1", "screenshoot2", "LoadBtn" })
             SetVisible(n, false);
         var container = Find("maps/container")!;
         _list = new Control { Name = "Rows", AnchorRight = 1, AnchorBottom = 1, ClipContents = true, MouseFilter = MouseFilterEnum.Stop };
@@ -32,6 +32,9 @@ public partial class CustomGameScreen : UiScreen
         _list.GuiInput += OnListInput;
         Bus.On("back", () => UiNavigator.Goto("mainmenu"));
         Bus.On("create", Create);
+        // "Generate Map": the stock random map generator dialog (UI/RMGScreen, game/src/AdvNet); the
+        // generated map starts at once with the first playable colour as the human player.
+        Bus.On("rmg", () => UiNavigator.ShowOverlay(new AdvNet.RmgDialog(StartGenerated)));
         Bus.On("sortbyname", () => Sort(m => m.Name));
         Bus.On("sortbyplayers", () => Sort(m => m.Players.ToString("00")));
         Bus.On("sortbymapsize", () => Sort(m => m.Size.ToString("000")));
@@ -134,6 +137,16 @@ public partial class CustomGameScreen : UiScreen
         }
     }
 
+    internal static void StartGeneratedForDev(H5.AdvNet.RmgSettings rmg, string name) => StartGenerated(rmg, name);
+
+    static void StartGenerated(H5.AdvNet.RmgSettings rmg, string name)
+    {
+        var lm = AdvNet.AdvNetGame.Maps.Load(new H5.AdvNet.AdvNetSettings { Rmg = rmg });
+        var human = lm.Map.Players.Where(p => p.Active).OrderByDescending(p => p.CanBeHuman).First().Index;
+        GD.Print($"[H5] generated map {name} ({lm.Map.TilesX}x{lm.Map.TilesY})");
+        AdventureScreen.Open(AdventureSession.StartLocal(lm, new[] { human }, (ulong)rmg.Seed, 1));
+    }
+
     void Create()
     {
         var sel = VisibleMaps().ElementAtOrDefault(_selected);
@@ -179,6 +192,19 @@ public static partial class AdventureLauncher
         if (arg == "--adventure-end-turn") { _endTurn = true; return true; }
         if (arg == "--adventure-meet-test") { _meetTest = true; return true; }
         if (arg == "--adventure-spellbook") { _spellbook = true; return true; }
+        if (arg == "--adventure-rmg-test")
+        {
+            // Dev: generate a random map with the dialog's defaults and start it.
+            // (after the intro movies, once the main menu hosts overlays)
+            var tree = (SceneTree)Engine.GetMainLoop();
+            tree.CreateTimer(15).Timeout += () =>
+            {
+                var dlg = UiNavigator.ShowOverlay(new AdvNet.RmgDialog(CustomGameScreen.StartGeneratedForDev));
+                dlg.GenerateForTest();
+                tree.CreateTimer(2).Timeout += () => dlg.Bus.Send("back"); // closing hands the generated map back
+            };
+            return true;
+        }
         if (arg.StartsWith("--adventure-cast=")) { _cast = arg["--adventure-cast=".Length..]; return true; }
         if (arg == "--adventure-reveal") { AdvWorld.RevealAll = true; return true; }
         if (arg == "--adventure-go") { _go = true; return true; }
