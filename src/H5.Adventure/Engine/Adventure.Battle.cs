@@ -227,6 +227,11 @@ public sealed partial class Adventure
         }
 
         long expAtt = ExpFor(pb.DefenderArmy, c.DefenderSurvivors);
+        // Captured before the survivors replace the attacker's army (the defender's experience and necromancy
+        // need the attacker's pre-battle stacks).
+        var attackerBefore = att.Army.Live().Select(s => new Stack(s.Creature, s.Count)).ToList();
+        static IEnumerable<(string, int)> Killed(List<Stack> before, List<ArmySlot> after) =>
+            before.GroupBy(s => s.Creature).Select(g => (g.Key, g.Sum(s => s.Count) - after.Where(a => a.Creature == g.Key).Sum(a => a.Count)));
         if (defHero == null && pb.DefenderObject >= 0 && O(pb.DefenderObject).Kind == ObjectKind.Monster)
         {
             var coefs = Db.Stats.Node(S.Campaign ? "adventure/NeutralsInCampaign/ExpCoefs" : "adventure/NeutralsNotInCampaign/ExpCoefs")?.Elements("Item").ToList();
@@ -269,13 +274,18 @@ public sealed partial class Adventure
                 }
             }
             GainExperience(att, expAtt);
+            NecromancyRaise(att, Killed(pb.DefenderArmy, c.DefenderSurvivors));   // exe FUN_00c26be0
             if (att.Army.StackCount() == 0) RemoveHero(att, "army destroyed");
             if (att.Perks.Contains("HERO_SKILL_PATH_OF_WAR")) att.MovePoints += 350;   // Warpath (p.300)
         }
         else
         {
             Emit(new BattleResolved(1, 0));
-            if (defHero != null) GainExperience(defHero, ExpFor(att.Army.Live().ToList(), c.AttackerSurvivors) + 500);
+            if (defHero != null)
+            {
+                GainExperience(defHero, ExpFor(attackerBefore, c.AttackerSurvivors) + 500);
+                NecromancyRaise(defHero, Killed(attackerBefore, c.AttackerSurvivors));
+            }
             if (pb.DefenderObject >= 0 && O(pb.DefenderObject).Kind != ObjectKind.Town)
             {
                 var os = S.Obj(pb.DefenderObject);
