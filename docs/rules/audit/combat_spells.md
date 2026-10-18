@@ -42,11 +42,11 @@ decompiler's `ROUND` is a truncation toward zero there.
 | `SPELL_LIGHTNING_BOLT` | FIXED | 00976b90, 0097d7b0 (→ 004e6a10) | truncated base / protection; stun rider 004e6a10 not compared | ProtectionPercentIsTruncated |
 | `SPELL_ICE_BOLT` | FIXED | 00976b90, 0097d7b0 (→ 004e6600) | truncated base / protection; freeze rider 004e6600 not compared | ProtectionPercentIsTruncated |
 | `SPELL_IMPLOSION` | FIXED | 00976b90, 0097c9f0 | truncated base; Dwarven Mithral Cuirass immunity | ArtifactsGrantSpellImmunities |
-| `SPELL_FIREBALL` | FIXED | 00976b90, 0085eaa0 | truncated base / protection; area enumeration 0085e7c0 / 0097a530 not compared | SpellBaseDamageTruncates |
-| `SPELL_FROST_RING` | FIXED | 00976b90, 0085eaa0 | as Fireball | SpellBaseDamageTruncates |
-| `SPELL_METEOR_SHOWER` | FIXED | 00976b90, 0085eaa0 | as Fireball | SpellBaseDamageTruncates |
-| `SPELL_STONE_SPIKES` | FIXED | 00976b90, 0085eaa0 (0xed) | as Fireball | SpellBaseDamageTruncates |
-| `SPELL_CHAIN_LIGHTNING` | FIXED | 00976b90, 0085edb0 | truncated base; per-target multipliers passed to 0097d600 (param_7) and the jump order (00a5dbb0) not compared; stun only on the first target (iVar16 == 0) matches | SpellBaseDamageTruncates |
+| `SPELL_FIREBALL` | FIXED | 00976b90, 0085eaa0, 0097a530 (area cells by spell id; neighbour table 00f757c8 = the 8 offsets) | truncated base / protection; area = target cell + 8 neighbours (3×3), every stack in it, friend or foe (00b3d960 enumerates both sides) | SpellBaseDamageTruncates |
+| `SPELL_FROST_RING` | FIXED | 00976b90, 0085eaa0, 0097a530 (area cells by spell id; neighbour table 00f757c8 = the 8 offsets) | as Fireball, area = the 8 neighbours only (centre excluded) | SpellBaseDamageTruncates |
+| `SPELL_METEOR_SHOWER` | FIXED | 00976b90, 0085eaa0, 0097a530 (case 8 / 0x11d) | as Fireball, area 5×5 (dx, dy ∈ −2..2) | SpellBaseDamageTruncates |
+| `SPELL_STONE_SPIKES` | FIXED | 00976b90, 0085eaa0, 0097a530 (case 0xed) | as Fireball, area = centre + 4 orthogonal cells | SpellBaseDamageTruncates |
+| `SPELL_CHAIN_LIGHTNING` | FIXED | 0085edb0, 00a5dbb0, 0085e2f0, 0097d600, 00e0ab70 | the chain (first target + up to 3 hops) is chosen before any damage: each hop goes to the nearest living stack not yet chained, friend or foe, skipping stacks with protection > 99 %, ties broken by the battle RNG; per hop the float base is halved (×0.5f) and truncated; riders (stun) only on the first target. Engine re-picked after each hit, included immune stacks and broke ties by id. Distance metric (combat vf +0x118) not traced (footprint gap used). Uber Chain Lightning (0xee) does not halve — not implemented (campaign hero ability) | ChainLightningSkipsFullyProtectedStacks, ChainLightningBreaksTiesWithTheRng, ChainLightningHopBasesHalveAndTruncate |
 | `SPELL_ARMAGEDDON` | FIXED | 00976b90, 0085f330 | truncated base / protection; 0085f330 target rule not compared | SpellBaseDamageTruncates |
 | `SPELL_HOLY_WORD` | FIXED | 00977600, 0097c9f0, 0085f330 | affects Undead, Demonic and Demon-Raged creatures (engine missed Demon-Raged); Ring of Death holder immune | ArtifactsGrantSpellImmunities |
 | `SPELL_UNHOLY_WORD` | MATCH | 00977600 | affects creatures that are neither Undead nor Demonic | |
@@ -66,3 +66,18 @@ decompiler's `ROUND` is a truncation toward zero there.
 | `SPELL_WARCRY_RALLING_CRY` | FIXED | FUN_00946030 struct, 008a1e50 formula | morale +((lvl−1)/LevelDivisor)·PerDividedLevel + Base (engine 1 + lvl/8) | WarcryBonusesUseLevelMinusOne |
 | `SPELL_WARCRY_BATTLECRY` | FIXED | 008a1e50 (0x126), FUN_00946030 | speed +((lvl−1)/div)·per + base (confirmed), offence by the same struct formula (engine 1 + lvl/2) | WarcryBonusesUseLevelMinusOne |
 | `SPELL_DEFLECT_ARROWS` | UNVERIFIED | 00a5a900 (visual only), 00a5a750 | the ranged reduction site was not found (not in 00a5a900 / 00a58de0 / 00a5c5a0); engine ×(1 − clamp(v,0,0.95)) left as is | |
+| `SPELL_FIREWALL` | UNVERIFIED | 0097a530 (case 0xec) | cells = (x, y−1), (x, y), (x, y+1) — matches; the field's entry/turn damage is not yet compared | |
+| `SPELL_MASS_DISRUPTING_RAY` | MATCH | 0097a530 (default case), spell record +0xcc IsAimed, +0xd0 Target | aimed mass spell: 4×4 area x−1..x+2, y−1..y+2, TARGET_HOSTILE → enemy stacks only; effect as SPELL_DISRUPTING_RAY | |
+| `SPELL_MASS_PLAGUE` | MATCH | 0097a530 (default case) | aimed: 4×4 area, enemy stacks only; effect as SPELL_PLAGUE | |
+| `SPELL_MASS_DISPEL` | UNVERIFIED | 0097a530 (default case) | aimed: 4×4 area, TARGET_NEUTRAL → all stacks (matches); dispel rules not yet compared | |
+| `SPELL_MASS_CURSE` | MATCH | 0097a530 (default case, IsAimed false) | whole enemy army (TARGET_HOSTILE → caster vf +0x10); effect as SPELL_CURSE | |
+| `SPELL_MASS_SLOW` | MATCH | 0097a530 | whole enemy army; effect as SPELL_SLOW | |
+| `SPELL_MASS_HASTE` | MATCH | 0097a530 | whole own army (TARGET_FRIEND → caster vf +0xc); effect as SPELL_HASTE | |
+| `SPELL_MASS_BLESS` | MATCH | 0097a530 | whole own army; effect as SPELL_BLESS | |
+| `SPELL_MASS_FORGETFULNESS` | GAP | 0097a530 | whole enemy army (matches); immunity as SPELL_FORGETFULNESS (GAP) | |
+| `SPELL_MASS_WEAKNESS` | UNVERIFIED | 0097a530 | whole enemy army (matches); SPELL_WEAKNESS effect not yet compared | |
+| `SPELL_MASS_STONESKIN` | UNVERIFIED | 0097a530 | whole own army (matches); SPELL_STONESKIN effect not yet compared | |
+| `SPELL_MASS_BLOODLUST` | UNVERIFIED | 0097a530 | whole own army (matches); SPELL_BLOODLUST effect not yet compared | |
+| `SPELL_MASS_DEFLECT_ARROWS` | UNVERIFIED | 0097a530 | whole own army (matches); Deflect Arrows reduction site not found | |
+| `HERO_SKILL_ELEMENTAL_VISION` | FIXED | 00977e60, 004b12c0, 004b0ef0, 004b0d40, 004b0d80, 004b0e90 | Elemental Chains on damage spells: Warlock (class 6) with Elemental Vision; spell element opposite to the target's; m = 1 + Invocation·0.1 + altars·0.1 (float), ×2 Absolute Chains, ×Runic_2Warlock_ElementalVisionMultiplier with ≥ 2 Runic pieces; extra = trunc(D·m − D) of the damage after protection; target element re-rolled. Engine: any class, Destructive school only, bonus before protection, no altars/Absolute Chains/Runic. Creature-attack chaining (Altar of Elements, 004b13e0 path) not implemented; re-roll picker (004b0e90 → 00877220) not traced | ElementalChainsUseTheExeMultiplier |
+| `HERO_SKILL_ABSOLUTE_CHAINS` | FIXED | 004b0d80 (skill 0x96) | doubles the Elemental Chains fraction x | ElementalChainsUseTheExeMultiplier |

@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 113 |
-| MATCH | 77 |
-| GAP | 7 |
-| UNVERIFIED | 334 |
+| FIXED | 116 |
+| MATCH | 83 |
+| GAP | 8 |
+| UNVERIFIED | 324 |
 | N/A | 57 |
 
 ## Core mechanics
@@ -282,7 +282,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_MELT_ARTIFACT` | MATCH | see EXE_FINDINGS | verified in EXE_FINDINGS.md |  |
 | `HERO_SKILL_MAGIC_MIRROR` | UNVERIFIED | 00983150 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_EMPOWERED_SPELLS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_ELEMENTAL_VISION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ELEMENTAL_VISION` | FIXED | 00977e60, 004b12c0, 004b0ef0, 004b0d40, 004b0d80, 004b0e90 | Elemental Chains on damage spells: Warlock (class 6) with Elemental Vision; spell element opposite to the target's; m = 1 + Invocation·0.1 + altars·0.1 (float), ×2 Absolute Chains, ×Runic_2Warlock_ElementalVisionMultiplier with ≥ 2 Runic pieces; extra = trunc(D·m − D) of the damage after protection; target element re-rolled. Engine: any class, Destructive school only, bonus before protection, no altars/Absolute Chains/Runic. Creature-attack chaining (Altar of Elements, 004b13e0 path) not implemented; re-roll picker (004b0e90 → 00877220) not traced | ElementalChainsUseTheExeMultiplier |
 | `HERO_SKILL_ROAD_HOME` | UNVERIFIED | 008a0e30 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_TRIPLE_BALLISTA` | FIXED | 00a75bf0, 00a65260 | shots per action set to 2 (+1 Ballista = 3) — no extra actions | tests/H5.Combat.Tests/WarMachineAuditTests.TripleBallistaFiresThreeShotsInOneActionThenEndsItsTurn |
 | `HERO_SKILL_ENCOURAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -344,7 +344,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_PAYBACK` | UNVERIFIED | 00977260 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ELITE_CASTERS` | FIXED | 009781e0 | creature casters: integer half | (CreatureManaCost) |
 | `HERO_SKILL_ELEMENTAL_OVERKILL` | UNVERIFIED | 00977a80 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_ABSOLUTE_CHAINS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ABSOLUTE_CHAINS` | FIXED | 004b0d80 (skill 0x96) | doubles the Elemental Chains fraction x | ElementalChainsUseTheExeMultiplier |
 | `HERO_SKILL_RUNELORE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_STRONG_RUNE` | UNVERIFIED | 00984a00 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_FINE_RUNE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -502,10 +502,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_MAGIC_FIST` | FIXED | 0097c9f0 (spell 2 → 0), 00976b90 | never resisted; truncated base | SpellBaseDamageTruncates |
 | `SPELL_LIGHTNING_BOLT` | FIXED | 00976b90, 0097d7b0 (→ 004e6a10) | truncated base / protection; stun rider 004e6a10 not compared | ProtectionPercentIsTruncated |
 | `SPELL_ICE_BOLT` | FIXED | 00976b90, 0097d7b0 (→ 004e6600) | truncated base / protection; freeze rider 004e6600 not compared | ProtectionPercentIsTruncated |
-| `SPELL_FIREBALL` | FIXED | 00976b90, 0085eaa0 | truncated base / protection; area enumeration 0085e7c0 / 0097a530 not compared | SpellBaseDamageTruncates |
-| `SPELL_FROST_RING` | FIXED | 00976b90, 0085eaa0 | as Fireball | SpellBaseDamageTruncates |
-| `SPELL_CHAIN_LIGHTNING` | FIXED | 00976b90, 0085edb0 | truncated base; per-target multipliers passed to 0097d600 (param_7) and the jump order (00a5dbb0) not compared; stun only on the first target (iVar16 == 0) matches | SpellBaseDamageTruncates |
-| `SPELL_METEOR_SHOWER` | FIXED | 00976b90, 0085eaa0 | as Fireball | SpellBaseDamageTruncates |
+| `SPELL_FIREBALL` | FIXED | 00976b90, 0085eaa0, 0097a530 (area cells by spell id; neighbour table 00f757c8 = the 8 offsets) | truncated base / protection; area = target cell + 8 neighbours (3×3), every stack in it, friend or foe (00b3d960 enumerates both sides) | SpellBaseDamageTruncates |
+| `SPELL_FROST_RING` | FIXED | 00976b90, 0085eaa0, 0097a530 (area cells by spell id; neighbour table 00f757c8 = the 8 offsets) | as Fireball, area = the 8 neighbours only (centre excluded) | SpellBaseDamageTruncates |
+| `SPELL_CHAIN_LIGHTNING` | FIXED | 0085edb0, 00a5dbb0, 0085e2f0, 0097d600, 00e0ab70 | the chain (first target + up to 3 hops) is chosen before any damage: each hop goes to the nearest living stack not yet chained, friend or foe, skipping stacks with protection > 99 %, ties broken by the battle RNG; per hop the float base is halved (×0.5f) and truncated; riders (stun) only on the first target. Engine re-picked after each hit, included immune stacks and broke ties by id. Distance metric (combat vf +0x118) not traced (footprint gap used). Uber Chain Lightning (0xee) does not halve — not implemented (campaign hero ability) | ChainLightningSkipsFullyProtectedStacks, ChainLightningBreaksTiesWithTheRng, ChainLightningHopBasesHalveAndTruncate |
+| `SPELL_METEOR_SHOWER` | FIXED | 00976b90, 0085eaa0, 0097a530 (case 8 / 0x11d) | as Fireball, area 5×5 (dx, dy ∈ −2..2) | SpellBaseDamageTruncates |
 | `SPELL_IMPLOSION` | FIXED | 00976b90, 0097c9f0 | truncated base; Dwarven Mithral Cuirass immunity | ArtifactsGrantSpellImmunities |
 | `SPELL_ARMAGEDDON` | FIXED | 00976b90, 0085f330 | truncated base / protection; 0085f330 target rule not compared | SpellBaseDamageTruncates |
 | `SPELL_CURSE` | MATCH | 008a2630, 0097c9f0 | (only without Bless) max = min + (max−min)·clamp(v,0,1) if lower; immune: IMMUNITY_TO_CURSE |  |
@@ -555,7 +555,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_SKILL_FIRE_PROTECTION` | UNVERIFIED | 0097af50 | implemented; not yet compared with the exe |  |
 | `SPELL_TOWN_TOWERS` | MATCH | 00bfdfb0 | verified in EXE_FINDINGS.md |  |
 | `SPELL_ABILITY_BATTLE_DIVE` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
-| `SPELL_ABILITY_GATING` | UNVERIFIED | 008a4330 00a5fee0 00bfb4b0 | implemented; not yet compared with the exe |  |
+| `SPELL_ABILITY_GATING` | FIXED | 008a4330, 00a5fee0 | the gated stack carries effect 0x9f for the rest of the battle: its initiative ignores every modifier (008a4330 returns base × max(0, Gating/InitiativeFactor) before effects, Prudent, Storm Wind, Fog Veil and flat bonuses) and it never retaliates ("COMBAT_NO_GATING_RETALIATE") — engine gave gated stacks no marker, so modifiers applied and they retaliated (00bfb4b0 not compared) | AuditAbilityTests.GatedStacksIgnoreInitiativeModifiers, GatedStacksNeverRetaliate |
 | `SPELL_ABILITY_EXPLOSION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_ENTANGLING_ROOTS` | UNVERIFIED | 008a1e50 00981650 00982010 00982a00 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_DASH` | UNVERIFIED | 008d30e0 | implemented; not yet compared with the exe |  |
@@ -566,21 +566,21 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_SPEC_DEMON_HUNTER` | FIXED | 008a2c20 | effect of HERO_SPEC_DEMON_HUNTER (rage bonus) | (AddRage) |
 | `SPELL_ARTFSET_NECROMANCERS_DEBUFF` | UNVERIFIED | 008a22f0 008a4800 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_ENRAGED` | UNVERIFIED | 008a3b90 | implemented; not yet compared with the exe |  |
-| `SPELL_MASS_CURSE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_MASS_DISRUPTING_RAY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_MASS_SLOW` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_MASS_FORGETFULNESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_MASS_PLAGUE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_MASS_WEAKNESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_MASS_BLESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_MASS_DISPEL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_MASS_STONESKIN` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_MASS_DEFLECT_ARROWS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_MASS_BLOODLUST` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_MASS_HASTE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_MASS_CURSE` | MATCH | 0097a530 (default case, IsAimed false) | whole enemy army (TARGET_HOSTILE → caster vf +0x10); effect as SPELL_CURSE |  |
+| `SPELL_MASS_DISRUPTING_RAY` | MATCH | 0097a530 (default case), spell record +0xcc IsAimed, +0xd0 Target | aimed mass spell: 4×4 area x−1..x+2, y−1..y+2, TARGET_HOSTILE → enemy stacks only; effect as SPELL_DISRUPTING_RAY |  |
+| `SPELL_MASS_SLOW` | MATCH | 0097a530 | whole enemy army; effect as SPELL_SLOW |  |
+| `SPELL_MASS_FORGETFULNESS` | GAP | 0097a530 | whole enemy army (matches); immunity as SPELL_FORGETFULNESS (GAP) |  |
+| `SPELL_MASS_PLAGUE` | MATCH | 0097a530 (default case) | aimed: 4×4 area, enemy stacks only; effect as SPELL_PLAGUE |  |
+| `SPELL_MASS_WEAKNESS` | UNVERIFIED | 0097a530 | whole enemy army (matches); SPELL_WEAKNESS effect not yet compared |  |
+| `SPELL_MASS_BLESS` | MATCH | 0097a530 | whole own army; effect as SPELL_BLESS |  |
+| `SPELL_MASS_DISPEL` | UNVERIFIED | 0097a530 (default case) | aimed: 4×4 area, TARGET_NEUTRAL → all stacks (matches); dispel rules not yet compared |  |
+| `SPELL_MASS_STONESKIN` | UNVERIFIED | 0097a530 | whole own army (matches); SPELL_STONESKIN effect not yet compared |  |
+| `SPELL_MASS_DEFLECT_ARROWS` | UNVERIFIED | 0097a530 | whole own army (matches); Deflect Arrows reduction site not found |  |
+| `SPELL_MASS_BLOODLUST` | UNVERIFIED | 0097a530 | whole own army (matches); SPELL_BLOODLUST effect not yet compared |  |
+| `SPELL_MASS_HASTE` | MATCH | 0097a530 | whole own army (TARGET_FRIEND → caster vf +0xc); effect as SPELL_HASTE |  |
 | `SPELL_CONJURE_PHOENIX` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_FIREWALL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_STONE_SPIKES` | FIXED | 00976b90, 0085eaa0 (0xed) | as Fireball | SpellBaseDamageTruncates |
+| `SPELL_FIREWALL` | UNVERIFIED | 0097a530 (case 0xec) | cells = (x, y−1), (x, y), (x, y+1) — matches; the field's entry/turn damage is not yet compared |  |
+| `SPELL_STONE_SPIKES` | FIXED | 00976b90, 0085eaa0, 0097a530 (case 0xed) | as Fireball, area = centre + 4 orthogonal cells | SpellBaseDamageTruncates |
 | `SPELL_EFFECT_WOUND` | UNVERIFIED | 008a1e50 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_BERSERKER_RAGE` | UNVERIFIED | 008a32b0 008a4800 00984a00 00a5fee0 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_MARK_OF_FIRE` | UNVERIFIED | 00977a80 | implemented; not yet compared with the exe |  |
