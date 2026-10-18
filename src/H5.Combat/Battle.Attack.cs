@@ -127,22 +127,34 @@ public sealed partial class Battle
         }
 
         var hit = new Hit { Kind = AttackKind.Melee, CellsWalked = walked };
+        // Strikes per action (creature vtable slot 0x1c0 = FUN_008a0f90): 1, Double Attack 2, Rune of Berserking +1.
         int strikes = 1;
         if (HasAbilityNow(u, Ab.DoubleAttack)) strikes = 2;
-        if (u.HasEffect(H5.Combat.Fx.RuneBerserking)) { strikes *= 2; }
+        if (u.HasEffect(H5.Combat.Fx.RuneBerserking)) strikes += 1;
         bool runeBattleRage = u.HasEffect(H5.Combat.Fx.RuneBattleRage);
         bool stunned = false;
         int killedTotal = 0;
+        // Targets that flee from melee (Cowardice / Manoeuvre) react after the whole attack instead of retaliating.
+        bool fleeingTarget = HasAbilityNow(t, Ab.Cowardice) || HasAbilityNow(t, Ab.Maneure);
+        bool noRetBase = HasAbilityNow(u, Ab.NoEnemyRetaliation) || runeBattleRage;
         for (int i = 0; i < strikes && u.Alive && t.Alive; i++)
         {
             var r = Strike(u, t, hit, pattern: true, extraAdjacentAll: runeBattleRage);
             stunned |= r.Stunned;
             killedTotal += r.Killed;
-            // Assault (Brutality): chance of another blow, rolled before retaliation (p.171).
-            if (i == strikes - 1 && HasAbilityNow(u, Ab.Brutality) && t.Alive && u.Alive && RollProc(u, ProcChance(u, t)))
+            // Retaliation follows the strike that allows it, inside the strike loop (exe FUN_00a65260 → FUN_00a64e90 →
+            // FUN_00a646b0): a double attack is answered after its first blow.
+            if (!fleeingTarget && u.Alive && t.Alive && !noRetBase && !r.Stunned
+                && !(preparation && retaliated && !HasAbilityNow(t, Ab.UnlimitedRetaliation)) && CanRetaliate(t, u))
+            {
+                Retaliate(t, u);
+                retaliated = true;
+            }
+            // Assault (Brutality): after the first strike, a proc adds one more strike to the loop (FUN_00a65260).
+            if (i == 0 && HasAbilityNow(u, Ab.Brutality) && t.Alive && u.Alive && RollProc(u, ProcChance(u, t)))
             {
                 Emit(new AbilityTriggered(u.Id, Ab.Brutality, t.Id));
-                Strike(u, t, new Hit { Kind = AttackKind.Melee, CellsWalked = walked }, pattern: true);
+                strikes++;
             }
             // Cleave: an extra strike once a creature is killed (p.172).
             if (i == strikes - 1 && r.Killed > 0 && HasAbilityNow(u, Ab.Cleave) && t.Alive && u.Alive)
@@ -159,8 +171,8 @@ public sealed partial class Battle
         if (u.Alive && t.Alive) PackHunterAssist(u, t);
         if (u.Alive && t.Alive) Flamewave(u, t);
         bool fled = u.Alive && ReactiveRetreat(u, t);
-        bool noRet = HasAbilityNow(u, Ab.NoEnemyRetaliation) || runeBattleRage || stunned || fled;
-        if (u.Alive && t.Alive && !noRet && !(preparation && retaliated && !HasAbilityNow(t, Ab.UnlimitedRetaliation)) && CanRetaliate(t, u))
+        bool noRet = noRetBase || stunned || fled;
+        if (fleeingTarget && u.Alive && t.Alive && !noRet && !(preparation && retaliated && !HasAbilityNow(t, Ab.UnlimitedRetaliation)) && CanRetaliate(t, u))
             Retaliate(t, u);
 
         PowerfulBlowFollowUp(u, t, melee: true);
