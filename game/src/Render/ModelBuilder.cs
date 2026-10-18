@@ -47,7 +47,8 @@ public static class ModelBuilder
     public static ArrayMesh BuildMesh(ModelAsset model, bool skinned)
     {
         var mesh = new ArrayMesh();
-        var materials = model.Materials.Select(BuildMaterial).ToList();
+        var effects = MaterialEffects(model);
+        var materials = model.Materials.Select((m, i) => BuildMaterial(m, i < effects.Count ? effects[i] : default)).ToList();
 
         foreach (var part in model.Mesh.Parts)
         {
@@ -98,8 +99,63 @@ public static class ModelBuilder
         return mesh;
     }
 
-    static Material BuildMaterial(MaterialData m)
+    /// <summary>Per-material Effect and FloatParam from the (Model) xdb (not carried by MaterialData).</summary>
+    static List<(string? Effect, float Param)> MaterialEffects(ModelAsset model)
     {
+        var list = new List<(string?, float)>();
+        try
+        {
+            if (string.IsNullOrEmpty(model.SourcePath) || !Game.Instance.Fs.Exists(model.SourcePath)) return list;
+            var xdb = Game.Instance.Xdb;
+            foreach (var item in xdb.Load(model.SourcePath).Root?.Element("Materials")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+            {
+                var mat = xdb.Resolve(item, model.SourcePath);
+                float.TryParse((string?)mat?.Element("FloatParam"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var param);
+                list.Add(((string?)mat?.Element("Effect"), param));
+            }
+        }
+        catch (Exception e) { GD.PushWarning($"[H5] material effects {model.SourcePath}: {e.Message}"); }
+        return list;
+    }
+
+    static Shader? _cloudsShader;
+
+    /// <summary>
+    /// M_CLOUDS_H5 (lava, cloud layers): a self-illuminated texture drifting over the surface.
+    /// FloatParam drives the drift speed; the exact original shader wasn't traced (exe FUN_00c76410
+    /// registers the effect), so direction and rate here are an approximation.
+    /// </summary>
+    static Material CloudsMaterial(Texture2D? tex, float param, bool selfIllum)
+    {
+        _cloudsShader ??= new Shader
+        {
+            Code = """
+                shader_type spatial;
+                render_mode cull_back;
+                uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_enable;
+                uniform float speed = 0.3;
+                uniform bool self_illum = true;
+                void fragment() {
+                    vec2 drift = vec2(1.0, 0.6) * speed * 0.05 * TIME;
+                    vec3 a = texture(tex, UV + drift).rgb;
+                    vec3 b = texture(tex, UV * 0.9 - drift * 0.7).rgb;
+                    vec3 c = (a + b) * 0.5;
+                    if (self_illum) { ALBEDO = vec3(0.0); EMISSION = c; } else { ALBEDO = c; }
+                }
+                """,
+        };
+        var m = new ShaderMaterial { Shader = _cloudsShader };
+        m.SetShaderParameter("tex", tex);
+        m.SetShaderParameter("speed", param);
+        m.SetShaderParameter("self_illum", selfIllum);
+        return m;
+    }
+
+    static Material BuildMaterial(MaterialData m, (string? Effect, float Param) fx)
+    {
+        if (fx.Effect == "M_CLOUDS_H5")
+            return CloudsMaterial(m.DiffuseTexture != null ? Game.Instance.LoadTexture(m.DiffuseTexture) : null, fx.Param, m.LightingMode == "L_SELFILLUM");
+
         var mat = new StandardMaterial3D
         {
             CullMode = m.TwoSided ? BaseMaterial3D.CullModeEnum.Disabled : BaseMaterial3D.CullModeEnum.Back,
@@ -129,7 +185,8 @@ public static class ModelBuilder
                 mat.RenderPriority = 1;
                 break;
         }
-        if (m.LightingMode == "L_NONE") mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+        // L_SELFILLUM surfaces (lava, glowing crystals) light themselves; L_NONE is unlit.
+        if (m.LightingMode is "L_NONE" or "L_SELFILLUM") mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
         return mat;
     }
 }
