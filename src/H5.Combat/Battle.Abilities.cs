@@ -61,6 +61,26 @@ public sealed partial class Battle
     /// A hero strike (exe FUN_008cf270). <paramref name="plain"/> = the hero's normal attack (no strike spell);
     /// <paramref name="powerfulBlow"/> = the Powerful Blow follow-up (SPELL_EFFECT_POWERFULL_BLOW).
     /// </summary>
+    /// <summary>
+    /// Death Scream morale penalty (exe 00989fd0 case 0x3b): trunc(DeathScream_MoralePenalty · f) with f = the Dark
+    /// Emissary multiplier (else 1) plus BansheeWhail_DeMorale when the screaming hero has 2+ Necromancers pieces
+    /// (Howl of Terror's −6 is added separately).
+    /// </summary>
+    internal int DeathScreamMoralePenalty(HeroState h)
+    {
+        double f = (h.Specialization == "HERO_SPEC_DARK_EMISSARY" ? Stats.Get("combat/HeroSkills/Necromancer/DarkEissary_DeathScreamMultiplier", 2) : 1)
+                   + (Specials.Pieces(h, Specials.Necromancers) > 1 ? (int)Stats.Get("ArtifactsSetsEffectsConsts/Necromancers_2Necromancer_BansheeWhail_DeMorale", 1) : 0);
+        return (int)((int)Stats.Get("combat/HeroSkills/Necromancer/DeathScream_MoralePenalty", 1) * f);
+    }
+
+    /// <summary>Lions set (exe 008cf7ff): a Knight (class 1) with 2+ Lions pieces marks the strike's target with
+    /// SPELL_ARTFSET_LIONS_DEMORALIZED (0x129) — permanent, never stacked.</summary>
+    internal void LionsMark(HeroState h, Unit t)
+    {
+        if (h.Class == "HERO_CLASS_KNIGHT" && Specials.Pieces(h, Specials.Lions) >= 2 && !t.HasEffect(LionsDemoralized))
+            AddEffect(t, new Effect { Id = LionsDemoralized, SourceSide = h.Side, Dispellable = false });
+    }
+
     void HeroStrike(HeroState h, Unit t, int levelBonus, bool friendly, double extraMult = 1, bool plain = false, bool powerfulBlow = false)
     {
         int actor = Actor.Hero(h.Side);
@@ -88,6 +108,7 @@ public sealed partial class Battle
         if (!friendly) ImbuedCast(h, t);
         RageEvent(t, "ReceiveHeroAttackRP");
         if (!t.Alive || friendly) return;
+        LionsMark(h, t);
         if (h.HasPerk(Sk.StunningBlow)) AddAtb(t.Id, -Stats.Get("combat/HeroSkills/Barbarian/StunningBlow_ATBDrop", 0.1), cap: 1);
         if ((h.HasPerk(Sk.SufferingStrike) || h.HasPerk(Sk.BarbSufferingStrike)) && Db.Spell("SPELL_WEAKNESS") is { } suf)
             ApplyEffectSpell(actor, h.Side, suf, HeroMastery(h, suf), HeroSpellPower(h, suf), t, h.Level, h);
@@ -182,8 +203,9 @@ public sealed partial class Battle
                 double howl = 1;
                 if (h.Specialization == "HERO_SPEC_DARK_EMISSARY") howl *= Stats.Get("combat/HeroSkills/Necromancer/DarkEissary_DeathScreamMultiplier", 2);
                 if (Specials.Pieces(h, Specials.Necromancers) >= 2) howl = Math.Max(howl, 2);
+                int moralePenalty = DeathScreamMoralePenalty(h);
                 foreach (var u in S.LivingOf(1 - c.Side).Where(IsLiving).ToList())
-                    AddEffect(u, new Effect { Id = H5.Combat.Fx.BansheeHowl, Value = howl + (h.HasPerk(Sk.HowlOfTerror) ? 6 : 0), Value2 = howl,
+                    AddEffect(u, new Effect { Id = H5.Combat.Fx.BansheeHowl, Value = moralePenalty + (h.HasPerk(Sk.HowlOfTerror) ? 6 : 0), Value2 = howl,
                         Remaining = 2 + Stats.Get("combat/HeroSkills/DeathScreamLevelMultiplier", 0.25) * h.Level, SourceSide = c.Side, Dispellable = false });
                 if (Specials.Pieces(h, Specials.Necromancers) >= 2) reset = 0.5;
             }
@@ -544,14 +566,7 @@ public sealed partial class Battle
             {
                 var h = HeroOf(u);
                 u.AbilityUses[c.Ability] = 1;
-                var portions = Stats.Array("combat/HeroSkills/DemonLord/Gating/PortionOfSummonedByGatingLevel");
-                int lvl = Math.Clamp((int)h.SkillLevel(Sk.Gating) - 1, 0, Math.Max(0, portions.Length - 1));
-                double portion = portions.Length > 0 ? portions[lvl] : 0.3;
-                if (h.HasPerk(Sk.GateMaster)) portion += Stats.Get("combat/HeroSkills/DemonLord/Gating/GatingMasteryPortionBonus", 0.2);
-                if (h.Specialization == "HERO_SPEC_GATE_KEEPER") portion += Stats.Get("combat/HeroSkills/DemonLord/Gating/GatekeeperHeroSpecPerLevelPortionBonus", 0.01) * h.Level;
-                if (h.HasPerk(Sk.SwarmingGate) && S.Rng.Chance(0.1 + Math.Max(0, h.Luck) * 0.05)) portion *= 2;
-                if (Specials.Pieces(h, Specials.Demonic) >= 2) portion *= 1 + Stats.Get("ArtifactsSetsEffectsConsts/Demonic_2DemonLord_GatingBonusPercents", 25) / 100.0;
-                int n = Math.Max(1, (int)(u.Count * portion));
+                int n = Math.Max(1, (int)Math.Floor(u.Count * GatingPortion(u, h)));
                 Emit(new AbilityTriggered(u.Id, c.Ability));
                 var g = SummonStackNear(u, u.CreatureId, n, c.Ability, Stats.Get("combat/HeroSkills/DemonLord/Gating/GatedStartATB", 0));
                 reset = h.HasPerk(Sk.QuickGating) ? Stats.Get("combat/HeroSkills/DemonLord/Gating/QuickGatingStartATB", 0.75)
@@ -564,6 +579,35 @@ public sealed partial class Battle
         }
         EndAction(u.Id, reset, allowMorale);
         return null;
+    }
+
+    /// <summary>
+    /// Gating portion (exe FUN_0085fe60): base = PortionOfSummonedByGatingLevel[mastery−1] (0.25 unless the table has
+    /// 4 entries); additive bonuses: Gating Mastery, Critical Gating (CriticalGatingPortionBonus × base, on an
+    /// ability roll of trunc(100·clamp(Const + Luck·PerLuck, 0, 1))), Infernal Looms (town-side, absent in duels) and
+    /// Gate Keeper (level × per-level bonus); the Demonic 2-piece set multiplies only the base (×(1 + pct·0.01));
+    /// the total is clamped to [0, 1000]. Bonus fields are clamped to [−1, 1000] as the exe does.
+    /// </summary>
+    internal double GatingPortion(Unit u, HeroState h)
+    {
+        double Cl(double v) => Math.Clamp(v, -1, 1000);
+        const string gp = "combat/HeroSkills/DemonLord/Gating/";
+        var portions = Stats.Array(gp + "PortionOfSummonedByGatingLevel");
+        int lvl = Math.Clamp((int)h.SkillLevel(Sk.Gating) - 1, 0, Math.Max(0, portions.Length - 1));
+        double basePortion = portions.Length == 4 ? portions[lvl] : 0.25;
+        double bonus = 0;
+        if (h.HasPerk(Sk.GateMaster)) bonus = Cl(Stats.Get(gp + "GatingMasteryPortionBonus", 0.2));
+        if (h.HasPerk(Sk.SwarmingGate))
+        {
+            double chance = Math.Clamp(Stats.Get(gp + "CriticalGatingConstantProb", 0.1), 0, 1);
+            if (h.Luck > 0) chance += h.Luck * Math.Clamp(Stats.Get(gp + "CriticalGatingPerLuckPointProb", 0.05), 0, 1);
+            if (RollPercent(u, (int)Math.Clamp(chance * 100, 0, 100), secondRoll: false))
+                bonus += Cl(Stats.Get(gp + "CriticalGatingPortionBonus", 1)) * basePortion;
+        }
+        if (h.Specialization == "HERO_SPEC_GATE_KEEPER") bonus += h.Level * Cl(Stats.Get(gp + "GatekeeperHeroSpecPerLevelPortionBonus", 0.01));
+        if (Specials.Pieces(h, Specials.Demonic) >= 2)
+            basePortion *= 1 + (int)Stats.Get("ArtifactsSetsEffectsConsts/Demonic_2DemonLord_GatingBonusPercents", 25) * 0.01;
+        return Math.Clamp(basePortion + bonus, 0, 1000);
     }
 
     IEnumerable<Cell> AttackPositionsAnywhere(Unit u, Unit t)

@@ -86,7 +86,25 @@ public sealed partial class Battle
         if (h.SkillLevel(Sk.Runelore) > Mastery.None)
             foreach (var r in Db.Spells.Values.Where(x => x.School == "MAGIC_SCHOOL_RUNIC"))
                 if (h.Spells.Contains(r.Id)) set.Add(r.Id);
-        return set.Distinct();
+        // Mind Cleaner blocks (exe 00983790 → caster hero vf 0x2b8): unusable for the rest of the combat.
+        return set.Distinct().Where(s => !h.AbilityUses.ContainsKey(MindCleanerBlock + s));
+    }
+
+    const string MindCleanerBlock = "MIND_CLEANER:";
+
+    /// <summary>
+    /// Mind Cleaner (exe 00983790 @ 0098431f-009843f2): chance = 100 / max(1, circle + 1) − caster level + Mind Cleaner
+    /// level (integer division), exe ability roll Range(0,100) &lt; chance; success blocks the spell for the caster.
+    /// </summary>
+    internal void MindCleanerCheck(HeroState caster, SpellDef sp)
+    {
+        var mc = S.Heroes[1 - caster.Side];
+        if (!mc.Present || mc.Specialization != "HERO_SPEC_MIND_CLEANER") return;
+        int chance = 100 / Math.Max(1, sp.Level + 1) - caster.Level + mc.Level;
+        var anyUnit = S.Units.FirstOrDefault(x => x.Alive);
+        if (anyUnit == null || !RollPercent(anyUnit, chance, secondRoll: false)) return;
+        caster.AbilityUses[MindCleanerBlock + sp.Id] = 1;
+        Emit(new AbilityTriggered(Actor.Hero(mc.Side), "HERO_SPEC_MIND_CLEANER", Actor.Hero(caster.Side)));
     }
 
     public Mastery HeroMastery(HeroState h, SpellDef sp)
@@ -314,6 +332,7 @@ public sealed partial class Battle
             if (doubled) _spellDamageScale *= 2;
             ResolveSpell(c.ActorId, h.Side, sp, mastery, power, target, c.Cell, fromHero: true);
             _spellDamageScale = 1;
+            MindCleanerCheck(h, sp);
             if (sp.School == "MAGIC_SCHOOL_RUNIC") { h.AbilityUses[$"{sp.Id}:{c.TargetId}"] = 1; TapRunes(h); }
             double reset = HeroCastAtbReset(h, sp);
             EndAction(c.ActorId, reset, false);

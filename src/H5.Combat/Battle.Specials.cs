@@ -15,8 +15,9 @@ public static class Specials
     /// <summary>"Base + floor(level / LevelDivisor) * PerDividedLevel" formulas used by several DefaultStats entries.</summary>
     public static double LevelFormula(RpgStats st, string path, int level, double defBase = 0, double defDiv = 1, double defPer = 0)
     {
-        double b = st.Get(path + "/Base", defBase), div = Math.Max(1, st.Get(path + "/LevelDivisor", defDiv)), per = st.Get(path + "/PerDividedLevel", defPer);
-        return b + Math.Floor(level / div) * per;
+        // exe (e.g. Blooddrinker 00a5c300): integer ((level - 1) / LevelDivisor) * PerDividedLevel + Base.
+        int b = (int)st.Get(path + "/Base", defBase), div = Math.Max(1, (int)st.Get(path + "/LevelDivisor", defDiv)), per = (int)st.Get(path + "/PerDividedLevel", defPer);
+        return (level - 1) / div * per + b;
     }
 
     static readonly Regex FamilySpec = new(@"^All (?<names>.+?) in hero'?s army gain \+1 to their Attack and Defen[cs]e for every two levels", RegexOptions.IgnoreCase);
@@ -74,7 +75,9 @@ public sealed partial class Battle
     double HeroInitiativeMultiplier(HeroState h)
     {
         int l = Spec(h, "HERO_SPEC_FEATHER_MAGE");
-        return l < 0 ? 1 : 1 + Stats.Get("combat/HeroSpecializations/Wizard/FeatherMage_InitiativeBonusPerLevel", 0.005) * l;
+        // exe FUN_00bc1eb0: 1 + clamp(FeatherMage_InitiativeBonusBase + level·PerLevel, 0, 5)
+        return l < 0 ? 1 : 1 + Math.Clamp(Stats.Get("combat/HeroSpecializations/Wizard/FeatherMage_InitiativeBonusBase", 0)
+                                          + l * Stats.Get("combat/HeroSpecializations/Wizard/FeatherMage_InitiativeBonusPerLevel", 0.005), 0, 5);
     }
 
     void SpecCombatStart()
@@ -87,9 +90,11 @@ public sealed partial class Battle
             int pl = Spec(h, "HERO_SPEC_POISONER");
             if (pl >= 0 && Db.Spell("SPELL_PLAGUE") is { } plague)
             {
-                double p = Stats.Get("combat/HeroSpecializations/Warlock/Poisoner_PlagueProb", 0.1) + Stats.Get("combat/HeroSpecializations/Warlock/Poisoner_PlagueProbPerLevel", 0.02) * pl;
+                // exe 009844e0: chance = trunc(100·clamp(Poisoner_PlagueProb + level·PerLevel, 0, 1)), ability roll
+                // Range(0,100) < chance per enemy stack (the exe pre-filters valid targets with 00982010 — not ported).
+                int chance = PoisonerChance(pl);
                 foreach (var u in S.LivingOf(1 - side).Where(u => u.Kind == UnitKind.Creature).ToList())
-                    if (S.Rng.Chance(p)) ApplyEffectSpell(Actor.Hero(side), side, plague, HeroMastery(h, plague), HeroSpellPower(h, plague), u, h.Level, h);
+                    if (RollPercent(u, chance, secondRoll: false)) ApplyEffectSpell(Actor.Hero(side), side, plague, HeroMastery(h, plague), HeroSpellPower(h, plague), u, h.Level, h);
             }
             // Centaur Mistress: +1% starting ATB per level for centaurs.
             int cl = Spec(h, "HERO_SPEC_CENTAUR_MISTRESS");
@@ -104,6 +109,11 @@ public sealed partial class Battle
                             ApplyEffectSpell(Actor.Hero(side), side, sp, Mastery.Expert, h.SpellPower, u, h.Level, h);
         }
     }
+
+    /// <summary>Poisoner chance (exe 009844e0): trunc(100·clamp(Poisoner_PlagueProb + level·PerLevel, 0, 1)).</summary>
+    internal int PoisonerChance(int level) =>
+        (int)(100 * Math.Clamp(Stats.Get("combat/HeroSpecializations/Warlock/Poisoner_PlagueProb", 0.1)
+                               + level * Stats.Get("combat/HeroSpecializations/Warlock/Poisoner_PlagueProbPerLevel", 0.02), 0, 1));
 
     /// <summary>Blooddrinker: each enemy stack killed gives the whole army Attack.</summary>
     void SpecOnEnemyStackKilled(int killerSide)
@@ -125,20 +135,32 @@ public sealed partial class Battle
         var h = HeroOf(ballista);
         int l = Spec(h, "HERO_SPEC_BOMBARDIER");
         if (l < 0 || Db.Spell("SPELL_FIREBALL") is not { } fb) return;
-        double power = Stats.Get("combat/HeroSpecializations/Demonlord/Bombardier_FireballSpellpower", -1)
-                       + Math.Floor(l / Math.Max(1, Stats.Get("combat/HeroSpecializations/Demonlord/Bombardier_FireballSpellpowerLevelDivisor", 5)))
-                       * Stats.Get("combat/HeroSpecializations/Demonlord/Bombardier_FireballSpellpowerPerLevel", 1);
-        ResolveSpell(ballista.Id, ballista.Side, fb, HeroMastery(h, fb), Math.Max(0, power), null, target.Pos, fromHero: false);
+        // exe 0085f0f0: cast at a fixed mastery 3 (Expert) with BombardierPower(level).
+        ResolveSpell(ballista.Id, ballista.Side, fb, Mastery.Expert, BombardierPower(l), null, target.Pos, fromHero: false);
     }
+
+    /// <summary>Bombardier fireball power (exe 0085f0f0): integer (level − 1)·PerLevel / Divisor + Base, not clamped.</summary>
+    internal int BombardierPower(int level)
+    {
+        int div = Math.Max(1, (int)Stats.Get("combat/HeroSpecializations/Demonlord/Bombardier_FireballSpellpowerLevelDivisor", 5));
+        return (level - 1) * (int)Stats.Get("combat/HeroSpecializations/Demonlord/Bombardier_FireballSpellpowerPerLevel", 1) / div
+               + (int)Stats.Get("combat/HeroSpecializations/Demonlord/Bombardier_FireballSpellpower", -1);
+    }
+
+    /// <summary>Sacred Hammer chance (exe 00bbebd0): trunc(100·clamp(ChanceToCastBase + level·PerLevel, 0, 1)).</summary>
+    internal int SacredHammerChance(int level) =>
+        (int)(100 * Math.Clamp(Stats.Get("combat/HeroSpecializations/Runemage/SacredHammer_ChanceToCastBase", 0.2)
+                               + level * Stats.Get("combat/HeroSpecializations/Runemage/SacredHammer_ChanceToCastPerLevel", 0.03), 0, 1));
 
     /// <summary>Sacred Hammer: light spells on friends may also cast a free Righteous Might.</summary>
     void SpecAfterFriendlyLightSpell(HeroState h, Unit target)
     {
         int l = Spec(h, "HERO_SPEC_SACRED_HAMMER");
         if (l < 0 || !target.Alive) return;
-        double p = Stats.Get("combat/HeroSpecializations/Runemage/SacredHammer_ChanceToCastBase", 0.2) + Stats.Get("combat/HeroSpecializations/Runemage/SacredHammer_ChanceToCastPerLevel", 0.03) * l;
+        // exe 00bbebd0: chance = trunc(100·clamp(Base + level·PerLevel, 0, 1)), ability roll Range(0,100) < chance.
+        int chance = SacredHammerChance(l);
         var spellId = Stats.Str("combat/HeroSpecializations/Runemage/SacredHammer_SpellToCast", "SPELL_BLOODLUST");
-        if (S.Rng.Chance(p) && Db.Spell(spellId) is { } sp)
+        if (RollPercent(target, chance, secondRoll: false) && Db.Spell(spellId) is { } sp)
         {
             Emit(new AbilityTriggered(Actor.Hero(h.Side), "HERO_SPEC_SACRED_HAMMER", target.Id));
             ApplyEffectSpell(Actor.Hero(h.Side), h.Side, sp, HeroMastery(h, sp), HeroSpellPower(h, sp), target, h.Level, h);

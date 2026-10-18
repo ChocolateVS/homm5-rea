@@ -319,6 +319,7 @@ public sealed partial class Battle
         // FUN_00a629b0 adds it with duration 0x7ffffffe; FUN_00a58de0 multiplies each retaliation by factor^stacks).
         u.AgilityCells = 0;   // exe FUN_008a6c40: SPELL_ABILITY_AGILITY is removed when the creature's turn begins
         RemoveEffect(u, H5.Combat.Fx.TakeRoots);
+        RemoveEffect(u, NecromancersDebuff);   // exe 008a6c40: lasts until the stack's next turn start
         // Mountain King: the hero's creatures get MountainKing_ActiveRune (Rune of Thunderclap) refreshed at the
         // start of each of their turns (exe FUN_008a6c40).
         if (u.Kind == UnitKind.Creature && HeroOf(u) is { Present: true, Specialization: "HERO_SPEC_MOUNTAIN_KING" })
@@ -342,6 +343,9 @@ public sealed partial class Battle
         {
             Emit(new MoraleProc(u.Id, false));
             RageEvent(u, "BadMoraleRP");
+            // exe 008a8140: the opposing hero's Necromancers set (4+ pieces) cripples a stack that fails its morale.
+            if (Specials.Pieces(Enemy(u.Side), Specials.Necromancers) > 3)
+                AddEffect(u, new Effect { Id = NecromancersDebuff, SourceSide = 1 - u.Side, Dispellable = false });
             FinishTurn(u, Stats.Get("combat/LuckAndMorale/BadMorale_ATBValue", 0.5), allowMorale: false);
             return false;
         }

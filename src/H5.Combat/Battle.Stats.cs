@@ -53,8 +53,16 @@ public sealed partial class Battle
         if (u.IsWarMachine && u.CreatureId == "WAR_MACHINE_BALLISTA" || (u.MaxShots > 0 && !u.IsWarMachine))
             a += AmmoCartAttackBonus(u.Side);
         if (h.HasPerk(Sk.OffensiveFormation)) a += FormationBonus(u, Stats.Get("combat/HeroSkills/Runemage/Offensive_MaxOffenseBonus", 10));
+        if (u.HasEffect(NecromancersDebuff)) a = NecromancersDebuffed(Math.Floor(a));
         return Math.Max(0, (int)Math.Floor(a));
     }
+
+    internal const string NecromancersDebuff = "SPELL_ARTFSET_NECROMANCERS_DEBUFF";
+    internal const string LionsDemoralized = "SPELL_ARTFSET_LIONS_DEMORALIZED";
+
+    /// <summary>Necromancers 4-piece debuff: trunc((1 − pct·0.01)·value) (exe 008a4800 / 008a22f0, pct int at RPGStats+0x1198).</summary>
+    double NecromancersDebuffed(double value) =>
+        (int)((1 - (int)Stats.Get("ArtifactsSetsEffectsConsts/Necromancers_4_EnemyCreature_BadMoralePenaltyToAttackDefencePercents", 20) * 0.01) * value);
 
     int AmmoCartAttackBonus(int side)
     {
@@ -102,6 +110,7 @@ public sealed partial class Battle
             if (vs != null && vs.Has(Ab.RiderCharge) && attackerCellsWalked > 0)
                 d *= Math.Max(0, 1 - Stats.Get("combat/Creatures/Dungeon/RiderCharge_DefenceReducePerPathCell", 0.2) * attackerCellsWalked);
         }
+        if (u.HasEffect(NecromancersDebuff)) d = NecromancersDebuffed(Math.Floor(d));
         return Math.Max(0, (int)Math.Floor(d));
     }
 
@@ -188,23 +197,34 @@ public sealed partial class Battle
     {
         double f = 1;
         if (u.GetEffect("SPELL_SLOW") is { } slow) f *= 1 - Math.Clamp(slow.Value, 0, 1);
+        // 008a4330 passes each effect's own caster hero (effect vf 0xc) to 004e4270, so Expediter and
+        // White Knight follow the hero who cast the effect, not the creature's owner.
+        HeroState Caster(Effect e) => e.SourceSide >= 0 ? S.Heroes[e.SourceSide] : h;
         if (u.GetEffect("SPELL_HASTE") is { } haste)
         {
             double hf = 1 + Math.Max(0, haste.Value);
-            if (h.Present && h.Specialization == "HERO_SPEC_HASTE")
-                hf += h.Level * Math.Clamp(Stats.Get("combat/HeroSpecializations/Knight/Expediter_HasteBonusPerLevel", 0.01), 0, 100);
+            var ch = Caster(haste);
+            if (ch.Present && ch.Specialization == "HERO_SPEC_HASTE")
+                hf += ch.Level * Math.Clamp(Stats.Get("combat/HeroSpecializations/Knight/Expediter_HasteBonusPerLevel", 0.01), 0, 100);
             f *= hf;
         }
         if (u.GetEffect("SPELL_HYPNOTIZE") is { } hyp) f *= Math.Clamp(hyp.Value, 0, 1);
-        if (u.HasEffect(H5.Combat.Fx.Benediction))
+        if (u.GetEffect(H5.Combat.Fx.Benediction) is { } prayer)
         {
             double bonus = Stats.Get("combat/HeroSkills/Knight/Prayer_InitiativeBonus", 0.1);
-            if (h.Present && h.Specialization == "HERO_SPEC_WHITE_KNIGHT") bonus *= Stats.Get("combat/HeroSkills/Knight/WhiteKnight_PrayerMultiplier", 2);
+            var ch = Caster(prayer);
+            if (ch.Present && ch.Specialization == "HERO_SPEC_WHITE_KNIGHT") bonus *= Stats.Get("combat/HeroSkills/Knight/WhiteKnight_PrayerMultiplier", 2);
             f *= 1 + bonus;
         }
         if (u.HasEffect(H5.Combat.Fx.Dash)) f *= Stats.Get("combat/Creatures/Academy/Dash_InitiativeFactor", 2);
         if (u.HasEffect(H5.Combat.Fx.Wound)) f *= 1 - Math.Clamp(Stats.Get("combat/Creatures/Fortress/Wound_InitiativeDecrease", 0.2), 0, 1);
-        if (u.HasEffect(H5.Combat.Fx.BansheeHowl)) f *= 1 - Stats.Get("combat/HeroSkills/Necromancer/DeathScream_InitiativePenalty", 0.1);
+        if (u.GetEffect(H5.Combat.Fx.BansheeHowl) is { } scream)
+        {
+            var ch = Caster(scream);
+            double mult = ch.Present && Specials.Pieces(ch, Specials.Necromancers) > 1
+                ? (int)Stats.Get("ArtifactsSetsEffectsConsts/Necromancers_2Necromancer_BansheeWhail_DeInitiativeMultiplier", 2) : 1;
+            f *= 1 - mult * Stats.Get("combat/HeroSkills/Necromancer/DeathScream_InitiativePenalty", 0.1);
+        }
         return f;
     }
 
@@ -315,6 +335,7 @@ public sealed partial class Battle
         if (u.HasEffect(H5.Combat.Fx.BearRoar)) m += (int)Stats.Get("combat/Creatures/Fortress/BearRoar_MoraleBonus", 1);
         if (u.HasEffect(H5.Combat.Fx.RunicAttunement)) m += (int)Stats.Get("combat/HeroSkills/Runemage/RunicAttunement_MoraleBonus", 2);
         if (u.HasEffect(H5.Combat.Fx.BansheeHowl)) m -= (int)Fx(u, H5.Combat.Fx.BansheeHowl);
+        if (u.HasEffect(LionsDemoralized)) m -= (int)Stats.Get("ArtifactsSetsEffectsConsts/Lions_2_HeroAttack_DeMorale", 2);   // exe 00989fd0 case 0x129
         if (u.HasEffect(H5.Combat.Fx.Sacrifice)) m += (int)Fx(u, H5.Combat.Fx.Sacrifice);
         if (Adjacent(u).Any(o => o.Side != u.Side && o.Has(Ab.FrightAura))) m -= 3;             // Frightful Aura (p.175)
         if (S.Living.Any(o => o.Side != u.Side && o.Has(Ab.HorrorOfDeath)))                    // Death Stare (p.173)
