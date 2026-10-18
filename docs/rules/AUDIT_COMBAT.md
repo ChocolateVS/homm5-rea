@@ -13,9 +13,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 | Status | Count |
 |---|---|
 | FIXED | 59 |
-| MATCH | 26 |
+| MATCH | 40 |
 | GAP | 4 |
-| UNVERIFIED | 435 |
+| UNVERIFIED | 421 |
 | N/A | 61 |
 
 ## Core mechanics
@@ -59,7 +59,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_ELEMENTAL` | UNVERIFIED | 0097b410 0097c9f0 0097f610 00a59c60 | implemented; not yet compared with the exe |  |
 | `ABILITY_CURSING_ATTACK` | UNVERIFIED | 00a5df30 | implemented; not yet compared with the exe |  |
 | `ABILITY_FLESH_AND_BLOOD` | FIXED | 008a34c0 | Phantom images lose Flesh and Blood | tests/H5.Combat.Tests/AuditSpecTests.DynamicAbilitiesFollowTheOriginal |
-| `ABILITY_ENRAGED` | UNVERIFIED | 008a3b90 | implemented; not yet compared with the exe |  |
+| `ABILITY_ENRAGED` | MATCH | 008a3b90 | on friendly non-summoned death: max(1, attack·killedPower/armyPower) int, permanent; enraged stacks get FriendlyStackKilledRPEnraged rage (fixed) |  |
 | `ABILITY_IMMUNITY_TO_BLIND` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_IMMUNITY_TO_MAGIC` | UNVERIFIED | 0097c9f0 0097f610 | implemented; not yet compared with the exe |  |
 | `ABILITY_IMMUNITY_TO_SLOW` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -68,12 +68,12 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_IMMUNITY_TO_FIRE` | UNVERIFIED | 0097c9f0 0097f610 | implemented; not yet compared with the exe |  |
 | `ABILITY_IMMUNITY_TO_WATER` | UNVERIFIED | 0097c9f0 | implemented; not yet compared with the exe |  |
 | `ABILITY_IMMUNITY_TO_EARTH` | UNVERIFIED | 0097c9f0 | implemented; not yet compared with the exe |  |
-| `ABILITY_MAGIC_PROOF_50` | UNVERIFIED | 0097af50 | implemented; not yet compared with the exe |  |
+| `ABILITY_MAGIC_PROOF_50` | MATCH | 0097af50 (0097b249) | independent ×0.5 |  |
 | `ABILITY_PRECISE_SHOT` | UNVERIFIED | 00a5a900 | implemented; not yet compared with the exe |  |
-| `ABILITY_LARGE_SHIELD` | UNVERIFIED | 00a5a900 | implemented; not yet compared with the exe |  |
-| `ABILITY_SHIELD_OTHER` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
+| `ABILITY_LARGE_SHIELD` | MATCH | 00a5a900 | ranged damage ×0.5 (own or adjacent Shield Other aura) |  |
+| `ABILITY_SHIELD_OTHER` | MATCH | 00a5a900 | aura type 2 gives adjacent allies the Large Shield reduction |  |
 | `ABILITY_JOUSTING` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
-| `ABILITY_BASH` | UNVERIFIED | 00a59a90 00a5d370 | implemented; not yet compared with the exe |  |
+| `ABILITY_BASH` | MATCH | 00a59a90 | proc via ability roll with Bash_ProcFactor |  |
 | `ABILITY_BATTLE_DIVE` | UNVERIFIED | 008aaec0 008d0ec0 008d5eb0 | implemented; not yet compared with the exe |  |
 | `ABILITY_MANA_DESTROYER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
 | `ABILITY_MANA_STEALER` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
@@ -86,7 +86,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_WEAKENING_STRIKE` | UNVERIFIED | 00a5deb0 | implemented; not yet compared with the exe |  |
 | `ABILITY_INCORPOREAL` | FIXED | 008a34c0 | Phantom images / Rune of Etherealness are Incorporeal | tests/H5.Combat.Tests/AuditSpecTests.DynamicAbilitiesFollowTheOriginal |
 | `ABILITY_MANA_DRAIN` | UNVERIFIED | 00a59c60 | implemented; not yet compared with the exe |  |
-| `ABILITY_LIFE_DRAIN` | UNVERIFIED | 00a59c60 | implemented; not yet compared with the exe |  |
+| `ABILITY_LIFE_DRAIN` | MATCH | 00a59c60 | LifeDrainIntensity of damage |  |
 | `ABILITY_DEATH_CLOUD` | UNVERIFIED | 00a2fd40 00a64830 00b3b330 | implemented; not yet compared with the exe |  |
 | `ABILITY_ELVES_DOUBLE_SHOT` | MATCH | 00a673c0 | second shot re-rolls luck (EXE_FINDINGS) |  |
 | `ABILITY_WARDING_ARROWS` | UNVERIFIED | 00a5b000 00a673c0 | implemented; not yet compared with the exe |  |
@@ -97,7 +97,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_ACID_BREATH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_MAGIC_ATTACK` | UNVERIFIED | 00a62030 00a66b60 00a6b710 00b3b330 | implemented; not yet compared with the exe |  |
 | `ABILITY_ENERGY_CHANNEL` | FIXED | 009781e0, 00978120 | ×0.75 rounded, at least −1 | (HeroManaCost) |
-| `ABILITY_MAGIC_PROOF_75` | UNVERIFIED | 0097af50 | implemented; not yet compared with the exe |  |
+| `ABILITY_MAGIC_PROOF_75` | MATCH | 0097af50 (0097b265) | independent ×0.25 |  |
 | `ABILITY_POISONOUS_ATTACK` | UNVERIFIED | 00a61720 | implemented; not yet compared with the exe |  |
 | `ABILITY_STRIKE_AND_RETURN` | UNVERIFIED | 008d4330 00a2f130 00a2f710 00a2f8f0 | implemented; not yet compared with the exe |  |
 | `ABILITY_BRAVERY` | UNVERIFIED | 00a6acd0 | implemented; not yet compared with the exe |  |
@@ -129,8 +129,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_CALL_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_LAY_HANDS` | MATCH | see EXE_FINDINGS | verified in EXE_FINDINGS.md |  |
 | `ABILITY_THREE_HEADED_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_ARMORED` | UNVERIFIED | 0097c9f0 00989790 00a5a900 | implemented; not yet compared with the exe |  |
-| `ABILITY_SHIELD_WALL` | UNVERIFIED | 00a5a900 | implemented; not yet compared with the exe |  |
+| `ABILITY_ARMORED` | MATCH | 00a5a900 | ignores Piercing Arrow / Rider Charge defence reduction |  |
+| `ABILITY_SHIELD_WALL` | MATCH | 00a5a900 | clamp(cells·perCell, 0, max) reduction |  |
 | `ABILITY_WOUND` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_PAW_STRIKE` | UNVERIFIED | 00a5d1b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_BERSERKER_RAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -149,7 +149,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_CHAMPION_CHARGE` | UNVERIFIED | 008aa990 | implemented; not yet compared with the exe |  |
 | `ABILITY_PURGER` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_BLADE_BARRIER` | N/A | 0097af50 00a5a900 00a5beb0 00a5fee0 | not used by shipped data |  |
-| `ABILITY_DEMON_RAGED` | UNVERIFIED | 00977600 | implemented; not yet compared with the exe |  |
+| `ABILITY_DEMON_RAGED` | MATCH | 008a2c20, 008a3b90 | rage events and coefficients per exe (see AddRage) |  |
 | `ABILITY_COWARDICE` | UNVERIFIED | 00a5fee0 00a629b0 | implemented; not yet compared with the exe |  |
 | `ABILITY_TREACHERY` | UNVERIFIED | 008a0b60 | implemented; not yet compared with the exe |  |
 | `ABILITY_SET_SNARES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -203,7 +203,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_INCINERATE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_INVISIBILITY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_RIDE_BY_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `ABILITY_ANTI_GIANT` | UNVERIFIED | 00a5a900 | implemented; not yet compared with the exe |  |
+| `ABILITY_ANTI_GIANT` | MATCH | 00a5a900 | AntiGiantDefenceInc vs large |  |
 | `ABILITY_AVENGING_FLAME` | N/A | 00a61090 | not used by shipped data |  |
 | `ABILITY_PREPARED_POSITION` | UNVERIFIED | 008aaec0 | implemented; not yet compared with the exe |  |
 | `ABILITY_BATTLE_RAGE` | UNVERIFIED | 008a6e20 | implemented; not yet compared with the exe |  |
@@ -216,7 +216,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_IMMUNITY_TO_CURSE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_IMMUNITY_TO_BERSERK` | UNVERIFIED | 0097c9f0 | implemented; not yet compared with the exe |  |
 | `ABILITY_IMMUNITY_TO_HYPNOTIZE` | UNVERIFIED | 0097c9f0 | implemented; not yet compared with the exe |  |
-| `ABILITY_MAGIC_PROOF_25` | UNVERIFIED | 0097af50 | implemented; not yet compared with the exe |  |
+| `ABILITY_MAGIC_PROOF_25` | MATCH | 0097af50 (0097b281) | independent ×0.75 (disassembly: levels stack) |  |
 | `ABILITY_FIRE_PROOF_50` | UNVERIFIED | 0097af50 | implemented; not yet compared with the exe |  |
 | `ABILITY_DESTRUCTION_MAGIC_MAGNETISM` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 
@@ -230,7 +230,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_LEADERSHIP` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_LUCK` | MATCH | see EXE_FINDINGS | verified in EXE_FINDINGS.md |  |
 | `HERO_SKILL_OFFENCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_DEFENCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_DEFENCE` | MATCH | 00a5a900 | melee damage reduce Basic/Advanced/Expert from data |  |
 | `HERO_SKILL_SORCERY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DESTRUCTIVE_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DARK_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -252,7 +252,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_ARCHERY` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_FRENZY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_PROTECTION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_EVASION` | UNVERIFIED | 00a5a900 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_EVASION` | MATCH | 00a5a900 | ranged ×(1−clamp(Evasion_DamageReduce,0,1)) |  |
 | `HERO_SKILL_TOUGHNESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ARCANE_TRAINING` | FIXED | 00a34740 | round(min(cost×0.8, cost−1)) | tests/H5.Combat.Tests/AuditSpecTests.SpellCostsMatchTheOriginalChain |
 | `HERO_SKILL_MASTER_OF_ICE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -454,7 +454,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_GOLEMS` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_MAGES` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_PRUDENT` | FIXED | 008a4330 | enemy initiative −clamp(lvl·1 %, 0, 1) | tests/H5.Combat.Tests/AuditSpecTests2.PrudentSlowsEnemies |
-| `HERO_SPEC_EVASIVE` | MATCH | 00a5a900 | verified in EXE_FINDINGS.md |  |
+| `HERO_SPEC_EVASIVE` | MATCH | 00a5a900 | ranged ×(1−clamp(base+lvl·perLevel,0,1)) |  |
 | `HERO_SPEC_POWER_BARGAIN` | FIXED | 00a34740 | empowered spells ×clamp(1−0.05−0.01·lvl, 0.5, 1) | (HeroManaCost) |
 | `HERO_SPEC_RIDERS` | FIXED | 00a58de0 | Lizard Bite ×0.5·(1.2+0.01·lvl) | (LizardBites) |
 | `HERO_SPEC_DARK_ACOLYTE` | N/A |  | no combat use found in exe or engine |  |

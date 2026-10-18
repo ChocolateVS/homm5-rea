@@ -936,7 +936,8 @@ public sealed partial class Battle
                 AddEffect(f, new Effect { Id = H5.Combat.Fx.Enraged, Value = (e?.Value ?? 0) + bonus, Positive = true, Dispellable = false });
                 Emit(new AbilityTriggered(f.Id, Ab.Enraged));
             }
-            foreach (var f in S.LivingOf(t.Side)) RageEvent(f, "FriendlyStackKilledRP");
+            // Enraged stacks gain FriendlyStackKilledRPEnraged instead (exe FUN_008a3b90).
+            foreach (var f in S.LivingOf(t.Side)) RageEvent(f, f.HasEffect(H5.Combat.Fx.Enraged) ? "FriendlyStackKilledRPEnraged" : "FriendlyStackKilledRP");
             SpecOnEnemyStackKilled(1 - t.Side);
             foreach (var f in S.LivingOf(1 - t.Side)) RageEvent(f, "EnemyStackKilledRP");
         }
