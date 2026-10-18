@@ -54,7 +54,9 @@ public sealed partial class Battle
     int AmmoCartAttackBonus(int side)
     {
         if (!S.Units.Any(x => x.Alive && x.Side == side && x.CreatureId == "WAR_MACHINE_AMMO_CART")) return 0;
-        return (int)S.Heroes[side].SkillLevel(Sk.WarMachines);   // +1/+2/+3 (p.307)
+        // +1/+2/+3 by War Machines mastery (p.307), +4 more with Ring of Machine Affinity (exe FUN_008a4800).
+        var h = S.Heroes[side];
+        return (int)h.SkillLevel(Sk.WarMachines) + (HasMachineAffinityRing(h) ? 4 : 0);
     }
 
     bool HasAmmoCart(int side) => S.Units.Any(x => x.Alive && x.Side == side && x.CreatureId == "WAR_MACHINE_AMMO_CART");

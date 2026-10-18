@@ -308,14 +308,6 @@ public sealed partial class Battle
         return chance;
     }
 
-    int CatapultShotsPerTurn(Unit u)
-    {
-        var h = HeroOf(u);
-        int n = 1;
-        if (h.HasPerk(Sk.Catapult)) n++;
-        if (h.HasPerk("HERO_SKILL_TRIPLE_CATAPULT")) n++;
-        return n;
-    }
 
     void CatapultShot(Unit u, SiegeBuilding aimed)
     {
@@ -349,11 +341,13 @@ public sealed partial class Battle
         var h = HeroOf(u);
         if (S.Siege == null) { FinishTurn(u, 0, allowMorale: false); return false; }
         if (h.HasPerk(Sk.Catapult) && !S.AiControlled[u.Side] && h.Present && CatapultTargets().Count > 0) return true;
-        for (int i = 0; i < CatapultShotsPerTurn(u) && u.Alive; i++)
+        // One action: the aimed building is chosen once and receives all shots (exe FUN_00b3bb50 loop);
+        // every shot rolls its own hit chance and may stray (FUN_00b3b7d0).
+        var targets = CatapultTargets();
+        if (targets.Count > 0)
         {
-            var targets = CatapultTargets();
-            if (targets.Count == 0) break;
-            CatapultShot(u, targets[S.Rng.Range(0, targets.Count - 1)]);
+            var aimed = targets[S.Rng.Range(0, targets.Count - 1)];
+            for (int i = 0; i < WarMachineShotsPerAction(u) && u.Alive; i++) CatapultShot(u, aimed);
         }
         FinishTurn(u, 0, allowMorale: false);
         return false;
@@ -365,11 +359,8 @@ public sealed partial class Battle
         if (c.Cell is not Cell cell) return "needs a target cell";
         var b = CatapultTargets().Find(t => t.Blocked.Contains(cell));
         if (b == null) return "not a valid catapult target";
-        CatapultShot(u, b);
-        int used = u.AbilityUses.GetValueOrDefault("SHOTS_THIS_TURN") + 1;
-        u.AbilityUses["SHOTS_THIS_TURN"] = used;
-        if (used < CatapultShotsPerTurn(u) && CatapultTargets().Count > 0) return null;   // more shots this turn
-        u.AbilityUses.Remove("SHOTS_THIS_TURN");
+        // One player action fires every shot at the chosen building (exe FUN_00b3bb50).
+        for (int i = 0; i < WarMachineShotsPerAction(u) && u.Alive; i++) CatapultShot(u, b);
         EndAction(u.Id, 0, allowMorale: false);
         return null;
     }

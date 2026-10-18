@@ -49,7 +49,6 @@ public sealed partial class Battle
         if (!CanShoot(u)) return "unit cannot shoot";
         RageEvent(u, "RangedAttackRP");
         PerformRangedAttack(u, t);
-        if (u.IsWarMachine && u.Alive && MoreBallistaShots(u)) return null;    // Ballista perk extra shots: same turn
         // Archer's Dream set: shooters lose 30% less ATB when shooting.
         double reset = !u.IsWarMachine && Specials.Pieces(HeroOf(u), Specials.Hunters) >= 2 ? Stats.Get("ArtifactsSetsEffectsConsts/Hunters_2_ShootersATBLessPercents", 30) / 100.0 : 0;
         EndAction(u.Id, reset);
@@ -66,20 +65,36 @@ public sealed partial class Battle
                                   && !o.HasEffect(H5.Combat.Fx.Invisible));
     }
 
-    int BallistaShotsPerTurn(Unit u)
+    /// <summary>
+    /// Shots a war machine fires in ONE action at the chosen target (exe FUN_00a75bf0, war machine vtable
+    /// slot 0x1c0, looped by the attack routine FUN_00a65260 / catapult FUN_00b3bb50): 1, Triple Ballista
+    /// (Triple Catapult) makes it 2, the Ballista (Catapult) perk adds 1, Ring of Machine Affinity adds 1.
+    /// The player never gets extra actions — the extra shots are consecutive strikes.
+    /// </summary>
+    public int WarMachineShotsPerAction(Unit u)
     {
         var h = HeroOf(u);
+        if (!h.Present) return 1;
         int n = 1;
-        if (h.HasPerk(Sk.Ballista)) n++;
-        if (h.HasPerk(Sk.TripleBallista)) n++;
+        switch (u.CreatureId)
+        {
+            case "WAR_MACHINE_BALLISTA":
+                if (h.HasPerk(Sk.TripleBallista)) n = 2;
+                if (h.HasPerk(Sk.Ballista)) n++;
+                break;
+            case "WAR_MACHINE_CATAPULT":
+                if (h.HasPerk("HERO_SKILL_TRIPLE_CATAPULT")) n = 2;
+                if (h.HasPerk(Sk.Catapult)) n++;
+                break;
+            default:
+                return 1;
+        }
+        if (HasMachineAffinityRing(h)) n++;
         return n;
     }
 
-    bool MoreBallistaShots(Unit u)
-    {
-        int done = u.AbilityUses.GetValueOrDefault("SHOTS_THIS_TURN");
-        return done < BallistaShotsPerTurn(u) && S.Living.Any(o => o.Side != u.Side && o.Kind == UnitKind.Creature);
-    }
+    /// <summary>Ring of Machine Affinity (hero vcall +0x314 in FUN_00a75bf0 / FUN_00977190 / FUN_008a4800).</summary>
+    static bool HasMachineAffinityRing(HeroState h) => h.Present && h.Artifacts.Contains("ARTIFACT_RING_OF_MACHINE_AFFINITY");
 
     // ------------------------------------------------------------------ melee
 
@@ -191,7 +206,8 @@ public sealed partial class Battle
         RemoveEffect(u, H5.Combat.Fx.Invisible);
         MarkOfTheDamnedTrigger(u);
         if (!u.Alive) return;
-        int shots = HasAbilityNow(u, Ab.DoubleShot) ? 2 : 1;
+        // Strikes per action (vtable slot 0x1c0): Double Shot for creatures, perks/ring for the Ballista.
+        int shots = u.IsWarMachine ? WarMachineShotsPerAction(u) : HasAbilityNow(u, Ab.DoubleShot) ? 2 : 1;
         int targetHpBefore = t.TotalHealth;
         for (int i = 0; i < shots && u.Alive && t.Alive; i++)
         {
@@ -212,7 +228,6 @@ public sealed partial class Battle
             {
                 if (HeroOf(u).HasPerk("HERO_SKILL_WILDFIRE") && t.Alive)
                     DealElementalDamage(t, 50, Elements.Fire, u.Id, "FLAMING_ARROWS");
-                u.AbilityUses["SHOTS_THIS_TURN"] = u.AbilityUses.GetValueOrDefault("SHOTS_THIS_TURN") + 1;
             }
         }
         // Ranged Retaliation (succubi, p.179).
@@ -983,12 +998,11 @@ public sealed partial class Battle
         {
             case "WAR_MACHINE_BALLISTA":
                 if (h.HasPerk(Sk.Ballista) && !S.AiControlled[u.Side] && h.Present) return true;
-                for (int i = 0; i < BallistaShotsPerTurn(u) && u.Alive; i++)
                 {
+                    // Automatic ballista: one action, all its shots at one target (FUN_00a65260 loop).
                     var target = S.Living.Where(o => o.Side != u.Side && o.Kind == UnitKind.Creature && !o.HasEffect(H5.Combat.Fx.Invisible))
                         .OrderByDescending(o => (double)o.Count * o.Power).ThenBy(o => o.Id).FirstOrDefault();
-                    if (target == null) break;
-                    PerformRangedAttack(u, target);
+                    if (target != null) PerformRangedAttack(u, target);
                     if (CheckEnd()) return false;
                 }
                 FinishTurn(u, 0, allowMorale: false);
@@ -1011,10 +1025,19 @@ public sealed partial class Battle
         S.LivingOf(tent.Side).Where(o => o.Kind == UnitKind.Creature && IsLiving(o) && (o.TopHealth < o.MaxHealthCache || HeroOf(tent).HasPerk(Sk.FirstAid) && o.Count < o.InitialCount))
             .OrderByDescending(o => o.MaxHealthCache - o.TopHealth).ThenBy(o => o.Id).FirstOrDefault();
 
-    int TentHealAmount(Unit tent) => HeroOf(tent).SkillLevel(Sk.WarMachines) switch
+    /// <summary>First Aid Tent heal (exe FUN_00977190): 10/20/50/100 by War Machines mastery, +5 per level for
+    /// HERO_SPEC_EMPIRIC, then doubled by Ring of Machine Affinity.</summary>
+    int TentHealAmount(Unit tent)
     {
-        Mastery.Basic => 20, Mastery.Advanced => 50, >= Mastery.Expert => 100, _ => 10,     // p.307
-    };
+        var h = HeroOf(tent);
+        int amount = h.SkillLevel(Sk.WarMachines) switch
+        {
+            Mastery.Basic => 20, Mastery.Advanced => 50, >= Mastery.Expert => 100, _ => 10,
+        };
+        if (h.Present && h.Specialization == "HERO_SPEC_EMPIRIC") amount += h.Level * 5;
+        if (HasMachineAffinityRing(h)) amount *= 2;
+        return amount;
+    }
 
     void TentHeal(Unit tent, Unit target)
     {
