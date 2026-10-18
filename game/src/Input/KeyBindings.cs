@@ -37,6 +37,28 @@ public static class KeyBindings
     public static IEnumerable<Chord> ChordsFor(string section, string action) =>
         Sections.TryGetValue(section, out var l) ? l.Where(e => e.Item2 == action).Select(e => e.Item1) : Enumerable.Empty<Chord>();
 
+    static Dictionary<string, List<List<string>>>? _rawKeys;
+
+    /// <summary>
+    /// Text for &lt;hotkey=action&gt;: one string per binding of the action in any section (file
+    /// order), its key names joined with UIGameRoot T_HOTKEY_CONTROLS_DELIMITER (exe FUN_0066db50).
+    /// Key names are the cfg tokens ('W', 'CTRL'); the exe's localised key-name lookup
+    /// (FUN_00666060) is not traced.
+    /// </summary>
+    public static IReadOnlyList<string>? HotkeyTexts(string action)
+    {
+        _ = Sections;
+        if (_rawKeys == null || !_rawKeys.TryGetValue(action, out var list) || list.Count == 0) return null;
+        var delim = Ui.UiGameRoot.Text("T_HOTKEY_CONTROLS_DELIMITER") ?? " +";
+        var result = new List<string>();
+        foreach (var keys in list)
+        {
+            var s = string.Join(delim, keys);
+            if (!result.Contains(s)) result.Add(s);
+        }
+        return result;
+    }
+
     static Dictionary<string, List<(Chord, string)>> Load()
     {
         var map = new Dictionary<string, List<(Chord, string)>>(StringComparer.OrdinalIgnoreCase) { [Global] = new() };
@@ -108,6 +130,9 @@ public static class KeyBindings
             }
             if (key == Key.None) continue;
             map[section].Add((new Chord(key, ctrl, shift, alt), action));
+            _rawKeys ??= new(StringComparer.OrdinalIgnoreCase);
+            if (!_rawKeys.TryGetValue(action, out var raws)) _rawKeys[action] = raws = new();
+            raws.Add(keys);
         }
     }
 

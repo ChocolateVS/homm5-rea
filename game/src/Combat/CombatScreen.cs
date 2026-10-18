@@ -104,14 +104,16 @@ public partial class CombatScreen : Control
         if (CombatLauncher.SkipTactics) CmdEndTactics();
         if (CombatLauncher.InfoUnit is int info && Session.Battle.State.Unit(info) is { } iu) Hud.ShowUnitInfo(iu);
         if (CombatLauncher.HudTooltip is { } ht)
-            Callable.From(() =>
+            GetTree().CreateTimer(0.5).Timeout += () =>
             {
                 if (Hud.Screen.Find(ht) is { } n && n._MakeCustomTooltip(n.TooltipText) is Control tip)
                 {
                     Hud.AddChild(tip);
                     tip.Position = n.GetGlobalRect().Position + new Vector2(0, -60);
                 }
-            }).CallDeferred();
+            };
+        if (CombatLauncher.RetreatDialogCost is { } rdc)
+            GetTree().CreateTimer(1.0).Timeout += () => { _devRansom = rdc; RetreatDialog.Open(this, Hud); };
         if (CombatLauncher.TooltipUnit is { } tu && Session.Battle.State.Unit(tu.Unit) is { } tUnit)
             Callable.From(() =>
             {
@@ -1269,11 +1271,18 @@ public partial class CombatScreen : Control
             if (s.Phase == BattlePhase.Tactics && !s.TacticsDone[side]) Submit(new EndTacticsCmd { Side = side });
     }
 
+    (int Cost, int Gold)? _devRansom;
+    /// <summary>Dev override of ransom/gold for the retreat box (--retreat-dialog).</summary>
+    internal (int Cost, int Gold)? DevRansom => _devRansom;
+
+    /// <summary>True while battle events are being animated (input locked).</summary>
+    internal bool IsPlaying => _playing;
+
+    /// <summary>The retreat button / R key: opens the stock Flee/Surrender box when allowed (exe 0053feb0).</summary>
     internal void CmdSurrender()
     {
-        if (Session.Ended) return;
-        int side = MySideToAct() ?? Session.ViewSide;
-        Submit(new SurrenderCmd { Side = side });
+        if (Session.Ended || RetreatDialog.RefusalCode(this, _playing) != 0) return;
+        RetreatDialog.Open(this, Hud);
     }
 
     internal void CmdAutoCombat()

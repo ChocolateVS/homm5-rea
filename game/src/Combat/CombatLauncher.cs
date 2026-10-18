@@ -61,6 +61,8 @@ public static class CombatLauncher
     public static (int Unit, int Clicks)? TooltipUnit;
     /// <summary>`--hud-tooltip=WINDOW`: shows the stock tooltip of a HUD window (screenshots; real hover needs a mouse).</summary>
     public static string? HudTooltip;
+    /// <summary>`--retreat-dialog=COST[:GOLD]` opens the Flee/Surrender box (screenshots; -1 = no ransom possible).</summary>
+    public static (int Cost, int Gold)? RetreatDialogCost;
 
     public static bool HandleArg(string arg)
     {
@@ -96,6 +98,12 @@ public static class CombatLauncher
         if (arg.StartsWith("--hover-target=")) { HoverTarget = arg["--hover-target=".Length..]; return true; }
         if (arg.StartsWith("--info-unit=")) { InfoUnit = int.Parse(arg["--info-unit=".Length..]); return true; }
         if (arg.StartsWith("--hud-tooltip=")) { HudTooltip = arg["--hud-tooltip=".Length..]; return true; }
+        if (arg.StartsWith("--retreat-dialog="))
+        {
+            var rp = arg["--retreat-dialog=".Length..].Split(':');
+            RetreatDialogCost = (int.Parse(rp[0]), rp.Length > 1 ? int.Parse(rp[1]) : 100000);
+            return true;
+        }
         if (arg.StartsWith("--tooltip-unit="))
         {
             var tp = arg["--tooltip-unit=".Length..].Split(':');

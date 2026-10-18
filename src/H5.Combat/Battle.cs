@@ -143,7 +143,7 @@ public sealed partial class Battle
     string? DoSurrender(SurrenderCmd c)
     {
         S.Heroes[c.Side].Fled = true;
-        EndBattle(1 - c.Side, "surrender");
+        EndBattle(1 - c.Side, c.PayRansom ? "surrender" : "fled");
         return null;
     }
 

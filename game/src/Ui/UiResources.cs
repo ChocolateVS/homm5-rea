@@ -24,6 +24,7 @@ public sealed class UiResources
         Loader = new UiLoader(xdb);
         Markup = new UiMarkup(xdb);
         Fonts = UiFontTable.Load(xdb);
+        UiMarkup.HotkeyResolver ??= Interaction.KeyBindings.HotkeyTexts;
     }
 
     /// <summary>

@@ -72,6 +72,14 @@ public partial class UiNode : Control
 
     public void SetText(string? markup) { _textOverride = markup; InvalidateText(); if (ResizesOnText) Screen?.QueueRelayout(); }
 
+    /// <summary>Replaces the tooltip markup (code-chosen tooltips such as the retreat button's refusal reasons).</summary>
+    public void SetTooltip(string? markup)
+    {
+        _tooltipMarkup = markup?.Trim();
+        TooltipText = markup == null ? "" : UiResources.StripMarkup(markup);
+        if (markup != null && MouseFilter == MouseFilterEnum.Ignore) MouseFilter = MouseFilterEnum.Pass;
+    }
+
     /// <summary>Sets a &lt;value=name&gt; placeholder used by this window's text.</summary>
     public void SetValue(string name, string value) { _values[name] = value; InvalidateText(); if (ResizesOnText) Screen?.QueueRelayout(); }
 

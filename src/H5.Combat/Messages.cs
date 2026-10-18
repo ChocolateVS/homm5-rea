@@ -38,7 +38,15 @@ public sealed record DefendCmd(int ActorId) : BattleCommand;
 public sealed record CastSpellCmd(int ActorId, string Spell, int? TargetId = null, Cell? Cell = null) : BattleCommand;
 public sealed record UseAbilityCmd(int ActorId, string Ability, int? TargetId = null, Cell? Cell = null) : BattleCommand;
 public sealed record HeroAttackCmd(int TargetId) : BattleCommand;
-public sealed record SurrenderCmd : BattleCommand;
+/// <summary>
+/// Leave the battle. Without <see cref="PayRansom"/> the hero flees (army lost, EndReason "fled");
+/// with it the hero surrenders, paying the ransom to keep the troops (EndReason "surrender").
+/// The ransom itself is settled by the adventure host.
+/// </summary>
+public sealed record SurrenderCmd : BattleCommand
+{
+    public bool PayRansom { get; init; }
+}
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$t")]
 [JsonDerivedType(typeof(PhaseChanged), "phase")]

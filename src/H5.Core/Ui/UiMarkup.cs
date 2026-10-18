@@ -48,6 +48,12 @@ public sealed class UiMarkup
 
     public UiMarkup(XdbLoader xdb) => _xdb = xdb;
 
+    /// <summary>
+    /// Key text of each binding of an input action (one string per binding, keys already
+    /// joined with T_HOTKEY_CONTROLS_DELIMITER), for &lt;hotkey=action&gt;. Set by the client.
+    /// </summary>
+    public static Func<string, IReadOnlyList<string>?>? HotkeyResolver;
+
     public string? Macro(string tag)
     {
         if (_macros.TryGetValue(tag, out var m)) return m;
@@ -120,6 +126,22 @@ public sealed class UiMarkup
                         // stock templates reset the style after values where they need to.
                         if (inserted.IndexOf('<') >= 0) Expand(inserted, depth + 1);
                         else runs.Add(new UiTextRun(inserted, style, false, vname));
+                        break;
+                    case "hotkey":
+                        // <hotkey=action> (exe tag handler FUN_0066db50): when the action has bindings,
+                        // "<hotkeys_prefix>" + per binding "<hotkey_prefix>" keys "<hotkey_postfix>"
+                        // joined by "<hotkeys_delimiter>" + "<hotkeys_postfix>"; nothing otherwise.
+                        if (attrs.TryGetValue("", out var hk) && HotkeyResolver?.Invoke(hk) is { Count: > 0 } binds)
+                        {
+                            var hs = new StringBuilder("<hotkeys_prefix>");
+                            for (int b = 0; b < binds.Count; b++)
+                            {
+                                if (b > 0) hs.Append("<hotkeys_delimiter>");
+                                hs.Append("<hotkey_prefix>").Append(binds[b]).Append("<hotkey_postfix>");
+                            }
+                            hs.Append("<hotkeys_postfix>");
+                            Expand(hs.ToString(), depth + 1);
+                        }
                         break;
                     case "nowrap": case "forcewrap": case "wrapdots": case "wrapright": case "wrapleft": case "dots":
                     case "image": case "minfontsize": break;

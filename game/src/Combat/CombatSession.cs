@@ -45,6 +45,21 @@ public abstract class CombatSession
 
     public bool CanAct(int side) =>
         !Busy && !Ended && LocalSides.Contains(side) && Battle.State.Phase == BattlePhase.Combat && Battle.SideToAct == side;
+
+    /// <summary>Duel mode: the retreat button is refused with "Can't retreat. (Duel Mode)" (exe 0053feb0 code 4).</summary>
+    public virtual bool IsDuelMode => false;
+
+    /// <summary>
+    /// Ransom ("safe passage") for a side's remaining troops, or null when surrender is not
+    /// possible (no enemy hero to pay). The adventure host supplies it; duels have none.
+    /// </summary>
+    public virtual int? SurrenderCost(int side) => null;
+
+    /// <summary>The side's gold for the ransom check.</summary>
+    public virtual long Gold(int side) => 0;
+
+    /// <summary>False when the side owns no town with a tavern to flee to (CANT_RETREAT_NO_TOWNS).</summary>
+    public virtual bool HasTavernTown(int side) => true;
 }
 
 /// <summary>A duel played entirely on this machine: some sides human, others the built-in AI.</summary>
@@ -79,6 +94,7 @@ public sealed class LocalCombatSession : CombatSession
     public override IReadOnlyList<int> Presets => _presets;
     public override ulong Seed => _seed;
     public override bool Busy => false;
+    public override bool IsDuelMode => true;
 
     public override void Submit(BattleCommand cmd)
     {
@@ -146,6 +162,7 @@ public sealed class NetCombatSession : CombatSession
     public override ulong Seed { get; }
     public override bool Busy => _pendingCommands() > 0 || _updates.Count > 0;
     public override bool Desynced => _replica.Desynced;
+    public override bool IsDuelMode => true;
 
     /// <summary>Feed every lobby message here (in arrival order).</summary>
     public void OnMessage(Message m)

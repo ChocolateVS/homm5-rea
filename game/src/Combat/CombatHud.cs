@@ -67,6 +67,28 @@ public partial class CombatHud : Control
 
     public override void _ExitTree() => UiMessageBus.Unhandled -= OnUnhandled;
 
+    int _retreatCode = -1;
+    bool? _autoState;
+
+    public override void _Process(double delta)
+    {
+        // Retreat button availability and tooltip (exe FUN_00540090 on FUN_0053feb0's code).
+        int code = RetreatDialog.RefusalCode(_screen, _screen.IsPlaying);
+        if (code != _retreatCode && Screen.Find("OnJog-Flee") is { } flee)
+        {
+            _retreatCode = code;
+            RetreatDialog.ApplyButton(flee, code);
+        }
+        // The auto-combat jog button is a two-state toggle (Combat_AutoCombat in both states):
+        // its state shows whether auto-combat is running.
+        bool auto = CombatScreen.Autoplay;
+        if (auto != _autoState && Screen.Find("OnJog-AutoCombat") is { } ab)
+        {
+            _autoState = auto;
+            ab.SetState(auto ? 1 : 0);
+        }
+    }
+
     void OnUnhandled(UiCommand cmd)
     {
         // OnJog-Wait sends "input_Combat_Wait0" through UISSendGameMessage.
