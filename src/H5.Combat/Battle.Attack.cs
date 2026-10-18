@@ -185,8 +185,9 @@ public sealed partial class Battle
         PowerfulBlowFollowUp(u, t, melee: true);
         RetaliationStrikeTrigger(u, t);
 
-        // Strike and Return (p.181).
-        if (u.Alive && HasAbilityNow(u, Ab.StrikeAndReturn) && origin != u.Pos && Fits(u, origin))
+        // Strike and Return (p.181): not while held by Entangling Roots (exe FUN_00a65260 at 00a65924 checks
+        // SPELL_ABILITY_ENTANGLING_ROOTS before walking back).
+        if (u.Alive && HasAbilityNow(u, Ab.StrikeAndReturn) && origin != u.Pos && !IsEntangled(u) && Fits(u, origin))
         {
             Emit(new AbilityTriggered(u.Id, Ab.StrikeAndReturn));
             Teleport(u, origin);
