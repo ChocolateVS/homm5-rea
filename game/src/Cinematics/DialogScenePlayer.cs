@@ -88,7 +88,7 @@ public partial class DialogScenePlayer : Control
     public override void _Ready()
     {
         // Original screens lay out in real pixels (as the main menu and adventure screen do).
-        GetTree().Root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
+        H5Reborn.Settings.VideoSettings.ApplyScaling();
         var container = new SubViewportContainer { AnchorRight = 1, AnchorBottom = 1, Stretch = true, MouseFilter = MouseFilterEnum.Ignore };
         AddChild(container);
         _viewport = new SubViewport { OwnWorld3D = true, HandleInputLocally = false, Msaa3D = Viewport.Msaa.Msaa2X };

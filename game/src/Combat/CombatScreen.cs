@@ -24,6 +24,7 @@ public partial class CombatScreen : Control
     public ArenaScene Arena { get; private set; } = null!;
     public CombatHud Hud { get; private set; } = null!;
     CombatCamera _camera = null!;
+    CinematicCameras _cine = null!;
     SiegeView? _siege;
 
     readonly Dictionary<int, UnitView> _units = new();
@@ -80,6 +81,7 @@ public partial class CombatScreen : Control
         PlaceObstacles();
         if (st.Siege != null) { _siege = new SiegeView(Arena, st); Arena.AddChild(_siege); }
         _camera = new CombatCamera(Arena);
+        _cine = new CinematicCameras(_camera, definition.CamerasSet);
         ApplyPhaseCamera(st.Phase, instant: true);
 
         _plaqueLayer = new Control { Name = "Plaques", AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore };
@@ -261,6 +263,7 @@ public partial class CombatScreen : Control
     public override void _Process(double delta)
     {
         _camera.Process(delta, GetViewport().GuiGetFocusOwner() is not LineEdit);
+        _cine.Process(delta);
         foreach (var v in _units.Values) v.PositionPlaque(Arena.Camera);
         if (!_playing) UpdateStirs();
 
@@ -342,6 +345,7 @@ public partial class CombatScreen : Control
                 catch (Exception ex) { GD.PushError($"[H5] playback {e.GetType().Name}: {ex}"); }
             }
             await FinishAttack();
+            _cine.EventEnded();
         }
         finally
         {
@@ -375,6 +379,7 @@ public partial class CombatScreen : Control
         {
             case TurnStarted t:
                 await FinishAttack();
+                _cine.EventEnded();
                 Hud.OnTurnStarted(t.Actor);
                 break;
 
@@ -420,6 +425,8 @@ public partial class CombatScreen : Control
                 break;
 
             case UnitDied ud when View(ud.UnitId) is { } dead:
+                // Death track cameras (stock sieges) only when no fight camera is already running.
+                if (!_cine.Playing && Participant(dead) is { } dying) _cine.Begin(CinematicCameras.Action.Death, dying, null, null);
                 dead.Dead = true;
                 dead.Count = 0;
                 dead.UpdatePlaque();
@@ -514,7 +521,10 @@ public partial class CombatScreen : Control
     async Task AnimateMove(UnitView v, IReadOnlyList<Cell> path, bool flying)
     {
         if (path.Count == 0) return;
-        const float cellsPerSecond = 3.2f;
+        // Ground speed from the move clip ((BasicSkelAnim) MovementSpeed × SpeedFactor, world units/s);
+        // the clip's own forward travel is extracted (CharacterBuilder.ExtractRootMotion).
+        float unitsPerSecond = v.MoveSpeed > 0 ? v.MoveSpeed : 3.2f * ArenaGrid.TileSize;
+        float cellsPerSecond = unitsPerSecond / ArenaGrid.TileSize;
         if (v.Has("moveStart") && v.Has("moveEnd"))
         {
             // Teleporting movers (Devils, Vampire Lords): vanish with moveStart, appear at the
@@ -531,6 +541,17 @@ public partial class CombatScreen : Control
             return;
         }
         v.Play(v.Has("move") ? "move" : "idle00", loop: true);
+        if (CombatLauncher.MoveFrames is { } mf && ++_moveCount == mf.N)
+            for (int i = 0; i < 8; i++)
+            {
+                int frame = i;
+                GetTree().CreateTimer(0.1 * i).Timeout += () =>
+                {
+                    var path = $"{mf.Prefix}{frame}.png";
+                    GetViewport().GetTexture().GetImage().SavePng(path);
+                    GD.Print($"[H5] move frame {path}");
+                };
+            }
         if (flying)
         {
             // Flyers lift off, travel straight, land (the original uses flyby sequences).
@@ -550,18 +571,51 @@ public partial class CombatScreen : Control
         }
         else
         {
+            // One continuous walk along the path polyline at constant speed (no per-cell restarts).
+            var points = new List<Vector3> { v.Position };
             foreach (var c in path)
             {
-                var to = Arena.Grid.StackCenter(new Vector2I(c.X, c.Y), v.Size);
-                if (to.DistanceTo(v.Position) < 0.01f) continue;
-                v.FaceTowards(to);
+                var p = Arena.Grid.StackCenter(new Vector2I(c.X, c.Y), v.Size);
+                if (p.DistanceTo(points[^1]) > 0.01f) points.Add(p);
+            }
+            var lengths = new float[points.Count];
+            for (int i = 1; i < points.Count; i++) lengths[i] = lengths[i - 1] + points[i - 1].DistanceTo(points[i]);
+            float total = lengths[^1];
+            if (total > 0.01f)
+            {
+                int seg = 0;
+                v.FaceTowards(points[1]);
                 var tw = CreateTween();
-                tw.TweenProperty(v, "position", to, v.Position.DistanceTo(to) / ArenaGrid.TileSize / cellsPerSecond);
+                tw.TweenMethod(Callable.From<float>(dist =>
+                {
+                    while (seg < points.Count - 2 && dist > lengths[seg + 1])
+                    {
+                        seg++;
+                        v.FaceTowards(points[seg + 1]);
+                    }
+                    float segLen = lengths[seg + 1] - lengths[seg];
+                    float k = segLen > 0 ? (dist - lengths[seg]) / segLen : 1f;
+                    v.Position = points[seg].Lerp(points[seg + 1], Mathf.Clamp(k, 0f, 1f));
+                }), 0f, total, total / unitsPerSecond);
                 await ToSignal(tw, Tween.SignalName.Finished);
             }
         }
         v.Cell = path[^1];
         v.Idle();
+    }
+
+    /// <summary>A battlefield participant for the track-camera filters (CinematicCameras).</summary>
+    CinematicCameras.Participant? Participant(Node3D? node)
+    {
+        if (node == null) return null;
+        var pos = CombatCamera.ToEngine(node.GlobalPosition);
+        if (node is UnitView u)
+        {
+            var visual = Game.Instance.Db.Creatures.GetValueOrDefault(u.CreatureId)?.VisualPath;
+            return new CinematicCameras.Participant(u.IsWarMachine ? CinematicCameras.CharTypeKind.Machine : CinematicCameras.CharTypeKind.Creature,
+                visual, u.Size, new Vector2I(u.Cell.X + ArenaGrid.MarginX, u.Cell.Y + ArenaGrid.MarginY), pos, u.Rotation.Y);
+        }
+        return new CinematicCameras.Participant(CinematicCameras.CharTypeKind.Hero, null, 1, new Vector2I(-1, -1), pos, node.Rotation.Y);
     }
 
     async Task AnimateAttack(AttackStarted a)
@@ -573,6 +627,9 @@ public partial class CombatScreen : Control
             av.FaceTowards(target.GlobalPosition);
             if (a.Kind != AttackKind.Ranged) target.FaceTowards(av.GlobalPosition);
         }
+        // A fight event may switch to a track camera (retaliations belong to the same fight).
+        if (a.Kind is AttackKind.Melee or AttackKind.Ranged && Participant(attackerNode) is { } actor)
+            _cine.Begin(a.Kind == AttackKind.Ranged ? CinematicCameras.Action.Ranged : CinematicCameras.Action.Melee, actor, Participant(target), null);
         string kind = a.Kind switch
         {
             AttackKind.Ranged => "rangeattack",
@@ -640,7 +697,7 @@ public partial class CombatScreen : Control
         Hud.PendingLuck = 0;
     }
 
-    int _shotCount, _spellCount;
+    int _shotCount, _spellCount, _moveCount;
 
     /// <summary>The catapult hurls its boulder at the building hit next (the following BuildingDamaged event).</summary>
     async Task AnimateCatapult(UnitView cat)
@@ -690,6 +747,12 @@ public partial class CombatScreen : Control
     async Task AnimateSpell(SpellCast sc)
     {
         Hud.Log.AddLine(CombatLogText.Spell(this, sc));
+        Node3D? casterNode = Actor.IsHero(sc.Caster) ? _heroes.GetValueOrDefault(Actor.HeroSide(sc.Caster)) : View(sc.Caster);
+        if (Participant(casterNode) is { } caster)
+        {
+            Vector3? point = sc.Cell is { } sp ? CombatCamera.ToEngine(Arena.Grid.CellCenter(new Vector2I(sp.X, sp.Y))) : null;
+            _cine.Begin(CinematicCameras.Action.SpellCast, caster, sc.Target is { } spellTarget ? Participant(View(spellTarget)) : null, sc.Spell, point);
+        }
         if (Actor.IsHero(sc.Caster) && _heroes.GetValueOrDefault(Actor.HeroSide(sc.Caster)) is Character hero && hero.Has("cast"))
             hero.Play("cast");
         else if (View(sc.Caster) is { } cv && cv.Has("cast"))
@@ -757,8 +820,8 @@ public partial class CombatScreen : Control
     }
 
     /// <summary>
-    /// Tactics phase: the stock view from behind the deploying local army; combat: the default view
-    /// (attacker on the left). See ArenaScene.TacticsPitchDeg for the evidence.
+    /// Phase changes only change army visibility: the exe sets the combat camera once at combat init
+    /// and keeps it through tactics and combat (docs/rules/CAMERA.md).
     /// </summary>
     void ApplyPhaseCamera(BattlePhase phase, bool instant)
     {
@@ -1054,19 +1117,16 @@ public partial class CombatScreen : Control
         return false;
     }
 
-    bool _rightDragged;
-
     public override void _UnhandledInput(InputEvent e)
     {
         if (e is InputEventKey key && HandleKey(key)) { GetViewport().SetInputAsHandled(); return; }
-        if (e is InputEventMouseMotion { ButtonMask: MouseButtonMask.Right } && _camera.HandleInput(e)) { _rightDragged = true; return; }
-        if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp or MouseButton.WheelDown } && _camera.HandleInput(e)) return;
+        // Camera mouse controls (wheel, right-drag rotate/pitch, middle or CTRL+right-drag pan): CombatCamera.
+        if (_camera.HandleInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (e is InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Right } rel)
         {
-            // Right click (not a drag) opens the creature info window, like the original.
-            if (!_rightDragged && !_playing && _mode == InputMode.Normal && Arena.CellAtScreen(rel.Position) is { } rc
+            // Right click (not a camera drag) opens the creature info window, like the original.
+            if (!_camera.RightDragged && !_playing && _mode == InputMode.Normal && Arena.CellAtScreen(rel.Position) is { } rc
                 && Session.Battle.State.At(new Cell(rc.X, rc.Y)) is { } info) Hud.ShowUnitInfo(info);
-            _rightDragged = false;
             return;
         }
         if (e is not InputEventMouseButton { Pressed: true } mb) return;
@@ -1074,7 +1134,6 @@ public partial class CombatScreen : Control
         var cell = Arena.CellAtScreen(mb.Position);
         if (mb.ButtonIndex == MouseButton.Right)
         {
-            _rightDragged = false;
             if (_mode != InputMode.Normal) CancelTargeting();
             return;
         }

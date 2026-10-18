@@ -23,6 +23,7 @@ public partial class MainMenuScreen : UiScreen
         Bus.On("back", () => ShowOnly("Main", Panels));
         Bus.On("lan", () => UiNavigator.Goto("lobby"));
         Bus.On("ubi_com", () => UiNavigator.Goto("lobby"));
+        Bus.On("options", () => UiNavigator.Goto("options"));
         Bus.On("main_menu_exit", () => Cinematics.AfterGameSplash.ShowAndQuit(GetTree()));
         Campaign.CampaignMenu.Attach(this); // Single Player → Campaign / mission selection
         Bus.On("hot_seat", () => ShowOnly("HotSeatSubMenu", Panels));

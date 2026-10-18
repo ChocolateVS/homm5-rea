@@ -72,7 +72,7 @@ public partial class PwlScreen : UiScreen
     public override void _Ready()
     {
         // Original screens lay out in real pixels (as the main menu and adventure screen do).
-        GetTree().Root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
+        H5Reborn.Settings.VideoSettings.ApplyScaling();
         base._Ready();
         FitBriefing();
         // Dev: `--pwl-autostart` picks the first bonus, starts, and dismisses "press any key".
@@ -296,7 +296,7 @@ public partial class MissionResultsScreen : UiScreen
 
     public override void _Ready()
     {
-        GetTree().Root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
+        H5Reborn.Settings.VideoSettings.ApplyScaling();
         base._Ready();
     }
 

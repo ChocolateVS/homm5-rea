@@ -56,7 +56,7 @@ public partial class ListRowsView : Control
         AnchorRight = 1;
         AnchorBottom = 1;
         MouseFilter = MouseFilterEnum.Stop;
-        TextureFilter = TextureFilterEnum.Nearest;
+        TextureFilter = TextureFilterEnum.ParentNode;
     }
 
     public void SetRows(List<string[]> rows)

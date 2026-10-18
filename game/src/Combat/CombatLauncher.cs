@@ -29,6 +29,8 @@ public static class CombatLauncher
     public static (int N, string Path)? ShotScreenshot, SpellScreenshot;
     /// <summary>`--open-spellbook`: autoplay the local side until its hero acts, then open the spellbook.</summary>
     public static bool OpenSpellbook;
+    /// <summary>`--move-frames=N:PREFIX`: frame sequence from the start of the Nth move.</summary>
+    public static (int N, string Prefix)? MoveFrames;
     static string SiegeTown = "TOWN_HEAVEN";
     static int SiegeFort = 3;
     static (int A, int B) SiegePresets = (0, 3);
@@ -66,6 +68,15 @@ public static class CombatLauncher
             return true;
         }
         if (arg.StartsWith("--combat-seed=")) { _seed = ulong.Parse(arg["--combat-seed=".Length..]); return true; }
+        if (arg.StartsWith("--camera-script=")) { CombatCamera.DevScript = arg["--camera-script=".Length..]; return true; }
+        if (arg == "--no-cinematic") { CinematicCameras.Enabled = false; return true; }
+        if (arg.StartsWith("--move-frames="))
+        {
+            // --move-frames=N:PREFIX : 8 frames, 0.1 s apart, from the start of the Nth move.
+            var parts = arg["--move-frames=".Length..].Split(':', 2);
+            MoveFrames = (int.Parse(parts[0]), parts[1]);
+            return true;
+        }
         if (arg == "--autoplay") { CombatScreen.Autoplay = true; return true; }
         if (arg.StartsWith("--fake-mouse="))
         {

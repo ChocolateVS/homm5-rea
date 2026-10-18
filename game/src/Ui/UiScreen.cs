@@ -28,11 +28,19 @@ public partial class UiScreen : Control
         // Design-size layout up front so screen code can read window rects while building.
         UiLayout.Apply(Root);
         AddChild(Build(Root));
+        // Events rather than _EnterTree/_ExitTree overrides, which subclasses replace.
+        TreeEntered += () => Settings.VideoSettings.Changed += QueueRelayout;
+        TreeExiting += () => Settings.VideoSettings.Changed -= QueueRelayout;
     }
 
     UiNode Build(UiWindow w)
     {
-        UiNode node = w.Type == "WindowEditLine" ? new UiEditLine(w) : new UiNode(w);
+        UiNode node = w.Type switch
+        {
+            "WindowEditLine" => new UiEditLine(w),
+            "WindowComboBox" => new UiComboBox(w),
+            _ => new UiNode(w),
+        };
         node.Screen = this;
         _nodes[w] = node;
         foreach (var child in UiLayout.PaintOrder(w))
@@ -52,10 +60,26 @@ public partial class UiScreen : Control
         _relayoutQueued = false;
         var size = Size;
         if (size.X <= 0 || size.Y <= 0) size = GetViewportRect().Size;
-        UiLayout.Apply(Root, (int)size.X, (int)size.Y);
-        if (ApplyTextSizes()) UiLayout.Apply(Root, (int)size.X, (int)size.Y);
+        // UI scale (user-requested extension): lay out at the virtual size with the original
+        // anchoring rules, then scale the whole tree uniformly; input follows the transform.
+        float scale = UiScale;
+        int w = (int)Math.Round(size.X / scale), h = (int)Math.Round(size.Y / scale);
+        UiLayout.Apply(Root, w, h);
+        if (ApplyTextSizes()) UiLayout.Apply(Root, w, h);
         Place(Root, new UiRect(0, 0, 0, 0));
+        var rootNode = _nodes[Root];
+        rootNode.Scale = new Vector2(scale, scale);
+        // Bitmap fonts stay pixel-exact at integer scales; filter otherwise.
+        rootNode.TextureFilter = Math.Abs(scale - Math.Round(scale)) < 0.001 ? TextureFilterEnum.Nearest : TextureFilterEnum.Linear;
     }
+
+    /// <summary>Uniform scale applied to this screen's UI (Settings.VideoSettings.UiScale unless overridden).</summary>
+    public float UiScale => ScaleOverride ?? Settings.VideoSettings.UiScale;
+    public float? ScaleOverride { get; set; }
+
+
+    /// <summary>Converts a point in this screen's (unscaled) coordinates to design/virtual UI coordinates.</summary>
+    public Vector2 ToUi(Vector2 local) => local / UiScale;
 
     /// <summary>
     /// WindowTextView ResizeOnTextSet: the window's height becomes its text block's height
@@ -99,6 +123,30 @@ public partial class UiScreen : Control
     }
 
     public UiNode Node(UiWindow w) => _nodes[w];
+
+    /// <summary>
+    /// Instantiates a copy of a template window (the original screens keep hidden
+    /// "*Template" windows that code clones, e.g. GameOptions' CheckBoxPanelTemplate)
+    /// under <paramref name="parent"/>, offset by <paramref name="position"/> in the
+    /// parent's coordinates, and lays the screen out again.
+    /// </summary>
+    public UiNode Instantiate(UiWindow template, UiWindow parent, Int2 position, string? name = null)
+    {
+        var copy = UiWindowCopy.Deep(template);
+        copy.Visible = true;
+        if (name != null) copy.Name = name;
+        copy.Placement = copy.Placement.MergedWith(new UiPlacement
+        {
+            Position = (position, true),
+            HorAlign = (UiAlign.LowEnd, true),
+            VerAlign = (UiAlign.LowEnd, true),
+        });
+        parent.Children.Add(copy);
+        var node = Build(copy);
+        _nodes[parent].AddChild(node);
+        QueueRelayout();
+        return node;
+    }
 
     /// <summary>Finds a node by window name, optionally by a '/'-separated path of names (e.g. "MultiPlayer/MenuPanel/BackBtn").</summary>
     public UiNode? Find(string path)

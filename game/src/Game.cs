@@ -51,6 +51,7 @@ public partial class Game : Node
 
     public override void _Ready()
     {
+        Settings.VideoSettings.Apply();
         foreach (var arg in OS.GetCmdlineUserArgs())
         {
             if (arg.StartsWith("--screenshot=")) _screenshotPath = arg["--screenshot=".Length..];

@@ -33,7 +33,7 @@ public partial class UiNode : Control
         Window = window;
         Name = string.IsNullOrEmpty(window.Name) ? window.Type : window.Name;
         Visible = window.Visible;
-        TextureFilter = TextureFilterEnum.Nearest;
+        TextureFilter = TextureFilterEnum.ParentNode;
         MouseFilter = IsButton ? MouseFilterEnum.Stop : MouseFilterEnum.Ignore;
         if (window.ButtonStates.Count > 0)
             State = Math.Clamp((int?)window.RawInstance?.Element("State") ?? 0, 0, window.ButtonStates.Count - 1);
@@ -341,7 +341,7 @@ public partial class AdditiveLayer : Control
         MouseFilter = MouseFilterEnum.Ignore;
         AnchorRight = 1;
         AnchorBottom = 1;
-        TextureFilter = TextureFilterEnum.Nearest;
+        TextureFilter = TextureFilterEnum.ParentNode;
     }
 
     public override void _Draw() => DrawCallback?.Invoke(this);

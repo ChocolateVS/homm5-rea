@@ -20,7 +20,7 @@ public partial class MainMenu : Control
     {
         // The original lays its UI out in real screen pixels (no scaling), re-anchoring
         // panels to the corners at higher resolutions.
-        GetTree().Root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
+        H5Reborn.Settings.VideoSettings.ApplyScaling();
 
         AddChild(new ColorRect { Name = "Black", Color = Colors.Black, AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore });
         var container = new SubViewportContainer
@@ -41,6 +41,7 @@ public partial class MainMenu : Control
         UiNavigator.Register("multiplayer", () => new MainMenuScreen("MultiPlayer"));
         UiNavigator.Register("lobby", () => new DuelLobbyScreen());
         UiNavigator.Register("wait", () => new DuelWaitScreen());
+        UiNavigator.Register("options", () => new OptionsScreen());
         UiNavigator.Register("hotseatduel", () => new Combat.HotseatDuelScreen());
 
         DevArgs.Parse();

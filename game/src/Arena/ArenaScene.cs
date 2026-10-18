@@ -198,6 +198,10 @@ public partial class ArenaScene : Node3D
 
     // ---- camera --------------------------------------------------------------------------
 
+    // NOTE: in battles the camera is driven by Combat.CombatCamera, which reproduces the exe's
+    // combat camera (arena default pose, limits, input, glide; docs/rules/CAMERA.md). The fitted
+    // constants below remain only for the arena viewer and as the original screenshot-fit record.
+    //
     // Default combat view, fitted to the original combat screenshots in the stock manual
     // (Game Manual 3.0.pdf p.14): an axis-aligned view looking north (script docs: yaw 0 =
     // north), the 12-cell axis across the screen, the near edge being grid row 0. Fitting the

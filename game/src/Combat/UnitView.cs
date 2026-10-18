@@ -173,18 +173,22 @@ public partial class UnitView : Node3D
 
     public bool Has(string kind) => Character?.Has(kind) ?? false;
 
+    /// <summary>Real-time length of a clip (its (BasicSkelAnim) SpeedFactor applied).</summary>
     public float Length(string kind) =>
-        Character is { } c && c.Has(kind) ? (float)c.Player.GetAnimation(Render.Character.Lib + kind).Length : 0f;
+        Character is { } c && c.Has(kind) ? (float)c.Player.GetAnimation(Render.Character.Lib + kind).Length / c.SpeedFactor(kind) : 0f;
 
-    /// <summary>Time of the animator's "action" event (the hit moment), or a fraction of the clip.</summary>
+    /// <summary>Real-time moment of the animator's "action" event (the hit), or a fraction of the clip.</summary>
     public float ActionTime(string kind)
     {
         if (Character is { } c && c.Events.TryGetValue(kind, out var evs))
             foreach (var (name, time) in evs)
                 if (name.Contains("action", StringComparison.OrdinalIgnoreCase) || name.Contains("hit", StringComparison.OrdinalIgnoreCase))
-                    return time;
+                    return time / c.SpeedFactor(kind);
         return Length(kind) * 0.55f;
     }
+
+    /// <summary>Ground speed of the move clip in world units per second (0 when unknown).</summary>
+    public float MoveSpeed => Character is { } c && c.GroundSpeeds.TryGetValue("move", out var s) ? s : 0f;
 
     public void Idle()
     {

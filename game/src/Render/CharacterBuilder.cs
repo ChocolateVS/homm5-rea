@@ -18,11 +18,23 @@ public partial class Character : Node3D
 
     public bool Has(string kind) => Player.HasAnimation(Lib + kind);
 
+    /// <summary>(BasicSkelAnim) SpeedFactor per kind: the clip's playback rate.</summary>
+    public Dictionary<string, float> SpeedFactors { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Ground speed (world units per second) of locomotion kinds: (BasicSkelAnim) MovementSpeed ×
+    /// SpeedFactor. The clip's own forward travel is extracted at build time, so the caller moves
+    /// the node at this speed while the clip plays in place.
+    /// </summary>
+    public Dictionary<string, float> GroundSpeeds { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public float SpeedFactor(string kind) => SpeedFactors.TryGetValue(kind, out var f) && f > 0 ? f : 1f;
+
     public void Play(string kind, bool loop = false)
     {
         if (!Has(kind)) return;
         var anim = Player.GetAnimation(Lib + kind);
         anim.LoopMode = loop ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
+        Player.SpeedScale = SpeedFactor(kind);
         Player.Play(Lib + kind);
     }
 
@@ -93,6 +105,13 @@ public static class CharacterBuilder
         var lib = new AnimationLibrary();
         foreach (var (kind, loaded) in animations)
         {
+            float speed = loaded.Entry.MovementSpeed;
+            node.SpeedFactors[kind] = loaded.Entry.SpeedFactor > 0 ? loaded.Entry.SpeedFactor : 1f;
+            if (speed > 0)
+            {
+                ExtractRootMotion(loaded.Clip, speed);
+                node.GroundSpeeds[kind] = speed * node.SpeedFactors[kind];
+            }
             lib.AddAnimation(kind, ToGodot(loaded.Clip, skeleton));
             node.Events[kind] = loaded.Events.Select(e => (e.Text, e.Time)).ToList();
         }
@@ -108,6 +127,41 @@ public static class CharacterBuilder
     /// </summary>
     static string SafeBoneName(string name, int index) =>
         string.IsNullOrEmpty(name) ? $"bone{index}" : name.Replace(':', '_').Replace('/', '_');
+
+    /// <summary>
+    /// Locomotion clips carry their forward travel in a body bone (Footman move: Hips goes from
+    /// y −0.13 to −4.69 over the 0.8 s cycle — exactly MovementSpeed 5.7 units/s), and Granny's
+    /// root-motion fields are unused (RootMotion null, LoopTranslation 0). Played as-is on a node
+    /// that also moves along the path, the body runs ahead and snaps back every loop. The original
+    /// moves the creature at MovementSpeed and plays the cycle in place, so the bone whose
+    /// horizontal drift matches MovementSpeed × duration has that linear drift removed.
+    /// </summary>
+    static void ExtractRootMotion(AnimationClip clip, float movementSpeed)
+    {
+        if (clip.Duration <= 0) return;
+        float expected = movementSpeed * clip.Duration;
+        BoneTrack? best = null;
+        float bestErr = float.MaxValue;
+        foreach (var tr in clip.Tracks)
+        {
+            if (tr.Translations.Length < 2) continue;
+            var d = tr.Translations[^1] - tr.Translations[0];
+            float drift = MathF.Sqrt(d.X * d.X + d.Y * d.Y);
+            float err = MathF.Abs(drift - expected);
+            if (drift > expected * 0.5f && err < bestErr) { best = tr; bestErr = err; }
+        }
+        if (best == null) return;
+        var first = best.Translations[0];
+        var total = best.Translations[^1] - first;
+        float t0 = best.TranslationTimes[0], span = best.TranslationTimes[^1] - t0;
+        if (span <= 0) return;
+        for (int k = 0; k < best.Translations.Length; k++)
+        {
+            float f = (best.TranslationTimes[k] - t0) / span;
+            var p = best.Translations[k];
+            best.Translations[k] = new System.Numerics.Vector3(p.X - total.X * f, p.Y - total.Y * f, p.Z);
+        }
+    }
 
     static Animation ToGodot(AnimationClip clip, SkeletonData skeleton)
     {

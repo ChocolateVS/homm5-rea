@@ -163,7 +163,7 @@ public partial class BitmapText : Control
         Invalidate();
     }
 
-    public BitmapText() { MouseFilter = MouseFilterEnum.Ignore; TextureFilter = TextureFilterEnum.Nearest; }
+    public BitmapText() { MouseFilter = MouseFilterEnum.Ignore; TextureFilter = TextureFilterEnum.ParentNode; }
 
     void Invalidate() { _layout = null; QueueRedraw(); }
 
