@@ -1,0 +1,4 @@
+# Caddy obtains a TLS certificate automatically and proxies HTTP + WebSocket (wss://) to the master.
+heroes.example.com {
+    reverse_proxy master:27620
+}

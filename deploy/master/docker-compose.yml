@@ -1,0 +1,33 @@
+# H5Reborn master server behind Caddy (automatic HTTPS / wss://).
+# 1. Point a DNS name (e.g. heroes.example.com) at your server.
+# 2. Replace heroes.example.com in Caddyfile, then: docker compose up -d --build
+# 3. Open firewall: 80/tcp + 443/tcp (Caddy) and 27621/udp (rendezvous/relay).
+# Players set "Online server" to https://heroes.example.com in the game's Connect... dialog
+# (desktop UDP rendezvous then goes to heroes.example.com:27621).
+services:
+  master:
+    build:
+      context: ../..
+      dockerfile: src/H5.Master/Dockerfile
+    restart: unless-stopped
+    environment:
+      H5_MASTER_URLS: http://0.0.0.0:27620
+      H5_MASTER_UDP_PORT: "27621"
+      # H5_MASTER_MOTD: "Welcome to my Heroes V server"
+      # H5_MASTER_RELAY_KBPS: "512"
+    ports:
+      - "27621:27621/udp"   # UDP must reach the container directly (a web proxy can't carry it)
+    expose:
+      - "27620"
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [master]
+volumes:
+  caddy_data:

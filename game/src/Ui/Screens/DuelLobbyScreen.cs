@@ -1,23 +1,36 @@
 using Godot;
 using H5.Net;
+using H5.Net.Discovery;
+using H5.Net.Master;
 using H5Reborn.Ui.Net;
 
 namespace H5Reborn.Ui.Screens;
 
 /// <summary>
 /// UI/MPDMLobby, "Duel Mode: Servers list" with the LAN menu (Join / Create /
-/// Player Name / Standard Mode / Exit). The games list shows the rooms of the
-/// connected H5Reborn server; joining or creating a room moves to the duel
-/// options screen (UI/MPDMWait).
+/// Player Name / Standard Mode / Exit).
+///
+/// Not connected: the games list is a server browser — games hosted on the local
+/// network (found automatically by LAN discovery) and public online games from the
+/// configured master server. Join connects to the selected one; Create hosts a game
+/// on this computer; the Standard Mode button (relabelled "Connect...") opens the
+/// address / join-code dialog. Connected: the list shows that server's game rooms,
+/// and joining or creating a room moves to the duel options screen (UI/MPDMWait).
 /// </summary>
 public partial class DuelLobbyScreen : UiScreen
 {
+    abstract record Row;
+    sealed record RoomRow(RoomSummary Room) : Row;
+    sealed record LanRow(LanGameInfo Game) : Row;
+    sealed record OnlineRow(OnlineLobby Lobby) : Row;
+
     readonly ListRowsView _games;
     readonly ChatLogView _log = new();
     readonly BitmapText _players = new();
-    List<RoomSummary> _shown = new();
+    List<Row> _shown = new();
     bool _showRunning = true, _showFull = true;
     double _refresh;
+    string _lastKey = "";
 
     static string H(int i) => UiResources.Instance.Text($"UI/Lobby/Texts/Games/GameColumnHeader_{i}.txt") ?? "";
 
@@ -48,10 +61,14 @@ public partial class DuelLobbyScreen : UiScreen
         _showRunning = Find("ShowRunningBtn")?.State != 1;
         _showFull = Find("ShowObservableBtn")?.State != 1;
 
+        // No "standard mode" exists here; its button opens the connect (address / join code) dialog.
+        foreach (var w in Root.Descendants().Where(w => w.ButtonStates.Any(s => s.OnEnter.Any(c => c.Argument == "standardmode"))))
+            Node(w)?.SetText("Connect...");
+
         Bus.On("join", Join);
-        Bus.On("create", () => UiNavigator.ShowOverlay(new CreateGameDialog()));
+        Bus.On("create", Create);
         Bus.On("changename", () => UiNavigator.ShowOverlay(new PlayerNameDialog()));
-        Bus.On("standardmode", () => { });
+        Bus.On("standardmode", () => UiNavigator.ShowOverlay(new ConnectDialog()));
         Bus.On("disconnect", Exit);
         Bus.On("show_running", () => { _showRunning = true; Refresh(); });
         Bus.On("hide_running", () => { _showRunning = false; Refresh(); });
@@ -66,17 +83,21 @@ public partial class DuelLobbyScreen : UiScreen
         lobby.MessageReceived += OnMessage;
         lobby.StatusChanged += OnStatus;
         lobby.Disconnected += OnDisconnected;
+        lobby.ErrorRaised += OnError;
+        lobby.StartLanBrowsing();
         if (DevArgs.Name != null) lobby.SetPlayerName(DevArgs.Name);
         if (lobby.Connected) { lobby.Send(new ListRooms()); return; }
-        if (DevArgs.Host) _ = Run(lobby.HostAsync());
+        if (DevArgs.Host) _ = Run(lobby.HostAsync(publishOnline: DevArgs.HostOnline));
+        else if (DevArgs.JoinCode != null) _ = Run(lobby.JoinOnlineAsync(DevArgs.JoinCode));
         else if (DevArgs.Connect != null) { var (h, p) = ConnectDialog.ParseAddress(DevArgs.Connect); _ = Run(lobby.ConnectAsync(h, p)); }
-        else UiNavigator.ShowOverlay(new ConnectDialog());
+        else _log.AddSystem("Games on your network appear below. Use Connect... to join by address or join code.");
+        Refresh();
     }
 
     async Task Run(Task t)
     {
         try { await t; }
-        catch (Exception e) { _log.AddSystem(e.Message); }
+        catch (Exception e) { _log.AddSystem(e.Message); OnError("Network", e.Message); }
     }
 
     public override void _ExitTree()
@@ -85,20 +106,41 @@ public partial class DuelLobbyScreen : UiScreen
         lobby.MessageReceived -= OnMessage;
         lobby.StatusChanged -= OnStatus;
         lobby.Disconnected -= OnDisconnected;
+        lobby.ErrorRaised -= OnError;
+        lobby.StopLanBrowsing();
     }
 
     public override void _Process(double delta)
     {
+        var lobby = LobbyService.Instance;
         _refresh += delta;
-        if (_refresh > 2 && LobbyService.Instance.Connected && LobbyService.Instance.Room == null)
+        if (_refresh > 2 && lobby.Connected && lobby.Room == null)
         {
             _refresh = 0;
-            LobbyService.Instance.Send(new ListRooms());
+            lobby.Send(new ListRooms());
+        }
+        if (!lobby.Connected)
+        {
+            // Browser mode: refresh when the LAN/online lists change.
+            var key = string.Join("|", lobby.LanGames.Select(g => g.Id + g.Players + g.OpenRooms))
+                      + "#" + string.Join("|", lobby.OnlineLobbies.Select(l => l.Id + l.Players)) + lobby.OnlineError;
+            if (key != _lastKey) { _lastKey = key; Refresh(); }
+            if (DevArgs.JoinLanFirst && lobby.LanGames.Count > 0)
+            {
+                DevArgs.JoinLanFirst = false;
+                var g = lobby.LanGames[0];
+                _ = Run(lobby.ConnectAsync(g.Address, g.Port));
+            }
         }
     }
 
     void OnStatus(string s) => _log.AddSystem(s);
-    void OnDisconnected(string reason) => _log.AddSystem($"Disconnected: {reason}");
+    void OnDisconnected(string reason) { _log.AddSystem($"Disconnected: {reason}"); Refresh(); }
+
+    void OnError(string title, string text)
+    {
+        if (UiNavigator.Current == this) Adventure.AdvDialogs.Message(this, title, text, null);
+    }
 
     void OnMessage(Message m)
     {
@@ -110,10 +152,10 @@ public partial class DuelLobbyScreen : UiScreen
                 break;
             case RoomList:
                 Refresh();
-                if (DevArgs.JoinFirst && _shown.FirstOrDefault(r => !r.InProgress && r.Players < r.MaxPlayers) is { } first)
+                if (DevArgs.JoinFirst && _shown.OfType<RoomRow>().FirstOrDefault(r => !r.Room.InProgress && r.Room.Players < r.Room.MaxPlayers) is { } first)
                 {
                     DevArgs.JoinFirst = false;
-                    LobbyService.Instance.Send(new JoinRoom(first.RoomId, null));
+                    LobbyService.Instance.Send(new JoinRoom(first.Room.RoomId, null));
                 }
                 break;
             case RoomState when UiNavigator.Current == this:
@@ -125,26 +167,93 @@ public partial class DuelLobbyScreen : UiScreen
     void Refresh()
     {
         var lobby = LobbyService.Instance;
-        _shown = (lobby.Rooms?.Rooms ?? Array.Empty<RoomSummary>())
-            .Where(r => (_showRunning || !r.InProgress) && (_showFull || r.Players < r.MaxPlayers)).ToList();
         string Field(string s) => $"<dots><body_bright>{ChatLogView.Escape(s)}";
-        _games.SetRows(_shown.Select(r => new[]
+        string Count(int n, int max) => $"<center><body_bright>{n}<body>/<body_bright>{max}";
+        if (lobby.Connected)
         {
-            Field(r.Name + (r.HasPassword ? " *" : "")),
-            $"<center><body_bright>{r.Players}<body>/<body_bright>{r.MaxPlayers}",
-            $"<center>{Field(r.InProgress ? "Duel (running)" : "Duel")}",
-            $"<center>{Field("-")}",
-            $"<center>{Field("3.1")}",
+            _shown = (lobby.Rooms?.Rooms ?? Array.Empty<RoomSummary>())
+                .Where(r => (_showRunning || !r.InProgress) && (_showFull || r.Players < r.MaxPlayers))
+                .Select(r => (Row)new RoomRow(r)).ToList();
+        }
+        else
+        {
+            _shown = lobby.LanGames.Select(g => (Row)new LanRow(g))
+                .Concat(lobby.OnlineLobbies.Where(l => _showFull || l.Players < l.MaxPlayers).Select(l => (Row)new OnlineRow(l)))
+                .ToList();
+        }
+        _games.SetRows(_shown.Select(row => row switch
+        {
+            RoomRow { Room: var r } => new[]
+            {
+                Field(r.Name + (r.HasPassword ? " *" : "")), Count(r.Players, r.MaxPlayers),
+                $"<center>{Field(r.InProgress ? "Duel (running)" : "Duel")}", $"<center>{Field("-")}", $"<center>{Field("3.1")}",
+            },
+            LanRow { Game: var g } => new[]
+            {
+                Field(g.Name), Count(g.Players, Math.Max(g.Players, 8)),
+                $"<center>{Field($"LAN ({g.OpenRooms} open)")}", $"<center>{Field(g.Address)}", $"<center>{Field("3.1")}",
+            },
+            OnlineRow { Lobby: var l } => new[]
+            {
+                Field(l.Name + (l.HasPassword ? " *" : "")), Count(l.Players, l.MaxPlayers),
+                $"<center>{Field("Online duel")}", $"<center>{Field(l.Code)}", $"<center>{Field("3.1")}",
+            },
+            _ => Array.Empty<string>(),
         }).ToList());
-        _players.Markup = lobby.Connected
-            ? $"<body_bright>{ChatLogView.Escape(lobby.PlayerName)}<br><body>{ChatLogView.Escape(lobby.ServerAddress ?? "")}{(lobby.IsHosting ? " (host)" : "")}"
-            : "";
+
+        string info;
+        if (lobby.Connected)
+        {
+            var ping = lobby.PingMs >= 0 ? $"<br><body>Ping: <body_bright>{lobby.PingMs} ms" : "";
+            var code = lobby.OnlineCode is { } c ? $"<br><body>Join code: <body_bright>{c}" : "";
+            info = $"<body_bright>{ChatLogView.Escape(lobby.PlayerName)}<br><body>{ChatLogView.Escape(lobby.ServerAddress ?? "")}{(lobby.IsHosting ? " (host)" : "")}{ping}{code}";
+        }
+        else
+        {
+            var server = string.IsNullOrWhiteSpace(lobby.Settings.MasterUrl) ? "none (set one in Connect...)" : lobby.Settings.MasterUrl!;
+            info = $"<body_bright>{ChatLogView.Escape(lobby.PlayerName)}<br><body>Online server: {ChatLogView.Escape(server)}"
+                   + (lobby.OnlineError != null ? $"<br><color=FFFF6040>{ChatLogView.Escape(lobby.OnlineError)}" : "");
+        }
+        _players.Markup = info;
     }
 
-    void Join()
+    async void Join()
     {
-        if (_games.Selected < 0 || _games.Selected >= _shown.Count) { _log.AddSystem("Select a game to join."); return; }
-        LobbyService.Instance.Send(new JoinRoom(_shown[_games.Selected].RoomId, null));
+        var lobby = LobbyService.Instance;
+        if (_games.Selected < 0 || _games.Selected >= _shown.Count)
+        {
+            if (lobby.Connected) _log.AddSystem("Select a game to join.");
+            else UiNavigator.ShowOverlay(new ConnectDialog());
+            return;
+        }
+        try
+        {
+            switch (_shown[_games.Selected])
+            {
+                case RoomRow { Room: var r }:
+                    if (r.HasPassword) UiNavigator.ShowOverlay(new PasswordDialog(r.RoomId));
+                    else lobby.Send(new JoinRoom(r.RoomId, null));
+                    break;
+                case LanRow { Game: var g }:
+                    await lobby.ConnectAsync(g.Address, g.Port);
+                    break;
+                case OnlineRow { Lobby: var l }:
+                    await lobby.JoinOnlineAsync(l.Code);
+                    break;
+            }
+        }
+        catch (Exception e) { _log.AddSystem(e.Message); OnError("Network", e.Message); }
+    }
+
+    async void Create()
+    {
+        var lobby = LobbyService.Instance;
+        if (!lobby.Connected)
+        {
+            try { await lobby.HostAsync(); }
+            catch (Exception e) { OnError("Network", e.Message); return; }
+        }
+        UiNavigator.ShowOverlay(new CreateGameDialog());
     }
 
     async void Exit()

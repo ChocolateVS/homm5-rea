@@ -11,7 +11,7 @@ namespace H5.Net;
 
 public static class ProtocolInfo
 {
-    public const int Version = 1;
+    public const int Version = 2;
     public const int DefaultPort = 27615;
     public const int MaxFrameBytes = 8 * 1024 * 1024;
 }
@@ -37,11 +37,20 @@ public static class ProtocolInfo
 [JsonDerivedType(typeof(GameUpdate), "game_update")]
 [JsonDerivedType(typeof(CommandRejected), "command_rejected")]
 [JsonDerivedType(typeof(GameEnded), "game_ended")]
+[JsonDerivedType(typeof(Resumed), "resumed")]
 public abstract record Message;
 
-/// <summary>Client → server, first frame. DataFingerprint guards against mismatched game data/mods.</summary>
-public sealed record Hello(int ProtocolVersion, string PlayerName, string DataFingerprint) : Message;
-public sealed record Welcome(int PlayerId, string ServerName) : Message;
+/// <summary>
+/// Client → server, first frame. DataFingerprint guards against mismatched game data/mods.
+/// ResumeToken (from an earlier Welcome) reattaches a dropped player to its seat in a
+/// running game; LastSeq is the last GameUpdate it applied (null = replay everything).
+/// </summary>
+public sealed record Hello(int ProtocolVersion, string PlayerName, string DataFingerprint,
+    string? ResumeToken = null, int? LastSeq = null) : Message;
+/// <summary>Server → client. Keep ResumeToken to reconnect after a dropped connection.</summary>
+public sealed record Welcome(int PlayerId, string ServerName, string? ResumeToken = null) : Message;
+/// <summary>Sent after a reconnect replay; the client's game is current again.</summary>
+public sealed record Resumed(int RoomId, int Seq) : Message;
 public sealed record ErrorMsg(string Code, string Text) : Message;
 public sealed record Ping(long Ticks) : Message;
 public sealed record Pong(long Ticks) : Message;
@@ -54,7 +63,8 @@ public sealed record CreateRoom(string Name, string Mode, int MaxPlayers, string
 public sealed record JoinRoom(int RoomId, string? Password) : Message;
 public sealed record LeaveRoom : Message;
 
-public sealed record RoomPlayer(int PlayerId, string Name, int Slot, bool Ready, bool IsHost, JsonObject? Options);
+/// <summary>Connected is false while a dropped player's seat is held for reconnection.</summary>
+public sealed record RoomPlayer(int PlayerId, string Name, int Slot, bool Ready, bool IsHost, JsonObject? Options, bool Connected = true);
 public sealed record RoomState(int RoomId, string Name, string Mode, int MaxPlayers, IReadOnlyList<RoomPlayer> Players, JsonObject? Settings, bool InProgress) : Message;
 public sealed record SetReady(bool Ready) : Message;
 /// <summary>Per-player lobby choices, e.g. {"preset": 4} in duel mode.</summary>
@@ -87,6 +97,9 @@ public static class MessageCodec
         json.CopyTo(frame, 4);
         return frame;
     }
+
+    /// <summary>The JSON body of a message, without length prefix (transports add their own framing).</summary>
+    public static byte[] EncodeBody(Message m) => JsonSerializer.SerializeToUtf8Bytes(m, Options);
 
     public static Message Decode(ReadOnlySpan<byte> json) =>
         JsonSerializer.Deserialize<Message>(json, Options) ?? throw new JsonException("null message");

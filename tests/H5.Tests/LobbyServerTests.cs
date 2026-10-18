@@ -113,9 +113,9 @@ public class LobbyServerTests
     }
 
     [Fact]
-    public async Task DisconnectForfeitsRunningGame()
+    public async Task DisconnectForfeitsRunningGameAfterGrace()
     {
-        await using var server = new LobbyServer(new[] { new CountingFactory() });
+        await using var server = new LobbyServer(new[] { new CountingFactory() }) { ReconnectGrace = TimeSpan.FromMilliseconds(300) };
         server.Start(0, IPAddress.Loopback);
         var (a, aLog) = await Join(server.Port, "Alice");
         var (b, bLog) = await Join(server.Port, "Bob");
