@@ -15,8 +15,9 @@ public sealed partial class Battle
         if (h.HasPerk("HERO_SKILL_COUNTERSPELL") && !h.Links.ContainsKey(LinkCounterspell)) yield return new(LinkCounterspell, AbilityTargeting.None);
         if (h.HasPerk(Sk.MarkOfWizard)) yield return new("MARK_OF_WIZARD", AbilityTargeting.Enemy);
         if (h.HasPerk(Sk.Banish) && S.Living.Any(u => u.Summoned && Controller(u) != h.Side)) yield return new("BANISH", AbilityTargeting.None);
-        if (h.HasPerk(Sk.ImbueArrow))
-            foreach (var s in HeroSpells(h))
+        // Imbuing takes no turn, so it may be changed at most once per hero turn.
+        if (h.HasPerk(Sk.ImbueArrow) && h.AbilityUses.GetValueOrDefault("IMBUE_TURN", -1) != S.TurnCounter)
+            foreach (var s in HeroSpells(h).Where(s => s != h.ImbuedSpell))
                 if (Db.Spell(s) is { } sp && sp.Target == "TARGET_HOSTILE" && !IsMass(s) && TargetingOf(sp) == SpellTargeting.Unit
                     && sp.School is "MAGIC_SCHOOL_DESTRUCTIVE" or "MAGIC_SCHOOL_DARK")
                     yield return new("IMBUE_ARROW:" + s, AbilityTargeting.None);
@@ -47,6 +48,7 @@ public sealed partial class Battle
         if (c.Ability.StartsWith("IMBUE_ARROW:"))
         {
             h.ImbuedSpell = c.Ability["IMBUE_ARROW:".Length..];
+            h.AbilityUses["IMBUE_TURN"] = S.TurnCounter;
             reset = -1;                                               // Imbue Arrow takes no ATB (p.312)
             return true;
         }

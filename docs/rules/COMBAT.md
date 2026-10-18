@@ -56,20 +56,13 @@ IBattleAI ai = new GreedyBattleAI(); BattleCommand cmd = ai.Decide(battle, side)
 
 ## Not implemented yet
 
-* Creature abilities: Battle Dive, Pack Dive (delayed air attacks), Set Snares, Defile Magic, Taunt, Treachery, Howl,
-  Pack Hunter, Seduction, Flamewave, Magnetism, Eldritch Aura (Dampen Magic), Power Feed, Bond of Light, Treant Union.
-* Hero: Magic Mirror, Counterspell, Mark of the Wizard, Imbue Arrow/Ballista, Consume Artifact, Elemental Vision
-  (Elemental Chains), Empowered Spells (and Power Bargain), Banish, Remote Control, Plague Tent, Tremors/Earthquake
-  (siege only), Matron Salvo / Radiant specialisations, Avenger favoured enemies beyond the 40% crit (no duel preset uses them).
-* Sieges (14x14 field, walls, towers, moat), catapult, terrain-specific arena layouts and summoned elemental type by terrain.
+* Hero: Consume Artifact (no creature artifacts in duels), Tremors (siege only), Power Bargain.
+* Sieges (14x14 field, walls, towers, moat), catapult, summoned elemental type by terrain.
+* Exact original hero / war machine cells, ATB integer timing.
 
-## Needs confirmation against the executable (rea / disassembly)
+## Confirmed against the executable
 
-* Whether DamageIncreaseCap/DamageDecreaseCap cap the A/D bonus as implemented (+300% max, ×0.1 floor).
-* Exact rounding points (per-blow floor vs per-creature), and whether luck is rolled once per blow (implemented) or per target.
-* Retaliation reset timing (implemented: at the defender's own turn start).
-* Range penalty distance metric (implemented: centre distance > half the field width).
-* Archangel Resurrect Allies amount (implemented 100 HP per Archangel), Lay Hands use limit, First Aid Tent action count.
-* Storm Wind speed penalty (manual -1, DefaultStats 2), Fog Veil (manual 10%, DefaultStats 25%), Wyvern Tamer HP formula.
-* Cavalry Commander jousting bonus, Bear Roar / Paw Strike chance scaling, Prismatic Breath geometry, Firewall shape.
-* War machine placement on the field and their targeting when uncontrolled.
+See `EXE_FINDINGS.md`: damage pipeline (uncapped A/D factor, 1-3 rolls / 3-roll average, truncation with 1e-4,
+pattern share), luck once per attack, Absolute Protection, range penalty metric, retaliation reset, Storm Wind and
+Fog Veil data values, Cavalry Commander, Evasive / Forest Guardian, inclusive RNG ranges, obstacle generator,
+spell base damage rounding and Empowered ×1.5, Magic Mirror / Spell Twister, Treachery, Taunt, Howl, Resurrect Allies.

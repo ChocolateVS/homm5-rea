@@ -145,7 +145,53 @@ Works on the internal grid W×H = (12+4)×(10+2):
 * Validation: Dijkstra (8-way, cost 2/3) of a 2×2 creature from internal (3,2); every free zone cell
   must be covered by a reachable footprint, otherwise retry; after 10 failures the field is empty.
 
+## Spell damage (resolved)
+
+* `FUN_00a34ca0` / `FUN_00a34cd0` → `FUN_00a34c40`: a spell's damage / duration value is
+  `Base + PerPower·SP` from the xdb table for the mastery, index clamped to the table length.
+* `FUN_00976b90` (damaging spells: Magic Arrow … Implosion, Plague, Holy/Unholy Word, Land Mine, Wasp Swarm,
+  Firewall, Stone Spikes, Deep Freeze, Divine Vengeance, Explosion, uber spells): base damage
+  `round(max(1, value))`, then `round(×1.5)` for an empowered variant (`FUN_00a34100` = "is empowered",
+  `FUN_00a34110` = base spell id). Call Storm = `CallStorm_DamagePerCreature × count`. Ported as
+  `Battle.SpellBaseDamage`.
+* Empowered spells (`SPELL_EMPOWERED_*`, mapped by `FUN_00973890`) have doubled TrainedCost in their xdbs
+  and placeholder damage tables; the ×1.5 comes from the code above.
+* Earthquake (spell 0x29, `FUN_0097d7b0`): wall damage in multiples of 50 (value / 50).
+
+## Abilities and perks (resolved or data-backed)
+
+* Treachery `FUN_008a0b60`: changes sides once when count/initial < `Treachery`/100 − Goblin King
+  `0.01·level` (effect SPELL_SPEC_GOBLIN_KING); confirmed by the fan manual (level 20 ⇒ 10 %).
+* Taunt `FUN_00a65d50`: every other TAUNT stack adjacent to the attacker rolls the trigger chance with
+  `Taunt_ProcFactor`; the last success becomes the target. Not for Battle Dive / Pack Dive finishing strikes.
+* Pack Hunter / Lizard Bite share the follow-up helper `FUN_00a63e90` (called from `FUN_00a64120`).
+* Howl `FUN_00a5cbc0`: summoned stack's ATB = rand(0, `HowlMaxATBValueAtStart`).
+* Auras are recomputed per unit by `FUN_008a4b70` (flags: fright aura, presence of commander 0x400,
+  searing aura 0x800, Eldritch Aura 0x1000 from neighbours of either side, bravery, element vulnerabilities,
+  weakening aura, shield other, magic resistance).
+* Battle Dive / Pack Dive: activation spells 0x9a / 0x15a, finishing strikes 0x9b (×2 in `FUN_00a58de0`)
+  and 0x15b (×`PackDive_DamageMultiplier`), delay `PackDive_DelayBeforAttack`.
+* Magic Mirror `FUN_00983150`: chance `round(level·MagicMirrorLevelMultiplier + 10)` %; Spell Twister
+  (HERO_SPEC_RADIANT) second roll `round((Radiant_MirrorProb + Radiant_MirrorProbPerLevel·level)·100)` %
+  restricts the new target to the caster's side, otherwise any random stack.
+* Resurrect Allies `FUN_009789b0` = 100 HP × Archangels; Gremlin Repair = count × min(power, 1000).
+* Data/description-based (exe call sites located but not fully decompiled): Set Snares and Defile Magic
+  (fan-manual outcome tables), Treant Union (TreeanUnionTargetHits/CasterHits), Power Feed, Bond of Light,
+  Flamewave, Magnetism, Seduction (2 + log2(power ratio)), Counterspell, Mark of the Wizard, Imbue Arrow /
+  Ballista, Elemental Vision (ElementalChainBonusPerInvocationTrained per mastery), Banish
+  (Unsummon_DamagePerHeroLevel / PerSkillMastery), Remote Control, Plague Tent, Matron Salvo (10 % + 2 %/level).
+
+## Placement (combat screen request)
+
+* Not found in data, Lua or by string search; the original computes hero / war machine positions in code
+  that was not located. H5Reborn keeps war machines just outside the grid behind their army (column −1 for
+  the attacker, 12 for the defender; Ballista row 1, First Aid Tent row 8, others row 5) and heroes off-grid
+  behind their side. The arena workstream's finding that the internal grid has a 2-column margin
+  (internal x 0..1 and 14..15) is consistent with machines standing in that margin.
+
 ## Still open
 
-* Lay Hands charges, First Aid Tent action count, war machine and hero placement, obstacle
-  generation, ATB integer timing, the abilities listed in COMBAT.md — in progress.
+* Exact hero / war machine cells (above); ATB integer timing (`ATBBaseTime` 100000 / `ATBEndTime` 20000 and the
+  hidden `ATBMin`/`ATBMax` defaults); Lay Hands use limit and First Aid Tent action count; Consume Artifact (needs
+  creature artifacts, absent in duels); Tremors (siege only); sieges in general (walls, towers, moat, catapult,
+  14×14 field — `FUN_004b33a0` battle types 1–3 also mark free rows 1,2,H−2,H−3 for them).
