@@ -70,4 +70,31 @@ public class AuditHeroStrikeTests(GameDataFixture f)
         Assert.True(b.Apply(new HeroAttackCmd(imp.Id) { Side = 0 }).Ok);
         Assert.Equal(expected, before - imp.TotalHealth);
     }
+
+    // exe FUN_004bc470: +2 HP per equipped Ring of Life (2 x CountArtifact(21) via FUN_00ca6680) — was missing.
+    [Fact]
+    public void RingOfLifeAddsTwoHealthPerRing()
+    {
+        BattleState Make(int rings)
+        {
+            var hero = f.Db.DuelPresets[0].Hero;
+            var s = BattleSetup.Create(f.Db,
+                new ArmySetup { Hero = hero, Army = new() { new ArmySlot("CREATURE_IMP", 10) } },
+                new ArmySetup { Hero = f.Db.DuelPresets[3].Hero, Army = new() { new ArmySlot("CREATURE_IMP", 10) } },
+                7, skipTactics: true, arena: "Grass_Big_01");
+            return s;
+        }
+        var hi = f.Db.DuelPresets[0].Hero;
+        var saved = hi.Artifacts.ToList();
+        try
+        {
+            hi.Artifacts.RemoveAll(a => a == "RING_OF_LIFE");
+            int plain = Make(0).Units.First(u => u.Side == 0).BaseHealth;
+            hi.Artifacts.Add("RING_OF_LIFE");
+            Assert.Equal(plain + 2, Make(1).Units.First(u => u.Side == 0).BaseHealth);
+            hi.Artifacts.Add("RING_OF_LIFE");
+            Assert.Equal(plain + 4, Make(2).Units.First(u => u.Side == 0).BaseHealth);
+        }
+        finally { hi.Artifacts.Clear(); hi.Artifacts.AddRange(saved); }
+    }
 }

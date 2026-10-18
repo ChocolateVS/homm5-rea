@@ -206,6 +206,9 @@ public static class BattleSetup
         {
             // Vitality: +2 HP per creature (fan manual p.112).
             if (h.HasPerk(Sk.Toughness)) u.BaseHealth += 2;
+            // Ring of Life (artifact 21): +2 HP per equipped copy (exe FUN_004bc470: 2 x CountArtifact(21),
+            // FUN_00ca6680 counts the hero's equipped artifacts of that id).
+            u.BaseHealth += 2 * h.Artifacts.Count(a => a == "RING_OF_LIFE");
             // Battle Frenzy: +1 min and max damage (p.107).
             if (h.HasPerk(Sk.Frenzy)) { u.BaseMinDamage += 1; u.BaseMaxDamage += 1; }
             // Nature's Wrath: Sylvan creatures +1 max damage (p.107).
