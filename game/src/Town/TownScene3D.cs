@@ -313,7 +313,7 @@ public partial class TownScene3D : Node3D
         _yaw = F("Rot", "y");
         _rod = G("Rod", 50);
         Camera.Fov = G("FOV", 54.4f);
-        Camera.Near = G("ClipDistanceMin", 1);
+        Camera.Near = Math.Max(0.05f, G("ClipDistanceMin", 1));
         Camera.Far = Math.Max(G("ClipDistanceMax", 1500), 3000);
         _pivot = eye + Dir(_pitch, _yaw) * _rod;
         ApplyCamera();
@@ -396,7 +396,16 @@ public partial class TownScene3D : Node3D
         var m = new System.Numerics.Matrix4x4(F(0), F(1), F(2), F(3), F(4), F(5), F(6), F(7),
             F(8), F(9), F(10), F(11), F(12), F(13), F(14), F(15));
         bool columnMajor = m.M41 == 0 && m.M42 == 0 && m.M43 == 0 && (m.M14 != 0 || m.M24 != 0 || m.M34 != 0);
-        if (columnMajor) m = System.Numerics.Matrix4x4.Transpose(m);
+        if (columnMajor)
+        {
+            // ArenaLocObjects are raw Maya transforms: column-vector and Y-up. Transpose to row-vector,
+            // then change basis Maya (x, y, z) → mesh (x, −z, y). Checked on the fort hall: the creature
+            // spots land on the floor (height ≈ 9) in front of the camera.
+            m = System.Numerics.Matrix4x4.Transpose(m);
+            var conv = new System.Numerics.Matrix4x4(1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1);
+            System.Numerics.Matrix4x4.Invert(conv, out var inv);
+            m = inv * m * conv;
+        }
         return ModelBuilder.ToGodot(m);
     }
 }

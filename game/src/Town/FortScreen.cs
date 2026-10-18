@@ -82,6 +82,8 @@ public sealed partial class FortScreen : TownSubScreen
             catch (Exception e) { GD.PushWarning($"[H5] fort creature {creature}: {e.Message}"); continue; }
             node.Transform = at;
             _scene.AddChild(node);
+            if (OS.GetCmdlineUserArgs().Contains("--town-debug-cam"))
+                GD.Print($"[H5] fort tier {tier} {creature} at {at.Origin} basisX={at.Basis.X} cam={_scene.Camera?.GlobalPosition}");
             AddPickBody(node, tier);
             _shown[tier] = (node, creature);
         }
