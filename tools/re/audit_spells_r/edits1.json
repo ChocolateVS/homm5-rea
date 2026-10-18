@@ -1,0 +1,88 @@
+{
+ "files": [
+  "src/H5.Combat/Battle.RuneAudit.cs",
+  "tests/H5.Combat.Tests/AuditRuneWarcryTests.cs"
+ ],
+ "edits": [
+  [
+   "src/H5.Combat/Battle.Spells.cs",
+   "                foreach (var e in t.Effects.Where(e => !e.Positive && e.Dispellable && e.Id != H5.Combat.Fx.Poison && (e.SpellLevel <= 3)).Select(e => e.Id).ToList())",
+   "                foreach (var e in t.Effects.Where(ExorcismRemoves).Select(e => e.Id).ToList())   // exe FUN_008d9b30 \u2192 FUN_004e4000"
+  ],
+  [
+   "src/H5.Combat/Battle.Spells.cs",
+   "                int a = S.Rng.Next(4), b = (a + 1 + S.Rng.Next(3)) % 4;",
+   "                var (a, b) = RollElementalImmunity();   // exe FUN_00c54620; exe element codes (1 air, 2 fire, 3 water, 4 earth)"
+  ],
+  [
+   "src/H5.Combat/Battle.Spells.cs",
+   "            case \"SPELL_RUNE_OF_STUNNING\": AddEffect(t, new Effect { Id = H5.Combat.Fx.RuneThunderclap, Positive = true, Dispellable = false }); break;",
+   "            // exe FUN_00c9d290: vf 0x25c(id, 1) \u2014 lasts one action, like Rune of Charge (FUN_00b40aa0).\n            case \"SPELL_RUNE_OF_STUNNING\": AddEffect(t, new Effect { Id = H5.Combat.Fx.RuneThunderclap, Actions = 1, Positive = true, Dispellable = false }); break;"
+  ],
+  [
+   "src/H5.Combat/Battle.Spells.cs",
+   "                if (t.Name.Contains(\"Dragon\", StringComparison.OrdinalIgnoreCase)) return false;",
+   "                if (DragonformForbidden(t)) return false;   // exe FUN_004b4460 \u2192 FUN_004bb000"
+  ],
+  [
+   "src/H5.Combat/Battle.Spells.cs",
+   "        int level = hero.Level + (hero.HasPerk(Sk.MightyShout) ? (int)Stats.Get(\"combat/HeroSkills/Barbarian/MightyVoice_HeroLevelBonus\", 5) : 0);",
+   "        int level = WarcryLevel(hero);"
+  ],
+  [
+   "src/H5.Combat/Battle.Spells.cs",
+   "        int armyRp = (int)(Stats.Get($\"combat/Spells/Warcries/RPToArmyOnWarcryLevel{Math.Clamp(sp.Level, 1, 3)}\", 20) * rageMult);\n        foreach (var u in S.LivingOf(side).Where(u => u.Has(Ab.DemonRaged)).ToList()) AddRage(u, armyRp);",
+   "        // exe FUN_009be6c0 \u2192 FUN_008a56f0: every warcry but Call of Blood gives the caster's army FUN_009bdbd0's rage points.\n        if (id != \"SPELL_WARCRY_CALL_OF_BLOOD\")\n        {\n            int armyRp = WarcryRagePoints(id, hero);\n            foreach (var u in S.LivingOf(side).Where(u => u.Has(Ab.DemonRaged)).ToList()) AddRage(u, armyRp);\n        }"
+  ],
+  [
+   "src/H5.Combat/Battle.Spells.cs",
+   "                foreach (var u in S.LivingOf(side).Where(u => !NeutralMorale(u)).ToList())",
+   "                foreach (var u in S.LivingOf(side).Where(u => !WarcryTargetInvalid(id, u)).ToList())"
+  ],
+  [
+   "src/H5.Combat/Battle.Spells.cs",
+   "                if (target != null && target.Has(Ab.DemonRaged)) { AddRage(target, (int)(level * Stats.Get(\"combat/Spells/Warcries/CallOfBlood_RPPerCasterLevel\", 10) * rageMult)); affected.Add(target.Id); }",
+   "                if (target != null && !WarcryTargetInvalid(id, target)) { AddRage(target, WarcryRagePoints(id, hero)); affected.Add(target.Id); }"
+  ],
+  [
+   "src/H5.Combat/Battle.Spells.cs",
+   "                if (target != null && IsLiving(target))",
+   "                if (target != null && !WarcryTargetInvalid(id, target))"
+  ],
+  [
+   "src/H5.Combat/Battle.Spells.cs",
+   "                if (target != null && !MindImmune(target) && S.Rng.Chance(0.5 + (level - target.Level) * 0.05))",
+   "                if (target != null && !WarcryTargetInvalid(id, target) && RollPercent(target, FearMyRoarPercent(level, target), secondRoll: false))"
+  ],
+  [
+   "src/H5.Combat/Battle.Spells.cs",
+   "                    AddEffect(u, new Effect { Id = H5.Combat.Fx.Battlecry, Value = att, Remaining = 1, Positive = true, SourceSide = side });",
+   "                    AddEffect(u, new Effect { Id = H5.Combat.Fx.Battlecry, Value = att, Value2 = BattlecrySpeedBonus(level), Remaining = 1, Positive = true, SourceSide = side });"
+  ],
+  [
+   "src/H5.Combat/Battle.Spells.cs",
+   "                    int n = S.LivingOf(side).Where(u => u.Kind == UnitKind.Creature).Sum(u => u.Count);\n                    DealSpellDamage(target, sp, n * Stats.Get(\"combat/Spells/Warcries/ShoutOfMany_DamagePerCreatureInArmy\", 1), side, false, null);",
+   "                    int dmg = ShoutOfManyDamage(side);\n                    if (dmg > 0) DealDamage(target, dmg, Actor.Hero(side), AttackKind.Spell, sp.Id);"
+  ],
+  [
+   "src/H5.Combat/Battle.Stats.cs",
+   "        sp += RoadHomeSpeedBonus(u);   // Familiar Ground (exe FUN_008a0e30)\n        if (u.HasEffect(H5.Combat.Fx.Battlecry)) sp += Stats.Get(\"combat/Spells/Warcries/Battlecry_SpeedBonus/Base\", 1);\n        sp += RageBonus(u, \"DEMON_RAGE_BONUS_SPEED\");\n        var eh = Enemy(u.Side);\n        // Storm Wind slows enemy flyers by StormWind_SpeedPenalty; results below 2 become 1 (exe 008a1e50).\n        if (eh.Present && u.Flying && (eh.HasPerk(Sk.StormWind) || eh.HasPerk(Sk.BarbStormWind)))\n        {\n            sp -= Stats.Get(\"combat/HeroSkills/Ranger/StormWind_SpeedPenalty\", 2);\n            if (sp < 2) sp = 1;\n        }\n        if (eh.Present && Specials.Pieces(eh, Specials.Necromancers) >= 2) sp -= (int)Stats.Get(\"ArtifactsSetsEffectsConsts/Necromancers_2_EnemyCreature_DeSpeed\", 1);\n        if (u.HasEffect(H5.Combat.Fx.RuneCharge)) sp *= 2;\n        if (u.HasEffect(H5.Combat.Fx.Wound)) sp *= 1 - Stats.Get(\"combat/Creatures/Fortress/Wound_SpeedDecrease\", 0.4);\n        return Math.Max(1, (int)Math.Floor(sp));",
+   "        sp += RoadHomeSpeedBonus(u);   // Familiar Ground (exe FUN_008a0e30)\n        // exe FUN_008a1e50 order: Wound trunc((1 \u2212 clamp(dec, 0, 1))\u00b7speed) \u2192 enemy Storm Wind on flyers \u2192 Rune of Charge \u00d72\n        // \u2192 enemy Necromancers set \u2192 Demon Rage speed bonus \u2192 Battlecry ((level\u22121)/div\u00b7per + base); clamped at 0.\n        if (u.HasEffect(H5.Combat.Fx.Wound))\n            sp = Math.Floor((1 - Math.Clamp((double)(float)Stats.Get(\"combat/Creatures/Fortress/Wound_SpeedDecrease\", 0.4), 0, 1)) * sp);\n        var eh = Enemy(u.Side);\n        // Storm Wind slows enemy flyers by StormWind_SpeedPenalty; results below 2 become 1 (exe 008a1e50).\n        if (eh.Present && u.Flying && (eh.HasPerk(Sk.StormWind) || eh.HasPerk(Sk.BarbStormWind)))\n        {\n            sp -= Stats.Get(\"combat/HeroSkills/Ranger/StormWind_SpeedPenalty\", 2);\n            if (sp < 2) sp = 1;\n        }\n        if (u.HasEffect(H5.Combat.Fx.RuneCharge)) sp *= 2;\n        if (eh.Present && Specials.Pieces(eh, Specials.Necromancers) >= 2) sp -= (int)Stats.Get(\"ArtifactsSetsEffectsConsts/Necromancers_2_EnemyCreature_DeSpeed\", 1);\n        sp += RageBonus(u, \"DEMON_RAGE_BONUS_SPEED\");\n        if (u.GetEffect(H5.Combat.Fx.Battlecry) is { } battlecry) sp += battlecry.Value2;\n        return Math.Max(0, (int)Math.Floor(sp));"
+  ],
+  [
+   "src/H5.Combat/Battle.Stats.cs",
+   "            string[] els = { Elements.Fire, Elements.Water, Elements.Air, Elements.Earth };\n            if (els[(int)ri.Value] == element || els[(int)ri.Value2] == element) return true;",
+   "            // exe FUN_00c546b0: the effect holds two exe element codes (1 air, 2 fire, 3 water, 4 earth).\n            if (ExeElement((int)ri.Value) == element || ExeElement((int)ri.Value2) == element) return true;"
+  ],
+  [
+   "src/H5.Combat/Battle.Attack.cs",
+   "        if (melee && !retaliation && HasAbilityNow(a, Ab.Bash) && !t.Has(Ab.Mechanical) && !t.IsWarMachine\n            && ProcRoll(a, t, Stats.Get(\"combat/Creatures/Haven/Bash_ProcFactor\", 1.5), primaryHpBefore, soldiersLuckDoubles: true, secondRoll: false))\n        {\n            Emit(new AbilityTriggered(a.Id, Ab.Bash, t.Id));\n            SetAtb(t.Id, 0);\n            stunned = true;\n            RageEvent(t, \"ReceiveBashRP\");\n        }",
+   "        // Rune of Stunning shares Bash's single chance and immunity (exe FUN_00a59a90 / FUN_00a5d370): Bash_ProcFactor,\n        // never against MECHANICAL; Bash only off retaliation and in melee, the rune on any strike.\n        bool thunderclap = a.HasEffect(H5.Combat.Fx.RuneThunderclap);\n        if ((thunderclap || melee && !retaliation && HasAbilityNow(a, Ab.Bash)) && !t.Has(Ab.Mechanical) && !t.IsWarMachine\n            && ProcRoll(a, t, Stats.Get(\"combat/Creatures/Haven/Bash_ProcFactor\", 1.5), primaryHpBefore, soldiersLuckDoubles: true, secondRoll: false))\n        {\n            Emit(new AbilityTriggered(a.Id, thunderclap ? \"RUNE_THUNDERCLAP\" : Ab.Bash, t.Id));\n            SetAtb(t.Id, 0);\n            stunned = true;\n            if (thunderclap) RemoveEffect(a, H5.Combat.Fx.RuneThunderclap);\n            else RageEvent(t, \"ReceiveBashRP\");\n        }"
+  ],
+  [
+   "src/H5.Combat/Battle.Attack.cs",
+   "        if (a.HasEffect(H5.Combat.Fx.RuneThunderclap) && RollProc(a, ProcChance(a, t, 1, primaryHpBefore)))\n        {\n            Emit(new AbilityTriggered(a.Id, \"RUNE_THUNDERCLAP\", t.Id));\n            SetAtb(t.Id, 0);\n            RemoveEffect(a, H5.Combat.Fx.RuneThunderclap);\n        }\n",
+   ""
+  ]
+ ]
+}

@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 178 |
-| MATCH | 115 |
+| FIXED | 188 |
+| MATCH | 116 |
 | GAP | 8 |
-| UNVERIFIED | 234 |
+| UNVERIFIED | 223 |
 | N/A | 58 |
 
 ## Core mechanics
@@ -584,19 +584,19 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_CONJURE_PHOENIX` | UNVERIFIED | 0097d7b0 (0xeb) → 00862130, 00861f90, 00862970, 008628f0 | stats come from the SRPGCombatUniqueCreatureStats resource GameMechanics/RPGStats/ConjuredPhoenix.xdb (Health 300 + 30/power, damage 10–15 per power, offence/defence 10 + 2/level), fed with the caster's power, level and knowledge; the exact "power" argument (engine: ceil(SP / divisor)) is lost in the decompile. If the ENEMY hero has Elemental Balance (skill 0x54) a second phoenix is summoned for that side (00862130) — engine lacks it (heroes partition) |  |
 | `SPELL_FIREWALL` | UNVERIFIED | 0097a530 (case 0xec), 0085cda0, 0098ade0, 0098a920 / 0098aa40 → 004e6770 | cells = (x, y−1), (x, y), (x, y+1) — matches; the field object (0x8c bytes, ctor 0098ade0) forwards entry/turn damage to the fire rider 004e6770, which deals the amount it is given without a new protection step — the caller computing that amount was not traced, so whether the engine's protection on each hit matches is open |  |
 | `SPELL_STONE_SPIKES` | FIXED | 00976b90, 0085eaa0, 0097a530 (case 0xed) | as Fireball, area = centre + 4 orthogonal cells | SpellBaseDamageTruncates |
-| `SPELL_EFFECT_WOUND` | UNVERIFIED | 008a1e50 | implemented; not yet compared with the exe |  |
+| `SPELL_EFFECT_WOUND` | FIXED | 008a1e50 (008a1f52..008a1fa9) | speed part: trunc((1 − clamp(Wound_SpeedDecrease, 0, 1))·speed) applied right after the base speed (before Storm Wind / Charge); the engine multiplied at the end without truncation order (initiative part: spells partition) | AuditRuneWarcryTests.SpeedAppliesChargeBeforeBattlecry |
 | `SPELL_ABILITY_BERSERKER_RAGE` | UNVERIFIED | 008a32b0 008a4800 00984a00 00a5fee0 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_MARK_OF_FIRE` | UNVERIFIED | 00977a80 | implemented; not yet compared with the exe |  |
-| `SPELL_RUNE_OF_CHARGE` | UNVERIFIED | 008a1e50 | implemented; not yet compared with the exe |  |
+| `SPELL_RUNE_OF_CHARGE` | FIXED | 00b40aa0, 008a1e50, 00b40a60 | vf 0x25c(id, 1): one action; speed ×2 after Wound and Storm Wind, before the Necromancers set, rage and Battlecry (see core row); removed by 00b40a60 at the end of the creature's action | AuditRuneWarcryTests.SpeedAppliesChargeBeforeBattlecry |
 | `SPELL_RUNE_OF_BERSERKING` | FIXED | 008a0f90 | +1 strike (was ×2) | tests/H5.Combat.Tests/AuditStrikeTests.RuneOfBerserkingAddsOneStrike |
-| `SPELL_RUNE_OF_MAGIC_CONTROL` | UNVERIFIED | 00a5ca80 | implemented; not yet compared with the exe |  |
-| `SPELL_RUNE_OF_EXORCISM` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_RUNE_OF_ELEMENTAL_IMMUNITY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_RUNE_OF_STUNNING` | UNVERIFIED | 00a59a90 00a5af10 00a5af70 00a5d370 | implemented; not yet compared with the exe |  |
+| `SPELL_RUNE_OF_MAGIC_CONTROL` | GAP | 00862a50, 00a5ca80 → 004e6470 / 004e4000 | whole battle until consumed (0x7fffffff); on attack the candidates come from FUN_004e4000 for the target's opposite side — every beneficial, timed, dispellable effect (any school). The engine only steals Light-school effects; the choice and transfer code was dropped by the decompiler (unreachable blocks in 00a5ca80) and is not ported |  |
+| `SPELL_RUNE_OF_EXORCISM` | FIXED | 008d9b30 → 004e6470 / 004e4000, 004e3960, 004e3ac0 | removes every effect FUN_004e4000 accepts for the caster's own side: harmful (spell kind ≠ positive), timed (duration not 0x7ffffffd/e/f), no "undispellable" flag, not from a warcry, and not Holy Charge, Demonic Strike, Dash, Poisonous Attack, Wound, Venom, goblin Sacrifice, Powerful Blow, Prepared Position or Battle Rage. No spell-level limit — the engine only removed level ≤ 3 effects | AuditRuneWarcryTests.ExorcismHasNoSpellLevelLimit |
+| `SPELL_RUNE_OF_ELEMENTAL_IMMUNITY` | FIXED | 00c54620, 00c546b0, 00ad02b0 | for the whole battle (0x7fffffff); value = b + 8a with a = 1 + Random(4), r = Random(3), b = r + 1 (r + 2 when a ≤ b), in the exe element enum 1 air, 2 fire, 3 water, 4 earth; the spell-immunity check (0097c9f0 → 00c546b0) compares the spell's element with both. The engine drew a different pair from the same RNG calls ((a + 1 + r) mod 4 over a fire/water/air/earth list) | AuditRuneWarcryTests.ElementalImmunityRollsTwoDistinctExeElements |
+| `SPELL_RUNE_OF_STUNNING` | FIXED | 00c9d290, 00a59a90, 00a5d370, 00a5af10 | vf 0x25c(id, 1): one action. Shares Bash's chance (FUN_00a59990 with Bash_ProcFactor, Soldier's Luck doubles, no second roll) and its MECHANICAL immunity: one roll when the creature has Bash or the rune; Bash only off retaliation, the rune on any strike; the stun zeroes ATB and cancels the retaliation. The engine rolled the rune separately after the blow (old ProcChance), with no mechanical immunity and no duration | (Battle.Attack Bash/rune block) |
 | `SPELL_RUNE_OF_BATTLERAGE` | UNVERIFIED | 00a5fee0 00a64e90 00a65260 | implemented; not yet compared with the exe |  |
-| `SPELL_RUNE_OF_ETHEREALNESS` | UNVERIFIED | 008a34c0 00bfba50 | implemented; not yet compared with the exe |  |
+| `SPELL_RUNE_OF_ETHEREALNESS` | MATCH | 0041a640, 008a34c0 | one turn (round of time per turn); grants ABILITY_INCORPOREAL through the dynamic HasAbility (engine Unit.Has) |  |
 | `SPELL_RUNE_OF_REVIVE` | MATCH | 00c20690 | revived = trunc((float)(initial − current count) · max(0, ReviveSpellPercent)); engine (int)(dead·0.4) gives the same integers (0.4f > 0.4, products of multiples of 5 are exact) |  |
-| `SPELL_RUNE_OF_DRAGONFORM` | UNVERIFIED | 0097af50 | implemented; not yet compared with the exe |  |
+| `SPELL_RUNE_OF_DRAGONFORM` | FIXED | 004b4460 → 004bb000, 004b4400, 0097af50 | refused ("COMBAT_RUNIC_SPELL_CANT_DRAGONFORM") when the creature's base creature is id 0x29 / 0x37 / 0x53 / 0x68 (Bone, Green, Deep, Fire Dragon — every dragon line); the engine matched "Dragon" in the (localised) name. Lasts one turn (round of time per turn) | AuditRuneWarcryTests.DragonformRefusesDragonLinesById |
 | `SPELL_EFFECT_BATTLE_FRENZY` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
 | `SPELL_SORROW` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_VAMPIRISM` | FIXED | 00a59c60 (00a59d4e..00a59d6e chop), 008a34c0, 00e15a80 | drain heal = trunc(frac·damage + 0.5) — rounded half up (engine truncated); frac = LifeDrainIntensity (ABILITY_LIFE_DRAIN) + Vampirism value·0.01; no drain from Undead (0xa, dynamic), Mechanical (9) or Elemental (0xc) targets (engine drained Undead). Same code path as ABILITY_LIFE_DRAIN (abilities partition: its MATCH needs these two corrections too). Whether the damage term excludes overkill was not traced | DrainRoundsHalfUpAndSkipsUndead |
@@ -609,12 +609,12 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_EFFECT_PREPARATION` | UNVERIFIED | 00a5fee0 00a64e90 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_EXPLODING_CORPSES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_MASTER_OF_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_WARCRY_RALLING_CRY` | FIXED | FUN_00946030 struct, 008a1e50 formula | morale +((lvl−1)/LevelDivisor)·PerDividedLevel + Base (engine 1 + lvl/8) | WarcryBonusesUseLevelMinusOne |
-| `SPELL_WARCRY_CALL_OF_BLOOD` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_WARCRY_WORD_OF_THE_CHIEF` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_WARCRY_FEAR_MY_ROAR` | GAP | 004e57d0, 009bdbd0 | the duration table 004e57d0 has no 0x125 case (no lasting effect — the engine only zeroes ATB, consistent); the success chance 0.5 + (level − target level)·0.05 used by the engine was not located in the exe (no 0x125 dispatch outside the enum table 009f29c0) |  |
-| `SPELL_WARCRY_BATTLECRY` | FIXED | 008a1e50 (0x126), FUN_00946030 | speed +((lvl−1)/div)·per + base (confirmed), offence by the same struct formula (engine 1 + lvl/2) | WarcryBonusesUseLevelMinusOne |
-| `SPELL_WARCRY_SHOUT_OF_MANY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_WARCRY_RALLING_CRY` | FIXED | 009be6c0 case 0x122, 009bdaa0 | targets every own stack except Undead and Mechanical (elementals included); morale bonus ((level−1)/div·per + base) for RallingCry_Duration (004e57d0); army rage per core row. The engine also skipped elementals (NeutralMorale) | AuditRuneWarcryTests.RallyingCryAndWordOfTheChiefTargets |
+| `SPELL_WARCRY_CALL_OF_BLOOD` | FIXED | 009be6c0 case 0x123, 009bdbd0, 009bdaa0 → 008a16b0 | target must be a Stronghold creature whose army hero has Blood Rage (engine: Demon-Raged); it gets trunc(level·CallOfBlood_RPPerCasterLevel·m) + hero level for War Leader; no army rage | AuditRuneWarcryTests.WarcryRagePointsFollowTheExe |
+| `SPELL_WARCRY_WORD_OF_THE_CHIEF` | FIXED | 009be6c0 case 0x124, 009bdd40, 009bdaa0 | friendly hero strike (008cfb50), ATB + (base + perLevel·level), target rage trunc(WordOfTheChief_RPBonus·m), army rage per core row; refuses Undead and Mechanical only — the engine also refused elementals | AuditRuneWarcryTests.RallyingCryAndWordOfTheChiefTargets |
+| `SPELL_WARCRY_FEAR_MY_ROAR` | FIXED | 009bddb0, 009be6c0 case 0x125, 009bdaa0 (jump at 009bdb2b: HasAbility(0x13)) | chance clamp((caster level − target level + 10)·5, 0, 100), 0 against HOLD_GROUND; rolled with the ability roll FUN_00a5a170 without an attacker (Range(0,100) < chance); success = frightened (FUN_009be240), failure shows FLYING_SIGN_RESIST; only IMMUNITY_TO_MIND_CONTROL makes the target invalid. The engine used a continuous 0.5 + 0.05·diff roll, ignored HOLD_GROUND and refused undead / elementals / mechanicals | AuditRuneWarcryTests.FearMyRoarChanceAndTargets, FearMyRoarHoldGroundAndImmunity |
+| `SPELL_WARCRY_BATTLECRY` | FIXED | 008a1e50, 009be6c0 case 0x126, 004e57d0 | the effect stores the caster level; speed bonus ((level−1)/Battlecry_SpeedBonus.LevelDivisor·PerDividedLevel + Base) — the engine added Base only; one turn (004e57d0 case 0x126 → 1.0) | AuditRuneWarcryTests.SpeedAppliesChargeBeforeBattlecry |
+| `SPELL_WARCRY_SHOUT_OF_MANY` | FIXED | 009be6c0 case 0x127, 009bde00, 009bdaa0, 00a616e0 → 00a61600 | damage = trunc(n·ShoutOfMany_DamagePerCreatureInArmy) in single precision, n = creatures of the caster's army not controlled by the other side (FUN_00977670); dealt straight through the stack damage pipeline (Arcane Armor, Blood Rage transfer, Last Stand) — no resistance roll, protection or immunity (the only target filter is "has an army", 009bdaa0 case 0x127). The engine sent it through spell damage (resistance, protection, immunity) and counted enemy-controlled stacks | AuditRuneWarcryTests.ShoutOfManyCountsOwnControlledCreatures |
 | `SPELL_ABILITY_VENOM` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_ARTFSET_LIONS_DEMORALIZED` | FIXED | 008cf7ff-008cf86d, 00989fd0 (case 0x129) | was not implemented: a Knight (hero class 1) with 2+ Lions pieces (set 3) marks every hero-strike target with effect 0x129 (infinite, not re-applied if present); the mark lowers morale by Lions_2_HeroAttack_DeMorale (+0x1178) | AuditSpecSetTests.LionsSetDemoralisesTheKnightsTargets |
 | `SPELL_DEMON_RAGE_LEVEL_1` | MATCH | 008a84e0 | rage level thresholds RPForLevel1..3 (engine RageLevel) |  |
