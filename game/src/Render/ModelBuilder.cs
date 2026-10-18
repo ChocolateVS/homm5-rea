@@ -162,6 +162,8 @@ public static class ModelBuilder
 
     static Material BuildMaterial(MaterialData m, (string? Effect, float Param, bool AddPlaced) fx)
     {
+        if (fx.Effect == "M_REFLECT_WATER")
+            return WaterMaterial.Create(m.BumpTexture != null ? Game.Instance.LoadTexture(m.BumpTexture) : null);
         if (fx.Effect == "M_CLOUDS_H5")
             return CloudsMaterial(m.DiffuseTexture != null ? Game.Instance.LoadTexture(m.DiffuseTexture) : null, fx.Param,
                 m.LightingMode == "L_SELFILLUM", m.AlphaMode is "AM_TRANSPARENT" or "AM_ALPHA_BLEND", fx.AddPlaced, m.TwoSided);

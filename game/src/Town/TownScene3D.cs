@@ -172,6 +172,10 @@ public partial class TownScene3D : Node3D
             return c;
         }
         var asset = _loader.Load(modelPath);
+        if (OS.GetCmdlineUserArgs().Contains("--town-debug-untextured"))
+            for (int i = 0; i < asset.Materials.Count; i++)
+                if (asset.Materials[i].DiffuseTexture is not { } t || !Game.Instance.Fs.Exists(t))
+                    GD.Print($"[town] untextured material {i} in {modelPath}: {asset.Materials[i].DiffuseTexture ?? "<none>"}");
         var root = new Node3D { Name = name };
         root.AddChild(new MeshInstance3D { Name = "Mesh", Mesh = ModelBuilder.BuildMesh(asset, skinned: false) });
         return root;
