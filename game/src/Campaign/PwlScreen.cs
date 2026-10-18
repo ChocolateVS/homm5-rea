@@ -286,8 +286,9 @@ public partial class MissionResultsScreen : UiScreen
         Find("Header")?.SetValue("text", UiResources.StripMarkup(header).Trim());
         var c = CampaignFlow.Find(campaignOrMap);
         var m = c != null && mission >= 0 && mission < c.Missions.Count ? c.Missions[mission] : null;
-        Find("Description")?.SetValue("text", m != null ? $"{m.Description}<br>{m.Name}" : campaignOrMap);
-        foreach (var n in new[] { "HeroTownPanel", "LeftScrollButton", "RightScrollButton" }) SetVisible(n, false);
+        // Substituted values are plain text (not markup), so no <br> here.
+        Find("Description")?.SetValue("text", m != null ? $"{m.Description}: {m.Name}" : campaignOrMap);
+        foreach (var n in new[] { "LeftScrollButton", "RightScrollButton" }) SetVisible(n, false);
         // UISSendGameMessage arguments arrive as written in the data ("0 close_mission_results0 0").
         foreach (var name in new[] { "close_mission_results0", "close_mission_results", "0 close_mission_results0 0" })
             Bus.On(name, Close);

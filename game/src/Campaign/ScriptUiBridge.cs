@@ -67,6 +67,9 @@ public partial class ScriptUiBridge : Node
             string? src = session.Files.TryReadAllBytes(map.ScriptPath, out var b) ? ScriptText.FromBytes(b) : null;
             host.Start(map.ScriptPath, src);
             Host = host;
+            // Dev: `--script-eval=<lua>` runs a chunk once the map script has started.
+            if (OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--script-eval=")) is { } eval)
+                host.L.DoString(eval["--script-eval=".Length..], "dev");
             Flush();
         }
         catch (Exception e)
@@ -109,9 +112,13 @@ public partial class ScriptUiBridge : Node
         }
         foreach (var ev in Host.Events.ToList()) Present(ev);
         Host.Events.Clear();
-        foreach (var req in Host.World.PendingUi.ToList())
-            if (_shown.Add(req.Id)) Show(req);
+        // One request at a time, oldest first, like the original's modal boxes and scenes.
+        if (_presenting == 0)
+            foreach (var req in Host.World.PendingUi.OrderBy(r => r.Id))
+                if (_shown.Add(req.Id)) { _presenting++; Show(req); break; }
     }
+
+    int _presenting;
 
     // ---- presentation events -----------------------------------------------------------
 
@@ -168,9 +175,21 @@ public partial class ScriptUiBridge : Node
 
     void Show(UiRequest req)
     {
-        Action<bool> answer = yes => Host?.AnswerUi(req.Id, yes);
+        bool answered = false;
+        Action<bool> answer = yes =>
+        {
+            if (answered) return;
+            answered = true;
+            _presenting = Math.Max(0, _presenting - 1);
+            Host?.AnswerUi(req.Id, yes);
+        };
+        if (OS.IsStdOutVerbose() || OS.GetCmdlineUserArgs().Contains("--script-verbose"))
+            GD.Print($"[H5] script UI #{req.Id} {req.Kind} '{req.Resource}'");
         switch (req.Kind)
         {
+            case "message_box" or "tutorial_message" or "question_box" or "talk_box" when OS.GetCmdlineUserArgs().Contains("--auto-answer-boxes"):
+                answer(true);
+                break;
             case "message_box":
             case "tutorial_message":
                 AdvDialogs.Message(Screen.DialogLayer, "", ResolveText(req.Resource, req.Values), null, () => answer(true));
@@ -182,6 +201,9 @@ public partial class ScriptUiBridge : Node
                 break;
             case "question_box":
                 AdvDialogs.YesNo(Screen.DialogLayer, "", ResolveText(req.Resource, req.Values), null, answer);
+                break;
+            case "dialog_scene" when OS.GetCmdlineUserArgs().Contains("--skip-dialog-scenes"):
+                answer(true);
                 break;
             case "dialog_scene":
                 _fullScreen++;
@@ -251,6 +273,7 @@ public partial class AdvMapDialogPlayer : Control
     bool _done;
     Transform3D _savedCamera;
     float _savedFov;
+    bool _hudWasVisible = true;
 
     public AdvMapDialogPlayer(AdventureScreen screen, AdvMapDialog dialog, CameraPos? camera, string mapXdb, Action onFinished)
     {
@@ -275,17 +298,21 @@ public partial class AdvMapDialogPlayer : Control
         _savedFov = cam.Fov;
         cam.InputEnabled = false;
         cam.SetProcess(false);
+        // MiniDialogScreen replaces the adventure HUD while the dialog runs.
+        _hudWasVisible = _screen.Hud.Visible;
+        _screen.Hud.Visible = false;
         if (_camera is { } c) ApplyCamera(c);
         Next();
     }
 
     void ApplyCamera(CameraPos c)
     {
-        // The adventure view is built at 1 unit per tile (AdvWorld.TileCenter); camera records use 2.
-        Vector3 W(System.Numerics.Vector3 v) => new(v.X / 2, v.Z, -v.Y / 2);
+        // The adventure view is built at 1 unit per tile (AdvWorld.TileCenter) while camera
+        // records use world units (2 per tile): keep the record's angles, halve its distances.
         var cam = _screen.World.Camera;
-        var eye = W(c.Anchor - c.Forward * c.Rod);
-        var target = W(c.Anchor);
+        var target = new Vector3(c.Anchor.X / 2, c.Anchor.Z, -c.Anchor.Y / 2);
+        var back = -c.Forward;
+        var eye = target + new Vector3(back.X, back.Z, -back.Y) * (c.Rod / 2);
         cam.Fov = c.Fov;
         cam.LookAtFromPosition(eye, target, Vector3.Up);
     }
@@ -297,24 +324,33 @@ public partial class AdvMapDialogPlayer : Control
         if (++_index >= _dialog.Sentences.Count) { Finish(); return; }
         var (text, sound, pause) = _dialog.Sentences[_index];
         var files = _screen.Session.Files;
-        var path = XdbRef.Parse(text, _mapXdb).Path;
+        // MapScriptData already resolved the sentence's hrefs to full archive paths.
+        var path = Rooted(text);
         var line = files.TryReadAllBytes(path, out var b) ? TextDecoding.Decode(b).Trim() : "";
         _ui.Find("HeroText")?.SetValue("Text", line);
         double voice = 0;
         if (!string.IsNullOrEmpty(sound))
         {
-            var href = XdbRef.Parse(sound, _mapXdb).Path;
-            if (SoundLibrary.Load(href) is { } def) { voice = def.Stream.GetLength(); _voice = SoundLibrary.Play(href, this); }
+            var href = Rooted(sound);
+            voice = VoiceLength.Of(href);
+            _voice = SoundLibrary.Play(href, this);
         }
         _time = 0;
         _length = voice + pause;
+        if (OS.GetCmdlineUserArgs().Contains("--script-verbose"))
+            GD.Print($"[H5] map dialog line {_index} at {Time.GetTicksMsec() / 1000.0:F1}s lasts {_length:F1}s");
         if (_length <= 0.01) _length = 3;
     }
+
+    /// <summary>A full archive path stays as is; anything else is relative to the map file.</summary>
+    string Rooted(string p) =>
+        _screen.Session.Files.TryReadAllBytes(H5.Core.IO.PakFileSystem.Normalize(p), out _) ? H5.Core.IO.PakFileSystem.Normalize(p) : XdbRef.Parse(p, _mapXdb).Path;
 
     public override void _Process(double delta)
     {
         if (_done) return;
-        _time += delta;
+        // The first frame after a heavy load can be seconds long; don't let it skip lines.
+        _time += Math.Min(delta, 0.1);
         if (_time >= _length) Next();
     }
 
@@ -338,6 +374,7 @@ public partial class AdvMapDialogPlayer : Control
         cam.Fov = _savedFov;
         cam.SetProcess(true);
         cam.InputEnabled = true;
+        _screen.Hud.Visible = _hudWasVisible;
         QueueFree();
         _onFinished();
     }

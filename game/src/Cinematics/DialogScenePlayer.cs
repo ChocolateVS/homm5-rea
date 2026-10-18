@@ -239,9 +239,9 @@ public partial class DialogScenePlayer : Control
         _ui.Find("HeroText")?.SetValue("Text", s.Text);
 
         double voiceLength = 0;
-        if (s.VoiceHref != null && SoundLibrary.Load(s.VoiceHref) is { } voice)
+        if (s.VoiceHref != null)
         {
-            voiceLength = voice.Stream.GetLength();
+            voiceLength = VoiceLength.Of(s.VoiceHref);
             _voice = SoundLibrary.Play(s.VoiceHref, this);
         }
         _length = voiceLength + Math.Max(0, s.Duration);
@@ -297,6 +297,8 @@ public partial class DialogScenePlayer : Control
     public override void _Process(double delta)
     {
         if (_finished || _sentence < 0 || _sentence >= Def.Sentences.Count) return;
+        // The first frame after building the set can be seconds long; don't let it skip lines.
+        delta = Math.Min(delta, 0.1);
         _time += delta;
         while (_cues.Count > 0 && _cues[0].At <= _time)
         {
