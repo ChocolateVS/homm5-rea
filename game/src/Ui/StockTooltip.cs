@@ -37,8 +37,11 @@ public static class StockTooltip
         string markup = template.Replace("<value=tooltiptext>", tooltipMarkup);
         // Text up to SingleLineWidth stays on one line and the tooltip shrinks to it; longer text wraps at that width.
         var single = BitmapTextLayout.Build(markup, null, new Rect2(0, 0, 4000, 2000), UiAlign.LowEnd, wrap: false);
-        float w = Math.Min(_width, Math.Max(24, single.Size.X));
-        var layout = single.Size.X <= _width ? single : BitmapTextLayout.Build(markup, null, new Rect2(0, 0, _width, 2000), UiAlign.LowEnd, wrap: true);
+        bool wraps = single.Size.X > _width;
+        // Single-line text is drawn unwrapped: wrapping at exactly the measured width could push
+        // the last glyph (e.g. the closing quote of a <hotkey>) onto a clipped second line.
+        float w = Math.Min(_width, Math.Max(24, MathF.Ceiling(single.Size.X) + 1));
+        var layout = !wraps ? single : BitmapTextLayout.Build(markup, null, new Rect2(0, 0, _width, 2000), UiAlign.LowEnd, wrap: true);
         float h = Math.Max(16, layout.Size.Y) + 8;
 
         var screen = new UiScreen(Window) { AnchorRight = 0, AnchorBottom = 0, MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -52,7 +55,7 @@ public static class StockTooltip
                 rootNode.Scale = new Vector2(uiScale, uiScale);
                 rootNode.Position = Vector2.Zero;
                 foreach (var c in rootNode.GetChildren()) if (c is Control cc) cc.Visible = false;
-                rootNode.AddChild(new BitmapText { Markup = markup, Wrap = true, Position = new Vector2(4, 4), Size = new Vector2(w, h - 8) });
+                rootNode.AddChild(new BitmapText { Markup = markup, Wrap = wraps, Position = new Vector2(4, 4), Size = new Vector2(w, h - 8) });
             }
         };
         return holder;
