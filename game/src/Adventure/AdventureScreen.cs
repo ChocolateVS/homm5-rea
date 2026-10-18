@@ -575,12 +575,13 @@ public partial class AdventureScreen : Control
                     _hotSeat ??= new AdvNet.HotSeatController(s.Players.Where(p => p.Human).Select(p => p.Index).ToHashSet());
                     if (_hotSeat.OnTurn(ts.Player))
                     {
-                        Hud.Screen.SetVisible("HotSeatBlackBg", true);
-                        var colour = s.Players.Find(p => p.Index == ts.Player)?.Colour ?? "";
-                        var name = AdvTexts.Get($"Text/Game/Player/Colors/{AdvColors.TextName(colour)}_player.txt");
-                        await Dialog(done => Message("", name, null, done));
+                        var cover = AdvNet.HotSeatHandOver.Cover();
+                        _dialogLayer.AddChild(cover);
+                        _dialogLayer.MoveChild(cover, 0);
+                        var next = s.Players.First(p => p.Index == ts.Player);
+                        await Dialog(done => Message(AdvNet.HotSeatHandOver.Header, AdvNet.HotSeatHandOver.Text(next), null, done));
                         _hotSeat.Confirm();
-                        Hud.Screen.SetVisible("HotSeatBlackBg", false);
+                        cover.QueueFree();
                     }
                     World.RefreshShroud();
                     Hud.UpdateMinimap();

@@ -133,6 +133,7 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
         _g.CommandSink = cmd => Intercept(cmd) ?? (inner != null ? inner(cmd) : _g.Apply(cmd));
         _g.Observer = (cmd, res) => { if (res.Ok) foreach (var e in res.Events) _events.Add((e, cmd.Player)); };
         if (_set.GhostMode) _ghosts = new GhostMode(_ghostData, _g);
+        if (_set.DevStartAdjacent) PlaceSecondHumanNextToFirst();
 
         CaptureHeroes();
         foreach (var e in opening) _events.Add((e, -1));
@@ -314,6 +315,26 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
         _turnStartMs = _clock();
         _battlePausedMs = 0;
         _ghosts?.BeginTurn(_g.Current.Index, _humanPlayers, _turnStartMs);
+    }
+
+    /// <summary>
+    /// Test setup (<see cref="AdvNetSettings.DevStartAdjacent"/>): moves side 1's first hero next to
+    /// side 0's first hero, so a human-versus-human battle starts with one move.
+    /// </summary>
+    void PlaceSecondHumanNextToFirst()
+    {
+        if (_sideMapPlayer.Length < 2) return;
+        var a = _g.S.Heroes.FirstOrDefault(x => x.Owner == _sideMapPlayer[0] && x.Alive && !x.Garrisoned);
+        var d = _g.S.Heroes.FirstOrDefault(x => x.Owner == _sideMapPlayer[1] && x.Alive && !x.Garrisoned);
+        if (a == null || d == null) return;
+        var floor = _g.Map.Floor(a.Pos.Floor)!;
+        foreach (var t in Enumerable.Range(-1, 3).SelectMany(dx => Enumerable.Range(-1, 3).Select(dy => a.Pos.Offset(dx, dy))))
+        {
+            if (t == a.Pos || !floor.InBounds(t.X, t.Y) || floor.IsBlocked(t.X, t.Y) || _g.FindPath(a, t) is not { Count: > 0 }) continue;
+            d.Pos = t;
+            d.InTown = -1;
+            return;
+        }
     }
 
     ulong NextSeed() => _seed ^ (0x9E3779B97F4A7C15UL * ++_battleSeq);

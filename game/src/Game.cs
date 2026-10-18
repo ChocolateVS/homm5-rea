@@ -72,6 +72,7 @@ public partial class Game : Node
             else if (Combat.CombatLauncher.HandleArg(arg)) { }
             else if (Adventure.AdventureLauncher.HandleArg(arg)) { }
             else if (Town.TownLauncher.HandleArg(arg)) { }
+            else if (AdvNet.AdvNetDevDriver.HandleArg(arg)) { }
             else if (arg.StartsWith("--anim=")) Dev.ModelViewer.Anim = arg["--anim=".Length..];
             else if (arg.StartsWith("--anim-time="))
                 Dev.ModelViewer.AnimTime = float.Parse(arg["--anim-time=".Length..], System.Globalization.CultureInfo.InvariantCulture);

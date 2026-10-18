@@ -51,6 +51,8 @@ public sealed class AdvNetSettings
     public int DynamicBattles { get; set; }
     public int AnimationSpeed { get; set; } = 1;
     public bool Autosave { get; set; } = true;
+    /// <summary>Test/dev only: side 1's first hero starts next to side 0's (immediate human-versus-human battle).</summary>
+    public bool DevStartAdjacent { get; set; }
 
     static readonly JsonSerializerOptions Json = new() { IncludeFields = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
