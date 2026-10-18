@@ -94,6 +94,22 @@ public class AuditAbilityTests(GameDataFixture f)
     }
 
     [Fact]
+    public void VorpalSwordDoesNotWorkOnCrystalScales()   // 00a673c0: +1 kill unless the target has CRYSTAL_SCALES
+    {
+        int Killed(bool scales)
+        {
+            var b = f.Duel("CREATURE_BALOR", 3, "CREATURE_PEASANT", 200, 5, L, R);
+            b.Begin();
+            var (a, t) = (b.State.Units[0], b.State.Units[1]);
+            if (scales) { t.Abilities.Add("ABILITY_CRYSTAL_SCALES"); t.Abilities.Sort(StringComparer.Ordinal); }
+            b.State.Active = a.Id;
+            Assert.True(b.Apply(new AttackCmd(a.Id, t.Id) { Side = 0 }).Ok);
+            return 200 - t.Count;
+        }
+        Assert.Equal(Killed(false) - 1, Killed(true));
+    }
+
+    [Fact]
     public void FearNeverTriggersOnRetaliation()   // FUN_00a629b0: Fear requires !retaliation (+0x21) and a pending retaliation
     {
         foreach (var (b, r) in Attacks("CREATURE_PEASANT", 30, "CREATURE_NIGHTMARE", 40, L, R))

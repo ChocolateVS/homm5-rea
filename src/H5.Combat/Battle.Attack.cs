@@ -476,8 +476,10 @@ public sealed partial class Battle
         int result = Math.Max(1, (int)(dmg + 1e-4));
         // Blade of Slaughter: +2 per creature in the target stack, after multipliers (p.172).
         if (HasAbilityNow(a, Ab.AxeOfSlaughter) && melee) result += (int)Stats.Get("combat/Creatures/Inferno/AxeOfSlaughterDamageHits", 2) * t.Count;
-        // Vorpal Sword: one extra creature killed (p.181).
-        if (HasAbilityNow(a, Ab.Vorpal) && melee && !hit.Secondary) result += MaxHealthOf(t);
+        // Vorpal Sword: one extra creature killed (exe 00a673c0 / 00a63020: +1 kill unless the target is not a creature or
+        // has CRYSTAL_SCALES).
+        if (HasAbilityNow(a, Ab.Vorpal) && melee && !hit.Secondary && !t.IsWarMachine && !t.IsObject && !t.Has("ABILITY_CRYSTAL_SCALES"))
+            result += MaxHealthOf(t);
         return Math.Max(baseDmg > 0 ? 1 : 0, result);
     }
 

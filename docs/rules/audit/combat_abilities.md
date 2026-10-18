@@ -28,3 +28,12 @@ FUN_00a64120 / FUN_00a629b0: `+0x14` = ranged strike, `+0x21` = retaliation stri
 | `ABILITY_NO_ENEMY_RETALIATION` | MATCH | 00a5fee0, 00a629b0 | attacker with it gets no retaliation unless the target has SPELL_EFFECT_PREPARATION and Preparation_RetaliateToNER (true in DefaultStats); also suppresses Maneuver's return shot |  |
 | `ABILITY_FAST_ATTACK` | MATCH | 00a5fee0 | no retaliation against a FAST_ATTACK attacker while the target is under SPELL_SLOW |  |
 | `ABILITY_INVISIBILITY` | MATCH | 00a5fee0 | no retaliation against an attacker under SPELL_ABILITY_INVISIBILITY |  |
+| `ABILITY_NO_MELEE_PENALTY` | MATCH | 00a58de0 | melee damage ×0.5 for SHOOTER stacks without NO_MELEE_PENALTY |  |
+| `ABILITY_RANGE_PENALTY` | MATCH | 00a58de0, 00a5c5a0 | ranged damage ×0.5 for stacks with RANGE_PENALTY (and they skip the distance penalty) |  |
+| `ABILITY_NO_RANGE_PENALTY` | MATCH | 00a5c5a0 | skips the (width/2)² distance penalty; wall penalty still applies |  |
+| `ABILITY_JOUSTING` | MATCH | 00a58de0 | melee, cells walked > 0: ×(1 + clamp(clamp(perCell,0,10),0,100)·cells), Cavalry Commander factor |  |
+| `ABILITY_PRECISE_SHOT` | MATCH | 00a5a900, 00a5a8b0 | ranged, not ARMORED target: defence 0 when squared nearest distance ≤ PreciseShotRange² |  |
+| `ABILITY_RIDER_CHARGE` | MATCH | 00a5a900 | defence ×clamp(1 − cells·RiderCharge_DefenceReducePerPathCell, 0, 1), not vs ARMORED |  |
+| `ABILITY_REGENERATION` | MATCH | 00bbb080, 008a3340 | turn start: heal Range(max(0,HydraRegenerationMin), max(min, HydraRegenerationMax)) inclusive on the top creature, no resurrection (combined with SPELL_REGENERATION in one heal in the exe) |  |
+| `ABILITY_UNLIMITED_RETALIATION` | MATCH | 008a1120 | the retaliation counter is only decremented without the ability |  |
+| `ABILITY_VORPAL_SWORD` | FIXED | 00a673c0, 00a63020 | +1 creature killed on the strike, only vs creature targets without CRYSTAL_SCALES — engine ignored both conditions | AuditAbilityTests.VorpalSwordDoesNotWorkOnCrystalScales |
