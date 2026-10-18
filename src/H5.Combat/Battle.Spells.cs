@@ -368,7 +368,6 @@ public sealed partial class Battle
     void ResolveSpell(int caster, int side, SpellDef sp, Mastery m, double power, Unit? target, Cell? cell, bool fromHero)
     {
         double prevScale = _spellDamageScale;
-        if (sp.Id.StartsWith("SPELL_EMPOWERED_")) _spellDamageScale *= 1.5;
         if (target != null) target = MagicMirror(side, sp, target);
         try { ResolveSpellCore(caster, side, sp, m, power, target, cell, fromHero); }
         finally { _spellDamageScale = prevScale; }
@@ -378,6 +377,17 @@ public sealed partial class Battle
             && S.Unit(mid) is { Alive: true } marked && TargetingOf(sp) == SpellTargeting.Unit && !IsMass(sp.Id))
             ResolveSpellCore(caster, side, sp, m, power, marked, cell, fromHero);
         if (mh != null && target != null && IsDamageSpell(BaseSpell(sp.Id))) MatronSalvo(mh, target);
+    }
+
+    /// <summary>
+    /// Base damage of a damaging spell (exe 00976b90): round(max(1, Base + PerPower·SP)) for the mastery,
+    /// then round(×1.5) for an empowered variant. Rounding is to nearest (x87 default mode).
+    /// </summary>
+    double SpellBaseDamage(SpellDef baseDef, SpellDef cast, Mastery m, double power)
+    {
+        double dmg = Math.Round(Math.Max(1, baseDef.DamageAt(m).Eval(power)), MidpointRounding.ToEven);
+        if (cast.Id.StartsWith("SPELL_EMPOWERED_")) dmg = Math.Round(dmg * 1.5, MidpointRounding.ToEven);
+        return dmg;
     }
 
     void ResolveSpellCore(int caster, int side, SpellDef sp, Mastery m, double power, Unit? target, Cell? cell, bool fromHero)
@@ -415,7 +425,7 @@ public sealed partial class Battle
             case "SPELL_DIVINE_VENGEANCE":
             {
                 if (target == null) return;
-                double dmg = baseDef.DamageAt(m).Eval(power);
+                double dmg = SpellBaseDamage(baseDef, sp, m, power);
                 if (id == "SPELL_DIVINE_VENGEANCE") dmg *= Math.Sqrt(target.Frags);                        // p.191
                 if (id == "SPELL_WASP_SWARM" && hero != null && Spec(hero, "HERO_SPEC_CALL_OF_THE_WASP") is var wl && wl >= 0)
                     dmg *= 1 + Stats.Get("combat/HeroSpecializations/Ranger/CallOfTheWasp_DamageBonusPerLevel", 0.05) * wl;
@@ -435,7 +445,7 @@ public sealed partial class Battle
             {
                 if (cell is not Cell c) return;
                 var cells = AreaCells(id, c);
-                double dmg = baseDef.DamageAt(m).Eval(power);
+                double dmg = SpellBaseDamage(baseDef, sp, m, power);
                 var victims = S.Living.Where(u => !u.IsObject && u.Cells().Any(cells.Contains)).ToList();
                 foreach (var v in victims)
                 {
@@ -449,7 +459,7 @@ public sealed partial class Battle
             case "SPELL_CHAIN_LIGHTNING":
             {
                 if (target == null) return;
-                double dmg = baseDef.DamageAt(m).Eval(power);
+                double dmg = SpellBaseDamage(baseDef, sp, m, power);
                 var cur = target;
                 var hitIds = new HashSet<int>();
                 for (int i = 0; i < 4 && cur != null; i++)
@@ -470,7 +480,7 @@ public sealed partial class Battle
             }
             case "SPELL_ARMAGEDDON":
             {
-                double dmg = baseDef.DamageAt(m).Eval(power);
+                double dmg = SpellBaseDamage(baseDef, sp, m, power);
                 double rock = baseDef.DurationAt(m).Eval(power);   // central 4x4 physical rock damage (p.189)
                 int cx = S.Width / 2 - 2, cy = S.Height / 2 - 2;
                 foreach (var v in S.Living.Where(u => !u.IsObject).ToList())
@@ -489,7 +499,7 @@ public sealed partial class Battle
             case "SPELL_HOLY_WORD":
             case "SPELL_UNHOLY_WORD":
             {
-                double dmg = baseDef.DamageAt(m).Eval(power);
+                double dmg = SpellBaseDamage(baseDef, sp, m, power);
                 foreach (var v in S.Living.Where(u => !u.IsObject && !u.IsWarMachine).ToList())
                 {
                     bool evilKind = IsUndeadLike(v) || v.Has(Ab.Demonic);
@@ -504,7 +514,7 @@ public sealed partial class Battle
             {
                 if (cell is not Cell c) return;
                 var cells = Enumerable.Range(-1, 3).Select(dy => new Cell(c.X, c.Y + dy)).Where(S.InBounds).ToList();
-                double dmg = baseDef.DamageAt(m).Eval(power);
+                double dmg = SpellBaseDamage(baseDef, sp, m, power);
                 var f = AddField("FIREWALL", side, cells, baseDef.DurationAt(m).Eval(power), dmg);
                 f.Power = power; f.Mastery = m;
                 foreach (var v in S.Living.Where(u => !u.IsObject && u.Cells().Any(cells.Contains)).ToList())
@@ -521,7 +531,7 @@ public sealed partial class Battle
                     var p = new Cell(c.X + dx, c.Y + dy);
                     if (S.InBounds(p) && S.At(p) == null && !S.Obstacles.Contains(p) && !S.Fields.Any(f => f.Kind == "MINE" && f.Cells.Contains(p))) free.Add(p);
                 }
-                double dmg = baseDef.DamageAt(m).Eval(power);
+                double dmg = SpellBaseDamage(baseDef, sp, m, power);
                 for (int i = 0; i < n && free.Count > 0; i++)
                 {
                     int k = S.Rng.Next(free.Count);
