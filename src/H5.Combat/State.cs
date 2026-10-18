@@ -158,6 +158,8 @@ public sealed class HeroState
     public List<string> FavoriteEnemies = new();
     /// <summary>Equipped pieces per artifact set effect id.</summary>
     public Dictionary<string, int> SetPieces = new();
+    /// <summary>Altars of Primal Elements owned (Elemental Chains, ElementalChainBonusPerAltarOfChaos per altar); set by the adventure hand-off.</summary>
+    public int ElementalAltars;
     /// <summary>Creatures boosted by the hero's "+1 Attack/Defense per two levels" specialisation.</summary>
     public List<string> SpecFamily = new();
     public Dictionary<string, int> AbilityUses = new();

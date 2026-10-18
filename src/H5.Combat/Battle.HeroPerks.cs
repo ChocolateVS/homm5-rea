@@ -113,24 +113,35 @@ public sealed partial class Battle
     }
 
     /// <summary>
-    /// Elemental Vision: the hero's Destructive spells deal extra elemental damage when the spell's element is
-    /// the opposite of the target's (Air↔Earth, Fire↔Water): ElementalChainBonusPerInvocationTrained per
-    /// Elemental Chains mastery level of the damage; the target's element is then re-rolled.
+    /// Elemental Chains on a damage spell (exe FUN_00977e60 → FUN_004b12c0 → FUN_004b0ef0): only for a Warlock
+    /// (hero class 6) with Elemental Vision (skill 0x48), when the spell's element is the opposite of the target's
+    /// (FUN_004b0d40: Air↔Earth, Fire↔Water). The multiplier (FUN_004b0d80, single precision) is
+    /// m = 1 + x with x = Invocation·ElementalChainBonusPerInvocationTrained + altars·ElementalChainBonusPerAltarOfChaos,
+    /// x doubled by Absolute Chains (0x96) and multiplied by Runic_2Warlock_ElementalVisionMultiplier (RPGStats+0x11bc)
+    /// with two or more Runic set pieces (set 9). The extra damage is trunc(D·m − D) of the damage after protection
+    /// (FPU chop, 00977f58); the target's element is then re-rolled (FUN_004b0e90).
     /// </summary>
-    double ElementalChainBonus(HeroState? hero, SpellDef sp, Unit t, double dmg)
+    internal int ElementalChainExtra(HeroState? hero, SpellDef sp, Unit t, int damage)
     {
-        if (hero == null || !hero.HasPerk(Sk.ElementalVision) || sp.School != "MAGIC_SCHOOL_DESTRUCTIVE" || sp.Element == Elements.None) return 0;
+        if (hero == null || damage <= 0 || hero.Class != "HERO_CLASS_WARLOCK" || !hero.HasPerk(Sk.ElementalVision)) return 0;
         string opposite = sp.Element switch
         {
             Elements.Air => Elements.Earth, Elements.Earth => Elements.Air,
             Elements.Fire => Elements.Water, Elements.Water => Elements.Fire, _ => "",
         };
-        if (t.Element1 != opposite) return 0;
-        double bonus = dmg * Stats.Get("combat/HeroSkills/Warlock/ElementalChainBonusPerInvocationTrained", 0.1) * (int)hero.SkillLevel(Sk.Invocation);
+        if (opposite.Length == 0 || t.Element1 != opposite) return 0;
+        float x = (int)hero.SkillLevel(Sk.Invocation) * (float)Stats.Get("combat/HeroSkills/Warlock/ElementalChainBonusPerInvocationTrained", 0.1)
+                  + hero.ElementalAltars * (float)Stats.Get("combat/HeroSkills/Warlock/ElementalChainBonusPerAltarOfChaos", 0.1);
+        if (hero.HasPerk("HERO_SKILL_ABSOLUTE_CHAINS")) x += x;
+        float m = Specials.Pieces(hero, Specials.Runic) >= 2
+            ? x * (float)Stats.Get("ArtifactsSetsEffectsConsts/Runic_2Warlock_ElementalVisionMultiplier", 2) + 1f
+            : x + 1f;
+        if (m <= 1f) return 0;
+        int extra = ExeChop((double)damage * m - damage);
         var all = new[] { Elements.Air, Elements.Earth, Elements.Fire, Elements.Water };
         t.Element1 = all[S.Rng.Next(all.Length)];
         Emit(new AbilityTriggered(Actor.Hero(hero.Side), Sk.ElementalVision, t.Id));
-        return bonus;
+        return Math.Max(0, extra);
     }
 
     /// <summary>Matron Salvo (Coven Mistress): after the hero hits with a damaging spell, each witch stack may shoot the target for free.</summary>

@@ -141,6 +141,51 @@ public sealed partial class Battle
         return art != null && h.Artifacts.Contains(art);
     }
 
+    /// <summary>
+    /// Chain Lightning's path (exe FUN_00a5dbb0 called from FUN_0085edb0): the first target, then up to three hops,
+    /// each to the nearest living stack not yet in the chain (friend or foe), skipping stacks fully protected from
+    /// the spell (callback FUN_0085e2f0: protection percent &gt; 99). Equally near stacks are collected and one is
+    /// picked with the battle RNG (inclusive range 0..n−1). The distance metric (combat vf +0x118) is not yet traced;
+    /// the footprint gap is used.
+    /// </summary>
+    internal List<Unit> ChainLightningTargets(Unit first, SpellDef sp, int side)
+    {
+        var chain = new List<Unit> { first };
+        for (int hop = 0; hop < 3; hop++)
+        {
+            var from = chain[^1];
+            var best = new List<Unit>();
+            int bestD = int.MaxValue;
+            foreach (var u in S.Living)
+            {
+                if (u.IsObject || chain.Contains(u) || FullyProtectedFrom(u, sp, side)) continue;
+                int d = Distance(u, from);
+                if (d < bestD) { bestD = d; best.Clear(); best.Add(u); }
+                else if (d == bestD) best.Add(u);
+            }
+            if (best.Count == 0) break;
+            chain.Add(best.Count == 1 ? best[0] : best[S.Rng.Range(0, best.Count - 1)]);
+        }
+        return chain;
+    }
+
+    /// <summary>Chain Lightning's per-hop base damage: a float halved per hop (×0.5f), truncated for each hop (0085ef1f).</summary>
+    internal static int[] ChainHopBases(int baseDamage, int hops)
+    {
+        var r = new int[hops];
+        float f = baseDamage;
+        for (int i = 0; i < hops; i++) { r[i] = (int)f; f *= 0.5f; }
+        return r;
+    }
+
+    /// <summary>Protection percent ≥ 100 against a spell without caster bonuses (immunity, or a damage multiplier of 0).</summary>
+    bool FullyProtectedFrom(Unit u, SpellDef sp, int side)
+    {
+        if (u.Has(Ab.ImmuneMagic) || sp.Element != Elements.None && ElementImmune(u, sp.Element)) return true;
+        float mult = (float)(SpellDamageMultiplier(u, sp, side) * ElementProtectionArtifacts(u, sp.Element));
+        return (int)((1f - Math.Clamp(mult, 0f, 1f)) * 100f) > 99;
+    }
+
     /// <summary>The creature currently casting (set by DoCast), for caster-dependent damage rules.</summary>
     Unit? _castingCreature;
     /// <summary>Set by SpellHits when a damage spell was resisted but Irresistible Magic still lets a share through.</summary>

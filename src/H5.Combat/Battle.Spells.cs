@@ -530,22 +530,20 @@ public sealed partial class Battle
             case "SPELL_CHAIN_LIGHTNING":
             {
                 if (target == null) return;
-                double dmg = SpellBaseDamage(baseDef, sp, m, power);
-                var cur = target;
-                var hitIds = new HashSet<int>();
-                for (int i = 0; i < 4 && cur != null; i++)
+                // exe FUN_0085edb0: the whole chain is chosen first (FUN_00a5dbb0), then damage is dealt along it.
+                var chain = ChainLightningTargets(target, baseDef, side);
+                // The float base halves per hop (×0.5f @00e0ab70); each hop's base is truncated (FISTP in chop mode,
+                // 0085ef1f) before protection (FUN_0097d600).
+                var bases = ChainHopBases((int)SpellBaseDamage(baseDef, sp, m, power), chain.Count);
+                for (int i = 0; i < chain.Count; i++)
                 {
-                    hitIds.Add(cur.Id);
-                    if (SpellHits(side, baseDef, cur, hostile: true, hero, area: i > 0))
+                    var cur = chain[i];
+                    if (cur.Alive && SpellHits(side, baseDef, cur, hostile: true, hero, area: i > 0))
                     {
                         affected.Add(cur.Id);
-                        DealSpellDamage(cur, baseDef, dmg, side, false, hero, m);
+                        DealSpellDamage(cur, baseDef, bases[i], side, false, hero, m);
                         if (cur.Alive && i == 0) SpellSideEffects(id, cur, m, power, hero, true, side);
                     }
-                    dmg /= 2;
-                    var from = cur;
-                    // The chain jumps to the nearest stack, friend or foe (p.188).
-                    cur = S.Living.Where(u => !u.IsObject && !hitIds.Contains(u.Id)).OrderBy(u => Distance(u, from)).ThenBy(u => u.Id).FirstOrDefault();
                 }
                 break;
             }
@@ -788,7 +786,6 @@ public sealed partial class Battle
         bool fullProtection = _resistedFullProtection;
         _resistedFullProtection = false;
         dmg *= _spellDamageScale;
-        dmg += ElementalChainBonus(hero, sp, t, dmg);
         // Caster-side modifiers before protection (exe FUN_00976db0): elemental artifacts ×1.5, and spells cast by
         // elementals ×Neutral/SpellDamageMultiplier.
         dmg = ElementArtifactDamage(hero, sp.Element, dmg);
@@ -814,6 +811,10 @@ public sealed partial class Battle
             if (hero.HasPerk(Sk.ColdDeath) && id is "SPELL_ICE_BOLT" or "SPELL_FROST_RING" or "SPELL_DEEP_FREEZE" && !ElementImmune(t, Elements.Water))
                 dmg += MaxHealthOf(t) * (ignoreResist ? 1 : SpellDamageMultiplier(t, sp, side));
         }
+        // Elemental Chains add their share on top of the protected damage (exe: FUN_0097d600 + FUN_00977e60 in the
+        // bolt/chain/area resolvers 0085e7c0/0085edb0/0085f330); the Holy/Unholy Word resolver (00977600) has none.
+        if (id is not ("SPELL_HOLY_WORD" or "SPELL_UNHOLY_WORD"))
+            dmg += ElementalChainExtra(hero, sp, t, Math.Max(0, (int)Math.Floor(dmg)));
         // Enchanted Obsidian: magical damage heals instead (p.174).
         if (t.Has(Ab.EnchantedObsidian) && !ignoreResist)
         {

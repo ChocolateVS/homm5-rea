@@ -181,4 +181,86 @@ public class AuditSpellTests(GameDataFixture f)
         golem.Count = 5;
         Assert.Equal("cannot raise this creature", b.ValidateSpellTarget(Actor.Hero(0), 0, raise, Mastery.Expert, golem.Id, null));
     }
+
+    // ---- Chain Lightning (exe FUN_0085edb0 / FUN_00a5dbb0) and Elemental Chains (FUN_00977e60 / FUN_004b0d80)
+
+    BattleState ChainSetup(params (int side, string id, int x, int y)[] units)
+    {
+        var mine = units.Where(u => u.side == 0).Select(u => (u.id, 10)).ToArray();
+        var theirs = units.Where(u => u.side == 1).Select(u => (u.id, 10)).ToArray();
+        var s = Setup(mine, theirs);
+        s.Units.RemoveAll(u => u.IsWarMachine);
+        foreach (var side in new[] { 0, 1 })
+        {
+            var placed = s.Units.Where(u => u.Side == side).ToList();
+            var specs = units.Where(u => u.side == side).ToList();
+            for (int i = 0; i < specs.Count; i++) placed[i].Pos = new Cell(specs[i].x, specs[i].y);
+        }
+        return s;
+    }
+
+    // 0085e2f0: stacks with protection > 99 % (magic immunity) are never chosen as a hop.
+    [Fact]
+    public void ChainLightningSkipsFullyProtectedStacks()
+    {
+        var s = ChainSetup((0, "CREATURE_PEASANT", 3, 3), (1, "CREATURE_BLACK_DRAGON", 4, 3), (1, "CREATURE_PEASANT", 8, 3));
+        var b = new Battle(f.Db, s);
+        var a = s.Units.Single(u => u.Side == 0);
+        var dragon = s.Units.Single(u => u.CreatureId == "CREATURE_BLACK_DRAGON");
+        var far = s.Units.Single(u => u.Side == 1 && u.CreatureId == "CREATURE_PEASANT");
+        var chain = b.ChainLightningTargets(a, f.Db.Spell("SPELL_CHAIN_LIGHTNING")!, 1);
+        Assert.Equal(new[] { a.Id, far.Id }, chain.Select(u => u.Id).ToArray());
+        Assert.DoesNotContain(dragon, chain);
+    }
+
+    // FUN_00a5dbb0 collects the equally near stacks and picks one with the battle RNG (not the lowest id).
+    [Fact]
+    public void ChainLightningBreaksTiesWithTheRng()
+    {
+        var seen = new HashSet<int>();
+        for (ulong seed = 1; seed <= 30; seed++)
+        {
+            var s = ChainSetup((0, "CREATURE_PEASANT", 5, 5), (1, "CREATURE_PEASANT", 7, 5), (1, "CREATURE_ARCHER", 5, 7));
+            s.Rng = new Rng(seed);
+            var b = new Battle(f.Db, s);
+            var a = s.Units.Single(u => u.Side == 0);
+            seen.Add(b.ChainLightningTargets(a, f.Db.Spell("SPELL_CHAIN_LIGHTNING")!, 1)[1].Id);
+        }
+        Assert.Equal(2, seen.Count);
+    }
+
+    // 0085ef1f / @00e0ab70: the float base halves per hop and each hop's base is truncated.
+    [Fact]
+    public void ChainLightningHopBasesHalveAndTruncate()
+    {
+        Assert.Equal(new[] { 101, 50, 25, 12 }, Battle.ChainHopBases(101, 4));
+        Assert.Equal(new[] { 7, 3, 1, 0 }, Battle.ChainHopBases(7, 4));
+    }
+
+    // FUN_004b0d80: m = 1 + Invocation·0.1 + altars·0.1 (single precision), ×2 with Absolute Chains; the extra is
+    // trunc(D·m − D) after protection (chop at 00977f58): 100 damage with m = 1.4f gives 39, not 40.
+    [Fact]
+    public void ElementalChainsUseTheExeMultiplier()
+    {
+        var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        var b = new Battle(f.Db, s);
+        var h = s.Heroes[0];
+        var t = s.Units.Single(u => u.Side == 1 && u.CreatureId == "CREATURE_PEASANT");
+        var bolt = f.Db.Spell("SPELL_LIGHTNING_BOLT")!;   // Air → Earth targets
+        h.Class = "HERO_CLASS_WARLOCK";
+        h.Perks.Add(Sk.ElementalVision);
+        h.Skills.RemoveAll(x => x.SkillId == Sk.Invocation);
+        h.Skills.Add(new SkillEntry(Sk.Invocation, Mastery.Expert));
+        h.ElementalAltars = 1;
+        t.Element1 = Elements.Earth;
+        Assert.Equal(39, b.ElementalChainExtra(h, bolt, t, 100));
+        t.Element1 = Elements.Fire;
+        Assert.Equal(0, b.ElementalChainExtra(h, bolt, t, 100));      // not opposite
+        h.Perks.Add("HERO_SKILL_ABSOLUTE_CHAINS");
+        t.Element1 = Elements.Earth;
+        Assert.Equal(79, b.ElementalChainExtra(h, bolt, t, 100));     // m = 1.8f
+        h.Class = "HERO_CLASS_KNIGHT";
+        t.Element1 = Elements.Earth;
+        Assert.Equal(0, b.ElementalChainExtra(h, bolt, t, 100));      // Warlocks only (class 6)
+    }
 }
