@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 125 |
-| MATCH | 86 |
-| GAP | 7 |
-| UNVERIFIED | 313 |
+| FIXED | 136 |
+| MATCH | 91 |
+| GAP | 9 |
+| UNVERIFIED | 295 |
 | N/A | 57 |
 
 ## Core mechanics
@@ -85,7 +85,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_FRIGHT_AURA` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
 | `ABILITY_VORPAL_SWORD` | FIXED | 00a673c0, 00a63020 | +1 creature killed on the strike, only vs creature targets without CRYSTAL_SCALES — engine ignored both conditions | AuditAbilityTests.VorpalSwordDoesNotWorkOnCrystalScales |
 | `ABILITY_CHAIN_SHOT` | UNVERIFIED | 00a673c0 | implemented; not yet compared with the exe |  |
-| `ABILITY_WEAKENING_STRIKE` | UNVERIFIED | 00a5deb0 | implemented; not yet compared with the exe |  |
+| `ABILITY_WEAKENING_STRIKE` | UNVERIFIED | 00a629b0 → 00a5deb0 → 00a5ddb0 → 00bbf160 | on every strike (incl. ranged/retaliation as far as 00a629b0's helper list shows), with power ZombieWeakeningStrike (0 if < 1), applied through the spell-effect pipeline (00a5ddb0 → 00bbf160 → 00988df0 cast record → 00bbf000); a successful application also feeds the Demon Rage/Blood Rage counter (army vf 0x7c, field +0x80 of 008a18b0). Whether re-application stacks (engine: adds ZombieWeakeningStrike per hit) depends on 00bbf000, not yet decoded; the engine also limits it to melee |  |
 | `ABILITY_INCORPOREAL` | FIXED | 008a34c0 | Phantom images / Rune of Etherealness are Incorporeal | tests/H5.Combat.Tests/AuditSpecTests.DynamicAbilitiesFollowTheOriginal |
 | `ABILITY_MANA_DRAIN` | MATCH | 00a59c60 | drained = min(attacker count, target mana); target loses it; the drainer heals (with resurrection) drained × its max health |  |
 | `ABILITY_LIFE_DRAIN` | MATCH | 00a59c60 | LifeDrainIntensity of damage |  |
@@ -142,13 +142,13 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_CROSS_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_MAGMA_SHIELD` | FIXED | 00a5bdd0 | same as Fire Shield with MagmaShield_Damage_Multiplier | AuditAbilityTests.FireShieldIgnoresOverkill |
 | `ABILITY_PACK_HUNTER` | UNVERIFIED | 00a64120 | implemented; not yet compared with the exe |  |
-| `ABILITY_HOWL` | UNVERIFIED | 00a5cbc0 | implemented; not yet compared with the exe |  |
+| `ABILITY_HOWL` | GAP | 00a5cbc0 (00a5cbe6, called from the strike loop 00a65260) | the exe's only HasAbility(HOWL) test is inside the attack pipeline: when the wolves attack, a friendly stack is created next to the target cell (FUN_00b3fac0 / FUN_00c558b0 cell search, army vtable +0x1c) with ATB = Range(0, HowlMaxATBValueAtStart) — i.e. it triggers automatically on attack, not as an activated ability. The engine offers it as a once-per-battle activated ability. Summoned count/slot (army vf 0x2c − 1), the once-only check (FUN_004e9280) and the cell search are not decoded yet |  |
 | `ABILITY_AGILITY` | UNVERIFIED | 008a6c40 008aaec0 00a66050 | implemented; not yet compared with the exe |  |
 | `ABILITY_HEXING_ATTACK` | FIXED | 00a5e000, stats +0x3ec | walks HexingAttackSpells in data order (Curse, Slow, Weakness, Disrupting Ray, all Expert) and casts the first the target lacks and doesn't resist — engine picked one at random | AuditAbilityTests.HexingAttackCastsTheFirstMissingSpellInDataOrder |
-| `ABILITY_CLEAVE` | UNVERIFIED | 00a65260 | implemented; not yet compared with the exe |  |
-| `ABILITY_BATTLE_FRENZY` | UNVERIFIED | 00a629b0 | implemented; not yet compared with the exe |  |
+| `ABILITY_CLEAVE` | FIXED | 00a65260 (00a657e2) | checked only after the FIRST strike of the attack (`strike == 0`), when that strike killed at least one creature: the strike loop's count and last index grow by one, so the extra blow is a normal loop iteration (pattern attack, retaliation rules, Rune of Berserking last-strike rule). The engine checked the LAST strike and dealt a pattern-less side blow | AuditAbilityTestsA.CleaveAddsAFullStrikeAfterTheFirstBlow |
+| `ABILITY_BATTLE_FRENZY` | FIXED | 00a629b0 (00a62a2b), 00a58de0 | after a RETALIATION strike (+0x21) by a creature with the ability, it gains SPELL_EFFECT_BATTLE_FRENZY for 0x7ffffffe (the whole battle, one stack per retaliation); every retaliation's damage is ×BattleFrenzyBoostFactor^stacks (00a58de0, GetSpellEffect(0x112) field +0x20). The engine reset the multiplier at the creature's own turn | AuditAbilityTestsA.BattleFrenzyLastsTheWholeBattle |
 | `ABILITY_PACK_DIVE` | UNVERIFIED | 00a2fd40 | implemented; not yet compared with the exe |  |
-| `ABILITY_CHAMPION_CHARGE` | UNVERIFIED | 008aa990 | implemented; not yet compared with the exe |  |
+| `ABILITY_CHAMPION_CHARGE` | FIXED | 008aa990, GameMechanics/Creature/Creatures/Haven/ChampionCharge.xdb | the charge pattern (DefaultStats ChampionChargePattern) is used only when ChampionChargeMinimalDistance < cells walked (strictly greater; text "walked more than 2 tiles"); pattern: the cell behind the target at DamageToOtherTargetsCoefficient 0.5 with DamageAll = true, so ALLIED stacks there are hit too. The engine used ≥ and enemies only. Note: the engine's centre-to-centre direction for a 2×2 attacker against a 1×1 target can pick a diagonal; the exe chooses among the pattern's 12 rotations (RotateToMainTarget) — not ported | AuditAbilityTestsA.ChampionChargeNeedsMoreThanTheMinimalDistanceAndHitsAllies |
 | `ABILITY_PURGER` | FIXED | 00a629b0, 00a5d690, 004e6470, 004e4000 | trigger: any strike, Purger_ProcFactor, chance on post-hit HP, second roll; removes ONE effect picked with RNG Next(n) (vtable +0x10) among the target's dispellable effects beneficial to it, never SPELL_PRAYER (hero Prayer), SPELL_DEATH_SCREAM or SPELL_EFFECT_SEDUCE_CASTED — engine could strip the hero's Prayer | AuditAbilityTests.PurgerNeverRemovesPrayer |
 | `ABILITY_BLADE_BARRIER` | N/A | 0097af50 00a5a900 00a5beb0 00a5fee0 | not used by shipped data |  |
 | `ABILITY_DEMON_RAGED` | MATCH | 008a2c20, 008a3b90 | rage events and coefficients per exe (see AddRage) |  |
@@ -159,7 +159,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_MANEURE` | UNVERIFIED | 00a629b0, 00a5d790, 008a0520, 00b3d3f0 | timing now matches the exe (inside the retaliated hit, attacker without NO_ENEMY_RETALIATION, melee, not a retaliation; shot from the new place via FUN_00a66050 during the move); the half-damage factor and the destination search (008a0250) are not yet confirmed | AuditAbilityTests.CowardiceRunsInsideTheFirstStrike (shared path) |
 | `ABILITY_BRUTALITY` | FIXED | 00a65260 (00a657a0) | Assault proc after the first strike uses Brutality_ProcFactor (engine used 1), flag 1, second roll | AuditStrikeTests |
 | `ABILITY_TAUNT` | FIXED | 00a65d50 (00a65e0a) | Taunt_ProcFactor with flag 1 (Soldier's Luck doubles) and no second roll | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
-| `ABILITY_FIERCE_RETALIATION` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
+| `ABILITY_FIERCE_RETALIATION` | MATCH | 00a58de0 | retaliation strikes (param_4) × FierceRetaliationCoef (2 in DefaultStats) in the attacker stage — same as the engine |  |
 | `ABILITY_SACRIFICE_GOBLIN` | UNVERIFIED | 008d03a0 | implemented; not yet compared with the exe |  |
 | `ABILITY_FAST_ATTACK` | MATCH | 00a5fee0 | no retaliation against a FAST_ATTACK attacker while the target is under SPELL_SLOW |  |
 | `ABILITY_PRESENCE_OF_COMMANDER` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
@@ -204,12 +204,12 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_AURA_OF_BRAVERY` | UNVERIFIED | 008a4b70 | implemented; not yet compared with the exe |  |
 | `ABILITY_INCINERATE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_INVISIBILITY` | MATCH | 00a5fee0 | no retaliation against an attacker under SPELL_ABILITY_INVISIBILITY |  |
-| `ABILITY_RIDE_BY_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `ABILITY_RIDE_BY_ATTACK` | FIXED | 00a66050, 00a5fa50, 00a61c50, 00b3d560 | skipped only on forced runs (Cowardice/Maneuver call 00a66050 with its last flag 1); victims = enemies (00b3d560) adjacent to path points 1 … N−1−RideByAttack_LastPointsToExclude (the start cell is not scanned), each attached to the point it is closest to and hit in path order as the rider passes; damage = base roll through FUN_00a5c790 with a fixed luck multiplier 1.0 (integer), × RideByAttack_DamageCoef in single precision, truncated (FISTP under chop, 00a61d42), dealt directly (no AttackStarted, no luck, no retaliation, no on-hit effects) — engine scanned the start cell, rolled luck and ran the full strike. Kept: the main target is not a victim (not traced) and ride-by only on attack moves (the ability text: "on its way to the main target") | AuditAbilityBTests.RideByAttackSkipsTheStartCellAndHitsWithoutRetaliation |
 | `ABILITY_ANTI_GIANT` | MATCH | 00a5a900 | AntiGiantDefenceInc vs large |  |
 | `ABILITY_AVENGING_FLAME` | N/A | 00a61090 | not used by shipped data |  |
 | `ABILITY_PREPARED_POSITION` | UNVERIFIED | 008aaec0 | implemented; not yet compared with the exe |  |
 | `ABILITY_BATTLE_RAGE` | UNVERIFIED | 008a6e20 | implemented; not yet compared with the exe |  |
-| `ABILITY_HARPOON_STRIKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `ABILITY_HARPOON_STRIKE` | FIXED | 00a58de0, 00a5d5f0, 00a5ceb0, 00a673c0 | the shot's damage ×(1 + HarpoonStrike_DamageBonus) (special 0x14b); the pull needs a target without HOLD_GROUND (dynamic ability 0xa5) and, unless HarpoonStrike_WorksOnLargeCreatures, a 1×1 target; the destination is the free neighbouring cell closest to "towards the harpooner" within π/4 (FUN_00a5ceb0 with its first argument 1 swaps the centres), exe ring order on ties; no qualifying cell → no pull — engine stepped one cell straight towards the attacker and ignored the damage bonus and the large-creature flag | AuditAbilityBTests.HarpoonPullsTowardsTheHarpoonerWithinFortyFiveDegrees, HarpoonNeverPullsCreaturesThatHoldTheirGround |
 | `ABILITY_BEAR_ROAR` | FIXED | 00a5e800 | only while the struck target would retaliate, melee, not a retaliation; victims = enemies next to the bear (target and its neighbours), not fully spell-immune; per victim p = ProcPercent(BearRoar_ProcFactor, flag 1), and for a 1×1 victim p = trunc(100 − (100 − p)/BearRoar_SmallCreaturesChanceMult); attacker's second roll; a frightened victim runs like Fear (FUN_0089ffc0 mode 2, ATB 0) and the target no longer retaliates; the bear gets SPELL_ABILITY_BEAR_ROAR — engine multiplied the ProcFactor exponent by the size factor and only reset ATB | AuditAbilityTests.BearRoarHalvesTheFailureOfSmallVictims |
 | `ABILITY_HOLD_GROUND` | FIXED | 008a34c0 | rooted Take Roots creature holds ground | (Unit.Has) |
 | `ABILITY_FLAMEWAVE` | FIXED | 00a62030 (00a62397) | FlameWave_ProcFactor with flag 1 and no second roll | AuditProcChanceTests.ChanceUsesIntegerRatioAndFactorAsExponent |
@@ -274,7 +274,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_CONSUME_CORPSE` | FIXED | 0097b690 | mana = round(max(1, HP/k)), capped by missing mana | (UseAbility CONSUME_CORPSE) |
 | `HERO_SKILL_DEMONIC_FIRE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DEMONIC_STRIKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_DEATH_SCREAM` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_DEATH_SCREAM` | FIXED | 00989c40, 00989fd0 | effect 0x3b: morale −= round(DeathScream_MoralePenalty · m), luck −= round(DeathScream_MoralePenalty · m), m = DarkEissary_DeathScreamMultiplier for the Dark Emissary (else 1) plus a set constant (RPGStats +0x1188 morale / +0x118c luck) with 2+ pieces of the necromancer set (FUN_004d8d60). Engine took a flat 1 luck point (Dark Emissary: should be 2). Set constant left to the artifacts audit | AuditSkillTests.DeathScreamLuckPenaltyScalesWithTheMultiplier |
 | `HERO_SKILL_MULTISHOT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SNIPE_DEAD` | FIXED | 00bc1b90, 008cf48d | Deadeye Shot: plain strike level +3 (was missing); vs a favoured enemy the plain strike crits for sure (kills ≥ 1) and skips the generic 40 % favoured-enemy roll | AuditHeroStrikeTests.DeadeyeShotAddsThreeLevelsToThePlainStrike |
 | `HERO_SKILL_IMBUE_ARROW` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
@@ -306,21 +306,21 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_FIRE_AFFINITY` | FIXED | 00861630 | always Fire Elementals; others by terrain | (ResolveSpell) |
 | `HERO_SKILL_DEATH_TREAD` | FIXED | 008a0ea0 | siege attacker +4 speed | tests/H5.Combat.Tests/AuditSpecTests2.DeathTreadOnlyInSieges |
 | `HERO_SKILL_LAST_AID` | UNVERIFIED | 0097f610 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_DEAD_LUCK` | UNVERIFIED | 00989c40 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_CHILLING_STEEL` | UNVERIFIED | 00a5c000 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_CHILLING_BONES` | UNVERIFIED | 00a5bc50 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_DEAD_LUCK` | MATCH | 00989c40 | luck −1 for stacks whose ENEMY hero (army vfunc 0x10) has the perk |  |
+| `HERO_SKILL_CHILLING_STEEL` | FIXED | 00a5c000 | strikes add cold damage 0.1 × the damage dealt (Last-Stand clamped, capped at the target's HP), dealt via FUN_0097d740 (rounded half up after protection). Engine truncated (9 damage → 0 instead of 1). The protection percent FUN_0097d2a0 for this call is not modelled | AuditSkillTests.ChillingPerkDamageRoundsHalfUp |
+| `HERO_SKILL_CHILLING_BONES` | FIXED | 00a5bc50 | melee hit on an ABILITY_UNDEAD stack whose hero has the perk: the attacker takes 0.05 × the damage dealt as cold damage when ≥ 0.5, via FUN_0097d740 (rounded half up). Engine truncated | AuditSkillTests.ChillingPerkDamageRoundsHalfUp |
 | `HERO_SKILL_SPELLPROOF_BONES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DEADLY_COLD` | UNVERIFIED | 00977a80 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SPIRIT_LINK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_TWILIGHT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_ABSOLUTE_FEAR` | UNVERIFIED | 00989fd0 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_IMBUE_BALLISTA` | UNVERIFIED | 00a59be0 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ABSOLUTE_FEAR` | MATCH | 00989fd0 | under Death Scream (effect 0x3b) morale −6 more when the screaming (enemy) hero has the perk (constant 6 in code) |  |
+| `HERO_SKILL_IMBUE_BALLISTA` | MATCH | 00a59be0 | the war machine with id 1 (Ballista) casts the imbued spell (FUN_0097ea20) on its target when its hero has the perk |  |
 | `HERO_SKILL_CUNNING_OF_THE_WOODS` | UNVERIFIED | 00a5ae40 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ELVEN_LUCK` | MATCH | 00a6a680, 00a6b820 | good-luck multiplier = ElvenLuck_DamageMultiplier instead of GoodLuck_DamageMultiplier |  |
 | `HERO_SKILL_FOREST_RAGE` | MATCH | 004bc020 | +1 max damage for Sylvan creatures |  |
-| `HERO_SKILL_LAST_STAND` | UNVERIFIED | 00a59490 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_LAST_STAND` | FIXED | 00a59490, 00a594f0, 00a61600 | a stack of 2+ creatures (vfunc 0x1c count > 1) hit for ≥ its total HP (vfunc 0x1dc) keeps 1 HP; no once-per-combat flag (re-triggers whenever the stack is back to 2+). Applies in the common damage pipeline (strikes, hero strike, damage spells, Corrupted Soil). Engine allowed it only once per stack | AuditSkillTests.LastStandHasNoOncePerCombatLimit |
 | `HERO_SKILL_SUN_FIRE` | UNVERIFIED | 00983790 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_SOIL_BURN` | UNVERIFIED | 00a61a60 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_SOIL_BURN` | FIXED | 00a61a60, 00a66050 | once per move of an enemy stack (called at the start of the move routine); flying stacks (vfunc 0x190) are exempt; damage round(level · clamp(SoilBurnDamagePerHeroLevel, 0.1, 1000)) through the stack damage pipeline. Engine also hurt flyers | AuditSkillTests.CorruptedSoilSparesFlyers |
 | `HERO_SKILL_STORM_WIND` | UNVERIFIED | 008a1e50 008a4330 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_FOG_VEIL` | UNVERIFIED | 008a2630 008a4330 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ABSOLUTE_LUCK` | MATCH | 008a3ef0, 00a6a680 | every strike is lucky (good-luck multiplier) unless the target's hero has Absolute Protection (then a normal roll) |  |
@@ -368,7 +368,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_MEMORY_OF_OUR_BLOOD` | UNVERIFIED | 008aaec0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_POWERFULL_BLOW` | FIXED | 00bc1b90, 008cf42b | the follow-up strike (SPELL_EFFECT_POWERFULL_BLOW) always gets +3 levels (engine: melee only) and adds PowerfullBlow_ChanceToCritical (10) to the critical chance (engine rolled 10 % × 4 separately) | AuditHeroStrikeTests.CriticalChanceComposesCriticalStrikeAndPowerfulBlow |
 | `HERO_SKILL_ABSOLUTE_RAGE` | UNVERIFIED | 008aaec0 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_BATTLE_ELATION` | UNVERIFIED | 008a0db0 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_BATTLE_ELATION` | MATCH | 008a0db0 | on good morale, the stack's rage gains BattleElation_RPOnGoodMorale when its hero has the perk (rage vfunc 0x7c) |  |
 | `HERO_SKILL_LUCK_OF_THE_BARBARIAN` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_STUNNING_BLOW` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DEFEND_US_ALL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -517,7 +517,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_FORGETFULNESS` | GAP | 0097c9f0 (0x11 → ability 0x13) | exe immunity: IMMUNITY_TO_MIND_CONTROL only; engine adds undead/elemental/mechanical (see Berserk) |  |
 | `SPELL_BERSERK` | FIXED | 008a2630, 0097c9f0 | damage ×max(1+v,0); immune: mind immunity / IMMUNITY_TO_BERSERK / Dwarven Mithral Shield (added). Exe checks only the IMMUNITY_TO_MIND_CONTROL ability (008a34c0 never grants it to undead) while the engine also treats undead/elemental/mechanical as mind-immune — open question (another targeting layer may block them) | ArtifactsGrantSpellImmunities |
 | `SPELL_BLIND` | GAP | 0097c9f0 (0x13 → ability 0x10) | immune only with ABILITY_IMMUNITY_TO_BLIND or Dwarven Mithral Helmet (helmet added). Engine also makes undead/elemental/mechanical (living-only + mind list) immune — not confirmed in the exe, left unchanged | ArtifactsGrantSpellImmunities |
-| `SPELL_HYPNOTIZE` | MATCH | 004e4270 (case 0x14), 0097c9f0 | initiative ×clamp(v,0,1); immune: mind immunity / IMMUNITY_TO_HYPNOTIZE; tier ≥ 7 needs Expert (caster mastery < 3 → 100) |  |
+| `SPELL_HYPNOTIZE` | FIXED | 004e4270 (case 0x14), 0097c9f0, 00a5fee0 @ 00a5ffbb | initiative ×clamp(v,0,1); immune: mind immunity / IMMUNITY_TO_HYPNOTIZE; tier ≥ 7 needs Expert (caster mastery < 3 → 100). Retaliation is suppressed only when attacker vf+0x18 (controller) equals the hypnotized defender's ("COMBAT_NO_HYPNOTIZE_RETALIATE"); the engine blocked every retaliation | HypnotizedStackOnlySparesItsController |
 | `SPELL_UNHOLY_WORD` | MATCH | 00977600 | affects creatures that are neither Undead nor Demonic |  |
 | `SPELL_UNHOLY_WORD_HIT_EFFECT` | N/A | 0089c720 008af9e0 00b32880 | visual effect only (client) |  |
 | `SPELL_BLESS` | MATCH | 008a2630 | min += (max−min)·clamp(v,0,1) |  |
@@ -592,7 +592,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_RUNE_OF_STUNNING` | UNVERIFIED | 00a59a90 00a5af10 00a5af70 00a5d370 | implemented; not yet compared with the exe |  |
 | `SPELL_RUNE_OF_BATTLERAGE` | UNVERIFIED | 00a5fee0 00a64e90 00a65260 | implemented; not yet compared with the exe |  |
 | `SPELL_RUNE_OF_ETHEREALNESS` | UNVERIFIED | 008a34c0 00bfba50 | implemented; not yet compared with the exe |  |
-| `SPELL_RUNE_OF_REVIVE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_RUNE_OF_REVIVE` | MATCH | 00c20690 | revived = trunc((float)(initial − current count) · max(0, ReviveSpellPercent)); engine (int)(dead·0.4) gives the same integers (0.4f > 0.4, products of multiples of 5 are exact) |  |
 | `SPELL_RUNE_OF_DRAGONFORM` | UNVERIFIED | 0097af50 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_BATTLE_FRENZY` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
 | `SPELL_SORROW` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -609,7 +609,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_WARCRY_RALLING_CRY` | FIXED | FUN_00946030 struct, 008a1e50 formula | morale +((lvl−1)/LevelDivisor)·PerDividedLevel + Base (engine 1 + lvl/8) | WarcryBonusesUseLevelMinusOne |
 | `SPELL_WARCRY_CALL_OF_BLOOD` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_WARCRY_WORD_OF_THE_CHIEF` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_WARCRY_FEAR_MY_ROAR` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_WARCRY_FEAR_MY_ROAR` | GAP | 004e57d0, 009bdbd0 | the duration table 004e57d0 has no 0x125 case (no lasting effect — the engine only zeroes ATB, consistent); the success chance 0.5 + (level − target level)·0.05 used by the engine was not located in the exe (no 0x125 dispatch outside the enum table 009f29c0) |  |
 | `SPELL_WARCRY_BATTLECRY` | FIXED | 008a1e50 (0x126), FUN_00946030 | speed +((lvl−1)/div)·per + base (confirmed), offence by the same struct formula (engine 1 + lvl/2) | WarcryBonusesUseLevelMinusOne |
 | `SPELL_WARCRY_SHOUT_OF_MANY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_ARTFSET_LIONS_DEMORALIZED` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
