@@ -112,3 +112,32 @@ startup: default lights, the interface arenas (incl. main menu), combat grid sel
 hero attributes UI, duel presets, adventure shared groups, dwelling flyby scenes... The slot index
 is the meaning; names must be recovered from the exe. Treat it as the entry point for
 "what does the engine load by default".
+
+
+## Siege battlefields
+
+Rendering data for sieges lives on `BattleState.Siege` (`H5.Combat.SiegeState`, null for field battles) together
+with the static layout in `GameDatabase.TownCombat[town]` (`H5.Core.Data.TownCombatDef`):
+
+| Field | Meaning |
+|---|---|
+| `TownCombatDef.ArenaDesc` | (ArenaDesc) of the siege arena (e.g. `/Arenas/CombatArena/NewGrassarena_siege/…`) |
+| `TownCombatDef.Scenery` | AdvMapDesc of the siege terrain (`/Maps/CombatArenas/Grass_Siege_Big_01/…`) |
+| `TownCombatDef.MountX/Y/Rot` | Mount point of the battlefield on that terrain (as for field arenas) |
+| `ArenaBuildingDef.Object` | (ArenaModObject) with the building's model and damage states |
+| `ArenaBuildingDef.Shooter` / `Shot` | Character standing on a tower and its projectile (Shot xdb) |
+| `ArenaBuildingDef.HitEffect/HitSound` | Played when the building is hit |
+| `ArenaBuildingDef.DestroyEffects` | Effects per `RuinLevel` (0 = first collapse stage, 1 = final) |
+| `SiegeBuilding.DefIndex` | Index of the building's `ArenaBuildingDef` |
+| `SiegeBuilding.Anchor` | `Pos` of the building in **field** cells (internal − (2, 1)); may lie outside the field |
+| `SiegeBuilding.Blocked` / `BlockedDestroyed` | Field cells blocked while intact / once destroyed |
+| `SiegeBuilding.Health/MaxHealth/Destroyed` | Current state; `BuildingDamaged` events report every change |
+| `SiegeState.Moat` | Moat cells (field coordinates); `SpentMines` lists exploded Academy mines |
+
+Siege fields are 14×14 field cells, i.e. an internal grid of 18×16 with the same 2-column / 1-row margin as the
+12×10 field (16×12). Use the field-battle placement rule with the siege MountPoint: field cell (cx, cy) is map
+tile (Mount.x + cx, Mount.y − (H + 1) + cy) with H = 14 (assumed by analogy with the 12×10 rule, not yet
+verified on screen). Common layout (identical for all eight towns, field cells): walls x 7–9 at y 1–4 and 9–12,
+gate x 7–8, y 5–8 (open centre rows 6–7 once destroyed), moat x 6–8 (no moat in front of the gate),
+side towers x 9–10 at y 0 and 13, central tower x 13, y 6–7. Tower units have `CreatureId` `SIEGE_<TYPE>` and an
+off-field `Pos`; draw them with their building's `Shooter` instead.

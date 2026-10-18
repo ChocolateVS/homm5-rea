@@ -56,9 +56,37 @@ IBattleAI ai = new GreedyBattleAI(); BattleCommand cmd = ai.Decide(battle, side)
 
 ## Not implemented yet
 
-* Hero: Consume Artifact (no creature artifacts in duels), Tremors (siege only), Power Bargain.
-* Sieges (14x14 field, walls, towers, moat), catapult, summoned elemental type by terrain.
-* Exact original hero / war machine cells, ATB integer timing.
+* Hero: Power Bargain. Summoned elemental type by terrain.
+* Exact original hero / war machine cells (not located in the exe).
+* Siege: the ×1.5 tower damage condition of `00bcdf10` (ids 0x49/0x4b from the battle object) is unidentified;
+  town building combat bonuses (Tavern morale, grail luck, Infernal Loom, …) belong to the adventure layer and are
+  not applied by `SiegeSetup` yet.
+
+## Sieges (`Siege.cs`, `BattleSetup.Create(..., siege: new SiegeSetup { … })`)
+
+* Layout per town type from data (`GameDatabase.TownCombat`), hit points from `ArenaBuildingsStats`
+  (base + fortification bonus; Stoneworks ×1.5, defence specialisation +50), moats from `TownTypesInfo`.
+* Fort = walls + gate, Citadel = + moat + central tower, Castle = + side towers; 14×14 field when fortified,
+  plain field otherwise. The attacker's Catapult joins automatically.
+* Gate blocks attackers, opens for defenders; destroyed gate leaves only its end tiles blocked; destroyed walls
+  are passable; destroyed towers keep their rubble tiles (data `blockedTilesForDestroyed`).
+* Catapult: accuracy 20 % without hero, else (War Machines mastery + 2) × 10 %, +2 % per 3 levels (rounded up) for
+  HERO_SPEC_WAR_MACHINES; a miss (roll 1..100 above the chance) hits a random other target, possibly a ruin;
+  luck applies; damage range from `WarMachines.xdb` by mastery; shots 1 (+Catapult, +Triple Catapult); manual
+  aiming with the Catapult perk (`UseAbilityCmd(catapult, "CATAPULT_SHOT", Cell: any tile of the building)`).
+  The central tower is a valid target only after both side towers fall.
+* Towers: defender actors with Initiative 10 that shoot the most valuable visible attacker each turn for
+  70 (central) / 50 (side) × 1.25 (towers specialisation) × town level ratio, ignoring Defence and Evasion;
+  they cannot be attacked by creatures, heroes or spells, only by the catapult and Earthquake.
+* Shots from outside the town at targets inside across an intact fortification are halved (also for creatures
+  with No Range Penalty).
+* Moat: walking attackers stop in the first moat tile and take its damage (MoatMaxDamage × town level ratio),
+  then the town's moat spells: Sylvan roots (50 %), Dungeon poison 28, Necropolis Curse + Disrupting Ray,
+  Academy single-use land mines (Blind), Fortress one of six spell / rune pairs (p.323). Flyers trigger it when
+  landing in it.
+* Earthquake: each standing structure takes 50 × Range(duration/50, damage/50); Tremors also hits every creature
+  inside the walls for round(10 + 5 × SP) and lowers its ATB by 0.1.
+* Fortress Guard Post: `SiegeSetup.GuardPostDefenders` Defenders at the DefaultStats cell.
 
 ## Confirmed against the executable
 

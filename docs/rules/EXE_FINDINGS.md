@@ -189,9 +189,69 @@ Works on the internal grid W×H = (12+4)×(10+2):
   behind their side. The arena workstream's finding that the internal grid has a 2-column margin
   (internal x 0..1 and 14..15) is consistent with machines standing in that margin.
 
+## ATB timing (resolved)
+
+* `FUN_00a2d6c0(initiative)` = `ATBBaseTime / max(initiative, ε)` with `ATBBaseTime` (RPGStats+0x50, data 100000,
+  default 100000 when ≤ 0): the time an empty gauge takes to fill. `FUN_00a2d700` does the same with
+  `SpellInitiative` (+0x48). The ATB is therefore continuous floating-point time, which H5Reborn models directly.
+* The `ATBMin` / `ATBMax` / `*_RealTime` / `ATBVisualTime` fields belong to a settings struct whose reader
+  (`FUN_0094cd80`) and metadata (`FUN_0094cb90`) have no callers and no vtable pointers: dead code.
+  `ATBEndTime` (+0x4c) has no reader reached through the RPGStats getter either.
+
+## Creature ability charges (resolved: Lay Hands)
+
+Creature records (`FUN_00ad90c0`) hold `SpellPoints` @+0x74 (mana), `SpellPoints1` @+0x78 and `SpellPoints2` @+0x7c.
+In the data `SpellPoints1` is the per-combat charge count of activated abilities (Archangel Resurrect Allies 1,
+Master Gremlin Repair 1, Genies' random casts 3, Stormlords/Thunder Thanes 1, …) and `SpellPoints2 = 1` on every
+Inferno creature (Gating once per combat). The Paladin has 0 / 0 and Lay Hands (`SPELL_ABILITY_LAY_HANDS`, 0x9c)
+costs no mana; its in-game description (unlike every limited ability's) states no limit. Lay Hands is therefore
+usable every turn; the former once-per-combat restriction was removed.
+
+## Consume Artifact (data-backed)
+
+`HERO_SKILL_MELT_ARTIFACT` (0x44, spell `SPELL_ABILITY_MELT_ARTIFACT` 0x40). DefaultStats Wizard section:
+`MeltArtifact_HealPerArtifactEffectPerHeroLevel` = 10 (RPGStats+0x684) and `MeltArtifact_ATBUsage` = 0.25 (+0x688).
+No direct reader through the RPGStats getter was found (accessed through a cached sub-struct pointer); the values
+match the fan manual's formula (p.137): heal (and resurrect) 10 × level × (1 + crafted effects), 0.25 turn.
+
+## Sieges (resolved unless noted)
+
+* **Data.** `AdvMapTownShared/Combat` (reader `FUN_009fd430`: walls, ArenaDesc, ArenaMap, GroundType) lists
+  `ArenaBuilding`s (reader `FUN_00930e70`: Pos, Size, Object, Locator, Shooter, Shot, Type, HitEffect, HitSound,
+  DestroyEffects{Upgrade, RuinLevel}, blockedTiles, blockedTilesForDestroyed). Type enum (`FUN_0092f3e0`):
+  0 BUILDING_ANY, 1 WALL, 2 GATE, 3 LEFT_TOWER, 4 BIG_TOWER, 5 MOAT, 6 RIGHT_TOWER, 7 MAGIC_WALL. Hit points:
+  `ArenaBuildingsStats` BaseHealth + HealthFortBonuses[fort level] (`FUN_0092faa0`), matching the manual's table.
+* **Grid.** Building tiles span internal x 0..17, y 0..15: the siege field is 14×14 with the usual 2-column /
+  1-row margin (field cell = internal − (2, 1)), consistent with the obstacle code's battle types 1–3
+  (`FUN_004b33a0`) marking extra free rows.
+* **Arena building methods** (secondary vtable 0x00e8832c): `+0x0` type, `+0x4` set gate open flag (gate only),
+  `+0x10 IsTargetable` (`FUN_00bfc9d0`: gate while closed, side towers while their shooter exists, never the moat,
+  always walls / central tower), `+0xc` tower damage (`FUN_00bfdfb0`).
+* **Tower damage** `FUN_00bfdfb0`: 0 for non-towers; 50 if the battle has no town; base 70 (BIG_TOWER) or 50
+  (side towers); if the tower has `SPELL_TOWN_TOWERS` (town specialisation) base = trunc(base × 1.25); damage =
+  trunc(town level ratio (town vcall +0x74, float) × base); then `FUN_00bcdf10` adds half (×1.5) when a battle
+  value (vcall +0x3c) is 0x49 or 0x4b — **unidentified**, not applied.
+* **Catapult** `FUN_00b3b7d0`: chance 20 without hero, else (WarMachines mastery + 2) × 10, plus
+  `((level + 2) / 3) × 2` with HERO_SPEC_WAR_MACHINES (0x08, the only reference to that spec). Unless forced,
+  `Range(1,100) > chance` retargets to a random entry of `FUN_00b3b560`'s list (targetable buildings including
+  destroyed ones, excluding the aimed one; BIG_TOWER only when no side tower stands). Luck is rolled (vcall
+  +0x1d0) and multiplies the damage roll.
+* **Wall penalty** `FUN_00a5c5a0`: for ranged attacks, if the shooter is not inside (`FUN_00b3de90`) and the target
+  is, and the fortification list between them (`FUN_00b3e920`, all buildings except MAGIC_WALL → `FUN_00b3e720`)
+  is non-empty, damage ×0.5 (0x00e0ab70). `FUN_00b3de90` only applies on siege fields to rows strictly inside the
+  vertical margins and builds its test from buildings other than BIG_TOWER and MOAT; Ghidra removed part of the
+  geometry, so H5Reborn implements "east of the fortification line of that row" and a segment test against intact
+  solid buildings (the moat is not solid).
+* **Earthquake** (`FUN_0097d7b0`, case 0x29): min = trunc(round(duration value) / 50), max = trunc(round(damage
+  value) / 50), each standing building takes `Range(min, max) × 50` (data: 0–100 / 0–200 / 50–300 / 100–400).
+  Tremors (HERO_SKILL_SHAKE_GROUND 0x8b): damage `round(SP × ShakeGroundDamagePerPower + ShakeGroundDamage)` and
+  ATB −`ShakeGroundATBReduce` to every unit inside the town (`FUN_00b3de90`).
+* **Moat** values and spells are data (`TownTypesInfo`); the stop-on-entry rule and the per-cell single use of
+  Academy mines follow the manual (p.308–309) — the moat trigger code was not located.
+* **Not located:** tower initiative and targeting (Initiative 10 and the automatic Ballista's target rule are used),
+  automatic catapult target choice (random valid target), hero / war machine cells.
+
 ## Still open
 
-* Exact hero / war machine cells (above); ATB integer timing (`ATBBaseTime` 100000 / `ATBEndTime` 20000 and the
-  hidden `ATBMin`/`ATBMax` defaults); Lay Hands use limit and First Aid Tent action count; Consume Artifact (needs
-  creature artifacts, absent in duels); Tremors (siege only); sieges in general (walls, towers, moat, catapult,
-  14×14 field — `FUN_004b33a0` battle types 1–3 also mark free rows 1,2,H−2,H−3 for them).
+* Exact hero / war machine cells (see Placement); the tower ×1.5 condition (`00bcdf10`); moat trigger code;
+  tower initiative / targeting; automatic catapult targeting.
