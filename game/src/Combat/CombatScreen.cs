@@ -339,7 +339,18 @@ public partial class CombatScreen : Control
         if (CombatLauncher.HoverTarget is not { } kind || MySideToAct() is null || CombatLauncher.AutoplayTurns > 0) return;
         var la = Session.Battle.GetLegalActions();
         if (la == null) return;
-        int? id = kind == "shoot" ? la.Shoot.Cast<int?>().FirstOrDefault() : la.Melee.Keys.Cast<int?>().FirstOrDefault();
+        int? id;
+        if (kind.StartsWith("spell:"))
+        {
+            // "spell:SPELL_ID": on the hero's turn, arm that spell and hover a stack it is refused on.
+            if (!la.IsHero) { if (!Session.Busy && !_playing) Session.Submit(new DefendCmd(la.Actor) { Side = la.Side }); return; }
+            if (la.Spells.Find(o => o.Spell == kind[6..]) is not { } opt) return;
+            _mode = InputMode.Spell;
+            _pendingSpell = opt;
+            id = Session.Battle.State.Living.Where(u => !u.IsWarMachine && Session.Battle.SpellTargetRefusalKey(la.Actor, la.Side, opt.Spell, opt.Mastery, u.Id) != null)
+                .Select(u => (int?)u.Id).FirstOrDefault();
+        }
+        else id = kind == "shoot" ? la.Shoot.Cast<int?>().FirstOrDefault() : la.Melee.Keys.Cast<int?>().FirstOrDefault();
         if (id is not int tid || Session.Battle.State.Unit(tid) is not { } t) return;
         var p = Arena.Camera.UnprojectPosition(Arena.Grid.StackCenter(new Vector2I(t.Pos.X, t.Pos.Y), t.Size) + new Vector3(0, 0.3f, 0));
         CombatLauncher.FakeMouse = p + new Vector2(-6, 4);
@@ -899,13 +910,18 @@ public partial class CombatScreen : Control
         if (cell == _lastHover && mouse.DistanceTo(_lastMouse) < 2) return;
         _lastHover = cell;
         _lastMouse = mouse;
+        _refusal = null;
         var action = Resolve(cell, mouse, out var cursor, out var hl);
         CombatCursors.Set(cursor);
         DrawFakeCursor(cursor);
         ShowStaticHighlights(hl);
-        // Moves show no prediction in the original; attacks, shots, spells and abilities do.
-        Hud.SetPrediction(action?.Pred);
+        // Moves show no prediction in the original; attacks, shots, spells and abilities do; a refused
+        // spell target shows the refusal reason instead.
+        Hud.SetPrediction(action?.Pred ?? _refusal);
     }
+
+    /// <summary>Refusal text for the hovered target (set by Resolve when it returns no action).</summary>
+    CombatPredictions.Prediction? _refusal;
 
     void ClearHighlights() => Arena.Overlay.ClearMarks();
 
@@ -979,6 +995,10 @@ public partial class CombatScreen : Control
             {
                 case Battle.SpellTargeting.Unit:
                 case Battle.SpellTargeting.UnitAndCell:
+                    // A refused target shows the reason in the box with the can't-cast cursor (exe FUN_00982010),
+                    // including immune stacks, which the original never lets you pick.
+                    string? refusal = occupant == null ? null : b.SpellTargetRefusalKey(la.Actor, side, sp.Spell, sp.Mastery, occupant.Id);
+                    if (refusal != null) { _refusal = new CombatPredictions.Prediction(CombatPredictions.Str(refusal), null); cursor = CombatCursor.CantCast; return null; }
                     if (occupant != null && sp.Targets.Contains(occupant.Id))
                     {
                         cursor = CombatCursor.Cast;
