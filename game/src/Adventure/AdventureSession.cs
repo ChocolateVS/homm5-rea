@@ -78,12 +78,63 @@ public sealed class AdventureSession
     /// <summary>The map's own files (map-relative hrefs, user .h5m contents layered over the game data).</summary>
     public MapFiles Files { get; private init; } = null!;
 
-    /// <summary>The (first) human player's state; the screen shows the map from their side.</summary>
-    public PlayerState Human => S.Players.First(p => p.Human);
-    public bool IsHumanTurn => Game.Current.Human && !S.Finished;
+    /// <summary>A networked game: the host simulates; this session only shows the view and sends commands.</summary>
+    public H5Reborn.AdvNet.RemoteAdventure? Remote { get; private init; }
+    public bool IsRemote => Remote != null;
+    /// <summary>Several humans share this machine (hot-seat): the view follows whichever human is to move.</summary>
+    public bool IsHotSeat => Remote == null && S.Players.Count(p => p.Human) > 1;
+    int _viewer = -1;
+
+    /// <summary>
+    /// The player whose side the screen shows: this machine's player in a network game, the human to move
+    /// in hot-seat (the last one during computer turns), else the single human.
+    /// </summary>
+    public PlayerState Human
+    {
+        get
+        {
+            if (Remote != null) return S.Players.First(p => p.Index == Remote.MyPlayer);
+            if (Game.Current.Human) _viewer = Game.Current.Index;
+            return S.Players.FirstOrDefault(p => p.Index == _viewer) ?? S.Players.First(p => p.Human);
+        }
+    }
+    public bool IsHumanTurn => Remote != null ? Remote.IsMyTurn && !S.Finished : Game.Current.Human && !S.Finished;
+
+    /// <summary>Opens the adventure screen's session for a networked game (AdvNetScreens.OpenNetworkGame).</summary>
+    public static AdventureSession FromRemote(H5Reborn.AdvNet.RemoteAdventure remote)
+    {
+        var lm = remote.Net.Replica.Map;
+        return new AdventureSession(lm.Db, lm.Map, remote.Game, Array.Empty<AdvEvent>(), 0)
+        {
+            Files = lm.Files ?? MapFiles.FromPak(H5Reborn.Game.Instance.Fs, "Maps/Generated/map.xdb"),
+            Remote = remote,
+        };
+    }
+
+    /// <summary>A local game on a loaded map (stock, user or generated) with the given map players as humans (hot-seat).</summary>
+    public static AdventureSession StartLocal(H5.AdvNet.LoadedMap lm, IEnumerable<int> humanMapPlayers, ulong seed, int difficulty)
+    {
+        var humans = humanMapPlayers.ToHashSet();
+        var setup = new GameSetup { Seed = seed, Difficulty = difficulty };
+        foreach (var p in lm.Map.Players.Where(p => p.Active))
+            setup.Players.Add(new PlayerSetup { MapPlayer = p.Index, Human = humans.Contains(p.Index) });
+        var (game, opening) = H5.Adventure.Engine.Adventure.NewGame(lm.Db, lm.Map, setup);
+        GD.Print($"[H5] adventure {lm.Map.Id} local game, humans {string.Join(",", humans.Select(h => h + 1))}, seed {seed}");
+        return new AdventureSession(lm.Db, lm.Map, game, opening, seed)
+        {
+            Files = lm.Files ?? MapFiles.FromPak(H5Reborn.Game.Instance.Fs, "Maps/Generated/map.xdb"),
+        };
+    }
 
     public bool TryDequeue(out AdvEvent ev, out int player)
     {
+        if (Remote != null && _events.Count == 0 && Remote.TryDequeue(out var re))
+        {
+            // Host events carry no cause; treat them as the current player's.
+            ev = re;
+            player = Game.Current.Index;
+            return true;
+        }
         if (_events.TryDequeue(out var e)) { ev = e.Event; player = e.Player; return true; }
         ev = null!;
         player = -1;
@@ -105,6 +156,8 @@ public sealed class AdventureSession
     /// <summary>Applies a command for the current (human) player.</summary>
     public AdvResult Apply(AdvCommand cmd)
     {
+        // Network game: the host applies it; the outcome arrives as an update.
+        if (Remote != null) return Remote.Apply(cmd with { Player = Remote.MyPlayer });
         // Through the script host's sink when one is attached, so map triggers see the human's actions.
         var c = cmd with { Player = Game.Current.Index };
         var r = Game.CommandSink?.Invoke(c) ?? Game.Apply(c);
@@ -119,6 +172,7 @@ public sealed class AdventureSession
     /// </summary>
     public void RunComputerTurns(int maxTurns = 16)
     {
+        if (Remote != null) return; // the host plays computer turns
         for (int i = 0; i < maxTurns && !S.Finished && !Game.Current.Human; i++)
             _bot.PlayTurn(Game, Seed ^ (ulong)(S.Day * 977 + S.CurrentPlayer * 31) ^ ++_battleSeq);
     }

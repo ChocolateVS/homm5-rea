@@ -232,6 +232,8 @@ public partial class AdventureScreen : Control
     Tile? TileAt(Vector2 screen) =>
         World.TileAtRay(World.Camera.ProjectRayOrigin(screen), World.Camera.ProjectRayNormal(screen));
 
+    AdvNet.HotSeatController? _hotSeat;
+
     /// <summary>An aimed adventure spell waiting for its target tile (Instant Travel).</summary>
     string? _pendingSpell;
 
@@ -443,8 +445,8 @@ public partial class AdventureScreen : Control
         }
         // Idle: drive whoever is to move.
         if (Session.S.Finished) return;
-        if (Session.S.Battle != null && Session.Game.Current.Human) { StartBattle(); return; }
-        if (!Session.IsHumanTurn) { RunComputerTurns(); return; }
+        if (Session.S.Battle != null && Session.Game.Current.Human && !Session.IsRemote) { StartBattle(); return; }
+        if (!Session.IsHumanTurn) { if (!Session.IsRemote) RunComputerTurns(); return; }
         Hud.ShowEnemyTurn(-1);
         if (Autoplay) AutoplayStep();
     }
@@ -536,6 +538,23 @@ public partial class AdventureScreen : Control
                 await Dialog(done => Message("", msg.Text, null, done));
                 break;
             case H5.Adventure.Engine.TurnStarted ts:
+                if (Session.IsHotSeat)
+                {
+                    // Hot-seat hand-over (AdvNet.HotSeatController): between two humans the stock
+                    // HotSeatBlackBg panel covers the map until the next player confirms.
+                    _hotSeat ??= new AdvNet.HotSeatController(s.Players.Where(p => p.Human).Select(p => p.Index).ToHashSet());
+                    if (_hotSeat.OnTurn(ts.Player))
+                    {
+                        Hud.Screen.SetVisible("HotSeatBlackBg", true);
+                        var colour = s.Players.Find(p => p.Index == ts.Player)?.Colour ?? "";
+                        var name = AdvTexts.Get($"Text/Game/Player/Colors/{AdvColors.TextName(colour)}_player.txt");
+                        await Dialog(done => Message("", name, null, done));
+                        _hotSeat.Confirm();
+                        Hud.Screen.SetVisible("HotSeatBlackBg", false);
+                    }
+                    World.RefreshShroud();
+                    Hud.UpdateMinimap();
+                }
                 Hud.ShowEnemyTurn(ts.Player == Session.Human.Index ? -1 : ts.Player);
                 if (ts.Player == Session.Human.Index)
                 {

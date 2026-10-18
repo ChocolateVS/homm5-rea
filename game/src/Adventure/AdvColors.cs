@@ -21,6 +21,13 @@ public static class AdvColors
         return i < 0 ? 0 : i;
     }
 
+    /// <summary>The Text/Game/Player/Colors/&lt;name&gt;*.txt base name for a PCOLOR_* value ("red", "dark_blue"…).</summary>
+    public static string TextName(string pcolor) => pcolor.Replace("PCOLOR_", "").ToLowerInvariant() switch
+    {
+        "" or "neutral" or "none" => "neutral",
+        var n => n,
+    };
+
     public static Color Rgb(string pcolor) => ColourModelIndex(pcolor) switch
     {
         1 => new Color(0.86f, 0.10f, 0.10f),
