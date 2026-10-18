@@ -331,15 +331,19 @@ public sealed partial class Battle
         var castCell = c.Cell;
         // Defile Magic (p.324): 1 fails, 2 halves spell power, 3 doubles the cost, 4 backfires onto the goblins.
         int defile = DefileOutcome(u, sp);
-        if (defile == 3) ucost = (int)(ucost * Stats.Get("combat/Creatures/Stronghold/DefileMagicManaCoef", 2));
-        if (defile == 2) cp = Math.Max(1, (int)(cp * Stats.Get("combat/Creatures/Stronghold/DefileMagicSpellPowerCoef", 0.5)));
+        // Halved spell power is truncated with no floor (exe FUN_00a6a7e0, FISTP under chop at 00a6a8eb).
+        if (defile == 2) cp = (int)(cp * (float)Stats.Get("combat/Creatures/Stronghold/DefileMagicSpellPowerCoef", 0.5));
         if (defile == 4 && sp.Target == "TARGET_HOSTILE" && !sp.IsAreaAttack && castTarget != null
             && S.Units.Find(g => g.Alive && g.Has(Ab.DefileMagic) && Controller(g) != Controller(u)) is { } defilers)
         {
             castTarget = defilers; ucost = 0;
         }
         if (u.Mana < ucost) { EndAction(u.Id, 0); return null; }
-        u.Mana -= ucost;
+        // Defile Magic's extra cost (exe FUN_008a11c0): only the base cost is required; the stack then loses another
+        // (DefileMagicManaCoef − 1)·cost in single precision, truncated, clamped at 0.
+        if (defile == 3)
+            u.Mana = Math.Max(0, (int)((float)(u.Mana - ucost) - ((float)Stats.Get("combat/Creatures/Stronghold/DefileMagicManaCoef", 2) - 1f) * ucost));
+        else u.Mana -= ucost;
         Emit(new ManaChanged(u.Id, u.Mana));
         RageEvent(u, "CastSpellRP");
         if (defile == 1) { Emit(new SpellResisted(castTarget?.Id ?? u.Id, sp.Id)); EndAction(u.Id, 0); return null; }
