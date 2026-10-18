@@ -54,7 +54,7 @@ public sealed class LocalCombatSession : CombatSession
     readonly int[] _humanSides;
     readonly HashSet<int> _aiSides;
     readonly Queue<IReadOnlyList<BattleEvent>> _pending = new();
-    readonly IBattleAI _ai = new GreedyBattleAI();
+    readonly IBattleAI _ai = H5.Combat.AI.BattleAiRegistry.Create("original");
     readonly int[] _presets;
     readonly ulong _seed;
 

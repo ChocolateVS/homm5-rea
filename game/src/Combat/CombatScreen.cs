@@ -33,7 +33,7 @@ public partial class CombatScreen : Control
     readonly Queue<BattleEvent> _queue = new();
     bool _playing;
     double _attackRemainderUntil;
-    readonly IBattleAI _autoAi = new GreedyBattleAI { MaxCandidates = 16 };
+    readonly IBattleAI _autoAi = H5.Combat.AI.BattleAiRegistry.Create("original");
     InputMode _mode = InputMode.Normal;
     SpellOption? _pendingSpell;
     AbilityOption? _pendingAbility;

@@ -15,7 +15,7 @@ public sealed class AdventureCombatSession : CombatSession
     readonly int[] _humanSides;
     readonly HashSet<int> _aiSides;
     readonly Queue<IReadOnlyList<BattleEvent>> _pending = new();
-    readonly IBattleAI _ai = new GreedyBattleAI();
+    readonly IBattleAI _ai = H5.Combat.AI.BattleAiRegistry.Create("original");
     readonly ulong _seed;
 
     public AdventureCombatSession(BattleState state, ulong seed, IEnumerable<int> humanSides)

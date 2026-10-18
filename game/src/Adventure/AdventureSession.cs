@@ -24,7 +24,7 @@ public sealed class AdventureSession
     public ulong Seed { get; }
 
     readonly Queue<(AdvEvent Event, int Player)> _events = new();
-    readonly SimpleAdventureBot _bot = new();
+    readonly H5.Adventure.AI.OriginalAdventureAI _bot = new();
     ulong _battleSeq;
 
     AdventureSession(AdventureDb db, AdvMap map, H5.Adventure.Engine.Adventure game, IEnumerable<AdvEvent> opening, ulong seed)
@@ -120,5 +120,5 @@ public sealed class AdventureSession
         return Apply(new ResolveBattleCmd(winner, Survivors(0), Survivors(1), attackerFled));
     }
 
-    public AdvResult QuickCombat() => Apply(H5.Adventure.Engine.QuickCombat.Resolve(Game, Seed ^ ++_battleSeq));
+    public AdvResult QuickCombat() => Apply(H5.Adventure.Engine.QuickCombat.Resolve(Game, Seed ^ ++_battleSeq, H5.Combat.AI.BattleAiRegistry.Create("original")));
 }
