@@ -186,3 +186,22 @@ sealed class AdvSimCommand : ICommand
         return 0;
     }
 }
+
+sealed class AdvLuaApiCommand : ICommand
+{
+    public string Name => "adv-lua-api";
+    public string Help => "adv-lua-api [top=80]  - list engine functions called by the original Lua scripts (global + all maps)";
+
+    public int Run(ToolContext ctx, string[] args)
+    {
+        int top = args.Length > 0 ? int.Parse(args[0]) : 80;
+        var db = GameDatabase.Load(ctx.Fs);
+        var loader = new MapLoader(db, ctx.Fs);
+        var maps = MapCatalog.All(ctx.Fs, ctx.Install).Select(loader.Load).ToList();
+        var cat = H5.Adventure.Scripting.LuaCatalog.Build(ctx.Fs, maps);
+        var api = cat.NativeApi.ToList();
+        Console.WriteLine($"{cat.Scripts.Count} scripts, {cat.Defined.Count} Lua-defined functions, {api.Count} native API functions called");
+        foreach (var (name, n) in api.Take(top)) Console.WriteLine($"  {n,6}  {name}");
+        return 0;
+    }
+}
