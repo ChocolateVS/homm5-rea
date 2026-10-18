@@ -364,13 +364,8 @@ public partial class HeroScreen : Control
 
     public override void _UnhandledInput(InputEvent e)
     {
-        if (e is InputEventKey { Pressed: true, Keycode: Key.Escape } || e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Right })
-        {
-            GetViewport().SetInputAsHandled();
-            QueueFree();
-            if (_town != null) _town.SubClosed();
-            else { _adv.Hud.Refresh(); foreach (var x in _adv.Session.S.Heroes) _adv.World.SyncHero(x); }
-        }
+        // Esc/hero_screen keys (game/src/Input/HeroScreen.Input.cs); a right click never closes the screen.
+        HandleHeroInput(e);
     }
 }
 

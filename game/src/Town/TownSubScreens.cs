@@ -45,11 +45,8 @@ public abstract partial class TownSubScreen : Control
 
     public override void _UnhandledInput(InputEvent e)
     {
-        if (e is InputEventKey { Pressed: true, Keycode: Key.Escape } || e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Right })
-        {
-            Close();
-            GetViewport().SetInputAsHandled();
-        }
+        // Section keys from input_a2.cfg (game/src/Input/TownScreen.Input.cs); right click does not close.
+        HandleSubInput(e);
     }
 
     protected void Close()

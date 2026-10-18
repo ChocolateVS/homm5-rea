@@ -211,6 +211,8 @@ public partial class AdventureScreen : Control
 
     public override void _UnhandledInput(InputEvent e)
     {
+        // Audited input (game/src/Input/AdventureScreen.Input.cs): input_a2.cfg keys, manual click table.
+        if (HandleAdvInput(e)) return;
         if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
             switch (k.Keycode)

@@ -159,6 +159,7 @@ public partial class AdvHud : Control
             Show(col, "BuildAllComplete", false);
         }
         UpdateMinimap();
+        ApplyInputAuditToggles();
     }
 
     static void Show(UiNode? col, string name, bool visible)

@@ -113,6 +113,7 @@ public sealed class ArmySlots
 
     public void Refresh(H5.Adventure.State.AdvState s)
     {
+        _infoState = s; // for CreatureInfoWindow on double click
         foreach (var v in _slots)
         {
             var army = v.Hero >= 0 ? s.Hero(v.Hero)?.Army : v.Town >= 0 ? s.Town(v.Town)?.Garrison : null;
@@ -130,6 +131,15 @@ public sealed class ArmySlots
     {
         if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left } mb)
         {
+            // Double click on a stack opens the stock creature info screen (manual p.10) — Input.CreatureInfoWindow.
+            if (mb.Pressed && mb.DoubleClick && _infoState != null && StackOf(v) is { Count: > 0 } st)
+            {
+                _dragFrom = null;
+                _selected = null;
+                Changed?.Invoke();
+                H5Reborn.Interaction.CreatureInfoWindow.Show(_overlay, st.Creature, st.Count, v.Hero >= 0 ? _infoState.Hero(v.Hero) : null);
+                return;
+            }
             if (mb.Pressed) { _dragFrom = v; _pressPos = mb.GlobalPosition; }
             else if (_dragFrom != null)
             {
@@ -152,6 +162,14 @@ public sealed class ArmySlots
         }
         if (e is InputEventMouseMotion && _dragIcon != null)
             _dragIcon.GlobalPosition = _overlay.GetGlobalMousePosition() - new Vector2(27, 27);
+    }
+
+    H5.Adventure.State.AdvState? _infoState;
+
+    H5.Adventure.State.Stack? StackOf(ArmySlotView v)
+    {
+        var army = v.Hero >= 0 ? _infoState?.Hero(v.Hero)?.Army : v.Town >= 0 ? _infoState?.Town(v.Town)?.Garrison : null;
+        return army != null && v.Slot < army.Length ? army[v.Slot] : null;
     }
 
     ArmySlotView? SlotAt(Vector2 global) =>

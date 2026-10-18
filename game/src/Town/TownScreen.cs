@@ -310,7 +310,8 @@ public partial class TownScreen : Control
                 _scene?.Orbit(0, 0, 0.9f); break;
             case InputEventMouseButton { ButtonIndex: MouseButton.WheelDown, Pressed: true }:
                 _scene?.Orbit(0, 0, 1.1f); break;
-            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true }:
+            // Buildings open on double click (exe click_pointer @00613130 is a no-op, dblclick_pointer @00619a30 opens).
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true, DoubleClick: true }:
                 if (_hoverBuilding != null) ClickBuilding(_hoverBuilding);
                 break;
         }
