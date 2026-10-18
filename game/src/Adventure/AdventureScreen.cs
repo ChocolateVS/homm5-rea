@@ -440,7 +440,7 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 if (HumanCaused(player) && Selected is { } sel)
                     for (int i = 0; i < 7; i++)
-                        if (rc.Delta[i] > 0) FlyTextAt(World.TileCenter(sel.Pos), $"+{rc.Delta[i]} {Purse.Names[i]}");
+                        if (rc.Delta[i] > 0) FlyTextAt(World.TileCenter(sel.Pos), $"+{rc.Delta[i]} {AdvTexts.ResourceName(i)}");
                 break;
             case BuildingBuilt bb:
                 World.SyncObject(bb.TownObject);
@@ -481,15 +481,20 @@ public partial class AdventureScreen : Control
                 }
                 break;
             case WeekStarted ws when s.Players.Count > 0:
-                if (Session.IsHumanTurn) await Dialog(done => Message("A New Week", $"Week {ws.Week} begins.", null, done));
+                if (Session.IsHumanTurn)
+                {
+                    // Stock: "Start of Week: <value=weektype>" with the moon week name and its description.
+                    var week = AdvTexts.WeekName(ws.MoonWeek);
+                    await Dialog(done => Message(AdvTexts.Get(AdvTexts.StartOfWeek, ("weektype", week)), AdvTexts.WeekDescription(ws.MoonWeek), null, done));
+                }
                 break;
             case PlayerEliminated pe:
                 if (pe.Player == Session.Human.Index)
-                    await Dialog(done => Message("Defeat", "You have been defeated.", null, () => { done(); ReturnToMainMenu(); }));
+                    await Dialog(done => Message("", AdvTexts.Get(AdvTexts.Defeat), null, () => { done(); ReturnToMainMenu(); }));
                 break;
             case H5.Adventure.Engine.GameEnded ge:
                 bool won = ge.WinnerTeam == Session.Human.Team;
-                await Dialog(done => Message(won ? "Victory" : "Defeat", won ? "You are victorious!" : "You have been defeated.", null, () => { done(); ReturnToMainMenu(); }));
+                await Dialog(done => Message("", AdvTexts.Get(won ? AdvTexts.Victory : AdvTexts.Defeat), null, () => { done(); ReturnToMainMenu(); }));
                 break;
             case BattleRequested:
                 // The battle starts once playback is idle (see _Process).
@@ -557,14 +562,14 @@ public partial class AdventureScreen : Control
             switch (c.Kind)
             {
                 case "chest":
-                    await Dialog(done => AdvDialogs.Choose2(_dialogLayer, ObjectName(c.Object), "You have found a treasure chest. Take the gold, or give it to the peasants for experience?", null,
-                        (null, $"{c.Gold} gold"), (null, $"{c.Experience} experience"), p => { option = p; done(); }));
+                    await Dialog(done => AdvDialogs.Choose2(_dialogLayer, AdvTexts.Get(AdvTexts.ChestTitle), AdvTexts.Get(AdvTexts.ChestDesc), null,
+                        (null, AdvTexts.Get(AdvTexts.ChestGold, ("gold", c.Gold))), (null, AdvTexts.Get(AdvTexts.ChestExp, ("exp", c.Experience))), p => { option = p; done(); }));
                     break;
                 case "join_free":
-                    await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), "The creatures offer to join your army. Do you accept?", null, y => { accept = y; done(); }));
+                    await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), AdvTexts.Get(AdvTexts.CreaturesJoin), null, y => { accept = y; done(); }));
                     break;
                 case "join_paid":
-                    await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), $"The creatures offer to join your army for {c.Gold} gold. Do you accept?", null, y => { accept = y; done(); }));
+                    await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), AdvTexts.Get(AdvTexts.CreaturesJoinMoney) + $"<br>{c.Gold}", null, y => { accept = y; done(); }));
                     break;
                 default:
                     await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), c.Kind.Replace('_', ' '), null, y => { accept = y; done(); }));
@@ -726,7 +731,8 @@ public partial class AdventureScreen : Control
     /// <summary>A rising caption over a map position (the original's "flyoff" messages).</summary>
     void FlyTextAt(Vector3 world, string text)
     {
-        var label = new BitmapText { Markup = $"<center><body_bright>{text}", Size = new Vector2(240, 24) };
+        // Stock sign style: Text/Interface/FlyingSignFormat_Text.txt ("<flying_signs>").
+        var label = new BitmapText { Markup = $"<center>{AdvTexts.Get(AdvTexts.FlyingSignFormat)}{text}", Size = new Vector2(240, 24) };
         _flyLayer.AddChild(label);
         var start = world + new Vector3(0, 2.5f, 0);
         double t = 0;
