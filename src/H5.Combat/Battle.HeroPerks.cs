@@ -177,10 +177,10 @@ public sealed partial class Battle
     string? Seduce(Unit u, Unit t)
     {
         if (MindImmune(t) || t.Has(Ab.ImmuneHypnotize) || t.CreatureId.Contains("SUCCUBUS")) return "target cannot be seduced";
-        double ratio = (double)u.Count * u.Power / Math.Max(1.0, (double)t.Count * t.Power);
-        double duration = 2 + Math.Log2(ratio);
-        if (duration <= 0) return "target is too strong";
+        // exe 00985b4e: the charge is spent, then FUN_009774a0 gives the duration; nothing happens when it is 0.
         u.AbilityUses["ABILITY_SEDUCE"] = 1;
+        double duration = SeduceDuration(u.Count, u.Power, t.Count, t.Power);
+        if (duration <= 0) { Emit(new AbilityTriggered(u.Id, "ABILITY_SEDUCE", t.Id)); return null; }
         Emit(new AbilityTriggered(u.Id, "ABILITY_SEDUCE", t.Id));
         AddEffect(t, new Effect { Id = H5.Combat.Fx.Seduced, SourceSide = Controller(u), SourceUnit = u.Id, Remaining = duration, Positive = false, SpellLevel = 3, School = "MAGIC_SCHOOL_DARK" });
         AddEffect(u, new Effect { Id = FxSeducing, SourceUnit = t.Id, Remaining = duration, Positive = true, Dispellable = false });

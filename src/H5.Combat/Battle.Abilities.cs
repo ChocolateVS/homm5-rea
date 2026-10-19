@@ -281,8 +281,10 @@ public sealed partial class Battle
         if (u.Has(Ab.LayHands)) yield return new(Ab.LayHands, AbilityTargeting.Friend, NeedsAdjacency: false);
         if (u.Has("ABILITY_SEDUCE") && Once("ABILITY_SEDUCE")) yield return new("ABILITY_SEDUCE", AbilityTargeting.Enemy);
         if (u.Has(Ab.ResurrectAllies) && Once(Ab.ResurrectAllies)) yield return new(Ab.ResurrectAllies, AbilityTargeting.DeadFriend);
-        if (u.Has(Ab.Dash) && Once(Ab.Dash)) yield return new(Ab.Dash, AbilityTargeting.None);
-        if (u.Has(Ab.Explosion)) yield return new(Ab.Explosion, AbilityTargeting.None);
+        // No charge: the Rakshasas have SpellPoints1 = 0 and the cast (exe 00987e8a) spends none.
+        if (u.Has(Ab.Dash)) yield return new(Ab.Dash, AbilityTargeting.None);
+        // One charge (SpellPoints1 = 1), spent by the cast (exe 00987602).
+        if (u.Has(Ab.Explosion) && Once(Ab.Explosion)) yield return new(Ab.Explosion, AbilityTargeting.None);
         if (u.Has(Ab.HarmTouch)) yield return new(Ab.HarmTouch, AbilityTargeting.Enemy, NeedsAdjacency: true);
         if (u.Has(Ab.DeathWail)) yield return new(Ab.DeathWail, AbilityTargeting.None);
         if (u.Has(Ab.CallLightning)) yield return new(Ab.CallLightning, AbilityTargeting.Enemy);
@@ -298,7 +300,8 @@ public sealed partial class Battle
         if (u.Has(Ab.BalorSummoning) && Once(Ab.BalorSummoning)) yield return new(Ab.BalorSummoning, AbilityTargeting.DeadFriend);
         if (u.Has(Ab.Flamestrike) && Once(Ab.Flamestrike)) yield return new(Ab.Flamestrike, AbilityTargeting.Enemy);
         if (u.Has(Ab.StormBolt) && Once(Ab.StormBolt)) yield return new(Ab.StormBolt, AbilityTargeting.Enemy);
-        if (u.Has(Ab.CallStorm)) yield return new(Ab.CallStorm, AbilityTargeting.Cell);
+        // One charge (Storm Lord SpellPoints1 = 1), spent by the cast (exe 00988279).
+        if (u.Has(Ab.CallStorm) && Once(Ab.CallStorm)) yield return new(Ab.CallStorm, AbilityTargeting.Cell);
         if (u.Has(Ab.HarpoonStrike) && CanShoot(u)) yield return new(Ab.HarpoonStrike, AbilityTargeting.Enemy);
         if (u.Has(Ab.Sabotage)) yield return new(Ab.Sabotage, AbilityTargeting.Enemy);
         if (u.Has(Ab.SwallowGoblin)) yield return new(Ab.SwallowGoblin, AbilityTargeting.Friend, NeedsAdjacency: true);
@@ -374,13 +377,13 @@ public sealed partial class Battle
             }
             case Ab.Dash:
                 Emit(new AbilityTriggered(u.Id, c.Ability));
-                u.AbilityUses[c.Ability] = 1;
                 AddEffect(u, new Effect { Id = H5.Combat.Fx.Dash, Actions = (int)Stats.Get("combat/Creatures/Academy/Dash_Duration", 3) + 1, Positive = true, Dispellable = false });
                 allowMorale = false;
                 break;
             case Ab.Explosion:
             {
                 Emit(new AbilityTriggered(u.Id, c.Ability));
+                u.AbilityUses[c.Ability] = 1;
                 int power = CreatureSpellPower(u.Count, Math.Max(1, u.WeeklyGrowth));
                 double dmg = 9 + 9 * power;                                   // p.306
                 foreach (var v in Adjacent(u).ToList())
@@ -392,8 +395,10 @@ public sealed partial class Battle
             }
             case Ab.HarmTouch:
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
-                DealDamage(t, t.TopHealth, u.Id, AttackKind.Ability, c.Ability);
-                foreach (var id in t.Effects.Where(e => e.Positive && e.School == "MAGIC_SCHOOL_LIGHT").Select(e => e.Id).ToList()) RemoveEffect(t, id);
+                // exe 0098747f: first every beneficial, non-permanent effect is removed (FUN_004e4120), then the target
+                // takes one creature's full health (FUN_00a61530 with n = 1: vf 0x1a8 × 1), not the top creature's rest.
+                foreach (var id in t.Effects.Where(HarmTouchRemoves).Select(e => e.Id).ToList()) RemoveEffect(t, id);
+                DealDamage(t, t.MaxHealthCache, u.Id, AttackKind.Ability, c.Ability);
                 break;
             case Ab.DeathWail:
             {
@@ -418,8 +423,10 @@ public sealed partial class Battle
             }
             case Ab.CallLightning:
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
-                if (!ElementImmune(t, Elements.Air))
-                    DealDamage(t, 30 * u.Count, u.Id, AttackKind.Ability, c.Ability);   // ignores magic protection (p.172)
+                // exe 00987ecb: the spell damage (FUN_00976b90, CallLightning.xdb 0 + 30·p) goes through the protection
+                // path FUN_0097d600 (ratio 1) like any air spell. p is kept as the stack size (not traced).
+                if (Db.Spell("SPELL_ABILITY_CALL_LIGHTNING") is { } cl)
+                    DealSpellDamage(t, cl, 30 * u.Count, Controller(u), ignoreResist: false);
                 break;
             case Ab.RageOfForest:
             {
@@ -427,6 +434,9 @@ public sealed partial class Battle
                 u.AbilityUses[c.Ability] = 1;
                 double half = Math.Floor(DefenceOf(u) / 2.0);
                 AddEffect(u, new Effect { Id = H5.Combat.Fx.RageOfForest, Value = half, Positive = true, Dispellable = false });
+                // exe 00985a42: the treants also let go of every stack they hold in Entangling Roots (effect 0xac).
+                foreach (var v in S.Units.Where(v => v.GetEffect(H5.Combat.Fx.Entangled)?.SourceUnit == u.Id).ToList())
+                    RemoveEffect(v, H5.Combat.Fx.Entangled);
                 break;
             }
             case Ab.BerserkerRage:
@@ -439,8 +449,13 @@ public sealed partial class Battle
             case Ab.OrderOfChief:
                 if (t!.Id == u.Id) return "cannot order itself";
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
-                DealDamage(t, u.Count, u.Id, AttackKind.Ability, c.Ability);
-                if (t.Alive) AddAtb(t.Id, Math.Min(0.6, u.Count * 0.01));      // p.178
+                // exe 009867fb: damage trunc(N·OrderOfTheChiefDamageCoef); ATB + clamp(trunc(N·InitiativeCoef), 0,
+                // InitiativeMax)·0.01, the new ATB capped at 1.25 (not 1).
+                const string oc = "combat/Creatures/Stronghold/OrderOfTheChief";
+                int ocDmg = (int)((float)u.Count * (float)Stats.Get(oc + "DamageCoef", 1));
+                int ocAtb = Math.Max(0, Math.Min((int)((float)u.Count * (float)Stats.Get(oc + "InitiativeCoef", 1)), (int)Stats.Get(oc + "InitiativeMax", 60)));
+                DealDamage(t, ocDmg, u.Id, AttackKind.Ability, c.Ability);
+                if (t.Alive) AddAtb(t.Id, ocAtb * (double)0.01f, cap: 1.25);
                 break;
             case Ab.Repair:
                 if (!t!.Has(Ab.Mechanical) && !t.IsWarMachine) return "only mechanical units can be repaired";
@@ -452,9 +467,11 @@ public sealed partial class Battle
             {
                 var h = HeroOf(u);
                 Emit(new AbilityTriggered(u.Id, c.Ability));
-                h.Mana += u.Mana; u.Mana = 0;
+                // exe 00987b0e: amount = min(creature mana, hero max mana − hero mana); the rest stays with the druids.
+                int fed = Math.Max(0, Math.Min(u.Mana, h.MaxMana - h.Mana));
+                h.Mana += fed; u.Mana -= fed;
                 Emit(new ManaChanged(Actor.Hero(u.Side), h.Mana));
-                Emit(new ManaChanged(u.Id, 0));
+                Emit(new ManaChanged(u.Id, u.Mana));
                 break;
             }
             case Ab.ScatterShot:
@@ -462,9 +479,12 @@ public sealed partial class Battle
                 var center = c.Cell!.Value;
                 Emit(new AbilityTriggered(u.Id, c.Ability));
                 if (!HasAmmoCart(u.Side)) u.Shots--;
-                foreach (var v in S.Living.Where(o => !o.IsObject && o.Cells().Any(x => x.Chebyshev(center) <= 1)).ToList())
+                var victims = S.Living.Where(o => !o.IsObject && o.Cells().Any(x => x.Chebyshev(center) <= 1)).ToList();
+                // One attack (exe 00987788 → FUN_00a65d50 → FUN_00a673c0): luck is rolled once for all its targets.
+                double luck = victims.Count > 0 ? RollLuck(u, S.At(center) ?? victims[0]) : 1;
+                foreach (var v in victims)
                 {
-                    int dmg = ComputeDamage(u, v, new Hit { Kind = AttackKind.Ranged, Multiplier = 0.5 }, ranged: true, RollLuck(u, v));
+                    int dmg = ComputeDamage(u, v, new Hit { Kind = AttackKind.Ranged, Multiplier = 0.5 }, ranged: true, luck);
                     DealDamage(v, dmg, u.Id, AttackKind.Ranged, c.Ability);
                 }
                 break;
@@ -484,12 +504,15 @@ public sealed partial class Battle
                 int cells = Math.Max(Math.Abs(land.X - u.Pos.X), Math.Abs(land.Y - u.Pos.Y));
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
                 Teleport(u, land);
-                var hit = new Hit { Kind = AttackKind.Melee, Multiplier = 1 + Stats.Get("combat/Creatures/Inferno/Leap_AttackDamageBonusPerPathCell", 0.1) * cells };
+                // exe FUN_00a58de0 special 0x140: ×(1 + Base + PerPathCell·cells), the retaliation with its own pair.
+                var hit = new Hit { Kind = AttackKind.Melee, Multiplier = 1 + Stats.Get("combat/Creatures/Inferno/Leap_AttackDamageBonusBase", 0)
+                                                                          + Stats.Get("combat/Creatures/Inferno/Leap_AttackDamageBonusPerPathCell", 0.1) * cells };
                 Strike(u, t!, hit, pattern: true);
                 if (u.Alive && t!.Alive && CanRetaliate(t, u))
                 {
                     if (t.RetaliationsLeft != int.MaxValue) t.RetaliationsLeft--;
-                    Strike(t, u, new Hit { Kind = AttackKind.Retaliation, Multiplier = Stats.Get("combat/Creatures/Inferno/Leap_RetaliateDamageBonusBase", 2) }, pattern: true);
+                    Strike(t, u, new Hit { Kind = AttackKind.Retaliation, Multiplier = 1 + Stats.Get("combat/Creatures/Inferno/Leap_RetaliateDamageBonusBase", 2)
+                                                                             + Stats.Get("combat/Creatures/Inferno/Leap_RetaliateDamageBonusPerPathCell", 0) * cells }, pattern: true);
                 }
                 break;
             }
@@ -505,8 +528,11 @@ public sealed partial class Battle
             case Ab.BalorSummoning:
             {
                 if (t!.Side != u.Side) return "needs a friendly corpse";
+                // exe 00860660: the corpse must be Demonic (HasAbility 0xb); count FUN_0085fe10 = min(2·N, HP / Pit Lord health).
+                if (!t.Has(Ab.Demonic)) return "needs a demonic corpse";
                 int hp = t.InitialCount * t.BaseHealth;
-                int n = Math.Min(2 * u.Count, hp / 120);                         // p.181
+                int balorHp = Db.Creatures.TryGetValue("CREATURE_BALOR", out var bd) && bd.Health > 0 ? bd.Health : 120;
+                int n = Math.Min(2 * u.Count, hp / balorHp);
                 if (n <= 0) return "corpse too weak";
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
                 u.AbilityUses[c.Ability] = 1;
@@ -535,6 +561,7 @@ public sealed partial class Battle
                 var cells = new List<Cell>();
                 for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) { var p = new Cell(center.X + dx, center.Y + dy); if (S.InBounds(p)) cells.Add(p); }
                 Emit(new AbilityTriggered(u.Id, c.Ability));
+                u.AbilityUses[c.Ability] = 1;
                 var f = AddField("STORM", u.Side, cells, Stats.Get("combat/Creatures/Academy/CallStorm_DurationInRounds", 3),
                     Stats.Get("combat/Creatures/Academy/CallStorm_DamagePerCreature", 10) * u.Count, u.Id);
                 f.Power = Math.Min(Stats.Get("combat/Creatures/Academy/CallStorm_MaxShootPenalty", 0.9), Stats.Get("combat/Creatures/Academy/CallStorm_ShootPenaltyPerCreature", 0.01) * u.Count);
@@ -561,12 +588,14 @@ public sealed partial class Battle
             {
                 if (!t!.CreatureId.StartsWith("CREATURE_GOBLIN")) return "needs an adjacent goblin stack";
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
-                int goblinHp = t.TopHealth;
+                // exe 009869e0: one goblin is removed; Sacrifice restores trunc(one goblin's full health (vf 0x1a8) ×
+                // SacrificeGoblin_ManaRestorePerHP) mana (00986b2e).
+                int goblinHp = t.MaxHealthCache;
                 DealDamage(t, t.TopHealth, u.Id, AttackKind.Ability, c.Ability);
                 if (c.Ability == Ab.SwallowGoblin) Heal(u, u.MaxHealthCache, resurrect: false, c.Ability);
                 else
                 {
-                    u.Mana += 2 * goblinHp;
+                    u.Mana += (int)((float)goblinHp * (float)Stats.Get("combat/Creatures/Stronghold/SacrificeGoblin_ManaRestorePerHP", 2));
                     var e = u.GetEffect(H5.Combat.Fx.Sacrifice);
                     AddEffect(u, new Effect { Id = H5.Combat.Fx.Sacrifice, Value = Math.Min(5, (e?.Value ?? 0) + 1), Positive = true, Dispellable = false });
                 }

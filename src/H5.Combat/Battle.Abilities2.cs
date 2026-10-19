@@ -112,7 +112,7 @@ public sealed partial class Battle
         if (u.Has(Ab.RandomCaster) && u.AbilityUses.GetValueOrDefault(Ab.RandomCaster) < 3) yield return new(Ab.RandomCaster, AbilityTargeting.Enemy);
         if (u.Has(Ab.RandomCasterBless) && u.AbilityUses.GetValueOrDefault(Ab.RandomCasterBless) < 3) yield return new(Ab.RandomCasterBless, AbilityTargeting.Any);
         if (u.Has(Ab.Incinerate)) yield return new(Ab.Incinerate, AbilityTargeting.Enemy, NeedsAdjacency: true);
-        if (u.Has(Ab.AmmoSteal) && !u.AbilityUses.ContainsKey(Ab.AmmoSteal)) yield return new(Ab.AmmoSteal, AbilityTargeting.None);
+        if (u.Has(Ab.AmmoSteal) && !u.AbilityUses.ContainsKey(Ab.AmmoSteal)) yield return new(Ab.AmmoSteal, AbilityTargeting.Enemy);
         if (u.Has(Ab.SyphonMana) && Enemy(Controller(u)).Mana > 0) yield return new(Ab.SyphonMana, AbilityTargeting.None);
         if (u.Has(Ab.Scavenger)) yield return new(Ab.Scavenger, AbilityTargeting.DeadFriend);
         if (u.Has(Ab.GoblinThrower) && Adjacent(u).Any(o => o.Side == u.Side && o.CreatureId.StartsWith("CREATURE_GOBLIN")))
@@ -133,8 +133,10 @@ public sealed partial class Battle
                 int v = S.Rng.Range(1, 3) * (Controller(t!) == Controller(u) ? 1 : -1);
                 var cur = t!.GetEffect("FX_WHEEL_OF_FORTUNE");
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
-                if (cur != null && Math.Sign(cur.Value) != Math.Sign(v)) RemoveEffect(t, "FX_WHEEL_OF_FORTUNE");
-                else AddEffect(t, new Effect { Id = "FX_WHEEL_OF_FORTUNE", Value = v, Positive = v > 0, SourceSide = u.Side });
+                // exe 00985705: Range(1, 3), negated for an enemy, always (re)applied with the new value — an opposite
+                // effect is replaced, not cancelled.
+                if (cur != null) RemoveEffect(t, "FX_WHEEL_OF_FORTUNE");
+                AddEffect(t, new Effect { Id = "FX_WHEEL_OF_FORTUNE", Value = v, Positive = v > 0, SourceSide = u.Side });
                 return null;
             }
             case Ab.RandomCaster:
@@ -163,12 +165,13 @@ public sealed partial class Battle
             }
             case Ab.AmmoSteal:
             {
+                // One aimed hostile target (spell Ammo_Steal.xdb IsAimed, exe 009865a0); the range check is the
+                // engine's (speed) — the exe's AmmoSteal_DistanceDecrease / CalcDistanceIgnoreObstacles test is not traced.
+                if (t!.MaxShots <= 0 || t.IsWarMachine || Distance(u, t) > SpeedOf(u)) return "target out of reach";
                 u.AbilityUses[Ab.AmmoSteal] = 1;
-                int n = Math.Max(1, u.Count / Math.Max(1, u.WeeklyGrowth));       // p.181
-                int range = SpeedOf(u);
-                Emit(new AbilityTriggered(u.Id, c.Ability));
-                foreach (var e in S.Living.Where(e => Controller(e) != Controller(u) && e.MaxShots > 0 && !e.IsWarMachine && Distance(u, e) <= range))
-                    e.Shots = Math.Max(0, e.Shots - n);
+                int n = AmmoStealAmount(u, t);
+                Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
+                if (n > 0) t.Shots -= n;
                 return null;
             }
             case Ab.SyphonMana:
@@ -194,7 +197,7 @@ public sealed partial class Battle
             {
                 if (t == null || t.Alive || Distance(u, t) > SpeedOf(u)) return "corpse out of reach";
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
-                Heal(u, (int)(0.2 * t.InitialCount * t.BaseHealth), resurrect: true, c.Ability);   // p.180
+                Heal(u, ScavengerHeal(t), resurrect: true, c.Ability);
                 t.Removed = true;
                 return null;
             }

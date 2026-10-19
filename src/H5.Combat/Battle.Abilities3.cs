@@ -54,7 +54,8 @@ public sealed partial class Battle
             {
                 var cell = c.Cell!.Value;
                 if (S.Obstacles.Contains(cell) || S.At(cell) != null) return "cell must be empty";
-                int ng = (int)Math.Ceiling(u.Count / 25.0);                        // fan manual p.324
+                // exe 0098614d: n = max(1, N / max(1, weekly growth)) (integer division).
+                int ng = Math.Max(1, u.Count / Math.Max(1, u.WeeklyGrowth));
                 var f = new FieldObject
                 {
                     Id = S.NextFieldId++, Kind = "SNARE", Side = Controller(u), Cells = { cell },
@@ -80,8 +81,12 @@ public sealed partial class Battle
                 if (!targetIsTreant) return "target must be treants";
                 u.AbilityUses[Ab.TreeantUnion] = 1;
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
-                Heal(t, u.Count * (int)Stats.Get("combat/Creatures/Sylvan/TreeanUnionTargetHits", 20), resurrect: true, c.Ability);
-                Heal(u, t.Count * (int)Stats.Get("combat/Creatures/Sylvan/TreeanUnionCasterHits", 4), resurrect: true, c.Ability);
+                // exe 00986377: the treants get caster count × TreeanUnionCasterHits (+0x2cc), the dryads get
+                // target count × TreeanUnionTargetHits (+0x2d0) — both counts taken before either heal.
+                int toTreants = u.Count * (int)Stats.Get("combat/Creatures/Sylvan/TreeanUnionCasterHits", 4);
+                int toDryads = t.Count * (int)Stats.Get("combat/Creatures/Sylvan/TreeanUnionTargetHits", 20);
+                Heal(t, toTreants, resurrect: true, c.Ability);
+                Heal(u, toDryads, resurrect: true, c.Ability);
                 return null;
             }
             case Ab.PackDive:
@@ -323,14 +328,14 @@ public sealed partial class Battle
         }
         else
         {
-            var origin = new Cell((int)f.Damage, (int)f.Power);
-            int dx = Math.Sign(target.X - origin.X), dy = Math.Sign(target.Y - origin.Y);
-            if (dx == 0 && dy == 0) dx = u.Side == 0 ? 1 : -1;
+            // Area of the finishing strike (exe FUN_0097a530 case 0x15a/0x15b): every cell of rows y and y+1 of the
+            // target cell across the whole field width, enemy stacks only (FUN_00b3d850).
             double mult = Stats.Get("combat/Creatures/Haven/PackDive_DamageMultiplier", 0.75);
             var seen = new HashSet<int>();
-            for (var c = target; S.InBounds(c); c = new Cell(c.X + dx, c.Y + dy))
-                if (S.At(c) is { } v && v.Id != u.Id && Controller(v) != Controller(u) && !v.IsObject && seen.Add(v.Id) && u.Alive)
-                    Strike(u, v, new Hit { Kind = AttackKind.Melee, Multiplier = mult }, pattern: false);
+            for (int x = 0; x < S.Width; x++)
+                for (int y = target.Y; y < target.Y + 2; y++)
+                    if (S.At(new Cell(x, y)) is { } v && v.Id != u.Id && Controller(v) != Controller(u) && !v.IsObject && seen.Add(v.Id) && u.Alive)
+                        Strike(u, v, new Hit { Kind = AttackKind.Melee, Multiplier = mult }, pattern: false);
         }
     }
 
