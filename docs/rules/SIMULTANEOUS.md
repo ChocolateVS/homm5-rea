@@ -100,25 +100,12 @@ standard turn based mode now." (`UI/AdventureScreen/EnemyTurnBox/Texts.(WindowRe
   (`ViewFilter.ViewFor(currentOverride)`), so the rest of the client works unchanged.
 * `Adventure.TurnOrder` hook gives the exe order (humans, then AIs, then a new day) in games created
   with simultaneous turns.
-* Break policy seam: `ISimultaneousPolicy.BreakOnIntersection`. `OriginalSimultaneousPolicy` (default)
-  breaks as above. `AlwaysOnSimultaneousPolicy` = lobby option "Simultaneous turns: always on (MMH 5.5)"
-  (`AdvNetSettings.SimultaneousAlwaysOn`, off by default): areas are never checked. Not an original
-  control: the stock checkbox gets a third click state captioned "Simultaneous (MMH 5.5)"
-  (off → on → MMH 5.5 → off; explained in its tooltip). `H5_ADVNET_SIMUL=0|1|2` presets it for screenshots.
-
-### MMH 5.5 "always on" — GAP
-The fan mod Might & Magic: Heroes 5.5 keeps simultaneous turns on for the whole game. Its rules are
-not in our data (mod files not provided yet). Until they are, the always-on policy only skips the
-break; everything else falls back to the original engine behaviour, which the mod surely changes.
-Open questions the mod files must answer:
-1. Contact/attack: what happens when heroes of two humans meet or one attacks the other while both
-   are moving (blocked? queued? battle immediately?).
-2. Battles while others keep moving: are the other humans paused, and is the battle interactive for
-   both sides during the simultaneous phase?
-3. Town captures / visiting objects another human is also heading for (who wins a race).
-4. Timers: one shared phase timer or per player; what happens to a player in battle when time runs out.
-5. AI: do computer players still move after all humans, or concurrently?
-6. Ghost mode while simultaneous turns are permanent.
+* Break policy seam: `ISimultaneousPolicy.BreakOnIntersection`. `OriginalSimultaneousPolicy` (stock
+  `H5_Game.exe`) breaks as above. `PestSimultaneousPolicy` = `H5_Game_PEST.exe` (§7): never breaks and never
+  computes areas. Chosen by the host's target exe (`AdvNetSettings.Pest` from `H5.Core.IO.TargetExe.Pest`: PEST with
+  an MMH55 install, since the user's 5.5 setup launches `bin/H5_Game_PEST.exe`; stock otherwise; `H5_EXE=pest|stock`
+  overrides). It is not a lobby control: the stock two-state checkbox is unchanged. `H5_ADVNET_SIMUL=1` ticks the
+  checkbox for screenshots.
 
 ## 6. Audit ledger
 
@@ -155,8 +142,63 @@ Open questions the mod files must answer:
 | 29 | Saves keep the broken state; load restarts turns + 20 s | GAP | network games cannot be saved yet |
 | 30 | `CWorld+0x84` suppression during multi-step operations | MATCH | our commands are atomic; checks run after each command |
 | 31 | General sequential turn order "humans first" in non-simultaneous games | GAP | engine still uses map player order there |
-| 32 | MMH 5.5 always-on policy | GAP | see §5 |
-| 33 | Other humans keep moving while one human of the phase fights a battle | GAP | the session runs one interactive battle at a time and holds every other command until it ends |
+| 32 | PEST exe (5.5 target): simultaneous turns never break; no area check at any trigger | FIXED | §7, `PestSimultaneousPolicy` |
+| 33 | Other humans keep moving while one human of the phase fights a battle | GAP | stock: each player holds its own combat (`CPlayer` vf `+0x8c`; vf `+0x90` a second reference) and the attack gate `00426b30` exists for concurrent combats (§7.3). The session runs one interactive battle at a time and holds every other command until it ends |
 | 34 | A pending adventure choice of one human (e.g. a chest) does not block the others | GAP | the engine has one shared choice slot; others get "another player is deciding" until it is answered |
+| 35 | PEST active only in network games with the option ticked; no effect in hot-seat / single player | MATCH | every patched site is behind `settings+8` (`CWorld+0x90`), which `0098f740` clears unless `+0x88` (network), §7.2 |
+| 36 | PEST: `break_simultaneous_turns` / `CBreakSimultaneousTurnsCmd` still break (deferred `009c25c0`, approvals, slot 8: not patched) | GAP | dev console not built (#28) |
+| 37 | Simultaneous phase: an attack is refused when the target's owner has a combat (vf `+0x8c`/`+0x90` non-null) or the target is the side-`+0x90` army of any player's running combat (`00426b30` from `00433440`) | GAP | unreachable here while battles are serialised (#33); to be added with concurrent battles |
+| 38 | Heroes of two humans meeting / attacking during the phase: ordinary attack, interactive battle for both humans (`00432d30`: interactive when either side is human and `CWorld` vf `+0x138` is false, else quick) | MATCH | `NetBattle` gives each human side to its player; the stock engine does not block or queue contact |
+| 39 | Two humans heading for the same object / town: commands apply in the order the host receives them | MATCH | no extra rule in the exe's command path; the session applies commands in arrival order |
+| 40 | Turn transitions wait while a combat runs (tick `00998520` returns while `CWorld+0x54` or `0098e150`: an entry of `CWorld+0xec` with vf `+0x6c` == 2) | GAP | `+0xec` list identity unresolved; our phase end waits for the single battle (`Step`), equivalent while battles are serialised |
 
-Counts: MATCH 3, FIXED 18, GAP 13 (34 items).
+Counts: MATCH 6, FIXED 19, GAP 15 (40 items).
+
+## 7. H5_Game_PEST.exe, "permanent endless simultaneous turns" (the 5.5 target)
+
+The user's install `HoMM 5 - Tribes of the East (5.5)` is launched with `bin/H5_Game_PEST.exe` = stock GOG 3.1
+`H5_Game.exe` with **16 bytes changed** (`cmp -l`) and no MMH55 DLL. Addresses: VAs in the stock exe (`.text` file
+offset = VA - 0x400c00). Ghidra copy `tools/ghidra-projects/pest`, scripts `tools/pestre`.
+
+### 7.1 The bytes
+
+| File offset (cmp, 1-based) | VA | Stock -> PEST | Function | Effect |
+|---|---|---|---|---|
+| 185459 | `0042e072` | `74 14` JZ -> `EB 14` JMP | `CBuildShipCmd` execute `0042de80` | after a ship is built, `if (settings+8 && world->vf1c()) { vf20(); 009c22f0(0,1); }` is skipped: no area check, no immediate break |
+| 4607430-33, 4607435 | `008659c5` | `0F 84 6F 05 00 00` JZ rel32 -> `E9 70 05 00 00 90` JMP rel32 + NOP (5 bytes differ) | adventure spell cast `008656e0`, case `SPELL_DIMENSION_DOOR` (0x32) | after the teleport, `if (settings+8 && !vf138() && vf1c()) { 009c25c0(); return; }` always jumps to `00865f3a` (the same epilogue): no deferred break |
+| 4607716 | `00865ae3` | `74 7F` -> `EB 7F` | same function, case `SPELL_SUMMON_BOAT` (0x31) | immediate break after the boat is summoned skipped |
+| 5827850 | `0098f909` | `74 34` -> `EB 34` | `StartTurns` `0098f7a0` | no check/break when turns (re)start with `+0x90` set (game start, load) |
+| 5863672 | `009984f7` | `74 13` -> `EB 13` | `GiveTurnToNextPlayers` `00998060` | no check/break when the humans' phase of a new day begins |
+| 6036065 | `009c2660` | `81` (`SUB ESP,0x174`) -> `C3` RET | `CWorld` vtable slot 7 (`00e62628`), the area check | returns at once with an undefined AL; harmless because every caller now ignores it. No areas are computed |
+| 7285349-53 | `00af3664` | `E8 57 EF EC FF` CALL `009c25c0` -> 5 x `90` | `00af35f0` (from `CCombat` slot 55 `00af6680`, battle end) | no deferred break after an interactive adventure battle |
+| 7645909 | `00b4b6d4` | `74 12` -> `EB 12` | `CHero` slot 33 `00b4b610` (artifact equipped) | no break when `ANGEL_WINGS` (0x1e) / `BOOTS_OF_LEVITATION` (0x36) are put on |
+
+These are all callers of the check (scan of every `CALL [reg+0x1c]; TEST AL,AL` site and of every reference to
+`009c22f0`, `009c25c0`, `0098fa60`); at `00af365b` the call stays but the break call after it is NOPed. Not patched:
+`CWorld` slot 8 `0098fa60` (the break itself), `009c25c0`/`009c22f0`, and their remaining caller
+`CBreakSimultaneousTurnsCmd` (`00426970`): the console command `break_simultaneous_turns` still ends simultaneous
+turns (deferred, with approvals). Nothing writes `CWorld+0x90`: PEST does not switch simultaneous turns on, it only
+keeps them on once the lobby option is ticked.
+
+### 7.2 Where it applies
+Only network games created with "Simultaneous Turns": `0098f740` clears `+0x90` when `+0x88` (network game) is 0 or
+`+0x89` is set, and every patched site sits behind `settings+8` (= `CWorld+0x90`). Hot-seat (no checkbox, §1) and
+single player are unaffected.
+
+### 7.3 Contact during the endless phase: the stock engine's own rules
+With the check gone nothing ends the humans' phase, so contact that the stock game avoids by breaking now happens
+inside it. Traced in the stock exe:
+* **Attack** (`CAttackHeroCmd` execute `004338f0` / `CAttackHeroExCmd` `00433990` -> `00433440(target, world)`):
+  first `00426b30(world, target)`, only while `settings+8` is set, refuses the attack (returns 0, nothing happens)
+  if the target's owner (`00426aa0`: hero owner, town owner via vf `+0xbc`, or `world->GetPlayer(obj->vf4())`) has a
+  combat (`CPlayer` vf `+0x8c`) or a second combat reference (vf `+0x90`), or if the target is the army on side
+  `vf+0x84(false)` (`CCombat+0x90`) of any player's running combat (`CWorld+0x24` player list). Then `00423d00`
+  refuses targets whose state (vf `+0x6c`) is 2 or 3. Otherwise the ordinary battle starts (`00432d30`); it is
+  interactive when either side is human and `CWorld` vf `+0x138` is false (`combat vf+0x10c`).
+* So heroes of two humans meeting or attacking each other fight an ordinary human-versus-human battle; nothing is
+  blocked or queued. The per-player combat reference and the gate above show that the stock engine lets battles run
+  while the other humans keep moving (GAP #33/#37: H5Reborn serialises them).
+* Captures and races for objects: no extra rule; commands apply in arrival order.
+* Timers: unchanged, one shared phase timer (§2); turn transitions wait for running combats (#40).
+* AI: unchanged, computer players move after every human ended (§2).
+* Ghost mode: unchanged (#27).

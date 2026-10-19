@@ -49,8 +49,11 @@ public sealed class AdvNetSettings
     public bool GhostMode { get; set; }
     /// <summary>Lobby "Simultaneous Turns" (room key simultaneus_turns, 00712d40): humans move at once until their areas meet (docs/rules/SIMULTANEOUS.md).</summary>
     public bool SimultaneousTurns { get; set; }
-    /// <summary>Not in the original: "Simultaneous turns: always on (MMH 5.5)" — never break back to sequential turns. GAP: the mod's contact rules are unknown.</summary>
-    public bool SimultaneousAlwaysOn { get; set; }
+    /// <summary>
+    /// The host runs H5_Game_PEST.exe (stock 3.1 + the 16-byte PEST patch; the 5.5 target, <c>TargetExe.Pest</c>): simultaneous
+    /// turns, once on, never switch to standard turns (docs/rules/SIMULTANEOUS.md §7). Not a lobby control.
+    /// </summary>
+    public bool Pest { get; set; }
     /// <summary>Dynamic battles: 0 off, 1 slow, 2 normal, 3 fast (DefaultStats DynamicBattle_SpeedCoeffs 2/1.5/1).</summary>
     public int DynamicBattles { get; set; }
     public int AnimationSpeed { get; set; } = 1;

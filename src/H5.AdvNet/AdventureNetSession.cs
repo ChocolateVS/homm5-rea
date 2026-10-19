@@ -146,7 +146,7 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
         if (_set.SimultaneousTurns)
         {
             // Humans first, then the computer players (00998060); all humans move at once until areas meet.
-            _simul = new SimultaneousTurns(_g, IsHuman, _set.SimultaneousAlwaysOn ? new AlwaysOnSimultaneousPolicy() : new OriginalSimultaneousPolicy());
+            _simul = new SimultaneousTurns(_g, IsHuman, _set.Pest ? new PestSimultaneousPolicy() : new OriginalSimultaneousPolicy());
             _g.TurnOrder = i => _g.HumansFirstOrder(i, IsHuman);
             int firstHuman = _g.HumansFirstOrder(-1, IsHuman);
             if (firstHuman >= 0) _g.S.CurrentPlayer = firstHuman;

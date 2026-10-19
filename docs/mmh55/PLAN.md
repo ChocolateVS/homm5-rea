@@ -1,17 +1,23 @@
 # MMH55 5.5 as the target — work plan
 
 Facts behind this plan: `INVENTORY.md`. Sizes: S ≈ ≤1 day of one helper, M ≈ 2–4 days, L ≈ a week+, XL = several helpers.
-Rule as before: every behaviour from the binaries/data (now: stock exe **plus the 55u.dll patch it applies**), ledger per item.
+Rule as before: every behaviour from the binaries/data (now: stock exe + PEST bytes + MMH55 data/scripts; §0), ledger per item.
 
-## 0. Decisions needed from the user (blockers)
+## 0. Target (decided by the user, 2026-10-19)
 
-1. **Which exe do you play?** `MMH55_64.exe` (QAI "3.1j enhanced AI" engine + 55.dll) or `MMH55_Utility_64.exe`
-   (stock engine + 55u.dll)? The GOG shortcut runs the stock `H5_Game.exe`, which ignores all DLL patches.
-   If MMH55_64.exe: the adventure AI target becomes Quantomas AI (new RE effort, see W9) and combat/adventure patches are
-   mapped from QAI addresses (`dll_patches_55_qai.txt`); otherwise the stock-address set (`dll_patches_55u.txt`) is exact.
-2. Keep a "stock 3.1" mode? Proposal: yes — the loader already supports both (`H5_TARGET=stock`, `H5_GAME_DIR`), tests stay
-   on stock until each workstream ports its tests; MMH55 behaviour is switched by "install has MMH55 + the enabled groups in
-   MMH55Stats.xml", exactly like the DLL.
+**The experience to copy = the user's install `HoMM 5 - Tribes of the East (5.5)` launched with
+`bin\H5_Game_PEST.exe`.** That exe is the stock GOG 3.1 `H5_Game.exe` with exactly 16 bytes changed (PEST, mapped in
+`docs/rules/SIMULTANEOUS.md` §7) and it loads **no MMH55 DLL**. So the target is: stock 3.1 engine + MMH55 data paks
++ MMH55 Lua scripts + the PEST byte patches.
+
+Consequences for this plan:
+- **Out of scope / optional:** every `55u.dll` / `55.dll` patch group (`dll_patches_55u.txt`, `dll_patches_55_qai.txt`),
+  the `MMH55_Utility.exe` byte patches (spell/artifact/class table counts, RMG multipliers, Dimension Door instead of
+  Cartographer) and the Quantomas AI engine of `MMH55.exe`. They are not active for the user. W3, W4 (except PEST),
+  W5's exe/DLL patches, W6's DLL hooks, W7, W8's DLL groups and W9 become optional modes, never the default.
+- **In scope:** W1 (data on the stock engine, including what the stock engine does with MMH55's larger tables), W2 (Lua),
+  PEST (done: `PestSimultaneousPolicy`), the UI data, RMG templates as data.
+- Stock 3.1 mode stays (`H5_TARGET=stock` for tests, `H5_EXE=stock|pest` for the exe behaviour).
 
 ## 1. Done in this pass
 - Loader: every `data/*.pak` + `UserMODs/*.h5u|*.zip`, per-file newest-timestamp override (exe FUN_009def50); 5.5 install is the
@@ -57,7 +63,7 @@ add a ledger row (stock behaviour → MMH55 behaviour, detour address). Families
 - Ledgers: AUDIT_COMBAT (all families; every MMH55 group gets a row), docs/rules/audit/combat_* fragments, COMBAT.md.
 
 ### W4 DLL adventure/economy patches (L, 1–2 helpers)
-Pest (simultaneous turns never break — AdvNet/ghost-mode/turn logic), Modifiers/Movement (pathfinding costs, diagonal 1.41,
+(Pest: done from the exe bytes, SIMULTANEOUS.md §7), Modifiers/Movement (pathfinding costs, diagonal 1.41,
 logistics/navigation/boots), InstantTravelMovementRequirements, Income, Weeks, ResourcePiles, SpellShrineExperience,
 HeroModifiers/Levels (cap 99, level table), Hero8Skills, BookOfPowerLevelUpFix, OneStackSplit, DwellingFramework,
 EnlightenmentForBarbsFix, RemoveMapScriptCheck. Ledgers: AUDIT_ADVENTURE, ADVENTURE.md, BOATS.md (PEST site in build-boat),

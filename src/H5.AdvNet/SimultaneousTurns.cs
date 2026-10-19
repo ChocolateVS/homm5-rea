@@ -17,11 +17,13 @@ public sealed class OriginalSimultaneousPolicy : ISimultaneousPolicy
 }
 
 /// <summary>
-/// "Always on (MMH 5.5)": simultaneous turns never end. GAP: the mod's rules for heroes meeting,
-/// battles, captures and timers during simultaneous turns are not known yet (docs/rules/SIMULTANEOUS.md §5);
-/// until then the original engine behaviour applies to those.
+/// H5_Game_PEST.exe (the 5.5 target, docs/rules/SIMULTANEOUS.md §7): every caller of the area check CWorld slot 7
+/// (009c2660, itself patched to RET) skips the break — JZ→JMP at 0042e072 (ship built), 008659c5 (Dimension Door),
+/// 00865ae3 (Summon Boat), 0098f909 (turns start), 009984f7 (humans' phase of a new day), 00b4b6d4 (wings/boots
+/// equipped) — and the battle-end deferred break call at 00af3664 is NOPed. Areas are never computed. Everything
+/// else (contact, battles, captures, timers) is the stock engine's behaviour.
 /// </summary>
-public sealed class AlwaysOnSimultaneousPolicy : ISimultaneousPolicy
+public sealed class PestSimultaneousPolicy : ISimultaneousPolicy
 {
     public bool BreakOnIntersection => false;
 }

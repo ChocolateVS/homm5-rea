@@ -63,6 +63,27 @@ public class SimultaneousTests
     }
 
     [Fact]
+    public void PestNeverBreaksAndNeverComputesAreas() // H5_Game_PEST.exe: 009c2660 RET, JZ→JMP at every caller, 00af3664 NOP
+    {
+        var h = new Harness(2, s => { s.SimultaneousTurns = true; s.DevStartAdjacent = true; s.Pest = true; });
+        var sim = h.Session.Simultaneous!;
+        Assert.IsType<PestSimultaneousPolicy>(sim.Policy);
+        // Adjacent humans: the stock exe breaks at once (test above); PEST keeps both humans current.
+        Assert.True(sim.Active);
+        Assert.True(sim.InPhase);
+        Assert.Null(sim.LastConflict);
+        Assert.True(MyTurn(h, 0) && MyTurn(h, 1));
+        // The former triggers are no-ops: battle end (00af3664 NOP), Dimension Door (008659c5 JMP).
+        sim.OnCommand(new ResolveBattleCmd(0, new(), new()));
+        sim.OnCommand(new CastAdventureSpellCmd(0, "SPELL_DIMENSION_DOOR"));
+        sim.Step();
+        Assert.True(sim.Active);
+        Assert.Null(sim.LastConflict);
+        Assert.Empty(sim.Pending);
+        AssertViewsMatchHost(h);
+    }
+
+    [Fact]
     public void ConflictCheckIsReadOnlyAndFindsAdjacentHeroes()
     {
         var h = new Harness(2, s => s.DevStartAdjacent = true);
@@ -80,7 +101,7 @@ public class SimultaneousTests
     [Fact]
     public void HumansMoveAtOnceThenComputersThenANewDay() // 00998060, 00998760, 00998520
     {
-        var h = new Harness(2, s => { s.SimultaneousTurns = true; s.SimultaneousAlwaysOn = true; });
+        var h = new Harness(2, s => { s.SimultaneousTurns = true; s.Pest = true; });
         var sim = h.Session.Simultaneous!;
         Assert.True(sim.Active);
         Assert.True(sim.InPhase);
@@ -124,7 +145,7 @@ public class SimultaneousTests
     [Fact]
     public void SharedPhaseTimerEndsEveryHumansTurn() // 00998520
     {
-        var h = new Harness(2, s => { s.SimultaneousTurns = true; s.SimultaneousAlwaysOn = true; s.TimeLimitMinutes = 1; });
+        var h = new Harness(2, s => { s.SimultaneousTurns = true; s.Pest = true; s.TimeLimitMinutes = 1; });
         int day = h.Session.Game.S.Day;
         h.Tick(30_000);
         Assert.Equal(day, h.Session.Game.S.Day);
@@ -137,7 +158,7 @@ public class SimultaneousTests
     [Fact]
     public void DeferredBreakWaitsForEveryApproval() // 009c25c0, 004289a0, 009c2270
     {
-        var h = new Harness(2, s => { s.SimultaneousTurns = true; s.SimultaneousAlwaysOn = true; });
+        var h = new Harness(2, s => { s.SimultaneousTurns = true; s.Pest = true; });
         var sim = h.Session.Simultaneous!;
         // Switch to the original policy's flow by hand: a deferred conflict check after a battle-like trigger.
         var probe = new SimultaneousTurns(h.Session.Game, mp => mp == h.Session.MapPlayerOf(0) || mp == h.Session.MapPlayerOf(1), new OriginalSimultaneousPolicy());
@@ -203,7 +224,7 @@ public class SimultaneousTests
             Assert.True(until(), "timed out");
         }
         await Pump(() => clients.All(c => c.Connected));
-        clients[0].Send(new CreateRoom("simul", "adventure", 2, null, Env.Settings(s => { s.SimultaneousTurns = true; s.SimultaneousAlwaysOn = true; })));
+        clients[0].Send(new CreateRoom("simul", "adventure", 2, null, Env.Settings(s => { s.SimultaneousTurns = true; s.Pest = true; })));
         await Pump(() => inbox[0].OfType<RoomState>().Any());
         var room = inbox[0].OfType<RoomState>().First().RoomId;
         clients[1].Send(new JoinRoom(room, null));

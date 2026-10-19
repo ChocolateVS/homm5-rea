@@ -59,34 +59,13 @@ public partial class AdvSetupScreen : UiScreen
     MapEntry? _selected;
     int _sort;
     readonly BitmapText _desc = new() { AnchorRight = 1, AnchorBottom = 1, Wrap = true };
-    int _simMode;
-
-    void ApplySimMode()
-    {
-        if (Find("simultaneus") is not { } sim) return;
-        sim.SetState(_simMode == 0 ? 1 : 0);
-        // The caption is the button's child text view (Simultanious.(WindowTextView), simultanious.txt).
-        var caption = sim.GetChildren().OfType<UiNode>().FirstOrDefault() ?? sim;
-        caption.SetText(_simMode == 2 ? "<value_name>Simultaneous (MMH 5.5)" : null);
-        Read();
-        ShowValues();
-    }
-
     static readonly int[] TimeLimits = { 0, 1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120 };
 
     public AdvSetupScreen(bool network) : base(network ? "UI/MPCreate.(WindowScreen).xdb" : "UI/HotSeat.(WindowScreen).xdb")
     {
         _network = network;
         // Simultaneous turns (room key simultaneus_turns, docs/rules/SIMULTANEOUS.md): off by default.
-        if (Find("simultaneus") is { } sim)
-        {
-            sim.SetState(1);
-            // Not in the original: a third click state "MMH 5.5" (the fan mod keeps simultaneous
-            // turns on for the whole game). Off → on → on (MMH 5.5) → off.
-            sim.TooltipText = UiResources.StripMarkup(AdvNetScreens.Text("UI/MPCreate/Options/SimultaneousTurns_tooltip.txt"))
-                + " Third click (MMH 5.5, not in the original game): simultaneous turns never switch back to standard turns.";
-            sim.Clicked += _ => { _simMode = (_simMode + 1) % 3; ApplySimMode(); };
-        }
+        if (Find("simultaneus") is { } sim) { sim.SetState(1); sim.Clicked += _ => { Read(); ShowValues(); }; }
         if (Find("loadbutton") is { } load) load.Enabled = false;
         if (Find("load") is { } load2) load2.Enabled = false;
 
@@ -129,9 +108,9 @@ public partial class AdvSetupScreen : UiScreen
     public override void _Ready()
     {
         base._Ready();
-        // Dev/test hook: H5_ADVNET_SIMUL=0|1|2 sets Simultaneous Turns off/on/MMH 5.5 (screenshots of the option line).
-        if (System.Environment.GetEnvironmentVariable("H5_ADVNET_SIMUL") is { } simMode && int.TryParse(simMode, out var m))
-        { _simMode = Math.Clamp(m, 0, 2); ApplySimMode(); }
+        // Dev/test hook: H5_ADVNET_SIMUL=1 ticks Simultaneous Turns (screenshots of the option line).
+        if (System.Environment.GetEnvironmentVariable("H5_ADVNET_SIMUL") == "1" && Find("simultaneus") is { } sim)
+        { sim.SetState(0); Read(); ShowValues(); }
         // Dev/test hook: H5_ADVNET_RMG=1 opens the random map generator and generates a map.
         if (System.Environment.GetEnvironmentVariable("H5_ADVNET_RMG") == "1")
         {
@@ -152,7 +131,8 @@ public partial class AdvSetupScreen : UiScreen
         _set.QuickCombat = Find("quick_combat")?.State == 0;
         _set.Autosave = Find("realtime")?.State == 0;
         _set.SimultaneousTurns = _network && Find("simultaneus")?.State == 0;
-        _set.SimultaneousAlwaysOn = _set.SimultaneousTurns && _simMode == 2;
+        // The host's exe: H5_Game_PEST.exe on the 5.5 target keeps simultaneous turns on for good (SIMULTANEOUS.md §7).
+        _set.Pest = H5.Core.IO.TargetExe.Pest(Game.Instance.Install.Root);
     }
 
     void ShowValues()

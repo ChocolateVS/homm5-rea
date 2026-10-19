@@ -18,12 +18,14 @@ MMH55 is three layers: **(A) runtime code patches** from a hook DLL, configured 
 | `bin\H5_Game.exe` | 5a881b84… | **identical to stock 3.1** (build 0x48469f9f, May 2008) | none (imports Ubisoft `um.dll`) |
 | `bin\MMH55.exe` / `MMH55_64.exe` | 841093c2… / a514c7b0… | a **different engine build: "3.1j enhanced AI" (Quantomas AI, QAI)**, 20 Oct 2011; spawns `H5_AIProcess_31j.exe` as the AI process. `_64` = same + Large-Address-Aware bit only | imports `55.dll` (`TrackingCount`) |
 | `bin\MMH55_Utility.exe` / `_64` | 33799609… / 26ef2784… | stock 3.1 + 346 bytes in 17 ranges; `_64` = LAA bit | import `um.dll`→`55u.dll` |
-| `bin\H5_Game_PEST.exe` | c44f05d5… | stock + 17 bytes (the PEST patch, §2) — also present in the stock install | none |
+| `bin\H5_Game_PEST.exe` | c44f05d5… | stock + 16 bytes (the PEST patch, §2) — also present in the stock install. **The user launches this exe (the target).** | none |
 | `bin\MMH55_Editor(_64).exe` | 97ac…/0b4e… | patched map editor | `55e.dll` |
 | `bin\MMH55_Mapmixer.exe` | caf1a951… | standalone x64 tool | — |
 | `binDM\H5_Game.exe` | 030fff20… | older build (Mar 2008), duel-mode exe | — |
 | `um.dll`, `SI.bin` (1 byte 0xF2) | same as stock | Ubisoft telemetry (`TrackingCount`, uts.ubi.com); SI.bin is its state | — |
 
+**Answered (user, 2026-10-19): the target is `bin\H5_Game_PEST.exe` = stock engine + PEST bytes, no DLL; see PLAN.md §0.
+The notes below about MMH55(_64).exe / MMH55_Utility.exe describe optional, out-of-scope engines.**
 **The GOG shortcut / goggame `.info` launch `bin\H5_Game.exe`, which is stock: launched that way the MMH55 paks
 run on a vanilla engine with none of the DLL patches.** MMH55 is fully active only via `MMH55.exe`/`MMH55_64.exe`
 (QAI engine + `55.dll`) or `MMH55_Utility(_64).exe` (stock engine + `55u.dll`). **Open question for the user: which
@@ -36,11 +38,11 @@ Profiles: `profiles\default_profile\{input_a2,user_a2}.cfg` (stock format), `pro
 
 ## 2. Exe byte patches (stock addresses)
 
-**PEST — "permanent endless simultaneous turns"** (also applied at runtime by the DLL group `/MMH55/Pest`):
+**PEST — "permanent endless simultaneous turns"** (16 bytes; full byte table in `docs/rules/SIMULTANEOUS.md` §7; also applied at runtime by the DLL group `/MMH55/Pest`):
 CWorld vtable +0x1c (`0x9c2660`, the player-area conflict check) becomes `RET`; call sites
 `if (world->vf1c()) { world->vf20(); FUN_009c22f0(); }` are skipped (JZ→JMP) at 0x42e072 (build boat,
 FUN_0042de80), 0x8659c5 / 0x865ae3 (adventure spell cast FUN_008656e0, e.g. Summon Boat), 0x98f909, 0x9984f7,
-0xb4b6d4; call to FUN_009c25c0 at 0xaf3664 NOPed. → simultaneous turns, once on, never break on contact.
+0xb4b6d4; call to FUN_009c25c0 at 0xaf3664 NOPed; 0x8659c5 is a 6-byte JZ rel32 → JMP rel32 + NOP (Dimension Door, deferred break). → simultaneous turns, once on, never break on contact; network games with the option only.
 
 **MMH55_Utility.exe (same patches found by signature in MMH55.exe):**
 - 0x81eeb7 JZ→JMP skips the stock UbiStats call; entry stub 0xd11f3c → cave 0xd122e1 calls the `TrackingCount`
