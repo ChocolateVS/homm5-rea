@@ -341,22 +341,42 @@ public sealed partial class Battle
     }
 
     /// <summary>
-    /// Magic Magnetism: a golem caught in a Destruction area spell with other stacks absorbs
-    /// MagicMagnetism_DamageRedirectPercentPerWeeklyGrowth% per weekly growth of their damage; half heals it.
-    /// Returns the damage left for <paramref name="victim"/>.
+    /// Magic Magnetism (exe FUN_0085e330, run by the area and chain resolvers FUN_0085e7c0 / FUN_0085edb0 on the final
+    /// per-victim amounts, any spell they resolve): every victim with the ability holds a share
+    /// (count / weekly growth) * MagicMagnetism_DamageRedirectPercentPerWeeklyGrowth (integer division), T = sum of shares.
+    /// Every other victim's amount D becomes max(0, trunc((float)D - (float)(D*T)*0.01f)); each magnet gets
+    /// trunc((float)(share * sum D)*0.01f) on top of its own amount (sum D = the others' original amounts), times 100 / T
+    /// (integer) when T &gt; 100. Nothing heals. Unresolved (NaN) entries are dealt nothing.
     /// </summary>
-    double MagnetismRedirect(Unit victim, double dmg, IReadOnlyCollection<Unit> areaVictims, H5.Core.Data.SpellDef sp, int side)
+    List<double> MagnetismRedistribute(List<(Unit V, double D)> hits)
     {
-        if (sp.School != "MAGIC_SCHOOL_DESTRUCTIVE" || sp.Id == "SPELL_ARMAGEDDON") return dmg;
-        var golem = areaVictims.FirstOrDefault(g => g.Id != victim.Id && g.Alive && g.Has(Ab.Magnetism));
-        if (golem == null) return dmg;
-        double pct = Math.Min(100, Stats.Get("combat/Creatures/Academy/MagicMagnetism_DamageRedirectPercentPerWeeklyGrowth", 5)
-                                   * golem.Count / (double)Math.Max(1, golem.WeeklyGrowth));
-        double absorbed = dmg * pct / 100;
-        if (absorbed <= 0) return dmg;
-        Emit(new AbilityTriggered(golem.Id, Ab.Magnetism, victim.Id));
-        DealSpellDamage(golem, sp, absorbed, side, ignoreResist: false);
-        if (golem.Alive) Heal(golem, (int)(absorbed / 2), resurrect: false, Ab.Magnetism);
-        return dmg - absorbed;
+        var dmg = hits.Select(h => double.IsNaN(h.D) ? 0 : h.D).ToList();
+        int coef = (int)Stats.Get("combat/Creatures/Academy/MagicMagnetism_DamageRedirectPercentPerWeeklyGrowth", 5);
+        var share = new int[hits.Count];
+        int total = 0;
+        for (int i = 0; i < hits.Count; i++)
+            if (HasAbilityNow(hits[i].V, Ab.Magnetism) && hits[i].V.WeeklyGrowth > 0)
+            {
+                share[i] = hits[i].V.Count / hits[i].V.WeeklyGrowth * coef;
+                total += share[i];
+            }
+        if (total == 0) return dmg;
+        int sumOthers = 0;
+        for (int i = 0; i < hits.Count; i++)
+        {
+            if (HasAbilityNow(hits[i].V, Ab.Magnetism)) continue;
+            int d = Math.Max(0, (int)Math.Floor(dmg[i]));
+            sumOthers += d;
+            dmg[i] = Math.Max(0, (int)((double)(float)d - (double)(float)(d * total) * (double)0.01f));
+        }
+        for (int i = 0; i < hits.Count; i++)
+        {
+            if (!HasAbilityNow(hits[i].V, Ab.Magnetism)) continue;
+            int add = (int)((double)(float)(share[i] * sumOthers) * (double)0.01f);
+            if (total > 100) add = add * 100 / total;
+            dmg[i] = Math.Max(0, (int)Math.Floor(dmg[i])) + add;
+            if (add > 0) Emit(new AbilityTriggered(hits[i].V.Id, Ab.Magnetism));
+        }
+        return dmg;
     }
 }

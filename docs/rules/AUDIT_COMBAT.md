@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 278 |
+| FIXED | 280 |
 | MATCH | 146 |
-| GAP | 11 |
-| UNVERIFIED | 157 |
+| GAP | 12 |
+| UNVERIFIED | 154 |
 | N/A | 55 |
 
 ## Core mechanics
@@ -169,7 +169,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_SCAVENGER` | FIXED | 0098624f (00986299–009862db) | the wyverns walk to the corpse (FUN_00978490, not ported: the engine needs it within speed) and heal, resurrecting, trunc((float)(creature health vf 0x1a8 × corpse count) × ScavengerCoef) (chop FISTP); the engine used the base health and a literal 0.2 | AuditAbilityTestsC.ScavengerUsesTheCreaturesCurrentHealthAndTheCoefficient |
 | `ABILITY_LIGHTNING_BREATH` | FIXED | 00a62030 (Lightning branch), 00b3d560, 00a673c0 (00a67b2c–00a67ba5) | targets: the main target plus the enemies next to it (FUN_00b3d560, FUN_004e5750 drops the attacker's own); outside retaliations one base roll is divided by the number of targets (main included) and each target is struck with that share; a retaliation strikes every target with its own full roll — engine gave the main target its full damage and the others 1/(n+1) of theirs | AuditAbilityTestsD.LightningBreathSharesOneRollAmongAllItsTargets |
 | `ABILITY_SWALLOW_GOBLIN` | MATCH | 009869e0 (case 0x12c) | one goblin removed; the cyclops heals one creature's health (vf 0x1a8), no resurrection — as the engine |  |
-| `ABILITY_GOBLIN_THROWER` | UNVERIFIED | 008a4b70 008d03a0 00a65260 00a6fef0 | implemented; not yet compared with the exe |  |
+| `ABILITY_GOBLIN_THROWER` | FIXED | 008a4b70 (008a4d38–008a4dbc), 004babf0, 00a65260, 00b3bfc0 | the cyclops' throws count the creatures of the ADJACENT ALLIED stacks of creature 0x75 = CREATURE_GOBLIN only (FUN_004babf0 == 0x75; the sum is stored with vf 0x1a4) — engine also took Goblin Trappers and Defilers. Not compared: the shot itself (FUN_00b3bfc0 → FUN_00a65d50) and which goblin is spent | AuditAbilityTestsD.GoblinThrowerCountsOnlyPlainGoblins |
 | `ABILITY_CRUSHING_BLOW` | FIXED | 00a5af70 | 2×2 area (unchanged) PLUS a Bash-like chance (CrushingBlow_ProcFactor, flag 1, no second roll, never on a retaliation, creature targets): ATB 0 and no retaliation — the stun was missing | AuditAbilityTests.CrushingBlowCanStunTheTarget |
 | `ABILITY_EVIL_EYE` | FIXED | 00a5e770 | melee strikes only, every target of the blow, permanent SPELL_EFFECT_UNLUCKY (−3 Luck per the ability text) — engine also applied it on shots | AuditAbilityTests.EvilEyeOnlyOnMeleeStrikes |
 | `ABILITY_RANDOM_CASTER_BLESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -200,7 +200,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_CALL_STORM` | FIXED | 00988279, 0085d1c0, 00976b90 case 0x14e | one charge (Storm Lord SpellPoints1 = 1) spent by the cast; the engine allowed a storm every turn. Field damage CallStorm_DamagePerCreature × value (00976b90) as the engine; the field shape (FUN_0085d1c0) is not compared | AuditAbilityTestsC.CallStormHasASingleCharge |
 | `ABILITY_SABOTAGE` | UNVERIFIED | 00985983 | no charge; the target gets effect 0x14a for one round and its ATB is reset (vf 0x61, FUN_00a2d6a0); the engine's validity rule (mechanical / war machine with less total health) is not traced |  |
 | `ABILITY_LUCK_GAMBLER` | FIXED | 00985705, 004e5750, 004e57d0 | one of 3 charges; value Range(1, 3), negated for an enemy, always applied as effect 0x14c (replacing an existing one); the engine cancelled an opposite effect instead. The effect duration (FUN_004e57d0) is not compared — the engine keeps it until the end of combat | AuditAbilityTestsC.LuckGamblerReplacesAnOppositeEffect |
-| `ABILITY_ENCHANTED_OBSIDIAN` | UNVERIFIED | 008d8087 0097c9f0 0097f610 00982010 | implemented; not yet compared with the exe |  |
+| `ABILITY_ENCHANTED_OBSIDIAN` | GAP | 0097c9f0, 00982010 (009827ed), 0097f610 (0097fa9d), 0085fa00 | immunity to every non-damage spell is the spells audit's (ExeSpellImmune, MATCH); the prediction paths show 0 damage (0097fa9d) / a heal (009776e0) for the golem. The routine that turns the damage into EnchantedObsidian_DamageToHealCoef healing (RPGStats +0x2fc) was not found (no other reader of +0x2fc in the combat code) — the engine heals trunc(D × 0.5) with resurrection instead of the damage |  |
 | `ABILITY_ACID_BLOOD` | FIXED | 00a673c0 (00a683ff–00a6859d), 008aa990 (008aaa51), 00a62030, AcidBlood.xdb | for every struck target with ACID_BLOOD on a non-ranged strike other than the Pack Dive finish (0x15b) — retaliation strikes included — the hydra runs AcidicHydraPattern from its own cell with the striker as main target (12 four-cell lines, DamageAll = true, so its own stacks on the line are hit); every victim takes (D + E) / 4 truncated (CDQ/SAR), D = the hydra's damage against it (FUN_00a597a0 roll, FUN_00a5c790), E = Elemental Chains (FUN_00977e60, not implemented for physical strikes in the engine: 0). Engine: the striker only, ×0.25 inside the attacker stage, never on retaliations. The luck argument of the 00a5c790 call is not identified (1 used) | AuditAbilityTestsD.AcidBloodSplashesTheLineThroughTheAttackerAndOnRetaliation, AcidBloodIsAQuarterOfTheHydrasDamageTruncated |
 | `ABILITY_AURA_OF_BRAVERY` | MATCH | 008a4b70 (flag 0x10), 00a6acd0 | flag 0x10 from the stack itself or an adjacent ally; morale = max(m, AuraOfBraveryMoraleMin = 1) and BRAVERY's max(m, 1) only without the flag — with the stock value 1 the same as the engine's two max() |  |
 | `ABILITY_INCINERATE` | UNVERIFIED | 00a58de0 | ×IncinerateCoef on the strike (special 0x142) matches the engine; the area/pattern is not compared |  |
@@ -221,7 +221,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_IMMUNITY_TO_HYPNOTIZE` | UNVERIFIED | 0097c9f0 | implemented; not yet compared with the exe |  |
 | `ABILITY_MAGIC_PROOF_25` | MATCH | 0097af50 (0097b281) | independent ×0.75 (disassembly: levels stack) |  |
 | `ABILITY_FIRE_PROOF_50` | UNVERIFIED | 0097af50 | implemented; not yet compared with the exe |  |
-| `ABILITY_DESTRUCTION_MAGIC_MAGNETISM` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `ABILITY_DESTRUCTION_MAGIC_MAGNETISM` | FIXED | 0085e330, called by 0085e7c0 (0085e901) and 0085edb0 (0085f041) | the area and chain resolvers first compute every victim's amount (FUN_0097d600 + Elemental Chains), then FUN_0085e330 redistributes: each victim with the ability holds share = (count / weekly growth) × MagicMagnetism_DamageRedirectPercentPerWeeklyGrowth (integer division), T = Σ shares; every other victim's amount D → max(0, trunc((float)D − (float)(D·T)·0.01f)); each magnet adds trunc((float)(share·ΣD)·0.01f) (ΣD = the others' original amounts; ×100/T when T &gt; 100) to its own amount. Nothing heals and the school is not tested — engine: Destructive area spells only, the first golem took dmg·pct through protection again and healed half | AuditAbilityTestsD.MagnetismMovesAShareOfTheOtherVictimsDamageOntoTheGolems |
 
 ## Hero skills and perks
 

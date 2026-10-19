@@ -101,7 +101,9 @@ public sealed partial class Battle
         if (u.Has(Ab.AmmoSteal) && !u.AbilityUses.ContainsKey(Ab.AmmoSteal)) yield return new(Ab.AmmoSteal, AbilityTargeting.Enemy);
         if (u.Has(Ab.SyphonMana) && Enemy(Controller(u)).Mana > 0) yield return new(Ab.SyphonMana, AbilityTargeting.None);
         if (u.Has(Ab.Scavenger)) yield return new(Ab.Scavenger, AbilityTargeting.DeadFriend);
-        if (u.Has(Ab.GoblinThrower) && Adjacent(u).Any(o => o.Side == u.Side && o.CreatureId.StartsWith("CREATURE_GOBLIN")))
+        // Goblin Thrower (exe FUN_008a4b70, 008a4d38–008a4dbc): only stacks of creature 0x75 (CREATURE_GOBLIN) among the
+        // adjacent allies count — trappers and defilers do not.
+        if (u.Has(Ab.GoblinThrower) && Adjacent(u).Any(o => o.Side == u.Side && o.CreatureId == "CREATURE_GOBLIN"))
             yield return new(Ab.GoblinThrower, AbilityTargeting.Enemy);
         foreach (var more in UnitAbilities3(u)) yield return more;
     }
@@ -189,7 +191,7 @@ public sealed partial class Battle
             }
             case Ab.GoblinThrower:
             {
-                var goblins = Adjacent(u).Where(o => o.Side == u.Side && o.CreatureId.StartsWith("CREATURE_GOBLIN")).OrderByDescending(o => o.TopHealth).First();
+                var goblins = Adjacent(u).Where(o => o.Side == u.Side && o.CreatureId == "CREATURE_GOBLIN").OrderByDescending(o => o.TopHealth).First();
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
                 DealDamage(goblins, goblins.TopHealth, u.Id, AttackKind.Ability, c.Ability);
                 Strike(u, t!, new Hit { Kind = AttackKind.Ranged }, pattern: false, rangedRetaliation: true);

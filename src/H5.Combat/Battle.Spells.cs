@@ -589,11 +589,20 @@ public sealed partial class Battle
                 var cells = AreaCells(id, c);
                 double dmg = SpellBaseDamage(baseDef, sp, m, power);
                 var victims = S.Living.Where(u => !u.IsObject && u.Cells().Any(cells.Contains)).ToList();
+                // exe FUN_0085e7c0: every victim's damage is computed first, Magic Magnetism (FUN_0085e330) redistributes
+                // the amounts, then they are dealt.
+                var hit = new List<(Unit V, double D)>();
                 foreach (var v in victims)
                 {
                     if (!SpellHits(side, baseDef, v, hostile: true, hero, area: true)) continue;
                     affected.Add(v.Id);
-                    int dealt = DealSpellDamage(v, baseDef, v.Has(Ab.Magnetism) ? dmg : MagnetismRedirect(v, dmg, victims, baseDef, side), side, false, hero, m);
+                    hit.Add((v, SpellDamageFinal(v, baseDef, dmg, side, false, hero) ?? double.NaN));
+                }
+                var amounts = MagnetismRedistribute(hit);
+                for (int i = 0; i < hit.Count; i++)
+                {
+                    var v = hit[i].V;
+                    int dealt = double.IsNaN(hit[i].D) ? 0 : ApplySpellDamageFinal(v, baseDef, amounts[i], side, false);
                     if (v.Alive) SpellSideEffects(id, v, m, power, hero, first: true, side, victims.Count, dealt);
                 }
                 break;
@@ -606,15 +615,25 @@ public sealed partial class Battle
                 // The float base halves per hop (×0.5f @00e0ab70); each hop's base is truncated (FISTP in chop mode,
                 // 0085ef1f) before protection (FUN_0097d600).
                 var bases = ChainHopBases((int)SpellBaseDamage(baseDef, sp, m, power), chain.Count);
+                // The chain resolver FUN_0085edb0 also runs Magic Magnetism (FUN_0085e330) over the computed amounts.
+                var hops = new List<(Unit V, double D)>();
+                var hopIndex = new List<int>();
                 for (int i = 0; i < chain.Count; i++)
                 {
                     var cur = chain[i];
                     if (cur.Alive && SpellHits(side, baseDef, cur, hostile: true, hero, area: i > 0))
                     {
                         affected.Add(cur.Id);
-                        DealSpellDamage(cur, baseDef, bases[i], side, false, hero, m);
-                        if (cur.Alive && i == 0) SpellSideEffects(id, cur, m, power, hero, true, side);
+                        hops.Add((cur, SpellDamageFinal(cur, baseDef, bases[i], side, false, hero) ?? double.NaN));
+                        hopIndex.Add(i);
                     }
+                }
+                var hopAmounts = MagnetismRedistribute(hops);
+                for (int k = 0; k < hops.Count; k++)
+                {
+                    var cur = hops[k].V;
+                    if (!double.IsNaN(hops[k].D)) ApplySpellDamageFinal(cur, baseDef, hopAmounts[k], side, false);
+                    if (cur.Alive && hopIndex[k] == 0) SpellSideEffects(id, cur, m, power, hero, true, side);
                 }
                 break;
             }
@@ -858,6 +877,12 @@ public sealed partial class Battle
     int DealSpellDamage(Unit t, SpellDef sp, double dmg, int side, bool ignoreResist, HeroState? hero = null, Mastery mastery = Mastery.None)
     {
         if (!t.Alive) return 0;
+        return SpellDamageFinal(t, sp, dmg, side, ignoreResist, hero) is double d ? ApplySpellDamageFinal(t, sp, d, side, ignoreResist) : 0;
+    }
+
+    /// <summary>The damage a spell would deal to <paramref name="t"/> after protection, luck and chains (null: none).</summary>
+    double? SpellDamageFinal(Unit t, SpellDef sp, double dmg, int side, bool ignoreResist, HeroState? hero)
+    {
         string id = BaseSpell(sp.Id);
         bool fullProtection = _resistedFullProtection;
         _resistedFullProtection = false;
@@ -873,7 +898,7 @@ public sealed partial class Battle
             double mult = SpellDamageMultiplier(t, sp, side, casterIsHero: hero != null) * ElementProtectionArtifacts(t, sp.Element);
             bool immune = (sp.Element != Elements.None && ElementImmune(t, sp.Element)) || t.Has(Ab.ImmuneMagic);
             var inv = hero != null ? hero.SkillLevel(Sk.Invocation) : Mastery.None;
-            if ((immune || fullProtection) && inv == Mastery.None) return 0;
+            if ((immune || fullProtection) && inv == Mastery.None) return null;
             // Irresistible Magic (p.140, p.322): reduces protection, and immune / resisted targets still take a share.
             dmg = ApplyProtectionPercent(dmg, mult, immune || fullProtection, inv);
         }
@@ -889,6 +914,12 @@ public sealed partial class Battle
         // bolt/chain/area resolvers 0085e7c0/0085edb0/0085f330); the Holy/Unholy Word resolver (00977600) has none.
         if (id is not ("SPELL_HOLY_WORD" or "SPELL_UNHOLY_WORD"))
             dmg += ElementalChainExtra(hero, sp, t, Math.Max(0, (int)Math.Floor(dmg)));
+        return dmg;
+    }
+
+    int ApplySpellDamageFinal(Unit t, SpellDef sp, double dmg, int side, bool ignoreResist)
+    {
+        if (!t.Alive) return 0;
         // Enchanted Obsidian: magical damage heals instead (p.174).
         if (t.Has(Ab.EnchantedObsidian) && !ignoreResist)
         {

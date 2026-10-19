@@ -227,4 +227,31 @@ public class AuditAbilityTestsD(GameDataFixture f)
         Assert.False(Blinded("CREATURE_SKELETON", false));   // undead: derived Immunity to Blind
         Assert.True(Blinded("CREATURE_PEASANT", true));      // Vampirism's dynamic undead does not feed the derived flags
     }
+    [Fact]
+    public void MagnetismMovesAShareOfTheOtherVictimsDamageOntoTheGolems()   // FUN_0085e330 (area / chain resolvers)
+    {
+        var b = f.Duel("CREATURE_OBSIDIAN_GOLEM", 30, "CREATURE_PEASANT", 100, 1, new Cell(1, 1), new Cell(10, 8));
+        b.Begin();
+        var golem = b.State.Units[0]; var peasant = b.State.Units[1];
+        golem.WeeklyGrowth = 6;   // share = 30 / 6 * 5 = 25 %
+        var m = typeof(Battle).GetMethod("MagnetismRedistribute", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var hits = new List<(Unit V, double D)> { (peasant, 100), (golem, 40) };
+        var r = (List<double>)m.Invoke(b, new object[] { hits })!;
+        Assert.Equal((int)((double)(float)100 - (double)(float)(100 * 25) * (double)0.01f), (int)r[0]);   // 74: single precision
+        Assert.Equal(40 + (int)((double)(float)(25 * 100) * (double)0.01f), (int)r[1]);                  // 65: no healing
+    }
+
+    [Fact]
+    public void GoblinThrowerCountsOnlyPlainGoblins()   // FUN_008a4b70: creature 0x75 (CREATURE_GOBLIN) next to the cyclops
+    {
+        bool Offered(string helper)
+        {
+            var b = f.Duel("CREATURE_CYCLOP_UNTAMED", 5, "CREATURE_PEASANT", 50, 1, new Cell(5, 4), new Cell(12, 8));
+            Add(b, 0, helper, 30, new Cell(4, 4));
+            b.Begin();
+            return b.UnitAbilities(b.State.Units[0]).Any(a => a.Id == Ab.GoblinThrower);
+        }
+        Assert.True(Offered("CREATURE_GOBLIN"));
+        Assert.False(Offered("CREATURE_GOBLIN_TRAPPER"));
+    }
 }
