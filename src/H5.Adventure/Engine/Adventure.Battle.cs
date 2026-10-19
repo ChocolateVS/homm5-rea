@@ -52,6 +52,7 @@ public sealed partial class Adventure
     /// </summary>
     void StartNeutralEncounter(HeroState h, MapObject mon)
     {
+        if (Refused(h, -1, mon.Index)) return;
         var os = S.Obj(mon.Index);
         var guards = os.Guards.Select(g => new Stack(g.Creature, g.Count)).ToList();
         bool mixed = guards.Select(g => g.Creature).Distinct().Count() > 1;

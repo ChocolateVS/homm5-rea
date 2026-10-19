@@ -21,6 +21,14 @@ public sealed class NetBattle
     readonly JsonNode _initialState;
     public long TurnStartedMs { get; private set; }
     int _lastActor = int.MinValue;
+    /// <summary>When the battle began (combat vf +0x88; its duration is FUN_00af1c00).</summary>
+    public long StartedMs { get; }
+    /// <summary>
+    /// Time each battle side spent with its unit or hero to act (CCombatArmy +0x7c, added each update by vf +0x130
+    /// for the active army, 00af5930). CCloseCombat (004e0f10) credits the turn timer with the duration minus this.
+    /// </summary>
+    public readonly long[] ActingMs = new long[2];
+    long _actMark;
 
     public NetBattle(GameDatabase core, BattleState initial, int[] controller, int attackerMapPlayer, IBattleAI ai, long nowMs)
     {
@@ -30,6 +38,14 @@ public sealed class NetBattle
         AttackerMapPlayer = attackerMapPlayer;
         _ai = ai;
         TurnStartedMs = nowMs;
+        StartedMs = _actMark = nowMs;
+    }
+
+    /// <summary>Adds the time since the last command to the side that was to act (no active army in tactics).</summary>
+    public void CountActingTime(long nowMs)
+    {
+        if (Battle.State.Phase == BattlePhase.Combat && Battle.SideToAct is { } s) ActingMs[s] += nowMs - _actMark;
+        _actMark = nowMs;
     }
 
     public bool Finished => Battle.State.Phase == BattlePhase.Finished;
@@ -73,6 +89,7 @@ public sealed class NetBattle
 
     string? Apply(BattleCommand cmd, List<JsonObject> updates, long nowMs)
     {
+        CountActingTime(nowMs);
         var r = Battle.Apply(cmd);
         if (!r.Ok) return r.Error ?? "rejected";
         updates.Add(new JsonObject

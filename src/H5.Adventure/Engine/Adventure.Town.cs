@@ -21,6 +21,7 @@ public sealed partial class Adventure
             return;
         }
         var garrisonHero = S.Heroes.Find(x => x.Alive && x.InTown == t.Object && x.Garrisoned);
+        if (Refused(h, garrisonHero?.Id ?? -1, t.Object)) return;
         var defenders = garrisonHero != null ? garrisonHero.Army.Live().ToList() : t.Garrison.Live().ToList();
         if (defenders.Count == 0 && garrisonHero == null)
         {

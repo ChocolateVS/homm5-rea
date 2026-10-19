@@ -227,6 +227,7 @@ public sealed partial class Adventure
             Emit(new ObjectVisited(h.Id, -1, $"meet:{other.Id}"));
             return null;
         }
+        if (Refused(h, other.Id, -1)) return null;
         StartBattle(h, other.Id, -1, other.Pos, other.Army.Live().Select(s => new Stack(s.Creature, s.Count)).ToList(), siege: false);
         return null;
     }

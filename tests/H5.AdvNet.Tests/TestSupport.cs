@@ -40,6 +40,7 @@ sealed class Harness
 {
     public AdventureNetSession Session { get; }
     public AdventureNetReplica[] Clients { get; }
+    public IReadOnlyList<JsonNode> Setups { get; }
     public int Seq;
     public long Now;
     public readonly List<string> Rejections = new();
@@ -50,6 +51,7 @@ sealed class Harness
         Session = new AdventureNetSession(Env.Maps, Env.GhostData, () => Now);
         var roster = Enumerable.Range(0, players).Select(i => Env.Player(i, $"P{i}")).ToList();
         var setups = Session.Start(roster, Env.Settings(settings), seed);
+        Setups = setups;
         Clients = setups.Select((s, i) => new AdventureNetReplica(Env.Maps, new GameStarted(i, s))).ToArray();
         Received = Enumerable.Range(0, players).Select(_ => new List<GameUpdate>()).ToArray();
     }

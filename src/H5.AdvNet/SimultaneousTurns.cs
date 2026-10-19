@@ -88,8 +88,10 @@ public sealed class SimultaneousTurns
     /// Advances the phase: begins it when the turn reaches the humans, runs requested checks and
     /// parks the engine's current player on a human still playing. Returns the human whose end of
     /// turn the session must send to the engine when every human has ended (else -1).
+    /// <paramref name="combatRunning"/>: a battle is still running, so the turn does not pass yet (the tick
+    /// 00998520 clears the end flag of every current player that holds a combat, vf +0x8c → vf +0x50(0)).
     /// </summary>
-    public int Step()
+    public int Step(bool combatRunning = false)
     {
         if (Active && !InPhase && _g.S.Battle == null && !_g.S.Finished && _isHuman(_g.Current.Index))
         {
@@ -102,6 +104,7 @@ public sealed class SimultaneousTurns
         var playing = Humans.Where(Playing).ToList();
         if (playing.Count == 0)
         {
+            if (combatRunning) return -1;
             // Everybody ended: the turn passes on from the last human in the original order.
             InPhase = false;
             Ended.Clear();

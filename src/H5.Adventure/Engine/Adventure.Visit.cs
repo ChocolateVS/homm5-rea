@@ -43,6 +43,7 @@ public sealed partial class Adventure
         // Guarded objects (artifacts, mines, banks…) must be fought for first.
         if (os.Guards.Count > 0 && o.Kind is not ObjectKind.Monster)
         {
+            if (Refused(h, -1, o.Index)) return;
             StartBattle(h, -1, o.Index, h.Pos, os.Guards.Select(g => new Stack(g.Creature, g.Count)).ToList(), siege: false);
             return;
         }
@@ -410,6 +411,7 @@ public sealed partial class Adventure
             RollBank(o, bankId);
             if (os.Guards.Count > 0)
             {
+                if (Refused(h, -1, o.Index)) return;
                 StartBattle(h, -1, o.Index, h.Pos, os.Guards.Select(g => new Stack(g.Creature, g.Count)).ToList(), siege: false);
                 return;
             }
@@ -527,7 +529,7 @@ public sealed partial class Adventure
                     JoinArmy(h, ch.Creatures);
                     RemoveObject(ch.Object);
                 }
-                else
+                else if (!Refused(h, -1, ch.Object))
                     StartBattle(h, -1, ch.Object, O(ch.Object).Pos, S.Obj(ch.Object).Guards.Select(g => new Stack(g.Creature, g.Count)).ToList(), siege: false);
                 break;
         }

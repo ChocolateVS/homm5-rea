@@ -18,7 +18,7 @@ public class SimultaneousTests
         foreach (var c in h.Clients)
         {
             Assert.False(c.Desynced);
-            var expected = ViewFilter.ViewFor(h.Session.Game.S, h.Session.Map, c.MyPlayer, h.Session.Simultaneous?.ViewCurrentFor(c.MyPlayer));
+            var expected = h.Session.ViewFor(c.MyPlayer);
             Assert.Equal(JsonDiff.CanonicalHash(expected), JsonDiff.CanonicalHash(JsonNode.Parse(c.View.Serialize())));
         }
     }

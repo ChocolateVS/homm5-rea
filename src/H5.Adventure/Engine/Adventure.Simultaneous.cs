@@ -24,6 +24,17 @@ public sealed partial class Adventure
     public Func<int, int>? TurnOrder { get; set; }
 
     /// <summary>
+    /// Simultaneous turns' attack gate (00426b30, first test of the attack 00433440): returns true when an
+    /// attack by <c>attacker</c> on a hero (<c>defenderHero</c>) or object/town (<c>defenderObject</c>) must not
+    /// happen because the target's owner holds a combat or the target defends a running combat. A refused
+    /// attack does nothing (the hero stays where its move stopped). Null: no gate.
+    /// </summary>
+    public Func<HeroState, int, int, bool>? AttackRefused { get; set; }
+
+    bool Refused(HeroState attacker, int defenderHero, int defenderObject) =>
+        AttackRefused?.Invoke(attacker, defenderHero, defenderObject) == true;
+
+    /// <summary>
     /// The original's order (00998060 GiveTurnToNextPlayers): alive human players first, then the
     /// computer players, then a new day. <paramref name="isHuman"/> tells which map players humans control.
     /// </summary>
