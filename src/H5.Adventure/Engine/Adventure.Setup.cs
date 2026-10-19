@@ -379,10 +379,10 @@ public sealed partial class Adventure
             }
             case "TREASURE_CHEST":
             {
-                // 00a829bd: a minor artifact when a roll of 1..99 is below ChestMinorArtifactChance (RPGStats +0xc0,
+                // 00a829bd: a minor artifact when a roll of 0..99 is below ChestMinorArtifactChance (RPGStats +0xc0,
                 // 2 without stats); otherwise gold or experience by the amount (data 1..3).
                 int chance = Db.Stats.Root.Element("adventure").Int("ChestMinorArtifactChance", 2);
-                if (S.Rng.Range(1, 99) < chance) os.ArtifactId = RandomArtifact("ARTF_CLASS_MINOR");
+                if (S.Rng.Range(0, 99) < chance) os.ArtifactId = RandomArtifact("ARTF_CLASS_MINOR");
                 os.Variant = Roll() - 1;
                 break;
             }

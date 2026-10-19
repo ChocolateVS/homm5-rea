@@ -332,13 +332,13 @@ public sealed partial class Adventure
 {
     /// <summary>
     /// Shipwrecked Footman (data MinResource 1) / Peasant (0), rolled at map start as the exe's treasure
-    /// roller does (FUN_00a82720, case TREASURE_SHIPWRECK) with r = 1..99:
+    /// roller does (FUN_00a82720, case TREASURE_SHIPWRECK) with r = 0..99 (world stream 1, FUN_008e7840 with min 0, max 99):
     /// Footman: r&lt;20 → 2000 gold; 20–49 minor, 50–94 major, 95–99 relic artifact.
     /// Peasant: r&lt;30 → 500 gold; 30–59 → 1000 gold; 60–94 minor, 95–99 relic artifact.
     /// </summary>
     void RollShipwreck(ObjState os, bool footman)
     {
-        int r = S.Rng.Range(1, 99);
+        int r = S.Rng.Range(0, 99);
         string? cls;
         if (footman)
         {

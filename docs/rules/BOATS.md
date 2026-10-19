@@ -52,7 +52,7 @@ Texture layers under the sea are ordinary ground textures, so water comes from t
   first slot on ties) loses (n+1)/2, or (n+1)/4 with `HERO_SKILL_FORTUNATE_ADVENTURER` (skill 0x21);
   a single stack of one creature is spared. (The manual's "rounded down" is rounding up in the exe.)
 * **Shipwrecked Footman/Peasant** (`TREASURE_SHIPWRECK`, data MinResource 1/0) — exe `FUN_00a82720`
-  with r = 1..99: Footman r<20 → 2000 gold, 20–49 minor, 50–94 major, 95–99 relic artifact;
+  with r = 0..99 (FUN_008e7840, min 0): Footman r<20 → 2000 gold, 20–49 minor, 50–94 major, 95–99 relic artifact;
   Peasant r<30 → 500 gold, 30–59 → 1000 gold, 60–94 minor, 95–99 relic. Flotsam and sea chest rules
   in the same function match the existing implementation.
 

@@ -215,10 +215,15 @@ public sealed partial class Adventure
         if (AdventureDb.BankFor(type) is { } bankId) { VisitBank(h, p, o, os, bankId); return; }
         switch (type)
         {
-            case "BUILDING_MERCENARY_CAMP": OncePerHero(h, o, () => AddStat(h, "Attack", 1)); break;
-            case "BUILDING_MARLETTO_TOWER": OncePerHero(h, o, () => AddStat(h, "Defence", 1)); break;
-            case "BUILDING_STAR_AXIS": OncePerHero(h, o, () => AddStat(h, "SpellPower", 1)); break;
-            case "BUILDING_GARDEN_OF_REVELATION": OncePerHero(h, o, () => AddStat(h, "Knowledge", 1)); break;
+            // 00b02740 cases 0x32..0x35: once per hero (vcall 0x1f4, else [3]), FUN_00b01980 raises the attributes
+            // DefaultStats RaiseAttributesBuildings lists for the building type.
+            case "BUILDING_MERCENARY_CAMP":
+            case "BUILDING_MARLETTO_TOWER":
+            case "BUILDING_STAR_AXIS":
+            case "BUILDING_GARDEN_OF_REVELATION":
+                OncePerHero(h, o, () => RaiseAttributes(h, type));
+                break;
+            // Case 0x36: 1000 experience through the hero's modifiers (vcall 0x19c, then +0x198).
             case "BUILDING_LEARNING_STONE": OncePerHero(h, o, () => GainExperience(h, 1000)); break;
             case "BUILDING_ARENA":
                 OncePerHero(h, o, () => Offer(h, o, "attack_or_defence_2"));
@@ -230,8 +235,15 @@ public sealed partial class Adventure
                 OncePerHero(h, o, () => Offer(h, o, "spellpower_or_knowledge_1"));
                 break;
             case "BUILDING_LIBRARY_OF_ENLIGHTENMENT":
-                if (h.Level < 10) { Emit(new Message("library_level", "The Library of Enlightenment requires a hero of level 10 or more.")); break; }
-                OncePerHero(h, o, () => { AddStat(h, "Knowledge", 2); AddStat(h, "SpellPower", 2); });
+                // Case 0x6a: visited → [3]; level 10+ (vcall 0x20) or skill 0x29 (Wisdom) in the hero's list (vcall
+                // 0x188) → RaiseAttributesBuildings and [2]; otherwise [4] FirstVisitForbidden.
+                if (h.VisitedOnce.Contains(o.Index)) { Emit(new Message("already_visited", "Already visited.")); break; }
+                if (h.Level < 10 && h.MasteryOf("HERO_SKILL_WISDOM") == Mastery.None && !h.HasPerk("HERO_SKILL_WISDOM"))
+                {
+                    Emit(new ObjectVisited(h.Id, o.Index, "msg:4"));
+                    break;
+                }
+                OncePerHero(h, o, () => RaiseAttributes(h, type));
                 break;
 
             // Next-battle morale/luck and movement locations (p.261-264).
@@ -256,7 +268,12 @@ public sealed partial class Adventure
             case "BUILDING_FAERIE_RING": OncePerHero(h, o, () => h.NextBattleLuck += 1, untilBattle: true); break;
             case "BUILDING_MERMAIDS": OncePerHero(h, o, () => h.NextBattleLuck += 1, untilBattle: true); break;
             case "BUILDING_FONTAIN_OF_FORTUNE":
-                OncePerHero(h, o, () => h.NextBattleLuck += new[] { 3, 2, -1 }[S.Rng.Next(3)], untilBattle: true);
+                // 00b03035: luck = rng & 3, 0 → −1 (+1 instead with Fortunate Adventurer, skill 0x21).
+                OncePerHero(h, o, () =>
+                {
+                    int r = S.Rng.Next(4);
+                    h.NextBattleLuck += r > 0 ? r : h.HasPerk(FortunateAdventurerPerk) ? 1 : -1;
+                }, untilBattle: true);
                 break;
             case "BUILDING_FONTAIN_OF_YOUTH":
                 OncePerHero(h, o, () => { h.NextBattleMorale += 1; h.MovePoints += adv.Int("VisitFountainOfYouthMovementBonus", 400); }, untilBattle: true);
@@ -313,19 +330,35 @@ public sealed partial class Adventure
                 break;
 
             // One-off loot.
+            // One-off loot (00b02740 cases 10 / 0xd / 0xe): a looted flag on the object, which stays; once set every
+            // visit shows [3]. Rolls on world streams with inclusive bounds (FUN_008e7840).
             case "BUILDING_LEAN_TO":
-                // TODO(exe): "a few resources"; 1–4 of a random rare resource used.
-                GiveOne(p, 1 + S.Rng.Next(5), S.Rng.Range(1, 4));
-                RemoveOnce(o, os);
+                if (Looted(h, o, os)) break;
+                // Resource 0..5 (wood … gems), 1..4 of it, through Fortunate Adventurer (vcall 0x178); then [2].
+                GiveOne(p, S.Rng.Range(0, 5), FortunateAdventurer(h, S.Rng.Range(1, 4)));
+                Emit(new ObjectVisited(h.Id, o.Index, "msg:2"));
                 break;
             case "BUILDING_WAGON":
-                if (S.Rng.Next(2) == 0 && RandomArtifact("ARTF_CLASS_MINOR") is { } wa) GiveArtifact(h, wa);
-                else GiveOne(p, S.Rng.Next(2) == 0 ? Purse.Wood : Purse.Ore, S.Rng.Range(2, 5));
-                RemoveOnce(o, os);
+            {
+                if (Looted(h, o, os)) break;
+                // r 1..10: 1 → [3]; 2..5 → resource 0..5, 2..5 of it (vcall 0x178), [2]; 6..10 → an artifact.
+                int r = S.Rng.Range(1, 10);
+                if (r <= 1) Emit(new ObjectVisited(h.Id, o.Index, "msg:3"));
+                else if (r <= 5)
+                {
+                    GiveOne(p, S.Rng.Range(0, 5), FortunateAdventurer(h, S.Rng.Range(2, 5)));
+                    Emit(new ObjectVisited(h.Id, o.Index, "msg:2"));
+                }
+                // TODO(exe): the artifact's choice (00b03e09 → FUN_00afa990) is not traced; a random minor one is used.
+                else if (RandomArtifact("ARTF_CLASS_MINOR") is { } wa) GiveArtifact(h, wa);
                 break;
+            }
             case "BUILDING_SKELETON":
-                if (S.Rng.Next(2) == 0 && RandomArtifact(null) is { } sa) GiveArtifact(h, sa);
-                RemoveOnce(o, os);
+                if (Looted(h, o, os)) break;
+                // r 1..10: up to 8 → [3]; 9..10 → an artifact (FUN_00afa7a0).
+                // TODO(exe): the artifact's choice is not traced; a random one is used.
+                if (S.Rng.Range(1, 10) <= 8) Emit(new ObjectVisited(h.Id, o.Index, "msg:3"));
+                else if (RandomArtifact(null) is { } sa) GiveArtifact(h, sa);
                 break;
             case "BUILDING_TOMB_OF_THE_WARRIOR":
                 OncePerHero(h, o, () =>
@@ -379,6 +412,23 @@ public sealed partial class Adventure
         }
     }
 
+    /// <summary>FUN_00b01980: the attribute raises of DefaultStats RaiseAttributesBuildings for a building type.</summary>
+    void RaiseAttributes(HeroState h, string type)
+    {
+        var item = Core.Stats.Node("RaiseAttributesBuildings")?.Elements("Item").FirstOrDefault(i => i.Element("BuildingType")?.Value.Trim() == type);
+        foreach (var a in item?.Element("Attributes")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+        {
+            int v = int.TryParse(a.Element("Value")?.Value, out var n) ? n : 0;
+            switch (a.Element("HeroAttribute")?.Value.Trim())
+            {
+                case "HERO_ATTRIB_OFFENCE": AddStat(h, "Attack", v); break;
+                case "HERO_ATTRIB_DEFENCE": AddStat(h, "Defence", v); break;
+                case "HERO_ATTRIB_SPELLPOWER": AddStat(h, "SpellPower", v); break;
+                case "HERO_ATTRIB_KNOWLEDGE": AddStat(h, "Knowledge", v); break;
+            }
+        }
+    }
+
     void OncePerHero(HeroState h, MapObject o, Action effect, bool untilBattle = false)
     {
         var set = untilBattle ? h.VisitedSinceBattle : h.VisitedOnce;
@@ -418,11 +468,12 @@ public sealed partial class Adventure
         Emit(new ObjectVisited(-1, o.Index, o.Shared.Type));
     }
 
-    void RemoveOnce(MapObject o, ObjState os)
+    /// <summary>The loot sites' looted flag (object +0xe9): set on the first visit; afterwards the visit shows [3].</summary>
+    bool Looted(HeroState h, MapObject o, ObjState os)
     {
+        if (os.TimesLooted > 0) { Emit(new ObjectVisited(h.Id, o.Index, "msg:3")); return true; }
         os.TimesLooted++;
-        Emit(new ObjectVisited(-1, o.Index, o.Shared.Type));
-        RemoveObject(o.Index);
+        return false;
     }
 
     void Offer(HeroState h, MapObject o, string kind)
