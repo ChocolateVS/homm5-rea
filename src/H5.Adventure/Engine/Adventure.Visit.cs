@@ -64,8 +64,12 @@ public sealed partial class Adventure
             case ObjectKind.Mine:
             case ObjectKind.DwarvenWarren:
             case ObjectKind.AbandonedMine:
-            case ObjectKind.Dwelling:
                 Capture(o, os, p);
+                break;
+            case ObjectKind.Dwelling:
+                // exe 005a5d90 case 3 (CHeroVisitDwellingDialogLogEntry): every visit opens the hire screen.
+                Capture(o, os, p);
+                Emit(new ObjectVisited(h.Id, o.Index, "dwelling"));
                 break;
             case ObjectKind.Shipyard:
                 Capture(o, os, p);

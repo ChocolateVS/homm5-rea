@@ -552,6 +552,17 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 break;
             }
+            case ObjectVisited { What: "dwelling" } dv when HumanCaused(player) && !Autoplay && s.Hero(dv.HeroId) is { } recruiter:
+            {
+                // Map dwelling: the hire screen while the hero stands at it (exe 005a5d90 case 3).
+                Hud.Visible = false;
+                var hire = new DwellingHireScreen(this, recruiter.Id, dv.Object);
+                AddChild(hire);
+                await ToSignal(hire, Node.SignalName.TreeExited);
+                Hud.Visible = true;
+                Hud.Refresh();
+                break;
+            }
             case ObjectVisited wv when wv.What.StartsWith("BUILDING_WITCH_HUT:") && HumanCaused(player) && !Autoplay:
             {
                 // BUILDING_WITCH_HUT:<learned|known|full>:<skill>, told with the hut's stock texts.
