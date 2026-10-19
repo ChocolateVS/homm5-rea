@@ -344,7 +344,12 @@ public partial class CombatScreen : Control
         {
             // "spell:SPELL_ID": on the hero's turn, arm that spell and hover a stack it is refused on.
             if (!la.IsHero) { if (!Session.Busy && !_playing) Session.Submit(new DefendCmd(la.Actor) { Side = la.Side }); return; }
-            if (la.Spells.Find(o => o.Spell == kind[6..]) is not { } opt) return;
+            if (la.Spells.Find(o => o.Spell == kind[6..]) is not { } opt)
+            {
+                GD.Print($"[H5] hover-target: {kind[6..]} not castable; spells: {string.Join(", ", la.Spells.Select(o => o.Spell))}");
+                CombatLauncher.HoverTarget = null;
+                return;
+            }
             _mode = InputMode.Spell;
             _pendingSpell = opt;
             id = Session.Battle.State.Living.Where(u => !u.IsWarMachine && Session.Battle.SpellTargetRefusalKey(la.Actor, la.Side, opt.Spell, opt.Mastery, u.Id) != null)
@@ -355,6 +360,9 @@ public partial class CombatScreen : Control
         var p = Arena.Camera.UnprojectPosition(Arena.Grid.StackCenter(new Vector2I(t.Pos.X, t.Pos.Y), t.Size) + new Vector3(0, 0.3f, 0));
         CombatLauncher.FakeMouse = p + new Vector2(-6, 4);
         CombatLauncher.HoverTarget = null;
+        // `--tooltip-unit=-1[:CLICKS]` with --hover-target: right-click the hovered target (tooltip + prediction).
+        if (CombatLauncher.TooltipUnit is { Unit: < 0 } htu)
+            GetTree().CreateTimer(0.5).Timeout += () => { for (int i = 0; i < htu.Clicks; i++) ShowTooltip(t, p); };
         if (_fakeCursor == null) { _fakeCursor = new TextureRect { MouseFilter = MouseFilterEnum.Ignore, ZIndex = 100 }; AddChild(_fakeCursor); }
         _lastHover = null;
     }
@@ -942,8 +950,12 @@ public partial class CombatScreen : Control
         ShowStaticHighlights(hl);
         // Moves show no prediction in the original; attacks, shots, spells and abilities do; a refused
         // spell target shows the refusal reason instead.
-        Hud.SetPrediction(action?.Pred ?? _refusal);
+        _hoverPrediction = action?.Pred ?? _refusal;
+        Hud.SetPrediction(_hoverPrediction);
     }
+
+    /// <summary>The hovered target's prediction; a right-click tooltip carries it underneath (exe FUN_00575430).</summary>
+    CombatPredictions.Prediction? _hoverPrediction;
 
     /// <summary>Refusal text for the hovered target (set by Resolve when it returns no action).</summary>
     CombatPredictions.Prediction? _refusal;
@@ -1253,7 +1265,10 @@ public partial class CombatScreen : Control
         HideTooltip(keepCount: true);
         _tooltipUnit = u.Id;
         _tooltipAt = at;
-        _tooltip = CreatureTooltip.Build(Session.Battle, u, _tooltipClicks % 3, null);
+        // FUN_00575430 → FUN_005751b0 / FUN_00573dd0: when a prediction text is current, a text tooltip with it is
+        // stacked under the creature info in the TOOLTIPS_HOLDER.
+        var pred = _hoverPrediction is { } hp && _lastHover is { } lh && Session.Battle.State.At(new Cell(lh.X, lh.Y))?.Id == u.Id ? hp.BoxMarkup : null;
+        _tooltip = CreatureTooltip.Build(Session.Battle, u, _tooltipClicks % 3, pred);
         Hud.AddChild(_tooltip);
         // Placed beside the cursor and kept on screen (exact anchor of the stock tooltip not traced).
         var view = GetViewportRect().Size;

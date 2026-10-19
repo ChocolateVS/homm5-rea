@@ -134,12 +134,17 @@ public partial class CreatureTooltip : Control
         _screen.Relayout();
         float s = _screen.UiScale;
         float h = _root.Rect.H;
-        if (Prediction != null && _screen.NodeOf(_root) is { } rootNode)
-        {
-            rootNode.AddChild(new BitmapText { Markup = Prediction, Wrap = true, Position = new Vector2(8, h + 2), Size = new Vector2(Width - 16, 34) });
-            h += 38;
-        }
         _screen.Size = new Vector2(Width, h) * s;
         Size = _screen.Size;
+        // The prediction goes under the creature info as a stock text tooltip (exe FUN_00573dd0 gathers the
+        // "CreatureInfo" and "Prediction" windows; FUN_005751b0 builds the latter as a text tooltip).
+        if (Prediction != null)
+        {
+            StockTooltip.EnsureInit();
+            var tip = StockTooltip.Build(Prediction, s);
+            tip.Position = new Vector2(0, Size.Y);
+            AddChild(tip);
+            Size = new Vector2(Math.Max(Size.X, tip.CustomMinimumSize.X), Size.Y + tip.CustomMinimumSize.Y);
+        }
     }
 }
