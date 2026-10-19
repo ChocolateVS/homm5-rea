@@ -98,7 +98,7 @@ Hero primary-stat getters are on the CHero interface vtable 00e7e484 (CHero + 28
 | ID | Status | Exe | Original behaviour | Test |
 |---|---|---|---|---|
 | `HERO_SKILL_LEADERSHIP` | MATCH | 00b4cae0 | hero morale = base fields + Leadership mastery (when > 0) − 1 with Pariah − a curse object's penalty; the engine adds the mastery the same way |  |
-| `HERO_SKILL_PARIAH` | MATCH | 00b4cae0 | Fallen Knight: hero morale − 1 (engine `Sk.FallenKnight`) |  |
+| `HERO_SKILL_PARIAH` | MATCH | 00b4cae0, 00bc04b8 | Fallen Knight: hero morale − 1 and +5 spell power for Dark spells (engine `Sk.FallenKnight`) |  |
 | `HERO_SKILL_LUCK` | MATCH | 00b4ca10 | hero luck = base fields + Luck mastery (when > 0) − curse + town-building terms; the engine adds the mastery the same way |  |
 | `HERO_SKILL_WAR_MACHINES` | MATCH | 004bd7b0, 004bc7f0, 004bc660, 004bb770/004bb7d0, 004bc710/004bc780, 004bb8c0/004bb920 | HP = record + mastery·WarMachines_HealthBonusPerSkillTrained, × PerkSpecificHealthMultiplier (truncated) with Ballista (id 1) / First Aid (3) / Catapult for ids 2 AND 4 (the Ammo Cart uses the Catapult perk — as the engine does); attack/defence/min/max damage from the record tables by mastery (index clamped to the table); Ballista attack + level with HERO_SPEC_WAR_MACHINES (spec 8) and damage × (hero vcall 0x1c + vcall 0x10, the engine's Attack + Knowledge — the two getters not decompiled further); the tables hold integers, so the engine's rounding is exact |  |
 | `PEDANT_OF_MASTERY` | FIXED | 00b4d150, 00875550 | GetSkillMastery: for the hero class's racial skill (Knight Training, Ranger Avenger, Wizard Artificier, Demon Lord Gating, Necromancer Necromancy, Warlock Invocation, Runemage Runelore, Barbarian Blood Rage) +1 with the artifact (also from none), results outside 0..4 → 0. Was ignored | AuditSkillTestsH.PendantOfMasteryRaisesTheRacialSkill |
@@ -154,3 +154,38 @@ enemy hero's Shatter (`004e6190`, ids 0xbf/0xc3/0xc7/0xcb with Weaken 0xc1/0xc5/
 
 Not changed: for runic / warcry schools 00b4b440 returns 0 while the engine uses Runelore / Voice mastery — runes and
 warcries are resolved by their own code (spells R partition).
+
+## Hero spell power
+
+`FUN_00bc00d0` (hero caster vcall 0x24): hero spell power (vcall 0x164) — returned unchanged for item casts — + combat
+field +0xec; + clamp(town effect values, 0, 1000) for SPELL_TOWN_DARK_GUARDIAN / DIETY_OF_FIRE / BLAZING_ANVIL; − the
+SPELL_SKILL_MIGHT_OVER_MAGIC effect's value; a switch on the RAW spell id (two jump tables at 00bc05b8 / 00bc05f4);
+Twilight +3 (Dark and Light), Fallen Knight +5 (Dark); enemy Shrug Darkness × multiplier (chop) for Dark; + the Power
+Feed effect value; at least 1. Then 004e6190 (Shatter / Weaken) in 00a6a7e0.
+
+| ID | Status | Exe | Original behaviour | Test |
+|---|---|---|---|---|
+| `HERO_SKILL_MASTER_OF_QUAKES` | FIXED | 00bc0331 | +4 for SPELL_LAND_MINE (0x26), SPELL_ARCANE_CRYSTAL (0x11a) and SPELL_BLADE_BARRIER (0x11c) — not Earthquake (0x29 falls outside the table), despite the perk text. Engine used Land Mine + Earthquake | AuditSkillTestsH.HeroSpellPowerPerkTableFollowsTheExe |
+| `ARTIFACT_BAND_OF_CONJURER` | FIXED | 00bc035a | +4 for Summon Elementals (artifact 60). Was missing | AuditSkillTestsH.HeroSpellPowerPerkTableFollowsTheExe |
+| `HERO_SPEC_WEILDER_OF_FIRE` | FIXED | 00bc0270 | Fireball (raw id 5): + ((level − 1) / WeilderOfFire_FireballSpellpowerBonus/LevelDivisor) · PerDividedLevel + Base. Was missing | AuditSkillTestsH.HeroSpellPowerPerkTableFollowsTheExe |
+| `HERO_SKILL_MASTER_OF_SICKNESS` | MATCH | 00bc021e | +4 for Unholy Word |  |
+| `HERO_SKILL_MASTER_OF_WRATH` | MATCH | 00bc0247 | +4 for Holy Word |  |
+| `HERO_SKILL_MASTER_OF_ANIMATION` | MATCH | 00bc0426 | +4 for Magic Fist and Animate Dead |  |
+| `HERO_SKILL_MASTER_OF_CREATURES` | MATCH | 00bc0392 | +4 for Summon Elementals and Conjure Phoenix |  |
+| `HERO_SPEC_MASTER_OF_ELEMENTS` | MATCH | 00bc03d0 | Summon Elementals / Conjure Phoenix + ((level − 1)/div)·per + base (MasterOfElements_SpellpowerBonus) |  |
+| `HERO_SKILL_RUNIC_ARMOR` | MATCH | 00bc02db | + RunicArmor_SpellpowerBonus for Celestial Shield |  |
+| `HERO_SKILL_TWILIGHT` | MATCH | 00bc0483, 00bc04e8 | +3 for Light and Dark spells |  |
+| `HERO_SKILL_SHRUG_DARKNESS` | FIXED | 00bc0530..00bc0575 | enemy hero's perk: Dark spells' running power × ShrugDarkness_EnemySpellpowerMultiplier, truncated (engine kept the fraction) | AuditSkillTestsH.HeroSpellPowerPerkTableFollowsTheExe |
+| Hero spell power order | FIXED | 00bc00d0, 00a6a7e0 | the perk bonuses use the raw spell id (empowered variants get none); Power Feed is added before the minimum of 1 and before Shatter / Weaken (engine added it after them and allowed 0) | AuditSkillTestsH.HeroSpellPowerPerkTableFollowsTheExe |
+
+Not compared: the engine's Might over Magic subtracts half the enemy's spell power, the exe subtracts the value of the
+SPELL_SKILL_MIGHT_OVER_MAGIC effect (set in 00c562f0, not decompiled); the town-building effects are applied by the
+adventure hand-off as hero spell power.
+
+## Spell resolution side effects (00983790)
+
+| ID | Status | Exe | Original behaviour | Test |
+|---|---|---|---|---|
+| `ARTIFACT_TWISTING_NEITHER` | FIXED | 00983790 (artifact 0x43 check) | Pendant of Conflux: when an enemy HERO casts (caster vcall 0x74 non-null), the artifact's owner gets (mana before − mana after) / 2 spell points (setter vcall 0x22c; whether it caps at the maximum is not traced — the engine does not cap). Was missing | AuditSkillTestsH.PendantOfConfluxGainsHalfTheEnemysSpentMana |
+| `HERO_SKILL_INTELLIGENCE` | MATCH | 00b4c8f0 | maximum spell points = clamp(HeroManaPerKnowledge, 1, 1000) · Knowledge; with Intelligence trunc(clamp(Intelligence_ManaPointsBonus, 0.5, 1000) · that) — the engine's formula |  |
+| `HERO_SKILL_RESISTANCE` | MATCH | 0097c9f0 | Magic Resistance perk: +15 to the stack's resistance chance (see `combat_spells.md`, ResistanceChanceSumsLikeTheExe) |  |

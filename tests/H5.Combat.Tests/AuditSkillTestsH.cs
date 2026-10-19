@@ -170,4 +170,59 @@ public class AuditSkillTestsH(GameDataFixture f)
         s.Heroes[1].Skills.Add(new SkillEntry("HERO_SKILL_SHATTER_DESTRUCTIVE_MAGIC", Mastery.Advanced));
         Assert.Equal(Mastery.Basic, b.HeroMastery(s.Heroes[0], f.Db.Spell("SPELL_LIGHTNING_BOLT")!));
     }
+
+    // exe 00bc00d0 (hero spell power): raw-spell-id switch — Master of Quakes +4 for Land Mine, Arcane Crystal and Blade
+    // Barrier (not Earthquake); Band of Conjurer +4 for Summon Elementals; Weilder of Fire +((level−1)/div)·per + base for
+    // Fireball only (not its empowered variant); the total is at least 1.
+    [Fact]
+    public void HeroSpellPowerPerkTableFollowsTheExe()
+    {
+        var (b, s) = Setup(Hero(0), Hero(3), "CREATURE_FOOTMAN");
+        var h = s.Heroes[0];
+        h.SpellPower = 5; h.Perks.Clear(); h.Artifacts.Clear(); h.Specialization = "";
+        double P(string spell) => b.HeroSpellPower(h, f.Db.Spell(spell)!);
+        h.Perks.Add("HERO_SKILL_MASTER_OF_QUAKES");
+        Assert.Equal(9, P("SPELL_ARCANE_CRYSTAL"));
+        Assert.Equal(9, P("SPELL_LAND_MINE"));
+        Assert.Equal(5, P("SPELL_EARTHQUAKE"));
+        h.Perks.Clear();
+        h.Artifacts.Add("ARTIFACT_BAND_OF_CONJURER");
+        Assert.Equal(9, P("SPELL_SUMMON_ELEMENTALS"));
+        h.Artifacts.Clear();
+        h.Specialization = "HERO_SPEC_WEILDER_OF_FIRE"; h.Level = 10;
+        const string k = "combat/HeroSpecializations/Wizard/WeilderOfFire_FireballSpellpowerBonus/";
+        int bonus = 9 / (int)f.Db.Stats.Get(k + "LevelDivisor", 3) * (int)f.Db.Stats.Get(k + "PerDividedLevel", 1) + (int)f.Db.Stats.Get(k + "Base", 1);
+        Assert.Equal(5 + bonus, P("SPELL_FIREBALL"));
+        if (f.Db.Spell("SPELL_EMPOWERED_FIREBALL") != null) Assert.Equal(5, P("SPELL_EMPOWERED_FIREBALL"));
+        h.Specialization = ""; h.SpellPower = 0;
+        Assert.Equal(1, P("SPELL_FIREBALL"));
+        // enemy Shrug Darkness: dark spells' power × ShrugDarkness_EnemySpellpowerMultiplier, truncated (00bc053f)
+        h.SpellPower = 5; s.Heroes[1].Perks.Add("HERO_SKILL_SHRUG_DARKNESS");
+        Assert.Equal((int)(5 * (float)f.Db.Stats.Get("combat/HeroSkills/Runemage/ShrugDarkness_EnemySpellpowerMultiplier", 0.5)), P("SPELL_CURSE"));
+    }
+
+    // exe 00983790 (spell resolution, enemy hero with artifact 67 ARTIFACT_TWISTING_NEITHER = Pendant of Conflux): the
+    // hero gains half the points the casting enemy hero spent. Was missing.
+    [Fact]
+    public void PendantOfConfluxGainsHalfTheEnemysSpentMana()
+    {
+        var (b, s) = Setup(Hero(0), Hero(3, "ARTIFACT_TWISTING_NEITHER"), "CREATURE_FOOTMAN");
+        var h = s.Heroes[0]; var enemy = s.Heroes[1];
+        h.Perks.Clear();
+        if (!h.Spells.Contains("SPELL_MAGIC_ARROW")) h.Spells.Add("SPELL_MAGIC_ARROW");
+        h.Mana = 500; enemy.Mana = 10;
+        b.Begin();
+        for (int i = 0; i < 50 && b.State.Active != Actor.Hero(0); i++)
+        {
+            var la = b.GetLegalActions();
+            if (la == null) break;
+            b.Apply(la.IsHero ? new WaitCmd(la.Actor) { Side = b.SideToAct!.Value } : new DefendCmd(la.Actor) { Side = b.SideToAct!.Value });
+        }
+        Assert.Equal(Actor.Hero(0), b.State.Active);
+        int cost = b.HeroManaCost(h, f.Db.Spell("SPELL_MAGIC_ARROW")!);
+        int before = enemy.Mana;
+        var imp = s.Units.First(u => u.CreatureId == "CREATURE_IMP" && u.Alive);
+        Assert.True(b.Apply(new CastSpellCmd(Actor.Hero(0), "SPELL_MAGIC_ARROW", imp.Id) { Side = 0 }).Ok);
+        Assert.Equal(before + cost / 2, enemy.Mana);
+    }
 }

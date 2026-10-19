@@ -12,11 +12,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 273 |
-| MATCH | 135 |
+| FIXED | 277 |
+| MATCH | 144 |
 | GAP | 11 |
-| UNVERIFIED | 169 |
-| N/A | 56 |
+| UNVERIFIED | 159 |
+| N/A | 55 |
 
 ## Core mechanics
 
@@ -248,8 +248,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_FIRST_AID` | FIXED | 00977190 | tent heal 10/20/50/100, Empiric, ring ×2 | tests/H5.Combat.Tests/WarMachineAuditTests |
 | `HERO_SKILL_BALLISTA` | FIXED | 00a75bf0, 00a65260 | one action = all shots at the chosen target; +1 shot | tests/H5.Combat.Tests/WarMachineAuditTests.BallistaShotsPerAction |
 | `HERO_SKILL_CATAPULT` | FIXED | 00a75bf0, 00b3bb50 | catapult shots fired in one action at the aimed building | tests/H5.Combat.Tests/WarMachineAuditTests |
-| `HERO_SKILL_INTELLIGENCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_RESISTANCE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_INTELLIGENCE` | MATCH | 00b4c8f0 | maximum spell points = clamp(HeroManaPerKnowledge, 1, 1000) · Knowledge; with Intelligence trunc(clamp(Intelligence_ManaPointsBonus, 0.5, 1000) · that) — the engine's formula |  |
+| `HERO_SKILL_RESISTANCE` | MATCH | 0097c9f0 | Magic Resistance perk: +15 to the stack's resistance chance (see `combat_spells.md`, ResistanceChanceSumsLikeTheExe) |  |
 | `HERO_SKILL_LUCKY_STRIKE` | FIXED | 00a59990, 00a5a170 | Soldier's Luck works two ways by caller: flag-1 abilities (Bash, Brutality, Crushing Blow, Flamewave, Taunt, Paw Strike, Bear Roar) double their ProcFactor; callers that name the attacker (on-hit group, Brutality, Warding Arrows, Bear Roar) get a second Range(0,100) roll | AuditProcChanceTests |
 | `HERO_SKILL_TACTICS` | FIXED | 004d8c10 | extra deployment column (see Tactics phase columns) | AuditHeroTests.TacticsColumnsFollowTheOriginalRule |
 | `HERO_SKILL_ARCHERY` | MATCH | 00a58de0 | ranged strikes ×(1+clamp(SkillOffence/Archery_DamageBonus,0,10)) when HasSkill(0x23) |  |
@@ -263,13 +263,13 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_MASTER_OF_LIGHTNINGS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MASTER_OF_CURSES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MASTER_OF_MIND` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_MASTER_OF_SICKNESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_MASTER_OF_SICKNESS` | MATCH | 00bc021e | +4 for Unholy Word |  |
 | `HERO_SKILL_MASTER_OF_BLESSING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MASTER_OF_ABJURATION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_MASTER_OF_WRATH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_MASTER_OF_QUAKES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_MASTER_OF_CREATURES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_MASTER_OF_ANIMATION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_MASTER_OF_WRATH` | MATCH | 00bc0247 | +4 for Holy Word |  |
+| `HERO_SKILL_MASTER_OF_QUAKES` | FIXED | 00bc0331 | +4 for SPELL_LAND_MINE (0x26), SPELL_ARCANE_CRYSTAL (0x11a) and SPELL_BLADE_BARRIER (0x11c) — not Earthquake (0x29 falls outside the table), despite the perk text. Engine used Land Mine + Earthquake | AuditSkillTestsH.HeroSpellPowerPerkTableFollowsTheExe |
+| `HERO_SKILL_MASTER_OF_CREATURES` | MATCH | 00bc0392 | +4 for Summon Elementals and Conjure Phoenix |  |
+| `HERO_SKILL_MASTER_OF_ANIMATION` | MATCH | 00bc0426 | +4 for Magic Fist and Animate Dead |  |
 | `HERO_SKILL_HOLY_CHARGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_PRAYER` | FIXED | 00989fd0, 00989790, 0098a430 | bonus = Prayer_DefenceBonus (data), not hard-coded | tests/H5.Combat.Tests/AuditSpecTests.WhiteKnightDoublesPrayer |
 | `HERO_SKILL_CONSUME_CORPSE` | FIXED | 0097b690 | mana = round(max(1, HP/k)), capped by missing mana | (UseAbility CONSUME_CORPSE) |
@@ -291,7 +291,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_HOLD_GROUND` | FIXED | 008a22f0 | multiplies the defend factor by HoldGround_DefendBonusMultiplier, or the Take Roots factor by HoldGround_TakeRootsBonusMultiplier (see Defend posture) | AuditHeroTests.TakeRootsReplacesTheDefendFactor |
 | `HERO_SKILL_GUARDIAN_ANGEL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ANCIENT_SMITHY` | FIXED | 00a5ed90 (call 00a5effb), 0097d740 | Fiery Wrath: 0.1 × damage dealt (creatures only) as fire damage via FUN_0097d740 with stand-in spell Fireball (ECX = 5), no caster; no Mark of Fire multiplier (FUN_00977a80 is not on this path). Engine skipped protection and doubled it on Mark of Fire targets | AuditSkillTestsG.PerkElementalDamageIsReducedByProtectionOfItsStandInSpell |
-| `HERO_SKILL_PARIAH` | MATCH | 00b4cae0 | Fallen Knight: hero morale − 1 (engine `Sk.FallenKnight`) |  |
+| `HERO_SKILL_PARIAH` | MATCH | 00b4cae0, 00bc04b8 | Fallen Knight: hero morale − 1 and +5 spell power for Dark spells (engine `Sk.FallenKnight`) |  |
 | `HERO_SKILL_ELEMENTAL_BALANCE` | FIXED | 00861630 (0086173c..008617aa), 00862130 (00862205..0086225e) | after a successful Summon Elementals / Conjure Phoenix, the caster's opponent (vf 0x10 → vf 0xc) with skill 0x54 summons for its own side: the opposite elemental of FUN_00861120's pair (Fire ↔ Water, Earth ↔ Air) in the same (week-adjusted, min 1) number, or a phoenix built from the caster's summon info (same stats); logged with skill 0x54. Engine had nothing. Placement of the counter-summon uses the engine's summon placement (exe position argument not decoded) | AuditSpellSTests.ElementalBalanceCounterSummons |
 | `HERO_SKILL_ABSOLUTE_CHARGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_QUICK_GATING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -313,7 +313,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_SPELLPROOF_BONES` | FIXED | 0097af50 (0097afc0) | Boneward: ×0.8 (constant 00e1857c) for Destructive spells on every stack of the hero; no undead condition (text: "any Destructive Magic spells to all troops"). Engine also required an undead target | AuditSkillTestsG.BonewardProtectsLivingTroopsFromDestructiveSpellsOnly |
 | `HERO_SKILL_DEADLY_COLD` | FIXED | 00977a80, 0097d600 | Cold Death: Ice Bolt (4), Circle of Winter (6), Deep Freeze (0x117) add one creature's HP (vfunc 0x1a8) to the raw spell damage BEFORE protection (FUN_0097d600 applies FUN_0097d2a0 to the sum). Engine added the HP after protection, pre-scaled by the protection share | AuditSkillTests.ColdDeathAndExorcismActBeforeProtection |
 | `HERO_SKILL_SPIRIT_LINK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_TWILIGHT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_TWILIGHT` | MATCH | 00bc0483, 00bc04e8 | +3 for Light and Dark spells |  |
 | `HERO_SKILL_ABSOLUTE_FEAR` | MATCH | 00989fd0 | under Death Scream (effect 0x3b) morale −6 more when the screaming (enemy) hero has the perk (constant 6 in code) |  |
 | `HERO_SKILL_IMBUE_BALLISTA` | MATCH | 00a59be0 | the war machine with id 1 (Ballista) casts the imbued spell (FUN_0097ea20) on its target when its hero has the perk |  |
 | `HERO_SKILL_CUNNING_OF_THE_WOODS` | UNVERIFIED | 00a5ae40 | implemented; not yet compared with the exe |  |
@@ -359,9 +359,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_DEFENSIVE_FORMATION` | MATCH | 008a22f0 | Fortress race (9) only: += clamp(trunc(10·log10(A/B)), 0, Defensive_MaxDefenseBonus) — trunc matches the manual's floor; operands A (unit+0xf0) / B (unit+0xa0 vf 0x24) taken as adjacent dwarven power / own power per manual p.323 (not traced further) |  |
 | `HERO_SKILL_DISTRACT` | MATCH | 00bbf935 | − Distract_EnemyHeroInitiativeDrop when the enemy hero HasSkill(0xa2) |  |
 | `HERO_SKILL_SET_AFIRE` | FIXED | 004e6770 (004e6893..004e6960), 004e5790 | fire-rider spells only (Fireball, Firewall, Armageddon — engine also fired on Magic Arrow and skipped Armageddon), enemy targets, damage > 0; per-turn damage trunc(trunc(D / clamp(MarkOfFire_FireDamageMultiplier,0,1000) if marked) · SetAfire_DamageMultiplier) with D the damage dealt (engine: base damage / 3); duration SetAfire_DamageDurationInRounds (004e57d0 case 0x10e) | SetAfireBurnsAShareOfTheDamageDealt |
-| `HERO_SKILL_SHRUG_DARKNESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_SHRUG_DARKNESS` | FIXED | 00bc0530..00bc0575 | enemy hero's perk: Dark spells' running power × ShrugDarkness_EnemySpellpowerMultiplier, truncated (engine kept the fraction) | AuditSkillTestsH.HeroSpellPowerPerkTableFollowsTheExe |
 | `HERO_SKILL_ETERNAL_LIGHT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_RUNIC_ARMOR` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_RUNIC_ARMOR` | MATCH | 00bc02db | + RunicArmor_SpellpowerBonus for Celestial Shield |  |
 | `HERO_SKILL_ABSOLUTE_PROTECTION` | MATCH | 008a3ef0 | enemy rolls normally; a lucky result becomes normal, anything else becomes BadLuck_DamageMultiplier — unless the attacker's hero has Absolute Luck |  |
 | `HERO_SKILL_EMPATHY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_PREPARATION` | UNVERIFIED | 008a65e0 | implemented; not yet compared with the exe |  |
@@ -449,12 +449,12 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_MIND_CLEANER` | FIXED | 00983790 (0098431f-009843f2) | combat spec (was marked economy-only): after an enemy hero's spell resolves, ability roll (no second roll) of 100 / max(1, circle + 1) − caster level + Mind Cleaner level (integer); success blocks that spell in the caster's book for the rest of the combat (hero vf 0x2b8). Hero roles in the subtraction read from the call order; levels taken as hero level (vf 0x20) | AuditSpecSetTests.MindCleanerBlocksTheEnemySpell |
 | `HERO_SPEC_EMPIRIC` | FIXED | 00977190 | First Aid Tent +5 HP per level | tests/H5.Combat.Tests/WarMachineAuditTests |
 | `HERO_SPEC_SOULHUNTER` | FIXED | 00a5b440, 00a61310 | min(count, level) Manes when an enemy stack dies | tests/H5.Combat.Tests/AuditSpecTests2.SoulhunterRaisesManesFromDeadEnemies |
-| `HERO_SPEC_MASTER_OF_ELEMENTS` | FIXED | 00a5a5a0, 00a61310 | elementals on own stack death; summon spell power | tests/H5.Combat.Tests/AuditSpecTests2.MasterOfElementsSummonsOnOwnLosses |
+| `HERO_SPEC_MASTER_OF_ELEMENTS` | MATCH | 00bc03d0 | Summon Elementals / Conjure Phoenix + ((level − 1)/div)·per + base (MasterOfElements_SpellpowerBonus) |  |
 | `HERO_SPEC_RADIANT` | MATCH | 00983150 | verified in EXE_FINDINGS.md |  |
 | `HERO_SPEC_INEXHAUSTIBLE` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_FEATHER_MAGE` | FIXED | 00bc1eb0 | hero initiative ×(1 + clamp(FeatherMage_InitiativeBonusBase + level·PerLevel, 0, 5)); engine had no Base term and no clamp | AuditSpecSetTests.FeatherMageInitiativeIsClamped |
 | `HERO_SPEC_DISRUPTER` | FIXED | 00976db0 | Vulnerability deals round(10 + (lvl−1)·10/3) | (ResolveSpell) |
-| `HERO_SPEC_WEILDER_OF_FIRE` | N/A |  | no combat use found in exe or engine |  |
+| `HERO_SPEC_WEILDER_OF_FIRE` | FIXED | 00bc0270 | Fireball (raw id 5): + ((level − 1) / WeilderOfFire_FireballSpellpowerBonus/LevelDivisor) · PerDividedLevel + Base. Was missing | AuditSkillTestsH.HeroSpellPowerPerkTableFollowsTheExe |
 | `HERO_SPEC_GREMLINS` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_GOLEMS` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_MAGES` | N/A |  | no combat use found in exe or engine |  |
@@ -653,10 +653,12 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `UNICORN_HORN_BOW` | FIXED | 008a34c0 | army shooters have No Range Penalty | tests/H5.Combat.Tests/AuditArtifactTests.UnicornHornBowRemovesRangePenalty |
 | `ARTIFACT_SHAWL_OF_GREAT_LICH` | FIXED | 008a34c0 | negates enemy IMMUNITY_TO_MIND_CONTROL | tests/H5.Combat.Tests/AuditArtifactTests.ShawlOfTheGreatLichNegatesEnemyMindImmunity |
 | `ARTFSET_EFFECT_MAGIS` | FIXED | 00bbf8f0..00bbf930 | with 4+ pieces (any class) or 2+ pieces and hero class 3 (Wizard): kept ATB r + (1 − r) · Magis_4_2Wizard_AfterCastATBLessPercents · 0.01. Engine added the percent to r and only for Wizards | AuditSkillTestsH.MagisSetScalesTheCastAtbByTheRemainder |
+| `ARTIFACT_BAND_OF_CONJURER` | FIXED | 00bc035a | +4 for Summon Elementals (artifact 60). Was missing | AuditSkillTestsH.HeroSpellPowerPerkTableFollowsTheExe |
 | `ARTIFACT_JINXING_BAND` | FIXED | 00989c40 (tail) | −2 luck per band to the enemy stacks. Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
 | `ARTIFACT_OGRE_CLUB` | FIXED | 004bc190 (004bc3ce) | −5 % each | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `ARTIFACT_OGRE_SHIELD` | FIXED | 004bc190 (004bc3e3) | −5 % each | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `ARTIFACT_RING_OF_CELERITY` | FIXED | 004bc190 (004bc2d8) | +10 % per ring | (same helper) |
+| `ARTIFACT_TWISTING_NEITHER` | FIXED | 00983790 (artifact 0x43 check) | Pendant of Conflux: when an enemy HERO casts (caster vcall 0x74 non-null), the artifact's owner gets (mana before − mana after) / 2 spell points (setter vcall 0x22c; whether it caps at the maximum is not traced — the engine does not cap). Was missing | AuditSkillTestsH.PendantOfConfluxGainsHalfTheEnemysSpentMana |
 | `CLOAK_OF_MOURNING` | FIXED | 00989fd0, 00989c40 (tails) | −2 morale and −2 luck per cloak to the enemy stacks. Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
 | `DRAGON_BONE_GRAVES` | FIXED | 004bc190 (004bc31e..004bc35d) | +10 % each for creatures without shots, not ABILITY_CASTER / ABILITY_RANDOM_CASTER, not flying | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `DRAGON_EYE_RING` | FIXED | 004bc190 (004bc3b1) | +10 % each for shooters (record shots > 0) | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |

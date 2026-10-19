@@ -193,14 +193,24 @@ public sealed partial class Battle
         string id = BaseSpell(sp.Id);
         if (h.HasPerk(Sk.Twilight) && sp.School is "MAGIC_SCHOOL_DARK" or "MAGIC_SCHOOL_LIGHT") p += 3;
         if (h.HasPerk(Sk.FallenKnight) && sp.School == "MAGIC_SCHOOL_DARK") p += 5;
-        if (h.HasPerk(Sk.MasterWrath) && id == "SPELL_HOLY_WORD") p += 4;
-        if (h.HasPerk(Sk.MasterPain) && id == "SPELL_UNHOLY_WORD") p += 4;
-        if (h.HasPerk(Sk.MasterLife) && id is "SPELL_MAGIC_FIST" or "SPELL_ANIMATE_DEAD") p += 4;
-        if (h.HasPerk(Sk.MasterEarthblood) && id is "SPELL_LAND_MINE" or "SPELL_EARTHQUAKE") p += 4;
-        if (h.HasPerk(Sk.MasterConjuration) && id is "SPELL_CONJURE_PHOENIX" or "SPELL_SUMMON_ELEMENTALS") p += 4;
+        // exe 00bc00d0 switches on the RAW spell id (empowered variants get none of these): Master of Sickness /
+        // Wrath / Animation / Quakes / Creatures +4, Band of Conjurer +4 on Summon Elementals, Weilder of Fire on
+        // Fireball, Master of Elements on Summon Elementals / Conjure Phoenix, Runic Armor on Celestial Shield.
+        string raw = sp.Id;
+        if (h.HasPerk(Sk.MasterWrath) && raw == "SPELL_HOLY_WORD") p += 4;
+        if (h.HasPerk(Sk.MasterPain) && raw == "SPELL_UNHOLY_WORD") p += 4;
+        if (h.HasPerk(Sk.MasterLife) && raw is "SPELL_MAGIC_FIST" or "SPELL_ANIMATE_DEAD") p += 4;
+        if (h.HasPerk(Sk.MasterEarthblood) && raw is "SPELL_LAND_MINE" or "SPELL_ARCANE_CRYSTAL" or "SPELL_BLADE_BARRIER") p += 4;
+        if (raw == "SPELL_SUMMON_ELEMENTALS" && h.Artifacts.Contains("ARTIFACT_BAND_OF_CONJURER")) p += 4;
+        if (h.HasPerk(Sk.MasterConjuration) && raw is "SPELL_CONJURE_PHOENIX" or "SPELL_SUMMON_ELEMENTALS") p += 4;
+        if (h.Specialization == "HERO_SPEC_WEILDER_OF_FIRE" && raw == "SPELL_FIREBALL")
+        {
+            const string k = "combat/HeroSpecializations/Wizard/WeilderOfFire_FireballSpellpowerBonus/";
+            p += (h.Level - 1) / Math.Max(1, (int)Stats.Get(k + "LevelDivisor", 1)) * (int)Stats.Get(k + "PerDividedLevel", 0) + (int)Stats.Get(k + "Base", 0);
+        }
         // Master of Elements: +((level−1)/div)·per + base spell power for Summon Elementals / Conjure Phoenix
         // (DefaultStats MasterOfElements_SpellpowerBonus; same level formula as its elemental count, exe FUN_00a5a5a0).
-        if (h.Specialization == "HERO_SPEC_MASTER_OF_ELEMENTS" && id is "SPELL_CONJURE_PHOENIX" or "SPELL_SUMMON_ELEMENTALS")
+        if (h.Specialization == "HERO_SPEC_MASTER_OF_ELEMENTS" && raw is "SPELL_CONJURE_PHOENIX" or "SPELL_SUMMON_ELEMENTALS")
         {
             const string k = "combat/HeroSpecializations/Wizard/MasterOfElements_SpellpowerBonus/";
             p += (h.Level - 1) / Math.Max(1, (int)Stats.Get(k + "LevelDivisor", 3)) * (int)Stats.Get(k + "PerDividedLevel", 1) + (int)Stats.Get(k + "Base", 1);
@@ -209,16 +219,17 @@ public sealed partial class Battle
         if (h.Specialization == "HERO_SPEC_REANIMATOR" && id == "SPELL_ANIMATE_DEAD")
             p += (h.Level - 1) / Math.Max(1, (int)Stats.Get("combat/HeroSpecializations/Necromancer/Reanimator_SpellpowerBonusLevelDivisor", 5))
                  + Stats.Get("combat/HeroSpecializations/Necromancer/Reanimator_SpellpowerBonus", 1);
-        if (h.HasPerk(Sk.RuneArmour) && id == "SPELL_CELESTIAL_SHIELD") p += Stats.Get("combat/HeroSkills/Runemage/RunicArmor_SpellpowerBonus", 4);
+        if (h.HasPerk(Sk.RuneArmour) && raw == "SPELL_CELESTIAL_SHIELD") p += Stats.Get("combat/HeroSkills/Runemage/RunicArmor_SpellpowerBonus", 4);
         var e = Enemy(h.Side);
         if (e.Present)
         {
             if (e.HasPerk(Sk.MightOverMagic)) p -= e.SpellPower / 2.0;
-            if (e.HasPerk(Sk.ShrugDarkness) && sp.School == "MAGIC_SCHOOL_DARK") p *= Stats.Get("combat/HeroSkills/Runemage/ShrugDarkness_EnemySpellpowerMultiplier", 0.5);
+            if (e.HasPerk(Sk.ShrugDarkness) && sp.School == "MAGIC_SCHOOL_DARK")
+                p = (int)(p * (float)Stats.Get("combat/HeroSkills/Runemage/ShrugDarkness_EnemySpellpowerMultiplier", 0.5));   // chop
         }
-        p = ShatterWeakenPower(h, sp, p);   // exe 004e6190 (Shatter / Weaken, subtractive)
-        p += PowerFeedBonus(h);
-        return Math.Max(0, p);
+        p += PowerFeedBonus(h);           // exe 00bc0590: Power Feed effect, then at least 1
+        p = Math.Max(1, p);
+        return ShatterWeakenPower(h, sp, p);   // exe 004e6190 from 00a6a7e0 (Shatter / Weaken, subtractive)
     }
 
     // Rounding helpers matching the x87 code: ROUND is round-half-even, int division truncates.
@@ -344,6 +355,12 @@ public sealed partial class Battle
             cost = SkillAuditH.ErraticManaSpend(cost, h.HasPerk(Sk.ErraticMana), HeroRoll, S.Rng);   // exe 00bbf6a6
             h.Mana -= cost;
             Emit(new ManaChanged(c.ActorId, h.Mana));
+            // Pendant of Conflux (ARTIFACT_TWISTING_NEITHER) on the enemy hero: + half the spent points (exe 00983790).
+            if (Enemy(h.Side) is { Present: true } conflux && conflux.Artifacts.Contains("ARTIFACT_TWISTING_NEITHER") && cost > 0)
+            {
+                conflux.Mana += cost / 2;
+                Emit(new ManaChanged(Actor.Hero(conflux.Side), conflux.Mana));
+            }
             if (Counterspelled(h, cost))
             {
                 Emit(new SpellResisted(target?.Id ?? c.ActorId, sp.Id));
