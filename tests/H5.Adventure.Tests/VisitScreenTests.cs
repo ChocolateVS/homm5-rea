@@ -85,4 +85,14 @@ public class VisitScreenTests(Fixture f)
         Assert.DoesNotContain(VisitFromEntrance(g, h, mine), e => e is ObjectVisited { What: "garrison" });
         Assert.Contains(VisitFromEntrance(g, h, mine), e => e is ObjectVisited { What: "garrison" });
     }
+
+    [Fact]
+    public void SignCarriesItsOwnText()
+    {
+        var g = f.NewGame("A2S3");
+        var sign = g.Map.Objects.First(o => o.Kind == ObjectKind.Sign);
+        Assert.False(string.IsNullOrWhiteSpace(sign.MessageText));
+        var h = MyHero(g);
+        Assert.Contains(VisitFromEntrance(g, h, sign), e => e is ObjectVisited { What: "BUILDING_SIGN" } v && v.Object == sign.Index);
+    }
 }

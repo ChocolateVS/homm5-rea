@@ -103,6 +103,8 @@ public sealed class MapObject
     /// <summary>Owning player index, -1 for none.</summary>
     public int Owner = -1;
     public List<ArmySlot> Guards = new();
+    /// <summary>The placed object's own text (AdvMapSign MessageFileRef, relative to the map).</summary>
+    public string? MessageText;
 
     // Monster
     public string? Creature;

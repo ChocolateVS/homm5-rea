@@ -522,6 +522,14 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 Hud.UpdateMinimap();
                 break;
+            case ObjectVisited { What: "border_guard_closed" } bc when HumanCaused(player) && !Autoplay:
+            {
+                // BorderguardBox without the key: ID_TITLE_TEXT_n / ID_DESCRIPTION_NEG_n, no Accept button (006ab6f0).
+                int col = Session.Map.Objects[bc.Object].Shared.Color;
+                await Dialog(done => AdvDialogs.Message(_dialogLayer, BorderGuardText($"ID_TITLE_TEXT_{col}"), BorderGuardText($"ID_DESCRIPTION_NEG_{col}"),
+                    Game.Instance.LoadTexture("Textures/Interface/Borderguard/Face_Texture.xdb"), done));
+                break;
+            }
             case ObjectVisited ov when HumanCaused(player) && !Autoplay && VisitMessage(ov) is { Length: > 0 } visitText:
                 await Dialog(done => Message("", visitText, null, done));
                 break;
@@ -965,8 +973,17 @@ public partial class AdventureScreen : Control
                     await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), ObjectMessage(c.Object, 2), null, y => { accept = y; done(); }));
                     break;
                 case "border_guard":
-                    await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), ObjectMessage(c.Object, 3), null, y => { accept = y; done(); }));
+                {
+                    // BorderguardBox (006ab6f0, 005a5d90 case 0x13): ID_BORDERGUARD texts by key colour, Accept / Refuse.
+                    int col = Session.Map.Objects[c.Object].Shared.Color;
+                    string Bg(string id) => BorderGuardText(id);
+                    Texture2D? Tex(string name) => Game.Instance.LoadTexture($"Textures/Interface/Borderguard/{name}.xdb");
+                    int pick = 1;
+                    await Dialog(done => AdvDialogs.Choose2(_dialogLayer, Bg($"ID_TITLE_TEXT_{col}"), Bg($"ID_DESCRIPTION_POS_{col}"), Tex("Face_Texture"),
+                        (Tex("Accept_Texture"), Bg("ID_ACCEPT_TEXT")), (Tex("Decline_Texture"), Bg("ID_DECLINE_TEXT")), p => { pick = p; done(); }, Bg("ID_HEADER_TEXT")));
+                    accept = pick == 0;
                     break;
+                }
                 case "join_free":
                     await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), AdvTexts.Get(AdvTexts.CreaturesJoin), null, y => { accept = y; done(); }));
                     break;
@@ -1176,6 +1193,15 @@ public partial class AdventureScreen : Control
         if ((string?)first?.Attribute("href") is { Length: > 0 } href && UiResources.Instance.Text(href) is { Length: > 0 } name)
             return UiResources.StripMarkup(name).Trim();
         return o.Shared.Type.Replace("BUILDING_", "").Replace('_', ' ');
+    }
+
+    /// <summary>A text of UI/BorderGuard/Texts (UIGameRoot ID_BORDERGUARD) by its TextName.</summary>
+    static string BorderGuardText(string name)
+    {
+        const string table = "UI/BorderGuard/Texts.(WindowRelatedTexts).xdb";
+        var item = Game.Instance.Xdb.Load(table).Root?.Element("texts")?.Elements("Item").FirstOrDefault(i => (string?)i.Element("TextName") == name);
+        var href = (string?)item?.Element("text")?.Attribute("href");
+        return string.IsNullOrEmpty(href) ? "" : UiResources.Instance.Text(H5.Core.Xdb.XdbRef.Parse(href, table).Path) ?? "";
     }
 
     static string ArtifactName(string id) => Game.Instance.Db.Artifacts.TryGetValue(id, out var a) && a.Name.Length > 0 ? a.Name : id;

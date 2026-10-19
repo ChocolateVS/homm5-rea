@@ -86,11 +86,12 @@ public static partial class AdvDialogs
 
     /// <summary>Pick one of two options (left/right buttons with icon and caption), then OK.</summary>
     public static void Choose2(Control parent, string title, string text, Texture2D? face,
-        (Texture2D? Icon, string Text) left, (Texture2D? Icon, string Text) right, Action<int> picked)
+        (Texture2D? Icon, string Text) left, (Texture2D? Icon, string Text) right, Action<int> picked, string? header = null)
     {
         Control? blocker = null;
         var s = Open(parent, Box2p, b => blocker = b);
         s.Find("Title")?.SetText($"<h3_header><center>{title}");
+        if (header != null) s.Find("HeaderMain")?.SetText($"<center>{header}");
         s.Find("MsgText")?.SetValue("text", text);
         SetFace(s, "Face", face);
         int choice = 0;

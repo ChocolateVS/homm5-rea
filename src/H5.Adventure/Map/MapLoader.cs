@@ -259,6 +259,7 @@ public sealed class MapLoader
             if (!c.HasElements && c.Attribute("href") == null && c.Value.Length > 0)
                 o.Props[c.Name.LocalName] = c.Value.Trim();
         o.Guards = Army(e, "armySlots");
+        if (e.Href("MessageFileRef") is { Length: > 0 } msg) o.MessageText = files.ReadText(msg)?.Trim();
         if (e.Element("ShipTile") is { } shipTile) o.ShipTile = (shipTile.Int("x"), shipTile.Int("y"));
 
         switch (o.Kind)
