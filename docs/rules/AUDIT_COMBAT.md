@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 248 |
-| MATCH | 118 |
-| GAP | 6 |
-| UNVERIFIED | 212 |
+| FIXED | 249 |
+| MATCH | 122 |
+| GAP | 8 |
+| UNVERIFIED | 205 |
 | N/A | 56 |
 
 ## Core mechanics
@@ -292,7 +292,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_GUARDIAN_ANGEL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ANCIENT_SMITHY` | FIXED | 00a5ed90 (call 00a5effb), 0097d740 | Fiery Wrath: 0.1 × damage dealt (creatures only) as fire damage via FUN_0097d740 with stand-in spell Fireball (ECX = 5), no caster; no Mark of Fire multiplier (FUN_00977a80 is not on this path). Engine skipped protection and doubled it on Mark of Fire targets | AuditSkillTestsG.PerkElementalDamageIsReducedByProtectionOfItsStandInSpell |
 | `HERO_SKILL_PARIAH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_ELEMENTAL_BALANCE` | GAP |  | enemy counter-summon on Summon Elementals (00861630): count/placement not ported |  |
+| `HERO_SKILL_ELEMENTAL_BALANCE` | FIXED | 00861630 (0086173c..008617aa), 00862130 (00862205..0086225e) | after a successful Summon Elementals / Conjure Phoenix, the caster's opponent (vf 0x10 → vf 0xc) with skill 0x54 summons for its own side: the opposite elemental of FUN_00861120's pair (Fire ↔ Water, Earth ↔ Air) in the same (week-adjusted, min 1) number, or a phoenix built from the caster's summon info (same stats); logged with skill 0x54. Engine had nothing. Placement of the counter-summon uses the engine's summon placement (exe position argument not decoded) | AuditSpellSTests.ElementalBalanceCounterSummons |
 | `HERO_SKILL_ABSOLUTE_CHARGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_QUICK_GATING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_TRIPLE_CATAPULT` | FIXED | 00a75bf0, 00b3bb50 | shots per action set to 2 (+1 Catapult) | tests/H5.Combat.Tests/WarMachineAuditTests |
@@ -527,7 +527,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_DISPEL` | FIXED | 00bbf000 (0x1a → 00bbe8b0), 00bbe976..00bbe9dc, 00e182c0, 00a5a170 | per dispellable effect: pct = trunc(clamp(base·100 + 3·(dispeller level − effect caster level), 0, 100)) (chop), halved (integer) for an Eternal Light effect (+0x53), rolled with FUN_00a5a170 (no second roll). Engine used a fractional chance and NextDouble | DispelChanceIsAWholePercentPlusThreePerLevel |
 | `SPELL_DISPEL_FAIL` | N/A | 008af63b | visual effect only (client) |  |
 | `SPELL_BLOODLUST` | MATCH | 0098a430 (effect 0x1c), 004e57d0 | attack sum = trunc(sum + max(0, value)); duration = time-per-turn · power |  |
-| `SPELL_DEFLECT_ARROWS` | UNVERIFIED | 00a5a900 (visual only), 00a5a750 | the ranged reduction site was not found (not in 00a5a900 / 00a58de0 / 00a5c5a0); engine ×(1 − clamp(v,0,0.95)) left as is |  |
+| `SPELL_DEFLECT_ARROWS` | MATCH | 00a5a900 (00a5ade1..00a5ae04), 00976b60 | on ranged strikes (attack record +0x14) the defender-stage factor is ×(1 − clamp(value, 0, 0.95)) (0x3f733333), value = Eval(damage table) 0.25 / 0.4 / 0.55 / 0.7; applied after Evasion and Death to the Nonexistent — the engine multiplies the same factor in the same stage. (00a5a750 is only the arrow-deflection visual) |  |
 | `SPELL_DEFLECT_ARROWS_HIT_EFFECT` | N/A | 0089c720 008af673 | visual effect only (client) |  |
 | `SPELL_ANTI_MAGIC` | MATCH | 004e41c0 | resists spells of level ≤ trunc(value) |  |
 | `SPELL_TELEPORT` | FIXED | 0097d7b0 (case 0x20), 004e4a20, 00e0ab70 | Teleport Assault (skill 0x8a of the teleported stack's hero): ATB += 0.5 clamped 0..1.25 (engine capped at 1), skipped when the stack is Blind (0x13), Frozen (0xc9), Sabotaged (0x14a), asleep (0x150) or Seduced (0x148) | TeleportAssaultClampsAtOnePointTwoFiveAndSkipsDisabledStacks |
@@ -538,9 +538,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_LAND_MINE` | MATCH | 0097d7b0 (0x26) | mine count = trunc(max(duration value, 2)) — data PerPower is 0 so engine's Base matches |  |
 | `SPELL_WASP_SWARM` | FIXED | 00976db0, 0097d7b0 (0x27), 0097c9f0 | Call of the Wasp damage trunc((lvl·per+1)·dmg); ATB −= duration·(1 + ((lvl+2)/3)·ATBReducePerLevel3) clamped 0..1 (engine added per3·lvl/3); immune: Undead, Elemental, Mechanical | CallOfTheWaspMultipliesTheAtbDrop |
 | `SPELL_PHANTOM` | MATCH | 0097c9f0 (0x28), 0097d7b0 → 00860be0 | a phantom cannot be cloned |  |
-| `SPELL_EARTHQUAKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_EARTHQUAKE` | MATCH | 0097d7b0 case 0x29, 00978ff0 | lo = max(0, trunc(Eval(duration))/50), hi = max(0, trunc(Eval(damage))/50); every intact siege object gets Range(lo, hi)·50 — buildings through vf 0x1f4, unit-like objects (vf 0x84 = 0) through FUN_00a616e0; Tremors (Shake Ground, hero skill 0x8b) follows. Engine matches (Range(min(lo,hi), hi), same data) |  |
 | `SPELL_ANIMATE_DEAD` | FIXED | 0097c9f0 (0x2a), 009789b0 | immune: Elemental, Mechanical (engine allowed them). Raised HP = trunc(max(0, eval(power))) in chop mode (00978a8b) — matches; an extra factor (target vf+0x70 object: vf+0x1a8 / vf+0x50) multiplies it when present — not identified | RaiseDeadSkipsElementalsAndMechanicals |
-| `SPELL_SUMMON_ELEMENTALS` | FIXED | 00861630, 00861120 | elemental kind from battlefield terrain (random among candidates) | tests/H5.Combat.Tests/AuditSpecTests2.GrassArenaSummonsAirOrEarthElementals |
+| `SPELL_SUMMON_ELEMENTALS` | FIXED | 00861630, 00861120, 00862800, 00bce190 | kind from the battlefield terrain (random among candidates; Fire Affinity → Fire); count trunc(max(1, Eval(power))), Fire Affinity then trunc(count·1.4f) — the engine applied ×1.4 before truncating; week-of-the-month adjustment FUN_00bce190. GAP inside: the stack is halved (min 1) when an object reached through caster vf 0x10 → 0xc → 0 has vf 0x318 > 0 (not identified), and re-casting replaces the previous linked stack at its position (FUN_00861500 → FUN_00a6e310, removal FUN_00a61530 not decoded) — not ported | AuditSpecTests2.GrassArenaSummonsAirOrEarthElementals, AuditSpellSTests.SummonElementalsCountTruncatesBeforeFireAffinity |
 | `SPELL_EFFECT_SUMMON_ELEMENTALS_EARTH` | GAP | 009a2350 | summon-variant effect id at 009a2350 (spell effect table); not mapped |  |
 | `SPELL_RESURRECT` | MATCH | 0097c9f0 (0x30), 009789b0 | immune: Undead, Elemental, Mechanical |  |
 | `SPELL_SUMMON_BOAT` | N/A | 009a2350 | adventure-map spell (H5.Adventure) |  |
@@ -581,11 +581,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_MASS_BLESS` | MATCH | 0097a530 | whole own army; effect as SPELL_BLESS |  |
 | `SPELL_MASS_DISPEL` | FIXED | 0097a530 (default case), 00bbe8b0 | aimed: 4×4 area, TARGET_NEUTRAL → all stacks (matches); per-effect chance as SPELL_DISPEL | DispelChanceIsAWholePercentPlusThreePerLevel |
 | `SPELL_MASS_STONESKIN` | MATCH | 0097a530, 00989790 (0x19) | whole own army; effect as SPELL_STONESKIN |  |
-| `SPELL_MASS_DEFLECT_ARROWS` | UNVERIFIED | 0097a530 | whole own army (matches); Deflect Arrows reduction site not found |  |
+| `SPELL_MASS_DEFLECT_ARROWS` | MATCH | 0097a530, 00a5a900 | whole own army (base id via FUN_00a33e20 0xdb → 0x1d); effect as SPELL_DEFLECT_ARROWS |  |
 | `SPELL_MASS_BLOODLUST` | MATCH | 0097a530, 0098a430 (0x1c) | whole own army; effect as SPELL_BLOODLUST |  |
 | `SPELL_MASS_HASTE` | MATCH | 0097a530 | whole own army (TARGET_FRIEND → caster vf +0xc); effect as SPELL_HASTE |  |
 | `SPELL_ABILITY_CALL_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_CONJURE_PHOENIX` | UNVERIFIED | 0097d7b0 (0xeb) → 00862130, 00861f90, 00862970, 008628f0 | stats come from the SRPGCombatUniqueCreatureStats resource GameMechanics/RPGStats/ConjuredPhoenix.xdb (Health 300 + 30/power, damage 10–15 per power, offence/defence 10 + 2/level), fed with the caster's power, level and knowledge; the exact "power" argument (engine: ceil(SP / divisor)) is lost in the decompile. If the ENEMY hero has Elemental Balance (skill 0x54) a second phoenix is summoned for that side (00862130) — engine lacks it (heroes partition) |  |
+| `SPELL_CONJURE_PHOENIX` | GAP | 0097d7b0 case 0xeb → 00862130, 00861f90, 00862970, 00861340 | summon info CUniqueCreatureSummonInfo (vtable 00e15b24) from ConjuredPhoenix.xdb (RPG stats +0x530: Health 300 + 30/power, damage 0 + 10 / 15 per power, offence / defence 10 + 2/level, initiative 15, speed 7, Fire Shield + fire immunity) with power = hero vf 0x244, level vf 0x23c, a third value (army hero vf 0x1c, 1 without), divisor trunc(Eval(damage table)) = 4/3/2/1 and a flag. The code that turns these into stats (how power and divisor combine; engine: ceil(SP/divisor)) was not located — reader of the summon info unknown. Re-cast: FUN_00861340 handles an existing linked phoenix (FUN_00a6e310) instead of refusing as the engine does — removal not decoded. Elemental Balance second phoenix: see HERO_SKILL_ELEMENTAL_BALANCE (FIXED) | AuditSpellSTests.ElementalBalanceCounterSummons |
 | `SPELL_FIREWALL` | UNVERIFIED | 0097a530 (case 0xec), 0085cda0, 0098ade0, 0098a920 / 0098aa40 → 004e6770 | cells = (x, y−1), (x, y), (x, y+1) — matches; the field object (0x8c bytes, ctor 0098ade0) forwards entry/turn damage to the fire rider 004e6770, which deals the amount it is given without a new protection step — the caller computing that amount was not traced, so whether the engine's protection on each hit matches is open |  |
 | `SPELL_STONE_SPIKES` | FIXED | 00976b90, 0085eaa0, 0097a530 (case 0xed) | as Fireball, area = centre + 4 orthogonal cells | SpellBaseDamageTruncates |
 | `SPELL_UBER_CHAIN_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -605,14 +605,14 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_RUNE_OF_REVIVE` | MATCH | 00c20690 | revived = trunc((float)(initial − current count) · max(0, ReviveSpellPercent)); engine (int)(dead·0.4) gives the same integers (0.4f > 0.4, products of multiples of 5 are exact) |  |
 | `SPELL_RUNE_OF_DRAGONFORM` | FIXED | 004b4460 → 004bb000, 004b4400, 0097af50 | refused ("COMBAT_RUNIC_SPELL_CANT_DRAGONFORM") when the creature's base creature is id 0x29 / 0x37 / 0x53 / 0x68 (Bone, Green, Deep, Fire Dragon — every dragon line); the engine matched "Dragon" in the (localised) name. Lasts one turn (round of time per turn) | AuditRuneWarcryTests.DragonformRefusesDragonLinesById |
 | `SPELL_EFFECT_BATTLE_FRENZY` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
-| `SPELL_SORROW` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_SORROW` | MATCH | 00989fd0 / 00989c40 case 0x115, 004e57d0 | morale and luck each −Eval(damage table at the effect's mastery) = 1 / 2 / 3 / 4, summed with the other effect terms before the ±5 clamp; timed by the duration table — as the engine |  |
 | `SPELL_VAMPIRISM` | FIXED | 00a59c60 (00a59d4e..00a59d6e chop), 008a34c0, 00e15a80, 0097c9f0 (0x116) | drain heal = trunc(frac·damage + 0.5) — rounded half up (engine truncated); frac = LifeDrainIntensity (ABILITY_LIFE_DRAIN) + Vampirism value·0.01; no drain from Undead (0xa, dynamic), Mechanical (9) or Elemental (0xc) targets. The spell itself refuses Mechanical and Elemental stacks only (undead may receive it) — the engine accepted any target. Whether the damage term excludes overkill was not traced | DrainRoundsHalfUpAndSkipsUndead, AuditSpellSTests.SpellTableImmunities |
 | `SPELL_DEEP_FREEZE` | MATCH | 00a5a900 (0x117) | frozen target takes ×max(value·0.01, 1) |  |
 | `SPELL_REGENERATION` | MATCH | 0097c9f0 (0x118) | immune: Undead, Elemental, Mechanical |  |
 | `SPELL_DIVINE_VENGEANCE` | FIXED | 00976b90, 0097d7b0 | truncated base; the engine's ×sqrt(frags) (manual p.191) not located in the exe — extra damage term 00977e60 not decompiled | SpellBaseDamageTruncates |
-| `SPELL_ARCANE_CRYSTAL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_SUMMON_HIVE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_BLADE_BARRIER` | MATCH | 0097d7b0 (0x11c) | three cells (y−1, y, y+1) |  |
+| `SPELL_ARCANE_CRYSTAL` | GAP | 0097d7b0 case 0x11a → FUN_00c55a40 → FUN_008b1090, 00a60e20 | spawn at the target cell with hit points ArcaneCrystal/Health (1), defence 0 (ArcaneCrystal/Defence is not read), tier ArcaneCrystal/Tier, caster's spell power / level / mastery stored — engine matches. The explosion when it is destroyed (FUN_00a60e20: spawn 0x11a, damage Eval(damage table 40/60/80/100 + 8/12/16/20 per power), FUN_00af4450) is not ported — the engine's crystal never explodes; its area / damage path was not decoded |  |
+| `SPELL_SUMMON_HIVE` | GAP | 0097d7b0 case 0x11b → FUN_008b1090, 008b07d0, 008b0af0 | hive: defence DefensePerCasterLevel·level + DefenseBase, hit points trunc(Eval(Health at mastery)), initiative Eval(Initiative), spell SummonHive/Spell (Wasp Swarm, Expert), initial ATB = battle RNG float in [0.5, 1) — engine matches. Its turn (which target, which power: caster's spell power via 008b07d0 or SummonHive/Power 10000 via 008b0af0, whether the hero's mana is spent — the engine spends it) was not traced |  |
+| `SPELL_BLADE_BARRIER` | MATCH | 0097d7b0 case 0x11c → FUN_008b1090 | three spawns at (x, y−1), (x, y), (x, y+1); hit points trunc(Eval(Health at mastery)), duration FUN_004e57d0; BladeBarrier/MagicProof 0.75 — as the engine |  |
 | `SPELL_UBER_METEOR_SHOWER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_PREPARATION` | UNVERIFIED | 00a5fee0 00a64e90 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_EXPLODING_CORPSES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |

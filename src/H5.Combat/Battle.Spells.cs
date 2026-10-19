@@ -460,7 +460,7 @@ public sealed partial class Battle
     // ------------------------------------------------------------------ resolution
 
     /// <summary>Applies a spell. Caster is an actor id (hero or unit); side is the caster's controlling side.</summary>
-    void ResolveSpell(int caster, int side, SpellDef sp, Mastery m, double power, Unit? target, Cell? cell, bool fromHero)
+    internal void ResolveSpell(int caster, int side, SpellDef sp, Mastery m, double power, Unit? target, Cell? cell, bool fromHero)
     {
         double prevScale = _spellDamageScale;
         if (target != null) target = MagicMirror(side, sp, target);
@@ -672,9 +672,13 @@ public sealed partial class Battle
                 // Fire Affinity always summons Fire Elementals; otherwise the kind comes from the battlefield terrain
                 // (exe FUN_00861630 → FUN_00861120).
                 string kind = hero != null && hero.HasPerk("HERO_SKILL_FIRE_AFFINITY") ? "CREATURE_FIRE_ELEMENTAL" : TerrainElemental();
-                double count = baseDef.DamageAt(m).Eval(power);
-                if (hero != null && hero.HasPerk("HERO_SKILL_FIRE_AFFINITY")) count *= 1.4;
-                SummonStack(side, kind, MoonWeek.SummonCount(Math.Max(1, (int)count), Db.Creature(kind).Element1, S.Week), sp.Id, atb: S.Rng.Next(6) * 0.05);
+                int count = SummonElementalsCount(baseDef, m, power, hero);
+                if (SummonStack(side, kind, MoonWeek.SummonCount(count, Db.Creature(kind).Element1, S.Week), sp.Id, atb: S.Rng.Next(6) * 0.05) != null)
+                {
+                    // Elemental Balance on the opposing hero: the opposite elemental, same count (exe 00861630 → 00861500).
+                    string opp = OppositeElemental(kind);
+                    ElementalBalanceSummon(side, opp, Math.Max(1, MoonWeek.SummonCount(count, Db.Creature(opp).Element1, S.Week)), sp.Id);
+                }
                 break;
             }
             case "SPELL_CONJURE_PHOENIX":
@@ -682,12 +686,17 @@ public sealed partial class Battle
                 if (S.Units.Any(u => u.Alive && u.Side == side && u.CreatureId == "CREATURE_PHOENIX" && u.Summoned)) return;
                 double div = Math.Max(1, baseDef.DamageAt(m).Base);
                 double p = Math.Ceiling(power / div);
-                var ph = SummonStack(side, "CREATURE_PHOENIX", 1, sp.Id, atb: S.Rng.Next(6) * 0.05);
-                if (ph != null)
+                void PhoenixStats(Unit ph)
                 {
                     ph.BaseAttack = ph.BaseDefence = 10 + 2 * casterLevel;      // p.194
                     ph.BaseMinDamage = (int)(10 * p); ph.BaseMaxDamage = (int)(15 * p);
                     ph.BaseHealth = (int)(300 + 30 * p); ph.MaxHealthCache = ph.TopHealth = ph.BaseHealth;
+                }
+                if (SummonStack(side, "CREATURE_PHOENIX", 1, sp.Id, atb: S.Rng.Next(6) * 0.05) is { } ph)
+                {
+                    PhoenixStats(ph);
+                    // Elemental Balance on the opposing hero: a phoenix with the caster's stats (exe 00862130).
+                    if (ElementalBalanceSummon(side, "CREATURE_PHOENIX", 1, sp.Id) is { } ph2) PhoenixStats(ph2);
                 }
                 break;
             }

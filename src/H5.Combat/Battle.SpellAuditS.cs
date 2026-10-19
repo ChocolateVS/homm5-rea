@@ -110,4 +110,39 @@ public sealed partial class Battle
         if (ArtifactSpellImmunity(t, id)) return true;
         return (ExeDamageSpell(id, hero) || id == "SPELL_PLAGUE") && ElementAbilityImmune(t, sp.Element);
     }
+
+    /// <summary>
+    /// Summon Elementals' count (exe FUN_00862800, chop mode): trunc(max(1, Eval(power))), then with Fire Affinity
+    /// trunc(count · 1.4f) (DAT_00e4c194). The engine multiplied before truncating. A further halving (count / 2, at least 1)
+    /// when a hero object reached through the caster's vf 0x10 → 0xc → 0 has vf 0x318 &gt; 0 is not identified (not ported).
+    /// </summary>
+    internal static int SummonElementalsCount(SpellDef baseDef, Mastery m, double power, HeroState? hero)
+    {
+        float e = (float)baseDef.DamageAt(m).Eval(power);
+        int count = (int)Math.Max(e, 1f);
+        if (hero != null && hero.HasPerk("HERO_SKILL_FIRE_AFFINITY")) count = (int)(count * 1.4f);
+        return count;
+    }
+
+    /// <summary>The counter-summon element of FUN_00861120's pair table: Fire ↔ Water, Earth ↔ Air (creatures 0x55..0x58).</summary>
+    internal static string OppositeElemental(string kind) => kind switch
+    {
+        "CREATURE_FIRE_ELEMENTAL" => "CREATURE_WATER_ELEMENTAL", "CREATURE_WATER_ELEMENTAL" => "CREATURE_FIRE_ELEMENTAL",
+        "CREATURE_EARTH_ELEMENTAL" => "CREATURE_AIR_ELEMENTAL", "CREATURE_AIR_ELEMENTAL" => "CREATURE_EARTH_ELEMENTAL",
+        _ => kind,
+    };
+
+    /// <summary>
+    /// Elemental Balance (skill 0x54): when a hero summons elementals or a phoenix and the summon succeeded, the opposing hero
+    /// with the skill gets the same summon on its side (exe FUN_00861630 tail / FUN_00862130: opponent via caster vf 0x10 →
+    /// vf 0xc, HeroHasSkill(0x54), FUN_00861500 / FUN_00861340 with that hero as summoner; logged as skill 0x54).
+    /// </summary>
+    Unit? ElementalBalanceSummon(int casterSide, string kind, int count, string by)
+    {
+        var e = Enemy(casterSide);
+        if (!e.Present || !e.HasPerk("HERO_SKILL_ELEMENTAL_BALANCE")) return null;
+        var u = SummonStack(1 - casterSide, kind, Math.Max(1, count), by, atb: S.Rng.Next(6) * 0.05);
+        if (u != null) Emit(new AbilityTriggered(Actor.Hero(1 - casterSide), "HERO_SKILL_ELEMENTAL_BALANCE", u.Id));
+        return u;
+    }
 }

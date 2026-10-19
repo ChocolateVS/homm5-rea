@@ -102,4 +102,39 @@ public class AuditSpellSTests(GameDataFixture f)
         Assert.Equal("COMBAT_CANT_CAST_SPELL_IMMUNITY", b.SpellTargetRefusalKey(Actor.Hero(0), 0, "SPELL_SLOW", Mastery.Basic, bd.Id));
         Assert.Null(b.SpellTargetRefusalKey(Actor.Hero(0), 0, "SPELL_LIGHTNING_BOLT", Mastery.Basic, bd.Id));
     }
+
+    // exe FUN_00862800 (chop mode): count = trunc(max(1, Eval)), Fire Affinity trunc(count · 1.4f) — 13 SP at Basic
+    // (0.75 per power): Eval 9.75 → 9 → 12 (the engine's (int)(9.75·1.4) gave 13).
+    [Fact]
+    public void SummonElementalsCountTruncatesBeforeFireAffinity()
+    {
+        var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        var h = b.State.Heroes[0];
+        var sp = Sp("SPELL_SUMMON_ELEMENTALS");
+        Assert.Equal(9, Battle.SummonElementalsCount(sp, Mastery.Basic, 13, h));
+        Assert.Equal(1, Battle.SummonElementalsCount(sp, Mastery.Basic, 1, h));
+        h.Perks.Add("HERO_SKILL_FIRE_AFFINITY");
+        Assert.Equal(12, Battle.SummonElementalsCount(sp, Mastery.Basic, 13, h));
+    }
+
+    // exe FUN_00861630 / FUN_00862130: an opposing hero with Elemental Balance (skill 0x54) gets the opposite elemental
+    // (FUN_00861120 pairs Fire↔Water, Earth↔Air) in the same number, and a phoenix with the caster's stats.
+    [Fact]
+    public void ElementalBalanceCounterSummons()
+    {
+        Assert.Equal("CREATURE_WATER_ELEMENTAL", Battle.OppositeElemental("CREATURE_FIRE_ELEMENTAL"));
+        Assert.Equal("CREATURE_AIR_ELEMENTAL", Battle.OppositeElemental("CREATURE_EARTH_ELEMENTAL"));
+        var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        b.State.Heroes[0].Perks.Add("HERO_SKILL_FIRE_AFFINITY");
+        b.State.Heroes[1].Perks.Add("HERO_SKILL_ELEMENTAL_BALANCE");
+        b.ResolveSpell(Actor.Hero(0), 0, Sp("SPELL_SUMMON_ELEMENTALS"), Mastery.Expert, 10, null, null, fromHero: true);
+        var fire = b.State.Units.Single(u => u.Side == 0 && u.CreatureId == "CREATURE_FIRE_ELEMENTAL");
+        var water = b.State.Units.Single(u => u.Side == 1 && u.CreatureId == "CREATURE_WATER_ELEMENTAL");
+        Assert.Equal(fire.Count, water.Count);
+        b.ResolveSpell(Actor.Hero(0), 0, Sp("SPELL_CONJURE_PHOENIX"), Mastery.Expert, 10, null, null, fromHero: true);
+        var p0 = b.State.Units.Single(u => u.Side == 0 && u.CreatureId == "CREATURE_PHOENIX");
+        var p1 = b.State.Units.Single(u => u.Side == 1 && u.CreatureId == "CREATURE_PHOENIX");
+        Assert.Equal(p0.BaseHealth, p1.BaseHealth);
+        Assert.Equal(p0.BaseAttack, p1.BaseAttack);
+    }
 }

@@ -53,15 +53,41 @@ try:
         env = dict(os.environ, H5_TREE=WT)
         print(run(sys.executable, f'{WT}/tools/re/audit/ledger.py', EXTRACT, env=env).stdout.strip())
         paths.append('docs/rules/AUDIT_COMBAT.md')
-    r = run('dotnet', 'test', 'H5Reborn.sln', '-nodeReuse:false', cwd=WT, check=False)
-    lines = sorted({l.strip() for l in r.stdout.splitlines() if 'Passed!' in l or 'Failed!' in l or ' error ' in l or '[FAIL]' in l})
-    print('\n'.join(lines))
-    if r.returncode or not lines or any('Failed!' in l or ' error ' in l for l in lines):
-        raise SystemExit('TESTS FAILED - nothing committed')
+    def test(target='H5Reborn.sln', build_only=False):
+        if build_only:
+            r = run('dotnet', 'build', 'H5Reborn.sln', '-nodeReuse:false', cwd=WT, check=False)
+            if r.returncode: raise SystemExit('BUILD FAILED - nothing committed: ' + r.stdout[-1500:])
+            print('build ok'); return
+        r = run('dotnet', 'test', target, '-nodeReuse:false', cwd=WT, check=False)
+        lines = sorted({l.strip() for l in r.stdout.splitlines() if 'Passed!' in l or 'Failed!' in l or ' error ' in l or '[FAIL]' in l})
+        print(chr(10).join(lines))
+        if r.returncode or not lines or any('Failed!' in l or ' error ' in l for l in lines):
+            raise SystemExit('TESTS FAILED - nothing committed')
+    test()
     run('git', 'add', '--', *paths, cwd=WT)
     run('git', '-c', 'user.email=office@rennacs.com', '-c', 'user.name=H5Reborn', 'commit', '-q', '-F', msg, cwd=WT)
-    new = run('git', 'rev-parse', 'HEAD', cwd=WT).stdout.strip()
-    run('git', 'update-ref', 'refs/heads/main', new, head)
+    for attempt in range(8):
+        new = run('git', 'rev-parse', 'HEAD', cwd=WT).stdout.strip()
+        if run('git', 'update-ref', 'refs/heads/main', new, head, check=False).returncode == 0: break
+        # main moved while testing: redo the commit on the new main (own paths only), regenerate the ledger, retest.
+        mine, old = new, head
+        head = run('git', 'rev-parse', 'refs/heads/main').stdout.strip()
+        touched = set(run('git', 'diff', '--name-only', old, head).stdout.split())
+        print(f'main moved to {head[:8]} - rebuilding on it')
+        run('git', 'reset', '-q', '--hard', head, cwd=WT)
+        own = [p for p in paths if p != 'docs/rules/AUDIT_COMBAT.md']
+        if touched & set(own): raise SystemExit(f'main changed my paths {touched & set(own)} - redo by hand')
+        run('git', 'checkout', mine, '--', *own, cwd=WT)
+        if spec.get('ledger'):
+            print(run(sys.executable, f'{WT}/tools/re/audit/ledger.py', EXTRACT, env=dict(os.environ, H5_TREE=WT)).stdout.strip())
+        # The full suite already passed on the earlier base with these changes; the intervening commits are disjoint from
+        # them. Re-check what they could interact with: the combat tests when they touch combat/core code, else a build.
+        combat = any(p.startswith(('src/H5.Combat/', 'src/H5.Core/', 'tests/H5.Combat.Tests/')) for p in touched)
+        test('tests/H5.Combat.Tests', build_only=not combat)
+        run('git', 'add', '--', *paths, cwd=WT)
+        run('git', '-c', 'user.email=office@rennacs.com', '-c', 'user.name=H5Reborn', 'commit', '-q', '-F', msg, cwd=WT)
+    else:
+        raise SystemExit('main kept moving - not committed')
     if spec.get('ledger'):
         shutil.copyfile(f'{WT}/docs/rules/AUDIT_COMBAT.md', f'{REPO}/docs/rules/AUDIT_COMBAT.md')
     run('git', 'reset', '-q', '--', *paths, check=False)
