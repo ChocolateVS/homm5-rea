@@ -47,7 +47,7 @@ public partial class CreatureTooltip : Control
     void Fill(Battle b, Unit u, bool effects)
     {
         var def = Game.Instance.Db.Creatures.GetValueOrDefault(u.CreatureId);
-        string name = CombatLogText.Escape(def?.Name is { Length: > 0 } n ? n : u.Name);
+        string name = CombatLogText.Escape(def?.Name is { Length: > 0 } n ? n : CombatLogText.WarMachineName(u.CreatureId) ?? u.Name);
         // creature_name.txt: "<tooltip_title><center><value=name>"; the count is part of the name line.
         var nameTpl = (UiResources.Instance.Text(Dir + "creature_name.txt") ?? "<value=name>").Trim();
         foreach (var nv in _screen.FindAll("NameTextView")) nv.SetText(nameTpl.Replace("<value=name>", $"{name} ({u.Count})"));

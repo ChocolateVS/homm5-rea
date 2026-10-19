@@ -30,8 +30,24 @@ public static class CombatLogText
     {
         var u = s.Session.Battle.State.Unit(id);
         if (u == null) return $"#{id}";
-        var name = Game.Instance.Db.Creatures.TryGetValue(u.CreatureId, out var c) && c.Name.Length > 0 ? c.Name : u.Name;
+        var name = Game.Instance.Db.Creatures.TryGetValue(u.CreatureId, out var c) && c.Name.Length > 0 ? c.Name
+                 : WarMachineName(u.CreatureId) ?? u.Name;
         return Escape(name);
+    }
+
+    static readonly Dictionary<string, string?> _machineNames = new();
+
+    /// <summary>
+    /// A war machine's stock name: its CreatureVisual (RefTables/WarMachines.xdb Visual) CreatureNameFileRef, e.g. "Ballista".
+    /// </summary>
+    public static string? WarMachineName(string id)
+    {
+        if (!Game.Instance.Db.WarMachines.ContainsKey(id)) return null;
+        if (_machineNames.TryGetValue(id, out var cached)) return cached;
+        string? name = null;
+        if (CreatureModels.VisualFor(id) is { } visual)
+            name = Game.Instance.Xdb.ReadText((string?)Game.Instance.Xdb.Load(visual).Root?.Element("CreatureNameFileRef")?.Attribute("href"), visual)?.Trim();
+        return _machineNames[id] = string.IsNullOrEmpty(name) ? null : name;
     }
 
     public static string ActorName(CombatScreen s, int actor)
@@ -108,15 +124,8 @@ public static class CombatIcons
         var key = creatureId + (large ? "#L" : "#S");
         if (_creature.TryGetValue(key, out var cached)) return cached;
         string? visual = null;
-        if (creatureId.StartsWith("WAR_MACHINE_"))
-        {
-            var name = creatureId switch
-            {
-                "WAR_MACHINE_BALLISTA" => "Ballista", "WAR_MACHINE_FIRST_AID_TENT" => "FirstAidTent",
-                "WAR_MACHINE_AMMO_CART" => "AmmoCart", _ => "Catapult",
-            };
-            visual = $"GameMechanics/CreatureVisual/WarMachines/{name}.xdb";
-        }
+        if (Game.Instance.Db.WarMachines.ContainsKey(creatureId))
+            visual = CreatureModels.VisualFor(creatureId);
         else if (CreatureModels.CreatureFile(creatureId) is { } file && Game.Instance.Fs.Exists(file))
         {
             var r = XdbRef.Parse((string?)Game.Instance.Xdb.Load(file).Root!.Element("Visual")?.Attribute("href"), file);

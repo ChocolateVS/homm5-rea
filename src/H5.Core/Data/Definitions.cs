@@ -110,6 +110,8 @@ public sealed class WarMachineDef
     public int[] Offense = Array.Empty<int>(), Defense = Array.Empty<int>();
     public double[] MinDamageFactor = Array.Empty<double>(), MaxDamageFactor = Array.Empty<double>();
     public Resources Cost = new(0, 0, 0, 0, 0, 0, 0);
+    /// <summary>The machine's CreatureVisual xdb (name, icons, character, shot).</summary>
+    public string? VisualPath;
 }
 
 public sealed record SkillEntry(string SkillId, Mastery Mastery);

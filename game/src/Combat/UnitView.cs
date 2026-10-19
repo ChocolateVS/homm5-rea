@@ -77,14 +77,7 @@ public partial class UnitView : Node3D
 
     static string? WarMachineCharacter(string id)
     {
-        var name = id switch
-        {
-            "WAR_MACHINE_BALLISTA" => "Ballista", "WAR_MACHINE_FIRST_AID_TENT" => "FirstAidTent",
-            "WAR_MACHINE_AMMO_CART" => "AmmoCart", "WAR_MACHINE_CATAPULT" => "Catapult", _ => null,
-        };
-        if (name == null) return null;
-        var visual = $"GameMechanics/CreatureVisual/WarMachines/{name}.xdb";
-        if (!Game.Instance.Fs.Exists(visual)) return null;
+        if (!Game.Instance.Db.WarMachines.ContainsKey(id) || CreatureModels.VisualFor(id) is not { } visual) return null;
         var r = H5.Core.Xdb.XdbRef.Parse((string?)Game.Instance.Xdb.Load(visual).Root!.Element("AnimCharacter")?.Attribute("href"), visual);
         return r.IsEmpty ? null : r.Path;
     }

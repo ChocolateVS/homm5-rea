@@ -333,10 +333,20 @@ public static class CreatureModels
         return _creatureFiles.GetValueOrDefault(creatureId);
     }
 
-    /// <summary>Creature → CreatureVisual → AnimShot (the (Shot) xdb a shooter fires), or null.</summary>
+    /// <summary>
+    /// CreatureVisual xdb of a creature (its Visual) or of a war machine (RefTables/WarMachines.xdb Visual), or null.
+    /// </summary>
+    public static string? VisualFor(string id)
+    {
+        var db = Game.Instance.Db;
+        var v = db.Creatures.GetValueOrDefault(id)?.VisualPath ?? db.WarMachines.GetValueOrDefault(id)?.VisualPath;
+        return v != null && Game.Instance.Fs.Exists(v) ? v : null;
+    }
+
+    /// <summary>Creature or war machine → CreatureVisual → AnimShot (the (Shot) xdb a shooter fires), or null.</summary>
     public static string? ShotFor(string creatureId)
     {
-        if (Game.Instance.Db.Creatures.GetValueOrDefault(creatureId)?.VisualPath is not { } visual || !Game.Instance.Fs.Exists(visual)) return null;
+        if (VisualFor(creatureId) is not { } visual) return null;
         var r = XdbRef.Parse((string?)Game.Instance.Xdb.Load(visual).Root?.Element("AnimShot")?.Attribute("href"), visual);
         return r.IsEmpty || !Game.Instance.Fs.Exists(r.Path) ? null : r.Path;
     }

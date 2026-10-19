@@ -224,9 +224,10 @@ public sealed class GameDatabase
 
     void LoadWarMachines()
     {
-        foreach (var (id, o, _) in ReadTable(WarMachineTable, "Obj"))
+        foreach (var (id, o, f) in ReadTable(WarMachineTable, "Obj"))
             WarMachines[id] = new WarMachineDef
             {
+                VisualPath = XdbRef.Parse(o.Href("Visual"), f).Path is { Length: > 0 } vp ? vp : null,
                 Id = id, Shots = o.Int("Shots"), Initiative = o.Int("Initiative"), Health = o.Int("Health"),
                 CombatSize = o.Int("CombatSize", 1), Cost = Resources.Parse(o.Element("Cost")),
                 Offense = o.StrItems("Offense").Select(s => (int)XmlHelpers.ParseDouble(s)).ToArray(),

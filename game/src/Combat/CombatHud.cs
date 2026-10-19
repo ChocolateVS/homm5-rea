@@ -556,7 +556,7 @@ public partial class CombatHud : Control
         SetTex(info.Find("creature_info/icon"), UiResources.Instance.Texture(CombatIcons.Creature(u.CreatureId, true)));
         if (info.Find("icon_definition") is { } idef)
         {
-            idef.SetValue("name", CombatLogText.Escape(def?.Name is { Length: > 0 } n ? n : u.Name));
+            idef.SetValue("name", CombatLogText.Escape(def?.Name is { Length: > 0 } n ? n : CombatLogText.WarMachineName(u.CreatureId) ?? u.Name));
             idef.SetValue("tier", u.Tier.ToString());
             idef.SetValue("town", TownName(u.Town));
         }
