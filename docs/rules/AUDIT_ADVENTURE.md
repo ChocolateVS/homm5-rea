@@ -4,7 +4,7 @@ Every adventure mechanic / screen element checked against `H5_Game.exe` (Ghidra 
 the original data. Status: **MATCH** (already as the exe), **FIXED** (changed to match), **GAP** (known difference or
 not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not traced).
 
-Rows at 2026-10-20: 51 FIXED, 5 MATCH, 18 GAP, 24 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
+Rows at 2026-10-20: 51 FIXED, 7 MATCH, 20 GAP, 28 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
 
 ## Seer Huts
 
@@ -53,7 +53,7 @@ Rows at 2026-10-20: 51 FIXED, 5 MATCH, 18 GAP, 24 UNVERIFIED (rows carrying two 
 | Item | Evidence | Original | Ours | Status |
 |---|---|---|---|---|
 | Where it is buried | map init 009960e0 | one of the map's Graal artifact objects (both floors) picked at random; all of them removed; no Graal → no Tear of Asha; warnings when obelisks and Graal don't match | same (`PlaceGrail`) | FIXED (was: random open land tile) |
-| Random maps: option | UIGameRoot RMG option EP_GRAAL_ON_MAP (ECT_CHECKBOX, name TemplateInfo/Grail/Name.txt "Do not use!", tooltip Graal/Tooltip.txt); InitialParams.Grail = generator +0xb5 (saved by 0090a980 as sRMGProps.InitialParams.Grail); the template's GraalOnMap (+0x74) is only read by its loaders and copy constructor | a check box on the RMG screen decides | `RmgOptions.Grail`, `RmgSettings.Grail`, a row in the RMG dialog | FIXED / the check box's default (0079e6f0 → option +0x2c) UNVERIFIED (ours: off) |
+| Random maps: option | UIGameRoot RMG option EP_GRAAL_ON_MAP (ECT_CHECKBOX, name TemplateInfo/Grail/Name.txt (shown as "Tears of Asha"), tooltip Graal/Tooltip.txt); InitialParams.Grail = generator +0xb5 (saved by 0090a980 as sRMGProps.InitialParams.Grail); the template's GraalOnMap (+0x74) is only read by its loaders and copy constructor | a check box on the RMG screen decides | `RmgOptions.Grail`, `RmgSettings.Grail`, a row in the RMG dialog | FIXED / the check box's default (0079e6f0 → option +0x2c) UNVERIFIED (ours: off) |
 | Random maps: placement | 0x00907150 (Next(template zones) up front, else one discarded draw), 0x00921a50 (Graal: ≤ 100 attempts, random candidate and quarter turn, tile marked 4), 0x00921a10 → 0x009216f0 (obelisks: (zone tiles·k)/(W·H) + 2 per zone, k 10 / 18 / 26 by size index) | Graal artifact (RMG/Params Grail) in the drawn zone; "obelisks" = RMG/Params Obelisk, which the stock data points at Learning_Stone | `PlaceGrailAndObelisks` after the dwellings of every zone; the adventure map then buries the Tear of Asha there (`PlaceGrail`) | FIXED / candidate filters (0x0091bb10, 0x009216f0) and the radius-5 test 0x00914a60 UNVERIFIED |
 | Random maps: grail objective | RMG/Params DefaultGrailObjective | — | not traced | GAP |
 | Puzzle pieces | 00a7f8c0, obelisk visit 00a7f880 | each of N obelisks visited (capped at N) opens (36 − open) / (obelisks left) | `PuzzlePiecesFor` | FIXED (was 36·v/N; differs e.g. N = 8) |
@@ -93,7 +93,14 @@ Rows at 2026-10-20: 51 FIXED, 5 MATCH, 18 GAP, 24 UNVERIFIED (rows carrying two 
 
 | Item | Evidence | Original | Ours | Status |
 |---|---|---|---|---|
-| Objectives / Kingdom Overview tabs, town and hero templates, resources with daily income, moon week, date | UI/MissionObjectives (townview1 / heroview1 templates) | — | MissionBoxScreen | UNVERIFIED (exe screen code not traced in this pass) |
+| Screen messages | FUN_005bb180 (tab_objectives, tab_log, tab_kingdom, kingdom_overview_towns / _heroes, objectives_close, timeout_forced_close, show_hero_artifacts 005b4c10, show_hero_abilities 005b4c80, spell_book 005b3d00, show_town_info 005b3df0, show_town_plan 005b2710); input_adv_show_kingdom_overview / _objectives / _objectives_log | tabs, town/hero lists and the per-view buttons | tabs, lists, input keys (AdvHud) bound | MATCH (tabs, lists) |
+| Templates | FUN_005baa00 (townview1 / heroview1, scroll_of_views) | two views per page | same templates | UNVERIFIED (paging/scroll not compared) |
+| Resources and income | FUN_005b2e40: %s_count = player +0xd8 (purse), %s_income = player +0xe8 (stored income, CPlayer +0x58) with the breakdown +0xf0 (+0x230) for tooltips | purse and the player's stored daily income | purse and `ExpectedIncome` (computed) | UNVERIFIED (how the exe fills +0x58 not traced; breakdown tooltips not built) |
+| Moon week and date | FUN_005b2e40: moon_week_name = the week's name with its description as tooltip (world +0xb0 → 00ad5ac0); month_week_day | as listed | name and date shown | UNVERIFIED (tooltip) |
+| Town view | FUN_005b64c0: TownName, TownLevel, TownSlotHeader, gold_income / silo_income, garrison / visiting slots (TownSlotGarrison/Visiting/Hero, GuardingHero, VisitingHero, Garrison), AvailableCreatures (Creature%d, CreatureNumber, BlockCreatures), build state BuildDone / BuildNoResources / NothingBuild, KO_TownInfo, KO_TownPlan | as listed | all these elements are filled | UNVERIFIED (element logic not compared line by line) |
+| Town view buttons | show_town_info 005b3df0 (needs a dwelling, FUN_0061a390, then the hire-creatures dialog 006db170); show_town_plan 005b2710 (town plan FUN_00659480) | hire creatures / town plan | KO_TownInfo opens the town on the fort (recruit) screen, KO_TownPlan on the hall | MATCH (destinations) / opening the whole town screen instead of the bare dialogs GAP |
+| Hero view | FUN_005b8510: HeroName, HeroClass, HeroLevel, HeroOwnerPrefix, primary attributes, Attribute6 = luck (ICON_LUCK, Attribute_Luck), Attribute7 = mana (ICON_MANA, Attribute_Mana), Attribute8 experience, num_of_creatures, bio/spec tooltips (biosuffix, specsuffix) | as listed | name, face, class, level, attributes, luck, mana, experience, army, artifacts | UNVERIFIED (bio/spec tooltips missing) |
+| Hero view buttons | show_hero_artifacts 005b4c10, show_hero_abilities 005b4c80, spell_book 005b3d00 | open the hero's artifacts / abilities / spell book | not bound (Cast hidden) | GAP |
 
 ## Faction special buildings (town "enter_special")
 
