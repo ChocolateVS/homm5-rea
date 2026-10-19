@@ -79,15 +79,30 @@ public sealed partial class Adventure
     public HeroState? HeroAtTile(Tile t) => HeroAt(t);
     public bool ArePlayersAllied(int a, int b) => Allied(a, b);
 
-    public void ScriptGiveArtifact(HeroState h, string artifact) => GiveArtifact(h, artifact);
+    /// <summary>
+    /// GiveArtefact (exe CGiveArtifact cmd Execute 0x00431fe0): the artifact is worn when its slot
+    /// has room (hero vf 0x80/0x84), otherwise it goes to the backpack.
+    /// </summary>
+    public void ScriptGiveArtifact(HeroState h, string artifact)
+    {
+        if (Core.Artifacts.TryGetValue(artifact, out var def) && SlotCapacity(def.Slot) is var cap && cap > 0
+            && h.Artifacts.Count(a => Core.Artifacts.TryGetValue(a, out var d) && d.Slot == def.Slot) < cap)
+            GiveArtifact(h, artifact);
+        else
+        {
+            h.Backpack.Add(artifact);
+            Emit(new ArtifactGained(h.Id, artifact));
+        }
+    }
 
+    /// <summary>
+    /// RemoveArtefact (exe cmd Execute 0x0042b1d0, hero vf 0x7c = 0x00b4b6f0 / vf 0x90): the worn copy
+    /// first, else one from the backpack. Artifact stat bonuses are not part of the base attributes
+    /// (they apply in battle), so nothing is subtracted here.
+    /// </summary>
     public bool ScriptRemoveArtifact(HeroState h, string artifact)
     {
-        if (!h.Artifacts.Remove(artifact)) return false;
-        if (Core.Artifacts.TryGetValue(artifact, out var a))
-        {
-            h.Attack -= a.Attack; h.Defence -= a.Defence; h.SpellPower -= a.SpellPower; h.Knowledge -= a.Knowledge;
-        }
+        if (!h.Artifacts.Remove(artifact) && !h.Backpack.Remove(artifact)) return false;
         Emit(new HeroStatChanged(h.Id, "artifact_removed:" + artifact, 0));
         return true;
     }
