@@ -100,4 +100,44 @@ public partial class AdventureScreen
             GD.Print($"[H5] dev hover tile {t}: {target.Action} → {target.Dest}, object {target.Object}, cursor {AdvCursors.Current}");
         }
     }
+
+    /// <summary>An object's own message (shared descriptor messagesFileRef[<paramref name="msg"/>]), or "".</summary>
+    string ObjectMessage(int index, int msg, params (string Name, object Value)[] values)
+    {
+        if (index < 0 || index >= Session.Map.Objects.Count) return "";
+        var m = Session.Map.Objects[index].Shared.Messages;
+        return msg < m.Count && m[msg].Length > 0 ? AdvTexts.Get(m[msg].TrimStart('/'), values) : "";
+    }
+
+    /// <summary>Visit outcomes whose text the object's data defines (shrines, keymaster tents, border guards).</summary>
+    string VisitMessage(ObjectVisited ov)
+    {
+        string Spell() => Session.S.Objects.TryGetValue(ov.Object, out var os) && os.SpellId is { } sp ? Game.Instance.Db.Spell(sp)?.Name ?? sp : "";
+        return ov.What switch
+        {
+            "shrine:learned" => ObjectMessage(ov.Object, 2, ("spell", Spell())),
+            "shrine:known" => ObjectMessage(ov.Object, 3, ("spell", Spell())),
+            "shrine:cant" => ObjectMessage(ov.Object, 4, ("spell", Spell()), ("skill", ShrineSkill(ov.Object))),
+            "border_guard_closed" => ObjectMessage(ov.Object, 2),
+            "bank:empty" => ObjectMessage(ov.Object, 3),
+            _ when ov.What.StartsWith("key:") => ObjectMessage(ov.Object, 2),
+            _ when ov.What.StartsWith("key_again:") => ObjectMessage(ov.Object, 3),
+            _ => "",
+        };
+    }
+
+    /// <summary>The magic school skill a shrine's spell needs (the rule in Adventure.LearnSpell).</summary>
+    string ShrineSkill(int index)
+    {
+        if (!Session.S.Objects.TryGetValue(index, out var os) || os.SpellId is not { } sp || Game.Instance.Db.Spell(sp) is not { } def) return "";
+        string? skill = def.School switch
+        {
+            "MAGIC_SCHOOL_DESTRUCTIVE" => "HERO_SKILL_DESTRUCTIVE_MAGIC",
+            "MAGIC_SCHOOL_DARK" => "HERO_SKILL_DARK_MAGIC",
+            "MAGIC_SCHOOL_LIGHT" => "HERO_SKILL_LIGHT_MAGIC",
+            "MAGIC_SCHOOL_SUMMONING" => "HERO_SKILL_SUMMONING_MAGIC",
+            _ => null,
+        };
+        return skill != null && Game.Instance.Db.Skills.TryGetValue(skill, out var sd) ? sd.Name ?? skill : "";
+    }
 }

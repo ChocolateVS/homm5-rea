@@ -133,3 +133,71 @@ Rows at 2026-10-20: 51 FIXED, 7 MATCH, 22 GAP, 28 UNVERIFIED (rows carrying two 
 | Fortress special (enter_special) | 00618d10: ability 0x20 (Fortress TB_SPECIAL_1) → FUN_00630450 | Runic Shrine screen | not built | GAP |
 | Academy Artifact Merchant | TB_SPECIAL_3 | buy artifacts | built earlier (ArtifactMerchantScreen) | UNVERIFIED |
 | Town "enter_special" for unbuilt screens | — | each opens its screen | Preserve, Academy and Fortress still show our notice "This building's screen is not available yet." (placeholder text, not from the game) | GAP |
+
+## Map object interaction (hover, cursor, click)
+
+The hover handler is 0059e1f0: pick (005913b0) → action (00600e70 → 00600060 → 005ff8f0) → cursor (switch at
+0059e594, jump tables 0059e694 / 0059e6bc; day families 0058c500 over the tables 00e21c78..00e21dd8). Cursor ids are the
+enum named at 00516900 and are resolved through `UI/RefTables/Cursors.xdb` (ID → hwcursors FileName). Code:
+`Adventure.Target` (src/H5.Adventure/Engine/Adventure.Interaction.cs), `AdvInteraction.cs`, `AdvCursors.cs`;
+tests `InteractionTests`; off-screen check `--adventure-hover=Mine:body|entrance[:click]`.
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Object under the mouse | 005913b0: ray pick of the visual object (param_2[4]); when nothing or a static is hit, 00cea350 (object on / entered from the tile) then 00cea010 (cell type 1, or object whose cell list covers the tile) | any part of the model, or any of its cells, points at the object | `AdvWorld.PickObject` (ray vs model triangles, bind pose) then `Adventure.ObjectAtTile` (position / active cell, then blocked cell); statics never picked | FIXED (was: only the entrance cell counted, the body gave the default cursor and no route) |
+| Route target | 00cebd50: the object's active cells (+0xb8, offsets from +0xa4) sorted by squared distance to the pointed tile (00cecb10), first with a route; heroes on their tile; no active cells → the pointed tile | route ends at the entrance nearest to the pointed cell | same (`Adventure.Approach`) | FIXED |
+| Action per object | 005ff8f0 | own/allied army-holding building (mine, dwelling, garrison) → 10 own building; guarded → 7 attack; ship without hero → 13 board; hero: ally → 15 meet, enemy → 7; town (00600e70): ally → 11 own town, enemy with hero/garrison → 7, empty → 6; anything else → 5/6 visit | same mapping on our object kinds; a monster's guard zone → attack | FIXED (the interface getters behind the switch are identified by behaviour, not by vtable) |
+| Cursor per action | 0059e594 switch | 0/5/6/7/10/11/13/14 → 0058c500 families (MOVE, USE, ATTACK_RED, OWN_BUILDING, OWN_TOWN, BOARD/UNBOARD/SHIP_MOVE); 1/2 → WAIT; 3, 0x15–0x18 → DEFAULT; 4 (no route) and 8 (no hero) → CANT_CAST; 9 → CAST; 0xf → HERO_MEET; 0x10/0x11 → FINGER; pick failed → CANT_CAST | `AdventureScreen.CursorFor` | FIXED (was: default over unreachable tiles, the selected hero and while locked; no CAST/WAIT/FINGER) |
+| Attack cursor | 0058c500 case 7 reads only 00e21d68 | always CURSOR_ATTACK_RED…_RED_6 (Attack_a.cur …) | same | FIXED (was Attack.cur) |
+| Day digit | 0058c500 clamps action+0x34 to 0..5; value from 00b4f930 (day roll-overs along the route; −1 when a step exceeds a full day → first entry) | 1–6 days | `Adventure.DaysFor` | MATCH |
+| Red (`_a`) variants | 00600060 sets action+0x31 from the last route node (+0x20 < 0, or = 0 and +0x2c < 0) | red horse/boat/town/building cursors | node fields not decoded; never red (except attack, above) | GAP |
+| Cursor files | `UI/RefTables/Cursors.xdb` (00e1bbdc, loader 00524cb0) | ID → `..\hwcursors\*.cur` | loaded from the table | FIXED (was a hand-written file list) |
+| Click | 00597640: stores the action; a second click with the same pick (tile and object) moves | plot, then go | same (`ClickTarget`) | FIXED (was: same destination tile) |
+| Path preview | — | markers to the entrance, red end marker for fights | ends at the entrance; Contested end marker also for guarded objects | FIXED |
+| Disembark on a visit route | 0059e5a7: action 5 with route flag +0x39 or water → UNBOARD family | — | not modelled | GAP |
+| Hover highlight of objects | not traced | — | none | GAP |
+| Tooltip target | tooltips follow the pick | — | `AdvTooltip` still resolves by tile (blocked cells included) | GAP |
+| Unexplored tiles | not traced | — | CANT_CAST | GAP |
+
+## Map object visits by category
+
+Census of non-static objects (`count/maps`: stock 75 maps; MMH 5.5 117 maps — the same object types; 5.5 adds
+ARTF_RANDOM_ANY and BUILDING_LEAN_TO and has no TREANT_THICKET, LAKE_OF_SCARLET_SWAN or MAGIC_SPRING on its maps).
+Objects a 5.5 (or campaign) script re-scripts go through `ScriptHooks.InterceptVisit` (script runtime workstream). Texts
+are the object's own `messagesFileRef` (index in brackets). The exe has one visit dialog per kind (RTTI
+`C*DialogLogEntry`: Astrologer, BlackMarket, BuildShip, Chest, EnterSanctuary, Garrison, HeroVisitDwelling, HillFort,
+Interactive, Market, MemoryMentor, SacrificialAltar, SearchGuarded, SeerHut, SpellShop, Sphinx, Tavern, ThievesInfo,
+Treasure, WarMachineFactory, WitchHut; dispatcher 005a5d90).
+
+| Category | Count (stock; 5.5) | Original | Ours | Status |
+|---|---|---|---|---|
+| Mines (sawmill, ore pit, alchemist lab, crystal cavern, gem pond, sulfur dune, gold mine) | 1877/68; 3055/105 | capture: flag + [2] FLYOFF_Captured flyoff; army holder (00b08560 / 00b086b0 put stacks in slots 0..6), so the owner can leave guards (own-building cursor); [3] AlreadyCaptured | capture, ownership, [2] flyoff; neutral guards fought on entry | FIXED (flyoff; was the name) / GAP (guard garrison, [3], fight prompt `DoYouWantToFightGuards.txt` not traced) |
+| Abandoned mine | 66/18; 111/38 | guarded; [2] FirstVisit | battle, capture | GAP ([2] unused) |
+| Dwarven Warren | 18/14; 34/23 | capture + [2] FLYOFF_Captured, [3] AlreadyCaptured, [4] DescriptionCaptured | capture + [2] flyoff | FIXED (flyoff) / GAP ([3], [4]) |
+| External dwellings (faction dwellings, military posts, refugee camp …) | ~900/72; ~1300/110 | capture + recruit dialog (CHeroVisitDwellingDialogLogEntry; [2] FirstVisit, [3] SecondVisit, [4]/[5] …NoHire) | capture only | FIXED (removed the invented name flyoff) / GAP (recruit dialog) |
+| Resource piles (wood … gold, random) | 9687/70; 15340/109 | pick up | resources + flyoff | UNVERIFIED |
+| Treasure chest | 4105/73; 6000/114 | gold or experience (CChestDialogLogEntry), minor artifact chance | Choose2 with the stock Chest texts | UNVERIFIED |
+| Campfire, flotsam, sea chest, shipwreck, soulstone | 768/53; 1707/88 | per type | rules per manual; soulstone not special-cased | UNVERIFIED |
+| Artifacts (specific and random) | 2899/59; 4170/97 | pick up | artifact given; box "You found the …" (invented wording) | GAP (message) |
+| Shrines (levels 1–3, runic) | 542/54; 975/91 | [2] SpellLearned, [3] AlreadyLearned, [4] SpellCantBeLearned (`<value=spell>`, `<value=skill>`) | outcome per visit, box with that text | FIXED (was: no message) |
+| Creature banks (crypt, cyclops stockpile, dwarven treasure, naga bank, gargoyle stonevault, dragon utopia, treant thicket, pyramid, blood temple, sunken temple, Biara citadel) | ~640/49; ~800/70 | [2] Search prompt (CSearchGuardedDialogLogEntry) before the fight; empty → [3] SearchedEmpty with the morale/luck loss | Yes/No with [2]; empty → [3] | FIXED (was: battle at once, invented "The place is empty.") / UNVERIFIED (loot) |
+| Keymaster tent | 19/10; 48/26 | [2] first_visit, [3] second_visit | key + box with [2] / [3] | FIXED (was: no message) |
+| Border guard | 24/10; 54/26 | without key [2] nopass; with key [3] pass "Do you wish to pass at this time?" (also `Text/Interface/BorderGuard`) | [2] box; key → Yes/No with [3], Yes removes the guard | FIXED (was: invented text, opened without asking) / GAP (dedicated BorderGuard window) |
+| Seer hut, Sphinx, obelisk / Tear of Asha, shipyard, marketplace | see the sections above | — | — | see above |
+| Garrisons (garrison, anti-magic garrison, outpost) | 60/18; 120/35 | garrison screen (CGarrisonDialogLogEntry), [2] WayThruBlockedByHero | event only | GAP |
+| Prison | 85/28; 99/38 | free the hero; [2] PrisonEmpty, [3] PrisonCantHire, [4] NoExit | frees the hero | GAP (messages) |
+| Towns | ~320/30; ~520/50 | enter / capture / siege | town screen, capture, siege hand-off | UNVERIFIED (town audits elsewhere) |
+| Monsters | 7417/72; 11946/114 | fight / join / flee (CJoinFleeDialogLogEntry, CFleeFightDialogLogEntry) | join/flee/fight by mood | UNVERIFIED (mood coefficients MATCH, see ADVENTURE.md) |
+| Heroes | 86/26; 152/56 | meet (exchange) / attack | exchange screen / battle | UNVERIFIED |
+| Teleports (monoliths one/two way, subterranean gate, whirlpool) | 448/46; 818/72 | teleport | `Teleport` | UNVERIFIED |
+| Boats | — | board / land | see BOATS.md | UNVERIFIED |
+| Stat buildings (mercenary camp, Marletto tower, star axis, garden of revelation, learning stone, arena, war academy, school of magic, library) | ~830/41; ~1400/70 | once per hero | once per hero; "Already visited." (invented wording); arena/school choice box shows the internal kind name | GAP (texts) / UNVERIFIED (rules) |
+| Morale / luck / movement places (buoy, faerie ring, mermaids, fountains, idol, rally flag, stables, temple, oasis, scarlet swan, sanctuary, sirens) | ~1100/64; ~1700/103 | until the next battle / weekly | per manual; "Already visited." | GAP (texts) / UNVERIFIED (rules) |
+| Weekly producers (windmill, water wheel, mystical garden), magic well / spring | ~790/59; ~1440/96 | weekly; `BuildingsCommon/AlreadyVisitedThisWeek.txt` | weekly; "Come back next week." (invented wording) | GAP (text) |
+| Loot sites (lean-to, wagon, skeleton, tomb of the warrior) | 100/20; 230/36 | one-off loot | per manual | UNVERIFIED |
+| Observatory, hut of magi, eye of magi, lighthouse, cartographer | ~500/58; ~800/93 | reveal / ownership | reveal rules; cartographer screen | UNVERIFIED |
+| Witch hut, tree of knowledge, trading post, hill fort, war machine factory, black market | ~370/48; ~520/71 | screens (CWitchHutDialogLogEntry, CHillFortDialogLogEntry, CMarketDialogLogEntry, CWarMachineFactoryDialogLogEntry, CBlackMarketDialogLogEntry) | client screens (MapBuildingScreens) | UNVERIFIED |
+| Signs | 31/12; 69/29 | sign text box | event only | GAP |
+| Spell shop, map tavern, den of thieves, Memory Mentor, sacrificial altar, astrologer tower, nomad shaman, fortuitous sanctuary, demolish, unkempt | ~520/48; ~620/66 | screens (CSpellShop / CTavern / CThievesInfo / CMemoryMentor / CSacrificialAltar / CAstrologer DialogLogEntry) | event only | GAP |
+
+Rows in these two sections: 15 FIXED, 1 MATCH, 18 GAP, 14 UNVERIFIED (rows with two statuses count once for each).

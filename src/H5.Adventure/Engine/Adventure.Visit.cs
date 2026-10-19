@@ -41,6 +41,12 @@ public sealed partial class Adventure
         var os = S.Obj(o.Index);
         var p = PlayerByIndex(h.Owner)!;
         // Guarded objects (artifacts, mines, banks…) must be fought for first.
+        // Creature banks ask first (messagesFileRef[2] "Search": search the place?).
+        if (os.Guards.Count > 0 && o.Kind == ObjectKind.Building && AdventureDb.BankFor(o.Shared.Type) != null)
+        {
+            Offer(h, o, "bank_search");
+            return;
+        }
         if (os.Guards.Count > 0 && o.Kind is not ObjectKind.Monster)
         {
             if (Refused(h, -1, o.Index)) return;
@@ -66,13 +72,18 @@ public sealed partial class Adventure
                 VisitShipyard(h, o);
                 break;
             case ObjectKind.Shrine:
-                if (os.SpellId != null) LearnSpell(h, os.SpellId, force: false);
-                Emit(new ObjectVisited(h.Id, o.Index, "shrine"));
+                // AdvMapShrineShared messagesFileRef: [2] SpellLearned, [3] AlreadyLearned, [4] SpellCantBeLearned.
+                Emit(new ObjectVisited(h.Id, o.Index, os.SpellId == null ? "shrine"
+                    : h.Spells.Contains(os.SpellId) ? "shrine:known"
+                    : LearnSpell(h, os.SpellId, force: false) ? "shrine:learned" : "shrine:cant"));
                 break;
             case ObjectKind.Tent:
-                if (o.Shared.Type == "BUILDING_KEYMASTER_TENT") { p.Keys.Add(o.Shared.Color); Emit(new ObjectVisited(h.Id, o.Index, $"key:{o.Shared.Color}")); }
-                else if (p.Keys.Contains(o.Shared.Color)) { RemoveObject(o.Index); Emit(new ObjectVisited(h.Id, o.Index, "border_guard_open")); }
-                else Emit(new Message("border_guard_closed", "You need the key from the keymaster's tent of this colour."));
+                // AdvMapTentShared messagesFileRef: keymaster [2] first_visit / [3] second_visit;
+                // border guard [2] nopass / [3] pass ("Do you wish to pass at this time?").
+                if (o.Shared.Type == "BUILDING_KEYMASTER_TENT")
+                    Emit(new ObjectVisited(h.Id, o.Index, p.Keys.Add(o.Shared.Color) ? $"key:{o.Shared.Color}" : $"key_again:{o.Shared.Color}"));
+                else if (p.Keys.Contains(o.Shared.Color)) Offer(h, o, "border_guard");
+                else Emit(new ObjectVisited(h.Id, o.Index, "border_guard_closed"));
                 break;
             case ObjectKind.Prison:
                 FreePrisoner(h, o);
@@ -405,16 +416,12 @@ public sealed partial class Adventure
                 // Looting an empty site costs morale/luck (BankXxx/Luck|MoraleLossOnEmpty).
                 h.NextBattleMorale -= bank.MoraleLossOnEmpty;
                 h.NextBattleLuck -= bank.LuckLossOnEmpty;
-                Emit(new Message("bank_empty", "The place is empty."));
+                // messagesFileRef[3] "SearchedEmpty".
+                Emit(new ObjectVisited(h.Id, o.Index, "bank:empty"));
                 return;
             }
             RollBank(o, bankId);
-            if (os.Guards.Count > 0)
-            {
-                if (Refused(h, -1, o.Index)) return;
-                StartBattle(h, -1, o.Index, h.Pos, os.Guards.Select(g => new Stack(g.Creature, g.Count)).ToList(), siege: false);
-                return;
-            }
+            if (os.Guards.Count > 0) Offer(h, o, "bank_search");
         }
     }
 
@@ -517,6 +524,13 @@ public sealed partial class Adventure
                     var err = BuildShipAt(O(ch.Object), p);
                     if (err == "not enough resources") Emit(new Message("shipyard_no_money", "You do not have enough gold and wood to build another boat."));
                 }
+                break;
+            case "bank_search":
+                if (c.Accept && S.Obj(ch.Object).Guards.Count > 0 && !Refused(h, -1, ch.Object))
+                    StartBattle(h, -1, ch.Object, h.Pos, S.Obj(ch.Object).Guards.Select(g => new Stack(g.Creature, g.Count)).ToList(), siege: false);
+                break;
+            case "border_guard":
+                if (c.Accept) { RemoveObject(ch.Object); Emit(new ObjectVisited(h.Id, ch.Object, "border_guard_open")); }
                 break;
             case "join_free":
                 if (c.Accept) JoinArmy(h, ch.Creatures);

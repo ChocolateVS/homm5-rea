@@ -522,6 +522,9 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 Hud.UpdateMinimap();
                 break;
+            case ObjectVisited ov when HumanCaused(player) && !Autoplay && VisitMessage(ov) is { Length: > 0 } visitText:
+                await Dialog(done => Message("", visitText, null, done));
+                break;
             case ObjectVisited { What: "BUILDING_TRADING_POST" } tp when HumanCaused(player) && !Autoplay && s.Hero(tp.HeroId) is { } trader:
             {
                 // Trading Post: the marketplace screen at the 3-marketplace rates while the hero stands on it.
@@ -700,8 +703,10 @@ public partial class AdventureScreen : Control
             case ObjectCaptured oc:
                 World.SyncObject(oc.Object);
                 Hud.UpdateMinimap();
-                if (HumanCaused(player) && Session.Map.Objects[oc.Object].Kind is ObjectKind.Mine or ObjectKind.Dwelling)
-                    FlyText(oc.Object, ObjectName(oc.Object));
+                // Mines and Dwarven Warrens carry their capture flyoff (messagesFileRef[2] FLYOFF_Captured).
+                if (HumanCaused(player) && Session.Map.Objects[oc.Object].Kind is ObjectKind.Mine or ObjectKind.DwarvenWarren
+                    && ObjectMessage(oc.Object, 2) is { Length: > 0 } flyoff)
+                    FlyText(oc.Object, flyoff);
                 break;
             case ResourcesChanged rc when rc.Player == Session.Human.Index:
                 Hud.Refresh();
@@ -929,6 +934,12 @@ public partial class AdventureScreen : Control
                 case "chest":
                     await Dialog(done => AdvDialogs.Choose2(_dialogLayer, AdvTexts.Get(AdvTexts.ChestTitle), AdvTexts.Get(AdvTexts.ChestDesc), null,
                         (null, AdvTexts.Get(AdvTexts.ChestGold, ("gold", c.Gold))), (null, AdvTexts.Get(AdvTexts.ChestExp, ("exp", c.Experience))), p => { option = p; done(); }));
+                    break;
+                case "bank_search":
+                    await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), ObjectMessage(c.Object, 2), null, y => { accept = y; done(); }));
+                    break;
+                case "border_guard":
+                    await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), ObjectMessage(c.Object, 3), null, y => { accept = y; done(); }));
                     break;
                 case "join_free":
                     await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), AdvTexts.Get(AdvTexts.CreaturesJoin), null, y => { accept = y; done(); }));

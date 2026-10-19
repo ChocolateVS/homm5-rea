@@ -124,4 +124,63 @@ public class InteractionTests(Fixture f)
         h.MovePoints = 100000;
         Assert.Equal(0, g.DaysFor(h, path));
     }
+
+    /// <summary>Visits one object directly from its entrance and returns the visit events.</summary>
+    static List<AdvEvent> VisitFromEntrance(Engine.Adventure g, HeroState h, MapObject o)
+    {
+        h.Pos = o.ActiveTiles.First();
+        var r = g.Apply(new MoveHeroCmd(h.Id, h.Pos) { Player = h.Owner });
+        Assert.True(r.Ok, r.Error);
+        return r.Events.ToList();
+    }
+
+    [Fact]
+    public void BorderGuardAsksBeforeLettingThrough()
+    {
+        var g = f.NewGame("A2M11");
+        var h = MyHero(g);
+        var guard = g.Map.Objects.First(o => o.Shared.Type == "BUILDING_BORDER_GUARD" && o.ActiveTiles.Any());
+        var p = g.S.Players.First(x => x.Index == h.Owner);
+        p.Keys.Remove(guard.Shared.Color);
+        Assert.Contains(VisitFromEntrance(g, h, guard), e => e is ObjectVisited { What: "border_guard_closed" });
+        Assert.False(g.S.Obj(guard.Index).Removed);
+        p.Keys.Add(guard.Shared.Color);
+        VisitFromEntrance(g, h, guard);
+        Assert.Equal("border_guard", g.S.Choice?.Kind);
+        g.Apply(new AnswerChoiceCmd(false, 0) { Player = h.Owner });
+        Assert.False(g.S.Obj(guard.Index).Removed);
+        VisitFromEntrance(g, h, guard);
+        g.Apply(new AnswerChoiceCmd(true, 0) { Player = h.Owner });
+        Assert.True(g.S.Obj(guard.Index).Removed);
+    }
+
+    [Fact]
+    public void ShrineReportsTheOutcome()
+    {
+        var g = f.NewGame("A2M1");
+        var h = MyHero(g);
+        var shrine = g.Map.Objects.First(o => o.Kind == ObjectKind.Shrine && g.S.Obj(o.Index).SpellId != null && o.ActiveTiles.Any());
+        var spell = g.S.Obj(shrine.Index).SpellId!;
+        h.Spells.Remove(spell);
+        var first = VisitFromEntrance(g, h, shrine).OfType<ObjectVisited>().Single(e => e.Object == shrine.Index).What;
+        Assert.True(first is "shrine:learned" or "shrine:cant", first);
+        if (!h.Spells.Contains(spell)) h.Spells.Add(spell);
+        Assert.Contains(VisitFromEntrance(g, h, shrine), e => e is ObjectVisited { What: "shrine:known" });
+    }
+
+    [Fact]
+    public void CreatureBankAsksBeforeTheFight()
+    {
+        var g = f.NewGame("A2M1");
+        var h = MyHero(g);
+        var bank = g.Map.Objects.First(o => o.Kind == ObjectKind.Building && H5.Adventure.Data.AdventureDb.BankFor(o.Shared.Type) != null && o.ActiveTiles.Any());
+        VisitFromEntrance(g, h, bank);
+        Assert.Equal("bank_search", g.S.Choice?.Kind);
+        g.Apply(new AnswerChoiceCmd(false, 0) { Player = h.Owner });
+        Assert.Null(g.S.Battle);
+        VisitFromEntrance(g, h, bank);
+        Assert.Equal("bank_search", g.S.Choice?.Kind);
+        g.Apply(new AnswerChoiceCmd(true, 0) { Player = h.Owner });
+        Assert.NotNull(g.S.Battle);
+    }
 }
