@@ -28,3 +28,4 @@ SetPlayerHeroesCountNotForHire	6	stock-native	MapScript.lua:2, A2C3M2_script.lua
 DenyAIHeroesFlee	4	stock-native	MapScript.lua:4
 AllowHiringOfHeroInTown	2	stock-native	MapScript.lua:2
 DeployEnemy	1	MMH55-only	script.lua:1
+== Status (W2): all of the above are implemented per the exe; EnableCinematicCamera lives in the combat table 0x00f33080 (not adventure). Ledger: docs/mmh55/SCRIPTS.md
