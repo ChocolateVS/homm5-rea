@@ -33,6 +33,8 @@ public sealed class Compiler
 
     sealed class FuncState
     {
+        /// <summary>Pc of the last jump target (lcode.c lasttarget): an instruction there may not be merged into.</summary>
+        public int LastTarget = -1;
         public readonly Proto P = new();
         public FuncState? Prev;
         public readonly List<string> Locals = new();
@@ -138,6 +140,7 @@ public sealed class Compiler
 
     void Patch(int pc, int target)
     {
+        if (target == Pc) _fs.LastTarget = Pc;
         var i = _fs.P.Code[pc];
         i.A = target;
         _fs.P.Code[pc] = i;
@@ -328,7 +331,17 @@ public sealed class Compiler
                 case BinOp.Or:
                     Patch(jump, Pc);
                     break;
-                case BinOp.Concat: Emit(Op.Concat, 2, 0, -1); break;
+                case BinOp.Concat:
+                    // luaK_posfix: a concatenation right after another merges into one CONCAT n.
+                    if (Pc > 0 && _fs.LastTarget != Pc && _fs.P.Code[Pc - 1].Op == Op.Concat)
+                    {
+                        var prev = _fs.P.Code[Pc - 1];
+                        prev.A++;
+                        _fs.P.Code[Pc - 1] = prev;
+                        _fs.Level--;
+                    }
+                    else Emit(Op.Concat, 2, 0, -1);
+                    break;
                 default: Emit(ArithOp(op), 0, 0, -1); break;
             }
             v = new Exp { K = EK.Value };

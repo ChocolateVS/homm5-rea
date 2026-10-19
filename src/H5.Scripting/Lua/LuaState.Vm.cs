@@ -89,6 +89,7 @@ public sealed partial class LuaState
         var ctx = new HostContext(this, t, args, h.Name);
         h.Call(ctx);
         PlaceResults(t, funcSlot, ctx.Results, want);
+        GcCheck();
         return false;
     }
 
@@ -101,7 +102,7 @@ public sealed partial class LuaState
     }
 
     /// <summary>Moves results base..top of the finishing frame to its function slot.</summary>
-    static void PostCall(LuaThread t, CallFrame f, int first)
+    void PostCall(LuaThread t, CallFrame f, int first)
     {
         int count = t.Top - first;
         int n = f.Want < 0 ? count : f.Want;
@@ -110,6 +111,7 @@ public sealed partial class LuaState
         for (int i = 0; i < n; i++) t.Stack[dst + i] = i < count ? t.Stack[first + i] : LuaValue.Nil;
         t.Top = dst + n;
         t.Frames.RemoveAt(t.Frames.Count - 1);
+        GcCheck();
     }
 
     bool ShouldYield(LuaThread t) => NoYield < 1 && t.Sleep > 0;
@@ -187,6 +189,7 @@ public sealed partial class LuaState
                             break;
                         }
                     case Op.CreateTable:
+                        GcCheck();
                         t.Push(LuaValue.Table(NewTable(ins.A)));
                         break;
                     case Op.SetLocal:
@@ -253,12 +256,21 @@ public sealed partial class LuaState
                         }
                     case Op.Concat:
                         {
-                            var x = s[t.Top - 2];
-                            var y = s[t.Top - 1];
-                            if (!x.TryToStr(out var sx)) throw new LuaRuntimeException($"attempt to concat a {x.TypeName()} value");
-                            if (!y.TryToStr(out var sy)) throw new LuaRuntimeException($"attempt to concat a {y.TypeName()} value");
-                            s[t.Top - 2] = LuaValue.String(string.Concat(sx, sy));
-                            t.Top--;
+                            // luaV_strconc: A operands, folded pairwise from the top (Lua 4.0 merges a..b..c into one CONCAT).
+                            int n = ins.A;
+                            int top = t.Top;
+                            do
+                            {
+                                var x = s[top - 2];
+                                var y = s[top - 1];
+                                if (!x.TryToStr(out var sx)) throw new LuaRuntimeException($"attempt to concat a {x.TypeName()} value");
+                                if (!y.TryToStr(out var sy)) throw new LuaRuntimeException($"attempt to concat a {y.TypeName()} value");
+                                s[top - 2] = LuaValue.String(string.Concat(sx, sy));
+                                top--;
+                                n--;
+                            } while (n > 1);
+                            t.Top = top;
+                            GcCheck();
                             break;
                         }
                     case Op.Minus:
@@ -374,6 +386,7 @@ public sealed partial class LuaState
                             Array.Copy(s, t.Top - ins.B, ups, 0, ins.B);
                             t.Top -= ins.B;
                             t.Push(LuaValue.Function(NewClosure(np, ups)));
+                            GcCheck();
                             break;
                         }
                     default:

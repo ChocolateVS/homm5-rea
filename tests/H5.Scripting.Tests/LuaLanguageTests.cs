@@ -113,16 +113,57 @@ public class LuaLanguageTests
     }
 
     [Fact]
-    public void TableLayoutMatchesLua40ForCollidingKeys()
+    public void TableIsTheEnginesChainedHashMap()
     {
-        // Size-4 table. 1 → node 1. 5 collides with 1 (main position 1, occupied by a key in its own
-        // main position) → goes to firstfree node 3. 3's main position (node 3) holds 5, which is out
-        // of its main position and after firstfree → 5 moves to node 2 and 3 takes node 3.
+        // 13 buckets; 1 and 14 share bucket 1 and a new node goes to the head of its chain.
         var t = new LuaTable(0);
         t.Set(1, "a");
-        t.Set(5, "b");
+        t.Set(14, "b");
         t.Set(3, "c");
-        Assert.Equal(new[] { "1", "5", "3" }, t.Pairs().Select(p => p.Key.ToString()).ToArray());
+        Assert.Equal(new[] { "14", "1", "3" }, t.Pairs().Select(p => p.Key.ToString()).ToArray());
+        Assert.Equal(13, t.BucketCount);
+        // The 14th key resizes to 29 buckets; each old chain is moved head first.
+        for (int i = 100; i < 111; i++) t.Set(i, i);
+        Assert.Equal(29, t.BucketCount);
+        // Strings: h = h*5 + c.
+        Assert.Equal((uint)('a' * 5 + 'b'), LuaTable.StringHash("ab"));
+    }
+
+    [Fact]
+    public void NilKeysAreOrdinaryAndNilValuesStayUntilCollected()
+    {
+        // The exe has no "table index is nil": t[nil] stores and reads back.
+        Assert.Equal("5", One("t = {} t[nil] = 5 print(t[nil])"));
+        Assert.Equal("nil", One("t = {} print(t[nil])"));
+        // A nil-valued entry is still traversed until a collection erases it.
+        Assert.Equal("1=nil|2=b", One("t = {} t[1] = 'a' t[2] = 'b' t[1] = nil for k, v in t do print(k, '=', v) end"));
+        var (L, output) = NewState();
+        L.DoString("t = {} t[1] = 'a' t[2] = 'b' t[1] = nil", "x");
+        L.Collect();
+        L.DoString("for k, v in t do print(k, '=', v) end", "y");
+        Assert.Equal("2=b", string.Join("|", output));
+    }
+
+    [Fact]
+    public void CollectorRunsOnEvery1001stCheck()
+    {
+        var (L, output) = NewState();
+        L.DoString("t = {} t[1] = 'a' t[1] = nil", "x");
+        int before = L.GcCount;
+        Assert.True(before > 0);
+        // Each Lua function return is one collector check; 2000 returns pass the 1001st check.
+        L.DoString("function f() end for i = 1, 2000 do f() end", "y");
+        L.DoString("n = 0 for k, v in t do n = n + 1 end print(n)", "z");
+        Assert.Equal("0", output[^1]);
+    }
+
+    [Fact]
+    public void ChainedConcatIsOneInstruction()
+    {
+        var p = Compiler.Compile("x = 'a' .. 'b' .. 'c' .. 'd'", "t");
+        Assert.Single(p.Code, i => i.Op == Op.Concat);
+        Assert.Equal("abcd", One("print('a' .. 'b' .. 'c' .. 'd')"));
+        Assert.Equal(2, Compiler.Compile("x = ('a' .. 'b') .. 'c'", "t").Code.Count(i => i.Op == Op.Concat));
     }
 
     [Fact]

@@ -26,8 +26,9 @@ public sealed class LuaSnapshot
         public int Id { get; set; }
         public Value[] Keys { get; set; } = Array.Empty<Value>();
         public Value[] Vals { get; set; } = Array.Empty<Value>();
-        public int[] Next { get; set; } = Array.Empty<int>();
-        public int FirstFree { get; set; }
+        /// <summary>Bucket of each node (nodes are listed in traversal order).</summary>
+        public int[] Buckets { get; set; } = Array.Empty<int>();
+        public int BucketCount { get; set; }
     }
 
     public sealed class Closure
@@ -60,6 +61,8 @@ public sealed class LuaSnapshot
     public int NextId { get; set; }
     public long Segment { get; set; }
     public int NoYield { get; set; }
+    /// <summary>Collector check count (FUN_00464a00 +0x44).</summary>
+    public int GcCount { get; set; }
     public int Globals { get; set; }
     public Dictionary<string, string> Chunks { get; set; } = new();
     public List<Table> Tables { get; set; } = new();
@@ -80,7 +83,7 @@ public sealed class LuaSnapshot
 
     public static LuaSnapshot Capture(LuaState L)
     {
-        var snap = new LuaSnapshot { NextId = L.PeekNextId, Segment = L.Segment, NoYield = L.NoYield, Globals = L.Globals.Id };
+        var snap = new LuaSnapshot { NextId = L.PeekNextId, Segment = L.Segment, NoYield = L.NoYield, GcCount = L.GcCount, Globals = L.Globals.Id };
         foreach (var (key, (source, _)) in L.Chunks) snap.Chunks[key] = source;
         var seen = new HashSet<int>();
         var pending = new Stack<LuaObject>();
@@ -115,14 +118,14 @@ public sealed class LuaSnapshot
                 {
                     case LuaTable t:
                         {
-                            var (keys, vals, next, ff) = t.RawNodes;
+                            var (keys, vals, buckets, nb) = t.RawNodes;
                             snap.Tables.Add(new Table
                             {
                                 Id = t.Id,
                                 Keys = keys.Select(V).ToArray(),
                                 Vals = vals.Select(V).ToArray(),
-                                Next = next.ToArray(),
-                                FirstFree = ff,
+                                Buckets = buckets,
+                                BucketCount = nb,
                             });
                             break;
                         }
@@ -186,7 +189,7 @@ public sealed class LuaSnapshot
         }
         L.RestoreSourceIndex();
 
-        var tables = Tables.ToDictionary(t => t.Id, t => new LuaTable(0) { Id = t.Id });
+        var tables = Tables.ToDictionary(t => t.Id, t => new LuaTable(0) { Id = t.Id, Owner = L });
         var closures = new Dictionary<int, LuaClosure>();
         foreach (var c in Closures)
         {
@@ -212,7 +215,7 @@ public sealed class LuaSnapshot
             for (int i = 0; i < c.Upvalues.Length; i++) target.Upvalues[i] = V(c.Upvalues[i]);
         }
         foreach (var t in Tables)
-            tables[t.Id].RestoreNodes(t.Keys.Select(V).ToArray(), t.Vals.Select(V).ToArray(), t.Next.ToArray(), t.FirstFree);
+            tables[t.Id].RestoreNodes(t.Keys.Select(V).ToArray(), t.Vals.Select(V).ToArray(), t.Buckets, t.BucketCount);
 
         L.ReplaceGlobals(tables[Globals]);
         L.ErrorHookFunction = ErrorHook != null ? V(ErrorHook) : LuaValue.Nil;
@@ -230,5 +233,6 @@ public sealed class LuaSnapshot
         L.SetNextId(NextId);
         L.Segment = Segment;
         L.NoYield = NoYield;
+        L.GcCount = GcCount;
     }
 }

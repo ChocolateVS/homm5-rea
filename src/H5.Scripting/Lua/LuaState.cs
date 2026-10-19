@@ -54,8 +54,40 @@ public sealed partial class LuaState
 
     public LuaTable NewTable(int sizeHint = 0)
     {
-        var t = new LuaTable(sizeHint) { Id = _nextId++ };
+        var t = new LuaTable(sizeHint) { Id = _nextId++, Owner = this };
         return t;
+    }
+
+    // ---- collector ------------------------------------------------------------------------
+    // The engine's luaC_checkGC (FUN_00464a00) counts calls instead of bytes: while the lock
+    // (+0x48) is 0 every check increments +0x44 and the 1001st runs a full collection
+    // (FUN_00464990) and resets the count. Checks happen at OP_CREATETABLE (before creating),
+    // OP_CLOSURE and OP_CONCAT (after), every function return / C-call completion
+    // (FUN_004c80a0 → FUN_009ac070), and chunk loads (FUN_009abcb0 / FUN_009abb60). The only
+    // observable effect of a collection is that the mark pass (FUN_00464640) erases every
+    // nil-valued node of every reachable table, so `for k,v in t` stops yielding them.
+
+    /// <summary>Collector check count (+0x44).</summary>
+    public int GcCount;
+    readonly HashSet<LuaTable> _nilValued = new(ReferenceEqualityComparer.Instance);
+
+    internal void NoteNilValue(LuaTable t) => _nilValued.Add(t);
+
+    /// <summary>luaC_checkGC (FUN_00464a00).</summary>
+    internal void GcCheck()
+    {
+        if (++GcCount > 1000)
+        {
+            Collect();
+            GcCount = 0;
+        }
+    }
+
+    /// <summary>A full collection's effect on live tables: nil-valued nodes are erased.</summary>
+    public void Collect()
+    {
+        foreach (var t in _nilValued) t.CollectNilValues();
+        _nilValued.Clear();
     }
 
     public LuaClosure NewClosure(Proto p, LuaValue[] upvalues) => new(p, upvalues) { Id = _nextId++ };
@@ -118,6 +150,7 @@ public sealed partial class LuaState
     public bool DoString(string source, string chunk)
     {
         Proto p;
+        GcCheck();
         try { p = Compile(source, chunk); }
         catch (LuaSyntaxException e)
         {
