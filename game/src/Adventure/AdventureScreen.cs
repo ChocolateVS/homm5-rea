@@ -759,7 +759,9 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 break;
             case ArtifactGained ag when HumanCaused(player):
-                await Dialog(done => Message("Artifact", $"You found the {ArtifactName(ag.Artifact)}.", ArtifactIcon(ag.Artifact), done));
+                // The artifact's own name and description (Artifacts.xdb) with its icon, instead of an invented sentence.
+                await Dialog(done => Message(ArtifactName(ag.Artifact),
+                    Game.Instance.Db.Artifacts.TryGetValue(ag.Artifact, out var adef) ? adef.Description : "", ArtifactIcon(ag.Artifact), done));
                 break;
             case SpellLearned sl when HumanCaused(player):
                 FlyTextAt(Selected is { } hs ? World.TileCenter(hs.Pos) : World.Camera.GlobalPosition, Game.Instance.Db.Spell(sl.Spell)?.Name ?? sl.Spell);
@@ -985,6 +987,13 @@ public partial class AdventureScreen : Control
                     accept = pick == 0;
                     break;
                 }
+                case "attack_or_defence_2" or "attack_or_defence_1" or "spellpower_or_knowledge_1" when SelectAttributeBox(c.Object) is { } sel:
+                    // CSelectAttribBuildingLogEntry (005a5d90 case 0x15 → 006af7f0 / 006af4b0): DefaultStats
+                    // SelectAttributeBuildings of the building type — title, choice header, description, the hero's
+                    // face and the two variants' icons and texts.
+                    await Dialog(done => AdvDialogs.Choose2(_dialogLayer, sel.Title, sel.Desc, Session.S.Hero(c.Hero) is { } sh ? AdvDialogs.HeroFace(sh) : null,
+                        sel.V1, sel.V2, p => { option = p; done(); }, sel.Header));
+                    break;
                 case "join_free":
                     await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), AdvTexts.Get(AdvTexts.CreaturesJoin), null, y => { accept = y; done(); }));
                     break;
@@ -1198,6 +1207,23 @@ public partial class AdventureScreen : Control
         if ((string?)first?.Attribute("href") is { Length: > 0 } href && UiResources.Instance.Text(href) is { Length: > 0 } name)
             return UiResources.StripMarkup(name).Trim();
         return o.Shared.Type.Replace("BUILDING_", "").Replace('_', ' ');
+    }
+
+    /// <summary>DefaultStats SelectAttributeBuildings entry of an object's building type (Arena, School of Magic, War Academy).</summary>
+    (string Title, string Header, string Desc, (Texture2D? Icon, string Text) V1, (Texture2D? Icon, string Text) V2)? SelectAttributeBox(int obj)
+    {
+        const string stats = "GameMechanics/RPGStats/DefaultStats.xdb";
+        var type = Session.Map.Objects[obj].Shared.Type;
+        var item = Game.Instance.Xdb.Load(stats).Root?.Element("SelectAttributeBuildings")?.Elements("Item").FirstOrDefault(i => (string?)i.Element("BuildingType") == type);
+        if (item == null) return null;
+        string T(System.Xml.Linq.XElement? e, string name) => (string?)e?.Element(name)?.Attribute("href") is { Length: > 0 } h ? UiResources.Instance.Text(H5.Core.Xdb.XdbRef.Parse(h, stats).Path) ?? "" : "";
+        (Texture2D?, string) V(string name)
+        {
+            var v = item.Element(name);
+            var icon = (string?)v?.Element("Icon64")?.Attribute("href");
+            return (string.IsNullOrEmpty(icon) ? null : Game.Instance.LoadTexture(H5.Core.Xdb.XdbRef.Parse(icon, stats).Path), T(v, "TextFileRef"));
+        }
+        return (T(item, "TitleFileRef"), T(item, "ChoiceHeaderFileRef"), T(item, "DescFileRef"), V("Variant1"), V("Variant2"));
     }
 
     /// <summary>A text of UI/BorderGuard/Texts (UIGameRoot ID_BORDERGUARD) by its TextName.</summary>
