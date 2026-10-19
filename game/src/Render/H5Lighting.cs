@@ -64,10 +64,24 @@ public static class H5Lighting
         return new Vector3(src.X, src.Z, -src.Y).Normalized();
     }
 
+    static ulong _ownerId;
+
+    /// <summary>
+    /// The scene whose light the globals hold (the last <see cref="Apply"/> caller). Overlays that bring
+    /// their own 3D scene (dialog scenes, the hero screen stand, the town) take the globals over while
+    /// the adventure map stays in the tree underneath; the map must not publish its fog of war then.
+    /// </summary>
+    public static Node? Owner => _ownerId != 0 && GodotObject.InstanceFromId(_ownerId) is Node n && GodotObject.IsInstanceValid(n) ? n : null;
+
+    /// <summary>True while another scene than <paramref name="self"/> owns the globals and is still shown.</summary>
+    public static bool OwnedByOther(Node self) =>
+        Owner is { } o && o != self && o.IsInsideTree() && (o is not Node3D n3 || n3.IsVisibleInTree());
+
     /// <summary>Publishes an AmbientLight record (and its fog) to the shaders.</summary>
-    public static void Apply(XElement? light, string? lightFile, Func<string, XElement?>? resolve = null)
+    public static void Apply(XElement? light, string? lightFile, Func<string, XElement?>? resolve = null, Node? owner = null)
     {
         Register();
+        _ownerId = owner?.GetInstanceId() ?? 0;
         Vector3 V(string n, float d)
         {
             var e = light?.Element(n);

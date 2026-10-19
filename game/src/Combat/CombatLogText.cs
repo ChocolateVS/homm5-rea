@@ -376,7 +376,11 @@ public static class CombatIcons
     {
         if (!Game.Instance.Db.Heroes.TryGetValue(heroId, out var def) || !Game.Instance.Fs.Exists(def.SourcePath)) return null;
         var root = Game.Instance.Xdb.Load(def.SourcePath).Root!;
-        var h = (string?)root.Element(large ? "FaceTexture" : "FaceTextureSmall")?.Attribute("href");
+        // FaceTextureSmall is empty on 27 of 119 stock shared heroes (TotE/HoF ones such as Brand,
+        // Shadwyn, Hangvul) and on the MMH 5.5 MP heroes (GodricMP); the original screens still show
+        // their faces, so an empty small face falls back to FaceTexture (as the adventure hero list does).
+        var h = large ? null : (string?)root.Element("FaceTextureSmall")?.Attribute("href");
+        if (string.IsNullOrEmpty(h)) h = (string?)root.Element("FaceTexture")?.Attribute("href");
         return string.IsNullOrEmpty(h) ? null : XdbRef.Parse(h, def.SourcePath).Path;
     }
 }

@@ -44,6 +44,13 @@ at the loop: the horse left the rider, the staff, shield and reins behind (`h5to
 | AmbientLight FogColor / FogStartDistance / FogDistance | +0xc8/+0xd4/+0xd8 referenced only by the serializer FUN_00c78010 (0xc783ea, 0xc78426, 0xc78464) | No renderer consumer found | Removed the Godot `Environment` exponential fog that was built from them. It fired for e.g. Night.xdb, Sand_Bright_day.xdb and A2C1M1 (start 10), on top of the H5Lit fog | FIXED |
 | Fog vs camera zoom | FUN_009add40 | Linear in view depth; nothing zoom-specific | Removed `OnCameraDistance` thinning of the Godot fog (it was invented). The extended-zoom shadow range is kept | FIXED |
 
+## Shader globals ownership (fog of war vs overlay scenes)
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Fog of war under a dialog scene / hero screen stand | Fog darkening is the adventure renderer's own vertex pass (FUN_00896430, see Fog of war); a dialog scene or the hero screen is a separate scene with its own light | Dialog actors and set lit by the scene's light, no fog of war | Was: AdvWorld stays visible under `DialogLayer` and re-published the map-space grid every frame, so H5Lit models in the dialog set (A1SM1 opening, any campaign scene started from the map, stock or 5.5) sampled unexplored texels → black silhouettes; the hero screen stand likewise. Now `H5Lighting.Apply(…, owner)` records the scene that owns the globals; AdvWorld skips the fog while another visible owner exists and re-applies its floor light + fog once that owner is gone (also after the town and battles, which used to leave their light on the map) | FIXED |
+| Small hero face (town hero bar, building screens) | FaceTextureSmall (+0x134) is only named by the serializers FUN_00a02450 / FUN_00a0c3b0; no reader with its own fallback found (scan of all 350 functions using disp 0x134) | Faces shown for heroes whose shared xdb has an empty FaceTextureSmall (27/119 stock, e.g. Brand, Shadwyn; MMH 5.5 GodricMP) | `CombatIcons.Hero(small)` falls back to FaceTexture when FaceTextureSmall is empty (as AdvHud already did) | FIXED (exact exe selector not traced) |
+
 ## Captures
 
 Off-screen captures used for this ledger: A2M1 start at the default zoom and at zoom 60, before and

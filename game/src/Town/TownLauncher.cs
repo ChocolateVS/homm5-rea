@@ -143,6 +143,8 @@ public static class TownLauncher
         if (h == null) return;
         h.Pos = adv.Session.Game.EntranceOf(town);
         h.InTown = town.Object;
+        // `--town-dev-hero=def:<HeroId>` swaps the hero's definition (portrait checks, e.g. def:GodricMP).
+        if (what.StartsWith("def:", StringComparison.Ordinal)) h.DefId = what[4..];
         if (what == "avenger")
         {
             h.Skills.RemoveAll(s => s.SkillId == "HERO_SKILL_AVENGER");

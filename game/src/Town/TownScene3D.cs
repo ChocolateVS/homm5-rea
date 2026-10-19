@@ -245,7 +245,7 @@ public partial class TownScene3D : Node3D
     void AddLighting(XElement light)
     {
         // Original-renderer lighting and fog for H5Lit materials (the town scene owns the screen).
-        Render.H5Lighting.Apply(light, DescPath);
+        Render.H5Lighting.Apply(light, DescPath, owner: this);
         float F(XElement? e, float d = 0) => e == null ? d : float.Parse(e.Value, CultureInfo.InvariantCulture);
         Color C(string tag, float scale = 1)
         {

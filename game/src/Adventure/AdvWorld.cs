@@ -247,10 +247,15 @@ public partial class AdvWorld : Node3D
             if (_sun[f] != null) _sun[f]!.Visible = f == floor;
             if (_env[f] != null) _env[f]!.Environment = f == floor ? _envRes[f] : null;
         }
-        // Original-renderer lighting and fog for the visible floor (H5Lit materials/terrain).
-        Render.H5Lighting.Apply(_lightRec[floor], _lightFile[floor], p => _session.Files.Exists(p) ? _session.Files.LoadXml(p).Root : null);
-        RefreshShroud();
+        ApplyLight();
         Boats?.OnFloorChanged();
+    }
+
+    /// <summary>Original-renderer lighting and fog for the visible floor (H5Lit materials/terrain), then the fog of war.</summary>
+    void ApplyLight()
+    {
+        Render.H5Lighting.Apply(_lightRec[Floor], _lightFile[Floor], p => _session.Files.Exists(p) ? _session.Files.LoadXml(p).Root : null, this);
+        RefreshShroud();
     }
 
     // ---------------------------------------------------------------- lighting
@@ -781,6 +786,11 @@ public partial class AdvWorld : Node3D
     {
         // Hidden behind the town screen: the town scene owns the shader globals.
         if (_fogA == null || !IsVisibleInTree()) return;
+        // An overlay with its own 3D scene (dialog scene, hero screen stand) owns the shader globals:
+        // the fog-of-war grid is in map space and would darken that scene (black actors). Once it is
+        // gone (or after the town / a battle), the map's light and fog of war come back.
+        if (Render.H5Lighting.OwnedByOther(this)) return;
+        if (Render.H5Lighting.Owner != this) { ApplyLight(); return; }
         if (_fogFloor != Floor) SnapWarFog();
         ulong now = Time.GetTicksMsec();
         if (_fogFading)
