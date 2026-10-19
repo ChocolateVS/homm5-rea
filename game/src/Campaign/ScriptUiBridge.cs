@@ -205,7 +205,7 @@ public partial class ScriptUiBridge : Node
             case "tutorial_message":
                 // Tutorial boxes play UIGameRoot TUTORIAL_SOUND as they open (00770df0).
                 if (req.Kind == "tutorial_message") Audio.AudioSystem.PlayNamed("TUTORIAL_SOUND");
-                AdvDialogs.Message(Screen.DialogLayer, "", ResolveText(req.Resource, req.Values), null, () => answer(true));
+                AdvDialogs.Message(Screen.DialogLayer, "", req.Text.Length > 0 ? req.Text.Trim() : ResolveText(req.Resource, req.Values), null, () => answer(true));
                 break;
             case "talk_box":
                 AdvDialogs.Message(Screen.DialogLayer, ResolveText(req.Values.GetValueOrDefault("title", ""), req.Values),
@@ -213,7 +213,7 @@ public partial class ScriptUiBridge : Node
                     req.Values.TryGetValue("icon", out var icon) ? Game.Instance.LoadTexture(icon) : null, () => answer(true));
                 break;
             case "question_box":
-                AdvDialogs.YesNo(Screen.DialogLayer, "", ResolveText(req.Resource, req.Values), null, answer);
+                AdvDialogs.YesNo(Screen.DialogLayer, "", req.Text.Length > 0 ? req.Text.Trim() : ResolveText(req.Resource, req.Values), null, answer);
                 break;
             case "dialog_scene" when OS.GetCmdlineUserArgs().Contains("--skip-dialog-scenes"):
                 answer(true);

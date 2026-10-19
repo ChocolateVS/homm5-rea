@@ -25,6 +25,8 @@ public sealed class UiRequest
     public string Resource = "";
     /// <summary>&lt;value&gt; substitutions for complex messages ({ "file.txt"; gold = 100 }).</summary>
     public Dictionary<string, string> Values = new();
+    /// <summary>The message text as the native built it (FUN_006b5010: file loaded, &lt;value=&gt; substituted); "" for other kinds.</summary>
+    public string Text = "";
     /// <summary>Lua function names (or expressions) invoked as name() on OK/yes and on no.</summary>
     public string Callback = "", CallbackNo = "";
     /// <summary>Player numbers (1-based) that see it; empty = the current/all human players.</summary>

@@ -23,7 +23,7 @@ public static class BaseLibrary
         L.Register("_ERRORMESSAGE", ctx => ctx.L.Output?.Invoke("(Script) ERROR: " + ctx.Str(0)));
         L.Register("parse", Parse);
         L.Register("print", ctx => ctx.L.Output?.Invoke(PrintText(ctx)));
-        L.Register("consoleCmd", ctx => ctx.L.ConsoleCommand?.Invoke(ctx.Str(0)));
+        L.Register("consoleCmd", ConsoleCmd);
         L.Register("doFile", ctx => DoFile(ctx, load));
         L.Register("mod", Mod);
         L.Register("sqrt", Sqrt);
@@ -82,43 +82,90 @@ public static class BaseLibrary
 
     static void IsEqual(HostContext ctx) => ctx.ReturnBool(ctx.Arg(0).Equals(ctx.Arg(1)));
 
-    /// <summary>parse(text): compiles a string and returns it as a function (nil on syntax error).</summary>
+    /// <summary>
+    /// FUN_00cabb60 → FUN_009abd30 (chunk "parse"): the compiled chunk is returned as a function.
+    /// A syntax error is a lua_error inside the protected parser: it is reported (_ERRORMESSAGE)
+    /// and sets the CALLING thread's stop flag; nothing is returned. The load runs the collector
+    /// check first (FUN_009abcb0 → FUN_00464a00).
+    /// </summary>
     static void Parse(HostContext ctx)
     {
         var src = ctx.Str(0);
-        try
-        {
-            var p = ctx.L.Compile(src, "parse");
-            ctx.Return(LuaValue.Function(ctx.L.NewClosure(p, Array.Empty<LuaValue>())));
-        }
-        catch (LuaSyntaxException) { ctx.Return(LuaValue.Nil); }
+        ctx.L.GcCheck();
+        Proto p;
+        try { p = ctx.L.Compile(src, "parse"); }
+        catch (LuaSyntaxException e) { throw ctx.Error(e.Message); }
+        ctx.Return(LuaValue.Function(ctx.L.NewClosure(p, Array.Empty<LuaValue>())));
     }
 
-    /// <summary>doFile(path): runs a script file from the game data, like DoString on its text.</summary>
+    /// <summary>
+    /// FUN_00cabda0: the file is read whole (FUN_00b0f720 — a missing file logs "Couldn't open
+    /// file PATH", an empty one "File PATH is empty.", and nothing runs), then handed to the
+    /// engine's DoString (FUN_00cab4a0 → FUN_009ac310): compiled and run at
+    /// once in a NEW thread appended to the list; the caller continues when it finishes or sleeps.
+    /// A syntax or runtime error stops only that new thread. (The exe names the chunk "DoString
+    /// script"; the file path is kept here as the chunk name because saves re-link closures by it.)
+    /// </summary>
     static void DoFile(HostContext ctx, FileLoader load)
     {
         var path = ctx.Str(0);
         var src = load(path);
-        if (src == null)
-        {
-            ctx.L.Output?.Invoke("Can`t find script file: " + path);
-            return;
-        }
+        if (src == null) { ctx.L.Output?.Invoke("Couldn't open file " + path); return; }
+        if (src.Length == 0) { ctx.L.Output?.Invoke("File " + path + " is empty."); return; }
         ctx.L.DoString(src, path);
     }
 
+    /// <summary>FUN_00cabf00: float arguments; y == 0 (not NaN) is an error; x - floor(x / y) * y in doubles.</summary>
     static void Mod(HostContext ctx)
     {
         float x = F(ctx, 0), y = F(ctx, 1);
-        if (y == 0) throw ctx.Error("mod: division by zero");
+        if (y == 0) throw ctx.Error("Divisor can`t be zero");
         ctx.Return((double)x - Math.Floor((double)x / y) * (double)y);
     }
 
+    /// <summary>FUN_00cac090: x &lt; 0 is an error (NaN passes through FSQRT).</summary>
     static void Sqrt(HostContext ctx)
     {
         float x = F(ctx, 0);
-        if (x < 0) throw ctx.Error("sqrt: negative argument");
+        if (x < 0) throw ctx.Error("Value under root can`t be negative");
         ctx.Return(Math.Sqrt((double)x));
+    }
+
+    // ---- console ------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Console variables changed through consoleCmd("setvar NAME = VALUE"). Like the exe's console
+    /// they are process-wide and not saved. Defaults of the variables the scripts touch:
+    /// ai_time_limit (0x00f440d0, ms) = 180000 — the AI turn's wall-clock limit (0x0086de76
+    /// compares GetTickCount deltas with it); dev_console_password = "" (FUN_00669f50 opens the
+    /// console only when it equals "schwinge-des-todes").
+    /// </summary>
+    public static readonly Dictionary<string, string> ConsoleVars = new(StringComparer.Ordinal)
+    {
+        ["ai_time_limit"] = "180000",
+        ["dev_console_password"] = "",
+    };
+
+    /// <summary>
+    /// FUN_00cabca0 → FUN_00bcf150(text, 3, -1, 0): the line goes to the console's command
+    /// handlers at once. Only setvar changes state the game reads; the other commands the scripts
+    /// issue (bind/bindsection/unbind: key bindings, game_writelog, console_size) are UI/logging.
+    /// </summary>
+    static void ConsoleCmd(HostContext ctx)
+    {
+        var line = ctx.Str(0);
+        ExecuteConsoleCommand(line);
+        ctx.L.ConsoleCommand?.Invoke(line);
+    }
+
+    /// <summary>setvar NAME [=] VALUE: the variable takes the first value token (FUN_00c11fa0).</summary>
+    public static void ExecuteConsoleCommand(string line)
+    {
+        var tok = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (tok.Length < 2 || !tok[0].Equals("setvar", StringComparison.OrdinalIgnoreCase)) return;
+        int v = tok.Length > 2 && tok[2] == "=" ? 3 : 2;
+        if (v >= tok.Length) return;
+        lock (ConsoleVars) ConsoleVars[tok[1]] = tok[v];
     }
 
     /// <summary>
@@ -139,37 +186,77 @@ public static class BaseLibrary
         ctx.Return(span == 0 ? lo : (double)(int)(raw() % span + (uint)lo));
     }
 
-    /// <summary>print: the textual form of each argument, concatenated (strings and numbers literally).</summary>
+    /// <summary>
+    /// print (FUN_00cac850 → FUN_00cab590): one log line, the concatenation of every argument
+    /// formatted by FUN_0087a180(value, name = null, quote = false, level = 0).
+    /// </summary>
     public static string PrintText(HostContext ctx)
     {
         var sb = new StringBuilder();
-        foreach (var a in ctx.Args) Append(sb, a, 0);
+        foreach (var a in ctx.Args) Format(sb, a, null, false, 0, 0);
         return sb.ToString();
     }
 
-    static void Append(StringBuilder sb, LuaValue v, int depth)
+    /// <summary>
+    /// FUN_0087a180: an indent of 2·level spaces, "name = " when named, then: userdata "[userdata]",
+    /// C function "[C-function]", function "[function]", nil "nil", anything lua_isnumber accepts
+    /// (numeric strings too) "%.16g", a string (in quotes when <paramref name="quote"/>), or a table:
+    /// "\n" indent "{\n", the list part t[1..] when t[1] and t[2] are both non-nil (items separated by
+    /// "\n"), then every pair from next() — numeric keys as "[%.16g]", list keys skipped — each followed
+    /// by ",\n" (", ;\n" once before the first such pair after a list; ",\n" after a list with no other
+    /// pairs), indent "}". Nested values are formatted at level 0 with quoting on, and a value at level
+    /// 0 with quoting on ends with "\n" (all as the exe does).
+    /// </summary>
+    static void Format(StringBuilder sb, LuaValue v, string? name, bool quote, int level, int nesting)
     {
-        switch (v.Type)
+        sb.Append(' ', Math.Max(0, level * 2));
+        if (name != null) sb.Append(name).Append(" = ");
+        if (v.Type == LuaType.Userdata) sb.Append("[userdata]");
+        else if (v.Type == LuaType.Function) sb.Append(v.O is HostFunction ? "[C-function]" : "[function]");
+        else if (v.IsNil) sb.Append("nil");
+        else if (v.TryToNumber(out var n)) sb.Append(LuaNumber.Format(n));
+        else if (v.Type == LuaType.String)
         {
-            case LuaType.Nil: sb.Append("nil"); break;
-            case LuaType.Number: sb.Append(LuaNumber.Format(v.N)); break;
-            case LuaType.String: sb.Append(v.Str); break;
-            case LuaType.Function: sb.Append(v.O is HostFunction ? "<C-function>" : "<function>"); break;
-            case LuaType.Table:
-                if (depth > 2) { sb.Append("{...}"); break; }
-                sb.Append('{');
-                bool first = true;
-                foreach (var (k, val) in v.TableValue.Pairs())
-                {
-                    if (!first) sb.Append(", ");
-                    first = false;
-                    Append(sb, k, depth + 1);
-                    sb.Append('=');
-                    Append(sb, val, depth + 1);
-                }
-                sb.Append('}');
-                break;
-            default: sb.Append("<userdata>"); break;
+            if (quote) sb.Append('"').Append(v.Str).Append('"');
+            else sb.Append(v.Str);
         }
+        else if (v.Type == LuaType.Table)
+        {
+            var t = v.TableValue;
+            bool inner = level != -1;
+            sb.Append('\n').Append(' ', Math.Max(0, level * 2)).Append("{\n");
+            if (nesting > 64) sb.Append("...\n"); // the exe recurses without limit (a cycle overflows its stack)
+            else
+            {
+                int next = 1;
+                if (!t.Get(1).IsNil && !t.Get(2).IsNil)
+                    for (bool first = true; !t.Get(next).IsNil; next++, first = false)
+                    {
+                        if (!first) sb.Append('\n');
+                        Format(sb, t.Get(next), null, inner, 0, nesting + 1);
+                    }
+                bool list = next > 1, separated = false;
+                foreach (var (k, val) in t.Pairs())
+                {
+                    string key;
+                    if (k.TryToNumber(out var kn))
+                    {
+                        if (list)
+                        {
+                            double tr = Math.Truncate(kn);
+                            if (kn == tr && tr >= 1 && tr < next) continue;
+                        }
+                        key = "[" + LuaNumber.Format(kn) + "]";
+                    }
+                    else key = k.TryToStr(out var ks) ? ks : "";
+                    if (list && !val.IsNil && !separated) { sb.Append(", ;\n"); separated = true; }
+                    Format(sb, val, key, inner, 0, nesting + 1);
+                    sb.Append(",\n");
+                }
+                if (list && !separated) sb.Append(",\n");
+            }
+            sb.Append(' ', Math.Max(0, level * 2)).Append('}');
+        }
+        if (level == 0 && quote) sb.Append('\n');
     }
 }
