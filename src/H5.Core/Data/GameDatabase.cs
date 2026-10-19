@@ -285,6 +285,7 @@ public sealed class GameDatabase
                 h.PrimarySkill = new SkillEntry(psId, MasteryParse.Parse(ps.Str("Mastery")));
             ReadEditable(ed, out h.Attack, out h.Defence, out h.SpellPower, out h.Knowledge, h.Skills, h.Perks, h.Spells,
                 out h.Ballista, out h.FirstAidTent, out h.AmmoCart);
+            h.FavoriteEnemies.AddRange(ed.Items("FavoriteEnemies").Select(e => e.Value.Trim()).Where(v => v.StartsWith("CREATURE_")));
             if (h.Id.Length == 0) h.Id = Path.GetFileName(path).Split('.')[0];
             RegisterHero(h);
         }

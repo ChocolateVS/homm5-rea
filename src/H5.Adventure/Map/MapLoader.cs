@@ -401,6 +401,7 @@ public sealed class MapLoader
         def.Perks.AddRange(ed.StrItems("perkIDs"));
         def.Spells.AddRange(ed.StrItems("spellIDs"));
         def.Ballista = ed.Bool("Ballista"); def.FirstAidTent = ed.Bool("FirstAidTent"); def.AmmoCart = ed.Bool("AmmoCart");
+        def.FavoriteEnemies.AddRange(ed.Items("FavoriteEnemies").Select(e => e.Value.Trim()).Where(v => v.StartsWith("CREATURE_")));
         // Campaign variants reuse a stock hero's InternalName (RedHeaven07_Orlando is "Orlando"):
         // keep both definitions, the variant under its file path; scripts still see def.Id.
         if (!_db.Heroes.TryAdd(def.Id, def)) _db.Heroes[path] = def;
@@ -426,6 +427,7 @@ public sealed class MapLoader
                 foreach (var s in sh.Skills) if (hi.Skills.All(x => x.SkillId != s.SkillId)) hi.Skills.Add(s);
             if (hi.Perks.Count == 0) hi.Perks.AddRange(sh.Perks);
             if (hi.Spells.Count == 0) hi.Spells.AddRange(sh.Spells);
+            if (hi.FavoriteEnemies.Count == 0) hi.FavoriteEnemies.AddRange(sh.FavoriteEnemies);
             if (!hi.Ballista && !hi.FirstAidTent && !hi.AmmoCart)
             { hi.Ballista = sh.Ballista; hi.FirstAidTent = sh.FirstAidTent; hi.AmmoCart = sh.AmmoCart; }
         }

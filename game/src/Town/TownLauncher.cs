@@ -29,6 +29,8 @@ public static class TownLauncher
         if (arg == "--town-open") { OpenTown = true; Callable.From(WaitForAdventure).CallDeferred(); return true; }
         if (arg.StartsWith("--town-goto=")) { Goto = arg["--town-goto=".Length..]; return true; }
         if (arg == "--town-build-all") { BuildAll = true; return true; }
+        if (arg.StartsWith("--town-type=")) { DevType = arg["--town-type=".Length..]; return true; }
+        if (arg.StartsWith("--town-dev-hero=")) { DevHero = arg["--town-dev-hero=".Length..]; return true; }
         if (arg == "--adventure-debug-cam") { Callable.From(DebugCam).CallDeferred(); return true; }
         if (arg.StartsWith("--town-orbit="))
         {
@@ -129,6 +131,29 @@ public static class TownLauncher
         }
     }
 
+    static string? DevType, DevHero;
+
+    /// <summary>
+    /// Dev (screenshots): `--town-dev-hero=avenger` moves the human's first hero into the town as the visiting hero
+    /// with Expert Avenger and kills of twice the weekly growth of every tier 1–3 base creature.
+    /// </summary>
+    static void DevSetupHero(AdventureScreen adv, H5.Adventure.State.TownState town, string what)
+    {
+        var h = adv.Session.S.Heroes.FirstOrDefault(x => x.Alive && x.Owner == town.Owner);
+        if (h == null) return;
+        h.Pos = adv.Session.Game.EntranceOf(town);
+        h.InTown = town.Object;
+        if (what == "avenger")
+        {
+            h.Skills.RemoveAll(s => s.SkillId == "HERO_SKILL_AVENGER");
+            h.Skills.Add(new H5.Core.Data.SkillEntry("HERO_SKILL_AVENGER", H5.Core.Data.Mastery.Expert));
+            foreach (var c in adv.Session.Game.Core.Creatures.Values.Where(c => c.Stock && c.Tier <= 3 && !c.Upgrade))
+                h.Kills[c.Id] = 2 * c.WeeklyGrowth;
+            h.FavoriteEnemies = new() { "CREATURE_PEASANT", "" };
+            town.Built[H5.Adventure.Engine.Adventure.AvengersGuild] = 1;
+        }
+    }
+
     static async void WaitForAdventure()
     {
         var tree = (SceneTree)Engine.GetMainLoop();
@@ -141,7 +166,9 @@ public static class TownLauncher
                 var town = adv.MyTowns().FirstOrDefault();
                 if (town == null) { GD.PushWarning("[H5] --town-open: the human player has no town"); return; }
                 GD.Print($"[H5] --town-open: {town.Name} {town.Type}");
+                if (DevType != null) town.Type = DevType;
                 if (BuildAll) TownData.GrantAllBuildings(adv.Session, town);
+                if (DevHero != null) DevSetupHero(adv, town, DevHero);
                 var screen = TownScreen.Open(adv, town);
                 if (Goto != null) screen.OpenSub(Goto);
                 return;

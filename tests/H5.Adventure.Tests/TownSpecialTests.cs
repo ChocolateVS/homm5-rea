@@ -200,4 +200,40 @@ public class TownSpecialTests(Fixture f)
         Assert.Null(t.Garrison[0]);
         Assert.Equal(gold + 500, g.Current.Purse[Purse.Gold]);
     }
+
+    [Fact]
+    public void FavoredEnemiesNeedTwiceTheWeeklyGrowthKilledOfTheLine()
+    {
+        var g = f.NewGame();
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == g.Current.Index);
+        h.Skills.RemoveAll(s => s.SkillId == "HERO_SKILL_AVENGER");
+        h.Skills.Add(new SkillEntry("HERO_SKILL_AVENGER", Mastery.Advanced));
+        h.Kills.Clear();
+        int growth = f.Core.Creatures["CREATURE_PEASANT"].WeeklyGrowth;
+        Assert.False(g.FavoriteEnemyAllowed(h, "CREATURE_PEASANT"));
+        // Kills of the upgrades count for the base creature (009a8be0 sums creature +0x104).
+        h.Kills["CREATURE_PEASANT"] = growth;
+        h.Kills["CREATURE_MILITIAMAN"] = growth - 1;
+        Assert.False(g.FavoriteEnemyAllowed(h, "CREATURE_PEASANT"));
+        h.Kills["CREATURE_LANDLORD"] = 1;
+        Assert.True(g.FavoriteEnemyAllowed(h, "CREATURE_PEASANT"));
+        // Upgrades are never offered (creature +0x100 ≠ 0) but count as their base in battle (009a8ba0).
+        h.Kills["CREATURE_MILITIAMAN"] = 1000;
+        Assert.False(g.FavoriteEnemyAllowed(h, "CREATURE_MILITIAMAN"));
+        h.Kills["CREATURE_IMP"] = 1000;
+        // Strict check: at most Avenger mastery entries, no duplicates, no disallowed entries before trailing empties.
+        Assert.True(g.CheckFavoriteEnemies(h, new() { "CREATURE_PEASANT", "" }, strict: true));
+        Assert.False(g.CheckFavoriteEnemies(h, new() { "", "CREATURE_PEASANT" }, strict: true));
+        Assert.False(g.CheckFavoriteEnemies(h, new() { "CREATURE_PEASANT", "CREATURE_PEASANT" }, strict: true));
+        Assert.False(g.CheckFavoriteEnemies(h, new() { "CREATURE_PEASANT", "CREATURE_IMP", "" }, strict: true));
+        // Lenient (the command): cut to the maximum, disallowed / duplicate entries emptied in place.
+        var r = g.Apply(new SetFavoriteEnemiesCmd(h.Id, new() { "CREATURE_ARCHER", "CREATURE_PEASANT", "CREATURE_IMP" }) { Player = g.Current.Index });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(new[] { "", "CREATURE_PEASANT" }, h.FavoriteEnemies);
+        Assert.True(g.IsFavoriteEnemy(h, "CREATURE_LANDLORD"));
+        Assert.False(g.IsFavoriteEnemy(h, "CREATURE_IMP"));
+        // Without the Avenger skill the hero has no IAvenger: the command fails (00427a30).
+        h.Skills.RemoveAll(s => s.SkillId == "HERO_SKILL_AVENGER");
+        Assert.False(g.Apply(new SetFavoriteEnemiesCmd(h.Id, new() { "CREATURE_PEASANT" }) { Player = g.Current.Index }).Ok);
+    }
 }

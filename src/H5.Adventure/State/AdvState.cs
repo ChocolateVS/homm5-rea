@@ -222,6 +222,13 @@ public sealed class HeroState
     public List<string> AiNoFleeFrom = new();
     /// <summary>SetAIHeroFleeControl (settings +0x2c): ignore the player's DenyAIHeroesFlee list.</summary>
     public bool AiFleeControl;
+    /// <summary>
+    /// Favoured enemies (IAvenger, hero vtable +0x25c → CAvenger +0xc list): base creatures; "" = an empty slot
+    /// left by the list check (009a8d30 clears entries in place).
+    /// </summary>
+    public List<string> FavoriteEnemies = new();
+    /// <summary>Creatures killed by the hero's battles (hero kill counter, hero vtable +0x60 → +0x1fc): id → count.</summary>
+    public Dictionary<string, int> Kills = new();
 
 
     public Mastery MasteryOf(string skill) => Skills.FirstOrDefault(s => s.SkillId == skill)?.Mastery ?? Mastery.None;

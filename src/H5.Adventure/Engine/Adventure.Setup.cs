@@ -234,6 +234,7 @@ public sealed partial class Adventure
             Attack = d.Attack, Defence = d.Defence, SpellPower = d.SpellPower, Knowledge = d.Knowledge,
             Skills = d.Skills.ToList(), Perks = d.Perks.ToList(), Spells = d.Spells.ToList(),
             Ballista = d.Ballista, FirstAidTent = d.FirstAidTent, AmmoCart = d.AmmoCart,
+            FavoriteEnemies = d.FavoriteEnemies.ToList(),
         };
         if (d.PrimarySkill is { } ps && h.Skills.All(s => s.SkillId != ps.SkillId)) h.Skills.Insert(0, ps);
         h.Mana = MaxMana(h);
@@ -250,6 +251,7 @@ public sealed partial class Adventure
             Attack = hi.Attack, Defence = hi.Defence, SpellPower = hi.SpellPower, Knowledge = hi.Knowledge,
             Skills = hi.Skills.ToList(), Perks = hi.Perks.ToList(), Spells = hi.Spells.ToList(), Artifacts = hi.Artifacts.ToList(),
             Ballista = hi.Ballista, FirstAidTent = hi.FirstAidTent, AmmoCart = hi.AmmoCart,
+            FavoriteEnemies = hi.FavoriteEnemies.ToList(),
         };
         foreach (var a in hi.Army) h.Army.TryAdd(a.Creature, a.Count);
         if (h.Army.StackCount() == 0) GiveStartingArmy(h);

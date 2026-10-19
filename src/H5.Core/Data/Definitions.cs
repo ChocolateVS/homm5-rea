@@ -160,6 +160,8 @@ public sealed class HeroDef
     public List<string> Perks = new();
     public List<string> Spells = new();
     public bool Ballista, FirstAidTent, AmmoCart;
+    /// <summary>Editable FavoriteEnemies of the shared hero (e.g. Diraya: CREATURE_FAMILIAR).</summary>
+    public List<string> FavoriteEnemies = new();
 }
 
 /// <summary>A configured hero placed on a map (duel presets use these): overrides the shared hero.</summary>

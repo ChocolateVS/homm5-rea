@@ -208,6 +208,7 @@ public sealed partial class Adventure
             Attack = h.Attack, Defence = h.Defence, SpellPower = h.SpellPower, Knowledge = h.Knowledge,
             Skills = h.Skills.ToList(), Perks = h.Perks.ToList(), Spells = h.Spells.ToList(),
             Ballista = h.Ballista, FirstAidTent = h.FirstAidTent, AmmoCart = h.AmmoCart, Mana = h.Mana,
+            FavoriteEnemies = h.FavoriteEnemies.Where(e => e.Length > 0).ToList(),
         };
     }
 
@@ -258,6 +259,10 @@ public sealed partial class Adventure
             defHero.VisitedSinceBattle.Clear(); defHero.NextBattleMorale = 0; defHero.NextBattleLuck = 0;
         }
 
+        // Hero kill counters (hero vtable +0x60, read by the Avenger's Guild list check 009a8be0).
+        // TODO(exe): the counter's writer (slot 1, FUN_00a844d0) is not traced; counted here as the enemy's losses.
+        AddKills(att, Killed(pb.DefenderArmy, c.DefenderSurvivors));
+        if (defHero != null) AddKills(defHero, Killed(attackerBefore, c.AttackerSurvivors));
         if (attackerWon)
         {
             Emit(new BattleResolved(0, expAtt) { Result = combatResult, Armies = savedArmies });
