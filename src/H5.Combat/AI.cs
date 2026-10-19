@@ -196,18 +196,30 @@ public sealed class GreedyBattleAI : IBattleAI
 }
 
 /// <summary>Drives a battle where both sides (or the given sides) are AI controlled, until it ends.</summary>
+/// <summary>
+/// Combat scripts attached to a battle (H5.Scripting's CombatScripting): sees the battle's events
+/// and, when present, applies the battle's commands so scripts react to them.
+/// </summary>
+public interface IBattleScriptSession
+{
+    /// <summary>The events of Battle.Begin().</summary>
+    void Begun(IEnumerable<BattleEvent> events);
+    ApplyResult Apply(BattleCommand cmd);
+}
+
 public static class BattleRunner
 {
-    public static List<BattleEvent> RunToEnd(Battle b, IBattleAI ai0, IBattleAI ai1, int maxCommands = 5000)
+    public static List<BattleEvent> RunToEnd(Battle b, IBattleAI ai0, IBattleAI ai1, int maxCommands = 5000, IBattleScriptSession? scripts = null)
     {
         var log = new List<BattleEvent>(b.Begin());
+        scripts?.Begun(log);
         for (int i = 0; i < maxCommands && b.State.Phase != BattlePhase.Finished; i++)
         {
             int side;
             if (b.State.Phase == BattlePhase.Tactics) side = b.State.TacticsDone[0] ? 1 : 0;
             else side = b.SideToAct ?? 0;
             var cmd = (side == 0 ? ai0 : ai1).Decide(b, side);
-            var r = b.Apply(cmd);
+            var r = scripts != null ? scripts.Apply(cmd) : b.Apply(cmd);
             if (!r.Ok)
             {
                 // Should not happen; fall back to a safe action so the game always terminates.

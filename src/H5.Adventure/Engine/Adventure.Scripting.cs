@@ -27,6 +27,12 @@ public sealed partial class Adventure
     public IAdventureScriptHooks? ScriptHooks { get; set; }
 
     /// <summary>
+    /// Attaches combat scripts to a battle about to be played out (null = none). The stock engine
+    /// runs combat scripts only in the combat screen (FUN_0054c2f0), never in multiplayer/hotseat.
+    /// </summary>
+    public Func<H5.Combat.Battle, H5.Combat.IBattleScriptSession?>? BattleScripts { get; set; }
+
+    /// <summary>
     /// Where drivers (bots, sessions) should send commands so that scripts see them; null means
     /// <see cref="Apply"/> directly. The script host sets this to its own Apply wrapper.
     /// </summary>

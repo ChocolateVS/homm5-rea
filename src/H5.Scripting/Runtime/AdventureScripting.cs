@@ -108,6 +108,19 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
         Pump();
     }
 
+    /// <summary>
+    /// Combat scripts for a battle started from this map, as the combat screen does (FUN_0054c2f0 →
+    /// FUN_0053e810): combat-startup.lua, createCombatAliases(), the battle's combat script, DoPrepare().
+    /// The game-variable table is the adventure map's own object, shared by reference (IAdventureMap vf8
+    /// handed to CCreateCombatArenaScreen at 0x005a789b), so combat SetGameVar is seen by the map.
+    /// </summary>
+    public CombatScripting CreateCombatScripts(H5.Combat.Battle battle, string? scriptPath = null, string? scriptSource = null)
+    {
+        var cs = new CombatScripting(Game.Core, battle, Ids, _readFile, World.GameVars, _game);
+        cs.Load(scriptPath, scriptSource);
+        return cs;
+    }
+
     void RunFile(string path)
     {
         var src = LoadScript(path);

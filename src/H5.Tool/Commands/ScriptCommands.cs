@@ -82,6 +82,21 @@ sealed class ScriptRunCommand : ICommand
             var host = AdventureScripting.Create(g, files, ids, loader.Catalog);
             host.AutoAnswerUi = true;
             host.RunWithoutMapScript = args.Contains("--no-map-script-check");
+            // Combat scripts run where the exe's combat screen would run them: a battle a human
+            // takes part in, single player (FUN_0054c2f0 skips them in multiplayer/hotseat).
+            var combatHosts = new List<CombatScripting>();
+            if (!args.Contains("--no-combat-scripts"))
+                g.BattleScripts = battle =>
+                {
+                    var pb = g.S.Battle;
+                    if (pb == null) return null;
+                    bool human = g.S.Heroes.Any(h => (h.Id == pb.AttackerHero || h.Id == pb.DefenderHero) && g.Player(h.Owner) is { Human: true });
+                    if (!human || !CombatScripting.ScriptsAllowed(false, false)) return null;
+                    var cs = host.CreateCombatScripts(battle);
+                    cs.SegmentsPerCommand = 1;
+                    combatHosts.Add(cs);
+                    return cs;
+                };
             host.SegmentsPerCommand = 2;
             string? src = null;
             if (map.ScriptPath != null && files.TryReadAllBytes(map.ScriptPath, out var b)) src = ScriptText.FromBytes(b);
@@ -102,9 +117,10 @@ sealed class ScriptRunCommand : ICommand
                 host.Tick(20);
                 turns++;
             }
+            foreach (var cs in combatHosts) host.Errors.AddRange(cs.Errors.Select(e => "combat: " + e));
             totalErrors += host.Errors.Count;
             if (host.Errors.Count == 0) clean++;
-            Console.WriteLine($"{mref.Id,-40} script={(src != null ? "yes" : "no "),-3} day {g.S.Day,3} threads {host.L.Threads.Count,3} ui {host.World.PendingUi.Count} events {host.Events.Count,5} errors {host.Errors.Count} ({sw.ElapsedMilliseconds} ms){(g.S.Finished ? " finished" : "")}");
+            Console.WriteLine($"{mref.Id,-40} script={(src != null ? "yes" : "no "),-3} day {g.S.Day,3} threads {host.L.Threads.Count,3} ui {host.World.PendingUi.Count} combats {combatHosts.Count} events {host.Events.Count,5} errors {host.Errors.Count} ({sw.ElapsedMilliseconds} ms){(g.S.Finished ? " finished" : "")}");
             foreach (var e in host.Errors.Distinct().Take(verbose ? 50 : 5)) Console.WriteLine("    " + e);
             if (verbose) foreach (var l in host.Log.Take(40)) Console.WriteLine("    | " + l);
           }

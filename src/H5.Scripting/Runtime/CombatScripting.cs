@@ -13,7 +13,7 @@ namespace H5.Scripting.Runtime;
 /// 0x00a1df98); binds the combat API (registration table 0x00f32e90) and the combat-tutorial
 /// API (0x00f33040). The battle itself stays in H5.Combat; scripts act on its public state.
 /// </summary>
-public sealed class CombatScripting
+public sealed class CombatScripting : IBattleScriptSession
 {
     public LuaState L { get; } = new() { ArgFormats = NativeFormats.Combat };
     public Battle Battle { get; }
@@ -82,21 +82,40 @@ public sealed class CombatScripting
 
     static string HeroName(CombatHero h) => h.HeroId.Length > 0 ? h.HeroId : $"{HeroPrefix}{h.Side}";
 
-    /// <summary>A named unit: a creature/war machine/building id, or a hero (Actor.Hero(side)).</summary>
-    bool TryResolve(string name, out int actor)
+    /// <summary>
+    /// A named unit: a creature/war machine/building id, or a hero (Actor.Hero(side)). The exe looks names up in the
+    /// combat world (world vf120 → vf4(name)); dead stacks stay there (UnitDeath("name") handlers in combat-startup.lua
+    /// still call GetUnitSide/GetUnitType on them), so <paramref name="includeDead"/> keeps killed stacks resolvable.
+    /// </summary>
+    bool TryResolve(string name, out int actor, bool includeDead = false)
     {
-        if (_byName.TryGetValue(name, out actor) && S.Unit(actor) is { Alive: true }) return true;
+        if (_byName.TryGetValue(name, out actor) && S.Unit(actor) is { } u
+            && (u.Alive || includeDead && !u.Removed && !u.Reserve)) return true;
         for (int side = 0; side < 2; side++)
             if (S.Heroes[side].Present && HeroName(S.Heroes[side]) == name) { actor = Actor.Hero(side); return true; }
         actor = 0;
         return false;
     }
 
-    int Resolve(HostContext c, int i)
+    /// <summary>Any unit (hero, creature, war machine, building, spell spawn); exe text "Unit \"%s\" is not exists".</summary>
+    int Resolve(HostContext c, int i) => ResolveAs(c, i, "Unit \"{0}\" is not exists");
+
+    /// <summary>Arena lookup (ICombatArenaCommon vfc) used by commandDefend/playAnimation/setATB.</summary>
+    int ResolveOnArena(HostContext c, int i) => ResolveAs(c, i, "There is no unit on combat arena with name \"{0}\"");
+
+    int ResolveAs(HostContext c, int i, string error)
     {
         var name = c.Str(i);
-        if (!TryResolve(name, out var a)) throw c.Error($"Unit \"{name}\" is not exists");
+        if (!TryResolve(name, out var a, includeDead: true)) throw c.Error(string.Format(error, name));
         return a;
+    }
+
+    /// <summary>A unit of a given kind (exe unit vf6c creature / vf74 hero / vf7c war machine / vf84 building).</summary>
+    Unit KindArg(HostContext c, int i, int type, string what)
+    {
+        var name = c.Str(i);
+        if (!TryResolve(name, out var a, includeDead: true) || UnitType(a) != type) throw c.Error($"{what} \"{name}\" is not exists");
+        return S.Unit(a)!;
     }
 
     Unit UnitArg(HostContext c, int i)
@@ -105,12 +124,21 @@ public sealed class CombatScripting
         return Actor.IsHero(a) ? throw c.Error($"Creature \"{c.Str(i)}\" is not exists") : S.Unit(a)!;
     }
 
-    int UnitType(int actor) => Actor.IsHero(actor) ? 0 : S.Unit(actor)!.Kind switch
+    static bool IsSiegeBuilding(Unit u) => u.Kind == UnitKind.Obstacle && u.CreatureId.StartsWith("SIEGE_", StringComparison.Ordinal);
+
+    /// <summary>
+    /// GetUnitType (0x005679f0): HERO 0 (vf74), CREATURE 1 (vf6c), WAR_MACHINE 2 (vf7c), BUILDING 3 (vf84: siege
+    /// fortifications), SPELL_SPAWN 4 (vf8c: spell-summoned objects such as the Arcane Crystal or Blade Barrier).
+    /// </summary>
+    int UnitType(int actor) => Actor.IsHero(actor) ? 0 : S.Unit(actor)! switch
     {
-        UnitKind.WarMachine => 2,
-        UnitKind.Obstacle => 3,
-        _ => S.Unit(actor)!.Summoned && S.Unit(actor)!.IsClone ? 4 : 1,
+        { Kind: UnitKind.WarMachine } => 2,
+        { Kind: UnitKind.Obstacle } u => IsSiegeBuilding(u) ? 3 : 4,
+        _ => 1,
     };
+
+    /// <summary>BUILDING_* ids of combat-startup.lua (WALL 1 … MAGIC_WALL 7) by our siege building type.</summary>
+    static readonly string[] BuildingTypes = { "", "WALL", "GATE", "LEFT_TOWER", "BIG_TOWER", "MOAT", "RIGHT_TOWER", "MAGIC_WALL" };
 
     int SideOf(int actor) => Actor.IsHero(actor) ? Actor.HeroSide(actor) : S.Unit(actor)!.Side;
 
@@ -133,14 +161,29 @@ public sealed class CombatScripting
 
     // ---- lifecycle -----------------------------------------------------------------------------
 
-    /// <summary>Registers the API, runs combat-startup.lua and the combat script, then DoPrepare().</summary>
+    /// <summary>
+    /// Whether the engine runs combat scripts at all (CCombatArenaScreen ctor FUN_0054c2f0 at 0x0054ce2a: the game
+    /// mode flags returned by combat-game vf14 must both be clear, FUN_006b9de0). These are the multiplayer and hotseat
+    /// flags (same test refuses flybys with "Flyby`s are not allowed in multiplayer or hotseat"); otherwise the exe logs
+    /// "Warning: scripts are not allowed" and neither combat-startup.lua, the combat script, DoPrepare/DoStart nor
+    /// UnitMove/UnitDeath run (the turn continuations are called directly). MMH55's DLL NOPs the JZ at 0x0054ce31.
+    /// </summary>
+    public static bool ScriptsAllowed(bool multiplayer, bool hotseat) => !multiplayer && !hotseat;
+
+    /// <summary>Tutorial arena (FUN_006a3fb0): also runs "createTutorialAliases();" after "createCombatAliases();".</summary>
+    public bool TutorialArena { get; init; }
+
+    /// <summary>
+    /// Registers the API, runs combat-startup.lua, "createCombatAliases();" and the battle's combat script
+    /// (FUN_0053e810), then DoPrepare() (the exe posts it from the arena update, state 0x4000, FUN_0056fb70).
+    /// </summary>
     public void Load(string? scriptPath, string? scriptSource)
     {
         BaseLibrary.Register(L, LoadScript, () => (uint)S.Rng.NextU64());
         RegisterApi();
         var startup = LoadScript("scripts/combat-startup.lua");
         if (startup != null) L.DoString(startup, "scripts/combat-startup.lua");
-        foreach (var alias in new[] { "createCombatAliases", "createTutorialAliases" })
+        foreach (var alias in TutorialArena ? new[] { "createCombatAliases", "createTutorialAliases" } : new[] { "createCombatAliases" })
             if (L.GetGlobal(alias).IsFunction) L.CallGlobal(alias);
         if (scriptSource != null) L.DoString(scriptSource, scriptPath ?? "CombatScript");
         if (L.GetGlobal("DoPrepare").IsFunction) L.CallGlobal("DoPrepare");
@@ -190,27 +233,45 @@ public sealed class CombatScripting
     {
         var r = Battle.Apply(cmd);
         if (r.Ok) OnEvents(r.Events);
+        if (SegmentsPerCommand > 0) Tick(SegmentsPerCommand);
         return r;
     }
+
+    /// <summary>Script segments run after each command (headless drivers; a real client ticks by time).</summary>
+    public int SegmentsPerCommand { get; set; }
+
+    void IBattleScriptSession.Begun(IEnumerable<BattleEvent> events) => OnEvents(events);
 
     // ---- API ---------------------------------------------------------------------------------
 
     void RegisterApi()
     {
         Reg("EnableDynamicBattleMode", c => Emit("dynamic_battle", ("enable", c.Bool(0))));
+        // ICombatArena vf0 (0x00552870): sets CCombatArenaScreen +0x4cc (default 1), which the arena update passes to
+        // the combat-event presentation sequencer (0x0054b2f0) — camera only, no game state.
+        Reg("EnableCinematicCamera", c => Emit("cinematic_camera", ("enable", c.Bool(0))));
         Reg("SetControlMode", c =>
         {
-            int side = c.Int(0);
-            if (side is < 0 or > 1) throw c.Error($"Invalid side ({side})");
-            ControlMode[side] = c.Int(1);
-            Emit("control_mode", ("side", side), ("mode", c.Int(1)));
+            int side = c.Int(0), mode = c.Int(1);
+            if (side is < 0 or > 1) throw c.Error($"Invalid side #{side}");
+            if (mode is < 0 or > 2) throw c.Error($"Invalid control mode #{mode}");
+            if (S.AiControlled[side]) throw c.Error($"Side #{side} player is not a human");
+            ControlMode[side] = mode;
+            Emit("control_mode", ("side", side), ("mode", mode));
         });
-        Reg("GetHost", c => { int side = c.Int(0); c.Return(side is >= 0 and <= 1 && S.AiControlled[side] ? 1 : 0); });
+        Reg("GetHost", c =>
+        {
+            int side = c.Int(0);
+            if (side is < 0 or > 1) throw c.Error($"Invalid side #{side}");
+            c.Return(S.AiControlled[side] ? 1 : 0);   // HUMAN 0 / COMPUTER 1; no player → 1
+        });
         Reg("EnableAutoFinish", c => AutoFinish = c.Bool(0));
         Reg("combatEnableFinish", c => AutoFinish = c.Bool(0));
         Reg("Finish", c =>
         {
-            FinishedBy = c.Has(0) ? c.Int(0) : -1;
+            int side = c.Int(0);
+            if (side is < 0 or > 1) throw c.Error($"Invalid side #{side}");
+            FinishedBy = side;
             if (S.Phase != BattlePhase.Finished)
             {
                 S.Phase = BattlePhase.Finished;
@@ -226,6 +287,8 @@ public sealed class CombatScripting
         Reg("GetUnits", c =>
         {
             int side = c.Int(0), type = c.Int(1);
+            if (side is < 0 or > 1) throw c.Error($"Invalid side id #{side}");
+            if (type is < 0 or > 4) throw c.Error($"Invalid type id #{type}");
             var names = new List<string>();
             if (type == 0) { if (S.Heroes[side].Present) names.Add(HeroName(S.Heroes[side])); }
             else names.AddRange(S.Units.Where(u => u.Alive && u.Side == side && UnitType(u.Id) == type).Select(NameOf));
@@ -244,24 +307,34 @@ public sealed class CombatScripting
         Reg("pos", position);
         Reg("GetHeroName", c =>
         {
-            int a = Resolve(c, 0);
-            c.Return(Actor.IsHero(a) ? S.Heroes[Actor.HeroSide(a)].HeroId : LuaValue.Nil);
+            var name = c.Str(0);
+            if (!TryResolve(name, out var a, includeDead: true) || !Actor.IsHero(a)) throw c.Error($"Hero \"{name}\" is not exists");
+            c.Return(S.Heroes[Actor.HeroSide(a)].HeroId);
         });
-        Reg("GetCreatureType", c => c.Return(Ids.Creatures.Id(UnitArg(c, 0).CreatureId)));
-        Reg("GetCreatureNumber", c => c.Return(UnitArg(c, 0).Count));
+        Reg("GetCreatureType", c => c.Return(Ids.Creatures.Id(KindArg(c, 0, 1, "Creature").CreatureId)));
+        Reg("GetCreatureNumber", c => c.Return(KindArg(c, 0, 1, "Creature").Count));
         Reg("GetWarMachineType", c =>
         {
-            var u = UnitArg(c, 0);
+            var u = KindArg(c, 0, 2, "War machine");
             c.Return(Array.IndexOf(EnumTables.WarMachines, u.CreatureId) is var i and > 0 ? i : 0);
         });
-        Reg("GetBuildingType", c => c.Return(UnitArg(c, 0).Kind == UnitKind.Obstacle ? 1 : 0));
+        Reg("GetBuildingType", c =>
+        {
+            var u = KindArg(c, 0, 3, "Building");
+            c.Return(Array.IndexOf(BuildingTypes, u.CreatureId["SIEGE_".Length..]) is var i and > 0 ? i : 0);
+        });
 
-        Reg("AddCreature", c => AddUnit(c, null, sideArg: 0, typeArg: 1, countArg: 2, xArg: 3, yArg: 4, summoned: false));
-        Reg("SummonCreature", c => AddUnit(c, null, sideArg: 0, typeArg: 1, countArg: 2, xArg: 3, yArg: 4, summoned: true));
+        // AddCreature/SummonCreature (0x00568d90/0x00569180): side, type, count, x=-1, y=-1, summoned (false/true), name="".
+        Reg("AddCreature", c => AddUnit(c, c.Str(6), sideArg: 0, typeArg: 1, countArg: 2, xArg: 3, yArg: 4, summoned: c.Bool(5), exe: true));
+        Reg("SummonCreature", c => AddUnit(c, c.Str(6), sideArg: 0, typeArg: 1, countArg: 2, xArg: 3, yArg: 4, summoned: c.Bool(5), exe: true));
         Reg("addUnit", c => AddUnit(c, c.Str(0), sideArg: 2, typeArg: 1, countArg: 3, xArg: 4, yArg: 5, summoned: false));
         Reg("removeUnit", c =>
         {
-            var u = UnitArg(c, 0);
+            // 0x0056b1d0: an unknown name is only logged (no script error); otherwise a remove command is posted.
+            var name = c.Str(0);
+            if (!TryResolve(name, out var a, includeDead: true)) { Log.Add("There is no unit on combat arena with name " + name); return; }
+            if (Actor.IsHero(a)) { Emit("unit_removed", ("unit", name)); return; }
+            var u = S.Unit(a)!;
             u.Removed = true;
             Emit("unit_removed", ("unit", NameOf(u)));
         });
@@ -282,21 +355,42 @@ public sealed class CombatScripting
         });
         Reg("setATB", c =>
         {
-            int a = Resolve(c, 0);
+            int a = ResolveOnArena(c, 0);
             if (Actor.IsHero(a)) S.Heroes[Actor.HeroSide(a)].Atb = c.Number(1);
             else S.Unit(a)!.Atb = c.Number(1);
         });
 
-        Reg("GetUnitManaPoints", c => { var u = UnitArg(c, 0); c.Return(u.Mana); });
-        Reg("GetUnitMaxManaPoints", c => { var u = UnitArg(c, 0); c.Return(u.MaxMana); });
-        Reg("SetUnitManaPoints", c => { var u = UnitArg(c, 0); u.Mana = Math.Clamp(c.Int(1), 0, Math.Max(u.MaxMana, c.Int(1))); });
-        Reg("UnitCastGlobalSpell", c => CastSpell(c, target: null, cell: null));
-        Reg("UnitCastAreaSpell", c => CastSpell(c, target: null, cell: new Cell(c.Int(2), c.Int(3))));
-        Reg("UnitCastAimedSpell", c => CastSpell(c, target: Resolve(c, 2), cell: null));
+        // Mana of any unit (unit vf234 / vf238), heroes included (MMH55 sets hero mana around its free casts).
+        Reg("GetUnitManaPoints", c => { int a = Resolve(c, 0); c.Return(Actor.IsHero(a) ? S.Heroes[Actor.HeroSide(a)].Mana : S.Unit(a)!.Mana); });
+        Reg("GetUnitMaxManaPoints", c => { int a = Resolve(c, 0); c.Return(Actor.IsHero(a) ? S.Heroes[Actor.HeroSide(a)].MaxMana : S.Unit(a)!.MaxMana); });
+        Reg("SetUnitManaPoints", c =>
+        {
+            int a = Resolve(c, 0), mana = c.Int(1);
+            if (mana < 0) throw c.Error($"Invalid mana points number {mana}");
+            if (Actor.IsHero(a)) S.Heroes[Actor.HeroSide(a)].Mana = mana;
+            else S.Unit(a)!.Mana = mana;
+        });
+        Reg("UnitCastGlobalSpell", c =>
+        {
+            int a = Resolve(c, 0);
+            if (!CastSpell(a, c.Int(1), target: null, cell: null)) throw c.Error($"Unit \"{c.Str(0)}\" can`t cast spell #{c.Int(1)}");
+        });
+        Reg("UnitCastAreaSpell", c =>
+        {
+            int a = Resolve(c, 0);
+            if (!CastSpell(a, c.Int(1), target: null, cell: new Cell(c.Int(2), c.Int(3))))
+                throw c.Error($"Unit \"{c.Str(0)}\" can`t cast spell #{c.Int(1)} at ({c.Int(2)},{c.Int(3)})");
+        });
+        Reg("UnitCastAimedSpell", c =>
+        {
+            int a = Resolve(c, 0), t = Resolve(c, 2);
+            if (!CastSpell(a, c.Int(1), target: t, cell: null))
+                throw c.Error($"Unit \"{c.Str(0)}\" can`t cast spell #{c.Int(1)} on unit \"{c.Str(2)}\"");
+        });
 
         Reg("commandDefend", c =>
         {
-            int a = Resolve(c, 0);
+            int a = ResolveOnArena(c, 0);
             Command(c, new DefendCmd(a) { Side = SideOf(a) });
         });
         Reg("commandMove", c =>
@@ -338,19 +432,41 @@ public sealed class CombatScripting
         Reg("combatStarted", c => c.ReturnBool(Started));
         Reg("combatReadyPerson", c =>
         {
-            if (S.Active is { } a) c.Return(Actor.IsHero(a) ? HeroName(S.Heroes[Actor.HeroSide(a)]) : S.Unit(a) is { } u ? NameOf(u) : LuaValue.Nil);
+            // 0x0056cd60: nothing while the battle is finished (world vf98) or not started (vf124); else the ready unit.
+            if (Started && S.Phase != BattlePhase.Finished && S.Active is { } a) c.Return(Actor.IsHero(a) ? HeroName(S.Heroes[Actor.HeroSide(a)]) : S.Unit(a) is { } u ? NameOf(u) : LuaValue.Nil);
             else c.Return(LuaValue.Nil);
         });
         Reg("combatSetPause", c => { Paused = c.Bool(0); Emit("pause", ("on", Paused)); });
         Reg("combatPlayEmotion", c => Emit("emotion", ("unit", c.Str(0)), ("emotion", c.Str(1))));
-        Reg("playAnimation", c => Emit("unit_animation", ("unit", c.Str(0)), ("animation", c.Str(1)), ("action", c.Int(2))));
+        Reg("playAnimation", c =>
+        {
+            ResolveOnArena(c, 0);
+            int action = c.Int(2);
+            if (action is < 0 or > 5) throw c.Error($"Non valid action type {action}");
+            Emit("unit_animation", ("unit", c.Str(0)), ("animation", c.Str(1)), ("action", action));
+        });
         Reg("showHighlighting", c => Emit("highlight", ("unit", c.Str(0)), ("on", c.Bool(1))));
         Reg("postEvent", c => Emit("post_event", ("event", c.Str(0)), ("arg", c.Str(1))));
-        Reg("GetRagePoints", c => c.Return(UnitArg(c, 0).RagePoints));
-        Reg("GetRageLevel", c => c.Return(UnitArg(c, 0).RageLevel));
+        Reg("GetRagePoints", c => { var u = RageUnit(c); c.Return(u?.RagePoints ?? 0); });
+        Reg("GetRageLevel", c => { var u = RageUnit(c); c.Return(u?.RageLevel ?? 0); });
 
-        Reg("GetGameVar", c => c.Return(GameVars.TryGetValue(c.Str(0), out var v) ? v : ""));
-        Reg("SetGameVar", c => GameVars[c.Str(0)] = c.Str(1));
+        // Game variables (0x0056a3f0/0x0056a660): ICombatArenaCommon vf40 = the arena's table (+0x2e8), which is the
+        // adventure map's own table object (IAdventureMap vf8) handed over by reference when the adventure starts the
+        // battle (0x005a789b → CCreateCombatArenaScreen +0x20) — shared, never copied; a battle created without one
+        // (FUN_00547310) gets a fresh empty table (FUN_006bca50).
+        Reg("GetGameVar", c =>
+        {
+            var name = c.Str(0);
+            if (name.Length == 0) throw c.Error("Game variable name is not specified");
+            c.Return(GameVars.TryGetValue(name, out var v) ? v : "");
+        });
+        Reg("SetGameVar", c =>
+        {
+            string name = c.Str(0), value = c.Str(1);
+            if (name.Length == 0) throw c.Error("Game variable name is not specified");
+            if (value.Length == 0) GameVars.Remove(name);   // table vfc (remove) for an empty value, else vf8 (set)
+            else GameVars[name] = value;
+        });
         Reg("MessageBox", c => Emit("message_box", ("text", c.Str(0)), ("callback", c.Str(1))));
         Reg("ShowFlyingSign", c => Emit("flying_sign", ("text", c.Str(0)), ("unit", c.Str(1)), ("time", c.Has(2) ? c.Number(2) : 1.0)));
         Reg("Play2DSound", c => Emit("sound_2d", ("sound", c.Str(0))));
@@ -377,13 +493,33 @@ public sealed class CombatScripting
         Reg("IsTutorialMessageBoxOpen", c => c.ReturnBool(false));
     }
 
-    void AddUnit(HostContext c, string? name, int sideArg, int typeArg, int countArg, int xArg, int yArg, bool summoned)
+    /// <summary>
+    /// <paramref name="exe"/>: AddCreature/SummonCreature checks in the exe's order (side, creature type, count, cell
+    /// x ∈ {-1} ∪ [0,width), y ∈ {-1} ∪ [0,height)) with its texts; an empty name means an engine-chosen name.
+    /// </summary>
+    void AddUnit(HostContext c, string? name, int sideArg, int typeArg, int countArg, int xArg, int yArg, bool summoned, bool exe = false)
     {
         int side = c.Int(sideArg);
-        if (side is < 0 or > 1) throw c.Error($"Invalid side ({side})");
-        var cr = Ids.Creatures.Name(c.Int(typeArg)) ?? throw c.Error($"Invalid creature type ({c.Int(typeArg)})");
-        int count = Math.Max(1, c.Int(countArg));
-        if (name != null && _byName.ContainsKey(name)) throw c.Error($"Unit with name \"{name}\" already exist in combat arena");
+        string cr;
+        int count;
+        if (exe)
+        {
+            if (side is < 0 or > 1) throw c.Error($"Invalid side #{side}");
+            int type = c.Int(typeArg);
+            cr = (type > 0 ? Ids.Creatures.Name(type) : null) ?? throw c.Error($"Invalid creature type #{type}");
+            count = c.Int(countArg);
+            if (count < 1) throw c.Error($"Invalid creature number #{count}");
+            int x = c.Int(xArg), y = c.Int(yArg);
+            if (!(x == -1 || x >= 0 && x < S.Width) || !(y == -1 || y >= 0 && y < S.Height)) throw c.Error($"Invalid cell ({x},{y})");
+            if (name == "") name = null;
+        }
+        else
+        {
+            if (side is < 0 or > 1) throw c.Error($"Invalid side ({side})");
+            cr = Ids.Creatures.Name(c.Int(typeArg)) ?? throw c.Error($"Invalid creature type ({c.Int(typeArg)})");
+            count = Math.Max(1, c.Int(countArg));
+            if (name != null && _byName.ContainsKey(name)) throw c.Error($"Unit with name \"{name}\" already exist in combat arena");
+        }
         Cell pos;
         if (c.Has(xArg) && c.Int(xArg) >= 0 && c.Has(yArg) && c.Int(yArg) >= 0) pos = new Cell(c.Int(xArg), c.Int(yArg));
         else pos = FreeCell(side);
@@ -405,11 +541,33 @@ public sealed class CombatScripting
         return new Cell(side == 0 ? 0 : S.Width - 1, 0);
     }
 
-    void CastSpell(HostContext c, int? target, Cell? cell)
+    /// <summary>
+    /// UnitCast*Spell: the exe validates the cast (FUN_00566940 → FUN_00982010) and posts it; a refused cast is the
+    /// script error the caller raises. Caster may be a hero or any unit.
+    /// </summary>
+    bool CastSpell(int caster, int spellId, int? target, Cell? cell)
     {
-        var u = UnitArg(c, 0);
-        var spell = Ids.Spells.Name(c.Int(1)) ?? throw c.Error($"Unit \"{NameOf(u)}\" can`t cast spell #{c.Int(1)}");
-        Command(c, new CastSpellCmd(u.Id, spell, target, cell) { Side = u.Side });
+        var spell = Ids.Spells.Name(spellId);
+        if (spell == null) return false;
+        var cmd = new CastSpellCmd(caster, spell, target, cell) { Side = SideOf(caster) };
+        var r = Battle.Apply(cmd);
+        if (!r.Ok) { Log.Add($"script command rejected: {cmd.GetType().Name}: {r.Error}"); return false; }
+        Emit("script_command", ("command", cmd.GetType().Name));
+        OnEvents(r.Events);
+        return true;
+    }
+
+    /// <summary>
+    /// GetRagePoints/GetRageLevel: any unit ("Unit \"%s\" is not exists"); without rage (FUN_008a16b0: a creature whose
+    /// army hero is a Stronghold hero) the exe only logs "Unit &lt;name&gt; has no rage points" and returns 0.
+    /// </summary>
+    Unit? RageUnit(HostContext c)
+    {
+        int a = Resolve(c, 0);
+        if (!Actor.IsHero(a) && S.Unit(a) is { Kind: UnitKind.Creature } u && S.Heroes[u.Side] is { Present: true, Town: Towns.Stronghold })
+            return u;
+        Log.Add($"Unit {c.Str(0)} has no rage points");
+        return null;
     }
 
     void Command(HostContext c, BattleCommand cmd)

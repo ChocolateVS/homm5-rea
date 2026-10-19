@@ -14,8 +14,9 @@ public static class QuickCombat
         ai ??= new GreedyBattleAI { MaxCandidates = 12 };
         var state = game.CreatePendingBattle(seed);
         var battle = new Battle(game.Core, state);
-        battle.Begin();
-        BattleRunner.RunToEnd(battle, ai, ai);
+        var scripts = game.BattleScripts?.Invoke(battle);
+        if (scripts == null) battle.Begin();
+        BattleRunner.RunToEnd(battle, ai, ai, scripts: scripts);
         List<ArmySlot> Survivors(int side) => state.Units
             .Where(u => u.Side == side && (u.Alive || u.Reserve) && !u.Summoned && !u.IsWarMachine)
             .GroupBy(u => u.CreatureId).Select(g => new ArmySlot(g.Key, g.Sum(u => u.Count))).ToList();
