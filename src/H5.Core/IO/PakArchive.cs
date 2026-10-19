@@ -8,41 +8,64 @@ namespace H5.Core.IO;
 /// entries without Zip64 records, so the 16-bit entry count in the end-of-central-
 /// directory record overflows and System.IO.Compression rejects the file. We walk
 /// the central directory by its byte size instead of trusting the count.
+/// Reads go through an <see cref="IRandomAccessSource"/> (file on desktop, browser Blob slices on
+/// the web); only the tail, the central directory and the requested entries are ever read.
 /// </summary>
 public sealed class PakArchive : IDisposable
 {
     public readonly record struct Entry(string Name, long LocalHeaderOffset, int Method, long CompressedSize, long Size);
 
-    readonly FileStream _stream;
-    readonly object _lock = new();
-    public string FilePath { get; }
+    readonly IRandomAccessSource _source;
+    public string FilePath => _source.Name;
+    public IRandomAccessSource Source => _source;
     public IReadOnlyList<Entry> Entries { get; }
 
-    public PakArchive(string path)
+    public PakArchive(string path) : this(new FileRandomAccessSource(path)) { }
+
+    /// <summary>Opens over a source that supports synchronous reads. Takes ownership of <paramref name="source"/>.</summary>
+    public PakArchive(IRandomAccessSource source)
     {
-        FilePath = path;
-        _stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.RandomAccess);
-        Entries = ReadCentralDirectory();
+        _source = source;
+        if (!source.SupportsSyncRead)
+            throw new ArgumentException($"{source.Name}: async-only source, use PakArchive.OpenAsync", nameof(source));
+        var tail = new byte[TailLength(source)];
+        source.ReadAt(source.Length - tail.Length, tail);
+        var (cdOffset, cdSize) = FindCentralDirectory(tail, source.Name);
+        var cd = new byte[cdSize];
+        source.ReadAt(cdOffset, cd);
+        Entries = ParseCentralDirectory(cd);
     }
 
-    List<Entry> ReadCentralDirectory()
+    PakArchive(IRandomAccessSource source, List<Entry> entries)
     {
-        // EOCD is within the last 64KiB + 22 bytes.
-        long tailLen = Math.Min(_stream.Length, 65557);
-        var tail = new byte[tailLen];
-        _stream.Position = _stream.Length - tailLen;
-        _stream.ReadExactly(tail);
-        int eocd = -1;
-        for (int i = tail.Length - 22; i >= 0; i--)
-            if (BitConverter.ToUInt32(tail, i) == 0x06054b50) { eocd = i; break; }
-        if (eocd < 0) throw new InvalidDataException($"{FilePath}: no end of central directory record");
+        _source = source;
+        Entries = entries;
+    }
 
-        uint cdSize = BitConverter.ToUInt32(tail, eocd + 12);
-        uint cdOffset = BitConverter.ToUInt32(tail, eocd + 16);
+    /// <summary>Opens over any source, reading the directory asynchronously. Takes ownership of <paramref name="source"/>.</summary>
+    public static async Task<PakArchive> OpenAsync(IRandomAccessSource source, CancellationToken ct = default)
+    {
+        var tail = new byte[TailLength(source)];
+        await source.ReadAtAsync(source.Length - tail.Length, tail, ct).ConfigureAwait(false);
+        var (cdOffset, cdSize) = FindCentralDirectory(tail, source.Name);
         var cd = new byte[cdSize];
-        _stream.Position = cdOffset;
-        _stream.ReadExactly(cd);
+        await source.ReadAtAsync(cdOffset, cd, ct).ConfigureAwait(false);
+        return new PakArchive(source, ParseCentralDirectory(cd));
+    }
 
+    // EOCD is within the last 64KiB + 22 bytes.
+    static int TailLength(IRandomAccessSource s) => (int)Math.Min(s.Length, 65557);
+
+    static (long Offset, uint Size) FindCentralDirectory(byte[] tail, string name)
+    {
+        for (int i = tail.Length - 22; i >= 0; i--)
+            if (BitConverter.ToUInt32(tail, i) == 0x06054b50)
+                return (BitConverter.ToUInt32(tail, i + 16), BitConverter.ToUInt32(tail, i + 12));
+        throw new InvalidDataException($"{name}: no end of central directory record");
+    }
+
+    static List<Entry> ParseCentralDirectory(byte[] cd)
+    {
         var list = new List<Entry>();
         int p = 0;
         while (p + 46 <= cd.Length && BitConverter.ToUInt32(cd, p) == 0x02014b50)
@@ -65,19 +88,44 @@ public sealed class PakArchive : IDisposable
 
     public byte[] Read(in Entry e)
     {
+        var hdr = new byte[30];
+        _source.ReadAt(e.LocalHeaderOffset, hdr);
+        var comp = new byte[e.CompressedSize];
+        _source.ReadAt(DataOffset(e, hdr), comp);
+        return Decompress(e, comp);
+    }
+
+    public async Task<byte[]> ReadAsync(Entry e, CancellationToken ct = default)
+    {
+        // The local header's name/extra lengths are read together with a guess of the data
+        // (central-directory name length + slack) to make one slice read in the common case.
+        int guess = 30 + Encoding.UTF8.GetByteCount(e.Name) + 64;
+        long want = Math.Min(guess + e.CompressedSize, _source.Length - e.LocalHeaderOffset);
+        var buf = new byte[want];
+        await _source.ReadAtAsync(e.LocalHeaderOffset, buf, ct).ConfigureAwait(false);
+        long data = DataOffset(e, buf);
+        long rel = data - e.LocalHeaderOffset;
         byte[] comp;
-        lock (_lock)
+        if (rel + e.CompressedSize <= buf.Length)
+            comp = buf.AsSpan((int)rel, (int)e.CompressedSize).ToArray();
+        else
         {
-            var hdr = new byte[30];
-            _stream.Position = e.LocalHeaderOffset;
-            _stream.ReadExactly(hdr);
-            if (BitConverter.ToUInt32(hdr, 0) != 0x04034b50)
-                throw new InvalidDataException($"{FilePath}: bad local header for {e.Name}");
-            int skip = BitConverter.ToUInt16(hdr, 26) + BitConverter.ToUInt16(hdr, 28);
-            _stream.Position = e.LocalHeaderOffset + 30 + skip;
             comp = new byte[e.CompressedSize];
-            _stream.ReadExactly(comp);
+            await _source.ReadAtAsync(data, comp, ct).ConfigureAwait(false);
         }
+        return Decompress(e, comp);
+    }
+
+    long DataOffset(in Entry e, byte[] hdr)
+    {
+        if (BitConverter.ToUInt32(hdr, 0) != 0x04034b50)
+            throw new InvalidDataException($"{FilePath}: bad local header for {e.Name}");
+        int skip = BitConverter.ToUInt16(hdr, 26) + BitConverter.ToUInt16(hdr, 28);
+        return e.LocalHeaderOffset + 30 + skip;
+    }
+
+    byte[] Decompress(in Entry e, byte[] comp)
+    {
         switch (e.Method)
         {
             case 0: return comp;
@@ -91,5 +139,5 @@ public sealed class PakArchive : IDisposable
         }
     }
 
-    public void Dispose() => _stream.Dispose();
+    public void Dispose() => _source.Dispose();
 }
