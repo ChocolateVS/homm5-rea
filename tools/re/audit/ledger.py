@@ -221,9 +221,10 @@ for kind in ('ability', 'skill', 'spec', 'spell'):
         rows[kind].append((ident,) + st)
 for ident in ('ARTIFACT_RING_OF_MACHINE_AFFINITY', 'RING_OF_MAGI', 'UNICORN_HORN_BOW', 'ARTIFACT_SHAWL_OF_GREAT_LICH'):
     rows['artifact'].append((ident,) + status(ident, 'artifact', [], ours(ident), True))
-# Week-of-the-month effects (MoonWeek ids) exist only as fragment rows.
-for ident in sorted(i for i in FRAG if i.startswith('WEEK_OF_')):
-    rows['week'].append((ident,) + FRAG[ident])
+# Week-of-the-month effects (MoonWeek ids) and further artifacts exist only as fragment rows.
+_listed = {r[0] for k in rows for r in rows[k]}
+for ident in sorted(i for i in FRAG if i not in _listed):
+    rows['week' if ident.startswith('WEEK_OF_') else 'artifact'].append((ident,) + FRAG[ident])
 
 MECH = [
     ('Damage pipeline (base roll, attack/defence factor uncapped, truncation)', 'MATCH', '00a597a0, 00a58de0, 00a5c5a0, 00a5a900', 'EXE_FINDINGS'),

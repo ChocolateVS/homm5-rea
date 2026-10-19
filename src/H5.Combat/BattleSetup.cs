@@ -199,7 +199,7 @@ public static class BattleSetup
             // 004bc470 hit points, 004bc190 initiative), before any hero bonus.
             BaseAttack = c.Attack, BaseDefence = MoonWeek.Defence(c.Defence, c.Town, s.Week),
             BaseMinDamage = MoonWeek.MightDamage(c.MinDamage, s.Week), BaseMaxDamage = MoonWeek.MightDamage(c.MaxDamage, s.Week),
-            BaseHealth = MoonWeek.Health(c.Health, s.Week), BaseSpeed = c.Speed, BaseInitiative = MoonWeek.Initiative(c.Initiative, c.Town, s.Week),
+            BaseHealth = MoonWeek.Health(c.Health, s.Week), BaseSpeed = c.Speed, BaseInitiative = SkillAuditH.CreatureInitiative(db, h, c, s.Week),
             MaxShots = c.Shots, Shots = c.Shots, Flying = c.Flying, Size = c.CombatSize, Power = c.Power, WeeklyGrowth = c.WeeklyGrowth,
             Abilities = c.Abilities.OrderBy(a => a, StringComparer.Ordinal).ToList(),
             Spells = c.KnownSpells.Select(k => new KnownSpell { Spell = k.Spell, Mastery = k.Mastery }).ToList(),
@@ -217,8 +217,8 @@ public static class BattleSetup
             if (h.HasPerk(Sk.Frenzy)) { u.BaseMinDamage += 1; u.BaseMaxDamage += 1; }
             // Nature's Wrath: Sylvan creatures +1 max damage (p.107).
             if (h.HasPerk(Sk.NaturesWrath) && u.Town == Towns.Sylvan) u.BaseMaxDamage += 1;
-            // March of the Golems: golems +2 speed/initiative (p.122).
-            if (h.HasPerk(Sk.MarchOfGolems) && u.Has(Ab.Mechanical)) { u.BaseSpeed += 2; u.BaseInitiative += 2; }
+            // March of the Golems: golems +2 speed (p.122); its +2 initiative is part of SkillAuditH.CreatureInitiative.
+            if (h.HasPerk(Sk.MarchOfGolems) && u.Has(Ab.Mechanical)) u.BaseSpeed += 2;
             // Creature specialisations: +1 Attack/Defense per two levels, starting on first level.
             if (h.SpecFamily.Contains(u.CreatureId)) { u.BaseAttack += (h.Level + 1) / 2; u.BaseDefence += (h.Level + 1) / 2; }
             // Specialisation-granted abilities (creature HasAbility override, exe FUN_008a34c0):

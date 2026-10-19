@@ -42,3 +42,34 @@ adventure (`AdvState.MoonWeek`), duels fight in WEEK_OF_NOTHING. Code: `src/H5.C
 Not changed: the Elemental Balance counter-summon (00861630, already a GAP) also takes the week-adjusted count (min 1);
 whether the catapult and First Aid Tent consume the week-adjusted war machine min/max of 004bc710/004bc780 is not
 traced (only the Ballista is changed).
+
+## Creature initiative with the hero, enemy artifacts
+
+| ID | Status | Exe | Original behaviour | Test |
+|---|---|---|---|---|
+| `HERO_SPEC_FURIOUS` | FIXED | 004bc190 (004bc1f0..004bc25b) | creature initiative × (1 + clamp(Furious_InitiativeBonusBase + level·Furious_InitiativeBonusPerLevel, 0, 5)) on the (week-adjusted) record value, before March of the Machines and the artifacts. Was missing | AuditSkillTestsH.FuriousSpecialisationsScaleCreatureInitiative |
+| `HERO_SPEC_MASTER_OF_INITIATIVE` | FIXED | 004bc190 (HasSpec 0x45, same branch) | the same factor as Furious (own army); the engine's 1 + 0.01·level factor in InitiativeOf (taken from the description) is removed. Its enemy Prudent part in 008a4330 is unchanged | AuditSkillTestsH.FuriousSpecialisationsScaleCreatureInitiative |
+| `RING_OF_HASTE` | FIXED | 004bc190 (004bc2c4) | army creatures' initiative +20 % (any number of rings), inside the artifact percent p: init = (p + 100)·init·0.01 with p ≥ −100. Was missing | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `ARTIFACT_RING_OF_CELERITY` | FIXED | 004bc190 (004bc2d8) | +10 % per ring | (same helper) |
+| `DRAGON_SCALE_ARMOR` | FIXED | 004bc190 (004bc2ef) | +5 % each for creatures with combat size > 1 (record +0xdc) | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `DRAGON_SCALE_SHIELD` | FIXED | 004bc190 (004bc309) | +5 % each for size-1 creatures | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `DRAGON_BONE_GRAVES` | FIXED | 004bc190 (004bc31e..004bc35d) | +10 % each for creatures without shots, not ABILITY_CASTER / ABILITY_RANDOM_CASTER, not flying | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `DRAGON_WING_MANTLE` | FIXED | 004bc190 (004bc363) | +10 % each for flyers | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `DRAGON_TEETH_NECKLACE` | FIXED | 004bc190 (004bc380) | +10 % each for ABILITY_CASTER / ABILITY_RANDOM_CASTER creatures | (same helper) |
+| `DRAGON_EYE_RING` | FIXED | 004bc190 (004bc3b1) | +10 % each for shooters (record shots > 0) | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `ARTIFACT_OGRE_CLUB` | FIXED | 004bc190 (004bc3ce) | −5 % each | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `ARTIFACT_OGRE_SHIELD` | FIXED | 004bc190 (004bc3e3) | −5 % each | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `NIGHTMARISH_RING` | FIXED | 00989fd0 (tail) | −2 morale per ring to the stacks facing the hero (army vcall 0x10 = enemy army's hero). Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
+| `CLOAK_OF_MOURNING` | FIXED | 00989fd0, 00989c40 (tails) | −2 morale and −2 luck per cloak to the enemy stacks. Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
+| `ARTIFACT_JINXING_BAND` | FIXED | 00989c40 (tail) | −2 luck per band to the enemy stacks. Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
+
+Also in 004bc190: Hero March of the Machines adds 2.0 to the float (Iron/Steel/Obsidian Golems 61/62/161) and the result
+is at least 1 before the artifact percent; afterwards a per-creature bonus byte (army slot +0x2c, ≤ 50 %) multiplies —
+not modelled (no source in shipped content found).
+
+**HP percentage multiplier (was a GAP in `combat_heroes_specs.md`)**: 004bc470 ends with (hp·clamp(100 + b, 0, 1000) + 50)
+/ 100 where b = hero vcall 0x330 (= hero + 0x270, `FUN_00b5ac30`) field +0x10. The struct is the script battle-bonus
+array of `GiveHeroBattleBonus` (advmap-startup.lua: HERO_BATTLE_BONUS_LUCK 0, MORALE 1, ATTACK 2, DEFENCE 3,
+HITPOINTS 4 (+0x10, percent), INITIATIVE 5 (+0x14, added to the initiative before the artifact percent), SPEED 6).
+GAP: the engine's GiveHeroBattleBonus stores types 2..6 in settings only; when the bonus is cleared and how attack,
+defence and speed use it is not traced.

@@ -12,11 +12,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 214 |
+| FIXED | 228 |
 | MATCH | 116 |
 | GAP | 5 |
-| UNVERIFIED | 232 |
-| N/A | 58 |
+| UNVERIFIED | 233 |
+| N/A | 56 |
 
 ## Core mechanics
 
@@ -115,7 +115,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ABILITY_CRYSTAL_SCALES` | UNVERIFIED | 0097f610 00a5bf60 00a63020 00a673c0 | implemented; not yet compared with the exe |  |
 | `ABILITY_LARGE_CREATURE` | N/A |  | not used by shipped data |  |
 | `ABILITY_FLYER` | N/A |  | not used by shipped data |  |
-| `ABILITY_CASTER` | N/A | 0097f610 00984a00 | not used by shipped data |  |
+| `ABILITY_CASTER` | UNVERIFIED | 0097f610 00984a00 | implemented; not yet compared with the exe |  |
 | `ABILITY_TAXPAYER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_SCATTER_SHOT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `ABILITY_RESURRECT_ALLIES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -420,7 +420,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_WAR_MACHINES` | MATCH | 00b3b7d0 | verified in EXE_FINDINGS.md |  |
 | `HERO_SPEC_LOGISTICS` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_HASTE` | FIXED | 004e4270 (case 0x18), 008a4330 | Haste factor 1 + max(0, v) + Expediter level × clamp(Expediter_HasteBonusPerLevel, 0, 100) — the Expediter is the effect's caster hero (effect vf 0xc); engine used the creature's own hero | AuditSpecSetTests.ExpediterBonusFollowsTheCasterOfHaste |
-| `HERO_SPEC_FURIOUS` | N/A |  | no combat use found in exe or engine |  |
+| `HERO_SPEC_FURIOUS` | FIXED | 004bc190 (004bc1f0..004bc25b) | creature initiative × (1 + clamp(Furious_InitiativeBonusBase + level·Furious_InitiativeBonusPerLevel, 0, 5)) on the (week-adjusted) record value, before March of the Machines and the artifacts. Was missing | AuditSkillTestsH.FuriousSpecialisationsScaleCreatureInitiative |
 | `HERO_SPEC_GATE_KEEPER` | FIXED | 0085fe60 | additive gating bonus level × clamp(GatekeeperHeroSpecPerLevelPortionBonus, −1, 1000); see the Gating core row for the other terms fixed alongside | AuditSpecSetTests.GatingPortionAddsBonusesAndScalesOnlyTheBase |
 | `HERO_SPEC_BEATER` | FIXED | 00a34740 | Teleport costs half (Rusher) | (HeroManaCost) |
 | `HERO_SPEC_BOMBARDIER` | FIXED | 0085f0f0 | ballista shot carries Fireball (spell 5) cast at a fixed mastery 3 (Expert) with power (level−1)·PerLevel / Divisor + Base (integer, Base −1, /5, ×1, unclamped); engine used the hero's own mastery and Base + floor(level/Divisor)·PerLevel clamped at 0 | AuditSpecSetTests.BombardierPowerUsesLevelMinusOne |
@@ -478,7 +478,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_ECONOMIST` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_DEFENDER` | FIXED | 004bc470 | Defenders and upgrades (base creature Defender): +level/5 HP — engine lacked the HP part | AuditHeroTests.DefenderSpecialisationAddsLevelOverFiveHealth |
 | `HERO_SPEC_STORMCALLER` | FIXED | 0097c9f0 | Air spells skip the resistance roll | (SpellHits) |
-| `HERO_SPEC_MASTER_OF_INITIATIVE` | FIXED | 008a4330 | enemy initiative penalty (+own +1 %/lvl from description) | (InitiativeOf) |
+| `HERO_SPEC_MASTER_OF_INITIATIVE` | FIXED | 004bc190 (HasSpec 0x45, same branch) | the same factor as Furious (own army); the engine's 1 + 0.01·level factor in InitiativeOf (taken from the description) is removed. Its enemy Prudent part in 008a4330 is unchanged | AuditSkillTestsH.FuriousSpecialisationsScaleCreatureInitiative |
 | `HERO_SPEC_CHOSEN_BY_GODS` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_GRIM_FIGHTER` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_RASH` | N/A |  | no combat use found in exe or engine |  |
@@ -649,6 +649,19 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `RING_OF_MAGI` | FIXED | 00a34740 | spell cost halved (integer) | tests/H5.Combat.Tests/AuditSpecTests.SpellCostsMatchTheOriginalChain |
 | `UNICORN_HORN_BOW` | FIXED | 008a34c0 | army shooters have No Range Penalty | tests/H5.Combat.Tests/AuditArtifactTests.UnicornHornBowRemovesRangePenalty |
 | `ARTIFACT_SHAWL_OF_GREAT_LICH` | FIXED | 008a34c0 | negates enemy IMMUNITY_TO_MIND_CONTROL | tests/H5.Combat.Tests/AuditArtifactTests.ShawlOfTheGreatLichNegatesEnemyMindImmunity |
+| `ARTIFACT_JINXING_BAND` | FIXED | 00989c40 (tail) | −2 luck per band to the enemy stacks. Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
+| `ARTIFACT_OGRE_CLUB` | FIXED | 004bc190 (004bc3ce) | −5 % each | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `ARTIFACT_OGRE_SHIELD` | FIXED | 004bc190 (004bc3e3) | −5 % each | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `ARTIFACT_RING_OF_CELERITY` | FIXED | 004bc190 (004bc2d8) | +10 % per ring | (same helper) |
+| `CLOAK_OF_MOURNING` | FIXED | 00989fd0, 00989c40 (tails) | −2 morale and −2 luck per cloak to the enemy stacks. Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
+| `DRAGON_BONE_GRAVES` | FIXED | 004bc190 (004bc31e..004bc35d) | +10 % each for creatures without shots, not ABILITY_CASTER / ABILITY_RANDOM_CASTER, not flying | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `DRAGON_EYE_RING` | FIXED | 004bc190 (004bc3b1) | +10 % each for shooters (record shots > 0) | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `DRAGON_SCALE_ARMOR` | FIXED | 004bc190 (004bc2ef) | +5 % each for creatures with combat size > 1 (record +0xdc) | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `DRAGON_SCALE_SHIELD` | FIXED | 004bc190 (004bc309) | +5 % each for size-1 creatures | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `DRAGON_TEETH_NECKLACE` | FIXED | 004bc190 (004bc380) | +10 % each for ABILITY_CASTER / ABILITY_RANDOM_CASTER creatures | (same helper) |
+| `DRAGON_WING_MANTLE` | FIXED | 004bc190 (004bc363) | +10 % each for flyers | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `NIGHTMARISH_RING` | FIXED | 00989fd0 (tail) | −2 morale per ring to the stacks facing the hero (army vcall 0x10 = enemy army's hero). Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
+| `RING_OF_HASTE` | FIXED | 004bc190 (004bc2c4) | army creatures' initiative +20 % (any number of rings), inside the artifact percent p: init = (p + 100)·init·0.01 with p ≥ −100. Was missing | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 
 ## Week of the month (combat effects)
 

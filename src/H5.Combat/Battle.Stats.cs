@@ -171,7 +171,6 @@ public sealed partial class Battle
             mult *= 1 - Math.Clamp(Stats.Get("combat/HeroSpecializations/Warlock/Prudent_InitiativeDisbonusBase", 0)
                                    + eh.Level * Stats.Get("combat/HeroSpecializations/Warlock/Prudent_InitiativeDisbonusPerLevel", 0.01), 0, 1);
         mult *= EffectInitiativeFactors(u, h);
-        if (h.Present && h.Specialization == "HERO_SPEC_MASTER_OF_INITIATIVE") mult *= 1 + 0.01 * h.Level;   // spec description (not in 008a4330)
         if (eh.Present && u.Flying && (eh.HasPerk(Sk.StormWind) || eh.HasPerk(Sk.BarbStormWind)))
             mult *= 1 - Stats.Get("combat/HeroSkills/Ranger/StormWind_InitiativePenalty", 0.2);
         if (eh.Present && u.MaxShots > 0 && !u.IsWarMachine && (eh.HasPerk(Sk.FogVeil) || eh.HasPerk(Sk.BarbFogVeil)))
@@ -341,6 +340,7 @@ public sealed partial class Battle
         if (u.HasEffect(H5.Combat.Fx.BansheeHowl)) m -= (int)Fx(u, H5.Combat.Fx.BansheeHowl);
         if (u.HasEffect(LionsDemoralized)) m -= (int)Stats.Get("ArtifactsSetsEffectsConsts/Lions_2_HeroAttack_DeMorale", 2);   // exe 00989fd0 case 0x129
         if (u.HasEffect(H5.Combat.Fx.Sacrifice)) m += (int)Fx(u, H5.Combat.Fx.Sacrifice);
+        m += SkillAuditH.EnemyArtifactMorale(Enemy(u.Side));   // exe 00989fd0: Nightmarish Ring, Cloak of Mourning
         if (Adjacent(u).Any(o => o.Side != u.Side && o.Has(Ab.FrightAura))) m -= 3;             // Frightful Aura (p.175)
         if (S.Living.Any(o => o.Side != u.Side && o.Has(Ab.HorrorOfDeath)))                    // Death Stare (p.173)
             m -= (int)Stats.Get("combat/Creatures/Necropolis/HorrorOfDeath_MoraleDecrease", 1);
@@ -364,6 +364,7 @@ public sealed partial class Battle
         if (MoonWeek.IsBalance(S.Week)) return l;
         var eh = Enemy(u.Side);
         if (eh.Present && eh.HasPerk(Sk.DeadLuck)) l -= 1;
+        l += SkillAuditH.EnemyArtifactLuck(eh);   // exe 00989c40: Cloak of Mourning, Jinxing Band
         l -= (int)Fx(u, "SPELL_SORROW");
         l -= (int)Fx(u, H5.Combat.Fx.EvilEye);
         l += (int)Fx(u, "FX_WHEEL_OF_FORTUNE");

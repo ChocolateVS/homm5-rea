@@ -13,7 +13,7 @@ caster hero (effect vf 0xc), not the creature's owner.
 |---|---|---|---|---|
 | Gating portion | FIXED | 0085fe60 | base = PortionOfSummonedByGatingLevel[mastery−1] (0.25 if the table does not have exactly 4 entries; engine used 0.3); bonuses are additive: Gating Mastery clamp(GatingMasteryPortionBonus,−1,1000); Critical Gating adds clamp(CriticalGatingPortionBonus,−1,1000) × base on an ability roll (00a5a170, no second roll) of trunc(100·clamp(clamp(Const,0,1) + Luck·clamp(PerLuck,0,1) [Luck > 0], 0, 1)) — engine doubled the whole portion on a continuous roll; Infernal Looms count × InfernalLoomPortionBonus (town-side, absent in duels); Gate Keeper level × clamp(per-level,−1,1000); the Demonic 2-piece set (artifact set 10, hero vf 0x328 > 1) multiplies only the base by 1 + pct·0.01 (engine multiplied the total); total clamped to [0, 1000]; n = floor(count·total). The exe then adds +1 on a random roll under a condition (00860524) not pinned down — engine keeps max(1, n). | AuditSpecSetTests.GatingPortionAddsBonusesAndScalesOnlyTheBase |
 | Battle-context ×1.5 | FIXED | 00bcdf10 | the id is the week of the month (battle vf 0x3c): 0x49 WEEK_OF_MIGHT / 0x4b WEEK_OF_MIGHTNMAGIC — see `combat_heroes_skills_h.md` |  |
-| HP percentage multiplier | GAP | 004bc470 (hero vf 0x330 struct +0x10) | creature HP ×clamp(100+pct,0,1000)/100; source of pct not identified (not reached in this pass). |  |
+| HP percentage multiplier | GAP | 004bc470 (hero vf 0x330 struct +0x10) | source identified: the script battle bonus HERO_BATTLE_BONUS_HITPOINTS (percent) — see `combat_heroes_skills_h.md`; not wired |  |
 
 ## IDs
 
