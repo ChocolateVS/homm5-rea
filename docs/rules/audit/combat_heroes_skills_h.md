@@ -192,13 +192,3 @@ adventure hand-off as hero spell power.
 | `STAFF_OF_VEXINGS` | FIXED | 008a4330 (008a4619..008a4647) | the enemy hero's Staff of Vexings: stack initiative factor × (1 − 0.2 (float 00e12ff8) · staffs), after Storm Wind / Fog Veil. Was missing | AuditSkillTestsH.EnemyStaffOfVexingsSlowsTheArmy |
 | `HERO_SKILL_STORM_WIND` | MATCH | 008a4330 (008a457f..008a45ae), 008a1e50 | enemy hero's perk: flyers' initiative × (1 − StormWind_InitiativePenalty); speed in 008a1e50 (see the engine's SpeedOf) |  |
 | `HERO_SKILL_FOG_VEIL` | MATCH | 008a4330 (008a45b2..008a45f0), 008a2630 | enemy hero's perk: shooters' (004bb150) initiative × (1 − FogVeil_InitiativePenalty) and damage range × (1 − FogVeil_DamageDecrease) |  |
-| `WEREWOLF_CLAW_NECKLACE` | FIXED | 004bbfb0 (004bc000), 004bc020 | + CountArtifact(17) to every creature's min and max damage (after Frenzy). Was missing | AuditSkillTestsH.WerewolfClawNecklaceAddsDamage |
-| `HERO_SKILL_LUCKY_SPELLS` | GAP | 00983790 (00983ab3..00983b6c) | Warlock's Luck: rolled ONCE per cast, for every spell in the damage list 004e5cb0 (not only Destructive), when the caster is a hero with the perk: the multiplier is the hero unit's luck roll (vcall 0x1d0, > 1 → "lucky" log) applied to all targets. The engine rolls per target, Destructive only, with min(0.5, luck·0.1); not changed because the hero unit's vcall 0x1d0 (roll and multiplier) is not identified |  |
-
-## Hero skills without a combat effect
-
-| ID | Status | Exe | Original behaviour | Test |
-|---|---|---|---|---|
-| `HERO_SKILL_LEARNING` | FIXED | 00b4bbb0 | Enlightenment acts only through the experience modifier (5 % per mastery, see Battle-end experience); no combat-code reads of skill 3 in the vcall 0x174 / 0x290 maps | AuditBattleExpTests.ExperienceModifierIsIntegerPercent |
-| `HERO_SKILL_LOGISTICS` | N/A | 00b4dd40 | only read by the adventure movement-points function; no combat use (vcall 0x174 / 0x290 maps of the combat ranges) |  |
-| `HERO_SKILL_NECROMANCY` | N/A | 00c26be0 (adventure) | post-battle raising only (adventure hand-off, `NecromancyRaise`); no combat use |  |

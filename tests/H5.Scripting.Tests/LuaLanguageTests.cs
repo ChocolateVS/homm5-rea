@@ -167,23 +167,6 @@ public class LuaLanguageTests
     }
 
     [Fact]
-    public void NativeArgumentsGoThroughTheExeParser()
-    {
-        var (L, output) = NewState();
-        L.ArgFormats = new Dictionary<string, string> { ["F"] = "nsn[-1]b[false]" };
-        var seen = new List<string>();
-        L.Register("F", c => seen.Add(string.Join(",", c.Args.Select(a => a.ToString()))));
-        L.DoString("F('3', 'x')", "a");
-        Assert.True(seen.Count == 1, string.Join("|", output));
-        Assert.Equal("3,x,-1,nil", seen[^1]);      // numeric string converted, defaults filled
-        L.DoString("F(nil, 'x')", "b");            // explicit nil is present: type error
-        Assert.Contains(output, o => o.Contains("Wrong type of argument 1, when calling function F."));
-        L.DoString("F(1)", "c");
-        Assert.Contains(output, o => o.Contains("Not enough arguments when calling function F."));
-        Assert.Equal(1, seen.Count);
-    }
-
-    [Fact]
     public void ErrorsAbortThreadAndCallErrorMessage()
     {
         var output = Run("x = nil  x.y = 1  print('not reached')");

@@ -66,7 +66,9 @@ public sealed partial class Adventure
         var p = Current;
         if (!p.Purse.CanAfford(def.Cost)) return "not enough resources";
         Give(p, Purse.Scale(def.Cost, -1));
+        int trainingBefore = TrainingPointsMax(t);
         t.Built[c.Building] = next;
+        TrainingPointsAfterBuild(t, trainingBefore);
         t.BuiltToday = true;
         // A new dwelling starts with one week of creatures (TODO(exe): confirm for H5).
         if (c.Building.StartsWith("TB_DWELLING_") && next == 1 && int.TryParse(c.Building[^1..], out var tier))

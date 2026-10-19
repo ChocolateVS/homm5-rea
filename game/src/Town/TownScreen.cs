@@ -259,9 +259,12 @@ public partial class TownScreen : Control
             "upgrade" => new UpgradeCreaturesScreen(this),
             "info" => new TownInfoScreen(this),
             "artifacts" => Town.Type == "TOWN_ACADEMY" && Town.Level(H5.Adventure.Engine.Adventure.ArtifactMerchantBuilding) > 0 ? new ArtifactMerchantScreen(this) : null,
-            "special" => null,
+            "special" => SpecialScreen(Town.Type),
+            "training" => HavenTrainingScreen.CanOpen(this) ? new HavenTrainingScreen(this) : null,
             _ => null,
         };
+        // enter_special (FUN_0061b570) and the building handlers open nothing when the screen's conditions fail.
+        if (sub == null && key is "special" or "training" && SpecialScreenBuilt(Town.Type)) return;
         if (sub == null)
         {
             var reason = key switch
@@ -277,6 +280,31 @@ public partial class TownScreen : Control
         _hud.Visible = sub is not HeroScreen and not MarketScreen;
         _subLayer.AddChild(sub);
     }
+
+    /// <summary>
+    /// enter_special (FUN_0061b570): switch on the town type 3..10 — Haven FUN_006184f0 (training), Preserve
+    /// FUN_00618ff0 (favoured enemies), Academy FUN_00618c10 (creature artifacts), Dungeon FUN_006187c0 (ritual
+    /// pit), Necropolis FUN_00619e80 (transform), Inferno FUN_00618870 (sacrificial pit), Fortress FUN_00618d10,
+    /// Stronghold FUN_00618dc0 (slave market).
+    /// </summary>
+    Control? SpecialScreen(string townType) => townType switch
+    {
+        "TOWN_HEAVEN" => HavenTrainingScreen.CanOpen(this) ? new HavenTrainingScreen(this) : null,
+        _ => null,
+    };
+
+    /// <summary>Town types whose enter_special screen is built here (the rest still show the placeholder notice).</summary>
+    static bool SpecialScreenBuilt(string townType) => townType is "TOWN_HEAVEN";
+
+    /// <summary>
+    /// Screen of a special building double-clicked in the 3D town (FUN_0061b760: the building's town ability
+    /// from the table at 00f7c998 → handler; abilities without a screen show the building's info box).
+    /// </summary>
+    static string? SpecialBuildingKey(string townType, string building) => (townType, building) switch
+    {
+        ("TOWN_HEAVEN", "TB_SPECIAL_1") => "training",
+        _ => null,
+    };
 
     public void OpenHero(HeroState h)
     {
@@ -387,6 +415,9 @@ public partial class TownScreen : Control
             var t when t.StartsWith("TB_DWELLING_") => "fort",
             _ => null,
         };
+        key ??= SpecialBuildingKey(Town.Type, view.Def.Type);
+        // Ability 0 (Training Grounds): when the screen cannot open, the building's info box (FUN_0061b760 default).
+        if (key == "training" && !HavenTrainingScreen.CanOpen(this)) key = null;
         if (view.Def.Type == "TB_SHIPYARD") OpenShipyard();
         else if (key != null) OpenSub(key);
         else Notice(view.Name, view.Description);

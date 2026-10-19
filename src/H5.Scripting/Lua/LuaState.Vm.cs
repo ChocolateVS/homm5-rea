@@ -86,7 +86,6 @@ public sealed partial class LuaState
         int nhost = t.Top - funcSlot - 1;
         var args = new LuaValue[nhost];
         Array.Copy(t.Stack, funcSlot + 1, args, 0, nhost);
-        if (h.Format != null) args = ArgParser.Apply(h.Format, h.Name, args);
         var ctx = new HostContext(this, t, args, h.Name);
         h.Call(ctx);
         PlaceResults(t, funcSlot, ctx.Results, want);

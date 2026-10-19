@@ -15,7 +15,7 @@ namespace H5.Scripting.Runtime;
 /// </summary>
 public sealed class CombatScripting
 {
-    public LuaState L { get; } = new() { ArgFormats = NativeFormats.Combat };
+    public LuaState L { get; } = new();
     public Battle Battle { get; }
     public BattleState S => Battle.State;
     public GameDatabase Db { get; }

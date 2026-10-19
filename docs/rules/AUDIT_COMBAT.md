@@ -12,11 +12,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 282 |
+| FIXED | 280 |
 | MATCH | 146 |
-| GAP | 13 |
-| UNVERIFIED | 150 |
-| N/A | 57 |
+| GAP | 12 |
+| UNVERIFIED | 154 |
+| N/A | 55 |
 
 ## Core mechanics
 
@@ -227,9 +227,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | ID | Status | Exe functions | Original behaviour / note | Regression test |
 |---|---|---|---|---|
-| `HERO_SKILL_LOGISTICS` | N/A | 00b4dd40 | only read by the adventure movement-points function; no combat use (vcall 0x174 / 0x290 maps of the combat ranges) |  |
+| `HERO_SKILL_LOGISTICS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_WAR_MACHINES` | MATCH | 004bd7b0, 004bc7f0, 004bc660, 004bb770/004bb7d0, 004bc710/004bc780, 004bb8c0/004bb920 | HP = record + mastery·WarMachines_HealthBonusPerSkillTrained, × PerkSpecificHealthMultiplier (truncated) with Ballista (id 1) / First Aid (3) / Catapult for ids 2 AND 4 (the Ammo Cart uses the Catapult perk — as the engine does); attack/defence/min/max damage from the record tables by mastery (index clamped to the table); Ballista attack + level with HERO_SPEC_WAR_MACHINES (spec 8) and damage × (hero vcall 0x1c + vcall 0x10, the engine's Attack + Knowledge — the two getters not decompiled further); the tables hold integers, so the engine's rounding is exact |  |
-| `HERO_SKILL_LEARNING` | FIXED | 00b4bbb0 | Enlightenment acts only through the experience modifier (5 % per mastery, see Battle-end experience); no combat-code reads of skill 3 in the vcall 0x174 / 0x290 maps | AuditBattleExpTests.ExperienceModifierIsIntegerPercent |
+| `HERO_SKILL_LEARNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_LEADERSHIP` | MATCH | 00b4cae0 | hero morale = base fields + Leadership mastery (when > 0) − 1 with Pariah − a curse object's penalty; the engine adds the mastery the same way |  |
 | `HERO_SKILL_LUCK` | MATCH | 00b4ca10 | hero luck = base fields + Luck mastery (when > 0) − curse + town-building terms; the engine adds the mastery the same way |  |
 | `HERO_SKILL_OFFENCE` | FIXED | 00a58de0 | melee ×(1+clamp(SkillOffence Basic/Advanced/Expert DamageBonus,0,10)) by mastery 1/2/3; any other mastery value gives nothing — engine gave the Expert bonus to mastery 4 | AuditHeroTests.OffenceBonusOnlyForMasteriesOneToThree |
@@ -241,7 +241,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_SUMMONING_MAGIC` | MATCH | 00b4b440 | school 3 |  |
 | `HERO_SKILL_TRAINING` | MATCH | 00a58de0 | retaliation strikes ×(1+clamp(Training Basic/Advanced/Expert/ExtraExpert DamageBonus,0,10)) by mastery 1..4 |  |
 | `HERO_SKILL_GATING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_NECROMANCY` | N/A | 00c26be0 (adventure) | post-battle raising only (adventure hand-off, `NecromancyRaise`); no combat use |  |
+| `HERO_SKILL_NECROMANCY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_AVENGER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ARTIFICIER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_INVOCATION` | MATCH | 0097d2a0 (0097d42c..0097d47f), 004e5cb0 | Irresistible Magic: for spells listed by FUN_004e5cb0, share' = (1 − {0,20,40,50,75}[caster hero mastery of 0x12] %) × share (table 00f46f18), also when fully resisted (share 1). Engine formula identical (ApplyProtectionPercent); spell-set difference noted below |  |
@@ -338,7 +338,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_TELEPORT_ASSAULT` | UNVERIFIED | 0097d7b0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SHAKE_GROUND` | MATCH | 0097d7b0 | verified in EXE_FINDINGS.md |  |
 | `HERO_SKILL_FAST_AND_FURIOUS` | MATCH | 004bc0b0 | +1 speed for every creature in the army |  |
-| `HERO_SKILL_LUCKY_SPELLS` | GAP | 00983790 (00983ab3..00983b6c) | Warlock's Luck: rolled ONCE per cast, for every spell in the damage list 004e5cb0 (not only Destructive), when the caster is a hero with the perk: the multiplier is the hero unit's luck roll (vcall 0x1d0, > 1 → "lucky" log) applied to all targets. The engine rolls per target, Destructive only, with min(0.5, luck·0.1); not changed because the hero unit's vcall 0x1d0 (roll and multiplier) is not identified |  |
+| `HERO_SKILL_LUCKY_SPELLS` | UNVERIFIED | 00983790 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_POWER_OF_HASTE` | GAP | 00b4b4c1..00b4b4e4 | the exe raises the mastery to Advanced when the cast spell id (00a34110) is SPELL_HASTE (0x18); the engine (and the perk text "Mass Haste on advanced level") use SPELL_MASS_HASTE — whether 00a34110 returns the base spell for mass casts is not traced; unchanged |  |
 | `HERO_SKILL_POWER_OF_STONE` | GAP | 00b4b4eb..00b4b50e | the same with SPELL_STONESKIN (0x19) vs SPELL_MASS_STONESKIN; unchanged |  |
 | `HERO_SKILL_CHAOTIC_SPELLS` | FIXED | 00bbf6a6..00bbf751 | Erratic Mana: for a positive cost, ability roll of 50 (FUN_00a5a170), then the hero pays trunc(r · cost), r uniform in [0.6, 0.9], at most cost − 1, at least 0. Engine had no implementation | AuditSkillTestsH.ErraticManaPaysSixtyToNinetyPercent |
@@ -671,7 +671,6 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `PEDANT_OF_MASTERY` | FIXED | 00b4d150, 00875550 | GetSkillMastery: for the hero class's racial skill (Knight Training, Ranger Avenger, Wizard Artificier, Demon Lord Gating, Necromancer Necromancy, Warlock Invocation, Runemage Runelore, Barbarian Blood Rage) +1 with the artifact (also from none), results outside 0..4 → 0. Was ignored | AuditSkillTestsH.PendantOfMasteryRaisesTheRacialSkill |
 | `RING_OF_HASTE` | FIXED | 004bc190 (004bc2c4) | army creatures' initiative +20 % (any number of rings), inside the artifact percent p: init = (p + 100)·init·0.01 with p ≥ −100. Was missing | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `STAFF_OF_VEXINGS` | FIXED | 008a4330 (008a4619..008a4647) | the enemy hero's Staff of Vexings: stack initiative factor × (1 − 0.2 (float 00e12ff8) · staffs), after Storm Wind / Fog Veil. Was missing | AuditSkillTestsH.EnemyStaffOfVexingsSlowsTheArmy |
-| `WEREWOLF_CLAW_NECKLACE` | FIXED | 004bbfb0 (004bc000), 004bc020 | + CountArtifact(17) to every creature's min and max damage (after Frenzy). Was missing | AuditSkillTestsH.WerewolfClawNecklaceAddsDamage |
 
 ## Week of the month (combat effects)
 

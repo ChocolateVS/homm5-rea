@@ -135,8 +135,6 @@ public sealed class HostFunction : LuaFunction
 {
     public readonly string Name;
     public readonly HostCall Call;
-    /// <summary>The exe's argument format for this native (see NativeFormats), or null = unchecked.</summary>
-    public string? Format;
     public HostFunction(string name, HostCall call) { Name = name; Call = call; }
 }
 

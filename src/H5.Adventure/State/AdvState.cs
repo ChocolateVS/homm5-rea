@@ -162,6 +162,8 @@ public sealed class TownState
     /// <summary>Mage guild spells per circle (index 0 = level 1).</summary>
     public List<List<string>> MageGuild = new() { new(), new(), new(), new(), new() };
     public string? Specialization;
+    /// <summary>Haven training points left this week (exe CAdvMapTown +0x2d0, see Adventure.TownSpecials).</summary>
+    public int TrainingPoints;
 
     public int Level(string type) => Built.TryGetValue(type, out var l) ? l : 0;
     /// <summary>Town level = number of buildings built, counting each upgrade (fan manual p.224 "Town Level").</summary>

@@ -42,6 +42,7 @@ public sealed partial class Adventure
             WeeklyGrowthAll();
             foreach (var p in S.Players) RollTavern(p);
             RestockTownArtifactMerchants();
+            ResetTrainingPoints();
         }
         foreach (var t in S.Towns) t.BuiltToday = false;
         foreach (var p in S.Players.Where(p => p.Alive)) DailyIncome(p);
