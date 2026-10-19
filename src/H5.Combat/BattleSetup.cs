@@ -219,6 +219,9 @@ public static class BattleSetup
             u.BaseHealth += 2 * h.Artifacts.Count(a => a == "RING_OF_LIFE");
             // Battle Frenzy: +1 min and max damage (p.107).
             if (h.HasPerk(Sk.Frenzy)) { u.BaseMinDamage += 1; u.BaseMaxDamage += 1; }
+            // Werewolf Claw Necklace (artifact 17): +1 min and max damage per necklace (exe 004bbfb0 / 004bc020).
+            int claws = h.Artifacts.Count(a => a == "WEREWOLF_CLAW_NECKLACE");
+            u.BaseMinDamage += claws; u.BaseMaxDamage += claws;
             // Nature's Wrath: Sylvan creatures +1 max damage (p.107).
             if (h.HasPerk(Sk.NaturesWrath) && u.Town == Towns.Sylvan) u.BaseMaxDamage += 1;
             // March of the Golems: golems +2 speed (p.122); its +2 initiative is part of SkillAuditH.CreatureInitiative.

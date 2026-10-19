@@ -240,4 +240,14 @@ public class AuditSkillTestsH(GameDataFixture f)
         double plain = b0.InitiativeOf(Of(s0, "CREATURE_FOOTMAN"));
         Assert.Equal(plain * 0.8f, b1.InitiativeOf(Of(s1, "CREATURE_FOOTMAN")), 4);
     }
+
+    // exe 004bbfb0 / 004bc020: + CountArtifact(17 = WEREWOLF_CLAW_NECKLACE) to the creatures' min and max damage. Was missing.
+    [Fact]
+    public void WerewolfClawNecklaceAddsDamage()
+    {
+        var a = Of(Setup(Hero(0), Hero(3), "CREATURE_FOOTMAN").s, "CREATURE_FOOTMAN");
+        var b = Of(Setup(Hero(0, "WEREWOLF_CLAW_NECKLACE"), Hero(3), "CREATURE_FOOTMAN").s, "CREATURE_FOOTMAN");
+        Assert.Equal(a.BaseMinDamage + 1, b.BaseMinDamage);
+        Assert.Equal(a.BaseMaxDamage + 1, b.BaseMaxDamage);
+    }
 }

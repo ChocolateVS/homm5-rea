@@ -14,9 +14,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 |---|---|
 | FIXED | 287 |
 | MATCH | 146 |
-| GAP | 19 |
-| UNVERIFIED | 137 |
-| N/A | 58 |
+| GAP | 20 |
+| UNVERIFIED | 138 |
+| N/A | 57 |
 
 ## Core mechanics
 
@@ -37,12 +37,12 @@ compared line by line · **N/A** unused by shipped data / test content.
 | Stack death summons (Master of Elements, Soulhunter) | FIXED | 00a61310 | AuditSpecTests2 |
 | Terrain elementals | FIXED | 00861120 | AuditSpecTests2 |
 | Obstacle generator | MATCH | 004b3860 | EXE_FINDINGS |
-| Siege: catapult, towers, walls, earthquake, moat | MATCH | 00b3b7d0, 00bfdfb0, 00a5c5a0, 0097d7b0 | EXE_FINDINGS (moat field CArenaMoat: GAP, combat_sweep_2.md) |
+| Siege: catapult, towers, walls, earthquake, moat | MATCH | 00b3b7d0, 00bfdfb0, 00a5c5a0, 0097d7b0 | EXE_FINDINGS (moat trigger unverified) |
 | ATB continuous time (ATBMin/Max dead code) | MATCH | EXE_FINDINGS | EXE_FINDINGS |
 | Spell damage rounding / empowered ×1.5 | MATCH | 00976b90 | EXE_FINDINGS |
-| Surrender / retreat conditions and ransom | FIXED | 004d9e20, 004d9780, 004da8d0, 004da9a0 | AuditRetreatTests (combat_heroes.md, combat_sweep_2.md) |
+| Surrender / retreat costs | UNVERIFIED |  | adventure hand-off; not compared |
 | Battle-end experience (winner) | FIXED | 00af3430, 004d9c60, 004d99b0, 00b4bbb0, 00bcdc60 | AuditBattleExpTests (combat_heroes_skills_h.md) |
-| Tactics phase columns (third column only when exactly one side has Tactics, Flagbearer of Darkness cancels) | FIXED | 004d8c10 | AuditHeroTests.TacticsColumnsFollowTheOriginalRule (combat_heroes.md); deploy zones DeploymentAxisTests |
+| Tactics phase rules | UNVERIFIED |  | deploy zones verified (DeploymentAxisTests); Tactics perk row count not compared |
 
 ## Creature abilities
 
@@ -227,9 +227,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | ID | Status | Exe functions | Original behaviour / note | Regression test |
 |---|---|---|---|---|
-| `HERO_SKILL_LOGISTICS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_LOGISTICS` | N/A | 00b4dd40 | only read by the adventure movement-points function; no combat use (vcall 0x174 / 0x290 maps of the combat ranges) |  |
 | `HERO_SKILL_WAR_MACHINES` | MATCH | 004bd7b0, 004bc7f0, 004bc660, 004bb770/004bb7d0, 004bc710/004bc780, 004bb8c0/004bb920 | HP = record + mastery·WarMachines_HealthBonusPerSkillTrained, × PerkSpecificHealthMultiplier (truncated) with Ballista (id 1) / First Aid (3) / Catapult for ids 2 AND 4 (the Ammo Cart uses the Catapult perk — as the engine does); attack/defence/min/max damage from the record tables by mastery (index clamped to the table); Ballista attack + level with HERO_SPEC_WAR_MACHINES (spec 8) and damage × (hero vcall 0x1c + vcall 0x10, the engine's Attack + Knowledge — the two getters not decompiled further); the tables hold integers, so the engine's rounding is exact |  |
-| `HERO_SKILL_LEARNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_LEARNING` | FIXED | 00b4bbb0 | Enlightenment acts only through the experience modifier (5 % per mastery, see Battle-end experience); no combat-code reads of skill 3 in the vcall 0x174 / 0x290 maps | AuditBattleExpTests.ExperienceModifierIsIntegerPercent |
 | `HERO_SKILL_LEADERSHIP` | MATCH | 00b4cae0 | hero morale = base fields + Leadership mastery (when > 0) − 1 with Pariah − a curse object's penalty; the engine adds the mastery the same way |  |
 | `HERO_SKILL_LUCK` | MATCH | 00b4ca10 | hero luck = base fields + Luck mastery (when > 0) − curse + town-building terms; the engine adds the mastery the same way |  |
 | `HERO_SKILL_OFFENCE` | FIXED | 00a58de0 | melee ×(1+clamp(SkillOffence Basic/Advanced/Expert DamageBonus,0,10)) by mastery 1/2/3; any other mastery value gives nothing — engine gave the Expert bonus to mastery 4 | AuditHeroTests.OffenceBonusOnlyForMasteriesOneToThree |
@@ -241,7 +241,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_SUMMONING_MAGIC` | MATCH | 00b4b440 | school 3 |  |
 | `HERO_SKILL_TRAINING` | MATCH | 00a58de0 | retaliation strikes ×(1+clamp(Training Basic/Advanced/Expert/ExtraExpert DamageBonus,0,10)) by mastery 1..4 |  |
 | `HERO_SKILL_GATING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_NECROMANCY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_NECROMANCY` | N/A | 00c26be0 (adventure) | post-battle raising only (adventure hand-off, `NecromancyRaise`); no combat use |  |
 | `HERO_SKILL_AVENGER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ARTIFICIER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_INVOCATION` | MATCH | 0097d2a0 (0097d42c..0097d47f), 004e5cb0 | Irresistible Magic: for spells listed by FUN_004e5cb0, share' = (1 − {0,20,40,50,75}[caster hero mastery of 0x12] %) × share (table 00f46f18), also when fully resisted (share 1). Engine formula identical (ApplyProtectionPercent); spell-set difference noted below |  |
@@ -338,7 +338,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_TELEPORT_ASSAULT` | UNVERIFIED | 0097d7b0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SHAKE_GROUND` | MATCH | 0097d7b0 | verified in EXE_FINDINGS.md |  |
 | `HERO_SKILL_FAST_AND_FURIOUS` | MATCH | 004bc0b0 | +1 speed for every creature in the army |  |
-| `HERO_SKILL_LUCKY_SPELLS` | UNVERIFIED | 00983790 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_LUCKY_SPELLS` | GAP | 00983790 (00983ab3..00983b6c) | Warlock's Luck: rolled ONCE per cast, for every spell in the damage list 004e5cb0 (not only Destructive), when the caster is a hero with the perk: the multiplier is the hero unit's luck roll (vcall 0x1d0, > 1 → "lucky" log) applied to all targets. The engine rolls per target, Destructive only, with min(0.5, luck·0.1); not changed because the hero unit's vcall 0x1d0 (roll and multiplier) is not identified |  |
 | `HERO_SKILL_POWER_OF_HASTE` | GAP | 00b4b4c1..00b4b4e4 | the exe raises the mastery to Advanced when the cast spell id (00a34110) is SPELL_HASTE (0x18); the engine (and the perk text "Mass Haste on advanced level") use SPELL_MASS_HASTE — whether 00a34110 returns the base spell for mass casts is not traced; unchanged |  |
 | `HERO_SKILL_POWER_OF_STONE` | GAP | 00b4b4eb..00b4b50e | the same with SPELL_STONESKIN (0x19) vs SPELL_MASS_STONESKIN; unchanged |  |
 | `HERO_SKILL_CHAOTIC_SPELLS` | FIXED | 00bbf6a6..00bbf751 | Erratic Mana: for a positive cost, ability roll of 50 (FUN_00a5a170), then the hero pays trunc(r · cost), r uniform in [0.6, 0.9], at most cost − 1, at least 0. Engine had no implementation | AuditSkillTestsH.ErraticManaPaysSixtyToNinetyPercent |
@@ -589,8 +589,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_CONJURE_PHOENIX` | GAP | 0097d7b0 case 0xeb → 00862130, 00861f90, 00862970, 00861340 | summon info CUniqueCreatureSummonInfo (vtable 00e15b24) from ConjuredPhoenix.xdb (RPG stats +0x530: Health 300 + 30/power, damage 0 + 10 / 15 per power, offence / defence 10 + 2/level, initiative 15, speed 7, Fire Shield + fire immunity) with power = hero vf 0x244, level vf 0x23c, a third value (army hero vf 0x1c, 1 without), divisor trunc(Eval(damage table)) = 4/3/2/1 and a flag. The code that turns these into stats (how power and divisor combine; engine: ceil(SP/divisor)) was not located — reader of the summon info unknown. Re-cast: FUN_00861340 handles an existing linked phoenix (FUN_00a6e310) instead of refusing as the engine does — removal not decoded. Elemental Balance second phoenix: see HERO_SKILL_ELEMENTAL_BALANCE (FIXED) | AuditSpellSTests.ElementalBalanceCounterSummons |
 | `SPELL_FIREWALL` | FIXED | 0097a530 (case 0xec), 0085cda0, 0098ade0, 0098abf0, 0098a920, 0085b790, 004e6770 | cells (x, y−1), (x, y), (x, y+1); every hit (cast, entry) recomputes FUN_0097d600 from the damage stored at the cast with the caster (artifacts, protection, Irresistible Magic) + Elemental Chains and deals it through the fire rider (Master of Fire, Set Afire); the cast rolls resistance (vf 0x1c second argument 0 → FUN_0097d600 roll flag 1) and hits creatures and spawns, not war machines. Engine fixed (core rows above); the turn-hit trigger was not located | AuditSweepTests.FirewallFieldHitsKeepTheCaster, FirewallCastSkipsWarMachines |
 | `SPELL_STONE_SPIKES` | FIXED | 00976b90, 0085eaa0, 0097a530 (case 0xed) | as Fireball, area = centre + 4 orthogonal cells | SpellBaseDamageTruncates |
-| `SPELL_UBER_CHAIN_LIGHTNING` | N/A | 0097c9f0 | boss spell 0xee: no shipped creature, hero or script casts it (only spell lists in multiplayer maps, GameMechanics/RefTables/UndividedSpells.xdb and the scripts/common.lua constant); immunity-table entries ported (combat_spells_s.md) |  |
-| `SPELL_BOSS_FIREWALL` | N/A | 0097c9f0 | boss spell 0xef (Demonic targets immune): not cast by shipped content (same references as above) |  |
+| `SPELL_UBER_CHAIN_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_BOSS_FIREWALL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_WOUND` | FIXED | 008a1e50 (008a1f52..008a1fa9) | speed part: trunc((1 − clamp(Wound_SpeedDecrease, 0, 1))·speed) applied right after the base speed (before Storm Wind / Charge); the engine multiplied at the end without truncation order (initiative part: spells partition) | AuditRuneWarcryTests.SpeedAppliesChargeBeforeBattlecry |
 | `SPELL_ABILITY_BERSERKER_RAGE` | UNVERIFIED | 008a32b0 008a4800 00984a00 00a5fee0 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_MARK_OF_FIRE` | UNVERIFIED | 00977a80 | implemented; not yet compared with the exe |  |
@@ -614,7 +614,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_ARCANE_CRYSTAL` | FIXED | 0097d7b0 case 0x11a → FUN_00c55a40 → FUN_008b1090; 00a61310 → 00a60e20 (disassembly 00a60e4f..00a6105d), 00af4450, 00b3d3f0 | spawn at the target cell with hit points ArcaneCrystal/Health (1), defence 0 (ArcaneCrystal/Defence is not read), tier ArcaneCrystal/Tier, caster's spell power / level / mastery stored — engine matches. When destroyed it explodes: trunc(Eval(damage table 40/60/80/100 + 8/12/16/20 per power)) (chop) to every creature, war machine or spawn of either army adjacent to it, straight through the stack damage call (no resistance / protection). The engine's crystal never exploded | AuditSpellSTests.ArcaneCrystalExplodesOnAdjacentUnits |
 | `SPELL_SUMMON_HIVE` | GAP | 0097d7b0 case 0x11b → FUN_008b1090; 008b07f0, 008b08a0, 00bbc310 | hive: defence DefensePerCasterLevel·level + DefenseBase, hit points trunc(Eval(Health at mastery)), initiative Eval(Initiative), spell SummonHive/Spell (Wasp Swarm, Expert), initial ATB = battle RNG float in [0.5, 1) — engine matches. It acts only while its hero has the mana for the spell's base cost FUN_00a34740 (008b07f0) and pays it from the hero (008b08a0) — FIXED: the engine compared and paid the raw ManaCost (no week / Arcane Training / Ring of Magi). Open: the target choice (FUN_00bbc310 → FUN_00bbcec0) and the cast power (FUN_00983790; caster power 008b07d0 vs SummonHive/Power 10000 008b0af0) were not decoded — engine: nearest living enemy, the caster's spell power | AuditSpellSTests.HivePaysTheBaseSpellCost |
 | `SPELL_BLADE_BARRIER` | MATCH | 0097d7b0 case 0x11c → FUN_008b1090 | three spawns at (x, y−1), (x, y), (x, y+1); hit points trunc(Eval(Health at mastery)), duration FUN_004e57d0; BladeBarrier/MagicProof 0.75 — as the engine |  |
-| `SPELL_UBER_METEOR_SHOWER` | N/A | 0097c9f0 | boss spell 0x11d: not cast by shipped content (same references as above) |  |
+| `SPELL_UBER_METEOR_SHOWER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_PREPARATION` | UNVERIFIED | 00a5fee0 00a64e90 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_EXPLODING_CORPSES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_MASTER_OF_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -671,6 +671,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `PEDANT_OF_MASTERY` | FIXED | 00b4d150, 00875550 | GetSkillMastery: for the hero class's racial skill (Knight Training, Ranger Avenger, Wizard Artificier, Demon Lord Gating, Necromancer Necromancy, Warlock Invocation, Runemage Runelore, Barbarian Blood Rage) +1 with the artifact (also from none), results outside 0..4 → 0. Was ignored | AuditSkillTestsH.PendantOfMasteryRaisesTheRacialSkill |
 | `RING_OF_HASTE` | FIXED | 004bc190 (004bc2c4) | army creatures' initiative +20 % (any number of rings), inside the artifact percent p: init = (p + 100)·init·0.01 with p ≥ −100. Was missing | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `STAFF_OF_VEXINGS` | FIXED | 008a4330 (008a4619..008a4647) | the enemy hero's Staff of Vexings: stack initiative factor × (1 − 0.2 (float 00e12ff8) · staffs), after Storm Wind / Fog Veil. Was missing | AuditSkillTestsH.EnemyStaffOfVexingsSlowsTheArmy |
+| `WEREWOLF_CLAW_NECKLACE` | FIXED | 004bbfb0 (004bc000), 004bc020 | + CountArtifact(17) to every creature's min and max damage (after Frenzy). Was missing | AuditSkillTestsH.WerewolfClawNecklaceAddsDamage |
 
 ## Week of the month (combat effects)
 
