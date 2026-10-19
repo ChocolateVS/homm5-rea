@@ -28,6 +28,32 @@ public static class GrannyPose
     }
 
     /// <summary>
+    /// Horizontal model-space travel of a locomotion clip over its duration, or null when no bone
+    /// travels (in-place clip). Move clips carry their forward travel in the skeleton itself: the body
+    /// AND every root-level prop bone (weapons, shields, banners, reins) move by the same amount
+    /// (`h5tool gr2-drift --all`: 68 of 91 adventure move clips have several such bones). The travel is
+    /// taken from the bone whose horizontal travel best matches MovementSpeed × duration, so the whole
+    /// skeleton can be shifted back rigidly while the node walks at MovementSpeed.
+    /// </summary>
+    public static Vector3? LocomotionTravel(SkeletonData s, AnimationClip clip, float movementSpeed)
+    {
+        if (clip.Duration <= 0 || movementSpeed <= 0 || s.Bones.Count == 0) return null;
+        float expected = movementSpeed * clip.Duration;
+        var w0 = AnimatedWorld(s, clip, 0);
+        var w1 = AnimatedWorld(s, clip, clip.Duration);
+        Vector3? best = null;
+        float bestErr = float.MaxValue;
+        for (int i = 0; i < w0.Length; i++)
+        {
+            var d = w1[i].Translation - w0[i].Translation;
+            float drift = MathF.Sqrt(d.X * d.X + d.Y * d.Y);
+            float err = MathF.Abs(drift - expected);
+            if (drift > expected * 0.5f && err < bestErr) { best = new Vector3(d.X, d.Y, 0); bestErr = err; }
+        }
+        return best;
+    }
+
+    /// <summary>
     /// World matrices with <paramref name="clip"/> applied at <paramref name="time"/>.
     /// Bones without a track keep their rest pose; a track channel without keys is identity
     /// (Granny treats a curve with no knots as an identity curve; <see cref="GrannyConvert.ToClip"/>

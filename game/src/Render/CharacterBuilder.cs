@@ -117,12 +117,11 @@ public static class CharacterBuilder
         {
             float speed = loaded.Entry.MovementSpeed;
             node.SpeedFactors[kind] = loaded.Entry.SpeedFactor > 0 ? loaded.Entry.SpeedFactor : 1f;
-            if (speed > 0)
-            {
-                ExtractRootMotion(loaded.Clip, speed);
-                node.GroundSpeeds[kind] = speed * node.SpeedFactors[kind];
-            }
-            lib.AddAnimation(kind, ToGodot(loaded.Clip, skeleton));
+            var travel = speed > 0 ? H5.Assets.Granny.GrannyPose.LocomotionTravel(skeleton, loaded.Clip, speed) : null;
+            if (speed > 0) node.GroundSpeeds[kind] = speed * node.SpeedFactors[kind];
+            var anim = ToGodot(loaded.Clip, skeleton);
+            AddInPlaceTrack(anim, travel, loaded.Clip.Duration);
+            lib.AddAnimation(kind, anim);
             node.Events[kind] = loaded.Events.Select(e => (e.Text, e.Time)).ToList();
         }
         player.AddAnimationLibrary(Character.Lib.TrimEnd('/'), lib);
@@ -139,38 +138,23 @@ public static class CharacterBuilder
         string.IsNullOrEmpty(name) ? $"bone{index}" : name.Replace(':', '_').Replace('/', '_');
 
     /// <summary>
-    /// Locomotion clips carry their forward travel in a body bone (Footman move: Hips goes from
+    /// Locomotion clips carry their forward travel in the skeleton (Footman move: Hips goes from
     /// y −0.13 to −4.69 over the 0.8 s cycle — exactly MovementSpeed 5.7 units/s), and Granny's
-    /// root-motion fields are unused (RootMotion null, LoopTranslation 0). Played as-is on a node
-    /// that also moves along the path, the body runs ahead and snaps back every loop. The original
-    /// moves the creature at MovementSpeed and plays the cycle in place, so the bone whose
-    /// horizontal drift matches MovementSpeed × duration has that linear drift removed.
+    /// root-motion fields are unused (RootMotion null, LoopTranslation 0; the exe samples with
+    /// accumulation off: GrannySetTrackGroupAccumulation(control, 0, 0) at 0089313f). The node walks
+    /// at MovementSpeed, so the cycle is played in place by shifting the whole skeleton back by the
+    /// clip's linear model-space travel. The shift must be rigid: weapons, shields, banners and reins
+    /// are root-level bones that travel exactly like the body; removing the drift from the body bone
+    /// alone (as before) left them running ahead and snapping back once per cycle. Every clip gets
+    /// the track (zero when in place) so cross-fades between clips blend it.
     /// </summary>
-    static void ExtractRootMotion(AnimationClip clip, float movementSpeed)
+    static void AddInPlaceTrack(Animation anim, System.Numerics.Vector3? travel, float duration)
     {
-        if (clip.Duration <= 0) return;
-        float expected = movementSpeed * clip.Duration;
-        BoneTrack? best = null;
-        float bestErr = float.MaxValue;
-        foreach (var tr in clip.Tracks)
-        {
-            if (tr.Translations.Length < 2) continue;
-            var d = tr.Translations[^1] - tr.Translations[0];
-            float drift = MathF.Sqrt(d.X * d.X + d.Y * d.Y);
-            float err = MathF.Abs(drift - expected);
-            if (drift > expected * 0.5f && err < bestErr) { best = tr; bestErr = err; }
-        }
-        if (best == null) return;
-        var first = best.Translations[0];
-        var total = best.Translations[^1] - first;
-        float t0 = best.TranslationTimes[0], span = best.TranslationTimes[^1] - t0;
-        if (span <= 0) return;
-        for (int k = 0; k < best.Translations.Length; k++)
-        {
-            float f = (best.TranslationTimes[k] - t0) / span;
-            var p = best.Translations[k];
-            best.Translations[k] = new System.Numerics.Vector3(p.X - total.X * f, p.Y - total.Y * f, p.Z);
-        }
+        int t = anim.AddTrack(Animation.TrackType.Position3D);
+        anim.TrackSetPath(t, new NodePath("Skeleton3D"));
+        anim.PositionTrackInsertKey(t, 0, Vector3.Zero);
+        if (travel is { } d && duration > 0)
+            anim.PositionTrackInsertKey(t, duration, -ModelBuilder.ToGodot(d));
     }
 
     static Animation ToGodot(AnimationClip clip, SkeletonData skeleton)

@@ -822,7 +822,7 @@ public partial class AdventureScreen : Control
         float mult = Math.Max(H5Reborn.Options.OptionsStore.GetFloat(human ? "adventure_speed_human" : "adventure_speed_ai", human ? 1 : 2), 0.25f);
         if (Autoplay) mult *= 4;
         // Ground speed = clip MovementSpeed × SpeedFactor; the clip's own forward drift is stripped
-        // at build time (CharacterBuilder.ExtractRootMotion), so the node carries the travel.
+        // at build time (CharacterBuilder.AddInPlaceTrack), so the node carries the travel.
         float ground = hero.GroundSpeeds.TryGetValue("move", out var gs) && gs > 0.1f ? gs : World.HeroSpeed(m.HeroId);
         float speed = ground * mult;
         if (hero.Has("move"))

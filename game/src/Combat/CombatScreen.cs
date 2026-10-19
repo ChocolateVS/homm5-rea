@@ -679,7 +679,7 @@ public partial class CombatScreen : Control
     {
         if (path.Count == 0) return;
         // Ground speed per exe 008b85e0 (move clip MovementSpeed × SpeedFactor, default 3 units/s);
-        // the clip's own forward travel is extracted (CharacterBuilder.ExtractRootMotion).
+        // the clip's own forward travel is extracted (CharacterBuilder.AddInPlaceTrack).
         float unitsPerSecond = v.LocomotionSpeed;
         if (v.Has("moveStart") && v.Has("moveEnd"))
         {
