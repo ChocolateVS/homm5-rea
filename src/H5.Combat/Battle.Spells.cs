@@ -843,7 +843,7 @@ public sealed partial class Battle
     }
 
     /// <summary>Immunity and magic resistance check for a spell on a unit. Emits SpellResisted on failure.</summary>
-    bool SpellHits(int side, SpellDef sp, Unit t, bool hostile, HeroState? hero, bool area = false)
+    internal bool SpellHits(int side, SpellDef sp, Unit t, bool hostile, HeroState? hero, bool area = false)
     {
         string id = BaseSpell(sp.Id);
         bool physical = id is "SPELL_MAGIC_FIST";
@@ -859,7 +859,13 @@ public sealed partial class Battle
         // (exe FUN_0097c9f0, element 1 = Air). Staff of Magi on the caster skips it too (0097cf89).
         bool irresistible = hero != null && hero.Specialization == "HERO_SPEC_STORMCALLER" && sp.Element == Elements.Air
                             || IgnoresResistance(hero);
-        if (hostile && Controller(t) != side && !physical && !irresistible && RollResistance(t, MagicResistanceChance(t)))
+        // The resistance chance is 0 only for a non-hostile spell (Target ≠ TARGET_HOSTILE, FUN_00a34520) on a stack of the
+        // caster's side (FUN_004e5750) — exe FUN_0097c9f0 @ 0097cf3a; a hostile spell hitting own stacks (Fireball,
+        // Armageddon, Firewall) is resisted like on enemies. The damage resolvers pass the roll flag to FUN_0097d600 → FUN_0097d2a0
+        // (0097da71 / 0097dec0 single target, 0085e8bf area, 0085ef3c chain, 0085f630 Armageddon / Words, 0098abf0 Firewall cast).
+        // The engine rolled for enemy stacks only. (The caller's `hostile` no longer decides it.)
+        bool resistible = sp.Target == "TARGET_HOSTILE" || Controller(t) != side;
+        if (resistible && !physical && !irresistible && RollResistance(t, MagicResistanceChance(t)))
         {
             // A resisted damage spell is 100 % protection; Irresistible Magic still lets its share through (0097d2a0,
             // fan manual p.322).

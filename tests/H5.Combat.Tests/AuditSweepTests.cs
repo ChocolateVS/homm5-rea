@@ -52,4 +52,29 @@ public class AuditSweepTests(GameDataFixture f)
         b.ResolveSpell(Actor.Hero(0), 0, f.Db.Spell("SPELL_FIREWALL")!, Mastery.Expert, 20, null, wm.Pos, fromHero: true);
         Assert.Equal((count, top), (wm.Count, wm.TopHealth));
     }
+
+    // exe FUN_0097c9f0 @ 0097cf3a: the resistance chance is skipped only for a non-hostile spell on the caster's own side;
+    // the damage resolvers roll it (FUN_0097d600 roll flag 1, e.g. 0097da71). A Fireball hitting an own stack can be resisted
+    // by its hero's resistance; a Bless on it cannot. The engine never rolled for own stacks.
+    [Fact]
+    public void HostileSpellsRollResistanceOnOwnStacks()
+    {
+        var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 200) });
+        var own = b.State.Units.First(x => x.Side == 0 && x.CreatureId == "CREATURE_FOOTMAN");
+        var h = b.State.Heroes[0];
+        h.Perks.Add(Sk.MagicResistance);
+        h.Artifacts.Add("PLATE_MAIL_OF_STABILITY");
+        h.Artifacts.Add("BOOTS_OF_INTERFERENCE");
+        Assert.Equal(45, b.MagicResistanceChance(own));
+        var fireball = f.Db.Spell("SPELL_FIREBALL")!;
+        var bless = f.Db.Spell("SPELL_BLESS")!;
+        int resisted = 0, blessResisted = 0;
+        for (int i = 0; i < 100; i++)
+        {
+            if (!b.SpellHits(0, fireball, own, hostile: true, h, area: true)) resisted++;
+            if (!b.SpellHits(0, bless, own, hostile: false, h)) blessResisted++;
+        }
+        Assert.InRange(resisted, 20, 70);
+        Assert.Equal(0, blessResisted);
+    }
 }
