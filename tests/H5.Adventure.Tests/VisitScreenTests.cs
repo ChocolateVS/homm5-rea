@@ -45,4 +45,44 @@ public class VisitScreenTests(Fixture f)
         Assert.Equal(before - 1, os.Available[row]);
         Assert.Contains(h.Army, s => s is { Count: 1 } && s.Creature == d.Shared.DwellingCreatures[row]);
     }
+
+    [Fact]
+    public void OwnGarrisonTakesTroopsAndDefendsWithThem()
+    {
+        var g = f.NewGame("A2M11");
+        var h = MyHero(g);
+        var gar = g.Map.Objects.First(o => o.Kind == ObjectKind.Garrison && o.ActiveTiles.Any());
+        var os = g.S.Obj(gar.Index);
+        os.Guards.Clear();
+        Array.Fill(os.Army, null);
+        os.Owner = h.Owner;
+        Assert.Contains(VisitFromEntrance(g, h, gar), e => e is ObjectVisited { What: "garrison" } v && v.Object == gar.Index);
+        int from = Array.FindIndex(h.Army, s => s is { Count: > 0 });
+        h.Army[(from + 1) % Army.Slots] ??= new Stack(h.Army[from]!.Creature, 1);   // keep one stack with the hero
+        var moved = h.Army[from]!;
+        var r = g.Apply(new SwapStacksCmd(h.Id, -1, from, -1, gar.Index, 0) { Player = h.Owner });
+        Assert.True(r.Ok, r.Error);
+        Assert.Same(moved, os.Army[0]);
+        // An enemy hero meets those troops in battle.
+        int team = g.S.Players.First(p => p.Index == h.Owner).Team;
+        var enemy = g.S.Heroes.First(x => x.Alive && g.S.Players.First(p => p.Index == x.Owner).Team != team);
+        g.S.CurrentPlayer = g.S.Players.FindIndex(p => p.Index == enemy.Owner);
+        enemy.MovePoints = enemy.MaxMovePoints = 2000;
+        enemy.Pos = gar.ActiveTiles.First();
+        h.Pos = new Tile(0, 0, 0);
+        var er = g.Apply(new MoveHeroCmd(enemy.Id, enemy.Pos) { Player = enemy.Owner });
+        Assert.True(er.Ok, er.Error);
+        Assert.NotNull(g.S.Battle);
+        Assert.Equal(gar.Index, g.S.Battle!.DefenderObject);
+    }
+
+    [Fact]
+    public void OwnMineRevisitOpensTheGarrisonScreen()
+    {
+        var g = f.NewGame("A2M1");
+        var h = MyHero(g);
+        var mine = g.Map.Objects.First(o => o.Kind == ObjectKind.Mine && o.ActiveTiles.Any() && g.S.Obj(o.Index).Guards.Count == 0 && g.S.Obj(o.Index).Owner < 0);
+        Assert.DoesNotContain(VisitFromEntrance(g, h, mine), e => e is ObjectVisited { What: "garrison" });
+        Assert.Contains(VisitFromEntrance(g, h, mine), e => e is ObjectVisited { What: "garrison" });
+    }
 }

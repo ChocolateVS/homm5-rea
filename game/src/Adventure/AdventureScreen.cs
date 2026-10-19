@@ -552,6 +552,17 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 break;
             }
+            case ObjectVisited { What: "garrison" } gv when HumanCaused(player) && !Autoplay && s.Hero(gv.HeroId) is { } keeper:
+            {
+                // Own garrison / mine: leave or take troops (exe 005a5d90 case 0x1c).
+                Hud.Visible = false;
+                var garrison = new GarrisonScreen(this, keeper.Id, gv.Object);
+                AddChild(garrison);
+                await ToSignal(garrison, Node.SignalName.TreeExited);
+                Hud.Visible = true;
+                Hud.Refresh();
+                break;
+            }
             case ObjectVisited { What: "dwelling" } dv when HumanCaused(player) && !Autoplay && s.Hero(dv.HeroId) is { } recruiter:
             {
                 // Map dwelling: the hire screen while the hero stands at it (exe 005a5d90 case 3).
@@ -1069,9 +1080,13 @@ public partial class AdventureScreen : Control
     public void DevVisit(string type)
     {
         var s = Session.S;
+        // TYPE:own — hand the object to the human player first, without guards (own-building visits: garrison screen).
+        bool own = type.EndsWith(":own");
+        if (own) type = type[..^4];
         var hero = Selected ?? MyHeroes().FirstOrDefault();
         var o = Session.Map.Objects.FirstOrDefault(x => (x.Shared.Type == type || x.Kind.ToString() == type) && !(s.Objects.TryGetValue(x.Index, out var os) && os.Removed));
         if (hero == null || o == null) { GD.PushWarning($"[H5] visit test: no hero or no {type} on this map"); return; }
+        if (own) { var os = s.Obj(o.Index); os.Owner = Session.Human.Index; os.Guards.Clear(); }
         var target = o.ActiveTiles.FirstOrDefault(o.Pos);
         // A varied army so upgrade prices show for several tiers.
         var db = Game.Instance.Db;

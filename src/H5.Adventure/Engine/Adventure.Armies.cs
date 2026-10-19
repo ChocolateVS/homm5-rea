@@ -23,7 +23,20 @@ public sealed partial class Adventure
         where = null;
         if (hero >= 0 && S.Hero(hero) is { } h && h.Owner == Current.Index) { where = h.Pos; return h.Army; }
         if (town >= 0 && S.Town(town) is { } t && t.Owner == Current.Index) { where = EntranceOf(t); return t.Garrison; }
-        return null;
+        return BuildingArmy(town, out where);
+    }
+
+    /// <summary>The army left in an own flagged building (garrison screen), met at the entrance the hero stands on.</summary>
+    Stack?[]? BuildingArmy(int obj, out Tile? where)
+    {
+        where = null;
+        if (obj < 0 || obj >= Map.Objects.Count || S.Town(obj) != null || !IsArmyHolder(O(obj))) return null;
+        var os = S.Obj(obj);
+        if (os.Owner != Current.Index) return null;
+        var o = O(obj);
+        var hero = S.Heroes.FirstOrDefault(h => h.Alive && h.Owner == Current.Index && o.ActiveTiles.Contains(h.Pos));
+        where = hero?.Pos ?? o.ActiveTiles.FirstOrDefault(o.Pos);
+        return os.Army;
     }
 
     string? DoSwap(SwapStacksCmd c)

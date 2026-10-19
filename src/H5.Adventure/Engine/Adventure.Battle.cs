@@ -272,6 +272,7 @@ public sealed partial class Adventure
                 var o = O(pb.DefenderObject);
                 var os = S.Obj(o.Index);
                 os.Guards.Clear();
+                Array.Fill(os.Army, null);
                 switch (o.Kind)
                 {
                     case ObjectKind.Monster: RemoveObject(o.Index); break;
@@ -306,7 +307,8 @@ public sealed partial class Adventure
             if (pb.DefenderObject >= 0 && O(pb.DefenderObject).Kind != ObjectKind.Town)
             {
                 var os = S.Obj(pb.DefenderObject);
-                os.Guards = c.DefenderSurvivors.Select(a => new Stack(a.Creature, a.Count)).ToList();
+                if (IsArmyHolder(O(pb.DefenderObject)) && os.Owner >= 0 && os.Guards.Count == 0) SetArmy(os.Army, c.DefenderSurvivors);
+                else os.Guards = c.DefenderSurvivors.Select(a => new Stack(a.Creature, a.Count)).ToList();
             }
             else if (pb.DefenderObject >= 0 && S.Town(pb.DefenderObject) is { } t && defHero == null)
                 SetArmy(t.Garrison, c.DefenderSurvivors);

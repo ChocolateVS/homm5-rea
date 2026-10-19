@@ -121,10 +121,14 @@ public sealed partial class Adventure
                 }
                 case ObjectKind.Mine:
                 case ObjectKind.DwarvenWarren:
+                case ObjectKind.Garrison:
                 {
+                    // Map armySlots: guards of a neutral building, the owner's troops of a flagged one.
                     var os = S.Obj(o.Index);
                     os.Owner = PlayerByIndex(o.Owner) != null ? o.Owner : -1;
-                    foreach (var g in o.Guards) os.Guards.Add(new Stack(g.Creature, g.Count));
+                    foreach (var g in o.Guards)
+                        if (os.Owner >= 0) os.Army.TryAdd(g.Creature, g.Count);
+                        else os.Guards.Add(new Stack(g.Creature, g.Count));
                     break;
                 }
                 case ObjectKind.AbandonedMine:

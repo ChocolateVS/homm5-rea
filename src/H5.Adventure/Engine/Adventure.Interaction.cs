@@ -108,7 +108,7 @@ public sealed partial class Adventure
                 return AdvAction.Attack;
             case ObjectKind.Mine or ObjectKind.AbandonedMine or ObjectKind.Dwelling or ObjectKind.DwarvenWarren or ObjectKind.Garrison:
                 if (Allied(owner, hero.Owner)) return AdvAction.OwnBuilding;
-                return guarded ? AdvAction.Attack : AdvAction.Use;
+                return guarded || os?.Army.Live().Any() == true ? AdvAction.Attack : AdvAction.Use;
             default:
                 return guarded ? AdvAction.Attack : AdvAction.Use;
         }

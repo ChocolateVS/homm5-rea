@@ -287,6 +287,8 @@ public sealed class ObjState
     public bool Removed;
     /// <summary>Remaining guards / neutral stacks (monsters, guarded mines, banks).</summary>
     public List<Stack> Guards = new();
+    /// <summary>Troops an owner left in a flagged army-holding building (garrison, mine; exe 00b08560 / 00b086b0, slots 0..6).</summary>
+    public Stack?[] Army = H5.Adventure.State.Army.Empty();
     /// <summary>Pre-rolled contents (treasure amounts, resource kind, bank variant…).</summary>
     public int Amount;
     public int ResourceKind = -1;

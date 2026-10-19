@@ -47,6 +47,13 @@ public sealed partial class Adventure
             Offer(h, o, "bank_search");
             return;
         }
+        // Troops an enemy left in its flagged building defend it.
+        if (IsArmyHolder(o) && os.Owner >= 0 && !Allied(os.Owner, p.Index) && os.Army.Live().Any())
+        {
+            if (Refused(h, -1, o.Index)) return;
+            StartBattle(h, -1, o.Index, h.Pos, os.Army.Live().Select(g => new Stack(g.Creature, g.Count)).ToList(), siege: false);
+            return;
+        }
         if (os.Guards.Count > 0 && o.Kind is not ObjectKind.Monster)
         {
             if (Refused(h, -1, o.Index)) return;
@@ -64,7 +71,16 @@ public sealed partial class Adventure
             case ObjectKind.Mine:
             case ObjectKind.DwarvenWarren:
             case ObjectKind.AbandonedMine:
+            {
+                // The owner's visit opens the garrison screen (CGarrisonDialogLogEntry, 005a5d90 case 0x1c) to leave guards.
+                bool own = os.Owner == p.Index;
                 Capture(o, os, p);
+                if (own) Emit(new ObjectVisited(h.Id, o.Index, "garrison"));
+                break;
+            }
+            case ObjectKind.Garrison:
+                Capture(o, os, p);
+                Emit(new ObjectVisited(h.Id, o.Index, "garrison"));
                 break;
             case ObjectKind.Dwelling:
                 // exe 005a5d90 case 3 (CHeroVisitDwellingDialogLogEntry): every visit opens the hire screen.
@@ -102,7 +118,6 @@ public sealed partial class Adventure
                 VisitSphinx(h, o);
                 break;
             case ObjectKind.HillFort:
-            case ObjectKind.Garrison:
             case ObjectKind.Sign:
             case ObjectKind.Cartographer:
                 // Interactive or scripted objects: reported to the client/script layer.
@@ -110,6 +125,9 @@ public sealed partial class Adventure
                 break;
         }
     }
+
+    /// <summary>Flagged buildings that hold an owner's army (005ff8f0 own-building case).</summary>
+    static bool IsArmyHolder(MapObject o) => o.Kind is ObjectKind.Mine or ObjectKind.AbandonedMine or ObjectKind.DwarvenWarren or ObjectKind.Garrison;
 
     void Capture(MapObject o, ObjState os, PlayerState p)
     {

@@ -459,3 +459,64 @@ public sealed partial class SphinxScreen : MapBuildingScreen
         if (Ui.Find("ChooseReward/ButtonOk") is { } ok3) ok3.Enabled = _reward is >= 0 and <= 2;
     }
 }
+
+/// <summary>
+/// Garrison screen (UI/Garrison, CGarrisonDialogLogEntry → 005a5d90 case 0x1c → 006d3010): the visiting hero's army
+/// (armyholder0) and the troops left in the own garrison / mine (armyholder1, "Here you can leave some of your creatures
+/// in order to control the building"); a click on a stack and then on another slot moves, swaps or merges them
+/// (SwapStacksCmd with the building as the second army); OK (confirm) closes.
+/// </summary>
+public sealed partial class GarrisonScreen : MapBuildingScreen
+{
+    (int Row, int Slot)? _picked;
+
+    public GarrisonScreen(AdventureScreen adv, int heroId, int building) : base(adv, "UI/Garrison.(WindowScreen).xdb", heroId, building)
+    {
+        Ui.Bus.On("confirm", Close);
+        for (int row = 0; row < 2; row++)
+            for (int i = 0; i < H5.Adventure.State.Army.Slots; i++)
+            {
+                int r = row, slot = i;
+                if (Ui.Find($"CreatureSwapMain/armyholder{row}/creature{i}") is { } b) b.Clicked += _ => Pick(r, slot);
+            }
+        Ui.Find("CreatureSwapMain/HeaderView")?.SetText("<h1><center>" + adv.ObjectTitle(building));
+        Ui.Find("CreatureSwapMain/CreatureSwapView")?.SetValue("desc", TownUi.Text("UI/Garrison/ScreenDesc.txt"));
+    }
+
+    H5.Adventure.State.Stack?[] Row(int row) => row == 0 ? Hero.Army : Adv.Session.S.Obj(Object).Army;
+
+    void Pick(int row, int slot)
+    {
+        if (_picked is not { } from)
+        {
+            if (Row(row)[slot] is { Count: > 0 }) _picked = (row, slot);
+            Refresh();
+            return;
+        }
+        _picked = null;
+        if (from != (row, slot))
+            Apply(new SwapStacksCmd(from.Row == 0 ? HeroId : -1, from.Row == 1 ? Object : -1, from.Slot,
+                row == 0 ? HeroId : -1, row == 1 ? Object : -1, slot));
+        else Refresh();
+    }
+
+    public override void Refresh()
+    {
+        base.Refresh();
+        TownUi.SetPicture(Ui.Find("CreatureSwapMain/heroicon0"), TownUi.HeroFace(Hero, large: false));
+        for (int row = 0; row < 2; row++)
+        {
+            var army = Row(row);
+            for (int i = 0; i < H5.Adventure.State.Army.Slots; i++)
+            {
+                var s = army[i];
+                var icon = Ui.Find($"CreatureSwapMain/armyholder{row}/creature{i}/icon");
+                if (icon == null) continue;
+                icon.Visible = s is { Count: > 0 };
+                TownUi.SetPicture(icon, s is { Count: > 0 } ? TownUi.CreatureIcon(s.Creature) : null);
+                (icon.FindChild("NumberOfCreatures", false, false) as UiNode)?.SetValue("NumberOfCreatures", s?.Count.ToString() ?? "");
+                icon.Modulate = _picked == (row, i) ? new Color(1.4f, 1.4f, 1f) : Colors.White;
+            }
+        }
+    }
+}

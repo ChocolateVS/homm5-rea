@@ -247,7 +247,7 @@ public sealed partial class Adventure
             where = null;
             if (hero >= 0 && S.Hero(hero) is { } h && h.Owner == Current.Index) { where = h.Pos; return h.Army; }
             if (town >= 0 && S.Town(town) is { } t && t.Owner == Current.Index) { where = EntranceOf(t); return t.Garrison; }
-            return null;
+            return BuildingArmy(town, out where);
         }
         var from = Army(c.FromHero, c.FromTown, out var wFrom);
         var to = Army(c.ToHero, c.ToTown, out var wTo);
