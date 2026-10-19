@@ -66,7 +66,7 @@ public class AuditAbilityTestsA(GameDataFixture f)
         return b;
     }
 
-    [Fact]
+    [StockFact]
     public void ChampionChargeNeedsMoreThanTheMinimalDistanceAndHitsAllies()   // FUN_008aa990, ChampionCharge.xdb DamageAll
     {
         var b = ChargeSetup(new Cell(1, 4), out var ally);
@@ -184,7 +184,7 @@ public class AuditAbilityTestsA(GameDataFixture f)
         Assert.False(ShotIsAnswered(b, b.State.Units[0], b.State.Units[1]), "sleep");   // a sleeping stack cannot retaliate
     }
 
-    [Fact]
+    [StockFact]
     public void DeathWailUsesTheDataCoefficientAndGapExponent()   // FUN_0085e610 damage, FUN_0097a530 case 0x13c area
     {
         var b = f.Duel("CREATURE_BANSHEE", 5, "CREATURE_PEASANT", 500, 1, new Cell(4, 4), new Cell(6, 4));   // banshees 2x2: gap 1
@@ -215,7 +215,7 @@ public class AuditAbilityTestsA(GameDataFixture f)
         return b;
     }
 
-    [Fact]
+    [StockFact]
     public void ManaStealerTakesCeilOfStackTimesRateOverGrowth()   // FUN_0097bd60: ceil(N · 4 / growth 16)
     {
         var b = WithHeroes("CREATURE_IMP", 10, "CREATURE_PEASANT", 10, 100);
@@ -224,7 +224,7 @@ public class AuditAbilityTestsA(GameDataFixture f)
         Assert.Equal(3, b.State.Heroes[0].Mana);
     }
 
-    [Fact]
+    [StockFact]
     public void SyphonManaUsesTheHalvedRateNotHalfTheStack()   // FUN_0097bd60 spell 0x13f: k = trunc(4·0.5 + 0.5) = 2
     {
         var b = WithHeroes("CREATURE_QUASIT", 20, "CREATURE_PEASANT", 10, 100);

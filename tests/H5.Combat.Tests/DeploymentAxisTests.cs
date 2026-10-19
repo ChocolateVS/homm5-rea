@@ -11,7 +11,7 @@ namespace H5.Combat.Tests;
 [Collection("game")]
 public class DeploymentAxisTests(GameDataFixture f)
 {
-    [Fact]
+    [StockFact]
     public void DeployZonesAreTheOuterColumnsOfTheTwelveCellAxis()
     {
         var b = new Battle(f.Db, BattleSetup.CreateDuel(f.Db, 0, 3, 5));
@@ -39,7 +39,7 @@ public class DeploymentAxisTests(GameDataFixture f)
         }
     }
 
-    [Fact]
+    [StockFact]
     public void ArenaTableGrassAverageIsTheDuelList()
     {
         var grass = f.Db.ArenaTable.ForBattle(CombatArenaTable.TerrainGrass);

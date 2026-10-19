@@ -6,7 +6,7 @@ namespace H5.Combat.Tests;
 public class RulesTests(GameDataFixture f)
 {
     /// <summary>Fan manual p.302 worked example: 10 Griffins attack 30 Horned Demons, then the demons retaliate.</summary>
-    [Fact]
+    [StockFact]
     public void GriffinsVersusHornedDemons()
     {
         var b = f.Duel("CREATURE_GRIFFIN", 10, "CREATURE_DEMON", 30, posA: new Cell(4, 4), posB: new Cell(6, 4));
@@ -25,7 +25,7 @@ public class RulesTests(GameDataFixture f)
         Assert.Equal(9, griffins.Count);
     }
 
-    [Fact]
+    [StockFact]
     public void AttackDefenceMultiplierTable()
     {
         // p.301 table: D-A = 10 → x0.667; A-D = 20 → x2.0
@@ -64,7 +64,7 @@ public class RulesTests(GameDataFixture f)
     public void CreatureSpellPowerTable(int size, int growth, int expected) =>
         Assert.Equal(expected, Battle.CreatureSpellPower(size, growth));   // fan manual p.305-306
 
-    [Fact]
+    [StockFact]
     public void HeroKillsTable()
     {
         var b = f.Duel("CREATURE_PEASANT", 1, "CREATURE_PEASANT", 1);
@@ -75,7 +75,7 @@ public class RulesTests(GameDataFixture f)
         Assert.Equal(1.033, b.HeroKills(21, 7), 3);   // p.302: a hero kills one tier-7 creature from level 21
     }
 
-    [Fact]
+    [StockFact]
     public void StartingAtbAndTurnOrder()
     {
         // p.310: an Initiative-16 stack starting at ATB 0 still acts before an Initiative-8 stack starting at 0.25.
@@ -133,7 +133,7 @@ public class RulesTests(GameDataFixture f)
         Assert.Equal(hash, b.State.ComputeHash());
     }
 
-    [Fact]
+    [StockFact]
     public void MovementCostsUseOctileBudget()
     {
         var b = f.Duel("CREATURE_FOOTMAN", 10, "CREATURE_FOOTMAN", 10, posA: new Cell(2, 2), posB: new Cell(11, 9));

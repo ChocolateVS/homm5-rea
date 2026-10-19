@@ -18,7 +18,7 @@ public class AuditSpellTests(GameDataFixture f)
 
     // exe FUN_008a4330 multiplies the base initiative by one factor per effect (FUN_004e4270): Haste 1+v,
     // Wound 1−Wound_InitiativeDecrease — so Expert Haste (0.4) with a Wound gives ×1.4×0.8, not ×(1+0.4−0.2).
-    [Fact]
+    [StockFact]
     public void InitiativeEffectFactorsMultiply()
     {
         var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
@@ -31,7 +31,7 @@ public class AuditSpellTests(GameDataFixture f)
     }
 
     // exe FUN_004e4270 case 0x18: Expediter (own hero spec HERO_SPEC_HASTE) adds level·Expediter_HasteBonusPerLevel to Haste.
-    [Fact]
+    [StockFact]
     public void ExpediterBoostsHaste()
     {
         var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
@@ -45,7 +45,7 @@ public class AuditSpellTests(GameDataFixture f)
     }
 
     // exe 00976c0d / 00976c53: spell base damage and the empowered ×1.5 are converted in chop mode (truncated).
-    [Fact]
+    [StockFact]
     public void SpellBaseDamageTruncates()
     {
         var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
@@ -89,7 +89,7 @@ public class AuditSpellTests(GameDataFixture f)
     }
 
     // exe FUN_00976db0 (spell 0xd, spec 0x2a): the Disrupter bonus applies to SPELL_DISRUPTING_RAY ("Vulnerability").
-    [Fact]
+    [StockFact]
     public void DisrupterDamagesWithDisruptingRay()
     {
         var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 200) });
@@ -131,7 +131,7 @@ public class AuditSpellTests(GameDataFixture f)
 
     // Warcry bonus structs (RPGStats FUN_00946030; formula used by 008a1e50 for Battlecry speed):
     // ((level−1)/LevelDivisor)·PerDividedLevel + Base — level 8 Rallying Cry gives +1 morale, not +2.
-    [Fact]
+    [StockFact]
     public void WarcryBonusesUseLevelMinusOne()
     {
         var b = new Battle(f.Db, Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) }));
@@ -142,7 +142,7 @@ public class AuditSpellTests(GameDataFixture f)
     }
 
     // exe FUN_0097d7b0 (0x27): Call of the Wasp multiplies the Wasp Swarm ATB drop by 1 + ((level+2)/3)·perLevel3.
-    [Fact]
+    [StockFact]
     public void CallOfTheWaspMultipliesTheAtbDrop()
     {
         var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
@@ -253,7 +253,7 @@ public class AuditSpellTests(GameDataFixture f)
 
     // FUN_004b0d80: m = 1 + Invocation·0.1 + altars·0.1 (single precision), ×2 with Absolute Chains; the extra is
     // trunc(D·m − D) after protection (chop at 00977f58): 100 damage with m = 1.4f gives 39, not 40.
-    [Fact]
+    [StockFact]
     public void ElementalChainsUseTheExeMultiplier()
     {
         var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
@@ -295,7 +295,7 @@ public class AuditSpellTests(GameDataFixture f)
 
     // 004e68ca..004e694b: Set Afire burns for trunc(D · 0.33f) of the damage dealt, D first divided back by the Mark of
     // Fire multiplier (2) when the target is marked.
-    [Fact]
+    [StockFact]
     public void SetAfireBurnsAShareOfTheDamageDealt()
     {
         var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });

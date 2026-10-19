@@ -288,7 +288,7 @@ public sealed partial class Adventure
     string RandomMonster(int level)
     {
         var pool = Core.Creatures.Values
-            .Where(c => c.WeeklyGrowth > 0 && c.Id != "CREATURE_UNKNOWN" && c.MonsterSharedPath != null && (level is 0 or 8 || c.Tier == level))
+            .Where(c => c.Stock && c.WeeklyGrowth > 0 && c.Id != "CREATURE_UNKNOWN" && c.MonsterSharedPath != null && (level is 0 or 8 || c.Tier == level))
             .OrderBy(c => c.Id, StringComparer.Ordinal).ToList();
         return pool.Count == 0 ? "CREATURE_PEASANT" : pool[S.Rng.Next(pool.Count)].Id;
     }
@@ -320,7 +320,7 @@ public sealed partial class Adventure
 
     string? RandomSpell(string? school, int level)
     {
-        var pool = Core.Spells.Values.Where(s => s.Level == level && s.ManaCost > 0 &&
+        var pool = Core.Spells.Values.Where(s => s.Stock && s.Level == level && s.ManaCost > 0 &&
                 (school == null ? s.School is "MAGIC_SCHOOL_DESTRUCTIVE" or "MAGIC_SCHOOL_DARK" or "MAGIC_SCHOOL_LIGHT" or "MAGIC_SCHOOL_SUMMONING" : s.School == school))
             .Select(s => s.Id).OrderBy(id => id, StringComparer.Ordinal).ToList();
         return pool.Count == 0 ? null : pool[S.Rng.Next(pool.Count)];
@@ -402,7 +402,7 @@ public sealed partial class Adventure
         for (int lvl = 1; lvl <= 5; lvl++)
         {
             var fromMap = o.TownSpells.Where(id => Core.Spell(id)?.Level == lvl).ToList();
-            var pool = Core.Spells.Values.Where(s => s.Level == lvl && s.ManaCost > 0 && schools.Contains(s.School))
+            var pool = Core.Spells.Values.Where(s => s.Stock && s.Level == lvl && s.ManaCost > 0 && schools.Contains(s.School))
                 .Select(s => s.Id).Where(id => !fromMap.Contains(id)).OrderBy(id => id, StringComparer.Ordinal).ToList();
             var list = fromMap.Take(perLevel[lvl - 1]).ToList();
             while (list.Count < perLevel[lvl - 1] && pool.Count > 0)

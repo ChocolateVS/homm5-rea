@@ -6,7 +6,7 @@ namespace H5.Adventure.Tests;
 [Collection("adv")]
 public class OriginalAdventureAiTests(Fixture f)
 {
-    [Fact]
+    [StockFact]
     public void TunablesComeFromDefaultStats()
     {
         var st = AdventureAiStats.Load(f.Core);
@@ -18,7 +18,7 @@ public class OriginalAdventureAiTests(Fixture f)
         Assert.Equal(300, st.SearchDangerEnemyMobilityBonus, 6);
     }
 
-    [Fact]
+    [StockFact]
     public void ExeConfirmedFormulas()
     {
         var st = AdventureAiStats.Load(f.Core);

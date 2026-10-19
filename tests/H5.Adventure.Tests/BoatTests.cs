@@ -212,7 +212,7 @@ public class BoatTests(Fixture f)
         Assert.Equal(plain * 3 / 2, g.ComputeMaxMovePoints(h));
     }
 
-    [Fact]
+    [StockFact]
     public void VesselOfShalassaBringsTheNearestEmptyShip()
     {
         var (g, h, b, shore) = HeroAtShipyard(snatch: false);
@@ -232,7 +232,7 @@ public class BoatTests(Fixture f)
         _ = from; _ = shore;
     }
 
-    [Fact]
+    [StockFact]
     public void VesselOfShalassaFailsWithoutShipsButSpendsTheMana()
     {
         var (g, h, b, _) = HeroAtShipyard(snatch: false);

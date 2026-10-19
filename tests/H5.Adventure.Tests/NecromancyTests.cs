@@ -18,7 +18,7 @@ public class NecromancyTests(Fixture f)
     }
 
     // exe FUN_00c26040: percent = RaisePercentBase (10) + RaisePercentPerSkillLevel (10) x mastery (+ pendant 10).
-    [Fact]
+    [StockFact]
     public void RaisePercentFollowsTheData()
     {
         var g = f.NewGame();
@@ -30,7 +30,7 @@ public class NecromancyTests(Fixture f)
 
     // exe FUN_00c264d0: raised = min(killed, pct x Health(dead) x killed / 100 / Health(risen)); TransformTable picks
     // the risen creature; undead (Necropolis) dead are never raised (FUN_00c25f90, TOWN_NECROMANCY = 7).
-    [Fact]
+    [StockFact]
     public void RaiseConvertsKilledHitPointsIntoTheTransformCreature()
     {
         var g = f.NewGame();

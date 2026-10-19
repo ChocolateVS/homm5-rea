@@ -55,7 +55,7 @@ public class AuditAbilityTests(GameDataFixture f)
         Assert.Contains(Attacks("CREATURE_NOSFERATU", 20, "CREATURE_GRIFFIN", 30, L, R), x => x.b.State.Units[1].HasEffect(Fx.Sleep));
     }
 
-    [Fact]
+    [StockFact]
     public void WhipStrikeCastsSlowWeaknessOrBerserk()   // FUN_00a5e2c0: Rng(100) <40 Slow, <75 Weakness, else Berserk
     {
         var applied = Attacks("CREATURE_MATRIARCH", 10, "CREATURE_PEASANT", 300, L, R, seeds: 80)
@@ -129,7 +129,7 @@ public class AuditAbilityTests(GameDataFixture f)
         Assert.Equal(R, t.Pos);
     }
 
-    [Fact]
+    [StockFact]
     public void BearRoarHalvesTheFailureOfSmallVictims()   // FUN_00a5e800: p = trunc(100 − (100 − p)/SmallCreaturesChanceMult)
     {
         var b = f.Duel("CREATURE_BLACKBEAR_RIDER", 10, "CREATURE_PEASANT", 100, 1, L, R);
@@ -165,7 +165,7 @@ public class AuditAbilityTests(GameDataFixture f)
         Assert.DoesNotContain(r.Events.OfType<AttackStarted>(), e => e.Kind == AttackKind.Retaliation);
     }
 
-    [Fact]
+    [StockFact]
     public void DeadlyStrikeReplacesTheBlowWithHalfTheStack()   // FUN_00a5bf60: kills = pre-hit count / 2, damage dropped
     {
         bool seen = false;
@@ -222,14 +222,14 @@ public class AuditAbilityTests(GameDataFixture f)
         Assert.False(t.HasEffect(Fx.EvilEye));
     }
 
-    [Fact]
+    [StockFact]
     public void SorrowStrikeUsesTheTrainedMastery()   // FUN_00a5e690: mastery = SorrowStrike_SpellTrained (3)
     {
         var (b, _) = Attacks("CREATURE_HORROR_DRAGON", 3, "CREATURE_PEASANT", 300, L, R, seeds: 1).First();
         Assert.Equal(Mastery.Expert, b.State.Units[1].GetEffect("SPELL_SORROW")!.Mastery);
     }
 
-    [Fact]
+    [StockFact]
     public void PurgerNeverRemovesPrayer()   // FUN_004e4000: SPELL_PRAYER (0x36), DEATH_SCREAM (0x3b), SEDUCE_CASTED excluded
     {
         bool removedPrayer = false, removedBless = false;

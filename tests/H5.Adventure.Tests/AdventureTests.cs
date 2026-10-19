@@ -98,24 +98,27 @@ public class MovementTests(Fixture f)
 {
     HeroState Hero(string town = "TOWN_HEAVEN") => new() { Town = town, Pos = new Tile(10, 10) };
 
-    /// <summary>Fan manual p.300: starting movement points with Logistics and Boots of the Swift Journey.</summary>
+    /// <summary>
+    /// Fan manual p.300: starting movement points with Logistics and Boots of the Swift Journey (stock 3.1).
+    /// MMH55: same formula, DefaultStats adventure/BaseHeroMovement 2500 → 2800 (the stock engine reads it).
+    /// </summary>
     [Theory]
-    [InlineData(0, false, 2500)]
-    [InlineData(1, false, 2749)]
-    [InlineData(2, false, 2999)]
-    [InlineData(3, false, 3249)]
-    [InlineData(0, true, 3125)]
-    [InlineData(1, true, 3436)]
-    [InlineData(2, true, 3748)]
-    [InlineData(3, true, 4061)]
-    public void MovementPointsMatchManualTable(int logistics, bool boots, int expected)
+    [InlineData(0, false, 2500, 2800)]
+    [InlineData(1, false, 2749, 3080)]
+    [InlineData(2, false, 2999, 3359)]
+    [InlineData(3, false, 3249, 3639)]
+    [InlineData(0, true, 3125, 3500)]
+    [InlineData(1, true, 3436, 3850)]
+    [InlineData(2, true, 3748, 4198)]
+    [InlineData(3, true, 4061, 4548)]
+    public void MovementPointsMatchManualTable(int logistics, bool boots, int expected, int expectedMmh55)
     {
         var g = f.NewGame();
         var h = Hero();
         if (logistics > 0) h.Skills.Add(new SkillEntry("HERO_SKILL_LOGISTICS", (Mastery)logistics));
         if (boots) h.Artifacts.Add("BOOTS_OF_SPEED");
         g.S.MoonWeek = "WEEK_OF_NOTHING";
-        Assert.Equal(expected, g.ComputeMaxMovePoints(h));
+        Assert.Equal(DataFixture.Pick(expected, expectedMmh55), g.ComputeMaxMovePoints(h));
     }
 
     /// <summary>Fan manual p.299-300 step costs (orthogonal / diagonal) per terrain.</summary>
@@ -166,7 +169,7 @@ public class MovementTests(Fixture f)
 public class RulesTests(Fixture f)
 {
     /// <summary>Fan manual p.320 worked example without the artifact factor: 100 Peasants, +5 morale, +3 luck.</summary>
-    [Fact]
+    [StockFact]
     public void ArmyPowerFollowsManualFormula()
     {
         var g = f.NewGame();

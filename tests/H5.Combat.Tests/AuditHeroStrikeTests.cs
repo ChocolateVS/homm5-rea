@@ -32,7 +32,7 @@ public class AuditHeroStrikeTests(GameDataFixture f)
 
     // exe 008cf406-008cf443: critical chance = CriticalStrike_ChanceToWork with Critical Strike, plus
     // PowerfullBlow_ChanceToCritical for Powerful Blow strikes, capped at 100. (The engine used 10% x 4 for Powerful Blow.)
-    [Fact]
+    [StockFact]
     public void CriticalChanceComposesCriticalStrikeAndPowerfulBlow()
     {
         var (b, s) = Setup();
@@ -46,7 +46,7 @@ public class AuditHeroStrikeTests(GameDataFixture f)
     }
 
     // exe FUN_00bc1b90: Deadeye Shot raises the PLAIN strike's level by 3 (HeroStrikeDamage with levelBonus 3).
-    [Fact]
+    [StockFact]
     public void DeadeyeShotAddsThreeLevelsToThePlainStrike()
     {
         var (b, s) = Setup();

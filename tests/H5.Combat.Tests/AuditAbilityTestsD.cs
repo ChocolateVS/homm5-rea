@@ -181,7 +181,7 @@ public class AuditAbilityTestsD(GameDataFixture f)
         Assert.Contains(r.Events.OfType<AbilityTriggered>(), e => e.UnitId == wolf2.Id && e.Ability == Ab.PackHunter);
     }
 
-    [Fact]
+    [StockFact]
     public void GoblinsDefectAtExactlyThirtyPercent()   // FUN_008a0b60: count/initial < (float)0.3
     {
         var b = f.Duel("CREATURE_PEASANT", 1, "CREATURE_GOBLIN", 10, 1, new Cell(1, 1), new Cell(10, 8));
@@ -227,7 +227,7 @@ public class AuditAbilityTestsD(GameDataFixture f)
         Assert.False(Blinded("CREATURE_SKELETON", false));   // undead: derived Immunity to Blind
         Assert.True(Blinded("CREATURE_PEASANT", true));      // Vampirism's dynamic undead does not feed the derived flags
     }
-    [Fact]
+    [StockFact]
     public void MagnetismMovesAShareOfTheOtherVictimsDamageOntoTheGolems()   // FUN_0085e330 (area / chain resolvers)
     {
         var b = f.Duel("CREATURE_OBSIDIAN_GOLEM", 30, "CREATURE_PEASANT", 100, 1, new Cell(1, 1), new Cell(10, 8));

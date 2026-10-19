@@ -5,7 +5,7 @@ namespace H5.Combat.Tests;
 [Collection("game")]
 public class NewAbilityTests(GameDataFixture f)
 {
-    [Fact]
+    [StockFact]
     public void TreacheryChangesSidesBelowThirtyPercent()
     {
         var b = f.Duel("CREATURE_FOOTMAN", 50, "CREATURE_GOBLIN", 100, posA: new Cell(4, 4), posB: new Cell(5, 4));

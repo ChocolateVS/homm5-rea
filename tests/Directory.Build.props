@@ -4,4 +4,8 @@
   <PropertyGroup>
     <RunSettingsFilePath>$(MSBuildThisFileDirectory)stock.runsettings</RunSettingsFilePath>
   </PropertyGroup>
+  <!-- DataFixture / [StockFact] / [StockTheory]: run the same tests on the stock and the MMH55 fixture. -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Shared\*.cs" Link="Shared\%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

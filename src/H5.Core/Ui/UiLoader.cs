@@ -30,8 +30,8 @@ public sealed class UiLoader
             Name = (string?)inst.Element("Name") ?? "",
             SourcePath = file,
             RawInstance = inst,
-            Visible = (bool?)inst.Element("Visible") ?? true,
-            Enabled = (bool?)inst.Element("Enabled") ?? true,
+            Visible = H5.Core.Data.XmlHelpers.BoolValue(inst.Element("Visible"), true),
+            Enabled = H5.Core.Data.XmlHelpers.BoolValue(inst.Element("Enabled"), true),
             Priority = (int?)inst.Element("Priority") ?? 0,
             TooltipPath = Path(inst.Element("TooltipFileRef"), file),
             ButtonGroupId = (int?)inst.Element("ButtonGroupID") ?? 0,
@@ -52,7 +52,7 @@ public sealed class UiLoader
         w.Placement = sharedPlacement.MergedWith(UiPlacement.Parse(inst.Element("Placement")));
         if (shared != null)
         {
-            w.Transparent = (bool?)shared.Element("Flags")?.Element("Transparent") ?? false;
+            w.Transparent = H5.Core.Data.XmlHelpers.BoolValue(shared.Element("Flags")?.Element("Transparent"));
             w.Background = LoadDrawable(shared.Element("Background"), sharedFile);
             w.Foreground = LoadDrawable(shared.Element("Foreground"), sharedFile);
             w.TriggerMode = (string?)shared.Element("TriggerMode");

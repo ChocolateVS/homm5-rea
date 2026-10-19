@@ -41,7 +41,7 @@ public class AuditSpecSetTests(GameDataFixture f)
 
     // exe 0085f0f0: Bombardier fireball power = integer (level − 1)·PerLevel / Divisor + Base (−1, /5, ×1), unclamped;
     // the engine used Base + floor(level/Divisor)·PerLevel clamped at 0.
-    [Fact]
+    [StockFact]
     public void BombardierPowerUsesLevelMinusOne()
     {
         var (_, b) = Setup();
@@ -76,7 +76,7 @@ public class AuditSpecSetTests(GameDataFixture f)
 
     // exe 00989fd0 case 0x3b: Death Scream morale = trunc(MoralePenalty · f), f = Dark Emissary multiplier (else 1)
     // plus BansheeWhail_DeMorale with 2+ Necromancers pieces — so Dark Emissary with the set gives 1·(2+1) = 3.
-    [Fact]
+    [StockFact]
     public void DeathScreamMoraleCombinesDarkEmissaryAndTheSet()
     {
         var (s, b) = Setup();
@@ -162,7 +162,7 @@ public class AuditSpecSetTests(GameDataFixture f)
     }
 
     // exe 00a5c300: Blooddrinker attack per kill = integer ((level − 1) / 6)·1 + 1 (was 1 + floor(level/6)).
-    [Fact]
+    [StockFact]
     public void LevelFormulaUsesLevelMinusOne()
     {
         const string path = "combat/HeroSpecializations/Barbarian/Blooddrinker_OffenceBonusPerStack";
@@ -173,7 +173,7 @@ public class AuditSpecSetTests(GameDataFixture f)
     }
 
     // exe 009844e0 / 00bbebd0: Poisoner and Sacred Hammer chances are trunc(100·clamp(Base + level·PerLevel, 0, 1)).
-    [Fact]
+    [StockFact]
     public void PoisonerAndSacredHammerChancesAreClampedWholePercents()
     {
         var (_, b) = Setup();

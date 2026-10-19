@@ -105,7 +105,7 @@ public class AuditSpellSTests(GameDataFixture f)
 
     // exe FUN_00862800 (chop mode): count = trunc(max(1, Eval)), Fire Affinity trunc(count · 1.4f) — 13 SP at Basic
     // (0.75 per power): Eval 9.75 → 9 → 12 (the engine's (int)(9.75·1.4) gave 13).
-    [Fact]
+    [StockFact]
     public void SummonElementalsCountTruncatesBeforeFireAffinity()
     {
         var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
@@ -153,7 +153,7 @@ public class AuditSpellSTests(GameDataFixture f)
 
     // exe FUN_00a60e20 (death handler FUN_00a61310): a destroyed Arcane Crystal deals trunc(Eval(damage, power)) to every
     // adjacent unit of either side, without protection — Basic, power 5: 60 + 12·5 = 120.
-    [Fact]
+    [StockFact]
     public void ArcaneCrystalExplodesOnAdjacentUnits()
     {
         var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 100) });

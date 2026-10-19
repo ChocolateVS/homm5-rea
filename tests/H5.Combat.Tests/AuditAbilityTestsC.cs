@@ -65,7 +65,7 @@ public class AuditAbilityTestsC(GameDataFixture f)
         Assert.Equal(13, u.Mana);
     }
 
-    [Fact]
+    [StockFact]
     public void TreantUnionUsesCasterHitsForTheTreantsAndTargetHitsForTheDryads()   // exe 00986377 (+0x2cc / +0x2d0)
     {
         var b = f.Duel("CREATURE_DRYAD", 30, "CREATURE_PEASANT", 50, 1, new Cell(2, 5), new Cell(10, 5));
@@ -97,7 +97,7 @@ public class AuditAbilityTestsC(GameDataFixture f)
         Assert.Equal(otherShots, other.Shots);
     }
 
-    [Fact]
+    [StockFact]
     public void LeapRetaliationAddsTheBonusToOne()   // exe FUN_00a58de0 special 0x140: ×(1 + Base + PerCell·cells)
     {
         int Retaliation(bool leap)

@@ -3,7 +3,7 @@ namespace H5.Combat.Tests;
 [Collection("game")]
 public class SpecialsTests(GameDataFixture f)
 {
-    [Fact]
+    [StockFact]
     public void GriffinSpecialisationResolvesFromGameText()
     {
         var ving = f.Db.DuelPresets[0].Hero.Shared!;
@@ -14,7 +14,7 @@ public class SpecialsTests(GameDataFixture f)
         Assert.Contains("CREATURE_BATTLE_GRIFFIN", family);
     }
 
-    [Fact]
+    [StockFact]
     public void EveryCreatureSpecialisationTextMapsToCreatures()
     {
         foreach (var h in f.Db.Heroes.Values)
@@ -26,7 +26,7 @@ public class SpecialsTests(GameDataFixture f)
         }
     }
 
-    [Fact]
+    [StockFact]
     public void SpecialisationBonusAppliedToStacks()
     {
         var s = BattleSetup.CreateDuel(f.Db, 0, 3, 1, skipTactics: true);
@@ -35,7 +35,7 @@ public class SpecialsTests(GameDataFixture f)
         Assert.Equal(def.Attack + 8, griffin.BaseAttack);    // level 15 → +8
     }
 
-    [Fact]
+    [StockFact]
     public void DragonSetBonusesFromData()
     {
         // Preset 3 wears four Power of Dragons pieces → +1 to all hero stats.

@@ -15,9 +15,15 @@ public static class XmlHelpers
     public static double Dbl(this XElement? e, string name, double def = 0) =>
         double.TryParse(e?.Element(name)?.Value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : def;
 
-    public static bool Bool(this XElement? e, string name, bool def = false)
+    public static bool Bool(this XElement? e, string name, bool def = false) => BoolValue(e?.Element(name), def);
+
+    /// <summary>
+    /// A bool field: "true"/"1" is true, anything else false (MMH55 ships a "fale" in a main menu layout; a strict
+    /// parse would throw), <paramref name="def"/> when the element is absent.
+    /// </summary>
+    public static bool BoolValue(XElement? e, bool def = false)
     {
-        var s = e?.Element(name)?.Value.Trim();
+        var s = e?.Value.Trim();
         return s == null ? def : s.Equals("true", StringComparison.OrdinalIgnoreCase) || s == "1";
     }
 

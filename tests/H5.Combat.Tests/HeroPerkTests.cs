@@ -13,7 +13,7 @@ public class HeroPerkTests(GameDataFixture f)
         return battle;
     }
 
-    [Fact]
+    [StockFact]
     public void EmpoweredSpellsAddEmpoweredVariants()
     {
         var b = Started(f, 15, 3, 1);
@@ -27,7 +27,7 @@ public class HeroPerkTests(GameDataFixture f)
         Assert.Equal(2 * f.Db.Spell("SPELL_FIREBALL")!.ManaCost, f.Db.Spell("SPELL_EMPOWERED_FIREBALL")!.ManaCost);
     }
 
-    [Fact]
+    [StockFact]
     public void BanishHitsEnemySummonedStacks()
     {
         var b = Started(f, 12, 3, 2);

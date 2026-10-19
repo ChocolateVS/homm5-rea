@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Xml.Linq;
+using H5.Core.Data;
 using H5.Core.IO;
 using H5.Core.Xdb;
 
@@ -266,6 +267,7 @@ public sealed class RmgDatabase
             var id = S(item, "ID");
             var path = Ref(item.Element("Obj"), table);
             int i = index++;
+            if (!StockTables.Kept(Xdb.FileSystem, table, id)) continue;   // beyond the stock engine's 180 creatures
             if (path.Length == 0 || !Xdb.FileSystem.Exists(path)) { Creatures.Add(new RmgCreature(i, id, "", 0, 0, null)); continue; }
             var c = Xdb.Load(path).Root!;
             var monster = Ref(c.Element("MonsterShared"), path);
@@ -279,7 +281,7 @@ public sealed class RmgDatabase
         const string table = "GameMechanics/RefTables/Artifacts.xdb";
         if (!Xdb.FileSystem.Exists(table)) return;
         var root = Xdb.Load(table).Root!;
-        foreach (var item in root.Element("objects")?.Elements("Item") ?? Enumerable.Empty<XElement>())
+        foreach (var item in StockTables.Items(Xdb.FileSystem, table, root))
         {
             var o = item.Element("obj");
             var shared = Ref(o?.Element("ArtifactShared"), table);

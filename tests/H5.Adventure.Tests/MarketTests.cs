@@ -54,7 +54,7 @@ public class MarketTests(Fixture f)
         Assert.False(g.Apply(new ExchangeResourcesCmd(Purse.Gem, Purse.Gold, 999) { Player = p.Index }).Ok);
     }
 
-    [Fact]
+    [StockFact]
     public void ArtifactsSellForHalfTheirGoldCost()
     {
         var g = f.NewGame();

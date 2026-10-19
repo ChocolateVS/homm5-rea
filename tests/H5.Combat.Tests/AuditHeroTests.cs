@@ -123,7 +123,7 @@ public class AuditHeroTests(GameDataFixture f)
 
     // exe FUN_004bc470: Wyvern Tamer gives creatures whose base creature is CREATURE_WYVERN
     // +((level−1)/LevelDivisor)·PerDividedLevel + Base HP (data 1/1/2 → 2·level − 1).
-    [Fact]
+    [StockFact]
     public void WyvernTamerHealthUsesLevelMinusOne()
     {
         var s = Setup(new[] { ("CREATURE_PEASANT", 10) }, new[] { ("CREATURE_IMP", 10) }, heroes: true);

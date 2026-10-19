@@ -83,7 +83,7 @@ public class SiegeHandOffTests(Fixture f)
         Assert.Equal(1, battle.MoraleOf(garrison));
     }
 
-    [Fact]
+    [StockFact]
     public void FactionBuildingsAndSpecialisationsMapToSides()
     {
         var g = f.NewGame();

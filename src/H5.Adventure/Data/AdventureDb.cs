@@ -165,7 +165,7 @@ public sealed class AdventureDb
         {
             if (_enums.Count == 0 && _xdb.FileSystem.TryReadAllBytes("types.xml", out var bytes))
             {
-                var root = System.Xml.Linq.XDocument.Parse(System.Text.Encoding.UTF8.GetString(bytes)).Root;
+                var root = System.Xml.Linq.XDocument.Parse(H5.Core.Xdb.TextDecoding.Decode(bytes)).Root;
                 foreach (var t in root?.Descendants("Item").Where(i => i.Element("Type")?.Value == "TYPE_TYPE_ENUM") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
                 {
                     var name = t.Element("TypeName")?.Value ?? "";
@@ -335,7 +335,7 @@ public sealed class AdventureDb
     void LoadArtifactClasses(XdbLoader x)
     {
         const string table = "GameMechanics/RefTables/Artifacts.xdb";
-        foreach (var item in x.Load(table).Root!.Element("objects")!.Elements("Item"))
+        foreach (var item in StockTables.Items(x.FileSystem, table, x.Load(table).Root))
         {
             var obj = item.Element("obj");
             var t = obj.Str("Type");

@@ -32,7 +32,7 @@ public class DataTests(GameDataFixture f)
         }
     }
 
-    [Fact]
+    [StockFact]
     public void FootmanMatchesGameData()
     {
         var c = f.Db.Creature("CREATURE_FOOTMAN");
@@ -41,7 +41,7 @@ public class DataTests(GameDataFixture f)
         Assert.Equal("TOWN_HEAVEN", c.Town);
     }
 
-    [Fact]
+    [StockFact]
     public void SpellsHaveMasteryTables()
     {
         var bolt = f.Db.Spell("SPELL_LIGHTNING_BOLT")!;
@@ -54,7 +54,7 @@ public class DataTests(GameDataFixture f)
             Assert.True(s.Damage.Length is 0 or 4, s.Id);
     }
 
-    [Fact]
+    [StockFact]
     public void DuelPresetsResolveArmiesAndHeroes()
     {
         foreach (var p in f.Db.DuelPresets)
@@ -78,7 +78,7 @@ public class DataTests(GameDataFixture f)
     [InlineData(35000, 15)]
     public void ExperienceLevels(int exp, int level) => Assert.Equal(level, f.Db.Experience.LevelFor(exp));
 
-    [Fact]
+    [StockFact]
     public void CombatConstantsFromDefaultStats()
     {
         Assert.Equal(0.05, f.Db.Stats.Get("combat/DamageIncrease"));

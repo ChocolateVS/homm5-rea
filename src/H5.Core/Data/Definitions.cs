@@ -7,6 +7,8 @@ namespace H5.Core.Data;
 public sealed class CreatureDef
 {
     public string Id = "";
+    /// <summary>In the stock engine's fixed-size table (StockTables): only these take part in random pools.</summary>
+    public bool Stock = true;
     public string SourcePath = "";
     public string Name = "";
     public string Description = "";
@@ -64,6 +66,8 @@ public sealed class CombatAbilityDef
 public sealed class SpellDef
 {
     public string Id = "";
+    /// <summary>In the stock engine's fixed-size table (StockTables): only these take part in random pools.</summary>
+    public bool Stock = true;
     public string SourcePath = "";
     public string Name = "";
     public string Description = "";
@@ -101,6 +105,8 @@ public sealed class SkillDef
 public sealed class ArtifactDef
 {
     public string Id = "";
+    /// <summary>In the stock engine's fixed-size table (StockTables): only these take part in random pools.</summary>
+    public bool Stock = true;
     public string Name = "";
     public string Description = "";
     public string Type = "";

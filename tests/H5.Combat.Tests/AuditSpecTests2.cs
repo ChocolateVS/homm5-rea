@@ -44,7 +44,7 @@ public class AuditSpecTests2(GameDataFixture f)
     }
 
     // exe FUN_00a5a5a0: Master of Elements summons elementals when one of its own stacks dies.
-    [Fact]
+    [StockFact]
     public void MasterOfElementsSummonsOnOwnLosses()
     {
         var s = Setup("HERO_SPEC_MASTER_OF_ELEMENTS", 7, new[] { ("CREATURE_FOOTMAN", 20), ("CREATURE_ARCHER", 5) }, new[] { ("CREATURE_PEASANT", 10) });
@@ -60,7 +60,7 @@ public class AuditSpecTests2(GameDataFixture f)
     }
 
     // exe FUN_008a4330: Prudent lowers enemy initiative by level × 1 %.
-    [Fact]
+    [StockFact]
     public void PrudentSlowsEnemies()
     {
         var s = Setup("", 20, new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });

@@ -118,7 +118,7 @@ public class GeneratorTests(RmgFixture f)
         Assert.Contains(f.Db.Creatures, c => c.Id == "CREATURE_FOOTMAN" && c.Power > 0);
     }
 
-    [Theory]
+    [StockTheory]
     // Player races of the user's RMG maps (Maps/*_RMG_Map_*.h5m): player 1 was fixed on the setup
     // screen (Dungeon/Preserve), the others were drawn by the generator. Zone creation reproduces them.
     [InlineData("S1-2P2-4Z4K1S", 1, 1736315553, 4, 6, new[] { 6, 8, 3, 10 })]   // S_S4_RMG_Map_009
@@ -131,7 +131,7 @@ public class GeneratorTests(RmgFixture f)
         Assert.Equal(expected, races);
     }
 
-    [Fact]
+    [StockFact]
     public void SameSeedSameMap()
     {
         var a = f.Generate("S1-2P2-4Z4K1S", 1, 4242, 4);
@@ -140,7 +140,7 @@ public class GeneratorTests(RmgFixture f)
         Assert.Equal(a.Generator.Rng.Counter, b.Generator.Rng.Counter);
     }
 
-    [Fact]
+    [StockFact]
     public void ZonesCoverTheMapAndAreSeparated()
     {
         var r = f.Generate("S1-2P2-4Z4K1S", 1, 99, 4);
@@ -153,7 +153,7 @@ public class GeneratorTests(RmgFixture f)
         Assert.Equal(4, r.StartTowns.Count);
     }
 
-    [Fact]
+    [StockFact]
     public void EveryTemplateGeneratesAtItsSmallestSize()
     {
         foreach (var t in f.Db.Templates.Values.Where(t => !t.TestTemplate))
@@ -165,7 +165,7 @@ public class GeneratorTests(RmgFixture f)
         }
     }
 
-    [Fact]
+    [StockFact]
     public void MineAndPrisonCountsFollowTheTemplate()
     {
         var r = f.Generate("S1-2P2-4Z4K1S", 1, 5150, 4);
@@ -180,7 +180,7 @@ public class GeneratorTests(RmgFixture f)
         }
     }
 
-    [Fact]
+    [StockFact]
     public void GeneratedMapPlaysInTheAdventureEngine()
     {
         var r = f.Generate("S0-1P2Z2K3T", 0, 2024, 2);

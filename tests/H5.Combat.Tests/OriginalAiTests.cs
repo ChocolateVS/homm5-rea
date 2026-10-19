@@ -5,7 +5,7 @@ namespace H5.Combat.Tests;
 [Collection("game")]
 public class OriginalAiTests(GameDataFixture f)
 {
-    [Fact]
+    [StockFact]
     public void AiTunablesComeFromDefaultStats()
     {
         var st = CombatAiStats.Load(f.Db);

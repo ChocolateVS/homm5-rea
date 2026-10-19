@@ -103,7 +103,7 @@ public class AuditSkillTests(GameDataFixture f)
 
     // exe FUN_008a0e30 (speed getter FUN_008a1e50): Familiar Ground gives +RoadHome/SpeedBonus on the
     // RoadHome/NativeTerrain battlefield (grass), nothing elsewhere.
-    [Fact]
+    [StockFact]
     public void FamiliarGroundAddsSpeedOnGrassOnly()
     {
         var (b, s) = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_IMP", 10) });

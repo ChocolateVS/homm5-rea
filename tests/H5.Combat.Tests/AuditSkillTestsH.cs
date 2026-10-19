@@ -145,7 +145,7 @@ public class AuditSkillTestsH(GameDataFixture f)
 
     // exe 004e6190 (from 00a6a7e0): enemy Shatter / Weaken subtract trunc(p·0.25 / 0.5) and trunc(p·WeakenMagic) (each at
     // least 1) from the integer spell power, at least 1 — the engine multiplied (10 → 5.625 instead of 6).
-    [Fact]
+    [StockFact]
     public void ShatterAndWeakenSubtractFromSpellPower()
     {
         var (b, s) = Setup(Hero(0), Hero(3), "CREATURE_FOOTMAN");
@@ -161,7 +161,7 @@ public class AuditSkillTestsH(GameDataFixture f)
 
     // exe 00a6a700: the week's school mastery (00bcde10) comes before the enemy Shatter drop (004e6190) — Week of
     // Evocation with Basic Destructive against Advanced Shatter gives Expert − 2 = Basic (engine: none).
-    [Fact]
+    [StockFact]
     public void WeekMasteryComesBeforeShatter()
     {
         var s = BattleSetup.Create(f.Db,

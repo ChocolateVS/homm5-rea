@@ -7,7 +7,7 @@ public class AuditStrikeTests(GameDataFixture f)
     static List<(int attacker, AttackKind kind)> Attacks(IEnumerable<BattleEvent> ev) =>
         ev.OfType<AttackStarted>().Select(a => (a.Attacker, a.Kind)).ToList();
 
-    [Fact]
+    [StockFact]
     public void DoubleAttackIsAnsweredAfterTheFirstBlow()
     {
         var b = f.Duel("CREATURE_MINOTAUR_KING", 30, "CREATURE_PEASANT", 400, posA: new Cell(5, 5), posB: new Cell(6, 5));
@@ -22,7 +22,7 @@ public class AuditStrikeTests(GameDataFixture f)
         Assert.Equal(new[] { (mino.Id, AttackKind.Melee), (peasants.Id, AttackKind.Retaliation), (mino.Id, AttackKind.Melee) }, seq.Take(3).ToArray());
     }
 
-    [Fact]
+    [StockFact]
     public void RuneOfBerserkingAddsOneStrike()
     {
         var b = f.Duel("CREATURE_MINOTAUR_KING", 30, "CREATURE_PEASANT", 600, posA: new Cell(5, 5), posB: new Cell(6, 5));

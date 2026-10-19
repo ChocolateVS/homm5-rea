@@ -84,7 +84,7 @@ public class MusicDataTests
         return (fs, new MusicData(new XdbLoader(fs)), install);
     });
 
-    [Fact]
+    [StockFact]
     public void RaceTableHasEveryFactionWithCombatMusic()
     {
         var d = Ctx.Value.Data;
@@ -100,7 +100,7 @@ public class MusicDataTests
         Assert.NotNull(d.Race("TOWN_HEAVEN")!.TownAmbientSoundSet);
     }
 
-    [Fact]
+    [StockFact]
     public void EveryMusicDescriptorPointsAtAShippedOggFile()
     {
         var (fs, d, install) = Ctx.Value;

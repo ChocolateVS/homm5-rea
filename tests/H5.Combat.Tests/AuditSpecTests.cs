@@ -23,7 +23,7 @@ public class AuditSpecTests(GameDataFixture f)
     }
 
     // exe FUN_008a34c0: HERO_SPEC_GRIFFINS gives basic Griffins (creature 7) Battle Dive.
-    [Fact]
+    [StockFact]
     public void GriffonCommanderGivesGriffinsBattleDive()
     {
         var preset = f.Db.DuelPresets[0].Hero;   // Ving, HERO_SPEC_GRIFFINS
@@ -73,7 +73,7 @@ public class AuditSpecTests(GameDataFixture f)
     }
 
     // exe FUN_00989fd0 / FUN_00989790 / FUN_0098a430: White Knight doubles Prayer's bonus.
-    [Fact]
+    [StockFact]
     public void WhiteKnightDoublesPrayer()
     {
         var s = Setup(f.Db, h => { h.Specialization = "HERO_SPEC_WHITE_KNIGHT"; h.Perks.Add(Sk.Benediction); }, ("CREATURE_FOOTMAN", 10));

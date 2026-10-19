@@ -66,7 +66,7 @@ public class MapBuildingTests(Fixture f)
 [Collection("adv")]
 public class WitchHutAndTreeTests(Fixture f)
 {
-    [Fact]
+    [StockFact]
     public void WitchHutTeachesItsSkillOnce()
     {
         var g = f.NewGame("A2M1");
@@ -120,7 +120,7 @@ public class WitchHutAndTreeTests(Fixture f)
 [Collection("adv")]
 public class ArtifactMerchantTests(Fixture f)
 {
-    [Fact]
+    [StockFact]
     public void MapMerchantIsStockedAndSells()
     {
         var g = f.NewGame("A2M1");

@@ -20,11 +20,12 @@ public class AdventureSpellTests(Fixture f)
     [Fact]
     public void SpellCostsComeFromTheSpellData()
     {
+        // TrainedCost: stock 15/20/0/4; MMH55-Index.pak DimensionDoor.xdb 25, Town_Portal.xdb 20, Summon_Boat.xdb 5.
         var g = f.NewGame();
-        Assert.Equal(15, g.AdventureSpellCost(Engine.Adventure.SpellDimensionDoor));
+        Assert.Equal(DataFixture.Pick(15, 25), g.AdventureSpellCost(Engine.Adventure.SpellDimensionDoor));
         Assert.Equal(20, g.AdventureSpellCost(Engine.Adventure.SpellTownPortal));
         Assert.Equal(0, g.AdventureSpellCost(Engine.Adventure.SpellSummonCreatures));
-        Assert.Equal(4, g.AdventureSpellCost(Engine.Adventure.SpellSummonBoat));
+        Assert.Equal(DataFixture.Pick(4, 5), g.AdventureSpellCost(Engine.Adventure.SpellSummonBoat));
     }
 
     [Fact]
@@ -34,7 +35,7 @@ public class AdventureSpellTests(Fixture f)
         Assert.Equal(141 * 5 + 100, Engine.Adventure.FlatMoveCost(new Tile(0, 0, 0), new Tile(5, 6, 0)));
     }
 
-    [Fact]
+    [StockFact]
     public void InstantTravelMovesWithinRangeAndCostsHalfTheDay()
     {
         var (g, h) = Setup(f, Engine.Adventure.SpellDimensionDoor);

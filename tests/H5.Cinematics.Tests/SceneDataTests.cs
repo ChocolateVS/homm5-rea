@@ -58,7 +58,7 @@ public class CameraPosTests
 
 public class CampaignTests(GameFixture g) : IClassFixture<GameFixture>
 {
-    [Fact]
+    [StockFact]
     public void StandardSetLoadsAllStockCampaigns()
     {
         var set = CampaignLoader.LoadStandardSet(g.Xdb);

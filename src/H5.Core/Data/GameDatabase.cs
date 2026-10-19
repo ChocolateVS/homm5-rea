@@ -134,7 +134,7 @@ public sealed class GameDatabase
             if (id == "CREATURE_UNKNOWN") continue;
             var c = new CreatureDef
             {
-                Id = id, SourcePath = f,
+                Id = id, SourcePath = f, Stock = StockTables.Kept(_x.FileSystem, CreatureTable, id),
                 Attack = o.Int("AttackSkill"), Defence = o.Int("DefenceSkill"), Shots = o.Int("Shots"),
                 MinDamage = o.Int("MinDamage"), MaxDamage = o.Int("MaxDamage"), Speed = o.Int("Speed"),
                 Initiative = o.Int("Initiative"), Flying = o.Bool("Flying"), Health = o.Int("Health"),
@@ -191,7 +191,7 @@ public sealed class GameDatabase
             if (o.Name.LocalName != "Spell") continue;
             Spells[id] = new SpellDef
             {
-                Id = id, SourcePath = f,
+                Id = id, SourcePath = f, Stock = StockTables.Kept(_x.FileSystem, SpellTable, id),
                 Name = Text(o, "NameFileRef", f),
                 Description = Text(o, "LongDescriptionFileRef", f),
                 Level = o.Int("Level"), School = o.Str("MagicSchool"), RequiredHeroLevel = o.Int("RequiredHeroLevel"),
@@ -228,7 +228,8 @@ public sealed class GameDatabase
             var m = o.Element("HeroStatsModif");
             Artifacts[id] = new ArtifactDef
             {
-                Id = id, Name = Text(o, "NameFileRef", f), Description = Text(o, "DescriptionFileRef", f),
+                Id = id, Stock = StockTables.Kept(_x.FileSystem, ArtifactTable, id),
+                Name = Text(o, "NameFileRef", f), Description = Text(o, "DescriptionFileRef", f),
                 Type = o.Str("Type"), Slot = o.Str("Slot"), CostOfGold = o.Int("CostOfGold"),
                 Attack = m.Int("Attack"), Defence = m.Int("Defence"), Knowledge = m.Int("Knowledge"),
                 SpellPower = m.Int("SpellPower"), Morale = m.Int("Morale"), Luck = m.Int("Luck"),

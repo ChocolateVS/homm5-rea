@@ -46,7 +46,7 @@ public class ObstacleTests(GameDataFixture f)
         Assert.Equal(a.Select(p => (p.Obstacle, p.Rotation)), b.Select(p => (p.Obstacle, p.Rotation)));
     }
 
-    [Fact]
+    [StockFact]
     public void FixedBoatLayoutUsesInternalCoordinates()
     {
         var placed = ObstacleGenerator.Generate(f.Db, new Rng(1), f.Db.Arenas["Boat_Arena"].Obstacles, 12, 10);

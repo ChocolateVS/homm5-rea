@@ -73,7 +73,7 @@ public sealed class UiPlacement
     {
         if (e == null) return (Int2.Zero, false);
         var f = e.Element("First");
-        return (new Int2((int?)f?.Element("x") ?? 0, (int?)f?.Element("y") ?? 0), (bool?)e.Element("Second") ?? false);
+        return (new Int2((int?)f?.Element("x") ?? 0, (int?)f?.Element("y") ?? 0), H5.Core.Data.XmlHelpers.BoolValue(e.Element("Second")));
     }
 
     static (UiAlign, bool) Align(XElement? e)
@@ -86,7 +86,7 @@ public sealed class UiPlacement
             "EPA_MARGIN" => UiAlign.Margin,
             _ => UiAlign.LowEnd,
         };
-        return (v, (bool?)e.Element("Second") ?? false);
+        return (v, H5.Core.Data.XmlHelpers.BoolValue(e.Element("Second")));
     }
 
     public override string ToString() =>

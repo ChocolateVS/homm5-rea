@@ -270,7 +270,7 @@ public class SiegeTests(GameDataFixture f)
         }
     }
 
-    [Fact]
+    [StockFact]
     public void ConsumeArtifactHealsByLevelAndEffects()
     {
         var hero = f.Db.DuelPresets[0].Hero;

@@ -10,7 +10,7 @@ namespace H5.Combat.Tests;
 public class ExeFindingsTests(GameDataFixture f)
 {
     /// <summary>00a58d30: the attack/defence factor is uncapped; DamageIncreaseCap is never read.</summary>
-    [Fact]
+    [StockFact]
     public void AttackDefenceFactorIsUncapped()
     {
         var b = f.Duel("CREATURE_PEASANT", 10, "CREATURE_PEASANT", 10);
@@ -71,7 +71,7 @@ public class ExeFindingsTests(GameDataFixture f)
     }
 
     /// <summary>00a5a900: Armored creatures ignore Precise Shot's defence removal.</summary>
-    [Fact]
+    [StockFact]
     public void ArmoredIgnoresPreciseShot()
     {
         var b = f.Duel("CREATURE_MARKSMAN", 10, "CREATURE_DEFENDER", 10, posA: new Cell(0, 0), posB: new Cell(2, 0));
