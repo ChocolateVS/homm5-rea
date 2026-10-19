@@ -83,16 +83,28 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
         return b == null ? null : ScriptText.FromBytes(b);
     }
 
-    /// <summary>Registers the API, runs the startup script and the map script.</summary>
+    /// <summary>
+    /// MMH55's DLL group RemoveMapScriptCheck (nop at 0x00992d2a) makes the engine run the startup
+    /// script on maps without a map script. The stock engine (the default) runs no scripts there.
+    /// </summary>
+    public bool RunWithoutMapScript { get; set; }
+
+    /// <summary>
+    /// Registers the API, then starts the scripts like FUN_00992d00: only when the map has a script
+    /// (else nothing runs at all); DoString(scripts/advmap-startup.lua), DoString("createAdvmapAliases();"),
+    /// one scheduler pass (engine vf8 = FUN_004c0720), then the map script text if it is not empty.
+    /// </summary>
     public void Start(string? mapScriptPath, string? mapScriptSource)
     {
         BaseLibrary.Register(L, LoadScript, () => (uint)S.Rng.NextU64());
         RegisterAdventureApi();
         InitObjectives();
+        if (mapScriptSource == null && !RunWithoutMapScript) return;
 
         RunFile("scripts/advmap-startup.lua");
-        if (L.GetGlobal("createAdvmapAliases").IsFunction) L.CallGlobal("createAdvmapAliases");
-        if (mapScriptSource != null) L.DoString(mapScriptSource, mapScriptPath ?? "MapScript");
+        L.DoString("createAdvmapAliases();", "DoString script");
+        L.Step();
+        if (!string.IsNullOrEmpty(mapScriptSource)) L.DoString(mapScriptSource, mapScriptPath ?? "MapScript");
         Pump();
     }
 
@@ -133,8 +145,24 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
         if (r.Ok) Dispatch(r.Events, heroesBefore);
         Pump();
         if (SegmentsPerCommand > 0) Tick(SegmentsPerCommand);
+        if (_turnSegments > 0)
+        {
+            int n = _turnSegments;
+            _turnSegments = 0;
+            Tick(n);
+        }
         return r;
     }
+
+    /// <summary>
+    /// Script segments given to a computer player's turn as it starts. The exe's world (and with it
+    /// the script scheduler, 200 ms per segment) keeps running while the AI plays its animated turn;
+    /// our AI turn takes no time, so scripts that poll the current player (MMH55's
+    /// H55_ContinuesActivator: GetDate, sleep(H55_CycleSpeed = 2), then IsPlayerCurrent) would never
+    /// see a computer player's turn. This guarantees them at least this much script time.
+    /// </summary>
+    public int SegmentsPerComputerTurn { get; set; } = 5;
+    int _turnSegments;
 
     /// <summary>Script segments to run after each command (headless drivers; a real client ticks by time).</summary>
     public int SegmentsPerCommand { get; set; }
@@ -236,6 +264,9 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
             {
                 case DayStarted:
                     Fire(TriggerTypes.NewDay, "", Data.NewDayTrigger);
+                    break;
+                case TurnStarted ts when Game.Player(ts.Player) is { Human: false }:
+                    _turnSegments += SegmentsPerComputerTurn;
                     break;
                 case HeroHired hh when S.Heroes.Find(x => x.Id == hh.HeroId) is { } h:
                     Fire(TriggerTypes.PlayerAddHero, (h.Owner + 1).ToString(), null, h.DefId);

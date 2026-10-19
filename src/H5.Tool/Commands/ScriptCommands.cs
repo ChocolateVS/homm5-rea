@@ -47,7 +47,7 @@ sealed class LuaCompileCommand : ICommand
 sealed class ScriptRunCommand : ICommand
 {
     public string Name => "script-run";
-    public string Help => "script-run <map|all> [days=14] [seed=1] [-v]  - play a map with its Lua scripts (bots for every player) and report script errors";
+    public string Help => "script-run <map|all|campaign> [days=14] [seed=1] [-v] [--no-map-script-check] [--include-user]  - play maps with their Lua scripts (bots for every player) and report script errors";
 
     public int Run(ToolContext ctx, string[] args)
     {
@@ -60,12 +60,15 @@ sealed class ScriptRunCommand : ICommand
         var db = H5.Adventure.Data.AdventureDb.Load(core, ctx.Fs);
         var loader = new MapLoader(core, ctx.Fs);
         var ids = new EnumTables(ctx.Fs);
+        bool includeUser = args.Contains("--include-user");
         var maps = pos[0] == "all"
-            ? MapCatalog.All(ctx.Fs, ctx.Install).Where(m => !m.IsUserMap).ToList()
+            ? MapCatalog.All(ctx.Fs, ctx.Install).Where(m => includeUser || !m.IsUserMap).ToList()
             : new List<MapCatalog.MapRef> { MapCatalog.Find(ctx.Fs, ctx.Install, pos[0]) ?? throw new ArgumentException("map not found") };
-        int totalErrors = 0;
+        int totalErrors = 0, crashed = 0, clean = 0;
         foreach (var mref in maps)
         {
+          try
+          {
             using var files = mref.Open(ctx.Fs);
             var map = loader.Load(files);
             if (map.Players.Count(p => p.Active) == 0) { Console.WriteLine($"{mref.Id,-40} (no active players: not a playable map)"); continue; }
@@ -78,6 +81,7 @@ sealed class ScriptRunCommand : ICommand
             }
             var host = AdventureScripting.Create(g, files, ids, loader.Catalog);
             host.AutoAnswerUi = true;
+            host.RunWithoutMapScript = args.Contains("--no-map-script-check");
             host.SegmentsPerCommand = 2;
             string? src = null;
             if (map.ScriptPath != null && files.TryReadAllBytes(map.ScriptPath, out var b)) src = ScriptText.FromBytes(b);
@@ -99,11 +103,20 @@ sealed class ScriptRunCommand : ICommand
                 turns++;
             }
             totalErrors += host.Errors.Count;
+            if (host.Errors.Count == 0) clean++;
             Console.WriteLine($"{mref.Id,-40} script={(src != null ? "yes" : "no "),-3} day {g.S.Day,3} threads {host.L.Threads.Count,3} ui {host.World.PendingUi.Count} events {host.Events.Count,5} errors {host.Errors.Count} ({sw.ElapsedMilliseconds} ms){(g.S.Finished ? " finished" : "")}");
             foreach (var e in host.Errors.Distinct().Take(verbose ? 50 : 5)) Console.WriteLine("    " + e);
             if (verbose) foreach (var l in host.Log.Take(40)) Console.WriteLine("    | " + l);
+          }
+          catch (Exception e)
+          {
+              // An engine (non-script) failure ends this map's run; report it and go on.
+              crashed++;
+              Console.WriteLine($"{mref.Id,-40} ENGINE EXCEPTION {e.GetType().Name}: {e.Message}");
+              Console.WriteLine("    " + e.StackTrace?.Split((char)10).FirstOrDefault()?.Trim());
+          }
         }
-        Console.WriteLine($"total script errors: {totalErrors}");
+        Console.WriteLine($"maps {maps.Count}, clean {clean}, engine exceptions {crashed}, total script errors: {totalErrors}");
         return totalErrors == 0 ? 0 : 1;
     }
 }
