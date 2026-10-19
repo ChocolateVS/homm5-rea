@@ -295,11 +295,14 @@ public partial class TownScreen : Control
         "TOWN_INFERNO" => new SacrificeScreen(this, growth: false),
         "TOWN_DUNGEON" => new SacrificeScreen(this, growth: true),
         "TOWN_STRONGHOLD" => SlaveMarketScreen.CanOpen(this) ? new SlaveMarketScreen(this) : null,
+        // FUN_00618d10: ability 0x20 (Runic Shrine) → FUN_00630450 = the magic guild screen (N_MAGIC_GUILD_SCREEN_ID)
+        // with "Button07" (a rune bookmark). TODO(exe): the rune panel (town rune list, FUN_006309d0) is not built.
+        "TOWN_FORTRESS" => Town.Level("TB_SPECIAL_1") > 0 ? new MageGuildScreen(this) : null,
         _ => null,
     };
 
     /// <summary>Town types whose enter_special screen is built here (the rest still show the placeholder notice).</summary>
-    static bool SpecialScreenBuilt(string townType) => townType is "TOWN_HEAVEN" or "TOWN_PRESERVE" or "TOWN_NECROMANCY" or "TOWN_INFERNO" or "TOWN_DUNGEON" or "TOWN_STRONGHOLD";
+    static bool SpecialScreenBuilt(string townType) => townType is "TOWN_HEAVEN" or "TOWN_PRESERVE" or "TOWN_FORTRESS" or "TOWN_NECROMANCY" or "TOWN_INFERNO" or "TOWN_DUNGEON" or "TOWN_STRONGHOLD";
 
     /// <summary>
     /// Screen of a special building double-clicked in the 3D town (FUN_0061b760: the building's town ability
@@ -313,6 +316,7 @@ public partial class TownScreen : Control
         ("TOWN_INFERNO", "TB_SPECIAL_5") => "special",
         ("TOWN_DUNGEON", "TB_SPECIAL_3") => "special",
         ("TOWN_STRONGHOLD", "TB_SPECIAL_5") => "special",
+        ("TOWN_FORTRESS", "TB_SPECIAL_1") => "special",
         _ => null,
     };
 

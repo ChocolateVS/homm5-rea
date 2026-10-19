@@ -4,7 +4,7 @@ Every adventure mechanic / screen element checked against `H5_Game.exe` (Ghidra 
 the original data. Status: **MATCH** (already as the exe), **FIXED** (changed to match), **GAP** (known difference or
 not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not traced).
 
-Rows at 2026-10-20: 54 FIXED, 7 MATCH, 22 GAP, 30 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
+Rows at 2026-10-20: 55 FIXED, 7 MATCH, 22 GAP, 30 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
 
 ## Seer Huts
 
@@ -133,9 +133,9 @@ Rows at 2026-10-20: 54 FIXED, 7 MATCH, 22 GAP, 30 UNVERIFIED (rows carrying two 
 | Stronghold Slave Market: screen | UI/StrongholdSlaveMarket (CStrongholdSlaveMarket@NUI 0xe43174); enter_special → FUN_00618dc0 (needs TB_SPECIAL_5) → FUN_007b9fc0; button switch FUN_007b99c0 | not removable → state 2 T_BUTTON_RED_UNREMOVEABLE; not sellable → state 2 T_BUTTON_RED_UNSELLABLE; else state 0 T_BUTTON_GREEN; enabled; sell_gain tooltip | `SlaveMarketScreen`; building double-click (ability 0x2d) | FIXED / click confirmation (FUN_007b9d30) not traced, sells directly UNVERIFIED |
 | Academy Arcane Forge (creature artifacts) | enter_special → 00618c10 → FUN_00640850 (UI/AcademyCreatureArtifacts, N_ACADEMY_CREATURE_ARTIFACTS_SCREEN_ID 00640ee0; UI/ArtefactMagic ID_ARTEFACT_MAGIC_SCREEN 007c0c10); building ability 0x16 (Academy TB_SPECIAL_2); CAddMicroArtifactToHeroBagCmd (0xe0e588, 004284e0 → hero +0xbc), CEquipMicroArtifactCmd (0xe0e564, 004283b0: HERO_SKILL_ARTIFICIER mastery > 0, slot in range, …), Move/Remove micro-artifact commands; MicroArtifactEffects / Prefixes / Shells tables | craft and equip creature artifacts | not built (combat has creature-artifact effects from another workstream) | GAP |
 | Tower of Astrologer (map building) | BUILDING_ASTROLOGER_TOWER, CAstrologerDialogLogEntry; ID_TOWER_OF_ASTROLOGER_SCREEN (007b88c0); refusals ASTROLOGER_CANT_CHANGE_NO_MONEY / _TWICE_ON_WEEK / _ON_SUNDAY / _NO_ELEMENTS (007b7970); CChangeMoonWeekCmd (0xe0edb0, 00429bb0); cost AstrologerCallWeekCost (6000 gold; MMH 5.5: 2500) | buy the next week's moon week | not built | GAP |
-| Fortress special (enter_special) | 00618d10: ability 0x20 (Fortress TB_SPECIAL_1) → FUN_00630450 | Runic Shrine screen | not built | GAP |
+| Fortress special (enter_special) | 00618d10: ability 0x20 (Fortress TB_SPECIAL_1, Runic Shrine) → FUN_00630450 (controller vtable 0xe2b6e8, open 006323f0 → FUN_00630f00 / 00631110: N_MAGIC_GUILD_SCREEN_ID, initial button "Button07") | the magic guild screen opened on a rune bookmark; RunesPanel_%02d / Button06–07 show the town's runes (+0x194 list, FUN_006309d0) | Fortress enter_special and the TB_SPECIAL_1 double-click open `MageGuildScreen` | FIXED / rune panel and bookmarks GAP (no town rune list; the guild screen's circle caption is still ours, not T_CIRCLE_%d) |
 | Academy Artifact Merchant | TB_SPECIAL_3 | buy artifacts | built earlier (ArtifactMerchantScreen) | UNVERIFIED |
-| Town "enter_special" for unbuilt screens | — | each opens its screen | Academy and Fortress still show our notice "This building's screen is not available yet." (placeholder text, not from the game) | GAP |
+| Town "enter_special" for unbuilt screens | — | each opens its screen | Academy still shows our notice "This building's screen is not available yet." (placeholder text, not from the game) | GAP |
 
 ## Map object interaction (hover, cursor, click)
 
