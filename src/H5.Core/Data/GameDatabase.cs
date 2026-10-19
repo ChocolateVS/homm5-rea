@@ -41,6 +41,9 @@ public sealed class GameDatabase
     /// <summary>Moat damage and effects per town type.</summary>
     public Dictionary<string, MoatDef> Moats { get; private set; } = new();
     public RpgStats Stats { get; private set; } = null!;
+    /// <summary>DefaultStats combat/Creatures/Haven/ChampionChargePattern and combat/Creatures/Dungeon/AcidicHydraPattern.</summary>
+    public AttackPattern? ChampionChargePattern { get; private set; }
+    public AttackPattern? AcidicHydraPattern { get; private set; }
     public ExperienceTable Experience { get; } = new();
     public List<string> Warnings { get; } = new();
 
@@ -60,6 +63,7 @@ public sealed class GameDatabase
     {
         var db = new GameDatabase { _x = new XdbLoader(fs) };
         db.Stats = new RpgStats(db._x.Load(StatsFile).Root!);
+        db.LoadStatsPatterns();
         db.LoadAbilities();
         db.LoadCreatures();
         db.LoadSpells();
@@ -146,6 +150,7 @@ public sealed class GameDatabase
             };
             foreach (var ks in o.Items("KnownSpells"))
                 c.KnownSpells.Add((ks.Str("Spell"), MasteryParse.Parse(ks.Str("Mastery"))));
+            c.Pattern = ParsePattern(_x.Resolve(o.Element("PatternAttack"), f));
             if (c.VisualPath != null && _x.FileSystem.Exists(c.VisualPath))
             {
                 var vis = _x.Load(c.VisualPath).Root;
@@ -155,6 +160,28 @@ public sealed class GameDatabase
             if (c.Name.Length == 0) c.Name = id;
             Creatures[id] = c;
         }
+    }
+
+    static AttackPattern? ParsePattern(XElement? e)
+    {
+        if (e == null) return null;
+        var p = new AttackPattern
+        {
+            RotateToMainTarget = e.Bool("RotateToMainTarget"),
+            MainCoefficient = (float)e.Dbl("DamageToMainTargetCoefficient", 1),
+            OtherCoefficient = (float)e.Dbl("DamageToOtherTargetsCoefficient", 1),
+            DamageAll = e.Bool("DamageAll"),
+        };
+        foreach (var r in e.Items("Patterns"))
+            p.Rotations.Add((r.Items("cells").Select(c => (c.Int("x"), c.Int("y"))).ToList(), (float)r.Dbl("AngleRotateTo")));
+        return p.Rotations.Count == 0 ? null : p;
+    }
+
+    void LoadStatsPatterns()
+    {
+        var creatures = _x.Load(StatsFile).Root?.Element("combat")?.Element("Creatures");
+        ChampionChargePattern = ParsePattern(_x.Resolve(creatures?.Element("Haven")?.Element("ChampionChargePattern"), StatsFile));
+        AcidicHydraPattern = ParsePattern(_x.Resolve(creatures?.Element("Dungeon")?.Element("AcidicHydraPattern"), StatsFile));
     }
 
     void LoadSpells()

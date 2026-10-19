@@ -81,7 +81,8 @@ public sealed partial class Battle
                 if (pos.Count > 0) la.Melee[t.Id] = pos;
             }
         if (CanShoot(unit))
-            la.Shoot = S.Living.Where(t => Controller(t) != la.Side && !t.HasEffect(H5.Combat.Fx.Invisible) && !IsSiegeTower(t)).Select(t => t.Id).ToList();
+            la.Shoot = S.Living.Where(t => Controller(t) != la.Side && !t.HasEffect(H5.Combat.Fx.Invisible) && !IsSiegeTower(t)
+                && !EldritchProtected(unit, t, ranged: true)).Select(t => t.Id).ToList();
         foreach (var ks in unit.Spells)
         {
             var sp = Db.Spell(ks.Spell);

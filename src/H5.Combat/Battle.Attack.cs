@@ -14,6 +14,8 @@ public sealed partial class Battle
         public double? FixedRoll;          // deterministic roll for previews/AI (null = random)
         public bool Secondary;             // splash/secondary target of a pattern attack
         public bool IgnoreDefence;
+        public double? TotalRoll;          // the stack's base roll fixed by the caller (Lightning Breath's shared roll)
+        public bool NoLuck;                // strike without a luck roll (FUN_00a673c0 flag param_5: helper strikes)
     }
 
     // ------------------------------------------------------------------ commands
@@ -47,6 +49,7 @@ public sealed partial class Battle
         if (t == null || !t.Alive || Controller(t) == Controller(u) || IsSiegeTower(t)) return "invalid target";
         if (t.HasEffect(H5.Combat.Fx.Invisible)) return "target is invisible";
         if (!CanShoot(u)) return "unit cannot shoot";
+        if (EldritchProtected(u, t, ranged: true)) return "target is protected by an eldritch aura";   // exe FUN_00b3b330
         RageEvent(u, "RangedAttackRP");
         PerformRangedAttack(u, t);
         // Archer's Dream set: shooters lose 30% less ATB when shooting.
@@ -147,6 +150,7 @@ public sealed partial class Battle
             var r = Strike(u, t, hit, pattern: true, extraAdjacentAll: runeBattleRage);
             stunned |= r.Stunned;
             killedTotal += r.Killed;
+            if (u.Alive) StrikeHelpers(u, t, retaliation: false);   // Lizard Bite / Pack Hunter after each strike (exe FUN_00a64830)
             // Retaliation follows the strike that allows it, inside the strike loop (exe FUN_00a65260 → FUN_00a64e90 →
             // FUN_00a646b0): a double attack is answered after its first blow.
             if (u.Alive && t.Alive && !noRetBase && !r.Stunned
@@ -179,8 +183,6 @@ public sealed partial class Battle
         if (u.HasEffect(H5.Combat.Fx.RuneBerserking) && t.Alive) RemoveEffect(u, H5.Combat.Fx.RuneBerserking);
         if (runeBattleRage) RemoveEffect(u, H5.Combat.Fx.RuneBattleRage);
 
-        if (u.Alive && t.Alive) LizardBites(u, t);
-        if (u.Alive && t.Alive) PackHunterAssist(u, t);
         if (u.Alive && t.Alive) Flamewave(u, t);
         PowerfulBlowFollowUp(u, t, melee: true);
         RetaliationStrikeTrigger(u, t);
@@ -217,6 +219,7 @@ public sealed partial class Battle
         if (!t.Alive) return;
         var hit = new Hit { Kind = AttackKind.Retaliation, Multiplier = t.FrenzyMultiplier };
         Strike(t, attacker, hit, pattern: true);
+        if (t.Alive) StrikeHelpers(t, attacker, retaliation: true);   // Pack Hunter after a retaliation (exe FUN_00a646b0)
         if (HasAbilityNow(t, Ab.BattleFrenzy))
             t.FrenzyMultiplier *= Stats.Get("combat/Creatures/Haven/BattleFrenzyBoostFactor", 1.5);   // p.172
     }
@@ -282,10 +285,14 @@ public sealed partial class Battle
 
         // Luck: rolled once per attack before the target loop, while the damage roll is
         // repeated for every target (exe 00a673c0; Elves' Double Shot re-rolls per shot).
-        double luckMult = RollLuck(a, t);
+        double luckMult = hit.NoLuck ? 1 : RollLuck(a, t);
 
-        var targets = new List<(Unit U, double Factor)> { (t, 1) };
-        if (pattern) targets.AddRange(PatternTargets(a, t, hit, ranged, extraAdjacentAll));
+        var targets = pattern ? StrikeTargets(a, t, hit, ranged, extraAdjacentAll) : new List<(Unit U, double Factor)> { (t, 1) };
+        // Lightning Breath (exe 00a67b2c–00a67ba5): outside retaliations ONE base roll is divided by the number of
+        // targets (the main target included) and every target is struck with that share.
+        double? sharedRoll = null;
+        if (pattern && HasAbilityNow(a, Ab.LightningBreath) && hit.Kind != AttackKind.Retaliation && targets.Count > 0)
+            sharedRoll = (float)(BaseDamageRoll(a, t, hit, ranged) / targets.Count);
 
         int primaryDamage = 0, primaryKilled = 0;
         bool stunned = false;
@@ -307,7 +314,7 @@ public sealed partial class Battle
             {
                 Kind = hit.Kind == AttackKind.Retaliation && ranged ? AttackKind.Retaliation : hit.Kind,
                 CellsWalked = hit.CellsWalked, Multiplier = hit.Multiplier, Secondary = !primary,
-                FixedRoll = hit.FixedRoll, IgnoreDefence = hit.IgnoreDefence,
+                FixedRoll = hit.FixedRoll, IgnoreDefence = hit.IgnoreDefence, TotalRoll = sharedRoll ?? hit.TotalRoll,
             };
             int dmg = ComputeDamage(a, target, h, ranged, luckMult);
             // The pattern share is applied to the already truncated damage and truncated again (exe 00a67bf3).
@@ -406,7 +413,7 @@ public sealed partial class Battle
         var ah = HeroOf(a); var th = HeroOf(t);
         bool melee = !ranged;
         bool isShooter = a.MaxShots > 0 && !a.IsWarMachine;
-        double baseDmg = BaseDamageRoll(a, t, hit, ranged);
+        double baseDmg = hit.TotalRoll ?? BaseDamageRoll(a, t, hit, ranged);
 
         // Avenger critical (exe 00a5ae40 / 00a673c0): replaces the luck multiplier with luck+1
         // when luck is normal or good, and with 1.0 on bad luck.
@@ -546,11 +553,21 @@ public sealed partial class Battle
         return (Math.Sign(Math.Round(tx - ax, 3)), Math.Sign(Math.Round(ty - ay, 3)));
     }
 
-    /// <summary>Additional units hit by an attack pattern, with damage factors.</summary>
-    IEnumerable<(Unit, double)> PatternTargets(Unit a, Unit t, Hit hit, bool ranged, bool allAdjacent)
+    /// <summary>Every unit a strike hits, the main target first unless the exe pattern leaves it out, with damage factors.</summary>
+    List<(Unit U, double Factor)> StrikeTargets(Unit a, Unit t, Hit hit, bool ranged, bool allAdjacent)
+    {
+        var exe = ExePatternTargets(a, t, hit, ranged);
+        var list = exe ?? new List<(Unit U, double Factor)> { (t, 1) };
+        list.AddRange(PatternTargets(a, t, hit, ranged, allAdjacent, exe));
+        return list;
+    }
+
+    /// <summary>Additional units hit by the engine's non-data attack rules (the data PatternAttack is ExePatternTargets).</summary>
+    IEnumerable<(Unit, double)> PatternTargets(Unit a, Unit t, Hit hit, bool ranged, bool allAdjacent, List<(Unit U, double Factor)>? exe = null)
     {
         var list = new List<(Unit, double)>();
         var seen = new HashSet<int> { t.Id, a.Id };
+        if (exe != null) foreach (var (u, _) in exe) seen.Add(u.Id);
         void Add(Unit? u, double f, bool enemiesOnly = true)
         {
             if (u == null || !u.Alive || u.IsObject && u.Side == a.Side || seen.Contains(u.Id)) return;
@@ -561,34 +578,10 @@ public sealed partial class Battle
         var (dx, dy) = Dir(a, t);
         if (!ranged)
         {
-            if (allAdjacent || HasAbilityNow(a, Ab.SixHeaded))
+            // Six-Headed, War Dance, Three-Headed, Spray, Whirlwind, Fire Breath, Champion Charge and Acid Breath are the
+            // creatures' PatternAttack data (ExePatternTargets, exe FUN_00a62030) — no ability test in the exe.
+            if (allAdjacent)
                 foreach (var o in Adjacent(a)) Add(o, 1);
-            if (HasAbilityNow(a, Ab.WarDance))
-                foreach (var o in Adjacent(a)) Add(o, 0.5);
-            // Three-Headed Attack / Spray: data PatternAttack (Cerberius, Sprite, Pixie, FirebreatherHound .xdb; 8 rotations,
-            // RotateToMainTarget = false, DamageAll = false): for a 1x1 attacker the attack cell plus the two cells beside it —
-            // straight attacks: the target cell ± the perpendicular; diagonal attacks: the two orthogonal neighbours. The
-            // Firebreather Hound's pattern adds the same three cells two steps out and deals DamageToOtherTargetsCoefficient
-            // 0.75 to every secondary target (its fire breath is that pattern, not the generic one below).
-            bool houndPattern = HasAbilityNow(a, Ab.ThreeHeaded) && HasAbilityNow(a, Ab.FireBreath);
-            if (HasAbilityNow(a, Ab.ThreeHeaded) || HasAbilityNow(a, Ab.Spray))
-            {
-                double f = houndPattern ? 0.75 : 1;
-                if (a.IsLarge || (dx == 0 && dy == 0))
-                    foreach (var o in Adjacent(a).Where(o => AreAdjacent(o, t))) Add(o, f);
-                else
-                    foreach (var c in FanCells(a.Pos, dx, dy))
-                    {
-                        Add(S.At(c), f);
-                        if (houndPattern) Add(S.At(new Cell(a.Pos.X + 2 * (c.X - a.Pos.X), a.Pos.Y + 2 * (c.Y - a.Pos.Y))), f);
-                    }
-            }
-            if (HasAbilityNow(a, Ab.Whirlwind))
-                foreach (var o in Adjacent(a))
-                {
-                    var (ox, oy) = Dir(a, o);
-                    if (ox * dx + oy * dy >= 0) Add(o, 1);
-                }
             if (HasAbilityNow(a, Ab.CrushingBlow))
             {
                 // 2x2 area including the target cell nearest the attacker, any side (p.173).
@@ -596,18 +589,6 @@ public sealed partial class Battle
                 for (int ox = 0; ox < 2; ox++) for (int oy = 0; oy < 2; oy++)
                     Add(S.At(new Cell(anchor.X + (dx < 0 ? -ox : ox), anchor.Y + (dy < 0 ? -oy : oy))), 1, enemiesOnly: false);
             }
-            if (HasAbilityNow(a, Ab.FireBreath) && !houndPattern)
-                Add(BehindTarget(t, dx, dy, 1), 1, enemiesOnly: false);
-            // Champion Charge: pattern only when the walked distance is strictly greater than ChampionChargeMinimalDistance
-            // (exe FUN_008aa990: MinimalDistance < walked); ChampionCharge.xdb: the cell behind the target at
-            // DamageToOtherTargetsCoefficient 0.5 with DamageAll = true (allies standing there are hit too).
-            if (HasAbilityNow(a, Ab.ChampionCharge) && hit.Kind == AttackKind.Melee
-                && hit.CellsWalked > Stats.Get("combat/Creatures/Haven/ChampionChargeMinimalDistance", 2))
-                Add(BehindTarget(t, dx, dy, 1), 0.5, enemiesOnly: false);
-            // Acid Breath (Gold/Green Dragon): only their PatternAttack — the attack cell and the one behind it (12 rotations),
-            // coefficient 1, DamageAll = true; the exe has no random-radius code for it (only RAINBOW_BREATH, FUN_00a62030).
-            if (HasAbilityNow(a, Ab.AcidBreath) && !HasAbilityNow(a, Ab.RainbowBreath))
-                Add(BehindTarget(t, dx, dy, 1), 1, enemiesOnly: false);
             if (HasAbilityNow(a, Ab.RainbowBreath))
             {
                 // Prismatic Breath: 1..5 cells behind the target (p.179).
@@ -619,7 +600,7 @@ public sealed partial class Battle
             if (HasAbilityNow(a, Ab.LightningBreath))
             {
                 var near = S.Living.Where(o => Controller(o) != Controller(a) && o.Id != t.Id && !o.IsObject && AreAdjacent(o, t)).ToList();
-                foreach (var o in near) Add(o, 1.0 / (near.Count + 1));
+                foreach (var o in near) Add(o, 1);   // the shared roll is divided in Strike (exe 00a67b2c)
             }
         }
         else
@@ -627,11 +608,9 @@ public sealed partial class Battle
             if (HasAbilityNow(a, Ab.DeathCloud))
                 foreach (var o in S.Living.Where(o => o.Id != t.Id && !IsUndeadLike(o) && !o.IsObject && Distance(o, t) <= 1 && CellsWithin(o, t, 1)))
                     Add(o, 0.5, enemiesOnly: false);
-            if (HasAbilityNow(a, Ab.CrossAttack))
-                foreach (var d in new[] { new Cell(1, 0), new Cell(-1, 0), new Cell(0, 1), new Cell(0, -1) })
-                    foreach (var c in t.Cells()) Add(S.At(c + d), 1);
             if (HasAbilityNow(a, Ab.MagicAttack))
-                foreach (var c in LineCells(a.Pos, t.Pos)) Add(S.At(c), 1, enemiesOnly: false);
+                foreach (var c in LineCells(a.Pos, t.Pos))
+                    if (S.At(c) is { } lu && !EldritchFlag(lu)) Add(lu, 1, enemiesOnly: false);   // exe FUN_00a62030: flag 0x1000 skipped
             if (HasAbilityNow(a, Ab.ChainShot) && !t.Has(Ab.Demonic))
             {
                 double f = 0.5; var last = t;
@@ -721,11 +700,7 @@ public sealed partial class Battle
                 if (t.Has(Ab.MagmaShield) && a.Alive) DealElementalDamage(a, (int)(taken * Math.Clamp(Stats.Get("combat/Creatures/Abilities/MagmaShield_Damage_Multiplier", 0.4), 0, 10)), Elements.Fire, t.Id, Ab.MagmaShield);
                 var th = HeroOf(t);
                 if (th.HasPerk(Sk.ChillingBones) && IsUndeadLike(t) && a.Alive) DealPerkElementalDamage(a, dmg * (double)0.05f, "SPELL_SKILL_CHILLING_BONES", t.Id, "CHILLING_BONES");   // exe FUN_00a5bc50 → 0097d740, ECX=0xcf
-                if (t.Has(Ab.AcidBlood) && a.Alive && !retaliation)
-                {
-                    Emit(new AbilityTriggered(t.Id, Ab.AcidBlood, a.Id));
-                    DealDamage(a, ComputeDamage(t, a, new Hit { Kind = AttackKind.Ability, Multiplier = 0.25 }, false), t.Id, AttackKind.Ability, Ab.AcidBlood);
-                }
+                if (HasAbilityNow(t, Ab.AcidBlood) && t.Alive && a.Alive) AcidBloodSplash(t, a, hit);
             }
         }
         if (!t.Alive || dmg <= 0 || !a.Alive) return;

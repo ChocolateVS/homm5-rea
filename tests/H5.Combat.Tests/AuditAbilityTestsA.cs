@@ -57,10 +57,10 @@ public class AuditAbilityTestsA(GameDataFixture f)
 
     Battle ChargeSetup(Cell start, out Unit ally)
     {
-        // 2x2 vs 2x2 on the same rows so the direction is unambiguous (the 12-direction pattern rotation for large
-        // creatures is a separate item).
-        var b = f.Duel("CREATURE_CHAMPION", 3, "CREATURE_CAVALIER", 40, 1, start, new Cell(8, 4));
-        ally = BattleSetup.AddCreature(b.Db, b.State, 0, "CREATURE_PEASANT", 30, new Cell(10, 4), summoned: false);
+        // The 2x2 champion attacks from (6,4) (exe cell (7,5), FUN_00a62030 anchors the pattern there): the rotation
+        // (1,0),(2,0) covers the 1x1 target at (8,5) and the cell behind it (9,5).
+        var b = f.Duel("CREATURE_CHAMPION", 3, "CREATURE_PEASANT", 40, 1, start, new Cell(8, 5));
+        ally = BattleSetup.AddCreature(b.Db, b.State, 0, "CREATURE_PEASANT", 30, new Cell(9, 5), summoned: false);
         b.Begin();
         b.State.Active = b.State.Units[0].Id;
         return b;
@@ -115,12 +115,20 @@ public class AuditAbilityTestsA(GameDataFixture f)
         r.Events.OfType<Damaged>().Any(d => b.State.Units.First(u => u.Id == d.Target).Pos == c);
 
     [Fact]
-    public void ThreeHeadedHitsTheCellsBesideTheTargetNotBesideTheAttacker()   // Cerberius.xdb PatternAttack (8 rotations)
+    public void ThreeHeadedPicksTheRotationWithTheMostVictims()   // Cerberius.xdb (8 rotations), exe FUN_00a5b630
     {
+        // Rotations holding the target (1,0): 0° {(1,-1),(1,0),(1,1)}, 45° {(1,0),(1,1),(0,1)}, 315° {(0,-1),(1,-1),(1,0)}.
+        // With enemies at (1,-1) and (0,-1) the 315° rotation has the most victims and wins over the straight one.
         var (b, r) = Hit("CREATURE_CERBERI", 20, "CREATURE_PEASANT", 200, new Cell(5, 5), new Cell(6, 5),
             (1, "CREATURE_PEASANT", new Cell(6, 4)), (1, "CREATURE_PEASANT", new Cell(5, 4)));
-        Assert.True(Damaged(b, r, new Cell(6, 4)));    // (1,-1): beside the target
-        Assert.False(Damaged(b, r, new Cell(5, 4)));   // (0,-1): beside the attacker — not in the pattern
+        Assert.True(Damaged(b, r, new Cell(6, 4)));
+        Assert.True(Damaged(b, r, new Cell(5, 4)));
+        // Equal victim counts: the rotation closest to the attack direction (0°) — (5,4) is left out.
+        (b, r) = Hit("CREATURE_CERBERI", 20, "CREATURE_PEASANT", 200, new Cell(5, 5), new Cell(6, 5),
+            (1, "CREATURE_PEASANT", new Cell(6, 4)), (1, "CREATURE_PEASANT", new Cell(5, 4)), (1, "CREATURE_PEASANT", new Cell(6, 6)));
+        Assert.True(Damaged(b, r, new Cell(6, 4)));
+        Assert.True(Damaged(b, r, new Cell(6, 6)));
+        Assert.False(Damaged(b, r, new Cell(5, 4)));
     }
 
     [Fact]
@@ -137,15 +145,16 @@ public class AuditAbilityTestsA(GameDataFixture f)
     {
         for (ulong seed = 1; seed <= 10; seed++)
         {
-            var b = f.Duel("CREATURE_GOLD_DRAGON", 3, "CREATURE_CAVALIER", 30, seed, new Cell(2, 4), new Cell(4, 4));
-            BattleSetup.AddCreature(b.Db, b.State, 0, "CREATURE_PEASANT", 50, new Cell(6, 5), summoned: false);
-            BattleSetup.AddCreature(b.Db, b.State, 1, "CREATURE_PEASANT", 50, new Cell(7, 4), summoned: false);
+            // 2x2 dragon at (2,4) = exe cell (3,5): rotation (1,0),(2,0) → the 1x1 target at (4,5) and (5,5) behind it.
+            var b = f.Duel("CREATURE_GOLD_DRAGON", 3, "CREATURE_PEASANT", 30, seed, new Cell(2, 4), new Cell(4, 5));
+            BattleSetup.AddCreature(b.Db, b.State, 0, "CREATURE_PEASANT", 50, new Cell(5, 5), summoned: false);
+            BattleSetup.AddCreature(b.Db, b.State, 1, "CREATURE_PEASANT", 50, new Cell(6, 5), summoned: false);
             b.Begin();
             b.State.Active = b.State.Units[0].Id;
             var r = b.Apply(new AttackCmd(b.State.Units[0].Id, b.State.Units[1].Id) { Side = 0 });
             Assert.True(r.Ok, r.Error);
-            Assert.True(Damaged(b, r, new Cell(6, 5)));    // the own stack right behind the target
-            Assert.False(Damaged(b, r, new Cell(7, 4)));   // two cells behind: no random radius for Acid Breath
+            Assert.True(Damaged(b, r, new Cell(5, 5)));    // the own stack right behind the target
+            Assert.False(Damaged(b, r, new Cell(6, 5)));   // two cells behind: no random radius for Acid Breath
         }
     }
 

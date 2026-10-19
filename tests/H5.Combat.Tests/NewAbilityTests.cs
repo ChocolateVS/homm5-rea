@@ -66,8 +66,9 @@ public class NewAbilityTests(GameDataFixture f)
         b.Begin();
         s.Active = s.Units[0].Id;
         int hp = s.Units[2].TotalHealth;
+        // exe FUN_00b3b330: a MAGIC_ATTACK shooter may not shoot a stack flagged 0x1000 at all.
         var r = b.Apply(new ShootCmd(s.Units[0].Id, s.Units[2].Id) { Side = 0 });
-        Assert.True(r.Ok, r.Error);
-        Assert.Contains(r.Events, e => e is Missed { Reason: "eldritch_aura" });
+        Assert.False(r.Ok);
+        Assert.Equal(hp, s.Units[2].TotalHealth);
     }
 }

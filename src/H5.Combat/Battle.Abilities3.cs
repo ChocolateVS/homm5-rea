@@ -117,32 +117,28 @@ public sealed partial class Battle
 
     // ------------------------------------------------------------------ passive hooks
 
-    /// <summary>Treachery (exe 008a0b60): below Treachery% (30) of the initial stack the goblins change sides, once.</summary>
+    /// <summary>
+    /// Treachery (exe FUN_008a0b60, vtable slot 0x68 of 00e4fe9c): once (flag +0x80), when count / reference count is
+    /// below the threshold the goblins change sides. Threshold, single precision: (float)(Treachery × 0.01), minus
+    /// level × GoblinKing_TreacheryBonusPerLevel when the stack carries SPELL_SPEC_GOBLIN_KING (0x13b, its +0x20 =
+    /// the hero's level); the reference (+0xc) is the stack's initial count, at least 1; the ratio is compared in
+    /// extended precision against the float threshold, so exactly 30 % (0.3 &lt; 0.300000012f) already defects.
+    /// The traitors lose Hypnotize (0x14) and Seduce (0x148) (vf 0x270).
+    /// </summary>
     void CheckTreachery(Unit t)
     {
-        if (!t.Alive || !t.Has(Ab.Treachery) || t.AbilityUses.ContainsKey(Ab.Treachery) || t.InitialCount <= 0) return;
-        double threshold = Stats.Get("combat/Creatures/Stronghold/Treachery", 30) / 100.0;
+        if (!t.Alive || !t.Has(Ab.Treachery) || t.AbilityUses.ContainsKey(Ab.Treachery)) return;
+        float threshold = (float)((int)Stats.Get("combat/Creatures/Stronghold/Treachery", 30) * 0.01);
         var gk = HeroOf(t);
         if (gk.Present && gk.Specialization == "HERO_SPEC_GOBLIN_KING")
-            threshold -= Stats.Get("combat/HeroSpecializations/Barbarian/GoblinKing_TreacheryBonusPerLevel", 0.01) * gk.Level;
-        if ((double)t.Count / t.InitialCount >= threshold) return;
+            threshold = (float)(threshold - gk.Level * (double)(float)Stats.Get("combat/HeroSpecializations/Barbarian/GoblinKing_TreacheryBonusPerLevel", 0.01));
+        int reference = Math.Max(1, t.InitialCount);
+        if (!((double)t.Count / reference < threshold)) return;
         t.AbilityUses[Ab.Treachery] = 1;
         t.Side = 1 - t.Side;
+        if (t.HasEffect("SPELL_HYPNOTIZE")) RemoveEffect(t, "SPELL_HYPNOTIZE");
+        if (t.HasEffect(H5.Combat.Fx.Seduced)) RemoveEffect(t, H5.Combat.Fx.Seduced);
         Emit(new AbilityTriggered(t.Id, Ab.Treachery));
-    }
-
-    /// <summary>Pack Hunter: every other stack of the same creature adjacent to the target joins the attack, before retaliation.</summary>
-    void PackHunterAssist(Unit attacker, Unit target)
-    {
-        if (!HasAbilityNow(attacker, Ab.PackHunter)) return;
-        foreach (var o in S.LivingOf(attacker.Side).Where(o => o.Id != attacker.Id && o.CreatureId == attacker.CreatureId
-                     && Controller(o) == Controller(attacker) && AreAdjacent(o, target)).ToList())
-        {
-            if (!target.Alive) break;
-            if (o.HasEffect(H5.Combat.Fx.Sleep) || o.HasEffect(H5.Combat.Fx.Stunned) || o.HasEffect("SPELL_BLIND")) continue;
-            Emit(new AbilityTriggered(o.Id, Ab.PackHunter, target.Id));
-            Strike(o, target, new Hit { Kind = AttackKind.Melee }, pattern: true);
-        }
     }
 
     /// <summary>
@@ -164,10 +160,15 @@ public sealed partial class Battle
         return result;
     }
 
-    /// <summary>Eldritch Aura: stacks next to a friendly Combat Mage are immune to distant Mage (magic) attacks.</summary>
+    /// <summary>
+    /// Eldritch Aura (exe FUN_008a4b70 flag 0x1000): set on a stack when an adjacent stack of EITHER side (the enemy and
+    /// the ally neighbour lists, not the stack itself) has the aura. A MAGIC_ATTACK shooter cannot shoot a flagged
+    /// stack at all (FUN_00b3b330 returns 0) and its magic line skips flagged stacks (FUN_00a62030, vf 0x21c(0x1000)).
+    /// </summary>
+    bool EldritchFlag(Unit t) => S.Living.Any(o => o.Id != t.Id && HasAbilityNow(o, Ab.EldritchAura) && AreAdjacent(o, t));
+
     bool EldritchProtected(Unit attacker, Unit target, bool ranged) =>
-        ranged && attacker.Has(Ab.MagicAttack) &&
-        (target.Has(Ab.EldritchAura) || Adjacent(target).Any(o => o.Side == target.Side && o.Has(Ab.EldritchAura)));
+        ranged && HasAbilityNow(attacker, Ab.MagicAttack) && EldritchFlag(target);
 
     /// <summary>Power Feed bonus to the hero's spell power (≤ Knowledge) while the feeding stack lives.</summary>
     double PowerFeedBonus(HeroState h)

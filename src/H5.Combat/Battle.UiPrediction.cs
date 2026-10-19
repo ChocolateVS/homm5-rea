@@ -73,14 +73,17 @@ public sealed partial class Battle
     /// </summary>
     public IReadOnlyList<(Unit Unit, double Factor)> PredictionTargets(Unit a, Unit t, Cell? from, AttackKind kind, int walked, bool ranged)
     {
-        var list = new List<(Unit, double)> { (t, 1) };
+        var list = new List<(Unit, double)>();
         var savedPos = a.Pos;
         var rng = S.Rng;
         ulong s0 = rng.S0, s1 = rng.S1, s2 = rng.S2, s3 = rng.S3;
         try
         {
             if (!ranged && from is { } f) a.Pos = f;
-            list.AddRange(PatternTargets(a, t, new Hit { Kind = kind, CellsWalked = walked }, ranged, false));
+            var all = StrikeTargets(a, t, new Hit { Kind = kind, CellsWalked = walked }, ranged, false);
+            // Lightning Breath divides one roll among all its targets (Strike); the prediction shows each share.
+            bool split = HasAbilityNow(a, Ab.LightningBreath) && kind != AttackKind.Retaliation;
+            foreach (var (u, fct) in all.OrderBy(x => x.U.Id == t.Id ? 0 : 1)) list.Add((u, split ? fct / all.Count : fct));
         }
         finally
         {

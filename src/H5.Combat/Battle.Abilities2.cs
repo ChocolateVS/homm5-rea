@@ -28,20 +28,6 @@ public sealed partial class Battle
         return true;
     }
 
-    /// <summary>Lizard Bite: allied raiders next to the target join in for half damage (p.177).</summary>
-    void LizardBites(Unit attacker, Unit t)
-    {
-        foreach (var r in S.LivingOf(attacker.Side).Where(r => r.Id != attacker.Id && HasAbilityNow(r, Ab.LizardBite) && AreAdjacent(r, t)).ToList())
-        {
-            if (!t.Alive) return;
-            Emit(new AbilityTriggered(r.Id, Ab.LizardBite, t.Id));
-            // ×0.5, and ×(1.2 + 0.01·level) more for the Riders specialisation (exe FUN_00a58de0, special 0xb5).
-            var rh = HeroOf(r);
-            double mult = 0.5 * (rh.Present && rh.Specialization == "HERO_SPEC_RIDERS" ? 1.2 + 0.01 * rh.Level : 1.0);
-            Strike(r, t, new Hit { Kind = AttackKind.Ability, Multiplier = mult }, pattern: false);
-        }
-    }
-
     /// <summary>
     /// Wheeling Attack (exe FUN_00a5fa50 builds the victims, FUN_00a61c50 hits them as the rider passes): the path
     /// points from index 1 (the start cell is skipped) up to, but not including, the last

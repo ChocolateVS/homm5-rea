@@ -28,6 +28,8 @@ public sealed class CreatureDef
     public HashSet<string> Abilities = new();
     public string? VisualPath;
     public string? MonsterSharedPath;
+    /// <summary>The creature's PatternAttack (null when the xdb has none).</summary>
+    public AttackPattern? Pattern;
 
     public bool IsShooter => Shots > 0;
     public bool IsLarge => CombatSize >= 2;
@@ -35,6 +37,20 @@ public sealed class CreatureDef
     /// <summary>Creature level as used by Cleansing/Warcries: tier for base, tier+1 for upgrades (fan manual p.190).</summary>
     public int Level => Tier + (Upgrade ? 1 : 0);
     public override string ToString() => $"{Id} ({Name})";
+}
+
+/// <summary>
+/// A PatternAttack object (NDb::SPatternAttack): alternative cell sets ("rotations") relative to the attack anchor, each
+/// with its AngleRotateTo in degrees; the DamageTo* coefficients and the DamageAll flag (also allies are hit).
+/// Exe offsets: patterns vector +0x44 (stride 0x14, AngleRotateTo +0x10), RotateToMainTarget +0x50,
+/// DamageToMainTargetCoefficient +0x54, DamageToOtherTargetsCoefficient +0x58, DamageAll +0x5c.
+/// </summary>
+public sealed class AttackPattern
+{
+    public List<(List<(int X, int Y)> Cells, float Angle)> Rotations = new();
+    public bool RotateToMainTarget;
+    public float MainCoefficient = 1, OtherCoefficient = 1;
+    public bool DamageAll;
 }
 
 public sealed class CombatAbilityDef
