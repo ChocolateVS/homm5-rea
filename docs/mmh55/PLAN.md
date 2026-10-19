@@ -26,6 +26,9 @@ Consequences for this plan:
 ## 2. Workstreams (parallelisable)
 
 ### W1 Data-driven — should "just work" once loaded, needs verification + test ports (M, 1 helper)
+**Status (2026-10-19): done for the stock-engine target — see `W1_DATA.md`.** Stock table sizes found in the exe and
+applied to pools (placeholders excluded), BOM/bool crashes fixed, tests run on both fixtures (83 stock-only, more ports
+open per area), smoke tests pass. Open: Lua runtime errors on MMH55 maps (W2), RMG `4P-Diamond-XL-#` (W5).
 Creature/spell/skill/artifact/hero/class stats, DefaultStats constants, town buildings/specialisations, banks, RMG templates,
 texts, UI layouts/textures, HD textures, arenas/obstacles, campaign/SP maps.
 - Port the 91 stock-value tests to a parallel MMH55 fixture (`H5_GAME_DIR` → 5.5) with MMH55 expected values; keep the stock set.

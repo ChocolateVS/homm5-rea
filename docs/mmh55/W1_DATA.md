@@ -43,7 +43,14 @@ the stock engine never offers them anywhere (no pool, no dwelling of the stock d
 every pool above. They still load as definitions (harmless; see §1 direct references).
 
 ## 3. Other limits (audit)
-See §3 table below (filled as audited).
+| Item | Stock engine | H5Reborn | Status |
+|---|---|---|---|
+| Creature/spell/skill/artifact/class tables | fixed counts (§1) | dictionaries keyed by id, no fixed arrays (grep for 180/353/221/97/9: none) | MATCH for pools, GAP for direct ids (§1) |
+| Hero class rules (`Class == KNIGHT/BARBARIAN/RANGER/WIZARD/WARLOCK/...`) | compare the class enum value | compare the class id string, so MMH55's Heretic (Haven) is not a Knight, Shaman (Stronghold) not a Barbarian — as in the exe | MATCH |
+| Class names / skill tables of the 16 new classes | out-of-range reads (§1) | MMH55 `HeroClass.xdb` data (name, AttributeProbs, SkillsProbs, preferred spells) | GAP (§1) |
+| Skills.xdb | 221 | MMH55's Skills.xdb also has 221 items (only the enum grew to 251) | MATCH |
+| 6 hero skill slots, level cap, 12×10 battlefield | stock constants; MMH55 changes them only through 55u.dll groups (Hero8Skills, Levels, BattlefieldSize) | stock values | MATCH (DLL groups out of scope) |
+| `CombatAbilities`, `WarMachines` tables | not enlarged by MMH55 (types.xml delta: only the five enums of §1 grew) | — | MATCH |
 
 ## 4. Tests on both fixtures
 * Default: stock (`tests/stock.runsettings` sets `H5_TARGET=stock`). MMH55: `H5_GAME_DIR="…/HoMM 5 - Tribes of the East (5.5)" dotnet test H5Reborn.sln`.
@@ -73,3 +80,12 @@ See §3 table below (filled as audited).
 * `TownSpecialTests.DiscountsFollowTheExeFormula`, `TrainingCostsThreeTimesTheTargetAndSpendsPoints`: stock values
   (town specials helper).
 * RMG `4P-Diamond-XL-#` at its smallest size places 4 start towns wrongly (W5).
+* SP map `Maps/SingleMissions/A1SM1` (MMH55-SPMaps.h5u): MMH55 system scripts report "Player is not in game"
+  (`H55-Core.lua:1758 H55_UpdateGameMode`), "Saved combat #-1 not found" (`H55-Core.lua:7687`) and
+  "Incorrect player ID (-1)" (`A1SM1/MapScript.lua:39`) — native semantics for W2.
+* One MMH55 DDS texture fails Godot's DDS header check ("linear size … does not match"); not identified yet.
+
+## 7. Smoke tests (off-screen 1920x1080, 5.5 install, HEAD b44a131)
+Main menu (MMH55 logo, "Version: 5.69k"), duel (`--combat-vs-ai=1,2`), MMH55 single mission A1SM1 (dialog scene,
+then the adventure screen with `--skip-dialog-scenes`), town screen (`--adventure=A2M1 --town-open`): all start and
+render, no crash or exception. Shots: scratchpad only.
