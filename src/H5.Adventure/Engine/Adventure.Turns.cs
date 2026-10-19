@@ -10,6 +10,14 @@ public sealed partial class Adventure
     {
         if (S.Heroes.Any(h => h.Owner == Current.Index && h.Alive && h.PendingLevelUps.Count > 0))
             return "a hero has a pending level-up";
+        if (TurnOrder != null)
+        {
+            int next = TurnOrder(S.CurrentPlayer);
+            if (next < 0) { NewDay(); next = TurnOrder(-1); }
+            if (next >= 0) S.CurrentPlayer = next;
+            if (!S.Finished) Emit(new TurnStarted(Current.Index, S.Day));
+            return null;
+        }
         // Next living player; wrapping around starts a new day.
         int idx = S.CurrentPlayer;
         do

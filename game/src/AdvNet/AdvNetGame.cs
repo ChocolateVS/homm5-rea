@@ -28,6 +28,10 @@ public sealed class AdvNetGame
     public event Action? Updated;
     public event Action<BattleReplica>? BattleStarted;
     public event Action<string>? Rejected;
+    /// <summary>"Simultaneous turns finished" must be shown (CEventSimultaneousConflict with the message flag).</summary>
+    public event Action? SimultaneousTurnsFinished;
+    /// <summary>Set when the message arrived while nobody listened (the adventure screen shows it when it opens).</summary>
+    public bool SimultaneousMessagePending { get; set; }
 
     static AdvMapSource? _maps;
     public static AdvMapSource Maps => _maps ??= new AdvMapSource(Game.Instance.Db, Game.Instance.Fs, Game.Instance.Install);
@@ -50,6 +54,16 @@ public sealed class AdvNetGame
             case GameUpdate u:
                 Replica.Apply(u);
                 if (Replica.Desynced) GD.PushWarning("[advnet] view desync — the client will resync on reconnect");
+                // 005a5d90 case 0x21: approve at once when asked; show the message box when flagged.
+                while (Replica.SimultaneousNotices.TryDequeue(out var n))
+                {
+                    if (n.Approve) _send(AdvNetCommands.SimultaneousApprove());
+                    if (n.Message)
+                    {
+                        if (SimultaneousTurnsFinished != null) SimultaneousTurnsFinished();
+                        else SimultaneousMessagePending = true;
+                    }
+                }
                 Updated?.Invoke();
                 break;
             case CommandRejected rej:

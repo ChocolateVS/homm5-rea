@@ -62,10 +62,12 @@ public static class ViewFilter
         a.Select(s => s is { Count: > 0 } ? new Stack(s.Creature, Band(s.Count)) : null).ToArray();
 
     /// <summary>The view of <paramref name="full"/> that map player <paramref name="me"/> may see, as JSON.</summary>
-    public static JsonNode ViewFor(AdvState full, AdvMap map, int me)
+    /// <param name="current">Overrides <see cref="AdvState.CurrentPlayer"/> (simultaneous turns: each playing human sees its own turn).</param>
+    public static JsonNode ViewFor(AdvState full, AdvMap map, int me, int? current = null)
     {
         Bind(map);
         var v = full.Clone();
+        if (current is { } cp) v.CurrentPlayer = cp;
         var mine = v.Players.Find(p => p.Index == me) ?? throw new ArgumentException($"no player {me}");
         bool Ally(int owner) => owner >= 0 && v.Players.Find(p => p.Index == owner) is { } o && o.Team == mine.Team;
 

@@ -13,6 +13,8 @@ public static class AdvNetCommands
     public static JsonNode Adv(AdvCommand c) => new JsonObject { ["$t"] = "adv", ["cmd"] = JsonNode.Parse(AdvJson.Serialize(c)) };
     public static JsonNode Battle(BattleCommand c) => new JsonObject { ["$t"] = "battle", ["cmd"] = JsonNode.Parse(MessageJson.Serialize(c)) };
     public static JsonNode Chat(string text) => new JsonObject { ["$t"] = "chat", ["text"] = text };
+    /// <summary>CApproveSimultaneousConflict: the answer to a simultaneous-turns notice with <c>Approve</c> set.</summary>
+    public static JsonNode SimultaneousApprove() => new JsonObject { ["$t"] = "simul", ["action"] = "approve" };
     public static JsonNode GhostMove(int hero, int x, int y, int floor) =>
         new JsonObject { ["$t"] = "ghost", ["action"] = "move", ["hero"] = hero, ["x"] = x, ["y"] = y, ["floor"] = floor };
     public static JsonNode GhostUpgrade(int hero, string skill) => new JsonObject { ["$t"] = "ghost", ["action"] = "upgrade", ["hero"] = hero, ["skill"] = skill };
@@ -77,6 +79,11 @@ public sealed class AdventureNetReplica
     public readonly Queue<AdvEvent> Events = new();
     public readonly Queue<(BattleReplica Battle, IReadOnlyList<BattleEvent> Events)> BattleEvents = new();
     public readonly Queue<ChatLine> Chat = new();
+    /// <summary>
+    /// CEventSimultaneousConflict notices (005a5d90 case 0x21): with <c>Approve</c> the client answers
+    /// <see cref="AdvNetCommands.SimultaneousApprove"/>; with <c>Message</c> it shows "Simultaneous turns finished".
+    /// </summary>
+    public readonly Queue<(bool Approve, bool Message)> SimultaneousNotices = new();
     /// <summary>Raised when a battle this player fights begins (the client opens the combat screen).</summary>
     public event Action<BattleReplica>? BattleStarted;
     public event Action<BattleReplica>? BattleEnded;
@@ -141,6 +148,8 @@ public sealed class AdventureNetReplica
             foreach (var c in chat)
                 Chat.Enqueue(new ChatLine((int)c!["from"]!, (string)c["name"]!, (string)c["scope"]!, (string)c["text"]!));
         if (p["ghosts"] is JsonObject g) Ghosts = g;
+        if (p["simul"] is JsonArray sn)
+            foreach (var x in sn) SimultaneousNotices.Enqueue(((bool?)x?["approve"] == true, (bool?)x?["message"] == true));
         if (p["turn"] is JsonObject t) Turn = t;
     }
 
@@ -169,6 +178,9 @@ public sealed class AdventureNetReplica
         }
         return true;
     }
+
+    /// <summary>Simultaneous turns: this player ended its turn and waits for the other humans (T_WAIT_FOR_PLAYERS).</summary>
+    public bool WaitingForPlayers => Turn?["simul"]?["waiting"] is JsonArray w && w.Any(x => (int?)x == MyPlayer);
 
     public bool IsMyTurn => !View.Finished && View.CurrentPlayer >= 0 && View.Players[View.CurrentPlayer].Index == MyPlayer && Battle == null && Turn?["battle"]?.GetValue<bool>() != true;
 

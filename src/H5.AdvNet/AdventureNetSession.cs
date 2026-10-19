@@ -70,6 +70,11 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
     GhostMode? _ghosts;
     NetBattle? _battle;
     AiRunner? _runner;
+    SimultaneousTurns? _simul;
+    int _phaseDay = -1;
+    bool _wasInPhase;
+    int[] _shownCurrent = Array.Empty<int>();
+    int _shownDay = -1;
     ulong _seed, _battleSeq;
     int[] _sideMapPlayer = Array.Empty<int>();
     string[] _sideName = Array.Empty<string>();
@@ -97,6 +102,7 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
     public H5.Adventure.Engine.Adventure Game => _g;
     public AdvMap Map => _lm.Map;
     public NetBattle? ActiveBattle => _battle;
+    public SimultaneousTurns? Simultaneous => _simul;
     public int MapPlayerOf(int side) => _sideMapPlayer[side];
 
     public IReadOnlyList<JsonNode> Start(IReadOnlyList<RoomPlayer> playersBySide, JsonObject? roomSettings, ulong seed)
@@ -131,7 +137,20 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
         StartScripts();
         var inner = _g.CommandSink;
         _g.CommandSink = cmd => Intercept(cmd) ?? (inner != null ? inner(cmd) : _g.Apply(cmd));
-        _g.Observer = (cmd, res) => { if (res.Ok) foreach (var e in res.Events) _events.Add((e, cmd.Player)); };
+        _g.Observer = (cmd, res) =>
+        {
+            if (!res.Ok) return;
+            foreach (var e in res.Events) _events.Add((e, cmd.Player));
+            _simul?.OnCommand(cmd);
+        };
+        if (_set.SimultaneousTurns)
+        {
+            // Humans first, then the computer players (00998060); all humans move at once until areas meet.
+            _simul = new SimultaneousTurns(_g, IsHuman, _set.SimultaneousAlwaysOn ? new AlwaysOnSimultaneousPolicy() : new OriginalSimultaneousPolicy());
+            _g.TurnOrder = i => _g.HumansFirstOrder(i, IsHuman);
+            int firstHuman = _g.HumansFirstOrder(-1, IsHuman);
+            if (firstHuman >= 0) _g.S.CurrentPlayer = firstHuman;
+        }
         if (_set.GhostMode) _ghosts = new GhostMode(_ghostData, _g);
         if (_set.DevStartAdjacent) PlaceSecondHumanNextToFirst();
 
@@ -172,6 +191,7 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
                 ["battle"] = payload["battle"]?.DeepClone(),
                 ["ghosts"] = payload["ghosts"]?.DeepClone(),
                 ["turn"] = payload["turn"]?.DeepClone(),
+                ["simul"] = payload["simul"]?.DeepClone(),
             });
         }
         return setups;
@@ -206,6 +226,7 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
             "battle" => DoBattle(side, c["cmd"]),
             "ghost" => _ghosts == null ? "ghost mode is off" : MarkDirty(_ghosts.Command(me, c)),
             "chat" => DoChat(side, (string?)c["text"]),
+            "simul" => DoSimul(me, (string?)c["action"]),
             _ => "unknown command",
         };
         if (err != null) return new SessionResult.Rejected(err);
@@ -218,11 +239,25 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
     {
         if (_g.S.Finished) return "the game is over";
         if (_battle != null) return "a battle is in progress";
-        if (_g.Current.Index != me || !_humanPlayers.Contains(me)) return "not your turn";
         AdvCommand cmd;
         try { cmd = AdvJson.DeserializeCommand(cmdNode!.ToJsonString()); }
         catch (Exception e) when (e is JsonException or NotSupportedException or NullReferenceException) { return "malformed command"; }
         if (cmd is ResolveBattleCmd) return "battles are resolved by the host";
+        if (_simul is { InPhase: true } sim)
+        {
+            if (!sim.Playing(me)) return IsHuman(me) ? "wait for other players" : "not your turn";
+            if (_g.S.Battle != null) return "a battle is in progress";
+            if (_g.S.Choice is { } ch && _g.S.Hero(ch.Hero) is { } chooser && chooser.Owner != me) return "another player is deciding";
+            if (cmd is EndTurnCmd)
+            {
+                if (_g.S.Heroes.Any(h => h.Owner == me && h.Alive && h.PendingLevelUps.Count > 0)) return "a hero has a pending level-up";
+                sim.EndTurn(me);
+                Continue();
+                return null;
+            }
+            sim.Enter(me);
+        }
+        else if (_g.Current.Index != me || !_humanPlayers.Contains(me)) return "not your turn";
         var r = Send(cmd with { Player = me });
         if (!r.Ok) return r.Error ?? "rejected";
         Continue();
@@ -241,6 +276,18 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
         PublishBattle(updates);
         if (_battle.Finished) FinishBattle();
         Continue();
+        return null;
+    }
+
+    /// <summary>{"$t":"simul","action":"approve"}: CApproveSimultaneousConflict (004289a0), sent by clients automatically.</summary>
+    string? DoSimul(int me, string? action)
+    {
+        if (_simul == null) return "simultaneous turns are off";
+        if (action != "approve") return "unknown action";
+        var err = _simul.Approve(me);
+        if (err != null) return err;
+        Continue();
+        _dirty = true;
         return null;
     }
 
@@ -280,6 +327,12 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
     {
         for (int guard = 0; guard < 1000; guard++)
         {
+            if (_simul != null && _battle == null && _runner == null && _simul.Step() is var last and >= 0)
+            {
+                // Every human ended the simultaneous phase: the turn passes on (computer players, new day).
+                Send(new EndTurnCmd { Player = last });
+                continue;
+            }
             OnTurnMaybeChanged();
             if (_g.S.Finished || _battle != null) return;
             if (_runner is { WaitingBattle: true }) return;
@@ -310,6 +363,15 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
 
     void OnTurnMaybeChanged()
     {
+        if (_simul is { InPhase: true })
+        {
+            // One timer for the whole humans' phase (00998520); ghosts stay idle (GAP).
+            if (_phaseDay != _g.S.Day) { _phaseDay = _g.S.Day; _turnStartMs = _clock(); _battlePausedMs = 0; }
+            _lastTurnPlayer = _g.S.CurrentPlayer;
+            _wasInPhase = true;
+            return;
+        }
+        if (_wasInPhase) { _wasInPhase = false; _lastTurnPlayer = -1; }
         if (_g.S.CurrentPlayer == _lastTurnPlayer) return;
         _lastTurnPlayer = _g.S.CurrentPlayer;
         _turnStartMs = _clock();
@@ -462,7 +524,8 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
             long used = nowMs - _turnStartMs - _battlePausedMs;
             if (used >= _set.TimeLimitMinutes * 60_000L)
             {
-                TimeOutTurn();
+                if (_simul is { InPhase: true }) TimeOutPhase();
+                else TimeOutTurn();
                 changed = true;
             }
         }
@@ -477,12 +540,31 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
     {
         int me = _g.Current.Index;
         _events.Add((new H5.Adventure.Engine.Message("turn_time_out", "Time is up."), -1));
+        AnswerDefaults(me);
+        Send(new EndTurnCmd { Player = me });
+        Continue();
+    }
+
+    /// <summary>The simultaneous phase's shared time ran out: every human still playing ends its turn.</summary>
+    void TimeOutPhase()
+    {
+        var sim = _simul!;
+        _events.Add((new H5.Adventure.Engine.Message("turn_time_out", "Time is up."), -1));
+        foreach (var mp in sim.Humans.Where(sim.Playing).ToList())
+        {
+            sim.Enter(mp);
+            AnswerDefaults(mp);
+            sim.EndTurn(mp);
+        }
+        Continue();
+    }
+
+    void AnswerDefaults(int me)
+    {
         for (int guard = 0; guard < 20 && _g.S.Choice != null; guard++) Send(new AnswerChoiceCmd(false) { Player = me });
         foreach (var h in _g.S.Heroes.Where(h => h.Owner == me && h.Alive))
             for (int guard = 0; guard < 40 && h.PendingLevelUps.Count > 0; guard++)
                 if (!Send(new ChooseLevelUpCmd(h.Id, 0) { Player = me }).Ok) break;
-        Send(new EndTurnCmd { Player = me });
-        Continue();
     }
 
     readonly Dictionary<string, double> _creatureTime = new();
@@ -514,6 +596,7 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
         if (side < 0 || side >= _sideMapPlayer.Length || _g == null) return null;
         int mp = _sideMapPlayer[side];
         if (!_humanPlayers.Remove(mp)) return null;
+        _simul?.Left(mp);
         _events.Add((new H5.Adventure.Engine.Message("player_left", $"{_sideName[side]} left the game; the computer takes over."), -1));
         if (_humanPlayers.Count == 0) return new NetGameEnded(null, "all players left");
         // The computer takes over the leaver's side (also in a running battle).
@@ -552,10 +635,12 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
         int n = _sideMapPlayer.Length;
         var payloads = new JsonNode[n];
         var hashes = new string[n];
+        if (_shownCurrent.Length != n) _shownCurrent = Enumerable.Repeat(-1, n).ToArray();
         for (int s = 0; s < n; s++)
         {
             int mp = _sideMapPlayer[s];
-            var view = ViewFilter.ViewFor(_g.S, _lm.Map, mp);
+            int? viewCurrent = _simul?.ViewCurrentFor(mp);
+            var view = ViewFilter.ViewFor(_g.S, _lm.Map, mp, viewCurrent);
             var patch = JsonDiff.Diff(_lastView[s], view);
             _lastView[s] = view;
             hashes[s] = JsonDiff.CanonicalHash(view);
@@ -568,6 +653,15 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
                 while (j < _events.Count && _events[j].Actor == a) j++;
                 evs.AddRange(ViewFilter.EventsFor(_events.Skip(i).Take(j - i).Select(x => x.Event), _g.S, _lm.Map, mp, a, _heroPos));
                 i = j;
+            }
+            if (_simul != null)
+            {
+                // Each side is told whose turn it sees: its own while it plays the simultaneous phase.
+                int shown = viewCurrent ?? _g.S.CurrentPlayer;
+                evs.RemoveAll(e => e is H5.Adventure.Engine.TurnStarted);
+                if (shown != _shownCurrent[s] || _g.S.Day != _shownDay)
+                    evs.Add(new H5.Adventure.Engine.TurnStarted(_g.S.Players[shown].Index, _g.S.Day));
+                _shownCurrent[s] = shown;
             }
 
             var payload = new JsonObject
@@ -590,8 +684,13 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
             }
             if (chat.Count > 0) payload["chat"] = chat;
             if (_ghosts != null) payload["ghosts"] = _ghosts.ViewFor(mp, _lm.Map);
+            if (_simul != null && _simul.Notices.Any(x => x.MapPlayer == mp))
+                payload["simul"] = new JsonArray(_simul.Notices.Where(x => x.MapPlayer == mp)
+                    .Select(x => (JsonNode)new JsonObject { ["approve"] = x.Approve, ["message"] = x.Message }).ToArray());
             payloads[s] = payload;
         }
+        _shownDay = _g.S.Day;
+        _simul?.Notices.Clear();
         _events.Clear();
         _battleOut.Clear();
         _chat.Clear();
@@ -612,6 +711,14 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
     JsonObject TurnInfo()
     {
         var o = new JsonObject { ["player"] = _g.Current.Index, ["day"] = _g.S.Day, ["battle"] = _battle != null };
+        if (_simul != null)
+            o["simul"] = new JsonObject
+            {
+                ["active"] = _simul.Active,
+                ["phase"] = _simul.InPhase,
+                ["waiting"] = new JsonArray(_simul.InPhase ? _simul.Humans.Where(h => !_simul.Playing(h)).Select(h => (JsonNode)h).ToArray() : Array.Empty<JsonNode>()),
+                ["pending"] = new JsonArray(_simul.Pending.Select(h => (JsonNode)h).ToArray()),
+            };
         if (_set.TimeLimitMinutes > 0 && IsHuman(_g.Current.Index))
             o["msLeft"] = Math.Max(0, _set.TimeLimitMinutes * 60_000L - (_clock() - _turnStartMs - _battlePausedMs));
         return o;

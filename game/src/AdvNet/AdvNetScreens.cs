@@ -59,14 +59,30 @@ public partial class AdvSetupScreen : UiScreen
     MapEntry? _selected;
     int _sort;
     readonly BitmapText _desc = new() { AnchorRight = 1, AnchorBottom = 1, Wrap = true };
+    readonly BitmapText _alwaysOn = new();
 
     static readonly int[] TimeLimits = { 0, 1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120 };
 
     public AdvSetupScreen(bool network) : base(network ? "UI/MPCreate.(WindowScreen).xdb" : "UI/HotSeat.(WindowScreen).xdb")
     {
         _network = network;
-        // Simultaneous turns are not supported yet: the option stays visible but disabled.
-        if (Find("simultaneus") is { } sim) sim.Enabled = false;
+        // Simultaneous turns (room key simultaneus_turns, docs/rules/SIMULTANEOUS.md): off by default.
+        if (Find("simultaneus") is { } sim)
+        {
+            sim.SetState(1);
+            sim.Clicked += _ => { Read(); ShowValues(); };
+            // Not in the original: the fan mod MMH 5.5 keeps simultaneous turns on for the whole game.
+            _alwaysOn.Position = new Vector2(sim.Position.X, sim.Position.Y + sim.Size.Y + 2);
+            _alwaysOn.Size = new Vector2(Math.Max(sim.Size.X, 260), 18);
+            _alwaysOn.MouseFilter = MouseFilterEnum.Stop;
+            _alwaysOn.TooltipText = "Not in the original game: simultaneous turns never switch back to standard turns (rules of the fan mod Might & Magic: Heroes 5.5).";
+            _alwaysOn.GuiInput += e =>
+            {
+                if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } && _set.SimultaneousTurns)
+                { _set.SimultaneousAlwaysOn = !_set.SimultaneousAlwaysOn; ShowValues(); }
+            };
+            sim.GetParent()?.AddChild(_alwaysOn);
+        }
         if (Find("loadbutton") is { } load) load.Enabled = false;
         if (Find("load") is { } load2) load2.Enabled = false;
 
@@ -128,6 +144,8 @@ public partial class AdvSetupScreen : UiScreen
         _set.GhostMode = Find("ghostmode")?.State == 0;
         _set.QuickCombat = Find("quick_combat")?.State == 0;
         _set.Autosave = Find("realtime")?.State == 0;
+        _set.SimultaneousTurns = _network && Find("simultaneus")?.State == 0;
+        if (!_set.SimultaneousTurns) _set.SimultaneousAlwaysOn = false;
     }
 
     void ShowValues()
@@ -138,6 +156,8 @@ public partial class AdvSetupScreen : UiScreen
         Find("difficultyvalue")?.SetValue("value", new[] { "Easy", "Normal", "Hard", "Heroic" }[_set.Difficulty]);
         Find("animationspeed_text")?.SetValue("speed", new[] { "Slow", "Normal", "Fast" }[_set.AnimationSpeed]);
         Find("combatturnspeed_text")?.SetValue("speed", new[] { "Off", "Slow", "Normal", "Fast" }[_set.DynamicBattles]);
+        _alwaysOn.Visible = _set.SimultaneousTurns;
+        _alwaysOn.Markup = $"<body>Simultaneous turns: always on (MMH 5.5): {(_set.SimultaneousAlwaysOn ? "On" : "Off")}";
     }
 
     void LoadMaps()

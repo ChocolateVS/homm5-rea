@@ -246,7 +246,10 @@ public partial class AdvHud : Control
         var box = Screen.Find("EnemyTurnBox");
         if (box == null) return;
         box.Visible = playerIndex >= 0;
-        if (playerIndex >= 0)
+        // Simultaneous turns: a human who ended its turn waits for the others (T_WAIT_FOR_PLAYERS).
+        bool waiting = Ui.Net.LobbyService.Instance?.Adventure?.Replica.WaitingForPlayers == true;
+        Screen.Find("EnemyTurnBox/Text")?.SetText(waiting ? UiResources.Instance.Text("UI/AdventureScreen/EnemyTurnBox/WaitForPlayers.txt") : null);
+        if (playerIndex >= 0 && !waiting)
         {
             // EnemyTurn.txt: "Player <value=PlayerID> turn", filled with the colour name from the
             // box's related texts color_1..color_8 (Red, Blue, … in ColourModels order).
@@ -255,6 +258,29 @@ public partial class AdvHud : Control
             var name = UiResources.Instance.Text($"UI/AdventureScreen/EnemyTurnBox/color_{Math.Max(1, ci)}.txt") ?? $"{playerIndex + 1}";
             Screen.Find("EnemyTurnBox/Text")?.SetValue("PlayerID", UiResources.StripMarkup(name).Trim());
         }
+    }
+
+    // ---------------------------------------------------------------- simultaneous turns
+
+    public override void _EnterTree()
+    {
+        if (Ui.Net.LobbyService.Instance?.Adventure is not { } net) return;
+        net.SimultaneousTurnsFinished += ShowSimultaneousFinished;
+        if (net.SimultaneousMessagePending) { net.SimultaneousMessagePending = false; Callable.From(ShowSimultaneousFinished).CallDeferred(); }
+    }
+
+    public override void _ExitTree()
+    {
+        if (Ui.Net.LobbyService.Instance?.Adventure is { } net) net.SimultaneousTurnsFinished -= ShowSimultaneousFinished;
+    }
+
+    /// <summary>FUN_00679150 with T_SIMULTANEOUS_TURNS_FINISHED_HEADER / _TEXT (005a5d90 case 0x21).</summary>
+    void ShowSimultaneousFinished()
+    {
+        if (!IsInsideTree()) return;
+        var header = UiResources.Instance.Text("UI/AdventureScreen/EnemyTurnBox/SimultaneousTurnsFinishedHeader.txt") ?? "";
+        var text = UiResources.Instance.Text("UI/AdventureScreen/EnemyTurnBox/SimultaneousTurnsFinishedText.txt") ?? "";
+        Options.MessageBoxes.Message(_screen, header, text);
     }
 
     // ---------------------------------------------------------------- minimap
