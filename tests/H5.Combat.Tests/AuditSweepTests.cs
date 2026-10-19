@@ -77,4 +77,34 @@ public class AuditSweepTests(GameDataFixture f)
         Assert.InRange(resisted, 20, 70);
         Assert.Equal(0, blessResisted);
     }
+
+    // exe FUN_00a65260 @ 00a65646 → FUN_00a5ca80: the rune steals before the strike loop (the stolen effect leaves the
+    // target before the first blow) and only in the holder's own attack, never in its retaliation.
+    [Fact]
+    public void MagicControlStealsBeforeTheFirstStrikeAndNotOnRetaliation()
+    {
+        var b = f.Duel("CREATURE_FOOTMAN", 10, "CREATURE_PEASANT", 400, posA: new Cell(5, 5), posB: new Cell(6, 5));
+        b.Begin();
+        var fm = b.State.Units[0]; var pe = b.State.Units[1];
+        fm.Effects.Add(new Effect { Id = Fx.RuneMagicControl, Positive = true, Dispellable = false });
+        pe.Effects.Add(new Effect { Id = "SPELL_HASTE", Positive = true, Remaining = 3, School = "MAGIC_SCHOOL_LIGHT" });
+        b.State.Active = fm.Id;
+        var r = b.Apply(new AttackCmd(fm.Id, pe.Id) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        var ev = r.Events.ToList();
+        int removed = ev.FindIndex(e => e is EffectRemoved { Effect: "SPELL_HASTE" } x && x.UnitId == pe.Id);
+        int firstBlow = ev.FindIndex(e => e is AttackStarted a && a.Attacker == fm.Id);
+        Assert.True(removed >= 0 && firstBlow >= 0 && removed < firstBlow, string.Join(" | ", ev));
+        Assert.True(fm.HasEffect("SPELL_HASTE"));
+
+        var b2 = f.Duel("CREATURE_FOOTMAN", 10, "CREATURE_PEASANT", 400, posA: new Cell(5, 5), posB: new Cell(6, 5));
+        b2.Begin();
+        var fm2 = b2.State.Units[0]; var pe2 = b2.State.Units[1];
+        pe2.Effects.Add(new Effect { Id = Fx.RuneMagicControl, Positive = true, Dispellable = false });
+        fm2.Effects.Add(new Effect { Id = "SPELL_HASTE", Positive = true, Remaining = 3, School = "MAGIC_SCHOOL_LIGHT" });
+        b2.State.Active = fm2.Id;
+        Assert.True(b2.Apply(new AttackCmd(fm2.Id, pe2.Id) { Side = 0 }).Ok);
+        Assert.True(pe2.HasEffect(Fx.RuneMagicControl));
+        Assert.True(fm2.HasEffect("SPELL_HASTE"));
+    }
 }

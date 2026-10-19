@@ -129,6 +129,7 @@ public sealed partial class Battle
             if (!u.Alive) return;
         }
 
+        RuneOfMagicControlSteal(u, t);   // exe FUN_00a65260 @ 00a65646, before the strike loop
         var hit = new Hit { Kind = AttackKind.Melee, CellsWalked = walked };
         // Strikes per action (creature vtable slot 0x1c0 = FUN_008a0f90): 1, Double Attack 2, Rune of Berserking +1.
         int strikes = 1;
@@ -231,6 +232,7 @@ public sealed partial class Battle
         RemoveEffect(u, H5.Combat.Fx.Invisible);
         MarkOfTheDamnedTrigger(u);
         if (!u.Alive) return;
+        RuneOfMagicControlSteal(u, t);   // exe FUN_00a65260 @ 00a65646, before the strike loop
         // Strikes per action (vtable slot 0x1c0): Double Shot for creatures, perks/ring for the Ballista.
         int shots = u.IsWarMachine ? WarMachineShotsPerAction(u) : HasAbilityNow(u, Ab.DoubleShot) ? 2 : 1;
         int targetHpBefore = t.TotalHealth;
@@ -873,18 +875,6 @@ public sealed partial class Battle
         }
         if (HasAbilityNow(a, Ab.StormStrike) && melee)
             StormStrikeChain(a, t, dmg);
-        if (a.HasEffect(H5.Combat.Fx.RuneMagicControl))
-        {
-            var bless = t.Effects.Where(MagicControlCandidate).ToList();   // any school (exe FUN_00a5ca80 → FUN_004e4000)
-            RemoveEffect(a, H5.Combat.Fx.RuneMagicControl);
-            if (bless.Count > 0)
-            {
-                var stolen = bless[S.Rng.Next(bless.Count)];
-                RemoveEffect(t, stolen.Id);
-                AddEffect(a, new Effect { Id = stolen.Id, Value = stolen.Value, Value2 = stolen.Value2, Remaining = stolen.Remaining,
-                    Positive = true, SourceSide = a.Side, Mastery = stolen.Mastery, Power = stolen.Power, School = stolen.School, SpellLevel = stolen.SpellLevel });
-            }
-        }
         // Bear Roar only fires while the struck target would still retaliate (exe FUN_00a5e800 checks *param_2).
         if (HasAbilityNow(a, Ab.BearRoar) && melee && !retaliation && !stunned && CanRetaliate(t, a))
         {

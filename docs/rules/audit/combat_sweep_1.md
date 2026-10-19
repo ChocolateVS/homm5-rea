@@ -1,4 +1,4 @@
-# Combat audit — sweep 1: Firewall field, resistance roll
+# Combat audit — sweep 1: Firewall field, resistance roll, Rune of Magic Control timing
 
 Per-ID rows merged into `docs/rules/AUDIT_COMBAT.md` by `tools/re/audit/ledger.py` (rows here override the earlier
 fragments). Exe references are H5_Game.exe (GOG 3.1) addresses, analysed headless with Ghidra 12.1.4
@@ -17,3 +17,4 @@ fragments). Exe references are H5_Game.exe (GOG 3.1) addresses, analysed headles
 | ID | Status | Exe | Original behaviour / note | Test |
 |---|---|---|---|---|
 | `SPELL_FIREWALL` | FIXED | 0097a530 (case 0xec), 0085cda0, 0098ade0, 0098abf0, 0098a920, 0085b790, 004e6770 | cells (x, y−1), (x, y), (x, y+1); every hit (cast, entry) recomputes FUN_0097d600 from the damage stored at the cast with the caster (artifacts, protection, Irresistible Magic) + Elemental Chains and deals it through the fire rider (Master of Fire, Set Afire); the cast rolls resistance (vf 0x1c second argument 0 → FUN_0097d600 roll flag 1) and hits creatures and spawns, not war machines. Engine fixed (core rows above); the turn-hit trigger was not located | AuditSweepTests.FirewallFieldHitsKeepTheCaster, FirewallCastSkipsWarMachines |
+| `SPELL_RUNE_OF_MAGIC_CONTROL` | FIXED | 00862a50, 00a65260 (call @ 00a65646), 00a5ca80 (disassembly 00a5caa8..00a5cb46), 00a5cb80 → 004e6470 / 004e4000 | whole battle until consumed (0x7fffffff); the attack routine FUN_00a65260 calls FUN_00a5ca80 once, after the approach and before the strike count (vf 0x1c0) and the strike loop — not in retaliations (FUN_00a64e90): with the rune (effect 0xfb) on the attacker and a living target, one of the target's effects FUN_004e4000 accepts as beneficial (dispellable, timed, not a warcry effect, not never-dispelled — any school) is chosen with the battle RNG (Random(n)), added to the attacker (vf 0x264) and removed from the target (vf 0x270), and the rune is removed. The engine stole after the first hit (also on retaliation hits) | AuditSpellSTests.MagicControlStealsAnySchool, AuditSweepTests.MagicControlStealsBeforeTheFirstStrikeAndNotOnRetaliation |
