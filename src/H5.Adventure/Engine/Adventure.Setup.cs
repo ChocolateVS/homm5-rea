@@ -27,6 +27,7 @@ public sealed partial class Adventure
         foreach (var p in s.Players) g.RollTavern(p);
         g.ChooseMoonWeek();
         g.StockArtifactMerchants();
+        g.StockSpellShops();
         g.ResetTrainingPoints();
         g.PlaceGrail();
         foreach (var h in s.Heroes) g.ResetHeroDay(h, newWeek: true);

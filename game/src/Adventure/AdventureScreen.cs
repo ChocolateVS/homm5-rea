@@ -560,7 +560,7 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 break;
             }
-            case ObjectVisited { What: "BUILDING_HILL_FORT" or "BUILDING_WARMACHINE_FACTORY" or "BUILDING_BLACK_MARKET" or H5.Adventure.Engine.Adventure.SacrificialAltar } bv when HumanCaused(player) && !Autoplay && s.Hero(bv.HeroId) is { } visitor:
+            case ObjectVisited { What: "BUILDING_HILL_FORT" or "BUILDING_WARMACHINE_FACTORY" or "BUILDING_BLACK_MARKET" or H5.Adventure.Engine.Adventure.SacrificialAltar or H5.Adventure.Engine.Adventure.SpellShop } bv when HumanCaused(player) && !Autoplay && s.Hero(bv.HeroId) is { } visitor:
             {
                 // Hill Fort / War Machine Factory / Artifact Merchant: their stock windows while the hero stands at the object.
                 Hud.Visible = false;
@@ -569,6 +569,7 @@ public partial class AdventureScreen : Control
                     "BUILDING_HILL_FORT" => new HillFortScreen(this, visitor.Id, bv.Object),
                     "BUILDING_BLACK_MARKET" => new BlackMarketScreen(this, visitor.Id, bv.Object),
                     H5.Adventure.Engine.Adventure.SacrificialAltar => new SacrificeAltarScreen(this, visitor.Id, bv.Object),
+                    H5.Adventure.Engine.Adventure.SpellShop => new SpellShopScreen(this, visitor.Id, bv.Object),
                     _ => new WarMachineFactoryScreen(this, visitor.Id, bv.Object),
                 };
                 AddChild(screen);

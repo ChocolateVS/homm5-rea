@@ -520,3 +520,71 @@ public sealed partial class GarrisonScreen : MapBuildingScreen
         }
     }
 }
+
+/// <summary>
+/// Arcane Library (UI/BuySpell, ID_BUY_SPELL_SCREEN, exe 007bb850): six SpellButton_%d with SpellPrice_%d
+/// (ResourceIcon + ResourceText); spell_select (007ba820) chooses an entry, buy_spell (007bad30) sends
+/// CBuySpellShopSpellCmd for it, clears the choice and plays BUY_SPELL_SOUND; the cost strip CreatureCountHolder
+/// (006d7ec0) shows the chosen price against the purse.
+/// </summary>
+public sealed partial class SpellShopScreen : MapBuildingScreen
+{
+    static readonly string[] ResourceFiles = { "Wood", "Ore", "Mercury", "Crystals", "Sulfur", "Gems", "Gold" };
+    int _choice = -1;
+
+    public SpellShopScreen(AdventureScreen adv, int heroId, int shop) : base(adv, "UI/BuySpell.(WindowScreen).xdb", heroId, shop)
+    {
+        Ui.Bus.On("spell_select", (_, src) => { if (src?.Name.ToString() is { } n && n.StartsWith("SpellButton_")) { _choice = n[^1] - '0'; Refresh(); } });
+        Ui.Bus.On("buy_spell", Buy);
+    }
+
+    string?[] Stock => Adv.Session.S.Obj(Object).ShopSpells ?? Array.Empty<string?>();
+
+    void Buy()
+    {
+        if (_choice is < 0 or >= 6) return;
+        // 004299b0 refuses silently (returns 0); the screen only resets the choice.
+        var r = Adv.Session.Apply(new BuySpellShopSpellCmd(HeroId, Object, _choice) { Player = Me.Index });
+        _choice = -1;
+        if (r.Ok) Audio.AudioSystem.PlayNamed("BUY_SPELL_SOUND");
+        Refresh();
+        Adv.Hud.Refresh();
+    }
+
+    static Texture2D? SpellIcon(SpellDef spell)
+    {
+        var icon = (string?)Game.Instance.Xdb.Load(spell.SourcePath).Root?.Element("Texture")?.Attribute("href");
+        return string.IsNullOrEmpty(icon) ? null : Game.Instance.LoadTexture(H5.Core.Xdb.XdbRef.Parse(icon, spell.SourcePath).Path);
+    }
+
+    public override void Refresh()
+    {
+        base.Refresh();
+        var stock = Stock;
+        for (int i = 0; i < 6; i++)
+        {
+            var spell = i < stock.Length && stock[i] is { } id ? Game.Instance.Db.Spell(id) : null;
+            TownUi.SetPicture(Ui.Find($"SpellButton_{i}/Icon"), spell != null ? SpellIcon(spell) : null);
+            if (Ui.Find($"SpellButton_{i}") is { } b)
+            {
+                b.Enabled = spell != null;
+                b.SetTooltip(spell != null ? $"<h3>{spell.Name}<br><body>{spell.Description}" : null);
+                b.SetState(i == _choice && b.Window.ButtonStates.Count > 1 ? 1 : 0);
+            }
+            var cost = H5.Adventure.Engine.Adventure.SpellShopCost(spell);
+            int[] v = { cost.Wood, cost.Ore, cost.Mercury, cost.Crystal, cost.Sulfur, cost.Gem, cost.Gold };
+            int res = Array.FindIndex(v, x => x > 0);
+            Ui.SetVisible($"SpellPrice_{i}", res >= 0);
+            if (res >= 0)
+            {
+                TownUi.SetPicture(Ui.Find($"SpellPrice_{i}/ResourceIcon"), Game.Instance.LoadTexture($"Textures/AdventureScreen/Resources/{ResourceFiles[res]}.dds"));
+                Ui.Find($"SpellPrice_{i}/ResourceText")?.SetText(v[res].ToString());
+            }
+        }
+        var chosen = _choice >= 0 && _choice < stock.Length && stock[_choice] is { } c ? Game.Instance.Db.Spell(c) : null;
+        var price = H5.Adventure.Engine.Adventure.SpellShopCost(chosen);
+        int[] pv = { price.Wood, price.Ore, price.Mercury, price.Crystal, price.Sulfur, price.Gem, price.Gold };
+        TownUi.SetCostStrip(Ui.Find("CreatureCountHolder"), chosen != null ? pv : null, Me);
+        if (Ui.Find("BuyButton") is { } buy) buy.Enabled = chosen != null;
+    }
+}

@@ -36,6 +36,7 @@ namespace H5.Adventure.Engine;
 [JsonDerivedType(typeof(SetFavoriteEnemiesCmd), "set_favorite_enemies")]
 [JsonDerivedType(typeof(SacrificeCreatureOnAltarCmd), "altar_creature")]
 [JsonDerivedType(typeof(SacrificeArtifactOnAltarCmd), "altar_artifact")]
+[JsonDerivedType(typeof(BuySpellShopSpellCmd), "buy_spell_shop_spell")]
 [JsonDerivedType(typeof(TransformCreatureCmd), "transform_creature")]
 [JsonDerivedType(typeof(SacrificeForExperienceCmd), "sacrifice_for_experience")]
 [JsonDerivedType(typeof(SacrificeForGrowthCmd), "sacrifice_for_growth")]

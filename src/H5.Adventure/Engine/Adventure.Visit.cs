@@ -586,8 +586,16 @@ public sealed partial class Adventure
     bool LearnSpell(HeroState h, string spell, bool force)
     {
         if (h.Spells.Contains(spell)) return false;
+        if (!force && !CanLearnSpell(h, spell)) return false;
+        h.Spells.Add(spell);
+        Emit(new SpellLearned(h.Id, spell));
+        return true;
+    }
+
+    bool CanLearnSpell(HeroState h, string spell)
+    {
         var def = Core.Spell(spell);
-        if (!force && def != null)
+        if (def != null)
         {
             if (h.Class == "HERO_CLASS_BARBARIAN" && def.School != "MAGIC_SCHOOL_WARCRIES") return false;
             var skill = def.School switch
@@ -601,8 +609,6 @@ public sealed partial class Adventure
             int need = def.Level <= 2 ? 0 : def.Level - 2;
             if (skill != null && (int)h.MasteryOf(skill) < need) return false;
         }
-        h.Spells.Add(spell);
-        Emit(new SpellLearned(h.Id, spell));
         return true;
     }
 

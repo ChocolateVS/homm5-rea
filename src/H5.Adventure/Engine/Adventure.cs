@@ -96,6 +96,7 @@ public sealed partial class Adventure
             SetFavoriteEnemiesCmd c => DoSetFavoriteEnemies(c),
             SacrificeCreatureOnAltarCmd c => DoSacrificeCreatureOnAltar(c),
             SacrificeArtifactOnAltarCmd c => DoSacrificeArtifactOnAltar(c),
+            BuySpellShopSpellCmd c => DoBuySpellShopSpell(c),
             DigCmd c => DoDig(c),
             CompleteSeerQuestCmd c => DoCompleteSeerQuest(c),
             AcceptSeerQuestCmd c => DoAcceptSeerQuest(c),

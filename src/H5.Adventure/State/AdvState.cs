@@ -296,6 +296,8 @@ public sealed class ObjState
     public int Amount;
     public int ResourceKind = -1;
     public int Variant = -1;
+    /// <summary>Arcane Library stock (CSpellShop +0x24: six entries, circle 4 then 5); a bought entry is null.</summary>
+    public string?[]? ShopSpells;
     /// <summary>Day number when the object becomes available again (banks, weekly buildings).</summary>
     public int RechargeDay;
     public int TimesLooted;
