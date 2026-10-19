@@ -97,7 +97,7 @@ public sealed partial class Battle
         "SPELL_WARCRY_RALLING_CRY" or "SPELL_WARCRY_WORD_OF_THE_CHIEF" => t.Has(Ab.Undead) || t.Has(Ab.Mechanical) || t.IsWarMachine || t.IsObject,
         "SPELL_WARCRY_CALL_OF_BLOOD" => !t.Has(Ab.DemonRaged),
         // Fear My Roar: only IMMUNITY_TO_MIND_CONTROL (removed by the enemy's Shawl of the Great Lich, FUN_008a34c0).
-        "SPELL_WARCRY_FEAR_MY_ROAR" => t.Has(Ab.ImmuneMind) && !(Enemy(t.Side) is { Present: true } e && e.Artifacts.Contains("ARTIFACT_SHAWL_OF_GREAT_LICH")),
+        "SPELL_WARCRY_FEAR_MY_ROAR" => HasAbilityExe(t, Ab.ImmuneMind),
         _ => false,
     };
 

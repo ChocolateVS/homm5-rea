@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 188 |
+| FIXED | 191 |
 | MATCH | 116 |
-| GAP | 8 |
-| UNVERIFIED | 223 |
+| GAP | 5 |
+| UNVERIFIED | 232 |
 | N/A | 58 |
 
 ## Core mechanics
@@ -510,13 +510,13 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_ARMAGEDDON` | FIXED | 00976b90, 0085f330 | truncated base / protection; 0085f330 target rule not compared | SpellBaseDamageTruncates |
 | `SPELL_CURSE` | MATCH | 008a2630, 0097c9f0 | (only without Bless) max = min + (max−min)·clamp(v,0,1) if lower; immune: IMMUNITY_TO_CURSE |  |
 | `SPELL_SLOW` | FIXED | 004e4270 (case 0xc), 0097c9f0 | initiative ×(1−clamp(v,0,1)); immune: ABILITY_IMMUNITY_TO_SLOW, Dwarven Mithral Greaves | InitiativeEffectFactorsMultiply, ArtifactsGrantSpellImmunities |
-| `SPELL_DISRUPTING_RAY` | FIXED | 00976db0 (0xd + spec 0x2a), 0097c9f0 | Disrupter deals trunc((lvl−1)·PerLevel/trunc(Div) + Base) with it — the engine checked a non-existent SPELL_VULNERABILITY id, so the bonus never fired; war machines immune unless Disrupter | DisrupterDamagesWithDisruptingRay |
+| `SPELL_DISRUPTING_RAY` | FIXED | 00976db0 (0xd + spec 0x2a), 0097c9f0, 004e5e60 | Disrupter deals trunc((lvl−1)·PerLevel/trunc(Div) + Base) with it; war machines immune unless Disrupter; Armored stacks immune unless Disrupter (the engine cast it and ignored the defence loss); a Rune of Elemental Immunity covering Air blocks it | DisrupterDamagesWithDisruptingRay, AuditSpellSTests.SpellTableImmunities |
 | `SPELL_PLAGUE` | FIXED | 00976b90, 0097c9f0 | truncated damage; immune: Undead, Mechanical, Elemental | SpellBaseDamageTruncates |
 | `SPELL_WEAKNESS` | MATCH | 0098a430 (effect 0xf), 004e57d0 | Suffering: attack sum = trunc(sum − max(0, value)) in chop mode (stock values are whole numbers); not blocked by Armored; duration = time-per-turn · power |  |
 | `SPELL_ABILITY_WEAKNING_STRIKE` | UNVERIFIED | 0089c720 008b237d 008be8f9 009a2950 | implemented; not yet compared with the exe |  |
-| `SPELL_FORGETFULNESS` | GAP | 0097c9f0 (0x11 → ability 0x13) | exe immunity: IMMUNITY_TO_MIND_CONTROL only; engine adds undead/elemental/mechanical (see Berserk) |  |
-| `SPELL_BERSERK` | FIXED | 008a2630, 0097c9f0 | damage ×max(1+v,0); immune: mind immunity / IMMUNITY_TO_BERSERK / Dwarven Mithral Shield (added). Exe checks only the IMMUNITY_TO_MIND_CONTROL ability (008a34c0 never grants it to undead) while the engine also treats undead/elemental/mechanical as mind-immune — open question (another targeting layer may block them) | ArtifactsGrantSpellImmunities |
-| `SPELL_BLIND` | GAP | 0097c9f0 (0x13 → ability 0x10) | immune only with ABILITY_IMMUNITY_TO_BLIND or Dwarven Mithral Helmet (helmet added). Engine also makes undead/elemental/mechanical (living-only + mind list) immune — not confirmed in the exe, left unchanged | ArtifactsGrantSpellImmunities |
+| `SPELL_FORGETFULNESS` | FIXED | 0097c9f0 (0x11 → HasAbility 0x13), 008a34c0, 00b61950 | immune with Immunity to Mind Control (explicit or derived); Shawl of the Great Lich cancels both — the engine kept undead/elemental/mechanical immune against the Shawl and refused vampirised stacks | AuditSpellSTests.DerivedImmunitiesFollowTheCreatureFlags |
+| `SPELL_BERSERK` | FIXED | 008a2630, 0097c9f0 (0x12), 00b61950 | damage ×max(1+v,0); immune: Immunity to Mind Control (derived for undead/elemental/mechanical, cancelled by the Shawl) or to Berserk, Dwarven Mithral Shield | ArtifactsGrantSpellImmunities, AuditSpellSTests.DerivedImmunitiesFollowTheCreatureFlags |
+| `SPELL_BLIND` | FIXED | 0097c9f0 (0x13 → HasAbility 0x10), 00b61950, 0097cdff | immune with Immunity to Blind — explicit or derived from Undead / Mechanical / Elemental / Immunity to Magic (so undead, golems and elementals are immune, as the engine had) — or Dwarven Mithral Helmet; a vampirised living stack is not immune (engine: living-only list) | AuditSpellSTests.DerivedImmunitiesFollowTheCreatureFlags |
 | `SPELL_HYPNOTIZE` | FIXED | 004e4270 (case 0x14), 0097c9f0, 00a5fee0 @ 00a5ffbb | initiative ×clamp(v,0,1); immune: mind immunity / IMMUNITY_TO_HYPNOTIZE; tier ≥ 7 needs Expert (caster mastery < 3 → 100). Retaliation is suppressed only when attacker vf+0x18 (controller) equals the hypnotized defender's ("COMBAT_NO_HYPNOTIZE_RETALIATE"); the engine blocked every retaliation | HypnotizedStackOnlySparesItsController |
 | `SPELL_UNHOLY_WORD` | MATCH | 00977600 | affects creatures that are neither Undead nor Demonic |  |
 | `SPELL_UNHOLY_WORD_HIT_EFFECT` | N/A | 0089c720 008af9e0 00b32880 | visual effect only (client) |  |
@@ -558,6 +558,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_TOWN_TOWERS` | MATCH | 00bfdfb0 | verified in EXE_FINDINGS.md |  |
 | `SPELL_ABILITY_BATTLE_DIVE` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_GATING` | FIXED | 008a4330, 00a5fee0 | the gated stack carries effect 0x9f for the rest of the battle: its initiative ignores every modifier (008a4330 returns base × max(0, Gating/InitiativeFactor) before effects, Prudent, Storm Wind, Fog Veil and flat bonuses) and it never retaliates ("COMBAT_NO_GATING_RETALIATE") — engine gave gated stacks no marker, so modifiers applied and they retaliated (00bfb4b0 not compared) | AuditAbilityTests.GatedStacksIgnoreInitiativeModifiers, GatedStacksNeverRetaliate |
+| `SPELL_ABILITY_FEAR` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_EXPLOSION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_ENTANGLING_ROOTS` | UNVERIFIED | 008a1e50 00981650 00982010 00982a00 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_DASH` | UNVERIFIED | 008d30e0 | implemented; not yet compared with the exe |  |
@@ -566,13 +567,14 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_EFFECT_FROZEN` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_FIRE_DAMAGE` | FIXED | 00bbe760 (0xca → 004e5b70) | the armour crush applied as an effect (Fortress moat): same rule as Master of Fire | MasterOfFireCrushIsAFixedHalfOfTheDefence |
 | `SPELL_SPEC_DEMON_HUNTER` | FIXED | 008a2c20 | effect of HERO_SPEC_DEMON_HUNTER (rage bonus) | (AddRage) |
+| `SPELL_EFFECT_FIRE_SHIELD` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_ARTFSET_NECROMANCERS_DEBUFF` | FIXED | 008a8140, 008a6c40, 008a4800, 008a22f0 | was not implemented: a stack failing its morale check gets effect 0xce when the opposing hero has > 3 Necromancers pieces; removed at the stack's next turn start; while present attack and defence are trunc(value·(1 − pct·0.01)), pct = Necromancers_4_EnemyCreature_BadMoralePenaltyToAttackDefencePercents (RPGStats+0x1198). The 2-piece Death Scream initiative doubling (BansheeWhail_DeInitiativeMultiplier, +0x1190, 004e4270) was also missing | AuditSpecSetTests.NecromancersDebuffCutsAttackAndDefence, DeathScreamInitiativeDoublesWithTheNecromancersSet |
 | `SPELL_SKILL_CHILLING_BONES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_ENRAGED` | UNVERIFIED | 008a3b90 | implemented; not yet compared with the exe |  |
 | `SPELL_MASS_CURSE` | MATCH | 0097a530 (default case, IsAimed false) | whole enemy army (TARGET_HOSTILE → caster vf +0x10); effect as SPELL_CURSE |  |
 | `SPELL_MASS_DISRUPTING_RAY` | MATCH | 0097a530 (default case), spell record +0xcc IsAimed, +0xd0 Target | aimed mass spell: 4×4 area x−1..x+2, y−1..y+2, TARGET_HOSTILE → enemy stacks only; effect as SPELL_DISRUPTING_RAY |  |
 | `SPELL_MASS_SLOW` | MATCH | 0097a530 | whole enemy army; effect as SPELL_SLOW |  |
-| `SPELL_MASS_FORGETFULNESS` | GAP | 0097a530 | whole enemy army (matches); immunity as SPELL_FORGETFULNESS (GAP) |  |
+| `SPELL_MASS_FORGETFULNESS` | FIXED | 0097a530, 0097c9f0 | whole enemy army (matches); immunity as SPELL_FORGETFULNESS (base id via FUN_00a33e20 0xd5 → 0x11) | AuditSpellSTests.DerivedImmunitiesFollowTheCreatureFlags |
 | `SPELL_MASS_PLAGUE` | MATCH | 0097a530 (default case) | aimed: 4×4 area, enemy stacks only; effect as SPELL_PLAGUE |  |
 | `SPELL_MASS_WEAKNESS` | MATCH | 0097a530, 0098a430 (0xf) | whole enemy army; effect as SPELL_WEAKNESS |  |
 | `SPELL_MASS_BLESS` | MATCH | 0097a530 | whole own army; effect as SPELL_BLESS |  |
@@ -581,12 +583,16 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_MASS_DEFLECT_ARROWS` | UNVERIFIED | 0097a530 | whole own army (matches); Deflect Arrows reduction site not found |  |
 | `SPELL_MASS_BLOODLUST` | MATCH | 0097a530, 0098a430 (0x1c) | whole own army; effect as SPELL_BLOODLUST |  |
 | `SPELL_MASS_HASTE` | MATCH | 0097a530 | whole own army (TARGET_FRIEND → caster vf +0xc); effect as SPELL_HASTE |  |
+| `SPELL_ABILITY_CALL_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_CONJURE_PHOENIX` | UNVERIFIED | 0097d7b0 (0xeb) → 00862130, 00861f90, 00862970, 008628f0 | stats come from the SRPGCombatUniqueCreatureStats resource GameMechanics/RPGStats/ConjuredPhoenix.xdb (Health 300 + 30/power, damage 10–15 per power, offence/defence 10 + 2/level), fed with the caster's power, level and knowledge; the exact "power" argument (engine: ceil(SP / divisor)) is lost in the decompile. If the ENEMY hero has Elemental Balance (skill 0x54) a second phoenix is summoned for that side (00862130) — engine lacks it (heroes partition) |  |
 | `SPELL_FIREWALL` | UNVERIFIED | 0097a530 (case 0xec), 0085cda0, 0098ade0, 0098a920 / 0098aa40 → 004e6770 | cells = (x, y−1), (x, y), (x, y+1) — matches; the field object (0x8c bytes, ctor 0098ade0) forwards entry/turn damage to the fire rider 004e6770, which deals the amount it is given without a new protection step — the caller computing that amount was not traced, so whether the engine's protection on each hit matches is open |  |
 | `SPELL_STONE_SPIKES` | FIXED | 00976b90, 0085eaa0, 0097a530 (case 0xed) | as Fireball, area = centre + 4 orthogonal cells | SpellBaseDamageTruncates |
+| `SPELL_UBER_CHAIN_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_BOSS_FIREWALL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_WOUND` | FIXED | 008a1e50 (008a1f52..008a1fa9) | speed part: trunc((1 − clamp(Wound_SpeedDecrease, 0, 1))·speed) applied right after the base speed (before Storm Wind / Charge); the engine multiplied at the end without truncation order (initiative part: spells partition) | AuditRuneWarcryTests.SpeedAppliesChargeBeforeBattlecry |
 | `SPELL_ABILITY_BERSERKER_RAGE` | UNVERIFIED | 008a32b0 008a4800 00984a00 00a5fee0 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_MARK_OF_FIRE` | UNVERIFIED | 00977a80 | implemented; not yet compared with the exe |  |
+| `SPELL_EFFECT_MAGMA_SHIELD` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_RUNE_OF_CHARGE` | FIXED | 00b40aa0, 008a1e50, 00b40a60 | vf 0x25c(id, 1): one action; speed ×2 after Wound and Storm Wind, before the Necromancers set, rage and Battlecry (see core row); removed by 00b40a60 at the end of the creature's action | AuditRuneWarcryTests.SpeedAppliesChargeBeforeBattlecry |
 | `SPELL_RUNE_OF_BERSERKING` | FIXED | 008a0f90 | +1 strike (was ×2) | tests/H5.Combat.Tests/AuditStrikeTests.RuneOfBerserkingAddsOneStrike |
 | `SPELL_RUNE_OF_MAGIC_CONTROL` | GAP | 00862a50, 00a5ca80 → 004e6470 / 004e4000 | whole battle until consumed (0x7fffffff); on attack the candidates come from FUN_004e4000 for the target's opposite side — every beneficial, timed, dispellable effect (any school). The engine only steals Light-school effects; the choice and transfer code was dropped by the decompiler (unreachable blocks in 00a5ca80) and is not ported |  |
@@ -599,20 +605,21 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_RUNE_OF_DRAGONFORM` | FIXED | 004b4460 → 004bb000, 004b4400, 0097af50 | refused ("COMBAT_RUNIC_SPELL_CANT_DRAGONFORM") when the creature's base creature is id 0x29 / 0x37 / 0x53 / 0x68 (Bone, Green, Deep, Fire Dragon — every dragon line); the engine matched "Dragon" in the (localised) name. Lasts one turn (round of time per turn) | AuditRuneWarcryTests.DragonformRefusesDragonLinesById |
 | `SPELL_EFFECT_BATTLE_FRENZY` | UNVERIFIED | 00a58de0 | implemented; not yet compared with the exe |  |
 | `SPELL_SORROW` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_VAMPIRISM` | FIXED | 00a59c60 (00a59d4e..00a59d6e chop), 008a34c0, 00e15a80 | drain heal = trunc(frac·damage + 0.5) — rounded half up (engine truncated); frac = LifeDrainIntensity (ABILITY_LIFE_DRAIN) + Vampirism value·0.01; no drain from Undead (0xa, dynamic), Mechanical (9) or Elemental (0xc) targets (engine drained Undead). Same code path as ABILITY_LIFE_DRAIN (abilities partition: its MATCH needs these two corrections too). Whether the damage term excludes overkill was not traced | DrainRoundsHalfUpAndSkipsUndead |
+| `SPELL_VAMPIRISM` | FIXED | 00a59c60 (00a59d4e..00a59d6e chop), 008a34c0, 00e15a80, 0097c9f0 (0x116) | drain heal = trunc(frac·damage + 0.5) — rounded half up (engine truncated); frac = LifeDrainIntensity (ABILITY_LIFE_DRAIN) + Vampirism value·0.01; no drain from Undead (0xa, dynamic), Mechanical (9) or Elemental (0xc) targets. The spell itself refuses Mechanical and Elemental stacks only (undead may receive it) — the engine accepted any target. Whether the damage term excludes overkill was not traced | DrainRoundsHalfUpAndSkipsUndead, AuditSpellSTests.SpellTableImmunities |
 | `SPELL_DEEP_FREEZE` | MATCH | 00a5a900 (0x117) | frozen target takes ×max(value·0.01, 1) |  |
 | `SPELL_REGENERATION` | MATCH | 0097c9f0 (0x118) | immune: Undead, Elemental, Mechanical |  |
 | `SPELL_DIVINE_VENGEANCE` | FIXED | 00976b90, 0097d7b0 | truncated base; the engine's ×sqrt(frags) (manual p.191) not located in the exe — extra damage term 00977e60 not decompiled | SpellBaseDamageTruncates |
 | `SPELL_ARCANE_CRYSTAL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_SUMMON_HIVE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_BLADE_BARRIER` | MATCH | 0097d7b0 (0x11c) | three cells (y−1, y, y+1) |  |
+| `SPELL_UBER_METEOR_SHOWER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_PREPARATION` | UNVERIFIED | 00a5fee0 00a64e90 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_EXPLODING_CORPSES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_MASTER_OF_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_WARCRY_RALLING_CRY` | FIXED | 009be6c0 case 0x122, 009bdaa0 | targets every own stack except Undead and Mechanical (elementals included); morale bonus ((level−1)/div·per + base) for RallingCry_Duration (004e57d0); army rage per core row. The engine also skipped elementals (NeutralMorale) | AuditRuneWarcryTests.RallyingCryAndWordOfTheChiefTargets |
 | `SPELL_WARCRY_CALL_OF_BLOOD` | FIXED | 009be6c0 case 0x123, 009bdbd0, 009bdaa0 → 008a16b0 | target must be a Stronghold creature whose army hero has Blood Rage (engine: Demon-Raged); it gets trunc(level·CallOfBlood_RPPerCasterLevel·m) + hero level for War Leader; no army rage | AuditRuneWarcryTests.WarcryRagePointsFollowTheExe |
 | `SPELL_WARCRY_WORD_OF_THE_CHIEF` | FIXED | 009be6c0 case 0x124, 009bdd40, 009bdaa0 | friendly hero strike (008cfb50), ATB + (base + perLevel·level), target rage trunc(WordOfTheChief_RPBonus·m), army rage per core row; refuses Undead and Mechanical only — the engine also refused elementals | AuditRuneWarcryTests.RallyingCryAndWordOfTheChiefTargets |
-| `SPELL_WARCRY_FEAR_MY_ROAR` | FIXED | 009bddb0, 009be6c0 case 0x125, 009bdaa0 (jump at 009bdb2b: HasAbility(0x13)) | chance clamp((caster level − target level + 10)·5, 0, 100), 0 against HOLD_GROUND; rolled with the ability roll FUN_00a5a170 without an attacker (Range(0,100) < chance); success = frightened (FUN_009be240), failure shows FLYING_SIGN_RESIST; only IMMUNITY_TO_MIND_CONTROL makes the target invalid. The engine used a continuous 0.5 + 0.05·diff roll, ignored HOLD_GROUND and refused undead / elementals / mechanicals | AuditRuneWarcryTests.FearMyRoarChanceAndTargets, FearMyRoarHoldGroundAndImmunity |
+| `SPELL_WARCRY_FEAR_MY_ROAR` | FIXED | 009bddb0, 009be6c0 case 0x125, 009bdaa0 (009bdb2b: HasAbility(0x13)), 00b61950 | chance clamp((caster level − target level + 10)·5, 0, 100), 0 against HOLD_GROUND; rolled with FUN_00a5a170 (Range(0,100) < chance); success = frightened (FUN_009be240), failure FLYING_SIGN_RESIST; the only invalid targets are those with HasAbility(IMMUNITY_TO_MIND_CONTROL) — which is derived for Undead / Mechanical / Elemental / magic-immune stacks (part R had read it as the explicit ability only) | AuditRuneWarcryTests.FearMyRoarChanceAndTargets, FearMyRoarHoldGroundAndImmunity |
 | `SPELL_WARCRY_BATTLECRY` | FIXED | 008a1e50, 009be6c0 case 0x126, 004e57d0 | the effect stores the caster level; speed bonus ((level−1)/Battlecry_SpeedBonus.LevelDivisor·PerDividedLevel + Base) — the engine added Base only; one turn (004e57d0 case 0x126 → 1.0) | AuditRuneWarcryTests.SpeedAppliesChargeBeforeBattlecry |
 | `SPELL_WARCRY_SHOUT_OF_MANY` | FIXED | 009be6c0 case 0x127, 009bde00, 009bdaa0, 00a616e0 → 00a61600 | damage = trunc(n·ShoutOfMany_DamagePerCreatureInArmy) in single precision, n = creatures of the caster's army not controlled by the other side (FUN_00977670); dealt straight through the stack damage pipeline (Arcane Armor, Blood Rage transfer, Last Stand) — no resistance roll, protection or immunity (the only target filter is "has an army", 009bdaa0 case 0x127). The engine sent it through spell damage (resistance, protection, immunity) and counted enemy-controlled stacks | AuditRuneWarcryTests.ShoutOfManyCountsOwnControlledCreatures |
 | `SPELL_ABILITY_VENOM` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -628,6 +635,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_ABILITY_SEDUCE` | UNVERIFIED | 008a08d0 008a2c20 00982010 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_RAGE_OF_THE_FOREST` | UNVERIFIED | 008a32b0 008a34c0 008a4330 008a4800 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_POWER_FEED` | UNVERIFIED | 0097c1d0 | implemented; not yet compared with the exe |  |
+| `SPELL_ABILITY_CALL_STORM` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_EFFECT_LIQUID_FLAME_BREATH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_SLEEPING_STRIKE` | UNVERIFIED | 008d3950 00a597a0 00a5fee0 00a63020 | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_PREPARED_POSITION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_BATTLE_RAGE` | UNVERIFIED | 008a4330 | implemented; not yet compared with the exe |  |

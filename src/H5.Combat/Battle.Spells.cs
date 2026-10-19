@@ -28,7 +28,6 @@ public sealed partial class Battle
     static readonly Dictionary<string, string> MassToBase = MassSpells.ToDictionary(kv => kv.Value.Mass, kv => kv.Key);
     static readonly HashSet<string> AreaMass = new() { "SPELL_MASS_DISRUPTING_RAY", "SPELL_MASS_PLAGUE", "SPELL_MASS_DISPEL" }; // 4x4 areas (p.186, p.190)
 
-    static readonly HashSet<string> MindSpells = new() { "SPELL_BLIND", "SPELL_FORGETFULNESS", "SPELL_MASS_FORGETFULNESS", "SPELL_BERSERK", "SPELL_HYPNOTIZE" };
     static readonly HashSet<string> LivingOnly = new()
     {
         "SPELL_PLAGUE", "SPELL_MASS_PLAGUE", "SPELL_BLIND", "SPELL_FORGETFULNESS", "SPELL_MASS_FORGETFULNESS", "SPELL_BERSERK",
@@ -437,7 +436,7 @@ public sealed partial class Battle
             if (target == "TARGET_HOSTILE" && friendly && sp.Id != "SPELL_DISPEL") return "spell must target an enemy";
             if (target == "TARGET_FRIEND" && !friendly) return "spell must target a friendly stack";
             if (t.IsObject) return "invalid target";
-            if (t.IsWarMachine && !IsDamageSpell(BaseSpell(sp.Id))) return "war machines can only be hit by damage spells";
+            if (t.IsWarMachine && !ExeWarMachineSpell(BaseSpell(sp.Id), Actor.IsHero(caster) ? S.Heroes[side] : null)) return "war machines can only be hit by damage spells";
             if (t.HasEffect(H5.Combat.Fx.Invisible) && !friendly) return "target is invisible";
             if (!t.Alive && sp.Id is not ("SPELL_RESURRECT" or "SPELL_ANIMATE_DEAD")) return "target is dead";
             if (sp.Id == "SPELL_RESURRECT" && (t.Has(Ab.Elemental) || t.Has(Ab.Mechanical) || IsUndeadLike(t))) return "cannot resurrect this creature";
@@ -774,17 +773,13 @@ public sealed partial class Battle
         string id = BaseSpell(sp.Id);
         bool physical = id is "SPELL_MAGIC_FIST";
         if (t.HasEffect(H5.Combat.Fx.Invisible) && Controller(t) != side && !area) return false;
-        if (!physical && t.Has(Ab.ImmuneMagic) && !(hero != null && hero.SkillLevel(Sk.Invocation) > 0)) { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
-        if (t.GetEffect("SPELL_ANTI_MAGIC") is { } am && sp.Level <= am.Value && !physical) { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
-        if (!physical && sp.Element != Elements.None && sp.Damage.Length > 0 && ElementImmune(t, sp.Element) && IsDamageSpell(id)
-            && !(hero != null && hero.SkillLevel(Sk.Invocation) > 0)) { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
-        if (MindSpells.Contains(id) && MindImmune(t)) { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
-        if (LivingOnly.Contains(id) && !IsLiving(t)) { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
-        if (ArtifactSpellImmunity(t, id)) { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
-        if (id == "SPELL_SLOW" && t.Has(Ab.ImmuneSlow) || id == "SPELL_BLIND" && t.Has(Ab.ImmuneBlind)
-            || id == "SPELL_BERSERK" && t.Has(Ab.ImmuneBerserk) || id == "SPELL_HYPNOTIZE" && t.Has(Ab.ImmuneHypnotize)
-            || id == "SPELL_CURSE" && t.Has(Ab.ImmuneCurse))
-        { Emit(new SpellResisted(t.Id, sp.Id)); return false; }
+        // Immunities (exe FUN_0097c9f0 → 100): Irresistible Magic lets only a damage spell's share through (FUN_0097d2a0).
+        if (ExeSpellImmune(t, sp, id, hero))
+        {
+            if (ExeDamageSpell(id, hero) && hero != null && hero.SkillLevel(Sk.Invocation) > Mastery.None) { _resistedFullProtection = true; return true; }
+            Emit(new SpellResisted(t.Id, sp.Id));
+            return false;
+        }
         // Stormcaller: the caster's Air (lightning) spells skip the resistance roll; immunities still apply
         // (exe FUN_0097c9f0, element 1 = Air). Staff of Magi on the caster skips it too (0097cf89).
         bool irresistible = hero != null && hero.Specialization == "HERO_SPEC_STORMCALLER" && sp.Element == Elements.Air

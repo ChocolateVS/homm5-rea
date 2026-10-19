@@ -16,6 +16,7 @@ import collections, glob, os, re, sys
 
 ROOT = 'G:/H5Reborn'
 OUT = ROOT + '/tools/re/audit/out'
+TREE = os.environ.get('H5_TREE', ROOT)   # checkout whose sources / fragments / ledger are used (default: ROOT)
 EXTRACT = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('H5_EXTRACT', '')
 
 def enum(name):
@@ -42,14 +43,14 @@ def combat_fns(fns):
         if any(lo <= a < hi for lo, hi in COMBAT_RANGES): out.append(f)
     return out
 
-src = ''.join(open(f, encoding='utf-8').read() for f in glob.glob(f'{ROOT}/src/H5.Combat/**/*.cs', recursive=True))
+src = ''.join(open(f, encoding='utf-8').read() for f in glob.glob(f'{TREE}/src/H5.Combat/**/*.cs', recursive=True))
 const = {m.group(2): m.group(1) for m in re.finditer(r'(\w+)\s*=\s*"((?:ABILITY|SPELL|HERO_SKILL|HERO_SPEC|ARTIFACT)_[A-Z0-9_]+)"', src)}
 def ours(ident):
     n = src.count('"' + ident + '"')
     c = const.get(ident)
     if c: n += len(re.findall(r'\.' + re.escape(c) + r'\b', src))
     return n
-findings = open(f'{ROOT}/docs/rules/EXE_FINDINGS.md', encoding='utf-8').read()
+findings = open(f'{TREE}/docs/rules/EXE_FINDINGS.md', encoding='utf-8').read()
 
 # ---- curated audit results (this audit) -------------------------------------------------------------
 T = 'tests/H5.Combat.Tests/'
@@ -184,7 +185,7 @@ def alias_refs(ident):
 # Per-category audit fragments (docs/rules/audit/*.md, written by the parallel audit workstreams):
 # rows "| `ID` | STATUS | exe | note | test |" override the computed status for that ID.
 FRAG = {}
-for _f in sorted(glob.glob(f'{ROOT}/docs/rules/audit/*.md')):
+for _f in sorted(glob.glob(f'{TREE}/docs/rules/audit/*.md')):
     for _line in open(_f, encoding='utf-8'):
         _p = [x.strip() for x in _line.split('|')]
         if len(_p) >= 7 and _p[1].startswith('`') and _p[2] in ('FIXED', 'MATCH', 'GAP', 'UNVERIFIED', 'N/A'):
@@ -266,5 +267,5 @@ for kind in ('ability', 'skill', 'spec', 'spell', 'artifact'):
     lines += ['', f'## {titles[kind]}', '', '| ID | Status | Exe functions | Original behaviour / note | Regression test |', '|---|---|---|---|---|']
     for ident, st, exe, note, test in rows[kind]:
         lines.append(f'| `{ident}` | {st} | {exe} | {note} | {test} |')
-open(f'{ROOT}/docs/rules/AUDIT_COMBAT.md', 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
+open(f'{TREE}/docs/rules/AUDIT_COMBAT.md', 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
 print(dict(counts))

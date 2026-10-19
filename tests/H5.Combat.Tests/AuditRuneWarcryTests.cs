@@ -71,7 +71,7 @@ public class AuditRuneWarcryTests(GameDataFixture f)
     }
 
     // exe FUN_009bddb0: chance = clamp((caster level − target level + 10)·5, 0, 100), 0 against HOLD_GROUND;
-    // FUN_009bdaa0 case 0x125: only IMMUNITY_TO_MIND_CONTROL makes the target invalid (undead are valid).
+    // FUN_009bdaa0 case 0x125: only HasAbility(IMMUNITY_TO_MIND_CONTROL) makes the target invalid (derived for undead).
     [Fact]
     public void FearMyRoarChanceAndTargets()
     {
@@ -95,9 +95,12 @@ public class AuditRuneWarcryTests(GameDataFixture f)
         t.Abilities.Add(Ab.HoldGround);
         Assert.Equal(0, b.FearMyRoarPercent(20, t));
         t.Abilities.Remove(Ab.HoldGround);
-        t.Abilities.Add(Ab.Undead);
         Assert.False(b.WarcryTargetInvalid("SPELL_WARCRY_FEAR_MY_ROAR", t));
         t.Abilities.Add(Ab.ImmuneMind);
+        Assert.True(b.WarcryTargetInvalid("SPELL_WARCRY_FEAR_MY_ROAR", t));
+        // HasAbility(IMMUNITY_TO_MIND_CONTROL) is also derived from Undead (FUN_00b61950 / FUN_00b618a0).
+        t.Abilities.Remove(Ab.ImmuneMind);
+        t.Abilities.Add(Ab.Undead);
         Assert.True(b.WarcryTargetInvalid("SPELL_WARCRY_FEAR_MY_ROAR", t));
     }
 

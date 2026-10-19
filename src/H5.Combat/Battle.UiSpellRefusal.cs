@@ -39,15 +39,9 @@ public sealed partial class Battle
             bool physical = id is "SPELL_MAGIC_FIST";
             var hero = Actor.IsHero(caster) ? S.Heroes[side] : null;
             bool invocation = hero != null && hero.SkillLevel(Sk.Invocation) > 0;
-            if (!physical && t.Has(Ab.ImmuneMagic) && !invocation) return "COMBAT_CANT_CAST_SPELL_IMMUNITY";
+            if (ExeSpellImmune(t, sp, id, hero) && !(ExeDamageSpell(id, hero) && invocation))
+                return LivingOnly.Contains(id) && !IsLiving(t) ? "COMBAT_CANT_CAST_SPELL_ONLY_LIVE" : "COMBAT_CANT_CAST_SPELL_IMMUNITY";
             if (IsDamageSpell(id) && !physical && !invocation && FullyProtectedFrom(t, sp, side)) return "COMBAT_CANT_CAST_SPELL_IMMUNITY";
-            if (MindSpells.Contains(id) && MindImmune(t)) return "COMBAT_CANT_CAST_SPELL_IMMUNITY";
-            if (LivingOnly.Contains(id) && !IsLiving(t)) return "COMBAT_CANT_CAST_SPELL_ONLY_LIVE";
-            if (ArtifactSpellImmunity(t, id)) return "COMBAT_CANT_CAST_SPELL_IMMUNITY";
-            if (id == "SPELL_SLOW" && t.Has(Ab.ImmuneSlow) || id == "SPELL_BLIND" && t.Has(Ab.ImmuneBlind)
-                || id == "SPELL_BERSERK" && t.Has(Ab.ImmuneBerserk) || id == "SPELL_HYPNOTIZE" && t.Has(Ab.ImmuneHypnotize)
-                || id == "SPELL_CURSE" && t.Has(Ab.ImmuneCurse))
-                return "COMBAT_CANT_CAST_SPELL_IMMUNITY";
         }
         return null;
     }
