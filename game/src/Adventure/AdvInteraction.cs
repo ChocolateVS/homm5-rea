@@ -132,6 +132,7 @@ public partial class AdventureScreen
             "prison:full" => ObjectMessage(ov.Object, 3),
             "prison:freed" => ObjectMessage(ov.Object, 4),
             "BUILDING_SIGN" => Session.Map.Objects[ov.Object].MessageText ?? "",
+            _ when ov.What.StartsWith("msg:") && int.TryParse(ov.What[4..], out int n) => ObjectMessage(ov.Object, n),
             _ when ov.What.StartsWith("key:") => ObjectMessage(ov.Object, 2),
             _ when ov.What.StartsWith("key_again:") => ObjectMessage(ov.Object, 3),
             _ => "",

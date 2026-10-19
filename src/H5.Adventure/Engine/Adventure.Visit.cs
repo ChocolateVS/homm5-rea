@@ -184,12 +184,14 @@ public sealed partial class Adventure
                     case 2: GiveOne(p, Purse.Wood, 5); break;
                     case 3: GiveOne(p, Purse.Wood, 5); GiveOne(p, Purse.Gold, 200); break;
                     case 4: GiveOne(p, Purse.Wood, 10); GiveOne(p, Purse.Gold, 500); break;
+                    default: Emit(new ObjectVisited(h.Id, o.Index, "msg:2")); break;   // 00a82c40: nothing in the purse → [2]
                 }
                 RemoveObject(o.Index);
                 break;
             case "TREASURE_SEA_CHEST":
                 // 1500 gold unless amount' is 1.
                 if (FortunateAdventurer(h, os.Variant + 1) != 1) GiveOne(p, Purse.Gold, 1500);
+                else Emit(new ObjectVisited(h.Id, o.Index, "msg:2"));   // 00a82c40: nothing in the purse → [2]
                 RemoveObject(o.Index);
                 break;
             case "TREASURE_SHIPWRECK":
@@ -363,6 +365,7 @@ public sealed partial class Adventure
             // Teleports.
             case "BUILDING_SUBTERRA_GATE":
             case "BUILDING_MONOLITH_ONE_WAY_ENTRANCE":
+            case "BUILDING_MONOLITH_ONE_WAY_EXIT":
             case "BUILDING_MONOLITH_TWO_WAY":
             case "BUILDING_WHIRLPOOL":
                 Teleport(h, o);
@@ -442,20 +445,35 @@ public sealed partial class Adventure
         GainExperience(h, hp);
     }
 
+    /// <summary>
+    /// Teleports (exe CAdvMapTeleport visit 00c24dc0 → 00c252f0; exits FUN_00afabe0 / 00afadd0): the exits are the
+    /// buildings of the group (building +0x9c, GroupID) of the same type — one-way entrance → one-way exits — less the
+    /// entrance itself; one is drawn at random (rng % count). No exit, or the drawn exit's entrance tile not free
+    /// (FUN_00ceca20 → 00ce9ed0), shows messagesFileRef[2]; the whirlpool (00c250d0) goes without that check.
+    /// A one-way exit shows its [2].
+    /// </summary>
     void Teleport(HeroState h, MapObject o)
     {
+        if (o.Shared.Type == "BUILDING_MONOLITH_ONE_WAY_EXIT") { Emit(new ObjectVisited(h.Id, o.Index, "msg:2")); return; }
         var group = o.Props.GetValueOrDefault("GroupID", "0");
         var exitType = o.Shared.Type switch
         {
             "BUILDING_MONOLITH_ONE_WAY_ENTRANCE" => "BUILDING_MONOLITH_ONE_WAY_EXIT",
             _ => o.Shared.Type,
         };
-        var exits = Map.Objects.Where(e => e.Index != o.Index && e.Shared.Type == exitType && e.Props.GetValueOrDefault("GroupID", "0") == group)
+        var exits = Map.Objects.Where(e => e.Index != o.Index && !S.Obj(e.Index).Removed && e.Shared.Type == exitType && e.Props.GetValueOrDefault("GroupID", "0") == group)
             .OrderBy(e => e.Index).ToList();
-        if (exits.Count == 0) { Emit(new Message("teleport_none", "Nothing happens.")); return; }
+        bool whirlpool = o.Shared.Type == "BUILDING_WHIRLPOOL";
+        if (exits.Count == 0)
+        {
+            if (!whirlpool) Emit(new ObjectVisited(h.Id, o.Index, "msg:2"));
+            return;
+        }
         var dest = exits[S.Rng.Next(exits.Count)];
         var to = dest.ActiveTiles.FirstOrDefault(dest.Pos);
-        if (o.Shared.Type == "BUILDING_WHIRLPOOL") ApplyWhirlpoolLoss(h);
+        // TODO(exe): FUN_00ce9ed0's full test is not decoded; a hero standing on the exit blocks it.
+        if (!whirlpool && HeroAt(to, h.Id) != null) { Emit(new ObjectVisited(h.Id, o.Index, "msg:2")); return; }
+        if (whirlpool) ApplyWhirlpoolLoss(h);
         h.Pos = to;
         SyncBoat(h);
         Emit(new HeroMoved(h.Id, new[] { o.ActiveTiles.FirstOrDefault(o.Pos), to }, h.MovePoints));
