@@ -318,15 +318,23 @@ public sealed partial class Adventure
                 break;
 
             // Weekly income buildings (per object).
+            // 00b02740 cases 9 / 8 / 0x44: a weekly flag on the object ([3] while set); amounts through Fortunate
+            // Adventurer (vcall 0x178).
             case "BUILDING_WINDMILL":
-                Weekly(o, os, () => GiveOne(p, 1 + S.Rng.Next(6), S.Rng.Range(3, 6)));
+                // Resource rand(1..5) (ore, mercury, crystal, sulfur, gems), rand(3..6) of it.
+                Weekly(o, os, () => GiveOne(p, S.Rng.Range(1, 5), FortunateAdventurer(h, S.Rng.Range(3, 6))));
                 break;
             case "BUILDING_WATER_WHEEL":
-                Weekly(o, os, () => GiveOne(p, Purse.Gold, S.Week == 1 ? 500 : 1000));
+                // 500 gold in the first week of the first month (FUN_005d6990 / 0058bce0), else 1000.
+                Weekly(o, os, () => GiveOne(p, Purse.Gold, FortunateAdventurer(h, S.Week == 1 ? 500 : 1000)));
                 break;
             case "BUILDING_MYSTICAL_GARDEN":
-                // 500 gold or "a few" gems (TODO(exe): exact gem amount; 5 used).
-                Weekly(o, os, () => { if (S.Rng.Next(2) == 0) GiveOne(p, Purse.Gold, 500); else GiveOne(p, Purse.Gem, 5); });
+                // rand(1..2): 1 → 500 gold, else 5 gems.
+                Weekly(o, os, () =>
+                {
+                    if (S.Rng.Range(1, 2) == 1) GiveOne(p, Purse.Gold, FortunateAdventurer(h, 500));
+                    else GiveOne(p, Purse.Gem, FortunateAdventurer(h, 5));
+                });
                 break;
 
             // One-off loot.
