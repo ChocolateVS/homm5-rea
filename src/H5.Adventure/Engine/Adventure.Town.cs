@@ -167,8 +167,10 @@ public sealed partial class Adventure
         var p = Current;
         if (t == null || t.Owner != p.Index) return "not your town";
         if (t.Level("TB_TAVERN") <= 0) return "no tavern";
-        if (c.TavernSlot < 0 || c.TavernSlot >= p.Tavern.Length || p.Tavern[c.TavernSlot] is not { } defId) return "no hero in that slot";
-        if (S.Heroes.Count(h => h.Alive && h.Owner == p.Index) >= MaxHeroesPerPlayer) return "too many heroes";
+        // The slot indexes the heroes this town's tavern shows (town hiring filter, exe FUN_00636a10).
+        var offers = TownTavernOffers(p, t);
+        if (c.TavernSlot < 0 || c.TavernSlot >= offers.Length || offers[c.TavernSlot] is not { } defId) return "no hero in that slot";
+        if (S.Heroes.Count(h => h.Alive && h.Owner == p.Index) >= HiringHeroLimit(p)) return "too many heroes";
         var entrance = EntranceOf(t);
         if (HeroAt(entrance) != null) return "the town entrance is occupied";
         if (p.Purse[Purse.Gold] < HeroHireCost) return "not enough gold";

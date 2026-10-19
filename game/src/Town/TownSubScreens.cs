@@ -259,14 +259,16 @@ public sealed partial class TavernScreen : TownSubScreen
     public override void Refresh()
     {
         base.Refresh();
+        // The town's hiring filter hides heroes; the remaining one moves to the first bookmark (exe FUN_00636a10).
+        var offers = H5.Adventure.Engine.Adventure.TownTavernOffers(Game.Instance.Db, Me, Owner.Town);
         for (int i = 0; i < 2; i++)
         {
-            var id = i < Me.Tavern.Length ? Me.Tavern[i] : null;
+            var id = i < offers.Length ? offers[i] : null;
             var bm = Ui.Find($"Hero{i + 1}Bookmark");
             TownUi.SetPicture(bm, id != null && Combat.CombatIcons.Hero(id, false) is { } face ? Game.Instance.LoadTexture(face) : null);
             if (bm != null && bm.Window.ButtonStates.Count > 1) bm.SetState(i == _slot ? 1 : 0);
         }
-        var defId = _slot < Me.Tavern.Length ? Me.Tavern[_slot] : null;
+        var defId = _slot < offers.Length ? offers[_slot] : null;
         var db = Game.Instance.Db;
         Ui.Find("price")?.SetValue("price", H5.Adventure.Engine.Adventure.HeroHireCost.ToString());
         if (defId == null || !db.Heroes.TryGetValue(defId, out var def))

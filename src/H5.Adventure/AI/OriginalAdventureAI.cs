@@ -55,6 +55,9 @@ public sealed partial class OriginalAdventureAI
         var claimed = new HashSet<int>();
         foreach (var h in order)
         {
+            // EnableHeroAI(hero, false): the AI leaves the hero to the map scripts (GAP-detail: the exe's skip in
+            // the move loop, 0x008698ba, is not traced; the documented meaning is that the AI does not move it).
+            if (!h.AiEnabled) continue;
             for (int step = 0; step < 8 && actions < MaxActionsPerTurn && h.Alive && !g.S.Finished; step++)
             {
                 ResolvePending(g, battleSeedBase + (ulong)actions);
@@ -68,7 +71,8 @@ public sealed partial class OriginalAdventureAI
                 _lastTarget[h.Id] = target.Value.Tile;
                 ResolvePending(g, battleSeedBase + (ulong)actions);
                 LevelUps(g, h, st);
-                if (h.InTown >= 0 && g.S.Town(h.InTown) is { } home && home.Owner == me) TakeGarrison(g, h, home);
+                // BlockTownGarrisonForAI: no creature exchange with that garrison (exe reader 0x008687a0).
+                if (h.InTown >= 0 && g.S.Town(h.InTown) is { } home && home.Owner == me && !home.AiGarrisonBlocked) TakeGarrison(g, h, home);
                 if (h.MovePoints < 100) break;
             }
         }
@@ -115,18 +119,34 @@ public sealed partial class OriginalAdventureAI
             if (o.Pos.Floor != h.Pos.Floor || o.Kind == ObjectKind.Static || claimed.Contains(o.Index)) continue;
             if (g.S.Objects.TryGetValue(o.Index, out var os) && os.Removed) continue;
             double value = ObjectValue(g, h, o, os, myPower, diff, st);
-            if (value <= 0) continue;
+            // SetAIHeroAttractor / SetAIPlayerAttractor (exe FUN_00bc5740): the hero's entry, else the player's;
+            // -1 subtracts SearchNegativeAttractorValue, 1 adds SearchPositiveAttractorValue, 2 marks the object
+            // "worth the game" (result state 3; GAP-detail: treated as chosen first, ignoring every danger).
+            int attract = AttractorPriority(g, h, o);
+            bool mustGo = attract == 2;
+            // "But the AI will not risk its heroes" (script reference): a hostile target judged too strong stays out.
+            if (attract == 1 && value <= 0 && (o.Kind is ObjectKind.Monster or ObjectKind.Hero ||
+                                               (o.Kind == ObjectKind.Town && g.S.Town(o.Index) is { } at && at.Owner != h.Owner))) continue;
+            if (attract == -1) value -= st.SearchNegativeAttractorValue;
+            else if (attract == 1) value += st.SearchPositiveAttractorValue;
+            if (value <= 0 && !mustGo) continue;
             var tile = o.Kind is ObjectKind.Monster or ObjectKind.Hero ? o.Pos : o.ActiveTiles.FirstOrDefault(o.Pos);
             int d = Math.Max(Math.Abs(tile.X - h.Pos.X), Math.Abs(tile.Y - h.Pos.Y));
             if (d == 0) continue;
             int cost = d * st.SearchAverageTerrainCost;
-            if (cost > maxCost) continue;
+            if (cost > maxCost && !mustGo) continue;
+            double days = cost / (double)Math.Max(100, h.MaxMovePoints);
+            if (mustGo)
+            {
+                double must = 1e300 / (1 + days);
+                if (best == null || must > best.Value.Score) best = new Destination(o.Index, tile, must);
+                continue;
+            }
             // Guards on the way: never walk into a stack we would lose to.
             if (o.Kind != ObjectKind.Monster && g.GuardingMonster(tile) is { } guard &&
                 g.S.Objects.TryGetValue(guard.Index, out var gs) && g.ArmyPower(gs.Guards, null) > myPower * (1 - diff.CowardiceVersusComputer)) continue;
             // Danger zones of stronger enemy heroes (FUN_00872330 reach).
             if (dangers.Any(z => z.Power > myPower && Math.Max(Math.Abs(z.Pos.X - tile.X), Math.Abs(z.Pos.Y - tile.Y)) * st.SearchAverageTerrainCost <= z.Reach)) continue;
-            double days = cost / (double)Math.Max(100, h.MaxMovePoints);
             double score = value / (1 + days);
             if (_lastTarget.TryGetValue(h.Id, out var last) && last == tile) score *= st.SearchOldTargetMultiplier;
             score *= 1 + (rng.NextDouble() * 2 - 1) * st.SearchBestPositionRandomFactor / 100.0;
@@ -134,6 +154,15 @@ public sealed partial class OriginalAdventureAI
         }
         if (best == null || g.FindPath(h, best.Value.Tile) == null) return SeaTravel(g, h, myPower, diff, st, claimed);
         return best;
+    }
+
+    /// <summary>Attractor priority for the hero (own entry first, then its player's; FUN_00b4d5c0 / player vf 0x1e8).</summary>
+    static int AttractorPriority(Engine.Adventure g, HeroState h, MapObject o)
+    {
+        if (o.Name.Length == 0) return 0;
+        int p = AiAttractor.Get(h.AiAttractors, o.Name);
+        if (p == 0 && h.Owner >= 0 && g.Player(h.Owner) is { } pl) p = AiAttractor.Get(pl.AiAttractors, o.Name);
+        return p;
     }
 
     /// <summary>Gold-equivalent value of visiting an object, using the AI/Adventure ValueOf* tunables.</summary>
@@ -246,12 +275,16 @@ public sealed partial class OriginalAdventureAI
     {
         var me = g.Current;
         int limit = Math.Min(diff.HireHeroesGlobalLimit, diff.HireHeroesBase + diff.HireHeroesPerTown * towns.Count);
-        foreach (var t in towns.Where(t => t.Level("TB_TAVERN") > 0))
+        // EnableAIHeroHiring(…, false) closes a town's tavern to the AI; candidates must pass the AI player's
+        // filter (AllowHeroHiringByRaceForAI / AllowHiringOfHeroForAI) and the town's (exe FUN_0086aa50).
+        foreach (var t in towns.Where(t => t.Level("TB_TAVERN") > 0 && !me.AiHiringDisabledTowns.Contains(t.Object)))
         {
             if (g.S.Heroes.Count(h => h.Alive && h.Owner == me.Index) >= limit) return;
             if (me.Purse[Purse.Gold] < Engine.Adventure.HeroHireCost * 2) return;
-            for (int slot = 0; slot < me.Tavern.Length; slot++)
-                if (me.Tavern[slot] != null && Send(g, new HireHeroCmd(t.Object, slot) { Player = me.Index }).Ok) break;
+            var offers = g.TownTavernOffers(me, t);
+            for (int slot = 0; slot < offers.Length; slot++)
+                if (offers[slot] is { } id && Engine.Adventure.FilterAccepts(g.Core, me.AiHireFilter, id) &&
+                    Send(g, new HireHeroCmd(t.Object, slot) { Player = me.Index }).Ok) break;
         }
     }
 

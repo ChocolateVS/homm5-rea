@@ -29,6 +29,9 @@ public sealed class AdventureAiStats
     public int SearchAverageTerrainCost { get; init; }
     public double SearchDangerEnemyMobilityMultiplier { get; init; }
     public double SearchDangerEnemyMobilityBonus { get; init; }
+    /// <summary>Search{Positive,Negative}AttractorValue (+0x218/+0x21c, int), read by FUN_00bc5740 for script attractors.</summary>
+    public int SearchPositiveAttractorValue { get; init; }
+    public int SearchNegativeAttractorValue { get; init; }
     /// <summary>RolesSpread{Commander,Collector,Supplier,Freelancer}Multiplier (+0x22c..+0x238), read by FUN_00866670.</summary>
     public double[] RoleSpread { get; init; } = new double[4];
     public int CollectPathBonusesMaxCost { get; init; }
@@ -87,6 +90,8 @@ public sealed class AdventureAiStats
             SearchAverageTerrainCost = Math.Max(1, I("SearchAverageTerrainCost", 100)),
             SearchDangerEnemyMobilityMultiplier = D("SearchDangerEnemyMobilityMultiplier", 1),
             SearchDangerEnemyMobilityBonus = D("SearchDangerEnemyMobilityBonus", 300),
+            SearchPositiveAttractorValue = I("SearchPositiveAttractorValue", 1000000),
+            SearchNegativeAttractorValue = I("SearchNegativeAttractorValue", 1000000),
             RoleSpread = new[]
             {
                 D("RolesSpreadCommanderMultiplier", 2.7), D("RolesSpreadCollectorMultiplier", 0.5),

@@ -118,28 +118,4 @@ public sealed partial class AdventureScripting
             ("yaw", c.Has(a + 5) ? c.Number(a + 5) : 0), ("noZoom", c.Bool(a + 6)), ("noRotate", c.Bool(a + 7)),
             ("fast", c.Bool(a + 8)), ("players", players == null ? "" : string.Join(",", players)));
     }
-
-    void RegisterAiApi()
-    {
-        // AI directives only steer the computer players; they are stored for the AI layer.
-        void Flag(string name, Func<HostContext, string> key, Func<HostContext, string> value) =>
-            Reg(name, c => World.Settings[key(c)] = value(c));
-
-        Flag("EnableHeroAI", c => $"hero_ai:{c.Str(0)}", c => c.Bool(1) ? "1" : "0");
-        Flag("SetAIHeroAttractor", c => $"ai_hero_attractor:{c.Str(1)}:{c.Str(0)}", c => c.Int(2).ToString());
-        Flag("SetAIPlayerAttractor", c => $"ai_player_attractor:{c.Int(1)}:{c.Str(0)}", c => c.Int(2).ToString());
-        Flag("EnableAIHeroHiring", c => $"ai_hiring:{c.Int(0)}:{c.Str(1)}", c => c.Bool(2) ? "1" : "0");
-        Flag("DenyAIHeroFlee", c => $"ai_deny_flee:{c.Str(0)}:{c.Str(2)}", c => c.Bool(1) ? "1" : "0");
-        Flag("DenyAIHeroesFlee", c => $"ai_deny_flee_player:{c.Int(0)}:{c.Str(2)}", c => c.Bool(1) ? "1" : "0");
-        Flag("SetAIHeroFleeControl", c => $"ai_flee_control:{c.Str(0)}", c => c.Bool(1) ? "1" : "0");
-        Flag("BlockTownGarrisonForAI", c => $"ai_block_garrison:{c.Str(0)}", c => c.Bool(1) ? "1" : "0");
-        Flag("AllowHeroHiringByRaceForAI", c => $"ai_hire_race:{c.Int(0)}:{c.Int(1)}", c => c.Bool(2) ? "1" : "0");
-        Flag("AllowHiringOfHeroForAI", c => $"ai_hire_hero:{c.Int(0)}:{c.Str(1)}", c => c.Bool(2) ? "1" : "0");
-        Flag("AllowHeroHiringByRaceInTown", c => $"town_hire_race:{c.Str(0)}:{c.Int(1)}", c => c.Bool(2) ? "1" : "0");
-        Flag("AllowHiringOfHeroInTown", c => $"town_hire_hero:{c.Str(0)}:{c.Str(1)}", c => c.Bool(2) ? "1" : "0");
-        Flag("AllowPlayerTavernRace", c => $"tavern_race:{c.Int(0)}:{c.Int(1)}", c => c.Bool(2) ? "1" : "0");
-        Flag("AllowPlayerTavernHero", c => $"tavern_hero:{c.Int(0)}:{c.Str(1)}", c => c.Bool(2) ? "1" : "0");
-        Flag("SetPlayerHeroesCountNotForHire", c => $"heroes_not_for_hire:{c.Int(0)}", c => c.Int(1).ToString());
-        Flag("DoNotGiveTurnToPlayerAIIfNoTownsAndActiveHeroes", c => $"ai_skip_turn:{c.Int(0)}", c => c.Bool(1) ? "1" : "0");
-    }
 }

@@ -24,7 +24,7 @@ public sealed partial class Adventure
         {
             idx++;
             if (idx >= S.Players.Count) { idx = 0; NewDay(); }
-        } while (!S.Players[idx].Alive && S.Players.Any(p => p.Alive));
+        } while (!GetsTurn(S.Players[idx]) && S.Players.Any(GetsTurn));   // exe FUN_0098e410 (Adventure.AiDirectives.cs)
         S.CurrentPlayer = idx;
         if (!S.Finished) Emit(new TurnStarted(Current.Index, S.Day));
         return null;
@@ -239,17 +239,23 @@ public sealed partial class Adventure
 
     void RollTavern(PlayerState p)
     {
-        var mp = Map.Players[p.Index];
         for (int i = 0; i < p.Tavern.Length; i++)
         {
             if (p.Tavern[i] != null && S.HeroPool.Contains(p.Tavern[i]!) && S.Week > 1) continue;
-            // Slot 0 prefers the player's race, slot 1 any race (TODO(exe): exact tavern rules).
-            var pool = S.HeroPool.Where(id => Core.Heroes.TryGetValue(id, out var d) && IsHireable(d, mp) &&
-                                             !mp.BannedHeroRaces.Contains(d.Town) && (i != 0 || d.Town == p.Race) &&
-                                             !p.Tavern.Contains(id)).ToList();
-            if (pool.Count == 0) pool = S.HeroPool.Where(id => !p.Tavern.Contains(id)).ToList();
-            p.Tavern[i] = pool.Count == 0 ? null : pool[S.Rng.Next(pool.Count)];
+            RollTavernSlot(p, i);
         }
+    }
+
+    void RollTavernSlot(PlayerState p, int i)
+    {
+        var mp = Map.Players[p.Index];
+        // Slot 0 prefers the player's race, slot 1 any race (TODO(exe): exact tavern rules).
+        // AllowPlayerTavernRace/Hero (p.TavernFilter) keep heroes out of this player's taverns.
+        var pool = S.HeroPool.Where(id => Core.Heroes.TryGetValue(id, out var d) && IsHireable(d, mp) &&
+                                         !mp.BannedHeroRaces.Contains(d.Town) && (i != 0 || d.Town == p.Race) &&
+                                         !p.Tavern.Contains(id) && TavernAccepts(p, id)).ToList();
+        if (pool.Count == 0) pool = S.HeroPool.Where(id => !p.Tavern.Contains(id) && TavernAccepts(p, id)).ToList();
+        p.Tavern[i] = pool.Count == 0 ? null : pool[S.Rng.Next(pool.Count)];
     }
 
     void CheckEliminations()

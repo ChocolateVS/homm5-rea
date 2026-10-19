@@ -190,6 +190,10 @@ public sealed partial class Adventure
             state.Heroes[side].Attack += ga;
             state.Heroes[side].Luck += gl;
         }
+        // DenyAIHeroFlee & co. (exe FUN_00c972d0): the AI hero neither flees nor surrenders. Our combat AI has
+        // no flee decision of its own; the denial is enforced through the side's retreat gate (only the AI acts there).
+        if (AiFleeDenied(att, defHero)) state.RetreatDenied[0] = true;
+        if (defHero != null && AiFleeDenied(defHero, att)) state.RetreatDenied[1] = true;
         return state;
     }
 

@@ -81,6 +81,94 @@ public sealed class PlayerState
     /// <summary>Objects already visited by any hero of this player (e.g. Eye/Hut of Magi reveals, Keymaster tents).</summary>
     public HashSet<int> VisitedObjects = new();
     public HashSet<int> Keys = new();
+
+    // ---- map-script AI directives (CPlayerAIInformation; set by the AI natives, see AdvApi.Ai.cs) ----
+    /// <summary>SetAIPlayerAttractor: object priorities for all this AI player's heroes (vf 0x1e4/0x1e8).</summary>
+    public List<AiAttractor> AiAttractors = new();
+    /// <summary>DenyAIHeroesFlee: enemy hero names ("" = any enemy) this player's AI heroes never flee from.</summary>
+    public List<string> AiNoFleeFrom = new();
+    /// <summary>EnableAIHeroHiring(…, false): towns (map object index) whose tavern the AI does not hire from.</summary>
+    public List<int> AiHiringDisabledTowns = new();
+    /// <summary>AllowHeroHiringByRaceForAI / AllowHiringOfHeroForAI (AI info +0x13c).</summary>
+    public HeroFilter AiHireFilter = new();
+    /// <summary>AllowPlayerTavernRace / AllowPlayerTavernHero: heroes generated in this player's taverns (player +0x644).</summary>
+    public HeroFilter TavernFilter = new();
+    /// <summary>SetPlayerHeroesCountNotForHire (player +0x610): hiring allowed while heroes &lt; max − this.</summary>
+    public int HeroesNotForHire;
+    /// <summary>DoNotGiveTurnToPlayerAIIfNoTownsAndActiveHeroes: without towns the AI only gets a turn while one of its heroes is AI-enabled.</summary>
+    public bool AiNoTurnWithoutTownsAndActiveHeroes;
+}
+
+/// <summary>An AI attractor entry {object, priority -1..2} (exe list of {objId, priority}, FUN_00b4e880).</summary>
+public sealed class AiAttractor
+{
+    /// <summary>Script name of the object (map object or hero).</summary>
+    public string Object = "";
+    public int Priority;
+
+    /// <summary>FUN_00b4e880: an existing entry is overwritten (priority ≠ 0) or removed (0); a new one is appended.</summary>
+    public static void Set(List<AiAttractor> list, string obj, int priority)
+    {
+        int i = list.FindIndex(a => a.Object == obj);
+        if (i >= 0)
+        {
+            if (priority != 0) list[i].Priority = priority;
+            else list.RemoveAt(i);
+            return;
+        }
+        list.Add(new AiAttractor { Object = obj, Priority = priority });
+    }
+
+    /// <summary>FUN_00b4d5c0: the entry's priority, 0 when there is none.</summary>
+    public static int Get(List<AiAttractor> list, string obj) => list.Find(a => a.Object == obj)?.Priority ?? 0;
+}
+
+/// <summary>
+/// CHeroesFilter: hero races (TOWN_*) denied, hero script names explicitly allowed (override the race
+/// rule) and explicitly denied. Check FUN_00c069d0; mutators FUN_00c06b20/c06a60 (races) and
+/// FUN_00c06be0/c06b50 (names). Lists keep the exe's order and duplicates.
+/// </summary>
+public sealed class HeroFilter
+{
+    public static readonly string[] Races =
+        { "TOWN_HEAVEN", "TOWN_PRESERVE", "TOWN_ACADEMY", "TOWN_DUNGEON", "TOWN_NECROMANCY", "TOWN_INFERNO", "TOWN_FORTRESS", "TOWN_STRONGHOLD" };
+
+    public List<string> DeniedRaces = new();
+    public List<string> AllowedHeroes = new();
+    public List<string> DeniedHeroes = new();
+
+    /// <summary>FUN_00c069d0: a denied name is rejected; a denied race is rejected unless the name is allowed.</summary>
+    public bool Accepts(string hero, string race) =>
+        !DeniedHeroes.Contains(hero) && (!DeniedRaces.Contains(race) || AllowedHeroes.Contains(hero));
+
+    /// <summary>FUN_00c06b20: deny adds the race when absent, allow removes it.</summary>
+    public void SetRace(string race, bool allow)
+    {
+        if (allow) DeniedRaces.Remove(race);
+        else if (!DeniedRaces.Contains(race)) DeniedRaces.Add(race);
+    }
+
+    /// <summary>FUN_00c06a60: allow clears the race list, deny appends every race.</summary>
+    public void SetAllRaces(bool allow)
+    {
+        if (allow) DeniedRaces.Clear();
+        else DeniedRaces.AddRange(Races);
+    }
+
+    /// <summary>FUN_00c06be0: deny → into the denied list, out of the allowed one; allow → the reverse.</summary>
+    public void SetHero(string hero, bool allow)
+    {
+        var (to, from) = allow ? (AllowedHeroes, DeniedHeroes) : (DeniedHeroes, AllowedHeroes);
+        from.Remove(hero);
+        if (!to.Contains(hero)) to.Add(hero);
+    }
+
+    /// <summary>FUN_00c06b50: the hero follows the race rule again.</summary>
+    public void ClearHero(string hero)
+    {
+        DeniedHeroes.Remove(hero);
+        AllowedHeroes.Remove(hero);
+    }
 }
 
 public sealed class HeroState
@@ -126,6 +214,14 @@ public sealed class HeroState
     /// <summary>Pending level-up choices; resolved one at a time with ChooseLevelUpCmd.</summary>
     public List<LevelUpOffer> PendingLevelUps = new();
     public bool Alive = true;
+    /// <summary>EnableHeroAI (CHero AI settings +0): an AI player's hero the AI moves; false leaves it to scripts.</summary>
+    public bool AiEnabled = true;
+    /// <summary>SetAIHeroAttractor (settings +0x14): per-hero object priorities, checked before the player's.</summary>
+    public List<AiAttractor> AiAttractors = new();
+    /// <summary>DenyAIHeroFlee (settings +0x20): enemy hero names ("" = any enemy) this AI hero never flees from.</summary>
+    public List<string> AiNoFleeFrom = new();
+    /// <summary>SetAIHeroFleeControl (settings +0x2c): ignore the player's DenyAIHeroesFlee list.</summary>
+    public bool AiFleeControl;
 
 
     public Mastery MasteryOf(string skill) => Skills.FirstOrDefault(s => s.SkillId == skill)?.Mastery ?? Mastery.None;
@@ -164,6 +260,10 @@ public sealed class TownState
     public string? Specialization;
     /// <summary>Haven training points left this week (exe CAdvMapTown +0x2d0, see Adventure.TownSpecials).</summary>
     public int TrainingPoints;
+    /// <summary>BlockTownGarrisonForAI: AI heroes do not exchange creatures with this garrison.</summary>
+    public bool AiGarrisonBlocked;
+    /// <summary>AllowHeroHiringByRaceInTown / AllowHiringOfHeroInTown (town +0x224), for every player.</summary>
+    public HeroFilter HireFilter = new();
 
     public int Level(string type) => Built.TryGetValue(type, out var l) ? l : 0;
     /// <summary>Town level = number of buildings built, counting each upgrade (fan manual p.224 "Town Level").</summary>
