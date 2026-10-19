@@ -59,7 +59,7 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
         _readFile = readFile;
         _catalog = catalog;
         _game = gameFiles;
-        L = new LuaState();
+        L = new LuaState { ArgFormats = NativeFormats.Adventure };
         L.Output = s => Log.Add(s);
         L.ErrorReported = (msg, label) => Errors.Add($"{label}: {msg}");
         game.ScriptHooks = this;

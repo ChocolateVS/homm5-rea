@@ -94,9 +94,13 @@ public sealed partial class LuaState
 
     public LuaThread NewThread(string label) => new() { Id = _nextId++, Label = label };
 
+    /// <summary>Argument formats applied to natives registered from now on (exe parser FUN_0087ad40).</summary>
+    public IReadOnlyDictionary<string, string>? ArgFormats;
+
     public void Register(string name, HostCall call)
     {
         var f = new HostFunction(name, call) { Id = 0 };
+        if (ArgFormats != null && ArgFormats.TryGetValue(name, out var fmt)) f.Format = fmt;
         HostFunctions[name] = f;
         Globals.Set(name, LuaValue.Function(f));
     }
