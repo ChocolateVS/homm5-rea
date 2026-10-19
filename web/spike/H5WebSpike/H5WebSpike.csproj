@@ -1,0 +1,30 @@
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <EnableDynamicLoading>true</EnableDynamicLoading>
+        <IsTrimmable>true</IsTrimmable>
+        <VerifyReferenceTrimCompatibility>true</VerifyReferenceTrimCompatibility>
+        <!-- 2dog.godotsharp generates TwoDogWebBoot (the web hosts' plugins initializer) only with unsafe code -->
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <!-- [JSImport] interop is browser-only by design (CA1416 platform analyzer) -->
+        <NoWarn>$(NoWarn);CA1416</NoWarn>
+        <!-- Keep nested host projects out of the default compile/content globs (their .gdignore hides them
+             from the Godot editor) -->
+        <DefaultItemExcludes>$(DefaultItemExcludes);H5WebSpike.web/**</DefaultItemExcludes>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="2dog.godotsharp" Version="$(TwoDogVersion)" />
+        <PackageReference Include="2dog.godotsharp.editor" Version="$(TwoDogVersion)"
+                          Condition="'$(Configuration)' == 'Debug' Or '$(Configuration)' == 'Editor'" />
+    </ItemGroup>
+    <!-- The real game libraries' sources, unchanged. Compiled in (linked) rather than ProjectReference'd so the
+         .NET 10 web build never writes into src/*/obj, which the desktop .NET 8 builds own. -->
+    <ItemGroup>
+        <Compile Include="../../../src/H5.Core/**/*.cs" Exclude="../../../src/H5.Core/obj/**;../../../src/H5.Core/bin/**" LinkBase="H5.Core" />
+        <Compile Include="../../../src/H5.Assets/**/*.cs" Exclude="../../../src/H5.Assets/obj/**;../../../src/H5.Assets/bin/**" LinkBase="H5.Assets" />
+        <!-- The whole client networking library (compiles for browser-wasm; the probe uses its WebSocket transport) -->
+        <Compile Include="../../../src/H5.Net/**/*.cs" Exclude="../../../src/H5.Net/obj/**;../../../src/H5.Net/bin/**" LinkBase="H5.Net" />
+    </ItemGroup>
+</Project>

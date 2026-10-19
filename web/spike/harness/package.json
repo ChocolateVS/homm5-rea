@@ -1,0 +1,7 @@
+{
+  "name": "h5-web-spike-harness",
+  "private": true,
+  "type": "module",
+  "description": "Static server (optional COOP/COEP) + headless Chromium runner for the web spike",
+  "dependencies": { "playwright-core": "1.56.0" }
+}

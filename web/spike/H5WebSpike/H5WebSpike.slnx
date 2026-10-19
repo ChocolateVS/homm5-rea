@@ -1,0 +1,12 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Editor" />
+    <BuildType Name="Release" />
+  </Configurations>
+  <Project Path="H5WebSpike.csproj" />
+  <Project Path="H5WebSpike.web/H5WebSpike.web.csproj">
+    <BuildType Solution="Editor|*" Project="Debug" />
+    <Build Project="false" />
+  </Project>
+</Solution>

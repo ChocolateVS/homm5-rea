@@ -33,7 +33,9 @@ public sealed class WebSocketFrameChannel : IFrameChannel
     public static async Task<WebSocketFrameChannel> ConnectAsync(Uri uri, TimeSpan timeout, CancellationToken ct = default)
     {
         var ws = new ClientWebSocket();
-        ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+        // Browsers manage WebSocket pings themselves; setting ClientWebSocketOptions there throws
+        // PlatformNotSupportedException (found by the web spike, docs/WEB_SPIKE.md).
+        if (!OperatingSystem.IsBrowser()) ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeout);
         try { await ws.ConnectAsync(uri, cts.Token); }

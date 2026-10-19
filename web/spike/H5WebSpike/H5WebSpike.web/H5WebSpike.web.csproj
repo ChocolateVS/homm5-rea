@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!-- Browser (wasm) host; requires `dotnet workload install wasm-tools`. Publish from the project root:
+         dotnet publish H5WebSpike.web -> AppBundle/ (engine linked in, content exported as godot.pck) -->
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <OutputType>Exe</OutputType>
+        <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+        <WasmEnableThreads Condition="'$(WasmEnableThreads)' == ''">$(TwoDogWebThreads)</WasmEnableThreads>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <!-- Keep host namespaces uniform with the desktop host (whose
+             '.2dog' assembly name is not a valid namespace). -->
+        <RootNamespace>H5WebSpike.Web</RootNamespace>
+        <!-- H5.Net's protocol records use reflection-based System.Text.Json; trimmed browser apps disable it by
+             default (JsonSerializerIsReflectionDisabled). Full port: source-generated JsonSerializerContext. -->
+        <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    </PropertyGroup>
+    <!-- Godot project location: the parent directory (hosts are nested inside
+         the Godot project, hidden from the Godot editor by their .gdignore) -->
+    <PropertyGroup>
+        <GodotProjectDir>..</GodotProjectDir>
+        <TwoDogRemoveDuplicateGodotAnalyzers>true</TwoDogRemoveDuplicateGodotAnalyzers>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="2dog.engine" Version="$(TwoDogVersion)"/>
+        <PackageReference Include="2dog.browser-wasm" Version="[$(TwoDogNativesVersion)]"/>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="../H5WebSpike.csproj"/>
+    </ItemGroup>
+
+    <!-- Scripts are resolved by reflection: root the game assembly, and any NuGet package your game reaches
+         via reflection (e.g. an ECS or serializer library) -->
+    <ItemGroup>
+        <TrimmerRootAssembly Include="H5WebSpike"/>
+        <TrimmerRootAssembly Include="$(TargetName)"/>
+    </ItemGroup>
+
+    <Target Name="DeepClean" AfterTargets="Clean">
+        <RemoveDir Directories="AppBundle"/>
+    </Target>
+</Project>

@@ -1,0 +1,8 @@
+# Web spike build outputs (never commit): browser bundle, .NET/Godot intermediates, harness deps, run artefacts
+**/AppBundle/
+**/bin/
+**/obj/
+**/.godot/
+harness/node_modules/
+harness/package-lock.json
+out/

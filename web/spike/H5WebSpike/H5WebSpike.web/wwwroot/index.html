@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>H5WebSpike</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="icon" type="image/png" sizes="96x96" href="favicon-96x96.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+    <link rel="shortcut icon" href="favicon.ico">
+    <!-- Start the big downloads before godot.js even runs; the dotnet.* files
+         are otherwise only discovered mid-boot. (When enabling TWODOG_PCK_GZ
+         below, swap both hints to their .gz siblings: godot.pck.gz, and
+         godot.wasm.gz because precompressedSuffix makes the engine fetch
+         that one too.) -->
+    <link rel="preload" href="godot.wasm" as="fetch" crossorigin="anonymous">
+    <link rel="preload" href="godot.pck" as="fetch" crossorigin="anonymous">
+    <link rel="modulepreload" href="_framework/dotnet.js">
+    <link rel="modulepreload" href="_framework/dotnet.boot.js">
+    <link rel="modulepreload" href="_framework/dotnet.runtime.js">
+    <link rel="modulepreload" href="_framework/dotnet.native.js">
+    <style>
+        html,
+        body,
+        #canvas {
+            margin: 0;
+            padding: 0;
+            border: 0;
+        }
+
+        body {
+            color: white;
+            background-color: black;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #canvas {
+            display: block;
+        }
+
+        #canvas:focus {
+            outline: none;
+        }
+
+        /* Painted above #status (which JavaScript would otherwise remove) so
+           the message is visible when scripts are disabled. */
+        noscript {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #242424;
+            font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
+        }
+
+        #status {
+            position: absolute;
+            inset: 0;
+            background-color: #242424;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        #status-splash {
+            width: clamp(96px, 22vmin, 200px);
+            height: auto;
+            animation: status-splash-pulse 2.4s ease-in-out infinite;
+        }
+
+        @keyframes status-splash-pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: .55;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #status-splash {
+                animation: none;
+            }
+        }
+
+        #status-progress {
+            width: min(60%, 320px);
+            display: none;
+        }
+
+        #status-notice {
+            background-color: #5b3943;
+            border-radius: 0.5rem;
+            border: 1px solid #9b3943;
+            color: #e0e0e0;
+            font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
+            line-height: 1.3;
+            margin: 0 2rem;
+            overflow: hidden;
+            padding: 1rem;
+            text-align: center;
+            /* Failure notices carry meaningful newlines (missing-feature lists). */
+            white-space: pre-line;
+            z-index: 1;
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas">
+        Your browser does not support the canvas tag.
+    </canvas>
+
+    <noscript>
+        Your browser does not support JavaScript.
+    </noscript>
+
+    <div id="status">
+        <!-- Set src to splash.svg, splash.png, or splash.webp to choose the image format. -->
+        <img id="status-splash" src="splash.svg" alt="Loading">
+        <progress id="status-progress" aria-label="Loading progress"></progress>
+        <div id="status-notice" role="alert"></div>
+    </div>
+
+    <script src="h5pak.js"></script>
+    <script src="godot.js"></script>
+    <script>
+        const GODOT_CONFIG = {
+            'args': [],
+            'canvasResizePolicy': 2,
+            'ensureCrossOriginIsolationHeaders': false,
+            'executable': 'godot',
+            'experimentalVK': false,
+            'focusCanvas': true,
+            'gdextensionLibs': []
+        };
+        const GODOT_THREADS_ENABLED = false;
+        // Opt-in: fetch godot.pck.gz (a sibling the 2dog publish writes) and
+        // inflate it in the page. For hosts that serve everything uncompressed;
+        // a host that already content-encodes would compress it a second time.
+        const TWODOG_PCK_GZ = false;
+
+        (function () {
+            performance.mark('2dog:boot');
+
+            const statusOverlay = document.getElementById('status');
+            const statusProgress = document.getElementById('status-progress');
+            const statusNotice = document.getElementById('status-notice');
+
+            let initializing = true;
+            let statusMode = '';
+
+            function setStatusMode(mode) {
+                if (statusMode === mode || !initializing) {
+                    return;
+                }
+                if (mode === 'hidden') {
+                    statusOverlay.remove();
+                    initializing = false;
+                    return;
+                }
+                statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
+                statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
+                statusMode = mode;
+            }
+
+            function displayFailureNotice(err) {
+                console.error(err);
+                statusNotice.textContent = typeof err?.message === 'string' ? err.message : String(err);
+                setStatusMode('notice');
+                initializing = false;
+            }
+
+            let downloadsDone = false;
+
+            function reportProgress(current, total) {
+                if (!downloadsDone && total > 0 && current >= total) {
+                    downloadsDone = true;
+                    performance.mark('2dog:downloads-done');
+                }
+                // Determinate while the size-tracked downloads run, then back
+                // to indeterminate for the tail (.NET runtime files and engine
+                // startup have no known total).
+                if (current > 0 && total > 0 && current < total) {
+                    statusProgress.value = current;
+                    statusProgress.max = total;
+                } else {
+                    statusProgress.removeAttribute('value');
+                    statusProgress.removeAttribute('max');
+                }
+            }
+
+            // The gz pack path re-points this at a merged reporter.
+            let engineProgress = reportProgress;
+
+            function startWithGzPack(fileSizes, makeEngine) {
+                // A rejected probe (network error, service worker failure)
+                // falls back to the uncompressed pack exactly like a 404.
+                return fetch('godot.pck.gz').catch(() => null).then((response) => {
+                    if (!response || !response.ok || !response.body) {
+                        console.warn('2dog: godot.pck.gz unavailable, falling back to godot.pck');
+                        return makeEngine('').startGame({});
+                    }
+                    const engine = makeEngine('.gz');
+                    // The engine only downloads the wasm here; this page fetches
+                    // and inflates the pack, merging both into one progress bar
+                    // (compressed pack bytes against its Content-Length).
+                    let pckLoaded = 0;
+                    let wasmLoaded = 0;
+                    let wasmTotal = fileSizes['godot.wasm'] || 0;
+                    const pckTotal = Number(response.headers.get('Content-Length')) || 0;
+                    const report = () => reportProgress(wasmLoaded + pckLoaded,
+                        wasmTotal > 0 && pckTotal > 0 ? wasmTotal + pckTotal : 0);
+                    engineProgress = (current, total) => {
+                        wasmLoaded = current;
+                        if (total > 0) wasmTotal = total;
+                        report();
+                    };
+                    const counted = new TransformStream({
+                        transform(chunk, controller) {
+                            pckLoaded += chunk.byteLength;
+                            report();
+                            controller.enqueue(chunk);
+                        },
+                    });
+                    const pack = new Response(
+                        response.body.pipeThrough(counted).pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+                    return Promise.all([
+                        engine.init(GODOT_CONFIG['executable']),
+                        pack.then((buffer) => engine.preloadFile(buffer, 'godot.pck')),
+                    ]).then(() => engine.start({ 'args': ['--main-pack', 'godot.pck'].concat(GODOT_CONFIG['args']) }));
+                });
+            }
+
+            function reportTimings() {
+                performance.mark('2dog:first-frame');
+                const total = performance.measure('2dog:total', '2dog:boot', '2dog:first-frame').duration;
+                let text = '2dog: first frame ' + Math.round(total) + ' ms after boot';
+                if (downloadsDone) {
+                    const tail = performance.measure('2dog:tail', '2dog:downloads-done', '2dog:first-frame').duration;
+                    text += ' (' + Math.round(total - tail) + ' ms downloading, ' + Math.round(tail) + ' ms starting)';
+                }
+                console.log(text);
+                // Detail table on demand (?2dog-timing). transferSize reads 0
+                // for memory-cache hits - measure with caching disabled.
+                if (!new URLSearchParams(location.search).has('2dog-timing')) {
+                    return;
+                }
+                const rows = performance.getEntriesByType('resource')
+                    .filter((entry) => entry.transferSize > 100000)
+                    .sort((a, b) => b.transferSize - a.transferSize)
+                    .map((entry) => ({
+                        file: entry.name.replace(/.*\//, ''),
+                        'wire kB': Math.round(entry.transferSize / 1000),
+                        ms: Math.round(entry.duration),
+                    }));
+                if (rows.length) console.table(rows);
+            }
+
+            const missing = Engine.getMissingFeatures({
+                threads: GODOT_THREADS_ENABLED,
+            });
+
+            if (missing.length !== 0) {
+                const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
+                displayFailureNotice(missingMsg + missing.join('\n'));
+                return;
+            }
+
+            // Exact sizes written by the publish make the bar determinate;
+            // without the manifest it stays indeterminate (Content-Length is
+            // the compressed size on hosts that gzip, so headers lie).
+            fetch('twodog.sizes.json')
+                .then((response) => (response.ok ? response.json() : {}))
+                .catch(() => ({}))
+                .then((fileSizes) => {
+                    // The suffix decides which files the engine fetches, so
+                    // the Engine is only constructed after the pack probe has
+                    // picked a path - a '.gz'-configured engine in the
+                    // fallback would re-request the sibling that just 404'd.
+                    const makeEngine = (suffix) => {
+                        GODOT_CONFIG['fileSizes'] = fileSizes;
+                        GODOT_CONFIG['onProgress'] = (current, total) => engineProgress(current, total);
+                        // Newer engines also inflate .gz siblings themselves
+                        // (godot.wasm.gz included); older ones ignore this key.
+                        GODOT_CONFIG['precompressedSuffix'] = suffix;
+                        return new Engine(GODOT_CONFIG);
+                    };
+                    setStatusMode('progress');
+                    const started = TWODOG_PCK_GZ && typeof DecompressionStream !== 'undefined'
+                        ? startWithGzPack(fileSizes, makeEngine)
+                        : makeEngine('').startGame({});
+                    return started.then(() => {
+                        reportTimings();
+                        setStatusMode('hidden');
+                    }, displayFailureNotice);
+                })
+                .catch(displayFailureNotice);
+        }());
+    </script>
+</body>
+
+</html>

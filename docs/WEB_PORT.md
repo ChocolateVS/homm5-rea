@@ -3,7 +3,9 @@
 The user wants a browser build once the desktop game matches the original. Godot 4.7 does not
 officially export C# projects to the web (docs: tutorials/export/exporting_for_web); a third-party
 route (2dog.browser-wasm, .NET 10 browser-wasm) exists but has **no System.Threading**. Upstream may
-improve by the time we port. To keep the port feasible, all workstreams follow these rules:
+improve by the time we port. **The spike in [WEB_SPIKE.md](WEB_SPIKE.md) (Oct 2026) proved the 2dog route:
+an original creature loads from the player's picked data.pak and renders in the browser.** To keep the
+port feasible, all workstreams follow these rules:
 
 1. **Assets come from the user's own copy.** Original files can never be hosted. The web build asks the
    player to pick their install's `data/*.pak` (File System Access API / file input) and keeps them in
