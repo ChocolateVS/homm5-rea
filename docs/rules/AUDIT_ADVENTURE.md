@@ -4,7 +4,7 @@ Every adventure mechanic / screen element checked against `H5_Game.exe` (Ghidra 
 the original data. Status: **MATCH** (already as the exe), **FIXED** (changed to match), **GAP** (known difference or
 not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not traced).
 
-Rows at 2026-10-19: 41 FIXED, 5 MATCH, 19 GAP, 17 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
+Rows at 2026-10-19: 43 FIXED, 5 MATCH, 18 GAP, 18 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
 
 ## Seer Huts
 
@@ -109,7 +109,8 @@ Rows at 2026-10-19: 41 FIXED, 5 MATCH, 19 GAP, 17 UNVERIFIED (rows carrying two 
 | Haven training: screen | UI/HavenTraining; FUN_00657820 (status → button), 00657e50 (click), 00657580 | 0 → state 0 T_BUTTON_GREEN; 1/4 disabled T_BUTTON_DISABLED; 5/7 state 1 T_BUTTON_RED; 6 state 2 T_BUTTON_YELLOW; 8 state 1 T_BUTTON_RED_NO_MONEY; 9 state 1 T_BUTTON_RED_LIMIT_REACHED; others disabled; tooltip with training_cost; click on green → confirmation → command + FORTHILL_UPGRADE_CREATURES_SOUND, red → FORTHILL_NO_RESOURCES_SOUND; smallcaption `remain` | `HavenTrainingScreen` (rows: garrison hero or town garrison / visiting hero) | FIXED / confirmation box and row contents UNVERIFIED (exe confirmation is a choose-upgrade window 0065fb60 with training_cost) |
 | Haven training (MMH 5.5) | docs/mmh55/INVENTORY.md "HavenTraining" DLL patch | 5.5 patches the training code | 3.1 rules | GAP (5.5) |
 | Sylvan Avenger's Guild (favoured enemies) | UI/FavoredEnemy | choose favoured enemies | not built | GAP |
-| Necropolis creature transformer | UI/NecropolisTransformCreature | transform creatures into undead | not built | GAP |
+| Necropolis transform: rules | FUN_00cd36c0 mode 3; CTurnCreatureToUndeadCmd (vtable 0xe0e468, execute 00428110) → FUN_00cd07f0 mode 3 | needs ability 0x12 (Necropolis TB_SPECIAL_2) else 3; undead, mechanical or elemental (FUN_00b61ba0 abilities 0xa, 9, 0xc) → 4; target = {Skeleton, Walking Dead, Manes, Vampire, Lich, Wight, Bone Dragon}[tier clamped 1..7], its TB_DWELLING_tier built else 5; free; same count; garrison or hero army, no hero needed | `TransformQuote`, `DoTransformCreature` | FIXED |
+| Necropolis transform: screen | UI/NecropolisTransformCreature (CNecropolisTransformCreature@NUI, vtable 0xe2cd24); enter_special → 00619e80 → FUN_0064ec40; status switch FUN_0064e860; click FUN_0064e630 | 0 → state 0 enabled; 4 → state 2 disabled + DENY_REASON_IMPOSSIBLE; 5 → state 4 disabled + DENY_REASON_NO_DWELLING_TEXT; others state 0 disabled; click → confirmation → command (no sound) | `NecropolisTransformScreen` (shared `CreatureTransformScreen` with the Haven screen); building double-click (ability 0x12) opens it | FIXED / confirmation box UNVERIFIED |
 | Dungeon / Inferno sacrifice altars | UI/DungeonSacrifice, UI/InfernoSacrifice, UI/SacrificeAltar | sacrifice creatures / artifacts | not built | GAP |
 | Stronghold slave market | UI/StrongholdSlaveMarket | trade creatures | not built | GAP |
 | Academy creature artifacts / Tower of Astrologer | UI/AcademyCreatureArtifacts, UI/ArtefactMagic, UI/TowerOfAstrologer | creature artifacts; astrologer | not built | GAP |

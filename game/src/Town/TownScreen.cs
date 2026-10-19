@@ -290,11 +290,12 @@ public partial class TownScreen : Control
     Control? SpecialScreen(string townType) => townType switch
     {
         "TOWN_HEAVEN" => HavenTrainingScreen.CanOpen(this) ? new HavenTrainingScreen(this) : null,
+        "TOWN_NECROMANCY" => new NecropolisTransformScreen(this),
         _ => null,
     };
 
     /// <summary>Town types whose enter_special screen is built here (the rest still show the placeholder notice).</summary>
-    static bool SpecialScreenBuilt(string townType) => townType is "TOWN_HEAVEN";
+    static bool SpecialScreenBuilt(string townType) => townType is "TOWN_HEAVEN" or "TOWN_NECROMANCY";
 
     /// <summary>
     /// Screen of a special building double-clicked in the 3D town (FUN_0061b760: the building's town ability
@@ -303,6 +304,7 @@ public partial class TownScreen : Control
     static string? SpecialBuildingKey(string townType, string building) => (townType, building) switch
     {
         ("TOWN_HEAVEN", "TB_SPECIAL_1") => "training",
+        ("TOWN_NECROMANCY", "TB_SPECIAL_2") => "special",
         _ => null,
     };
 

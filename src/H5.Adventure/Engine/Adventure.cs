@@ -89,6 +89,7 @@ public sealed partial class Adventure
             UseTreeOfKnowledgeCmd c => DoUseTreeOfKnowledge(c),
             BuyMerchantArtifactCmd c => DoBuyMerchantArtifact(c),
             TrainCreatureCmd c => DoTrainCreature(c),
+            TransformCreatureCmd c => DoTransformCreature(c),
             DigCmd c => DoDig(c),
             CompleteSeerQuestCmd c => DoCompleteSeerQuest(c),
             AcceptSeerQuestCmd c => DoAcceptSeerQuest(c),

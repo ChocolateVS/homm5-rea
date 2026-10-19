@@ -99,4 +99,30 @@ public class TownSpecialTests(Fixture f)
         while (g.S.DayOfWeek != 1) g.Apply(new EndTurnCmd { Player = g.Current.Index });
         Assert.Equal(20, t.TrainingPoints);
     }
+
+    [Fact]
+    public void NecropolisShrineTurnsLivingStacksIntoTheUndeadOfTheirTier()
+    {
+        var g = f.NewGame();
+        var t = g.S.Towns.First(x => x.Owner == g.Current.Index);
+        t.Type = "TOWN_NECROMANCY";
+        Array.Fill(t.Garrison, null);
+        t.Garrison[0] = new Stack("CREATURE_ARCHER", 9);       // tier 2
+        t.Garrison[1] = new Stack("CREATURE_SKELETON", 5);     // undead
+        t.Garrison[2] = new Stack("CREATURE_GRIFFIN", 4);      // tier 4
+        Assert.Equal(TrainStatus.NoBuilding, g.TransformQuote(t, null, 0).Status);
+        t.Built["TB_SPECIAL_2"] = 1;
+        t.Built.Remove("TB_DWELLING_2");
+        Assert.Equal(TrainStatus.NoDwelling, g.TransformQuote(t, null, 0).Status);
+        t.Built["TB_DWELLING_2"] = 1;
+        Assert.Equal(TrainStatus.NotTrainable, g.TransformQuote(t, null, 1).Status);
+        int gold = g.Current.Purse[Purse.Gold];
+        var r = g.Apply(new TransformCreatureCmd(t.Object, -1, 0) { Player = g.Current.Index });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal("CREATURE_WALKING_DEAD", t.Garrison[0]!.Creature);
+        Assert.Equal(9, t.Garrison[0]!.Count);
+        Assert.Equal(gold, g.Current.Purse[Purse.Gold]);
+        t.Built["TB_DWELLING_4"] = 1;
+        Assert.Equal("CREATURE_VAMPIRE", g.TransformQuote(t, null, 2).Target);
+    }
 }

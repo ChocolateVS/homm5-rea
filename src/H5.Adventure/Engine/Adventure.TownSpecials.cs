@@ -10,6 +10,13 @@ namespace H5.Adventure.Engine;
 /// </summary>
 public sealed record TrainCreatureCmd(int TownObject, int HeroId, int Slot) : AdvCommand;
 
+/// <summary>
+/// Necropolis Shrine of the Netherworld: turn a living stack into the undead creature of its tier.
+/// Exe: CTurnCreatureToUndeadCmd (vtable 0xe0e468, execute 0x428110) → transformer slot +0x10 mode 3.
+/// <paramref name="HeroId"/> −1 = the town garrison.
+/// </summary>
+public sealed record TransformCreatureCmd(int TownObject, int HeroId, int Slot) : AdvCommand;
+
 /// <summary>Result of the transformer's quote FUN_00cd36c0 (first field of its output).</summary>
 public enum TrainStatus
 {
@@ -127,6 +134,59 @@ public sealed partial class Adventure
         h.Army[c.Slot] = new Stack(q.Target!, q.Count);
         Emit(new CreatureUpgraded(h.Id, -1, c.Slot, from, q.Target!));
         Emit(new ArmyChanged(h.Id, -1));
+        return null;
+    }
+
+    /// <summary>Base undead creature per tier 1..7 (FUN_00cd36c0 mode 3 table: 0x1d, 0x1f, 0x21, 0x23, 0x25, 0x27, 0x29).</summary>
+    static readonly string[] UndeadByTier =
+    {
+        "CREATURE_SKELETON", "CREATURE_WALKING_DEAD", "CREATURE_MANES", "CREATURE_VAMPIRE",
+        "CREATURE_LICH", "CREATURE_WIGHT", "CREATURE_BONE_DRAGON",
+    };
+
+    /// <summary>Town ability 0x12 (table 00f7c998): Necropolis TB_SPECIAL_2.</summary>
+    public const string ShrineOfTheNetherworld = "TB_SPECIAL_2";
+
+    Stack?[]? TownArmy(TownState t, HeroState? h) => h != null ? h.Army : t.Garrison;
+
+    /// <summary>
+    /// Transform quote (FUN_00cd36c0 mode 3): no stack → 1; no shrine (ability 0x12) → 3; an undead, mechanical
+    /// or elemental creature (FUN_00b61ba0 abilities 0xa, 9, 0xc) → 4; target = the undead base creature of the
+    /// stack's tier (clamped 1..7), whose dwelling TB_DWELLING_tier must be built (else 5). Free, same count.
+    /// </summary>
+    public TrainQuote TransformQuote(TownState t, HeroState? h, int slot)
+    {
+        var none = new Resources(0, 0, 0, 0, 0, 0, 0);
+        var army = TownArmy(t, h);
+        if (army == null || slot is < 0 or >= State.Army.Slots || army[slot] is not { Count: > 0 } s) return new(TrainStatus.NoStack, null, 0, none);
+        if (t.Type != "TOWN_NECROMANCY" || t.Level(ShrineOfTheNetherworld) < 1) return new(TrainStatus.NoBuilding, null, s.Count, none);
+        var cd = Core.Creatures.GetValueOrDefault(s.Creature);
+        if (cd == null || cd.Abilities.Any(a => a is "ABILITY_UNDEAD" or "ABILITY_MECHANICAL" or "ABILITY_ELEMENTAL"))
+            return new(TrainStatus.NotTrainable, null, s.Count, none);
+        int tier = Math.Clamp(cd.Tier, 1, 7);
+        string target = UndeadByTier[tier - 1];
+        if (t.Level($"TB_DWELLING_{tier}") < 1) return new(TrainStatus.NoDwelling, target, s.Count, none);
+        return new(TrainStatus.Ok, target, s.Count, none);
+    }
+
+    string? DoTransformCreature(TransformCreatureCmd c)
+    {
+        var p = Current;
+        var t = S.Town(c.TownObject);
+        if (t == null || t.Owner != p.Index) return "not your town";
+        HeroState? h = null;
+        if (c.HeroId >= 0)
+        {
+            h = S.Hero(c.HeroId);
+            if (h == null || h.Owner != p.Index || h.InTown != t.Object) return "hero must be in your town";
+        }
+        var q = TransformQuote(t, h, c.Slot);
+        if (q.Status != TrainStatus.Ok) return $"cannot transform ({q.Status})";
+        var army = TownArmy(t, h)!;
+        string from = army[c.Slot]!.Creature;
+        army[c.Slot] = new Stack(q.Target!, q.Count);
+        Emit(new CreatureUpgraded(h?.Id ?? -1, h == null ? t.Object : -1, c.Slot, from, q.Target!));
+        Emit(new ArmyChanged(h?.Id ?? -1, h == null ? t.Object : -1));
         return null;
     }
 
