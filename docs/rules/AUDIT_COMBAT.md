@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 263 |
-| MATCH | 132 |
-| GAP | 9 |
-| UNVERIFIED | 183 |
+| FIXED | 272 |
+| MATCH | 136 |
+| GAP | 11 |
+| UNVERIFIED | 169 |
 | N/A | 56 |
 
 ## Core mechanics
@@ -235,10 +235,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_OFFENCE` | FIXED | 00a58de0 | melee ×(1+clamp(SkillOffence Basic/Advanced/Expert DamageBonus,0,10)) by mastery 1/2/3; any other mastery value gives nothing — engine gave the Expert bonus to mastery 4 | AuditHeroTests.OffenceBonusOnlyForMasteriesOneToThree |
 | `HERO_SKILL_DEFENCE` | FIXED | 00a5a900 | melee damage ×(1−clamp(SkillDefence reduce,0,1)) for mastery 1/2/3 only (mastery 4: none) — engine gave Expert to mastery 4 | (DefenceReduction) |
 | `HERO_SKILL_SORCERY` | MATCH | 00bbf610 (00bbf8a8..) | kept ATB 0.1 (float 00e12f10) × Sorcery mastery; mass spells 0.5 — the engine's 0.5 also requires the mass perk, which every hero casting a SPELL_MASS_* spell has |  |
-| `HERO_SKILL_DESTRUCTIVE_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_DARK_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_LIGHT_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_SUMMONING_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_DESTRUCTIVE_MAGIC` | MATCH | 00b4b440 | school 0 mastery = Destructive Magic (likewise Dark 10 / Light 11 / Summoning 12) |  |
+| `HERO_SKILL_DARK_MAGIC` | MATCH | 00b4b440 | school 1 |  |
+| `HERO_SKILL_LIGHT_MAGIC` | MATCH | 00b4b440 | school 2 |  |
+| `HERO_SKILL_SUMMONING_MAGIC` | MATCH | 00b4b440 | school 3 |  |
 | `HERO_SKILL_TRAINING` | MATCH | 00a58de0 | retaliation strikes ×(1+clamp(Training Basic/Advanced/Expert/ExtraExpert DamageBonus,0,10)) by mastery 1..4 |  |
 | `HERO_SKILL_GATING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_NECROMANCY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -334,12 +334,13 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_SUPRESS_DARK` | FIXED | 009781e0 | enemy Dark spells ×2 | (HeroManaCost) |
 | `HERO_SKILL_SUPRESS_LIGHT` | FIXED | 009781e0 | enemy Light spells ×2 | (HeroManaCost) |
 | `HERO_SKILL_UNSUMMON` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ABSOLUTE_WIZARDY` | FIXED | 00b4b440 (00b4b45d) | every hero spell at Expert (before the week and Shatter). Was missing | (HeroMastery, see AuditSkillTestsH) |
 | `HERO_SKILL_TELEPORT_ASSAULT` | UNVERIFIED | 0097d7b0 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SHAKE_GROUND` | MATCH | 0097d7b0 | verified in EXE_FINDINGS.md |  |
 | `HERO_SKILL_FAST_AND_FURIOUS` | MATCH | 004bc0b0 | +1 speed for every creature in the army |  |
 | `HERO_SKILL_LUCKY_SPELLS` | UNVERIFIED | 00983790 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_POWER_OF_HASTE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_POWER_OF_STONE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_POWER_OF_HASTE` | GAP | 00b4b4c1..00b4b4e4 | the exe raises the mastery to Advanced when the cast spell id (00a34110) is SPELL_HASTE (0x18); the engine (and the perk text "Mass Haste on advanced level") use SPELL_MASS_HASTE — whether 00a34110 returns the base spell for mass casts is not traced; unchanged |  |
+| `HERO_SKILL_POWER_OF_STONE` | GAP | 00b4b4eb..00b4b50e | the same with SPELL_STONESKIN (0x19) vs SPELL_MASS_STONESKIN; unchanged |  |
 | `HERO_SKILL_CHAOTIC_SPELLS` | FIXED | 00bbf6a6..00bbf751 | Erratic Mana: for a positive cost, ability roll of 50 (FUN_00a5a170), then the hero pays trunc(r · cost), r uniform in [0.6, 0.9], at most cost − 1, at least 0. Engine had no implementation | AuditSkillTestsH.ErraticManaPaysSixtyToNinetyPercent |
 | `HERO_SKILL_SECRETS_OF_DESTRUCTION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_PAYBACK` | UNVERIFIED | 00977260 | implemented; not yet compared with the exe |  |
@@ -379,21 +380,21 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_VOICE_TRAINING` | FIXED | 00a34740 | warcries min(cost×(1.001−d), cost−1), ≥1 | tests/H5.Combat.Tests/AuditSpecTests |
 | `HERO_SKILL_MIGHTY_VOICE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_VOICE_OF_RAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_SHATTER_DESTRUCTIVE_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_SHATTER_DESTRUCTIVE_MAGIC` | FIXED | 004e6190 | mastery − {Basic,Advanced,Expert}ShatterMagic/SpellTrainedDecrease[spell level − 1] AFTER the week, clamped 0..3; when that reaches −1: power − max(1, trunc(p · SpellpowerDecreaseForTrainedDrop1BelowNone)), −2 or below: Drop2; integer, result ≥ 1. Engine applied the week after the drop and multiplied the power (×0.75 / ×0.5) | AuditSkillTestsH.WeekMasteryComesBeforeShatter, AuditSkillTestsH.ShatterAndWeakenSubtractFromSpellPower |
 | `HERO_SKILL_CORRUPT_DESTRUCTIVE` | FIXED | 009781e0, 004e6000 | rounded ×(1+increase) | (HeroManaCost) |
-| `HERO_SKILL_WEAKEN_DESTRUCTIVE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_WEAKEN_DESTRUCTIVE` | FIXED | 004e6190 | power − max(1, trunc(p · WeakenMagic_SpellPowerDecrease)) (subtracted together with the Shatter loss, result ≥ 1). Engine multiplied by (1 − 0.25) | AuditSkillTestsH.ShatterAndWeakenSubtractFromSpellPower |
 | `HERO_SKILL_DETAIN_DESTRUCTIVE` | MATCH | 004e5f60 | − DetainMagic_CasterExtraATBDrop for the matching school (likewise Detain Dark / Light / Summoning) |  |
-| `HERO_SKILL_SHATTER_DARK_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_SHATTER_DARK_MAGIC` | FIXED | 004e6190 | the same for Dark | (same code) |
 | `HERO_SKILL_CORRUPT_DARK` | FIXED | 009781e0, 004e6000 | rounded ×(1+increase) | (HeroManaCost) |
-| `HERO_SKILL_WEAKEN_DARK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_WEAKEN_DARK` | FIXED | 004e6190 | the same for Dark | (same code) |
 | `HERO_SKILL_DETAIN_DARK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_SHATTER_LIGHT_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_SHATTER_LIGHT_MAGIC` | FIXED | 004e6190 | the same for Light | (same code) |
 | `HERO_SKILL_CORRUPT_LIGHT` | FIXED | 009781e0, 004e6000 | rounded ×(1+increase) | (HeroManaCost) |
-| `HERO_SKILL_WEAKEN_LIGHT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_WEAKEN_LIGHT` | FIXED | 004e6190 | the same for Light | (same code) |
 | `HERO_SKILL_DETAIN_LIGHT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_SHATTER_SUMMONING_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_SHATTER_SUMMONING_MAGIC` | FIXED | 004e6190 | the same for Summoning | (same code) |
 | `HERO_SKILL_CORRUPT_SUMMONING` | FIXED | 009781e0, 004e6000 | rounded ×(1+increase) | (HeroManaCost) |
-| `HERO_SKILL_WEAKEN_SUMMONING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_WEAKEN_SUMMONING` | FIXED | 004e6190 | the same for Summoning | (same code) |
 | `HERO_SKILL_DETAIN_SUMMONING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DEATH_TO_NONEXISTENT` | MATCH | 00a5a900 (00a5adc6) | damage ×DeathToNonexistent_DamageToSummonsMult when the target has a summoner link (vf 0x6c → 0x58) |  |
 | `HERO_SKILL_BARBARIAN_ANCIENT_SMITHY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |

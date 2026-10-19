@@ -138,4 +138,36 @@ public class AuditSkillTestsH(GameDataFixture f)
         Assert.Equal(20, SkillAuditH.ErraticManaSpend(20, true, _ => false, rng));
         Assert.Equal(20, SkillAuditH.ErraticManaSpend(20, false, _ => true, rng));
     }
+
+    // exe 004e6190 (from 00a6a7e0): enemy Shatter / Weaken subtract trunc(p·0.25 / 0.5) and trunc(p·WeakenMagic) (each at
+    // least 1) from the integer spell power, at least 1 — the engine multiplied (10 → 5.625 instead of 6).
+    [Fact]
+    public void ShatterAndWeakenSubtractFromSpellPower()
+    {
+        var (b, s) = Setup(Hero(0), Hero(3), "CREATURE_FOOTMAN");
+        var h = s.Heroes[0]; var e = s.Heroes[1];
+        h.SpellPower = 10; h.Skills.RemoveAll(k => k.SkillId == "HERO_SKILL_DESTRUCTIVE_MAGIC");
+        var bolt = f.Db.Spell("SPELL_LIGHTNING_BOLT")!;
+        double plain = b.HeroSpellPower(h, bolt);
+        e.Skills.Add(new SkillEntry("HERO_SKILL_SHATTER_DESTRUCTIVE_MAGIC", Mastery.Basic));
+        e.Perks.Add("HERO_SKILL_WEAKEN_DESTRUCTIVE");
+        int pi = (int)plain;
+        Assert.Equal(Math.Max(1, pi - Math.Max(1, (int)(pi * 0.25f)) - Math.Max(1, (int)(pi * 0.25f))), b.HeroSpellPower(h, bolt));
+    }
+
+    // exe 00a6a700: the week's school mastery (00bcde10) comes before the enemy Shatter drop (004e6190) — Week of
+    // Evocation with Basic Destructive against Advanced Shatter gives Expert − 2 = Basic (engine: none).
+    [Fact]
+    public void WeekMasteryComesBeforeShatter()
+    {
+        var s = BattleSetup.Create(f.Db,
+            new ArmySetup { Hero = Hero(0), Army = { new ArmySlot("CREATURE_FOOTMAN", 10) } },
+            new ArmySetup { Hero = Hero(3), Army = { new ArmySlot("CREATURE_IMP", 10) } },
+            7, skipTactics: true, arena: "Grass_Big_01", week: MoonWeek.Evocation);
+        var b = new Battle(f.Db, s);
+        s.Heroes[0].Skills.RemoveAll(k => k.SkillId == "HERO_SKILL_DESTRUCTIVE_MAGIC");
+        s.Heroes[0].Skills.Add(new SkillEntry("HERO_SKILL_DESTRUCTIVE_MAGIC", Mastery.Basic));
+        s.Heroes[1].Skills.Add(new SkillEntry("HERO_SKILL_SHATTER_DESTRUCTIVE_MAGIC", Mastery.Advanced));
+        Assert.Equal(Mastery.Basic, b.HeroMastery(s.Heroes[0], f.Db.Spell("SPELL_LIGHTNING_BOLT")!));
+    }
 }

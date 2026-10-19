@@ -124,3 +124,33 @@ the enemy hero has the school's Detain perk (004e5f60: 0xc2/0xc6/0xca/0xce by sc
 | `HERO_SKILL_CHAOTIC_SPELLS` | FIXED | 00bbf6a6..00bbf751 | Erratic Mana: for a positive cost, ability roll of 50 (FUN_00a5a170), then the hero pays trunc(r · cost), r uniform in [0.6, 0.9], at most cost − 1, at least 0. Engine had no implementation | AuditSkillTestsH.ErraticManaPaysSixtyToNinetyPercent |
 | `ARTFSET_EFFECT_MAGIS` | FIXED | 00bbf8f0..00bbf930 | with 4+ pieces (any class) or 2+ pieces and hero class 3 (Wizard): kept ATB r + (1 − r) · Magis_4_2Wizard_AfterCastATBLessPercents · 0.01. Engine added the percent to r and only for Wizards | AuditSkillTestsH.MagisSetScalesTheCastAtbByTheRemainder |
 | Hero spell points | FIXED | 00bbf610 (hero mana field −0x68 decremented by the cast) | the combat hero is the adventure CHero: a battle starts with the hero's current spell points and the points spent stay spent. Engine refilled the hero to Knowledge·10(·1.5) for every battle and kept the adventure mana unchanged; now `HeroInstance.Mana` carries the current points in and `ResolveBattleCmd.HeroMana` writes them back (local, quick combat and network battles) | AuditBattleExpTests.HeroManaCarriesIntoAndOutOfBattle |
+
+## Magic skills: hero spell mastery, Shatter and Weaken
+
+Hero spell mastery `FUN_00b4b440` (caster vcall 0x20, called from the generic `00a6a700`): Advanced when the spell is cast
+from an item (00a34470: cast record +0x1c), Expert with Absolute Wizardry, else the school skill (0 Destructive → 9,
+1 Dark → 10, 2 Light → 11, 3 Summoning → 12; other schools 0); Power of Haste / Power of Stone raise to Advanced when the
+cast spell id is SPELL_HASTE (0x18) / SPELL_STONESKIN (0x19); then the week. `00a6a700` applies the week again and the
+enemy hero's Shatter (`004e6190`, ids 0xbf/0xc3/0xc7/0xcb with Weaken 0xc1/0xc5/0xc9/0xcd); the spell power getter
+`00a6a7e0` passes the same mastery to `004e6190` for the power loss.
+
+| ID | Status | Exe | Original behaviour | Test |
+|---|---|---|---|---|
+| `HERO_SKILL_DESTRUCTIVE_MAGIC` | MATCH | 00b4b440 | school 0 mastery = Destructive Magic (likewise Dark 10 / Light 11 / Summoning 12) |  |
+| `HERO_SKILL_DARK_MAGIC` | MATCH | 00b4b440 | school 1 |  |
+| `HERO_SKILL_LIGHT_MAGIC` | MATCH | 00b4b440 | school 2 |  |
+| `HERO_SKILL_SUMMONING_MAGIC` | MATCH | 00b4b440 | school 3 |  |
+| `HERO_SKILL_ABSOLUTE_WIZARDY` | FIXED | 00b4b440 (00b4b45d) | every hero spell at Expert (before the week and Shatter). Was missing | (HeroMastery, see AuditSkillTestsH) |
+| `HERO_SKILL_SHATTER_DESTRUCTIVE_MAGIC` | FIXED | 004e6190 | mastery − {Basic,Advanced,Expert}ShatterMagic/SpellTrainedDecrease[spell level − 1] AFTER the week, clamped 0..3; when that reaches −1: power − max(1, trunc(p · SpellpowerDecreaseForTrainedDrop1BelowNone)), −2 or below: Drop2; integer, result ≥ 1. Engine applied the week after the drop and multiplied the power (×0.75 / ×0.5) | AuditSkillTestsH.WeekMasteryComesBeforeShatter, AuditSkillTestsH.ShatterAndWeakenSubtractFromSpellPower |
+| `HERO_SKILL_SHATTER_DARK_MAGIC` | FIXED | 004e6190 | the same for Dark | (same code) |
+| `HERO_SKILL_SHATTER_LIGHT_MAGIC` | FIXED | 004e6190 | the same for Light | (same code) |
+| `HERO_SKILL_SHATTER_SUMMONING_MAGIC` | FIXED | 004e6190 | the same for Summoning | (same code) |
+| `HERO_SKILL_WEAKEN_DESTRUCTIVE` | FIXED | 004e6190 | power − max(1, trunc(p · WeakenMagic_SpellPowerDecrease)) (subtracted together with the Shatter loss, result ≥ 1). Engine multiplied by (1 − 0.25) | AuditSkillTestsH.ShatterAndWeakenSubtractFromSpellPower |
+| `HERO_SKILL_WEAKEN_DARK` | FIXED | 004e6190 | the same for Dark | (same code) |
+| `HERO_SKILL_WEAKEN_LIGHT` | FIXED | 004e6190 | the same for Light | (same code) |
+| `HERO_SKILL_WEAKEN_SUMMONING` | FIXED | 004e6190 | the same for Summoning | (same code) |
+| `HERO_SKILL_POWER_OF_HASTE` | GAP | 00b4b4c1..00b4b4e4 | the exe raises the mastery to Advanced when the cast spell id (00a34110) is SPELL_HASTE (0x18); the engine (and the perk text "Mass Haste on advanced level") use SPELL_MASS_HASTE — whether 00a34110 returns the base spell for mass casts is not traced; unchanged |  |
+| `HERO_SKILL_POWER_OF_STONE` | GAP | 00b4b4eb..00b4b50e | the same with SPELL_STONESKIN (0x19) vs SPELL_MASS_STONESKIN; unchanged |  |
+
+Not changed: for runic / warcry schools 00b4b440 returns 0 while the engine uses Runelore / Voice mastery — runes and
+warcries are resolved by their own code (spells R partition).

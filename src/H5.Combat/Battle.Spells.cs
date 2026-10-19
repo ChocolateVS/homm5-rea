@@ -106,7 +106,8 @@ public sealed partial class Battle
         Emit(new AbilityTriggered(Actor.Hero(mc.Side), "HERO_SPEC_MIND_CLEANER", Actor.Hero(caster.Side)));
     }
 
-    public Mastery HeroMastery(HeroState h, SpellDef sp)
+    /// <summary>The hero's own mastery for a spell before Absolute Wizardry, the week and Shatter.</summary>
+    Mastery SchoolMastery(HeroState h, SpellDef sp)
     {
         Mastery m = sp.School switch
         {
@@ -122,45 +123,68 @@ public sealed partial class Battle
         // Power of Speed / Endurance cast at Advanced unless Expert in Light Magic.
         if ((sp.Id == "SPELL_MASS_HASTE" && h.HasPerk(Sk.PowerOfSpeed) || sp.Id == "SPELL_MASS_STONESKIN" && h.HasPerk(Sk.PowerOfEndurance)) && m < Mastery.Advanced)
             m = Mastery.Advanced;
-        // Shatter magic of the enemy hero (p.126-129).
-        var enemy = Enemy(h.Side);
-        string shatter = sp.School switch
-        {
-            "MAGIC_SCHOOL_DESTRUCTIVE" => Sk.ShatterDestructive, "MAGIC_SCHOOL_DARK" => Sk.ShatterDark,
-            "MAGIC_SCHOOL_LIGHT" => Sk.ShatterLight, "MAGIC_SCHOOL_SUMMONING" => Sk.ShatterSummoning, _ => "",
-        };
-        if (enemy.Present && shatter.Length > 0)
-        {
-            var sm = enemy.SkillLevel(shatter);
-            int drop = 0;
-            if (sm == Mastery.Basic) drop = sp.Level <= 3 ? 1 : 0;
-            else if (sm == Mastery.Advanced) drop = sp.Level <= 3 ? 2 : sp.Level == 4 ? 1 : 0;
-            else if (sm >= Mastery.Expert) drop = sp.Level <= 3 ? 2 : 1;
-            m = (Mastery)Math.Max(0, (int)m - drop);
-        }
-        return MoonWeek.SpellMastery(m, sp.School, S.Week);   // exe 00a6a700 → 00bcde10, after the caster's own mastery
+        return m;
     }
 
-    /// <summary>Spell power reduction from enemy shatter below "None" mastery (p.126).</summary>
-    double ShatterPowerFactor(HeroState h, SpellDef sp)
+    public Mastery HeroMastery(HeroState h, SpellDef sp)
+    {
+        Mastery m = SchoolMastery(h, sp);
+        // Absolute Wizardry: every spell at Expert (exe 00b4b440 returns 3 before the school lookup).
+        if (h.HasPerk("HERO_SKILL_ABSOLUTE_WIZARDY")) m = Mastery.Expert;
+        m = MoonWeek.SpellMastery(m, sp.School, S.Week);   // exe 00a6a700 → 00bcde10, after the caster's own mastery
+        // Enemy Shatter (exe 004e6190, after the week): mastery − SpellTrainedDecrease[spell level − 1], clamped 0..3.
+        int below = ShatterMasteryAfterDrop(h, sp, m);
+        return below == int.MinValue ? m : (Mastery)Math.Clamp(below, 0, 3);
+    }
+
+    string ShatterSkill(string school) => school switch
+    {
+        "MAGIC_SCHOOL_DESTRUCTIVE" => Sk.ShatterDestructive, "MAGIC_SCHOOL_DARK" => Sk.ShatterDark,
+        "MAGIC_SCHOOL_LIGHT" => Sk.ShatterLight, "MAGIC_SCHOOL_SUMMONING" => Sk.ShatterSummoning, _ => "",
+    };
+
+    string ShatterTable(Mastery shatter) => "combat/HeroSkills/Barbarian/"
+        + (shatter == Mastery.Basic ? "Basic" : shatter == Mastery.Advanced ? "Advanced" : "Expert") + "ShatterMagic/";
+
+    /// <summary>Exe 004e6190: the caster's mastery minus the enemy Shatter drop (unclamped), or int.MinValue when the
+    /// enemy hero has no Shatter skill of the spell's school.</summary>
+    int ShatterMasteryAfterDrop(HeroState h, SpellDef sp, Mastery m)
     {
         var enemy = Enemy(h.Side);
-        if (!enemy.Present) return 1;
-        string shatter = sp.School switch
-        {
-            "MAGIC_SCHOOL_DESTRUCTIVE" => Sk.ShatterDestructive, "MAGIC_SCHOOL_DARK" => Sk.ShatterDark,
-            "MAGIC_SCHOOL_LIGHT" => Sk.ShatterLight, "MAGIC_SCHOOL_SUMMONING" => Sk.ShatterSummoning, _ => "",
-        };
-        if (shatter.Length == 0 || enemy.SkillLevel(shatter) == Mastery.None) return 1;
-        int raw = Math.Min(3, (int)(sp.School switch
-        {
-            "MAGIC_SCHOOL_DESTRUCTIVE" => h.SkillLevel(Sk.Destructive), "MAGIC_SCHOOL_DARK" => h.SkillLevel(Sk.Dark),
-            "MAGIC_SCHOOL_LIGHT" => h.SkillLevel(Sk.Light), _ => h.SkillLevel(Sk.Summoning),
-        }));
+        string shatter = ShatterSkill(sp.School);
+        if (!enemy.Present || shatter.Length == 0) return int.MinValue;
         var sm = enemy.SkillLevel(shatter);
-        int drop = sm == Mastery.Basic ? (sp.Level <= 3 ? 1 : 0) : sm == Mastery.Advanced ? (sp.Level <= 3 ? 2 : sp.Level == 4 ? 1 : 0) : (sp.Level <= 3 ? 2 : 1);
-        int below = drop - raw;
-        return below >= 2 ? 0.5 : below == 1 ? 0.75 : 1;
+        if (sm == Mastery.None) return int.MinValue;
+        var items = Stats.Node(ShatterTable(sm) + "SpellTrainedDecrease")?.Elements("Item").ToList();
+        int drop = items != null && sp.Level >= 1 && sp.Level <= items.Count ? (int)XmlHelpers.ParseDouble(items[sp.Level - 1].Value, 0) : 0;
+        return (int)m - drop;
+    }
+
+    /// <summary>
+    /// Enemy Shatter / Weaken on the caster's spell power (exe 004e6190 from 00a6a7e0): when the drop takes the mastery
+    /// to −1 / −2 or below, trunc(p · SpellpowerDecreaseForTrainedDrop1 / 2BelowNone) (at least 1) is subtracted; Weaken
+    /// of the school subtracts trunc(p · WeakenMagic_SpellPowerDecrease) (at least 1); the result is at least 1. Only
+    /// when the enemy hero has the school's Shatter skill.
+    /// </summary>
+    double ShatterWeakenPower(HeroState h, SpellDef sp, double p)
+    {
+        Mastery m = h.HasPerk("HERO_SKILL_ABSOLUTE_WIZARDY") ? Mastery.Expert : SchoolMastery(h, sp);
+        m = MoonWeek.SpellMastery(m, sp.School, S.Week);
+        int below = ShatterMasteryAfterDrop(h, sp, m);
+        if (below == int.MinValue) return p;
+        var enemy = Enemy(h.Side);
+        string tbl = ShatterTable(enemy.SkillLevel(ShatterSkill(sp.School)));
+        int pi = (int)p, shatterLoss = 0, weakenLoss = 0;
+        if (below == -1) shatterLoss = Math.Max(1, (int)(pi * (float)Stats.Get(tbl + "SpellpowerDecreaseForTrainedDrop1BelowNone", 0.25)));
+        else if (below <= -2) shatterLoss = Math.Max(1, (int)(pi * (float)Stats.Get(tbl + "SpellpowerDecreaseForTrainedDrop2BelowNone", 0.5)));
+        string weaken = sp.School switch
+        {
+            "MAGIC_SCHOOL_DESTRUCTIVE" => Sk.WeakenDestructive, "MAGIC_SCHOOL_DARK" => Sk.WeakenDark,
+            "MAGIC_SCHOOL_LIGHT" => Sk.WeakenLight, "MAGIC_SCHOOL_SUMMONING" => Sk.WeakenSummoning, _ => "",
+        };
+        if (enemy.HasPerk(weaken))
+            weakenLoss = Math.Max(1, (int)(pi * (float)Stats.Get("combat/HeroSkills/Barbarian/WeakenMagic_SpellPowerDecrease", 0.25)));
+        return Math.Max(1, pi - weakenLoss - shatterLoss);
     }
 
     public double HeroSpellPower(HeroState h, SpellDef sp)
@@ -191,14 +215,8 @@ public sealed partial class Battle
         {
             if (e.HasPerk(Sk.MightOverMagic)) p -= e.SpellPower / 2.0;
             if (e.HasPerk(Sk.ShrugDarkness) && sp.School == "MAGIC_SCHOOL_DARK") p *= Stats.Get("combat/HeroSkills/Runemage/ShrugDarkness_EnemySpellpowerMultiplier", 0.5);
-            string weaken = sp.School switch
-            {
-                "MAGIC_SCHOOL_DESTRUCTIVE" => Sk.WeakenDestructive, "MAGIC_SCHOOL_DARK" => Sk.WeakenDark,
-                "MAGIC_SCHOOL_LIGHT" => Sk.WeakenLight, "MAGIC_SCHOOL_SUMMONING" => Sk.WeakenSummoning, _ => "",
-            };
-            if (weaken.Length > 0 && e.HasPerk(weaken)) p *= 1 - Stats.Get("combat/HeroSkills/Barbarian/WeakenMagic_SpellPowerDecrease", 0.25);
         }
-        p *= ShatterPowerFactor(h, sp);
+        p = ShatterWeakenPower(h, sp, p);   // exe 004e6190 (Shatter / Weaken, subtractive)
         p += PowerFeedBonus(h);
         return Math.Max(0, p);
     }
