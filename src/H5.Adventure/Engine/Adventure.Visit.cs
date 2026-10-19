@@ -381,13 +381,16 @@ public sealed partial class Adventure
 
     void FreePrisoner(HeroState h, MapObject o)
     {
-        if (o.Hero == null || S.Heroes.Count(x => x.Alive && x.Owner == h.Owner) >= 8) { Emit(new Message("prison_full", "You cannot have more heroes.")); return; }
+        // AdvMapPrisonShared messagesFileRef: [2] PrisonEmpty, [3] PrisonCantHire, [4] (named NoExit) the freeing text.
+        if (o.Hero == null) { Emit(new ObjectVisited(h.Id, o.Index, "prison:empty")); return; }
+        if (S.Heroes.Count(x => x.Alive && x.Owner == h.Owner) >= 8) { Emit(new ObjectVisited(h.Id, o.Index, "prison:full")); return; }
         var freed = HeroFromInstance(o.Hero, h.Owner, h.Pos);
         // The freed hero appears next to the prison (TODO(exe): exact placement).
         freed.Pos = FreeTileNear(h.Pos) ?? h.Pos;
         freed.MaxMovePoints = ComputeMaxMovePoints(freed);
         S.Heroes.Add(freed);
         S.HeroPool.Remove(freed.DefId);
+        Emit(new ObjectVisited(h.Id, o.Index, "prison:freed"));
         RemoveObject(o.Index);
         Emit(new HeroHired(freed.Id, freed.DefId, -1));
     }

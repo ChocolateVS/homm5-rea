@@ -185,19 +185,19 @@ Treasure, WarMachineFactory, WitchHut; dispatcher 005a5d90).
 | Border guard | 24/10; 54/26 | without key [2] nopass; with key [3] pass "Do you wish to pass at this time?" (also `Text/Interface/BorderGuard`) | [2] box; key → Yes/No with [3], Yes removes the guard | FIXED (was: invented text, opened without asking) / GAP (dedicated BorderGuard window) |
 | Seer hut, Sphinx, obelisk / Tear of Asha, shipyard, marketplace | see the sections above | — | — | see above |
 | Garrisons (garrison, anti-magic garrison, outpost) | 60/18; 120/35 | garrison screen (CGarrisonDialogLogEntry), [2] WayThruBlockedByHero | event only | GAP |
-| Prison | 85/28; 99/38 | free the hero; [2] PrisonEmpty, [3] PrisonCantHire, [4] NoExit | frees the hero | GAP (messages) |
+| Prison | 85/28; 99/38 | free the hero; [2] PrisonEmpty, [3] PrisonCantHire (too many heroes), [4] (file named NoExit) the freeing text | frees the hero; box with [2] / [3] / [4] | FIXED (was: invented "You cannot have more heroes.", no message on freeing) / UNVERIFIED (prison removed after freeing; hero cap 8) |
 | Towns | ~320/30; ~520/50 | enter / capture / siege | town screen, capture, siege hand-off | UNVERIFIED (town audits elsewhere) |
 | Monsters | 7417/72; 11946/114 | fight / join / flee (CJoinFleeDialogLogEntry, CFleeFightDialogLogEntry) | join/flee/fight by mood | UNVERIFIED (mood coefficients MATCH, see ADVENTURE.md) |
 | Heroes | 86/26; 152/56 | meet (exchange) / attack | exchange screen / battle | UNVERIFIED |
 | Teleports (monoliths one/two way, subterranean gate, whirlpool) | 448/46; 818/72 | teleport | `Teleport` | UNVERIFIED |
 | Boats | — | board / land | see BOATS.md | UNVERIFIED |
-| Stat buildings (mercenary camp, Marletto tower, star axis, garden of revelation, learning stone, arena, war academy, school of magic, library) | ~830/41; ~1400/70 | once per hero | once per hero; "Already visited." (invented wording); arena/school choice box shows the internal kind name | GAP (texts) / UNVERIFIED (rules) |
-| Morale / luck / movement places (buoy, faerie ring, mermaids, fountains, idol, rally flag, stables, temple, oasis, scarlet swan, sanctuary, sirens) | ~1100/64; ~1700/103 | until the next battle / weekly | per manual; "Already visited." | GAP (texts) / UNVERIFIED (rules) |
-| Weekly producers (windmill, water wheel, mystical garden), magic well / spring | ~790/59; ~1440/96 | weekly; `BuildingsCommon/AlreadyVisitedThisWeek.txt` | weekly; "Come back next week." (invented wording) | GAP (text) |
+| Stat buildings (mercenary camp, Marletto tower, star axis, garden of revelation, learning stone, arena, war academy, school of magic, library) | ~830/41; ~1400/70 | once per hero | once per hero; revisit box `BuildingsCommon/AlreadyVisited.txt`; arena/school choice box shows the internal kind name | GAP (choice box) / UNVERIFIED (rules) |
+| Morale / luck / movement places (buoy, faerie ring, mermaids, fountains, idol, rally flag, stables, temple, oasis, scarlet swan, sanctuary, sirens) | ~1100/64; ~1700/103 | until the next battle / weekly | per manual; revisit box `BuildingsCommon/AlreadyVisited.txt` / `AlreadyVisitedThisWeek.txt` | FIXED (was the engine's placeholder wording) / UNVERIFIED (rules) |
+| Weekly producers (windmill, water wheel, mystical garden), magic well / spring | ~790/59; ~1440/96 | weekly; `BuildingsCommon/AlreadyVisitedThisWeek.txt` | weekly; that text on a revisit | FIXED (was "Come back next week.") |
 | Loot sites (lean-to, wagon, skeleton, tomb of the warrior) | 100/20; 230/36 | one-off loot | per manual | UNVERIFIED |
 | Observatory, hut of magi, eye of magi, lighthouse, cartographer | ~500/58; ~800/93 | reveal / ownership | reveal rules; cartographer screen | UNVERIFIED |
 | Witch hut, tree of knowledge, trading post, hill fort, war machine factory, black market | ~370/48; ~520/71 | screens (CWitchHutDialogLogEntry, CHillFortDialogLogEntry, CMarketDialogLogEntry, CWarMachineFactoryDialogLogEntry, CBlackMarketDialogLogEntry) | client screens (MapBuildingScreens) | UNVERIFIED |
 | Signs | 31/12; 69/29 | sign text box | event only | GAP |
 | Spell shop, map tavern, den of thieves, Memory Mentor, sacrificial altar, astrologer tower, nomad shaman, fortuitous sanctuary, demolish, unkempt | ~520/48; ~620/66 | screens (CSpellShop / CTavern / CThievesInfo / CMemoryMentor / CSacrificialAltar / CAstrologer DialogLogEntry) | event only | GAP |
 
-Rows in these two sections: 15 FIXED, 1 MATCH, 18 GAP, 14 UNVERIFIED (rows with two statuses count once for each).
+Rows in these two sections: 18 FIXED, 1 MATCH, 15 GAP, 15 UNVERIFIED (rows with two statuses count once for each).

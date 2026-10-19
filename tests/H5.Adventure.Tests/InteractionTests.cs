@@ -183,4 +183,19 @@ public class InteractionTests(Fixture f)
         g.Apply(new AnswerChoiceCmd(true, 0) { Player = h.Owner });
         Assert.NotNull(g.S.Battle);
     }
+
+    [Fact]
+    public void PrisonReportsWithItsOwnTexts()
+    {
+        foreach (var id in new[] { "A2M1", "A2M11", "A2M7", "A2M13" })
+        {
+            var g = f.NewGame(id);
+            var prison = g.Map.Objects.FirstOrDefault(o => o.Kind == ObjectKind.Prison && o.Hero != null && o.ActiveTiles.Any());
+            if (prison == null) continue;
+            var h = MyHero(g);
+            Assert.Contains(VisitFromEntrance(g, h, prison), e => e is ObjectVisited { What: "prison:freed" });
+            Assert.True(g.S.Obj(prison.Index).Removed);
+            return;
+        }
+    }
 }

@@ -739,6 +739,10 @@ public partial class AdventureScreen : Control
             case ChoiceOffered co when HumanCaused(player) && s.Choice != null:
                 await AnswerChoice(co);
                 break;
+            case Message { Key: "already_visited" or "already_visited_week" } av when HumanCaused(player):
+                // Stock wording (Text/Game/BuildingsCommon) instead of the engine's placeholder.
+                await Dialog(done => Message("", AdvTexts.Get(av.Key == "already_visited" ? "Text/Game/BuildingsCommon/AlreadyVisited.txt" : AdvTexts.AlreadyVisited), null, done));
+                break;
             case Message msg when HumanCaused(player) && !string.IsNullOrWhiteSpace(msg.Text):
                 await Dialog(done => Message("", msg.Text, null, done));
                 break;
