@@ -24,6 +24,9 @@ public sealed partial class AdventureScripting
             var name = ObjectNameArg(c, 0);
             var o = ObjOrNull(c, 0, out var h);
             if (h != null) { c.Return(h.Pos.X, h.Pos.Y, h.Pos.Floor); return; }
+            // The buried Grail is a world object named OBJECT_GRAIL = 'grail' (advmap-startup.lua)
+            // until it is dug up.
+            if (o == null && name == "grail" && S.Grail is { } g && !S.GrailFound) { c.Return(g.X, g.Y, g.Floor); return; }
             if (o == null) throw c.Error($"Object \"{name}\" is not exists");
             var p = PositionOf(o);
             c.Return(p.X, p.Y, p.Floor);
@@ -685,7 +688,10 @@ public sealed partial class AdventureScripting
         || (o.Kind == ObjectKind.Building && o.Shared.Type == "BUILDING_LIGHTHOUSE");
 
     /// <summary>Objects with an army (FUN_005c0710): monsters, towns, garrisons and guarded objects.</summary>
-    bool HasArmy(MapObject o) => o.Kind is ObjectKind.Monster or ObjectKind.Town or ObjectKind.Garrison || S.Obj(o.Index).Guards.Count > 0;
+    // Army holders (FUN_005c0710 picks the object's army interface): monsters, towns, garrisons and mines
+    // (H5 mines take a garrison; MMH55's H55_MineVisit reads mine armies), plus anything still guarded.
+    bool HasArmy(MapObject o) => o.Kind is ObjectKind.Monster or ObjectKind.Town or ObjectKind.Garrison or ObjectKind.Mine or ObjectKind.AbandonedMine
+        || S.Obj(o.Index).Guards.Count > 0;
 
     bool HeroInteractionsEnabled(string heroName)
     {

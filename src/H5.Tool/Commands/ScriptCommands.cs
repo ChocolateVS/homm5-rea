@@ -57,6 +57,9 @@ sealed class ScriptRunCommand : ICommand
         "doesn't taking part in the current game",
         "A1C3M1/a1c3m1.lua",
         "A1C3M5/script_combat.lua",
+        // Heroes missing from MMH55's race phonebooks (campaign variants such as Caldwell_DSU): race 0
+        // indexes H55_UnusualSchools[0] = nil, in the exe as here.
+        "in H55_GetUnusualSchools]",
     };
 
     static bool IsStockError(string e) => StockErrors.Any(e.Contains);
