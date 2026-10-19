@@ -45,3 +45,20 @@ not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not
 | Wrong answer | 006ebd20 → CFightSphinxCmd (004331c0), CCombatHeroVsSphinxArenaAndOpponentsLoader | battle against the Sphinx's opponents | opponents not traced: no battle, the Sphinx is spent | GAP |
 | Sphinx stores the riddle's artifact | 009cb070 `+0xd4 = riddle+0x64` | purpose not traced | not modelled | GAP |
 | AI | "AI: Hero visited Sphinx and got " (00e168f4) | AI answers | AI visits pose a riddle nobody answers | GAP |
+
+## Tear of Asha, digging, obelisks
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Where it is buried | map init 009960e0 | one of the map's Graal artifact objects (both floors) picked at random; all of them removed; no Graal → no Tear of Asha; warnings when obelisks and Graal don't match | same (`PlaceGrail`) | FIXED (was: random open land tile) |
+| Random maps | RMG `GraalOnMap` / `Grail` (RmgData) | the generator places a Graal | H5.Rmg does not place one yet, so generated maps have no Tear of Asha | GAP (RMG workstream) |
+| Puzzle pieces | 00a7f8c0, obelisk visit 00a7f880 | each of N obelisks visited (capped at N) opens (36 − open) / (obelisks left) | `PuzzlePiecesFor` | FIXED (was 36·v/N; differs e.g. N = 8) |
+| Pieces without a Tear of Asha | 009960e0 (puzzle object only created with a Graal) | none | none | FIXED |
+| Dig checks | 0098ec30 | hole on the tile → GRAAL_HAS_HOLE (no cost, command succeeds); tile not clear → GRAAL_TRY_ON_CLEAR; movement < cost → GRAAL_NOT_ENOUGH_MOVEMENT (RPGRoot texts) | same messages | FIXED |
+| Dig cost / "clear" test | hero slots +0x104/+0xf8; 00bcc2b0, 0098eb30 | not traced | whole day's movement; free land tile without objects/towns | UNVERIFIED |
+| Hole | 009920a0 (FUN_00a80000 creates a hole object, sound 0x35) | every dig leaves a hole | `AdvState.Holes` (rules); the hole model is not drawn | FIXED / visual GAP |
+| Found | 00a7fa50 | same floor, Chebyshev distance ≤ 0, or ≤ 2 with Tear of Asha Vision (skill 0x50 = HERO_SKILL_GRAIL_VISION) | same | FIXED (was reach 1) |
+| Found message | 009920a0 | GRAAL_NAME header, GRAAL_CONGRATULATIONS text, music 0x36 | message box with those texts and the artifact icon | FIXED (music not checked) |
+| Hint | 00a7f8f0 / 00a7f710 | within 5 tiles (|dx|, |dy| ≤ 5, same floor): direction by |dx|·26 vs |dy|·10 (8 GRAAL_HINT_* ids, north = +y); otherwise GRAAL_NOTHING_HERE | `GrailHint` | FIXED (was: no hints) |
+| Dig confirmation | DIG_CONFIRMATION(_HEADER) 005a4860, adv_dig | Yes/No box | stock dig_graal texts | UNVERIFIED (text ids not cross-checked) |
+| Puzzle map screen | UI/PuzzleMap, CPuzzleMap@NUI | 36 PuzzleDesc pieces over the terrain around the Tear of Asha | built earlier (c144024) | UNVERIFIED |

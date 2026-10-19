@@ -254,9 +254,11 @@ public sealed class AdvState
     public Dictionary<int, ObjState> Objects = new();
     /// <summary>Artifact merchant stock (6 slots, null = sold) by town or map object index.</summary>
     public Dictionary<int, string?[]> ArtifactMarkets = new();
-    /// <summary>Where the Tear of Asha is buried (null if the map has no room for it) and whether it was dug up.</summary>
+    /// <summary>Where the Tear of Asha is buried (null when the map places no Graal) and whether it was dug up.</summary>
     public Tile? Grail;
     public bool GrailFound;
+    /// <summary>Tiles already dug (holes stay on the map; digging there again says GRAAL_HAS_HOLE).</summary>
+    public HashSet<Tile> Holes = new();
     /// <summary>Hero definition ids not yet in play (tavern pool).</summary>
     public List<string> HeroPool = new();
     public PendingBattle? Battle;

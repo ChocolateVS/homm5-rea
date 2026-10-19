@@ -210,7 +210,8 @@ public partial class AdventureScreen : Control
         {
             if (!yes) return;
             var r = Session.Apply(new DigCmd(hero.Id) { Player = Session.Human.Index });
-            if (!r.Ok) Message(T("dig_graal_header.txt", "Dig for the Tear of Asha"), char.ToUpperInvariant((r.Error ?? "Not possible")[0]) + (r.Error ?? "Not possible")[1..] + ".");
+            // Refusals carry the exe's RPGRoot text id (GRAAL_TRY_ON_CLEAR, GRAAL_NOT_ENOUGH_MOVEMENT).
+            if (!r.Ok) Message(T("dig_graal_header.txt", "Dig for the Tear of Asha"), AdvTexts.Rpg(r.Error ?? "") is { Length: > 0 } why ? why : r.Error ?? "");
             Hud.Refresh();
         });
     }
@@ -603,13 +604,14 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 break;
             }
-            case ObjectVisited { What: "dig:nothing" or "dig:grail" } dg when HumanCaused(player) && !Autoplay:
+            case ObjectVisited { Object: -1 } dg when dg.What.StartsWith("dig:") && HumanCaused(player) && !Autoplay:
             {
-                var title = AdvTexts.Get("UI/AdventureScreen-heavy/dig_graal_header.txt") is { Length: > 0 } dt ? dt : "Dig for the Tear of Asha";
-                var text = dg.What == "dig:grail"
-                    ? $"{ArtifactName(H5.Adventure.Engine.Adventure.GrailArtifact)}<br>{(Game.Instance.Db.Artifacts.TryGetValue(H5.Adventure.Engine.Adventure.GrailArtifact, out var ga) ? ga.Description : "")}"
-                    : AdvTexts.Get("Text/Game/Buildings/Obelisk/NoGrailHere.txt") is { Length: > 0 } ng ? ng : "No sign of a Tear of Asha here...";
-                var face = dg.What == "dig:grail" ? ArtifactIcon(H5.Adventure.Engine.Adventure.GrailArtifact) : null;
+                // 009920a0: GRAAL_NAME / GRAAL_CONGRATULATIONS when found, else GRAAL_HAS_HOLE, a GRAAL_HINT_* or GRAAL_NOTHING_HERE.
+                var title = AdvTexts.Get("UI/AdventureScreen-heavy/dig_graal_header.txt") is { Length: > 0 } dt ? dt : "";
+                bool found = dg.What == "dig:grail";
+                if (found && AdvTexts.Rpg("GRAAL_NAME") is { Length: > 0 } gn) title = gn;
+                var text = AdvTexts.Rpg(found ? "GRAAL_CONGRATULATIONS" : dg.What[4..]);
+                var face = found ? ArtifactIcon(H5.Adventure.Engine.Adventure.GrailArtifact) : null;
                 await Dialog(done => AdvDialogs.Message(_dialogLayer, title, text, face, done));
                 Hud.Refresh();
                 break;

@@ -42,6 +42,22 @@ public static class AdvTexts
     /// <summary>Resource names as the treasure piles name them (Text/Game/Treasures/&lt;Res&gt;/Name.txt).</summary>
     static readonly string[] ResourceFolders = { "Wood", "Ore", "Mercury", "Crystals", "Sulfur", "Gems", "Gold" };
 
+    static Dictionary<string, string>? _rpg;
+
+    /// <summary>A text id of GameMechanics/RPGStats/RPGRoot.xdb (e.g. GRAAL_NOTHING_HERE), or "" when unknown.</summary>
+    public static string Rpg(string id)
+    {
+        if (_rpg == null)
+        {
+            _rpg = new(StringComparer.Ordinal);
+            const string root = "GameMechanics/RPGStats/RPGRoot.xdb";
+            foreach (var item in Game.Instance.Xdb.Load(root).Descendants("Item"))
+                if ((string?)item.Element("ID") is { } key && (string?)item.Element("TextFileRef")?.Attribute("href") is { } href)
+                    _rpg.TryAdd(key, XdbRef.Parse(href, root).Path);
+        }
+        return _rpg.TryGetValue(id, out var path) ? (Ui.UiResources.Instance.Text(path) ?? "").Trim() : "";
+    }
+
     public static string ResourceName(int index)
     {
         if (index < 0 || index >= ResourceFolders.Length) return "";

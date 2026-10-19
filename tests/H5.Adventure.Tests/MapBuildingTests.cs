@@ -167,43 +167,79 @@ public class ArtifactMerchantTests(Fixture f)
 public class GrailTests(Fixture f)
 {
     [Fact]
-    public void GrailIsBuriedOnOpenLandAndFoundByDigging()
+    public void GrailIsOneOfTheMapsGraalSpotsAndFoundByDigging()
     {
-        var g = f.NewGame("A2M1");
+        // A2M13 places four Graal objects; one is picked and all are taken off the map (009960e0).
+        var g = f.NewGame("A2M13");
         var p = g.Current;
         var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
+        var spots = g.Map.Objects.Where(o => o.Kind == Map.ObjectKind.Artifact && o.ArtifactId == Engine.Adventure.GrailArtifact).ToList();
+        Assert.Equal(4, spots.Count);
         Assert.NotNull(g.S.Grail);
         var grail = g.S.Grail!.Value;
-        var floor = g.Map.Floor(grail.Floor)!;
-        Assert.False(floor.IsBlocked(grail.X, grail.Y));
-        Assert.False(floor.IsWater(grail.X, grail.Y));
-        // Next to it: nothing (no Tear of Asha Vision); a moved hero cannot dig.
-        h.Pos = grail with { X = grail.X + 1 };
+        Assert.Contains(spots, o => o.Pos == grail);
+        Assert.All(spots, o => Assert.True(g.S.Obj(o.Index).Removed));
+        h.Perks.Remove("HERO_SKILL_GRAIL_VISION");
+        // Three tiles east: a moved hero cannot dig; a fresh one gets the "west" hint and leaves a hole.
+        h.Pos = grail with { X = grail.X + 3 };
         h.MovePoints = h.MaxMovePoints - 1;
-        Assert.False(g.Apply(new DigCmd(h.Id) { Player = p.Index }).Ok);
-        h.MovePoints = h.MaxMovePoints;
-        Assert.True(g.Apply(new DigCmd(h.Id) { Player = p.Index }).Ok);
-        Assert.Equal(0, h.MovePoints);
-        Assert.False(g.S.GrailFound);
-        h.Pos = grail;
+        var refused = g.Apply(new DigCmd(h.Id) { Player = p.Index });
+        Assert.False(refused.Ok);
+        Assert.Equal("GRAAL_NOT_ENOUGH_MOVEMENT", refused.Error);
         h.MovePoints = h.MaxMovePoints;
         var r = g.Apply(new DigCmd(h.Id) { Player = p.Index });
+        Assert.True(r.Ok, r.Error);
+        Assert.Contains(r.Events, e => e is ObjectVisited { What: "dig:GRAAL_HINT_WEST" });
+        Assert.Equal(0, h.MovePoints);
+        Assert.False(g.S.GrailFound);
+        // Digging the same hole again only says so.
+        var again = g.Apply(new DigCmd(h.Id) { Player = p.Index });
+        Assert.Contains(again.Events, e => e is ObjectVisited { What: "dig:GRAAL_HAS_HOLE" });
+        h.Pos = grail;
+        h.MovePoints = h.MaxMovePoints;
+        r = g.Apply(new DigCmd(h.Id) { Player = p.Index });
         Assert.True(r.Ok, r.Error);
         Assert.True(g.S.GrailFound);
         Assert.Contains(Engine.Adventure.GrailArtifact, h.Artifacts);
     }
 
     [Fact]
+    public void MapWithoutGraalHasNoGrail() => Assert.Null(f.NewGame("A2M1").S.Grail);
+
+    [Theory]
+    // 00a7f8c0: each visit opens (36 - open) / (obelisks left).
+    [InlineData(8, new[] { 4, 8, 12, 16, 21, 26, 31, 36 })]
+    [InlineData(5, new[] { 7, 14, 21, 28, 36 })]
+    [InlineData(3, new[] { 12, 24, 36 })]
+    public void PuzzlePiecesPerObelisk(int obelisks, int[] expected)
+    {
+        for (int v = 1; v <= obelisks; v++) Assert.Equal(expected[v - 1], Engine.Adventure.PuzzlePiecesFor(v, obelisks));
+        Assert.Equal(0, Engine.Adventure.PuzzlePiecesFor(1, obelisks, hasGrail: false));
+    }
+
+    [Theory]
+    [InlineData(0, 3, "GRAAL_HINT_NORTH")]
+    [InlineData(0, -3, "GRAAL_HINT_SOUTH")]
+    [InlineData(3, 0, "GRAAL_HINT_EAST")]
+    [InlineData(-3, 0, "GRAAL_HINT_WEST")]
+    [InlineData(3, 3, "GRAAL_HINT_NORTH_EAST")]
+    [InlineData(-3, -3, "GRAAL_HINT_SOUTH_WEST")]
+    [InlineData(5, 1, "GRAAL_HINT_EAST")]   // 1*26 <= 5*10
+    [InlineData(2, 1, "GRAAL_HINT_NORTH_EAST")]
+    public void HintDirections(int dx, int dy, string hint) =>
+        Assert.Equal(hint, Engine.Adventure.GrailHint(new Map.Tile(10, 10), new Map.Tile(10 + dx, 10 + dy)));
+
+    [Fact]
     public void ObelisksUncoverPuzzlePieces()
     {
-        var g = f.NewGame("A2M1");
+        var g = f.NewGame("A2M13");
         var p = g.Current;
         var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
         var obelisks = g.Map.Objects.Where(o => o.Shared.Type == "BUILDING_OBELISK").ToList();
         Assert.Equal(0, g.PuzzlePiecesOpen(p));
         if (obelisks.Count == 0) return;
         g.InteractWithObject(h, obelisks[0].Index);
-        Assert.Equal(Engine.Adventure.PuzzlePieces / obelisks.Count, g.PuzzlePiecesOpen(p));
+        Assert.Equal(Engine.Adventure.PuzzlePiecesFor(1, obelisks.Count), g.PuzzlePiecesOpen(p));
         foreach (var o in obelisks) g.InteractWithObject(h, o.Index);
         Assert.Equal(Engine.Adventure.PuzzlePieces, g.PuzzlePiecesOpen(p));
     }
