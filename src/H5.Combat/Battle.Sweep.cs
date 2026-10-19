@@ -48,4 +48,33 @@ public sealed partial class Battle
         var ties = list.Where(o => SquaredCellDistance(o, hive) == best).ToList();
         return ties[S.Rng.Next(ties.Count)];
     }
+
+    const string LinkSummonElementals = "SPELL_SUMMON_ELEMENTALS";
+
+    /// <summary>
+    /// Summon Elementals' stack (exe FUN_00861500, called by FUN_00861630 with the "counter-summon" flag 0): the summon
+    /// position is found first (FUN_00860f20 — nothing happens without one); then the elemental stack still linked to the
+    /// caster for spell 0x2b (FUN_00a6e310) is destroyed — FUN_00a61530 with its creature count, i.e. count × health through
+    /// the stack damage path — and unlinked (vf 0x2a0); the new stack is placed and linked (vf 0x298(0x2b, stack)) unless it
+    /// died on arrival. The engine kept the previous stack and added another.
+    /// </summary>
+    Unit? SummonLinkedElementals(HeroState? hero, int side, string kind, int count, string by, double atb)
+    {
+        if (!Db.Creatures.ContainsKey(kind)) return null;
+        var probe = new Unit { Size = Db.Creature(kind).CombatSize };
+        Cell around = side == 0 ? new Cell(1, S.Height / 2) : new Cell(S.Width - 2, S.Height / 2);
+        if (NearestFree(probe, around) is not Cell pos) return null;
+        if (hero != null && hero.Links.TryGetValue(LinkSummonElementals, out var oldId))
+        {
+            if (S.Unit(oldId) is { Alive: true } old)
+                DealDamage(old, old.MaxHealthCache * old.Count, -1, AttackKind.Other, by);
+            hero.Links.Remove(LinkSummonElementals);
+        }
+        var u = BattleSetup.AddCreature(Db, S, side, kind, count, pos, summoned: true);
+        u.Atb = atb;
+        u.HasMovedFromStart = true;
+        Emit(new UnitSummoned(u.Id, kind, count, side, u.Pos, by));
+        if (hero != null && u.Alive) hero.Links[LinkSummonElementals] = u.Id;
+        return u;
+    }
 }

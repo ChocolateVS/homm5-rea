@@ -123,4 +123,20 @@ public class AuditSweepTests(GameDataFixture f)
         Assert.Equal(16, Battle.SquaredCellDistance(straight, hive));
         Assert.Same(straight, b.HiveTarget(hive, new[] { diag, straight }));
     }
+
+    // exe FUN_00861500: a second Summon Elementals destroys the stack still linked to the caster for spell 0x2b
+    // (FUN_00a6e310 → FUN_00a61530, count × health) before the new stack is placed and linked.
+    [Fact]
+    public void SummonElementalsReplacesTheLinkedStack()
+    {
+        var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 20) });
+        var sp = f.Db.Spell("SPELL_SUMMON_ELEMENTALS")!;
+        b.ResolveSpell(Actor.Hero(0), 0, sp, Mastery.Expert, 10, null, null, fromHero: true);
+        var first = b.State.Units.Single(u => u.Side == 0 && u.Summoned && u.Alive);
+        b.ResolveSpell(Actor.Hero(0), 0, sp, Mastery.Expert, 10, null, null, fromHero: true);
+        var alive = b.State.Units.Where(u => u.Side == 0 && u.Summoned && u.Alive).ToList();
+        Assert.Single(alive);
+        Assert.NotEqual(first.Id, alive[0].Id);
+        Assert.False(first.Alive);
+    }
 }

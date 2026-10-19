@@ -739,7 +739,7 @@ public sealed partial class Battle
                 // (exe FUN_00861630 → FUN_00861120).
                 string kind = hero != null && hero.HasPerk("HERO_SKILL_FIRE_AFFINITY") ? "CREATURE_FIRE_ELEMENTAL" : TerrainElemental();
                 int count = SummonElementalsCount(baseDef, m, power, hero);
-                if (SummonStack(side, kind, MoonWeek.SummonCount(count, Db.Creature(kind).Element1, S.Week), sp.Id, atb: S.Rng.Next(6) * 0.05) != null)
+                if (SummonLinkedElementals(hero, side, kind, MoonWeek.SummonCount(count, Db.Creature(kind).Element1, S.Week), sp.Id, atb: S.Rng.Next(6) * 0.05) != null)
                 {
                     // Elemental Balance on the opposing hero: the opposite elemental, same count (exe 00861630 → 00861500).
                     string opp = OppositeElemental(kind);
