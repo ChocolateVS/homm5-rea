@@ -53,7 +53,11 @@ public sealed record HireHeroCmd(int TownObject, int TavernSlot) : AdvCommand;
 public sealed record ChooseLevelUpCmd(int HeroId, int Option) : AdvCommand;
 public sealed record AnswerChoiceCmd(bool Accept, int Option = 0) : AdvCommand;
 /// <summary>Reports the outcome of the pending battle (run by H5.Combat). Survivors are full armies after combat.</summary>
-public sealed record ResolveBattleCmd(int WinnerSide, List<ArmySlot> AttackerSurvivors, List<ArmySlot> DefenderSurvivors, bool AttackerFled = false) : AdvCommand;
+public sealed record ResolveBattleCmd(int WinnerSide, List<ArmySlot> AttackerSurvivors, List<ArmySlot> DefenderSurvivors, bool AttackerFled = false) : AdvCommand
+{
+    /// <summary>Spell points the two heroes have left at the end of the battle (attacker, defender); null = unchanged.</summary>
+    public int[]? HeroMana { get; init; }
+}
 public sealed record DismissHeroCmd(int HeroId) : AdvCommand;
 public sealed record BuyWarMachineCmd(int TownObject, int HeroId, string Machine) : AdvCommand;
 /// <summary>Move/split creatures between two armies at the same place (hero ↔ hero, hero ↔ town garrison).</summary>

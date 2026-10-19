@@ -202,7 +202,7 @@ public sealed partial class Adventure
             Army = h.Army.ToSlots(), Artifacts = h.Artifacts.ToList(),
             Attack = h.Attack, Defence = h.Defence, SpellPower = h.SpellPower, Knowledge = h.Knowledge,
             Skills = h.Skills.ToList(), Perks = h.Perks.ToList(), Spells = h.Spells.ToList(),
-            Ballista = h.Ballista, FirstAidTent = h.FirstAidTent, AmmoCart = h.AmmoCart,
+            Ballista = h.Ballista, FirstAidTent = h.FirstAidTent, AmmoCart = h.AmmoCart, Mana = h.Mana,
         };
     }
 
@@ -213,6 +213,8 @@ public sealed partial class Adventure
         var att = S.Hero(pb.AttackerHero)!;
         var defHero = pb.DefenderHero >= 0 ? S.Hero(pb.DefenderHero) : null;
         bool attackerWon = c.WinnerSide == 0;
+        // Spell points spent in the battle stay spent (exe: the combat hero is the adventure hero).
+        if (c.HeroMana is { Length: 2 } mana) { att.Mana = Math.Max(0, mana[0]); if (defHero != null) defHero.Mana = Math.Max(0, mana[1]); }
 
         // Experience: killed creatures' Exp (p.298), neutral difficulty coefficient, +500 for a defeated hero.
         long ExpFor(List<Stack> before, List<ArmySlot> after)

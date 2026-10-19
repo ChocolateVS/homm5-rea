@@ -156,6 +156,8 @@ public sealed class HeroInstance
     public List<string> Perks = new();
     public List<string> Spells = new();
     public bool Ballista, FirstAidTent, AmmoCart;
+    /// <summary>Current spell points the hero brings into battle; negative = full (duels, presets).</summary>
+    public int Mana = -1;
     public string Class => Shared?.Class ?? "";
     public string Town => Shared?.Town ?? "";
 }

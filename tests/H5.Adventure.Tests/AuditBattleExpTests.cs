@@ -1,3 +1,4 @@
+using H5.Adventure.State;
 using H5.Core.Data;
 
 namespace H5.Adventure.Tests;
@@ -36,5 +37,28 @@ public class AuditBattleExpTests(Fixture f)
         g.S.MoonWeek = "WEEK_OF_NOTHING";
         h.Specialization = "HERO_SPEC_TALENTED_WARRIOR"; h.Level = 10;
         Assert.Equal((long)((10 * 0.02 + 1.0) * 1500), g.BattleExperience(h, 1000, opponentHeroLost: true, 1));
+    }
+
+    // exe FUN_00bbf610: the hero's cast subtracts from the CHero's own mana field — the combat hero is the adventure
+    // hero, so a battle starts with the hero's current spell points and the spent points stay spent. The engine
+    // refilled the hero for every battle and never took the spent mana off.
+    [Fact]
+    public void HeroManaCarriesIntoAndOutOfBattle()
+    {
+        var g = f.NewGame();
+        var town = g.S.Towns.First(t => t.Owner >= 0);
+        var attacker = g.S.Heroes.First(h => h.Alive && h.Owner != town.Owner);
+        Array.Fill(town.Garrison, null);
+        town.Garrison[0] = new State.Stack("CREATURE_PEASANT", 1);
+        g.S.Battle = new State.PendingBattle
+        {
+            AttackerHero = attacker.Id, DefenderObject = town.Object, Where = town.Pos,
+            DefenderArmy = new() { new State.Stack("CREATURE_PEASANT", 1) }, Siege = true,
+        };
+        attacker.Mana = 3;
+        var state = g.CreatePendingBattle(5);
+        Assert.Equal(3, state.Heroes[0].Mana);
+        var r = g.Apply(new Engine.ResolveBattleCmd(0, attacker.Army.Live().Select(st => new ArmySlot(st.Creature, st.Count)).ToList(), new()) { Player = g.Current.Index, HeroMana = new[] { 1, 0 } });
+        Assert.Equal(1, attacker.Mana);
     }
 }

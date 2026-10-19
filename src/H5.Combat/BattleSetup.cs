@@ -185,6 +185,9 @@ public static class BattleSetup
         double manaPerKnowledge = db.Stats.Get("adventure/HeroManaPerKnowledge", 10);
         double intel = h.HasPerk(Sk.Intelligence) || h.HasPerk(Sk.BarbIntelligence) ? db.Stats.Get("adventure/HeroSkills/Intelligence_ManaPointsBonus", 1.5) : 1;
         h.MaxMana = h.Mana = (int)(h.Knowledge * manaPerKnowledge * intel);
+        // The hero fights with his current spell points (the exe's combat hero is the adventure CHero: the cast
+        // FUN_00bbf610 subtracts from the hero's own mana field).
+        if (hi.Mana >= 0) h.Mana = hi.Mana;
         return h;
     }
 

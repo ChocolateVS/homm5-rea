@@ -194,7 +194,8 @@ public sealed class AdventureSession
             .Where(u => u.Side == side && u.Alive && !u.Summoned && !u.IsWarMachine)
             .GroupBy(u => u.CreatureId).Select(g => new ArmySlot(g.Key, g.Sum(u => u.Count))).ToList();
         int winner = finished.Winner ?? 1;
-        return Apply(new ResolveBattleCmd(winner, Survivors(0), Survivors(1), attackerFled));
+        return Apply(new ResolveBattleCmd(winner, Survivors(0), Survivors(1), attackerFled)
+        { HeroMana = finished.Heroes.Select(h => h.Mana).ToArray() });
     }
 
     public AdvResult QuickCombat() => Apply(H5.Adventure.Engine.QuickCombat.Resolve(Game, Seed ^ ++_battleSeq, H5.Combat.AI.BattleAiRegistry.Create("original")));
