@@ -224,3 +224,119 @@ public sealed partial class BlackMarketScreen : MapBuildingScreen
         _merchant?.Refresh();
     }
 }
+
+/// <summary>
+/// The Seer Hut box (UI/SeerHut/Main, exe 006f09b0 / fill 006f0000): the quest's caption and description, the quest
+/// item (006ef730) and the reward (006efb10) with the ID_SEER_HUT related *_FORMAT texts. Mode 1 (quest not taken):
+/// Accept takes it. Mode 2 (taken, not fulfilled): Accept closes. Mode 3 (fulfilled): Complete Quest and Cancel
+/// replace Accept (SetVisible on mode == 3).
+/// </summary>
+public static class SeerHutBox
+{
+    const string Texts = "ID_SEER_HUT";
+
+    static string Fmt(string key, string desc, int number)
+    {
+        var t = UiGameRoot.RelatedText(Texts, key) ?? "";
+        // 006efb10 inserts <value=number> only when it is positive.
+        return t.Replace("<value=desc>", desc).Replace("<value=number>", number > 0 ? number.ToString() : "");
+    }
+
+    static readonly string[] ResourceFiles = { "Wood", "Ore", "Mercury", "Crystals", "Sulfur", "Gems", "Gold" };
+
+    static Texture2D? ResourceIcon(int r) => Game.Instance.LoadTexture($"Textures/AdventureScreen/Resources/{ResourceFiles[Math.Clamp(r, 0, 6)]}.dds");
+
+    static Texture2D? RootTexture(string id) => UiResources.Instance.Texture(UiGameRoot.Texture(id));
+
+    public static void Open(AdventureScreen adv, Control layer, HeroState hero, int hut, bool offer, Action closed)
+    {
+        var game = adv.Session.Game;
+        var o = adv.Session.Map.Objects[hut];
+        var q = o.Quest!;
+        // Centred over a modal blocker, like the stock message boxes (AdvDialogs).
+        var dim = new ColorRect { Color = new Color(0, 0, 0, 0.35f), AnchorRight = 1, AnchorBottom = 1, MouseFilter = Control.MouseFilterEnum.Stop };
+        var box = new UiScreen("UI/SeerHut/Main.(WindowSimple).xdb");
+        var size = new Vector2(box.Root.Rect.W, box.Root.Rect.H);
+        box.AnchorRight = 0;
+        box.AnchorBottom = 0;
+        box.Size = size;
+        dim.AddChild(box);
+        layer.AddChild(dim);
+        void Center() => box.Position = ((dim.Size - size) * 0.5f).Floor();
+        dim.Resized += Center;
+        Callable.From(Center).CallDeferred();
+        box.Find("MainCaptionView")?.SetText($"<h1>{adv.ObjectTitle(hut)}");
+        TownUi.SetPicture(box.Find("Hero"), TownUi.HeroFace(hero));
+        // The description scrolls inside DescContainer (QUEST_FORMAT with the quest caption and description).
+        var desc = box.Find("DescView");
+        if (desc != null && box.Find("DescContainer") is { } area)
+        {
+            var markup = (UiGameRoot.RelatedText(Texts, "QUEST_FORMAT") ?? "")
+                .Replace("<value=caption>", q.Objective.Caption ?? "").Replace("<value=desc>", q.Description ?? "");
+            desc.Visible = false;
+            area.ClipContents = true;
+            var text = new BitmapText { Markup = markup, VerticalAlign = H5.Core.Ui.UiAlign.LowEnd, Size = new Vector2(desc.Size.X, 4000) };
+            area.AddChild(text);
+            float height = BitmapTextLayout.Build(markup, null, new Rect2(0, 0, desc.Size.X, 4000), H5.Core.Ui.UiAlign.LowEnd).Size.Y;
+            area.MouseFilter = Control.MouseFilterEnum.Stop;
+            area.GuiInput += e =>
+            {
+                if (e is not InputEventMouseButton { Pressed: true } mb) return;
+                float step = mb.ButtonIndex switch { MouseButton.WheelDown => -16, MouseButton.WheelUp => 16, _ => 0 };
+                text.Position = new Vector2(0, Math.Clamp(text.Position.Y + step, Math.Min(0, area.Size.Y - height), 0));
+            };
+        }
+        // The quest item (006ef730: a format per objective kind, else UNKNOWN_FORMAT with the riddle texture).
+        var (kind, id, amount, name) = game.QuestRequirement(q);
+        var db = Game.Instance.Db;
+        string CreatureName(string c) => db.Creatures.TryGetValue(c, out var cd) ? cd.Name : c;
+        (Texture2D? Icon, string Text) unknown = (RootTexture("ID_RIDDLE_CHOICE_TEXTURE"), Fmt("UNKNOWN_FORMAT", "", 0));
+        (Texture2D? Icon, string Text) item = kind switch
+        {
+            "artifact" when id != null => (Hero.HeroScreen.ArtifactIcon(id), Fmt("ARTIFACT_FORMAT", Hero.HeroScreen.ArtifactName(id), 0)),
+            "army" when id != null => (TownUi.CreatureIcon(id), Fmt("ASSEMBLEARMY_FORMAT", CreatureName(id), amount)),
+            "resources" when int.TryParse(name, out int r) => (ResourceIcon(r), Fmt("RESOURCES_FORMAT", AdvTexts.ResourceName(r), amount)),
+            "level" => (Game.Instance.LoadTexture("UI/SeerHut/AdvanceHeroesIcon.(Texture).xdb"), Fmt("ADVANCEHERO_FORMAT", "", amount)),
+            "neutrals" => (unknown.Icon, Fmt("NEUTRALS_FORMAT", name ?? "", 0)),
+            _ => unknown,
+        };
+        TownUi.SetPicture(box.Find("QuestItemPanel/Item"), item.Icon);
+        box.Find("QuestItemPanel/ItemDescView")?.SetText(item.Text);
+        // The reward (006efb10: EXP / RESOURCE / ARTIFACT / CREATURE / SKILL, anything else UNKNOWN_FORMAT).
+        int res = H5.Adventure.Engine.Adventure.ShownRewardResource(q.Resources);
+        (Texture2D? Icon, string Text) reward = q.AwardType switch
+        {
+            "AWARD_EXPERIENCE" => (RootTexture("CHEST_EXP_TEXTURE"), Fmt("EXP_FORMAT", "", q.Experience)),
+            "AWARD_RESOURCE" when res >= 0 => (ResourceIcon(res), Fmt("RESOURCES_FORMAT", AdvTexts.ResourceName(res), q.Resources[res])),
+            "AWARD_ARTIFACT" when q.Artifact != null => (Hero.HeroScreen.ArtifactIcon(q.Artifact), Fmt("ARTIFACT_FORMAT", Hero.HeroScreen.ArtifactName(q.Artifact), 0)),
+            "AWARD_CREATURE" when q.Creature != null => (TownUi.CreatureIcon(q.Creature), Fmt("ARMY_FORMAT", CreatureName(q.Creature), q.CreatureCount)),
+            "AWARD_SKILL" when q.Skill != null => (AdvDialogs.SkillIcon(q.Skill, 1), Fmt("SKILL_FORMAT", AdvDialogs.SkillName(q.Skill, 1), 0)),
+            _ => unknown,
+        };
+        TownUi.SetPicture(box.Find("RewardPanel/Item"), reward.Icon);
+        box.Find("RewardPanel/ItemDescView")?.SetText(reward.Text);
+        int mode = offer ? 1 : game.SeerQuestMet(hero, hut) ? 3 : 2;
+        box.SetVisible("CompleteQuestBtn", mode == 3);
+        box.SetVisible("CancelBtn", mode == 3);
+        box.SetVisible("AcceptBtn", mode != 3);
+        void Close() { dim.QueueFree(); closed(); }
+        box.Bus.On("seer_hut_accept", () =>
+        {
+            if (mode == 1)
+            {
+                var r = adv.Session.Apply(new AcceptSeerQuestCmd(hero.Id, hut) { Player = adv.Session.Human.Index });
+                if (!r.Ok) GD.PushWarning($"[H5] seer hut accept: {r.Error}");
+            }
+            Close();
+        });
+        box.Bus.On("seer_hut_cancel", Close);
+        box.Bus.On("timeout_forced_close", Close);
+        box.Bus.On("seer_hut_complete_quest", () =>
+        {
+            var r = adv.Session.Apply(new CompleteSeerQuestCmd(hero.Id, hut) { Player = adv.Session.Human.Index });
+            Close();
+            if (!r.Ok) adv.Message(adv.ObjectTitle(hut), r.Error ?? "");
+            adv.Hud.Refresh();
+        });
+    }
+}

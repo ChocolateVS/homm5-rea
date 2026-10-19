@@ -191,6 +191,10 @@ public sealed class ObjState
     public string? ArtifactId;
     public string? SpellId;
     public string? Creature;
+    /// <summary>Seer Hut quest completed (AllowMultipleCompletions is not modelled: once).</summary>
+    public bool QuestDone;
+    /// <summary>Players that took the Seer Hut quest (Accept on the first visit).</summary>
+    public HashSet<int> QuestTakenBy = new();
     /// <summary>Skill a Witch Hut teaches (rolled on first visit).</summary>
     public string? SkillId;
 }

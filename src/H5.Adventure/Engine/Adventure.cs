@@ -89,6 +89,8 @@ public sealed partial class Adventure
             UseTreeOfKnowledgeCmd c => DoUseTreeOfKnowledge(c),
             BuyMerchantArtifactCmd c => DoBuyMerchantArtifact(c),
             DigCmd c => DoDig(c),
+            CompleteSeerQuestCmd c => DoCompleteSeerQuest(c),
+            AcceptSeerQuestCmd c => DoAcceptSeerQuest(c),
             _ => "unknown command",
         };
         var result = err != null ? AdvResult.Reject(err) : new AdvResult { Ok = true, Events = _ev };

@@ -614,6 +614,10 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 break;
             }
+            // A finished quest opens no box (exe 005a5d90 case 0x1d: only quest states 1 and 2 open one).
+            case ObjectVisited { What: "seerhut" or "seerhut:offer" } sh when HumanCaused(player) && !Autoplay && s.Hero(sh.HeroId) is { } seeker:
+                await Dialog(done => SeerHutBox.Open(this, _dialogLayer, seeker, sh.Object, sh.What == "seerhut:offer", done));
+                break;
             case ObjectVisited { What: "BUILDING_CARTOGRAPHER" } cv when HumanCaused(player) && !Autoplay && s.Hero(cv.HeroId) is { } buyer:
             {
                 var me = Session.Human;
@@ -940,7 +944,7 @@ public partial class AdventureScreen : Control
             return;
         }
         var state = Session.CreatePendingBattle(out var seed);
-        var combat = new AdventureCombatSession(state, seed, new[] { 0 });
+        var combat = new AdventureCombatSession(state, seed, H5Reborn.AdvNet.HotSeatBattles.HumanSides(Session.S, pb));
         // Keep the adventure screen alive while the combat screen owns the scene.
         var tree = GetTree();
         var placeholder = new Node { Name = "AdventurePause" };
@@ -1026,7 +1030,7 @@ public partial class AdventureScreen : Control
     {
         var s = Session.S;
         var hero = Selected ?? MyHeroes().FirstOrDefault();
-        var o = Session.Map.Objects.FirstOrDefault(x => x.Shared.Type == type && !(s.Objects.TryGetValue(x.Index, out var os) && os.Removed));
+        var o = Session.Map.Objects.FirstOrDefault(x => (x.Shared.Type == type || x.Kind.ToString() == type) && !(s.Objects.TryGetValue(x.Index, out var os) && os.Removed));
         if (hero == null || o == null) { GD.PushWarning($"[H5] visit test: no hero or no {type} on this map"); return; }
         var target = o.ActiveTiles.FirstOrDefault(o.Pos);
         // A varied army so upgrade prices show for several tiers.

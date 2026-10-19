@@ -16,7 +16,7 @@ mkdir -p "$WT/tools"
 cp -r "$ROOT/game/nuget.config" "$WT/game/nuget.config" 2>/dev/null
 cmd //c mklink /J "G:\\H5Reborn-advdone-check\\tools\\godot" "G:\\H5Reborn\\tools\\godot" >/dev/null 2>&1
 cd "$WT" || exit 1
-R=$(dotnet build game/H5Reborn.csproj -v q 2>&1 | grep -E " error |Build succeeded" | sort -u | head -5)
+R=$(dotnet build game/H5Reborn.csproj -v q -nodeReuse:false 2>&1 | grep -E " error |Build succeeded" | sort -u | head -5)
 echo "$R"
 case "$R" in *error*) STATUS=1 ;; *) STATUS=0 ;; esac
 if [ $STATUS -eq 0 ] && [ $TEST -eq 1 ]; then

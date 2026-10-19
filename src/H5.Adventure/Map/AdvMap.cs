@@ -144,6 +144,9 @@ public sealed class MapObject
     /// </summary>
     public (int X, int Y)? ShipTile;
 
+    /// <summary>Seer Hut quest (&lt;Quest&gt;): objective, description and award.</summary>
+    public SeerQuest? Quest;
+
     /// <summary>Scalar fields not modelled above (kept for scripts and later rules).</summary>
     public Dictionary<string, string> Props = new(StringComparer.Ordinal);
 
@@ -156,6 +159,22 @@ public sealed class MapObject
 }
 
 public sealed record TownBuildingInit(string Type, int Initial, int Max);
+
+/// <summary>A Seer Hut's quest: an objective (OBJECTIVE_KIND_*) with enum-index parameters and its award.</summary>
+public sealed class SeerQuest
+{
+    public MapObjective Objective = new();
+    public string? Description;
+    public bool TakeContribution;
+    public string AwardType = "AWARD_NONE";
+    public int Experience;
+    public int[] Resources = new int[7];
+    public string Attribute = "";
+    public int AttributeAmount;
+    public string? Artifact, Spell, Creature, Skill;
+    public int CreatureCount, SpellPoints, Morale, Luck;
+    public string Mastery = "MASTERY_NONE";
+}
 
 /// <summary>Converts a footprint offset into an absolute tile, honouring the object's rotation.</summary>
 public static class Footprint

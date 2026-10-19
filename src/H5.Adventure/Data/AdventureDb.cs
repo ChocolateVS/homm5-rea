@@ -134,6 +134,33 @@ public sealed class AdventureDb
         }
     }
 
+    readonly Dictionary<string, Dictionary<int, string>> _enums = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Name of an enum value from the game's types.xml (e.g. ("CreatureType", 21) → a CREATURE_* id): map data such
+    /// as quest parameters stores enums as numbers. Null when unknown.
+    /// </summary>
+    public string? EnumName(string type, int value)
+    {
+        if (_xdb == null) return null;
+        lock (_enums)
+        {
+            if (_enums.Count == 0 && _xdb.FileSystem.TryReadAllBytes("types.xml", out var bytes))
+            {
+                var root = System.Xml.Linq.XDocument.Parse(System.Text.Encoding.UTF8.GetString(bytes)).Root;
+                foreach (var t in root?.Descendants("Item").Where(i => i.Element("Type")?.Value == "TYPE_TYPE_ENUM") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+                {
+                    var name = t.Element("TypeName")?.Value ?? "";
+                    var map = new Dictionary<int, string>();
+                    foreach (var en in t.Element("Entries")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+                        if (int.TryParse(en.Element("Value")?.Value, out int v)) map.TryAdd(v, en.Element("Name")?.Value ?? "");
+                    _enums.TryAdd(name, map);
+                }
+            }
+            return _enums.TryGetValue(type, out var m) && m.TryGetValue(value, out var n) ? n : null;
+        }
+    }
+
     const string TownTypesInfo = "GameMechanics/RefTables/TownTypesInfo.xdb";
 
     public static AdventureDb Load(GameDatabase core, PakFileSystem fs)

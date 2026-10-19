@@ -291,6 +291,27 @@ public sealed class MapLoader
             case ObjectKind.Shrine:
                 o.SpellId = e.Str("SpellID") is { Length: > 0 } ss && ss != "SPELL_NONE" ? ss : null;
                 break;
+            case ObjectKind.SeerHut when e.Element("Quest") is { } q:
+            {
+                var aw = q.Element("Award");
+                var awardRes = aw?.Element("Resources");
+                string? Id(string? v, string none) => string.IsNullOrEmpty(v) || v == none ? null : v;
+                o.Quest = new SeerQuest
+                {
+                    Objective = ReadObjective(q, false, -1, files),
+                    Description = files.ReadText(q.Href("DescriptionFileRef"))?.Trim(),
+                    TakeContribution = q.Bool("TakeContribution"),
+                    AwardType = aw.Str("Type") is { Length: > 0 } at ? at : "AWARD_NONE",
+                    Experience = aw.Int("Experience"),
+                    Resources = new[] { "Wood", "Ore", "Mercury", "Crystal", "Sulfur", "Gem", "Gold" }.Select(r => awardRes.Int(r)).ToArray(),
+                    Attribute = aw.Str("Attribute"), AttributeAmount = aw.Int("AttributeAmount"),
+                    Artifact = Id(aw.Str("ArtifactID"), "ARTIFACT_NONE"), Spell = Id(aw.Str("SpellID"), "SPELL_NONE"),
+                    Creature = Id(aw?.Element("ArmySlot").Str("Creature"), "CREATURE_UNKNOWN"), CreatureCount = aw?.Element("ArmySlot").Int("Count") ?? 0,
+                    SpellPoints = aw.Int("SpellPoints"), Morale = aw.Int("Morale"), Luck = aw.Int("Luck"),
+                    Skill = Id(aw?.Element("SkillWithMastery").Str("SkillID"), "HERO_SKILL_NONE"), Mastery = aw?.Element("SkillWithMastery").Str("Mastery") ?? "MASTERY_NONE",
+                };
+                break;
+            }
             case ObjectKind.Treasure:
                 o.TreasureCustom = e.Bool("IsCustom"); o.TreasureAmount = e.Int("Amount");
                 break;

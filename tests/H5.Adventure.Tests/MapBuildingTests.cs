@@ -208,3 +208,44 @@ public class GrailTests(Fixture f)
         Assert.Equal(Engine.Adventure.PuzzlePieces, g.PuzzlePiecesOpen(p));
     }
 }
+
+/// <summary>Seer Hut quests (A2S4: bring an artifact; A2S2: assemble an army).</summary>
+[Collection("adv")]
+public class SeerHutTests(Fixture f)
+{
+    [Theory]
+    [InlineData("A2S4")]
+    [InlineData("A2S2")]
+    public void QuestIsCompletedWhenMet(string map)
+    {
+        var g = f.NewGame(map);
+        var p = g.Current;
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
+        var hut = g.Map.Objects.First(o => o.Kind == Map.ObjectKind.SeerHut && o.Quest?.Objective.Kind is "OBJECTIVE_KIND_OBTAIN_ARTIFACT" or "OBJECTIVE_KIND_ASSEMBLE_ARMY");
+        var (kind, id, amount, _) = g.QuestRequirement(hut.Quest!);
+        Assert.NotNull(id);
+        h.Pos = hut.ActiveTiles.FirstOrDefault(hut.Pos);
+        Assert.False(g.SeerQuestMet(h, hut.Index));
+        Assert.False(g.Apply(new CompleteSeerQuestCmd(h.Id, hut.Index) { Player = p.Index }).Ok);
+        // The quest must be taken first (Accept in mode 1), once.
+        Assert.True(g.Apply(new AcceptSeerQuestCmd(h.Id, hut.Index) { Player = p.Index }).Ok);
+        Assert.False(g.Apply(new AcceptSeerQuestCmd(h.Id, hut.Index) { Player = p.Index }).Ok);
+        Assert.False(g.Apply(new CompleteSeerQuestCmd(h.Id, hut.Index) { Player = p.Index }).Ok);
+        if (kind == "artifact") { Assert.True(f.Core.Artifacts.ContainsKey(id!)); h.Artifacts.Add(id!); }
+        else { Assert.True(f.Core.Creatures.ContainsKey(id!)); for (int i = 0; i < 7; i++) h.Army[i] = null; h.Army[0] = new Stack(id!, amount); }
+        Assert.True(g.SeerQuestMet(h, hut.Index));
+        var r = g.Apply(new CompleteSeerQuestCmd(h.Id, hut.Index) { Player = p.Index });
+        Assert.True(r.Ok, r.Error);
+        Assert.True(g.S.Obj(hut.Index).QuestDone);
+        Assert.False(g.Apply(new CompleteSeerQuestCmd(h.Id, hut.Index) { Player = p.Index }).Ok);
+    }
+
+    [Fact]
+    public void RewardResourceSkipsSulfur()
+    {
+        // exe 006eefe0 tests wood, ore, mercury, crystal, gems, gold — not sulfur.
+        Assert.Equal(-1, Engine.Adventure.ShownRewardResource(new[] { 0, 0, 0, 0, 5, 0, 0 }));
+        Assert.Equal(5, Engine.Adventure.ShownRewardResource(new[] { 0, 0, 0, 0, 5, 3, 100 }));
+        Assert.Equal(0, Engine.Adventure.ShownRewardResource(new[] { 1, 0, 0, 0, 0, 0, 100 }));
+    }
+}
