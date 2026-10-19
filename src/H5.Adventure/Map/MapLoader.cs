@@ -312,6 +312,15 @@ public sealed class MapLoader
                 };
                 break;
             }
+            case ObjectKind.Sphinx:
+            {
+                // AdvMapSphinx reader 00a02330: Shared, Riddle (href), RandomRiddle.
+                o.SphinxRandomRiddle = e.Bool("RandomRiddle");
+                var rp = files.Resolve(e.Href("Riddle"));
+                if (!o.SphinxRandomRiddle && rp.Length > 0 && files.Exists(rp) && files.LoadXml(rp).Root is { } rr)
+                    o.SphinxRiddle = Data.SphinxRiddle.Parse(rr, (h, cur) => files.ReadText(h, cur ?? rp));
+                break;
+            }
             case ObjectKind.Treasure:
                 o.TreasureCustom = e.Bool("IsCustom"); o.TreasureAmount = e.Int("Amount");
                 break;

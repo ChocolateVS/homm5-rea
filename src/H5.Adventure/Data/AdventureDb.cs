@@ -5,6 +5,24 @@ using H5.Core.Xdb;
 
 namespace H5.Adventure.Data;
 
+/// <summary>A Sphinx riddle (GameMechanics/SphinxRiddles/*.xdb, NDb::SSphinxRiddle): answers[0] is the right one.</summary>
+public sealed class SphinxRiddle
+{
+    public string Question = "";
+    public List<string> Answers = new();
+    public int Experience, Gold;
+    public string? Artifact;
+
+    public static SphinxRiddle Parse(XElement root, Func<string?, string?, string?> readText) => new()
+    {
+        Question = readText(root.Href("Question"), null)?.Trim() ?? "",
+        Answers = root.Element("answers")?.Elements("Item").Select(i => readText((string?)i.Attribute("href"), null)?.Trim() ?? "").ToList() ?? new(),
+        Experience = root.Int("Experience"),
+        Gold = root.Int("Gold"),
+        Artifact = root.Str("ArtifactID") is { Length: > 0 } a && a != "ARTIFACT_NONE" ? a : null,
+    };
+}
+
 /// <summary>A town building level as defined by TownBuildingSharedStats.</summary>
 public sealed class BuildingDef
 {
@@ -162,6 +180,22 @@ public sealed class AdventureDb
     }
 
     const string TownTypesInfo = "GameMechanics/RefTables/TownTypesInfo.xdb";
+    /// <summary>The random riddle group (path from the exe, 00a94ce8).</summary>
+    const string RiddleGroup = "GameMechanics/SphinxRiddles/RandomGroup.xdb";
+
+    /// <summary>Riddles of the random group, in its order (CRiddlesPool fill 00ced5b0).</summary>
+    public List<SphinxRiddle> RandomRiddles { get; } = new();
+
+    void LoadRiddles(XdbLoader x)
+    {
+        if (!x.FileSystem.Exists(RiddleGroup)) return;
+        foreach (var item in x.Load(RiddleGroup).Root?.Element("variants")?.Elements("Item") ?? Enumerable.Empty<XElement>())
+        {
+            var p = XdbRef.Parse((string?)item.Attribute("href"), RiddleGroup).Path;
+            if (p.Length == 0 || !x.FileSystem.Exists(p) || x.Load(p).Root is not { } r) continue;
+            RandomRiddles.Add(SphinxRiddle.Parse(r, (h, cur) => x.ReadText(h, cur ?? p)));
+        }
+    }
 
     public static AdventureDb Load(GameDatabase core, PakFileSystem fs)
     {
@@ -174,6 +208,7 @@ public sealed class AdventureDb
         db.LoadArtifactClasses(x);
         db.LoadPerks(x);
         db.LoadTownTypes(x);
+        db.LoadRiddles(x);
         return db;
     }
 

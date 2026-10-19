@@ -195,6 +195,10 @@ public sealed class ObjState
     public bool QuestDone;
     /// <summary>Players that took the Seer Hut quest (Accept on the first visit).</summary>
     public HashSet<int> QuestTakenBy = new();
+    /// <summary>Sphinx answered (CAdvMapSphinx +0xd0): later visits get the refuse message.</summary>
+    public bool SphinxUsed;
+    /// <summary>The riddle a Sphinx posed on the current visit, waiting for the answer.</summary>
+    public PendingRiddle? Riddle;
     /// <summary>Skill a Witch Hut teaches (rolled on first visit).</summary>
     public string? SkillId;
 }
@@ -212,6 +216,17 @@ public sealed class PendingBattle
 }
 
 /// <summary>A choice the engine is waiting for (neutral join offer, treasure chest gold/exp…).</summary>
+/// <summary>A posed Sphinx riddle: answers in display order and the position of the right one.</summary>
+public sealed class PendingRiddle
+{
+    public int Hero;
+    public string Question = "";
+    public string[] Answers = Array.Empty<string>();
+    public int Correct;
+    public int Experience, Gold;
+    public string? Artifact;
+}
+
 public sealed class PendingChoice
 {
     public string Kind = "";          // "join_free", "join_paid", "chest", "witch_hut"…
@@ -246,6 +261,8 @@ public sealed class AdvState
     public List<string> HeroPool = new();
     public PendingBattle? Battle;
     public PendingChoice? Choice;
+    /// <summary>Random Sphinx riddles not drawn yet (indices into RandomGroup; CRiddlesPool).</summary>
+    public List<int> RiddlePool = new();
     public int NextHeroId = 1;
     public bool Finished;
     public int? WinnerTeam;

@@ -82,10 +82,12 @@ public sealed partial class Adventure
             case ObjectKind.SeerHut:
                 VisitSeerHut(h, o);
                 break;
+            case ObjectKind.Sphinx:
+                VisitSphinx(h, o);
+                break;
             case ObjectKind.HillFort:
             case ObjectKind.Garrison:
             case ObjectKind.Sign:
-            case ObjectKind.Sphinx:
             case ObjectKind.Cartographer:
                 // Interactive or scripted objects: reported to the client/script layer.
                 Emit(new ObjectVisited(h.Id, o.Index, o.Shared.Type));

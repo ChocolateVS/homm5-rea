@@ -618,6 +618,25 @@ public partial class AdventureScreen : Control
             case ObjectVisited { What: "seerhut" or "seerhut:offer" } sh when HumanCaused(player) && !Autoplay && s.Hero(sh.HeroId) is { } seeker:
                 await Dialog(done => SeerHutBox.Open(this, _dialogLayer, seeker, sh.Object, sh.What == "seerhut:offer", done));
                 break;
+            case SphinxRiddlePosed sp when HumanCaused(player) && !Autoplay && s.Obj(sp.Object).Riddle is { } riddle:
+            {
+                // Sphinx (009cb070 → UI/Sphinx): pose, riddle and reward pages while the hero stands at it.
+                Hud.Visible = false;
+                var screen = new SphinxScreen(this, sp.HeroId, sp.Object, riddle);
+                AddChild(screen);
+                await ToSignal(screen, Node.SignalName.TreeExited);
+                Hud.Visible = true;
+                Hud.Refresh();
+                break;
+            }
+            case ObjectVisited { What: "sphinx:refuse" } sr when HumanCaused(player) && !Autoplay:
+            {
+                // A used Sphinx (or one without a riddle) says its messagesFileRef[3] text.
+                var msgs = Session.Map.Objects[sr.Object].Shared.Messages;
+                var text = msgs.Count > 3 ? UiResources.Instance.Text(msgs[3])?.Trim() : null;
+                if (!string.IsNullOrEmpty(text)) await Dialog(done => AdvDialogs.Message(_dialogLayer, ObjectName(sr.Object), text, null, done));
+                break;
+            }
             case ObjectVisited { What: "BUILDING_CARTOGRAPHER" } cv when HumanCaused(player) && !Autoplay && s.Hero(cv.HeroId) is { } buyer:
             {
                 var me = Session.Human;

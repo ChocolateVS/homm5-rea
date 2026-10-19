@@ -340,3 +340,122 @@ public static class SeerHutBox
         });
     }
 }
+
+/// <summary>
+/// The Sphinx screen (UI/Sphinx, exe 006ebfd0; pages by 006eb640 / 006ebca0): 1 PoseRiddle (box2p: Accept /
+/// Refuse, Ok), 2 Riddle (question and three answers, Ok or double click), 3 ChooseReward (gold / artifact /
+/// experience). Refusing closes; a wrong answer ends the visit (the exe's battle is not built); the reward
+/// page's choice is sent with the answer (<see cref="AnswerSphinxCmd"/>).
+/// </summary>
+public sealed partial class SphinxScreen : MapBuildingScreen
+{
+    const string Related = "UI/Sphinx/relatedTexts.(WindowRelatedTexts).xdb";
+    const string PoseTexts = "UI/Sphinx/PoseRiddle.(WindowRelatedTexts).xdb";
+    const string RewardTexts = "UI/Sphinx/ChooseReward.(WindowRelatedTexts).xdb";
+    readonly PendingRiddle _riddle;
+    int _page = 1, _accept, _answer = -1, _reward = -1;
+
+    public SphinxScreen(AdventureScreen adv, int heroId, int sphinx, PendingRiddle riddle) : base(adv, "UI/Sphinx.(WindowScreen).xdb", heroId, sphinx)
+    {
+        _riddle = riddle;
+        Ui.Bus.On("left", () => { _accept = 1; Refresh(); });
+        Ui.Bus.On("right", () => { _accept = 2; Refresh(); });
+        Ui.Bus.On("left_force", () => { _accept = 1; Confirm(); });
+        Ui.Bus.On("right_force", () => { _accept = 2; Confirm(); });
+        Ui.Bus.On("confirm", Confirm);
+        Ui.Bus.On("choice_click", (_, src) => Choose(src, false));
+        Ui.Bus.On("choice_double_click", (_, src) => Choose(src, true));
+        Fill();
+        // Dev (`--adventure-sphinx-page=2|3`): open on the riddle / reward page for screenshots.
+        if (DevPage is 2 or 3) { _accept = 1; _page = DevPage; if (DevPage == 3) _answer = _riddle.Correct; }
+    }
+
+    public static int DevPage;
+
+    void Choose(UiNode? src, bool confirm)
+    {
+        if (src?.Name.ToString() is not { } n || !n.StartsWith("Choice_")) return;
+        int i = n[^1] - '0';
+        if (_page == 2) _answer = i; else if (_page == 3) _reward = i; else return;
+        if (confirm) Confirm(); else Refresh();
+    }
+
+    void Confirm()
+    {
+        // 006e95c0: Ok moves to the next page once the page has a selection; 006eb640 acts on the new page.
+        if (_page == 1 && _accept == 0 || _page == 2 && _answer < 0 || _page == 3 && _reward < 0) return;
+        _page++;
+        if (_page == 2 && _accept == 2) { Close(); return; }
+        if (_page == 3 && _answer != _riddle.Correct || _page == 4)
+        {
+            Apply(new AnswerSphinxCmd(HeroId, Object, _answer, Math.Max(0, _reward)));
+            Close();
+            return;
+        }
+        Refresh();
+    }
+
+    static Texture2D? RootTexture(string id) => UiResources.Instance.Texture(UiGameRoot.Texture(id));
+
+    static void Icon(UiNode? host, Texture2D? tex) => TownUi.SetPicture(host, tex);
+
+    void Fill()
+    {
+        // Pose page (006e9880): Face = ID_SPHINX_ICON_TEXTURE, Title = ID_SPHINX_HEADER_TEXT (T_HEADER_TOOLTIP),
+        // the left/right choices with the accept/refuse textures and texts.
+        Icon(Ui.Find("PoseRiddle/Face"), RootTexture("ID_SPHINX_ICON_TEXTURE"));
+        Ui.Find("PoseRiddle/Title")?.SetText(UiGameRoot.RelatedTextAt(Related, "ID_SPHINX_HEADER_TEXT"));
+        Ui.Find("PoseRiddle/Title")?.SetTooltip(UiGameRoot.RelatedTextAt(PoseTexts, "T_HEADER_TOOLTIP"));
+        Icon(Ui.Find("PoseRiddle/ButtonLeft/Icon"), RootTexture("ID_POSE_RIDDLE_ACCEPT_TEXTURE"));
+        Icon(Ui.Find("PoseRiddle/ButtonRight/Icon"), RootTexture("ID_POSE_RIDDLE_REFUSE_TEXTURE"));
+        Ui.Find("PoseRiddle/ButtonLeft/Text")?.SetText(UiGameRoot.RelatedTextAt(Related, "ID_POSE_RIDDLE_ACCEPT_TEXT"));
+        Ui.Find("PoseRiddle/ButtonRight/Text")?.SetText(UiGameRoot.RelatedTextAt(Related, "ID_POSE_RIDDLE_REFUSE_TEXT"));
+        Ui.Find("PoseRiddle/ButtonLeft")?.SetTooltip(UiGameRoot.RelatedTextAt(PoseTexts, "T_ACCEPT_TOOLTIP"));
+        Ui.Find("PoseRiddle/ButtonRight")?.SetTooltip(UiGameRoot.RelatedTextAt(PoseTexts, "T_REFUSE_TOOLTIP"));
+        // Riddle page (006ea100): Sphinx icon, the question, the answers with the riddle-choice texture.
+        Icon(Ui.Find("Riddle/Face"), RootTexture("ID_SPHINX_ICON_TEXTURE"));
+        Ui.Find("Riddle/Description")?.SetText((UiGameRoot.RelatedTextAt(Related, "ID_RIDDLE_QUESTION_TEXT") ?? "").Replace("<value=Question>", _riddle.Question));
+        var choiceText = UiResources.Instance.Text("UI/Sphinx/ChooseFrom3/Choice/Text.txt") ?? "<value=Text>";
+        for (int i = 0; i < 3; i++)
+        {
+            Ui.Find($"Riddle/Choice_{i}/Text")?.SetText(choiceText.Replace("<value=Text>", _riddle.Answers[i]));
+            Icon(Ui.Find($"Riddle/Choice_{i}/Icon"), RootTexture("ID_RIDDLE_CHOICE_TEXTURE"));
+        }
+        // Reward page (006ea940): Choice_0 gold, Choice_1 artifact, Choice_2 experience.
+        Icon(Ui.Find("ChooseReward/Face"), RootTexture("ID_SPHINX_ICON_TEXTURE"));
+        Ui.Find("ChooseReward/Description")?.SetText(UiGameRoot.RelatedTextAt(Related, "ID_CHOOSE_REWARD_DESCRIPTION_TEXT"));
+        Ui.Find("ChooseReward/Choice_0/Text")?.SetText((UiGameRoot.RelatedTextAt(Related, "ID_CHOOSE_REWARD_GOLD_TEXT") ?? "").Replace("<value=Amount>", _riddle.Gold.ToString()));
+        Icon(Ui.Find("ChooseReward/Choice_0/Icon"), Game.Instance.LoadTexture("Textures/AdventureScreen/Resources/Gold.dds"));
+        Ui.Find("ChooseReward/Choice_0")?.SetTooltip(UiGameRoot.RelatedTextAt(RewardTexts, "T_REWARD_TOOLTIP_GOLD"));
+        if (_riddle.Artifact is { } art)
+        {
+            Ui.Find("ChooseReward/Choice_1/Text")?.SetText(choiceText.Replace("<value=Text>", H5Reborn.Hero.HeroScreen.ArtifactName(art)));
+            Icon(Ui.Find("ChooseReward/Choice_1/Icon"), H5Reborn.Hero.HeroScreen.ArtifactIcon(art));
+        }
+        Ui.Find("ChooseReward/Choice_1")?.SetTooltip(UiGameRoot.RelatedTextAt(RewardTexts, "T_REWARD_TOOLTIP_ARTEFACT"));
+        Ui.Find("ChooseReward/Choice_2/Text")?.SetText((UiGameRoot.RelatedTextAt(Related, "ID_CHOOSE_REWARD_EXPERIENCE_TEXT") ?? "").Replace("<value=Amount>", _riddle.Experience.ToString()));
+        Icon(Ui.Find("ChooseReward/Choice_2/Icon"), RootTexture("CHEST_EXP_TEXTURE"));
+        Ui.Find("ChooseReward/Choice_2")?.SetTooltip(UiGameRoot.RelatedTextAt(RewardTexts, "T_REWARD_TOOLTIP_EXP"));
+    }
+
+    public override void Refresh()
+    {
+        if (Ui == null) return;
+        // 006ebca0: one page at a time.
+        Ui.SetVisible("PoseRiddle", _page == 1);
+        Ui.SetVisible("Riddle", _page == 2);
+        Ui.SetVisible("ChooseReward", _page == 3);
+        // 006eb6d0: the left/right buttons show the pose choice; Ok needs one.
+        Ui.Find("PoseRiddle/ButtonLeft")?.SetState(_accept == 1 ? 1 : 0);
+        Ui.Find("PoseRiddle/ButtonRight")?.SetState(_accept == 2 ? 1 : 0);
+        if (Ui.Find("PoseRiddle/ButtonOk") is { } ok1) ok1.Enabled = _accept != 0;
+        // 006eb8c0 / 006ebab0: the selected answer / reward is pressed; Ok needs a selection.
+        for (int i = 0; i < 3; i++)
+        {
+            Ui.Find($"Riddle/Choice_{i}")?.SetState(i == _answer ? 1 : 0);
+            Ui.Find($"ChooseReward/Choice_{i}")?.SetState(i == _reward ? 1 : 0);
+        }
+        if (Ui.Find("Riddle/ButtonOk") is { } ok2) ok2.Enabled = _answer is >= 0 and <= 2;
+        if (Ui.Find("ChooseReward/ButtonOk") is { } ok3) ok3.Enabled = _reward is >= 0 and <= 2;
+    }
+}

@@ -147,6 +147,10 @@ public sealed class MapObject
     /// <summary>Seer Hut quest (&lt;Quest&gt;): objective, description and award.</summary>
     public SeerQuest? Quest;
 
+    /// <summary>Sphinx: draws from the random riddle pool (RandomRiddle), else asks <see cref="SphinxRiddle"/>.</summary>
+    public bool SphinxRandomRiddle = true;
+    public Data.SphinxRiddle? SphinxRiddle;
+
     /// <summary>Scalar fields not modelled above (kept for scripts and later rules).</summary>
     public Dictionary<string, string> Props = new(StringComparer.Ordinal);
 

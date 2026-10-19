@@ -249,3 +249,55 @@ public class SeerHutTests(Fixture f)
         Assert.Equal(0, Engine.Adventure.ShownRewardResource(new[] { 1, 0, 0, 0, 0, 0, 100 }));
     }
 }
+
+/// <summary>Sphinx riddles (A2M7 has a random-riddle Sphinx).</summary>
+[Collection("adv")]
+public class SphinxTests(Fixture f)
+{
+    [Fact]
+    public void RiddlePoolHasTheStockRiddles()
+    {
+        var g = f.NewGame("A2M7");
+        Assert.Equal(30, g.Db.RandomRiddles.Count);
+        Assert.All(g.Db.RandomRiddles, r => { Assert.Equal(3, r.Answers.Count); Assert.NotEmpty(r.Question); });
+        Assert.Equal(1500, g.Db.RandomRiddles[0].Experience);
+        Assert.Equal(3000, g.Db.RandomRiddles[0].Gold);
+        Assert.Equal("BOOTS_OF_SPEED", g.Db.RandomRiddles[0].Artifact);
+    }
+
+    [Theory]
+    [InlineData(true, 0)]
+    [InlineData(true, 1)]
+    [InlineData(true, 2)]
+    [InlineData(false, 0)]
+    public void AnswerRewardsOrFailsAndUsesTheSphinx(bool right, int reward)
+    {
+        var g = f.NewGame("A2M7");
+        var p = g.Current;
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
+        var sx = g.Map.Objects.First(o => o.Kind == Map.ObjectKind.Sphinx);
+        Assert.True(sx.SphinxRandomRiddle);
+        h.Pos = sx.ActiveTiles.FirstOrDefault(sx.Pos);
+        g.InteractWithObject(h, sx.Index);
+        var r = g.S.Obj(sx.Index).Riddle;
+        Assert.NotNull(r);
+        Assert.Equal(29, g.S.RiddlePool.Count);
+        var riddle = g.Db.RandomRiddles.First(x => x.Question == r!.Question);
+        Assert.Equal(riddle.Answers[0], r!.Answers[r.Correct]);
+        Assert.Equal(3, r.Answers.Distinct().Count());
+        int gold = p.Purse[Purse.Gold];
+        long exp = h.Experience;
+        int answer = right ? r.Correct : (r.Correct + 1) % 3;
+        var res = g.Apply(new AnswerSphinxCmd(h.Id, sx.Index, answer, reward) { Player = p.Index });
+        Assert.True(res.Ok, res.Error);
+        Assert.True(g.S.Obj(sx.Index).SphinxUsed);
+        if (!right) { Assert.Equal(gold, p.Purse[Purse.Gold]); Assert.Equal(exp, h.Experience); }
+        else if (reward == 0) Assert.Equal(gold + riddle.Gold, p.Purse[Purse.Gold]);
+        else if (reward == 1) Assert.Contains(riddle.Artifact!, h.Artifacts);
+        else Assert.True(h.Experience > exp);
+        // A used Sphinx poses no riddle.
+        g.InteractWithObject(h, sx.Index);
+        Assert.Null(g.S.Obj(sx.Index).Riddle);
+        Assert.False(g.Apply(new AnswerSphinxCmd(h.Id, sx.Index, 0, 0) { Player = p.Index }).Ok);
+    }
+}
