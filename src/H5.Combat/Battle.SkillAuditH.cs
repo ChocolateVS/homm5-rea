@@ -43,6 +43,49 @@ public static class SkillAuditH
         return (float)((p + 100) * init * 0.01f);
     }
 
+    /// <summary>War machine initiative (exe FUN_004bae60, stored as trunc(x + 0.5) by 004bd7b0): record initiative ×
+    /// (0.1 · Dragon Talon Crowns + 1) + RunicMachines_InitiativeBonus with Runic Machines (the script battle bonus
+    /// HERO_BATTLE_BONUS_INITIATIVE is not modelled).</summary>
+    public static double WarMachineInitiative(GameDatabase db, HeroState h, double baseInit)
+    {
+        float init = (float)baseInit;
+        if (!h.Present) return init;
+        init = (h.Artifacts.Count(a => a == "DRAGON_TALON_CROWN") * 0.1f + 1f) * init;
+        if (h.HasPerk(Sk.RunicMachines)) init += (int)db.Stats.Get("combat/HeroSkills/Runemage/RunicMachines_InitiativeBonus", 3);
+        return (int)(init + 0.5f);
+    }
+
+    /// <summary>Erratic Mana (HERO_SKILL_CHAOTIC_SPELLS, exe 00bbf6a6..00bbf751): for a positive cost, an ability roll of
+    /// 50 (FUN_00a5a170) and then the hero pays trunc(r · cost) with r uniform in [0.6, 0.9] (floats 0x3f19999a /
+    /// 0x3f666666), at most cost − 1 and at least 0.</summary>
+    public static int ErraticManaSpend(int cost, bool perk, Func<int, bool> roll, Rng rng)
+    {
+        if (cost <= 0 || !perk || !roll(50)) return cost;
+        float r = (float)rng.RangeD(0.6f, 0.9f);
+        int spent = Math.Min(cost - 1, (int)(r * cost));
+        return Math.Max(0, spent);
+    }
+
+    /// <summary>Hero class → racial skill (exe FUN_00875550).</summary>
+    public static string RacialSkill(string heroClass) => heroClass switch
+    {
+        "HERO_CLASS_KNIGHT" => "HERO_SKILL_TRAINING", "HERO_CLASS_RANGER" => "HERO_SKILL_AVENGER",
+        "HERO_CLASS_WIZARD" => "HERO_SKILL_ARTIFICIER", "HERO_CLASS_DEMON_LORD" => "HERO_SKILL_GATING",
+        "HERO_CLASS_NECROMANCER" => "HERO_SKILL_NECROMANCY", "HERO_CLASS_WARLOCK" => "HERO_SKILL_INVOCATION",
+        "HERO_CLASS_RUNEMAGE" => "HERO_SKILL_RUNELORE", "HERO_CLASS_BARBARIAN" => "HERO_SKILL_DEMONIC_RAGE", _ => "",
+    };
+
+    /// <summary>Pendant of Mastery (artifact 15, exe GetSkillMastery FUN_00b4d150): +1 mastery of the class's racial skill
+    /// (also from none), results outside 0..4 count as 0; heroes without any skill entry get nothing.</summary>
+    public static void ApplyPendantOfMastery(HeroState h)
+    {
+        string rs = RacialSkill(h.Class);
+        if (rs.Length == 0 || !h.Artifacts.Contains("PEDANT_OF_MASTERY") || h.Skills.Count == 0) return;
+        int m = (int)h.SkillLevel(rs) + 1;
+        h.Skills.RemoveAll(s => s.SkillId == rs);
+        h.Skills.Add(new SkillEntry(rs, m is < 0 or > 4 ? Mastery.None : (Mastery)m));
+    }
+
     /// <summary>Enemy hero artifacts in the stack's morale (exe 00989fd0 tail): −2 per Nightmarish Ring and per Cloak of
     /// Mourning of the enemy hero (army vcall 0x10).</summary>
     public static int EnemyArtifactMorale(HeroState enemy) => !enemy.Present ? 0

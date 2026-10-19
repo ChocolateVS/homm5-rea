@@ -26,7 +26,7 @@ adventure (`AdvState.MoonWeek`), duels fight in WEEK_OF_NOTHING. Code: `src/H5.C
 | `WEEK_OF_LIGHT` | FIXED | 00bcdc90 | group 2: base morale and luck −2 | AuditWeekTests.WeekChangesMoraleAndLuck |
 | `WEEK_OF_HOPE` | FIXED | 00bcdc90 | every creature: base morale and luck +1 (neutrals too: no group test) | AuditWeekTests.WeekChangesMoraleAndLuck |
 | `WEEK_OF_BALANCE` | FIXED | 00bcdc90, 00bcdd20 ← 00a6abf0, 00bcdd30 ← 00a6acd0 | base morale and luck become 0 and the stack's morale/luck skip the effect sums (00989fd0: spell effects, auras flags 4/0x20/0x2000, enemy artifacts 0x17/0x21; 00989c40: luck effects incl. Dead Luck); the minimum-morale rules (Bravery, Aura of Bravery) still apply | AuditWeekTests.WeekChangesMoraleAndLuck |
-| `WEEK_OF_MAGIC` | FIXED | 00bcddf0 ← 00a34740 (00a347b9) | spell cost / 2 (integer) right after the base cost (×2 for empowered), before every discount, warcries included; creature casters reach the same function through 009781e0 (hero = null). Was missing | AuditWeekTests.WeekChangesSpellCostMasteryAndDamage |
+| `WEEK_OF_MAGIC` | FIXED | 00bcddf0 ← 00a34740 (00a347b9) | spell cost / 2 (integer) right after the base cost (× 2 for mass (00a33e20) and empowered (00a33f70) spells), before every discount, warcries included; creature casters reach the same function through 009781e0 (hero = null). Was missing | AuditWeekTests.WeekChangesSpellCostMasteryAndDamage |
 | `WEEK_OF_ETHER` | FIXED | 00bcddf0 | spell cost × 2 at the same place | AuditWeekTests.WeekChangesSpellCostMasteryAndDamage |
 | `WEEK_OF_EVOCATION` | FIXED | 00bcde10 ← 00a6a700 | the caster's mastery for a Destructive spell (school 0), if above none, becomes 3 (Expert) — applied after the caster's own mastery (so after Shatter); heroes and creature casters. Was missing | AuditWeekTests.WeekChangesSpellCostMasteryAndDamage |
 | `WEEK_OF_ABJURATION` | FIXED | 00bcde10 | the same for Light (school 2) | AuditWeekTests.WeekChangesSpellCostMasteryAndDamage |
@@ -88,3 +88,38 @@ sides are CCombatArmy objects (interface vtable 00e17bcc at object +0x20). Steps
 | Neutral coefficient | MATCH | 00af353f..00af35ae, 0098ded0 | when the opponent is a map monster: × the difficulty's ExpCoefs float (chop) — the engine's NeutralsNotInCampaign / InCampaign table, now applied after +500 / Talented Warrior | |
 | Hero modifier | FIXED | CHero vcall 0x19c = 00b4bbb0 | exp + (5·Enlightenment mastery (≤ 4) + 10·Turban of Enlightenment + 20·Chain Mail of Enlightenment (per copy) + Educational_2_GainExperienceBonusPercents with 2+ Educational set pieces)·exp / 100 in integers. Engine used a double multiplier (100 → 114 instead of 115), capped Enlightenment at 3 and lacked the set bonus. GainExperience uses it for every source (whether other exp sources call vcall 0x19c is not traced) | AuditBattleExpTests.ExperienceModifierIsIntegerPercent |
 | Week | FIXED | 00bcdc60 (00af35c9) | Week of Folly exp / 2, Week of Honor exp × 2 on the final amount (after +500 and the modifier); engine applied it to the base only | AuditBattleExpTests.BattleExperienceAppliesTheWeekLast |
+
+## Might skills: hero morale/luck, war machines, Pendant of Mastery
+
+Hero primary-stat getters are on the CHero interface vtable 00e7e484 (CHero + 28): +0x8 luck `00b4ca10`, +0xc morale
+`00b4cae0`, +0x174 GetSkillMastery `00b4d150`, +0x19c experience modifier `00b4bbb0`, +0x330 battle-bonus array
+`00b5ac30`.
+
+| ID | Status | Exe | Original behaviour | Test |
+|---|---|---|---|---|
+| `HERO_SKILL_LEADERSHIP` | MATCH | 00b4cae0 | hero morale = base fields + Leadership mastery (when > 0) − 1 with Pariah − a curse object's penalty; the engine adds the mastery the same way |  |
+| `HERO_SKILL_PARIAH` | MATCH | 00b4cae0 | Fallen Knight: hero morale − 1 (engine `Sk.FallenKnight`) |  |
+| `HERO_SKILL_LUCK` | MATCH | 00b4ca10 | hero luck = base fields + Luck mastery (when > 0) − curse + town-building terms; the engine adds the mastery the same way |  |
+| `HERO_SKILL_WAR_MACHINES` | MATCH | 004bd7b0, 004bc7f0, 004bc660, 004bb770/004bb7d0, 004bc710/004bc780, 004bb8c0/004bb920 | HP = record + mastery·WarMachines_HealthBonusPerSkillTrained, × PerkSpecificHealthMultiplier (truncated) with Ballista (id 1) / First Aid (3) / Catapult for ids 2 AND 4 (the Ammo Cart uses the Catapult perk — as the engine does); attack/defence/min/max damage from the record tables by mastery (index clamped to the table); Ballista attack + level with HERO_SPEC_WAR_MACHINES (spec 8) and damage × (hero vcall 0x1c + vcall 0x10, the engine's Attack + Knowledge — the two getters not decompiled further); the tables hold integers, so the engine's rounding is exact |  |
+| `PEDANT_OF_MASTERY` | FIXED | 00b4d150, 00875550 | GetSkillMastery: for the hero class's racial skill (Knight Training, Ranger Avenger, Wizard Artificier, Demon Lord Gating, Necromancer Necromancy, Warlock Invocation, Runemage Runelore, Barbarian Blood Rage) +1 with the artifact (also from none), results outside 0..4 → 0. Was ignored | AuditSkillTestsH.PendantOfMasteryRaisesTheRacialSkill |
+| `DRAGON_TALON_CROWN` | FIXED | 004bae60, 004bd7b0 (+0x68) | war machine initiative × (0.1 · crowns + 1), + RunicMachines_InitiativeBonus, stored round-half-up as an integer. Was missing | AuditSkillTestsH.DragonTalonCrownSpeedsUpWarMachines |
+
+**Surrender ransom adjustment** (GAP kept): 004da9a0 passes trunc(value/2) to vcall 0xc of the CCombatArmy's hero pointer
+(army + 0x30). That pointer's vtable is not the 00e7e484 interface (its +0xc is the fastcall morale getter, while the
+ransom call pushes an argument), so the adjusting function is still unidentified.
+
+## Magic skills: hero cast ATB, Erratic Mana
+
+Hero spell cast (exe `FUN_00bbf610`, the hero's cast command): cost from 009781e0, Erratic Mana, Defile Magic, mana
+spent; then the ATB kept after the cast: 0.5 for a mass spell (00a33e20 maps SPELL_MASS_* to its base spell), else
+0.1 · mastery of Sorcery (warcries: Voice); Magis set; − Distract of the enemy hero; − DetainMagic_CasterExtraATBDrop when
+the enemy hero has the school's Detain perk (004e5f60: 0xc2/0xc6/0xca/0xce by school).
+
+| ID | Status | Exe | Original behaviour | Test |
+|---|---|---|---|---|
+| `HERO_SKILL_SORCERY` | MATCH | 00bbf610 (00bbf8a8..) | kept ATB 0.1 (float 00e12f10) × Sorcery mastery; mass spells 0.5 — the engine's 0.5 also requires the mass perk, which every hero casting a SPELL_MASS_* spell has |  |
+| `HERO_SKILL_VOICE` | MATCH | 00bbf610 | warcries use the Voice mastery instead of Sorcery |  |
+| `HERO_SKILL_DISTRACT` | MATCH | 00bbf935 | − Distract_EnemyHeroInitiativeDrop when the enemy hero HasSkill(0xa2) |  |
+| `HERO_SKILL_DETAIN_DESTRUCTIVE` | MATCH | 004e5f60 | − DetainMagic_CasterExtraATBDrop for the matching school (likewise Detain Dark / Light / Summoning) |  |
+| `HERO_SKILL_CHAOTIC_SPELLS` | FIXED | 00bbf6a6..00bbf751 | Erratic Mana: for a positive cost, ability roll of 50 (FUN_00a5a170), then the hero pays trunc(r · cost), r uniform in [0.6, 0.9], at most cost − 1, at least 0. Engine had no implementation | AuditSkillTestsH.ErraticManaPaysSixtyToNinetyPercent |
+| `ARTFSET_EFFECT_MAGIS` | FIXED | 00bbf8f0..00bbf930 | with 4+ pieces (any class) or 2+ pieces and hero class 3 (Wizard): kept ATB r + (1 − r) · Magis_4_2Wizard_AfterCastATBLessPercents · 0.01. Engine added the percent to r and only for Wizards | AuditSkillTestsH.MagisSetScalesTheCastAtbByTheRemainder |

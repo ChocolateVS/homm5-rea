@@ -79,4 +79,63 @@ public class AuditSkillTestsH(GameDataFixture f)
         Assert.Equal(b0.MoraleOf(Of(s0, "CREATURE_FOOTMAN")) - 4, b1.MoraleOf(Of(s1, "CREATURE_FOOTMAN")));
         Assert.Equal(b0.LuckOf(Of(s0, "CREATURE_FOOTMAN")) - 4, b1.LuckOf(Of(s1, "CREATURE_FOOTMAN")));
     }
+
+    // exe FUN_00b4d150 (hero GetSkillMastery): with Pendant of Mastery (artifact 15) the class's racial skill (FUN_00875550)
+    // counts one mastery higher, up to 4 — the engine ignored the artifact.
+    [Fact]
+    public void PendantOfMasteryRaisesTheRacialSkill()
+    {
+        var mine = Hero(0, "PEDANT_OF_MASTERY");
+        mine.Skills.Add(new SkillEntry("HERO_SKILL_LEADERSHIP", Mastery.Basic));
+        mine.Skills.Add(new SkillEntry(SkillAuditH.RacialSkill(mine.Class), Mastery.Expert));
+        var (_, s) = Setup(mine, Hero(3), "CREATURE_FOOTMAN");
+        Assert.Equal(Mastery.Ultimate, s.Heroes[0].SkillLevel(SkillAuditH.RacialSkill(mine.Class)));
+        Assert.Equal(Mastery.Basic, s.Heroes[0].SkillLevel("HERO_SKILL_LEADERSHIP"));
+    }
+
+    // exe FUN_004bae60: war machine initiative × (0.1 · Dragon Talon Crowns + 1), stored as trunc(x + 0.5) (004bd7b0).
+    [Fact]
+    public void DragonTalonCrownSpeedsUpWarMachines()
+    {
+        var mine = Hero(0, "DRAGON_TALON_CROWN"); mine.Ballista = true;
+        var (_, s) = Setup(mine, Hero(3), "CREATURE_FOOTMAN");
+        var ballista = s.Units.First(u => u.CreatureId == "WAR_MACHINE_BALLISTA");
+        Assert.Equal((int)(f.Db.WarMachines["WAR_MACHINE_BALLISTA"].Initiative * 1.1f + 0.5f), ballista.BaseInitiative);
+    }
+
+    // exe 00bbf610 (hero cast end): Magis set with 4+ pieces (any class) or 2+ for a Wizard: ATB reset
+    // r + (1 − r)·Magis_4_2Wizard_AfterCastATBLessPercents·0.01 — the engine added the percent to r (Wizards only).
+    [Fact]
+    public void MagisSetScalesTheCastAtbByTheRemainder()
+    {
+        var magis = f.Db.ArtifactSets["ARTFSET_EFFECT_MAGIS"];
+        var (b, s) = Setup(Hero(0), Hero(3), "CREATURE_FOOTMAN");
+        var h = s.Heroes[0];
+        h.Skills.Add(new SkillEntry("HERO_SKILL_SORCERY", Mastery.Basic));
+        var bolt = f.Db.Spell("SPELL_LIGHTNING_BOLT")!;
+        float pct = (int)f.Db.Stats.Get("ArtifactsSetsEffectsConsts/Magis_4_2Wizard_AfterCastATBLessPercents", 10);
+        h.Class = "HERO_CLASS_WIZARD";
+        foreach (var a in magis.Take(2)) { h.Artifacts.Add(a); h.SetPieces["ARTFSET_EFFECT_MAGIS"] = h.Artifacts.Count(magis.Contains); }
+        Assert.Equal((1f - 0.1f) * pct * 0.01f + 0.1f, b.HeroCastAtbReset(h, bolt), 5);
+        h.Class = "HERO_CLASS_KNIGHT";
+        Assert.Equal(0.1, b.HeroCastAtbReset(h, bolt), 5);
+        foreach (var a in magis.Skip(2).Take(2)) { h.Artifacts.Add(a); h.SetPieces["ARTFSET_EFFECT_MAGIS"] = h.Artifacts.Count(magis.Contains); }
+        Assert.Equal((1f - 0.1f) * pct * 0.01f + 0.1f, b.HeroCastAtbReset(h, bolt), 5);
+    }
+
+    // exe 00bbf6a6..00bbf751: Erratic Mana — after a won 50 roll the hero pays trunc(r·cost), r in [0.6, 0.9], at most
+    // cost − 1 and at least 0. The engine had no implementation.
+    [Fact]
+    public void ErraticManaPaysSixtyToNinetyPercent()
+    {
+        var rng = new Rng(3);
+        for (int i = 0; i < 200; i++)
+        {
+            int paid = SkillAuditH.ErraticManaSpend(20, true, _ => true, rng);
+            Assert.InRange(paid, 12, 18);
+        }
+        Assert.Equal(0, SkillAuditH.ErraticManaSpend(1, true, _ => true, rng));
+        Assert.Equal(20, SkillAuditH.ErraticManaSpend(20, true, _ => false, rng));
+        Assert.Equal(20, SkillAuditH.ErraticManaSpend(20, false, _ => true, rng));
+    }
 }

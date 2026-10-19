@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 250 |
-| MATCH | 123 |
+| FIXED | 254 |
+| MATCH | 130 |
 | GAP | 7 |
-| UNVERIFIED | 204 |
+| UNVERIFIED | 196 |
 | N/A | 56 |
 
 ## Core mechanics
@@ -228,13 +228,13 @@ compared line by line · **N/A** unused by shipped data / test content.
 | ID | Status | Exe functions | Original behaviour / note | Regression test |
 |---|---|---|---|---|
 | `HERO_SKILL_LOGISTICS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_WAR_MACHINES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_WAR_MACHINES` | MATCH | 004bd7b0, 004bc7f0, 004bc660, 004bb770/004bb7d0, 004bc710/004bc780, 004bb8c0/004bb920 | HP = record + mastery·WarMachines_HealthBonusPerSkillTrained, × PerkSpecificHealthMultiplier (truncated) with Ballista (id 1) / First Aid (3) / Catapult for ids 2 AND 4 (the Ammo Cart uses the Catapult perk — as the engine does); attack/defence/min/max damage from the record tables by mastery (index clamped to the table); Ballista attack + level with HERO_SPEC_WAR_MACHINES (spec 8) and damage × (hero vcall 0x1c + vcall 0x10, the engine's Attack + Knowledge — the two getters not decompiled further); the tables hold integers, so the engine's rounding is exact |  |
 | `HERO_SKILL_LEARNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_LEADERSHIP` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_LUCK` | MATCH | see EXE_FINDINGS | verified in EXE_FINDINGS.md |  |
+| `HERO_SKILL_LEADERSHIP` | MATCH | 00b4cae0 | hero morale = base fields + Leadership mastery (when > 0) − 1 with Pariah − a curse object's penalty; the engine adds the mastery the same way |  |
+| `HERO_SKILL_LUCK` | MATCH | 00b4ca10 | hero luck = base fields + Luck mastery (when > 0) − curse + town-building terms; the engine adds the mastery the same way |  |
 | `HERO_SKILL_OFFENCE` | FIXED | 00a58de0 | melee ×(1+clamp(SkillOffence Basic/Advanced/Expert DamageBonus,0,10)) by mastery 1/2/3; any other mastery value gives nothing — engine gave the Expert bonus to mastery 4 | AuditHeroTests.OffenceBonusOnlyForMasteriesOneToThree |
 | `HERO_SKILL_DEFENCE` | FIXED | 00a5a900 | melee damage ×(1−clamp(SkillDefence reduce,0,1)) for mastery 1/2/3 only (mastery 4: none) — engine gave Expert to mastery 4 | (DefenceReduction) |
-| `HERO_SKILL_SORCERY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_SORCERY` | MATCH | 00bbf610 (00bbf8a8..) | kept ATB 0.1 (float 00e12f10) × Sorcery mastery; mass spells 0.5 — the engine's 0.5 also requires the mass perk, which every hero casting a SPELL_MASS_* spell has |  |
 | `HERO_SKILL_DESTRUCTIVE_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DARK_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_LIGHT_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -291,7 +291,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_HOLD_GROUND` | FIXED | 008a22f0 | multiplies the defend factor by HoldGround_DefendBonusMultiplier, or the Take Roots factor by HoldGround_TakeRootsBonusMultiplier (see Defend posture) | AuditHeroTests.TakeRootsReplacesTheDefendFactor |
 | `HERO_SKILL_GUARDIAN_ANGEL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ANCIENT_SMITHY` | FIXED | 00a5ed90 (call 00a5effb), 0097d740 | Fiery Wrath: 0.1 × damage dealt (creatures only) as fire damage via FUN_0097d740 with stand-in spell Fireball (ECX = 5), no caster; no Mark of Fire multiplier (FUN_00977a80 is not on this path). Engine skipped protection and doubled it on Mark of Fire targets | AuditSkillTestsG.PerkElementalDamageIsReducedByProtectionOfItsStandInSpell |
-| `HERO_SKILL_PARIAH` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_PARIAH` | MATCH | 00b4cae0 | Fallen Knight: hero morale − 1 (engine `Sk.FallenKnight`) |  |
 | `HERO_SKILL_ELEMENTAL_BALANCE` | FIXED | 00861630 (0086173c..008617aa), 00862130 (00862205..0086225e) | after a successful Summon Elementals / Conjure Phoenix, the caster's opponent (vf 0x10 → vf 0xc) with skill 0x54 summons for its own side: the opposite elemental of FUN_00861120's pair (Fire ↔ Water, Earth ↔ Air) in the same (week-adjusted, min 1) number, or a phoenix built from the caster's summon info (same stats); logged with skill 0x54. Engine had nothing. Placement of the counter-summon uses the engine's summon placement (exe position argument not decoded) | AuditSpellSTests.ElementalBalanceCounterSummons |
 | `HERO_SKILL_ABSOLUTE_CHARGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_QUICK_GATING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -340,7 +340,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_LUCKY_SPELLS` | UNVERIFIED | 00983790 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_POWER_OF_HASTE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_POWER_OF_STONE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_CHAOTIC_SPELLS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_CHAOTIC_SPELLS` | FIXED | 00bbf6a6..00bbf751 | Erratic Mana: for a positive cost, ability roll of 50 (FUN_00a5a170), then the hero pays trunc(r · cost), r uniform in [0.6, 0.9], at most cost − 1, at least 0. Engine had no implementation | AuditSkillTestsH.ErraticManaPaysSixtyToNinetyPercent |
 | `HERO_SKILL_SECRETS_OF_DESTRUCTION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_PAYBACK` | UNVERIFIED | 00977260 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ELITE_CASTERS` | FIXED | 009781e0 | creature casters: integer half | (CreatureManaCost) |
@@ -356,7 +356,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_DWARVEN_LUCK` | MATCH | 00977790, 0097d2a0 | a failed resistance roll by a stack whose hero has the perk is re-rolled once (Range(1,100) < chance) |  |
 | `HERO_SKILL_OFFENSIVE_FORMATION` | MATCH | 008a4800 | same formula with Offensive_MaxOffenseBonus |  |
 | `HERO_SKILL_DEFENSIVE_FORMATION` | MATCH | 008a22f0 | Fortress race (9) only: += clamp(trunc(10·log10(A/B)), 0, Defensive_MaxDefenseBonus) — trunc matches the manual's floor; operands A (unit+0xf0) / B (unit+0xa0 vf 0x24) taken as adjacent dwarven power / own power per manual p.323 (not traced further) |  |
-| `HERO_SKILL_DISTRACT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_DISTRACT` | MATCH | 00bbf935 | − Distract_EnemyHeroInitiativeDrop when the enemy hero HasSkill(0xa2) |  |
 | `HERO_SKILL_SET_AFIRE` | FIXED | 004e6770 (004e6893..004e6960), 004e5790 | fire-rider spells only (Fireball, Firewall, Armageddon — engine also fired on Magic Arrow and skipped Armageddon), enemy targets, damage > 0; per-turn damage trunc(trunc(D / clamp(MarkOfFire_FireDamageMultiplier,0,1000) if marked) · SetAfire_DamageMultiplier) with D the damage dealt (engine: base damage / 3); duration SetAfire_DamageDurationInRounds (004e57d0 case 0x10e) | SetAfireBurnsAShareOfTheDamageDealt |
 | `HERO_SKILL_SHRUG_DARKNESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_ETERNAL_LIGHT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -375,14 +375,14 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_DEFEND_US_ALL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_POWER_OF_BLOOD` | FIXED | 008a2c20 | rage ×RPCoefPowerOfBlood rounded (was truncated) | (AddRage) |
 | `HERO_SKILL_BODYBUILDING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_VOICE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_VOICE` | MATCH | 00bbf610 | warcries use the Voice mastery instead of Sorcery |  |
 | `HERO_SKILL_VOICE_TRAINING` | FIXED | 00a34740 | warcries min(cost×(1.001−d), cost−1), ≥1 | tests/H5.Combat.Tests/AuditSpecTests |
 | `HERO_SKILL_MIGHTY_VOICE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_VOICE_OF_RAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SHATTER_DESTRUCTIVE_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_CORRUPT_DESTRUCTIVE` | FIXED | 009781e0, 004e6000 | rounded ×(1+increase) | (HeroManaCost) |
 | `HERO_SKILL_WEAKEN_DESTRUCTIVE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_DETAIN_DESTRUCTIVE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_DETAIN_DESTRUCTIVE` | MATCH | 004e5f60 | − DetainMagic_CasterExtraATBDrop for the matching school (likewise Detain Dark / Light / Summoning) |  |
 | `HERO_SKILL_SHATTER_DARK_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_CORRUPT_DARK` | FIXED | 009781e0, 004e6000 | rounded ×(1+increase) | (HeroManaCost) |
 | `HERO_SKILL_WEAKEN_DARK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -651,6 +651,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `RING_OF_MAGI` | FIXED | 00a34740 | spell cost halved (integer) | tests/H5.Combat.Tests/AuditSpecTests.SpellCostsMatchTheOriginalChain |
 | `UNICORN_HORN_BOW` | FIXED | 008a34c0 | army shooters have No Range Penalty | tests/H5.Combat.Tests/AuditArtifactTests.UnicornHornBowRemovesRangePenalty |
 | `ARTIFACT_SHAWL_OF_GREAT_LICH` | FIXED | 008a34c0 | negates enemy IMMUNITY_TO_MIND_CONTROL | tests/H5.Combat.Tests/AuditArtifactTests.ShawlOfTheGreatLichNegatesEnemyMindImmunity |
+| `ARTFSET_EFFECT_MAGIS` | FIXED | 00bbf8f0..00bbf930 | with 4+ pieces (any class) or 2+ pieces and hero class 3 (Wizard): kept ATB r + (1 − r) · Magis_4_2Wizard_AfterCastATBLessPercents · 0.01. Engine added the percent to r and only for Wizards | AuditSkillTestsH.MagisSetScalesTheCastAtbByTheRemainder |
 | `ARTIFACT_JINXING_BAND` | FIXED | 00989c40 (tail) | −2 luck per band to the enemy stacks. Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
 | `ARTIFACT_OGRE_CLUB` | FIXED | 004bc190 (004bc3ce) | −5 % each | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `ARTIFACT_OGRE_SHIELD` | FIXED | 004bc190 (004bc3e3) | −5 % each | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
@@ -660,9 +661,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `DRAGON_EYE_RING` | FIXED | 004bc190 (004bc3b1) | +10 % each for shooters (record shots > 0) | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `DRAGON_SCALE_ARMOR` | FIXED | 004bc190 (004bc2ef) | +5 % each for creatures with combat size > 1 (record +0xdc) | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `DRAGON_SCALE_SHIELD` | FIXED | 004bc190 (004bc309) | +5 % each for size-1 creatures | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `DRAGON_TALON_CROWN` | FIXED | 004bae60, 004bd7b0 (+0x68) | war machine initiative × (0.1 · crowns + 1), + RunicMachines_InitiativeBonus, stored round-half-up as an integer. Was missing | AuditSkillTestsH.DragonTalonCrownSpeedsUpWarMachines |
 | `DRAGON_TEETH_NECKLACE` | FIXED | 004bc190 (004bc380) | +10 % each for ABILITY_CASTER / ABILITY_RANDOM_CASTER creatures | (same helper) |
 | `DRAGON_WING_MANTLE` | FIXED | 004bc190 (004bc363) | +10 % each for flyers | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `NIGHTMARISH_RING` | FIXED | 00989fd0 (tail) | −2 morale per ring to the stacks facing the hero (army vcall 0x10 = enemy army's hero). Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
+| `PEDANT_OF_MASTERY` | FIXED | 00b4d150, 00875550 | GetSkillMastery: for the hero class's racial skill (Knight Training, Ranger Avenger, Wizard Artificier, Demon Lord Gating, Necromancer Necromancy, Warlock Invocation, Runemage Runelore, Barbarian Blood Rage) +1 with the artifact (also from none), results outside 0..4 → 0. Was ignored | AuditSkillTestsH.PendantOfMasteryRaisesTheRacialSkill |
 | `RING_OF_HASTE` | FIXED | 004bc190 (004bc2c4) | army creatures' initiative +20 % (any number of rings), inside the artifact percent p: init = (p + 100)·init·0.01 with p ≥ −100. Was missing | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 
 ## Week of the month (combat effects)
@@ -686,7 +689,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `WEEK_OF_IDLENESS` | FIXED | 00bcdd40 ← 004bc190 | group 1: record initiative (as float) × 0.8 (constant 00e1857c) before the flat and artifact bonuses. Was missing | AuditWeekTests.WeekChangesTheCreatureBaseStats |
 | `WEEK_OF_INFIRMITY` | FIXED | 00bcdd80 ← 004bb2a0 | the same for group 2 | AuditWeekTests.WeekChangesTheCreatureBaseStats |
 | `WEEK_OF_LIGHT` | FIXED | 00bcdc90 | group 2: base morale and luck −2 | AuditWeekTests.WeekChangesMoraleAndLuck |
-| `WEEK_OF_MAGIC` | FIXED | 00bcddf0 ← 00a34740 (00a347b9) | spell cost / 2 (integer) right after the base cost (×2 for empowered), before every discount, warcries included; creature casters reach the same function through 009781e0 (hero = null). Was missing | AuditWeekTests.WeekChangesSpellCostMasteryAndDamage |
+| `WEEK_OF_MAGIC` | FIXED | 00bcddf0 ← 00a34740 (00a347b9) | spell cost / 2 (integer) right after the base cost (× 2 for mass (00a33e20) and empowered (00a33f70) spells), before every discount, warcries included; creature casters reach the same function through 009781e0 (hero = null). Was missing | AuditWeekTests.WeekChangesSpellCostMasteryAndDamage |
 | `WEEK_OF_MIGHT` | FIXED | 00bcdf10 ← 004bbfb0, 004bc020, 004bc710, 004bc780, 00bc1b90 (00bc1c78), 00bfdfb0 | x + x/2 (integer) on the creature record's min/max damage (before Frenzy / artifacts), on war machine min/max damage, on the hero strike right after its base (before the favoured-enemy doubling and Offender) and on tower damage (towns only: the no-town 50 returns before it). Was missing | AuditWeekTests.WeekChangesTheCreatureBaseStats, AuditWeekTests.MightWeekRaisesTheHeroStrike |
 | `WEEK_OF_MIGHTNMAGIC` | FIXED | 00bcdf10, 00bcddf0 | both the Might ×1.5 above and the Magic spell cost / 2 | AuditWeekTests.WeekChangesTheCreatureBaseStats |
 | `WEEK_OF_SORROW` | FIXED | 00bcdc90 ← 00bcdcf0 (luck 004ba970), 00bcdd00 (morale 004ba9d0, 004bae10 Artificial Glory, 004bd7b0) | group 1: base morale −2 and base luck −2 (before the effect terms 00989fd0 / 00989c40). Was missing | AuditWeekTests.WeekChangesMoraleAndLuck |

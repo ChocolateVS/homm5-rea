@@ -316,6 +316,7 @@ public sealed partial class Battle
             // Mark of the Wizard: spells on the marked stack are doubled when the hero can pay the cost twice.
             bool doubled = target != null && h.Links.TryGetValue(LinkMarkOfWizard, out var markedId) && markedId == target.Id && h.Mana >= 2 * cost;
             if (doubled) cost *= 2;
+            cost = SkillAuditH.ErraticManaSpend(cost, h.HasPerk(Sk.ErraticMana), HeroRoll, S.Rng);   // exe 00bbf6a6
             h.Mana -= cost;
             Emit(new ManaChanged(c.ActorId, h.Mana));
             if (Counterspelled(h, cost))
@@ -390,7 +391,7 @@ public sealed partial class Battle
         Emit(new ManaChanged(Actor.Hero(h.Side), h.Mana));
     }
 
-    double HeroCastAtbReset(HeroState h, SpellDef sp)
+    internal double HeroCastAtbReset(HeroState h, SpellDef sp)
     {
         double reset;
         if (IsMass(sp.Id) && h.HasPerk(MassSpells[MassToBase[sp.Id]].Perk)) reset = 0.5;   // p.313
@@ -399,8 +400,10 @@ public sealed partial class Battle
             var mastery = sp.School == "MAGIC_SCHOOL_WARCRIES" ? h.SkillLevel(Sk.Shout) : h.SkillLevel(Sk.Sorcery);
             reset = Math.Min(3, (int)mastery) * 0.1;                                           // p.312
         }
-        if (h.Class == "HERO_CLASS_WIZARD" && Specials.Pieces(h, Specials.Magis) >= 2)
-            reset += Stats.Get("ArtifactsSetsEffectsConsts/Magis_4_2Wizard_AfterCastATBLessPercents", 10) / 100.0;
+        // Magis set (exe 00bbf610): 4+ pieces, or 2+ for a Wizard: reset + (1 − reset)·percent·0.01.
+        int magis = Specials.Pieces(h, Specials.Magis);
+        if (magis >= 4 || magis >= 2 && h.Class == "HERO_CLASS_WIZARD")
+            reset = (1f - (float)reset) * (int)Stats.Get("ArtifactsSetsEffectsConsts/Magis_4_2Wizard_AfterCastATBLessPercents", 10) * 0.01f + (float)reset;
         var e = Enemy(h.Side);
         if (e.Present && (e.HasPerk(Sk.Distract) || e.HasPerk(Sk.BarbDistract))) reset -= Stats.Get("combat/HeroSkills/Runemage/Distract_EnemyHeroInitiativeDrop", 0.15);
         string detain = sp.School switch

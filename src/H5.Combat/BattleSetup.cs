@@ -154,6 +154,7 @@ public static class BattleSetup
         h.Perks = hi.Perks.ToList();
         h.Spells = hi.Spells.ToList();
         h.Artifacts = hi.Artifacts.ToList();
+        SkillAuditH.ApplyPendantOfMastery(h);
         h.FavoriteEnemies = hi.FavoriteEnemies.ToList();
         foreach (var aid in hi.Artifacts)
             if (db.Artifacts.TryGetValue(aid, out var a))
@@ -288,8 +289,7 @@ public static class BattleSetup
         int minD = wm != null && wm.MinDamageFactor.Length > 0 ? (int)Math.Round(wm.MinDamageFactor[Math.Min(m, wm.MinDamageFactor.Length - 1)] * mult) : 0;
         int maxD = wm != null && wm.MaxDamageFactor.Length > 0 ? (int)Math.Round(wm.MaxDamageFactor[Math.Min(m, wm.MaxDamageFactor.Length - 1)] * mult) : 0;
         minD = MoonWeek.MightDamage(minD, s.Week); maxD = MoonWeek.MightDamage(maxD, s.Week);   // exe 004bc710 / 004bc780
-        double init = wm?.Initiative ?? 10;
-        if (h.HasPerk(Sk.RunicMachines)) init += db.Stats.Get("combat/HeroSkills/Runemage/RunicMachines_InitiativeBonus", 3);
+        double init = SkillAuditH.WarMachineInitiative(db, h, wm?.Initiative ?? 10);   // exe 004bae60, stored round-half-up (004bd7b0)
         // War machines stand just outside the grid behind their army (column -1 / Width).
         int x = side == 0 ? -1 : s.Width;
         int y = machineId switch { "WAR_MACHINE_BALLISTA" => 1, "WAR_MACHINE_FIRST_AID_TENT" => s.Height - 2, _ => s.Height / 2 };
