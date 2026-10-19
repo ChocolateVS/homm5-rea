@@ -44,6 +44,7 @@ public static class SeaPlane
             Code = """
                 shader_type spatial;
                 render_mode unshaded, cull_back, specular_disabled, depth_draw_never;
+                #include "res://src/Render/H5Lit.gdshaderinc"
                 uniform sampler2D water_tex : source_color, filter_linear_mipmap, repeat_enable;
                 uniform sampler2D bump : hint_normal, filter_linear_mipmap, repeat_enable;
                 uniform bool has_tex = false;
@@ -56,7 +57,8 @@ public static class SeaPlane
                 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
                 uniform float shore_fade = 0.45;
                 varying vec3 world_pos;
-                void vertex() { world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+                varying float war;
+                void vertex() { world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; war = h5_warfog_at(world_pos); }
                 void fragment() {
                     vec2 uv = world_pos.xz * 0.04;
                     vec3 n = vec3(0.0, 1.0, 0.0);
@@ -72,6 +74,8 @@ public static class SeaPlane
                     vec3 r = reflect(-view, n);
                     vec3 refl = mix(deep_color * 2.0, sky_color, sqrt(clamp(r.y, 0.0, 1.0)));
                     ALBEDO = mix(base.rgb, refl, mirror * (0.35 + 0.65 * fresnel));
+                    // Fog of war darkens the sea like the lit geometry (colour × w, in gamma space).
+                    ALBEDO *= h5_srgb_to_linear(vec3(war));
                     float d = texture(depth_tex, SCREEN_UV).x;
                     #if CURRENT_RENDERER == RENDERER_COMPATIBILITY
                     d = d * 2.0 - 1.0; // OpenGL NDC depth is -1..1

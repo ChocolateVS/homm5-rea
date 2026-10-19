@@ -24,12 +24,14 @@ public static class WaterMaterial
             Code = """
                 shader_type spatial;
                 render_mode unshaded, cull_back, specular_disabled;
+                #include "res://src/Render/H5Lit.gdshaderinc"
                 uniform sampler2D bump : hint_normal, filter_linear_mipmap, repeat_enable;
                 uniform bool has_bump = false;
                 uniform vec3 sky_color : source_color = vec3(0.55, 0.62, 0.70);
                 uniform vec3 deep_color : source_color = vec3(0.06, 0.09, 0.12);
                 varying vec3 world_pos;
-                void vertex() { world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+                varying float war;
+                void vertex() { world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; war = h5_warfog_at(world_pos); }
                 void fragment() {
                     vec3 n = vec3(0.0, 1.0, 0.0);
                     if (has_bump) {
@@ -45,6 +47,7 @@ public static class WaterMaterial
                     float sky = clamp(r.y, 0.0, 1.0);
                     vec3 refl = mix(deep_color * 2.0, sky_color, sqrt(sky));
                     ALBEDO = mix(deep_color, refl, 0.35 + 0.65 * fresnel);
+                    ALBEDO *= h5_srgb_to_linear(vec3(war)); // adventure fog of war (1 elsewhere)
                 }
                 """,
         };

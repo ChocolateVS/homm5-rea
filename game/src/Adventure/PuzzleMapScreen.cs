@@ -17,8 +17,13 @@ public sealed partial class PuzzleMapScreen : Control
 {
     const float ViewTiles = 24f;
 
+    readonly AdventureScreen _adv;
+
     public PuzzleMapScreen(AdventureScreen adv)
     {
+        _adv = adv;
+        // The land around the grail is shown without the fog of war (shader globals, see AdvWorld).
+        adv.World.SuppressWarFog = true;
         Name = "PuzzleMap";
         AnchorRight = 1;
         AnchorBottom = 1;
@@ -112,7 +117,12 @@ public sealed partial class PuzzleMapScreen : Control
         return layer;
     }
 
-    void Close() => QueueFree();
+    void Close()
+    {
+        _adv.World.SuppressWarFog = false;
+        _adv.World.RefreshShroud();
+        QueueFree();
+    }
 
     public override void _UnhandledInput(InputEvent e)
     {

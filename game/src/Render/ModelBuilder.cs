@@ -140,14 +140,19 @@ public static class ModelBuilder
                 Code = $$"""
                     shader_type spatial;
                     render_mode {{key}};
+                    #include "res://src/Render/H5Lit.gdshaderinc"
                     uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_enable;
                     uniform float speed = 0.3;
+                    varying float war;
+                    // Adventure fog of war (1 elsewhere): transparent objects are scaled by it too
+                    // (FUN_00cf9a80 from the CTransparentRenderer).
+                    void vertex() { war = h5_warfog_at((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz); }
                     void fragment() {
                         vec2 drift = vec2(1.0, 0.6) * speed * 0.05 * TIME;
                         vec4 a = texture(tex, UV + drift);
                         vec4 b = texture(tex, UV * 0.9 - drift * 0.7);
                         vec4 c = (a + b) * 0.5;
-                        ALBEDO = c.rgb;
+                        ALBEDO = c.rgb * h5_srgb_to_linear(vec3(war));
                         {{(transparent ? "ALPHA = c.a;" : "")}}
                     }
                     """,

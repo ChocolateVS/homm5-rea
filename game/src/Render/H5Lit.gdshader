@@ -14,6 +14,7 @@ uniform bool use_fog = true;          // material AffectedByFog
 varying vec3 v_lit;
 varying vec3 v_shadow;
 varying float v_fog;
+varying float v_war;
 varying vec3 v_tex;
 
 void vertex() {
@@ -25,6 +26,7 @@ void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float depth = -(VIEW_MATRIX * vec4(wp, 1.0)).z;
 	v_fog = use_fog ? h5_fog_factor(depth, wp.y) : 1.0;
+	v_war = h5_warfog_at(wp);
 }
 
 void fragment() {
@@ -34,7 +36,7 @@ void fragment() {
 	ALBEDO = vec3(1.0);
 	if (self_illum > 0.5) {
 		// Unlit: no light pass contributes, so emit the texel directly.
-		EMISSION = h5_srgb_to_linear(mix(h5_fog_color, t.rgb, v_fog));
+		EMISSION = h5_srgb_to_linear(mix(h5_fog_color, t.rgb * v_war, clamp(v_fog + 1.0 - v_war, 0.0, 1.0)));
 		ALBEDO = vec3(0.0);
 	}
 #ifdef H5_BLEND
@@ -48,10 +50,10 @@ void light() {
 	if (LIGHT_IS_DIRECTIONAL) {
 		float s = receive_shadow > 0.5 ? ATTENUATION : 1.0;
 		vec3 vc = mix(v_shadow, v_lit, s);
-		DIFFUSE_LIGHT += h5_srgb_to_linear(h5_finish(v_tex, vc, v_fog));
+		DIFFUSE_LIGHT += h5_srgb_to_linear(h5_finish(v_tex, vc, v_fog, v_war));
 	} else {
 		// Dynamic point lights add to the vertex colour in the original; approximate per pixel.
 		float ndl = max(dot(NORMAL, LIGHT), 0.0);
-		DIFFUSE_LIGHT += h5_srgb_to_linear(clamp(h5_light_scale * v_tex * LIGHT_COLOR * ndl * ATTENUATION / PI, 0.0, 1.0)) * v_fog;
+		DIFFUSE_LIGHT += h5_srgb_to_linear(clamp(h5_light_scale * v_tex * LIGHT_COLOR * ndl * ATTENUATION / PI, 0.0, 1.0)) * v_fog * v_war;
 	}
 }

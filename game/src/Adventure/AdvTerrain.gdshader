@@ -25,6 +25,7 @@ uniform float layer_water[32];
 varying vec3 v_lit;
 varying vec3 v_shadow;
 varying float v_fog;
+varying float v_war;
 varying vec3 v_tex;
 
 vec4 weight_texel(int t, vec2 uv) {
@@ -46,6 +47,7 @@ void vertex() {
 	v_shadow = shadow_c;
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	v_fog = h5_fog_factor(-(VIEW_MATRIX * vec4(wp, 1.0)).z, wp.y);
+	v_war = h5_warfog_at(wp);
 }
 
 void fragment() {
@@ -68,9 +70,9 @@ void fragment() {
 
 void light() {
 	if (LIGHT_IS_DIRECTIONAL) {
-		DIFFUSE_LIGHT += h5_srgb_to_linear(h5_finish(v_tex, mix(v_shadow, v_lit, ATTENUATION), v_fog));
+		DIFFUSE_LIGHT += h5_srgb_to_linear(h5_finish(v_tex, mix(v_shadow, v_lit, ATTENUATION), v_fog, v_war));
 	} else {
 		float ndl = max(dot(NORMAL, LIGHT), 0.0);
-		DIFFUSE_LIGHT += h5_srgb_to_linear(clamp(h5_light_scale * v_tex * LIGHT_COLOR * ndl * ATTENUATION / PI, 0.0, 1.0)) * v_fog;
+		DIFFUSE_LIGHT += h5_srgb_to_linear(clamp(h5_light_scale * v_tex * LIGHT_COLOR * ndl * ATTENUATION / PI, 0.0, 1.0)) * v_fog * v_war;
 	}
 }

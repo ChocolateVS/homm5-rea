@@ -48,6 +48,10 @@ public static class H5Lighting
         Add("h5_fog_params", RenderingServer.GlobalShaderParameterType.Vec4, new Vector4(1000, 2000, -10000, -10001));
         Add("h5_fog_color", RenderingServer.GlobalShaderParameterType.Vec3, Vector3.Zero);
         Add("h5_fog_enabled", RenderingServer.GlobalShaderParameterType.Float, 0f);
+        var white = ImageTexture.CreateFromImage(Image.CreateFromData(1, 1, false, Image.Format.R8, new byte[] { 255 }));
+        Add("h5_warfog_a", RenderingServer.GlobalShaderParameterType.Sampler2D, white);
+        Add("h5_warfog_b", RenderingServer.GlobalShaderParameterType.Sampler2D, white);
+        Add("h5_warfog", RenderingServer.GlobalShaderParameterType.Vec4, Vector4.Zero);
     }
 
     public readonly record struct Fog(bool Enabled, Vector3 Color, float MinDist, float MaxDist, float MinZ, float MaxZ);
@@ -76,6 +80,31 @@ public static class H5Lighting
         RenderingServer.GlobalShaderParameterSet("h5_sun_dir", SunDirection(F(light?.Element("Pitch"), 45), F(light?.Element("Yaw"), 45)));
         RenderingServer.GlobalShaderParameterSet("h5_light_scale", ScaleFor(light));
         SetFog(ReadFog(light, lightFile, resolve));
+        // Fog of war belongs to the adventure map only; it re-enables it after applying its light.
+        DisableWarFog();
+    }
+
+    /// <summary>
+    /// Fog-of-war grids for the H5Lit shaders (see AdvWorld fog of war): <paramref name="a"/> the newest,
+    /// <paramref name="b"/> the previous one, crossfaded by <paramref name="t"/> (A weight); sizes are
+    /// nextPow2 + 1 texels per side.
+    /// </summary>
+    public static void SetWarFog(Texture2D a, Texture2D b, float t, int gridW, int gridH)
+    {
+        Register();
+        RenderingServer.GlobalShaderParameterSet("h5_warfog_a", a);
+        RenderingServer.GlobalShaderParameterSet("h5_warfog_b", b);
+        RenderingServer.GlobalShaderParameterSet("h5_warfog", new Vector4(t, 1, gridW - 2, gridH - 2));
+    }
+
+    /// <summary>Updates only the crossfade weight of the current grids.</summary>
+    public static void SetWarFogFade(float t, int gridW, int gridH) =>
+        RenderingServer.GlobalShaderParameterSet("h5_warfog", new Vector4(t, 1, gridW - 2, gridH - 2));
+
+    public static void DisableWarFog()
+    {
+        Register();
+        RenderingServer.GlobalShaderParameterSet("h5_warfog", Vector4.Zero);
     }
 
     public static void SetFog(Fog fog)

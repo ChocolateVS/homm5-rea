@@ -28,8 +28,6 @@ public partial class AdvWorld : Node3D
     readonly Dictionary<string, (ArrayMesh Mesh, ModelAsset Model)?> _meshCache = new(StringComparer.OrdinalIgnoreCase);
     readonly ModelLoader _loader = new(Game.Instance.Xdb);
     readonly AnimSetLoader _anims = new(Game.Instance.Xdb);
-    ShaderMaterial? _shroudMaterial;
-    ImageTexture?[] _shroudTex = new ImageTexture?[2];
     Node3D _pathRoot = null!;
     Node3D? _selection;
 
@@ -70,7 +68,6 @@ public partial class AdvWorld : Node3D
 
         _pathRoot = new Node3D { Name = "Path" };
         AddChild(_pathRoot);
-        BuildShroud();
 
         Camera = new AdvCamera(this) { Name = "Camera" };
         AddChild(Camera);
@@ -92,9 +89,9 @@ public partial class AdvWorld : Node3D
     float _lastCamDistance = -1;
 
     /// <summary>
-    /// Keeps the far view usable when the camera pulls back past the stock 70 (extended zoom):
-    /// fog thins in proportion so distant terrain stays readable, and the sun's shadow range grows
-    /// with the view. At or below the stock distance the original values apply unchanged.
+    /// Extended zoom (past the stock 70): the sun's shadow range grows with the view. At or below the
+    /// stock distance the original values apply unchanged. (Distance fog is not thinned: the exe's fog
+    /// is linear in view depth, FUN_009add40.)
     /// </summary>
     public void OnCameraDistance(float distance)
     {
@@ -103,11 +100,6 @@ public partial class AdvWorld : Node3D
         float k = Math.Max(1f, distance / AdvCamera.MaxDistance);
         for (int f = 0; f < 2; f++)
         {
-            if (_envRes[f] is { } env && env.FogEnabled)
-            {
-                if (!env.HasMeta("baseFog")) env.SetMeta("baseFog", env.FogDensity);
-                env.FogDensity = (float)env.GetMeta("baseFog") / k;
-            }
             if (_sun[f] is { } sun) sun.DirectionalShadowMaxDistance = 120 * k;
         }
     }
@@ -257,7 +249,6 @@ public partial class AdvWorld : Node3D
         }
         // Original-renderer lighting and fog for the visible floor (H5Lit materials/terrain).
         Render.H5Lighting.Apply(_lightRec[floor], _lightFile[floor], p => _session.Files.Exists(p) ? _session.Files.LoadXml(p).Root : null);
-        if (_shroudMaterial != null && _shroudTex[floor] != null) _shroudMaterial.SetShaderParameter("shroud", _shroudTex[floor]);
         RefreshShroud();
         Boats?.OnFloorChanged();
     }
@@ -312,7 +303,6 @@ public partial class AdvWorld : Node3D
         Color C(Vector3 v, float scale = 1) => new(Math.Min(1, v.X * scale), Math.Min(1, v.Y * scale), Math.Min(1, v.Z * scale));
 
         // The original lights in an overbright (×2) range, like the combat arenas (ArenaScene).
-        var fog = V("FogColor", 0.5f);
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Color,
@@ -321,13 +311,9 @@ public partial class AdvWorld : Node3D
             AmbientLightColor = C(V("AmbientColor", 0.3f), 2f),
             TonemapMode = Godot.Environment.ToneMapper.Linear,
         };
-        float fogStart = F(light?.Element("FogStartDistance"), 1000), fogDist = F(light?.Element("FogDistance"), 1000);
-        if (fogStart < 900)
-        {
-            env.FogEnabled = true;
-            env.FogLightColor = C(fog);
-            env.FogDensity = 1f / Math.Max(10f, fogDist) * 0.5f;
-        }
+        // No Godot fog: the AmbientLight FogColor/FogStartDistance/FogDistance fields (+0xc8/+0xd4/+0xd8)
+        // are only touched by the serializer FUN_00c78010; the renderer's distance fog is the DistanceFog
+        // record, drawn by the H5Lit shaders (H5Lighting.ReadFog, FUN_009add40).
         _envRes[f] = env;
         _env[f] = new WorldEnvironment { Name = $"Env{f}" };
         AddChild(_env[f]);
@@ -353,18 +339,18 @@ public partial class AdvWorld : Node3D
             for (int i = 0; i < mesh.GetSurfaceCount(); i++)
             {
                 // Cloud layers use M_CLOUDS_H5, which ModelBuilder builds as a drifting ShaderMaterial
-                // (opaque, culled, depth-writing); as a dome it must be a plain unshaded sky backdrop.
-                StandardMaterial3D? m = mesh.SurfaceGetMaterial(i) switch
+                // (opaque, culled, depth-writing); as a dome it must be a plain unlit sky backdrop.
+                // An unlit two-sided H5Lit material, so the fog of war darkens it like the rest of the
+                // scene (the former overlay hid it wherever it stood over unexplored or off-map ground).
+                Texture2D? tex = mesh.SurfaceGetMaterial(i) switch
                 {
-                    StandardMaterial3D std => (StandardMaterial3D)std.Duplicate(),
-                    ShaderMaterial sm => new StandardMaterial3D { AlbedoTexture = sm.GetShaderParameter("tex").As<Texture2D>() },
+                    StandardMaterial3D std => std.AlbedoTexture,
+                    ShaderMaterial sm => sm.GetShaderParameter("tex").As<Texture2D>(),
                     _ => null,
                 };
-                if (m == null) continue;
-                m.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-                m.DisableFog = true;
-                m.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
-                mesh.SurfaceSetMaterial(i, m);
+                if (mesh.SurfaceGetMaterial(i) == null) continue;
+                mesh.SurfaceSetMaterial(i, H5LitMaterials.Create(tex, H5LitMaterials.Blend.Opaque, twoSided: true, selfIllum: true,
+                    receiveShadow: false, affectedByFog: false));
             }
             var dome = new MeshInstance3D { Name = "SkyDome", Mesh = mesh, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, Layers = SkyLayer };
             dome.Position = new Vector3(Map.TilesX * 0.5f * Unit, 0, -Map.TilesY * 0.5f * Unit);
@@ -732,43 +718,93 @@ public partial class AdvWorld : Node3D
 
     // ---------------------------------------------------------------- fog of war
 
-    /// <summary>Render layer of the fog-of-war quad.</summary>
+    /// <summary>Render layer formerly used by the fog-of-war overlay quad (kept for camera masks).</summary>
     public const uint ShroudLayer = 1u << 1;
     /// <summary>Render layer of the sky dome (left out of the puzzle map's view from above).</summary>
     public const uint SkyLayer = 1u << 2;
 
-    void BuildShroud()
+    // Fog of war as H5_Game.exe draws it: no overlay or texture layer, but a per-vertex darkening of
+    // every lit mesh (H5Lit.gdshaderinc h5_warfog_at). The controller FUN_005b1260 polls the human
+    // player's explored array every frame; a change rebuilds the corner grid (WarFogGrid,
+    // FUN_005b0f80), the previous grid becomes B, the new one A, and t runs linearly from 0 to 1 over
+    // 1000 ms (elapsed * 0.001, DAT_00e155ac). Changes during a fade wait for it to end. Switching
+    // floor (another explored array) snaps: A = B = new grid.
+    ImageTexture? _fogA, _fogB;
+    byte[]? _fogGridA;
+    int _fogW, _fogH, _fogFloor = -1;
+    bool[]? _fogBits;
+    bool _fogFading;
+    ulong _fogStart;
+    float _fogT;
+
+    /// <summary>Set while a view that shows the map without fog of war is open (puzzle map).</summary>
+    public bool SuppressWarFog { get; set; }
+
+    bool[] ExploredBits(int f)
     {
-        _shroudMaterial = new ShaderMaterial { Shader = GD.Load<Shader>("res://src/Adventure/AdvShroud.gdshader") };
-        _shroudMaterial.SetShaderParameter("map_size", new Vector2(Map.TilesX, Map.TilesY) * Unit);
-        var quad = new MeshInstance3D
-        {
-            Name = "Shroud",
-            Mesh = new QuadMesh { Size = new Vector2(2, 2), FlipFaces = true },
-            MaterialOverride = _shroudMaterial,
-            CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
-            ExtraCullMargin = 16384,
-            // Its own render layer, so the puzzle map's top-down camera can leave the shroud out.
-            Layers = ShroudLayer,
-        };
-        AddChild(quad);
+        int n = Map.TilesX * Map.TilesY;
+        var player = _session.Human;
+        if (f < player.Explored.Count && player.Explored[f] is { } bits && bits.Length >= n) return bits[..n];
+        return new bool[n];
     }
 
-    /// <summary>Updates the shroud from the human player's explored tiles.</summary>
+    void SnapWarFog()
+    {
+        _fogFloor = Floor;
+        _fogBits = ExploredBits(Floor);
+        _fogGridA = WarFogGrid.Build(_fogBits, Map.TilesX, Map.TilesY, out _fogW, out _fogH);
+        var img = Image.CreateFromData(_fogW, _fogH, false, Image.Format.R8, _fogGridA);
+        if (_fogA == null || _fogA.GetWidth() != _fogW || _fogA.GetHeight() != _fogH)
+        {
+            _fogA = ImageTexture.CreateFromImage(img);
+            _fogB = ImageTexture.CreateFromImage(img);
+        }
+        else { _fogA.Update(img); _fogB!.Update(img); }
+        _fogT = 0;
+        _fogFading = false;
+    }
+
+    void PublishWarFog()
+    {
+        if (RevealAll || SuppressWarFog || _fogA == null) { Render.H5Lighting.DisableWarFog(); return; }
+        Render.H5Lighting.SetWarFog(_fogA, _fogB!, _fogT, _fogW, _fogH);
+    }
+
+    /// <summary>Re-publishes the fog of war (after the light was applied, a floor switch or a closed view).</summary>
     public void RefreshShroud()
     {
-        if (_shroudMaterial == null) return;
-        var player = _session.Human;
-        int f = Floor;
-        int w = Map.TilesX, h = Map.TilesY;
-        var data = new byte[w * h];
-        if (RevealAll) Array.Fill(data, (byte)255);
-        else if (f < player.Explored.Count && player.Explored[f] is { } bits && bits.Length >= w * h)
-            for (int i = 0; i < w * h; i++) data[i] = bits[i] ? (byte)255 : (byte)0;
-        var img = Image.CreateFromData(w, h, false, Image.Format.R8, data);
-        if (_shroudTex[f] == null) _shroudTex[f] = ImageTexture.CreateFromImage(img);
-        else _shroudTex[f]!.Update(img);
-        _shroudMaterial.SetShaderParameter("shroud", _shroudTex[f]);
+        if (_fogFloor != Floor || _fogA == null) SnapWarFog();
+        PublishWarFog();
+    }
+
+    public override void _Process(double delta)
+    {
+        // Hidden behind the town screen: the town scene owns the shader globals.
+        if (_fogA == null || !IsVisibleInTree()) return;
+        if (_fogFloor != Floor) SnapWarFog();
+        ulong now = Time.GetTicksMsec();
+        if (_fogFading)
+        {
+            ulong elapsed = now - _fogStart;
+            _fogT = Math.Clamp(elapsed * 0.001f, 0f, 1f);
+            if (elapsed > 1000) _fogFading = false;
+        }
+        else
+        {
+            var bits = ExploredBits(Floor);
+            if (!bits.AsSpan().SequenceEqual(_fogBits))
+            {
+                _fogBits = bits;
+                var grid = WarFogGrid.Build(bits, Map.TilesX, Map.TilesY, out _, out _);
+                _fogB!.Update(Image.CreateFromData(_fogW, _fogH, false, Image.Format.R8, _fogGridA!));
+                _fogA!.Update(Image.CreateFromData(_fogW, _fogH, false, Image.Format.R8, grid));
+                _fogGridA = grid;
+                _fogT = 0;
+                _fogFading = true;
+                _fogStart = now;
+            }
+        }
+        PublishWarFog();
     }
 
     public bool IsExplored(Tile t)
