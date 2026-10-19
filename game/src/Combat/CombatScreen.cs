@@ -441,6 +441,10 @@ public partial class CombatScreen : Control
 
     /// <summary>The last spell cast (damage entries name its caster) and its not yet written cast entry.</summary>
     SpellCast? _lastCast;
+    /// <summary>Engine marker for the favoured-enemy critical (exe FUN_00a5ae40) on the next strike.</summary>
+    internal const string FavoredCritical = "FAVOURED_ENEMY_CRITICAL";
+    bool _favoredHit, _criticalStrike;
+    AbilityTriggered? _pendingPurge, _lastAbility;
     string? _pendingCastLine;
     /// <summary>First Aid Tent whose heal entry waits for the Healed event.</summary>
     int? _tentHealer;
@@ -458,9 +462,16 @@ public partial class CombatScreen : Control
         _pendingCastLine = null;
     }
 
+    (int Hero, int Damage, int Dead)? _tremors;
+
     async Task Play(BattleEvent e)
     {
         var s = Session.Battle.State;
+        if (_tremors is { } tq && e is not Damaged { By: "TREMORS" })
+        {
+            if (CombatLogText.Tremors(this, tq.Hero, tq.Damage, tq.Dead) is { } tremorLine) Hud.Log.AddLine(tremorLine);
+            _tremors = null;
+        }
         CombatLogText.SetViewSide(Session.ViewSide);
         FlushCastLine(e);
         switch (e)
@@ -469,6 +480,8 @@ public partial class CombatScreen : Control
                 await FinishAttack();
                 _cine.EventEnded();
                 Hud.OnTurnStarted(t.Actor);
+                _lastAbility = _pendingPurge = null;
+                _favoredHit = _criticalStrike = false;
                 break;
 
             case PhaseChanged p:
@@ -534,6 +547,7 @@ public partial class CombatScreen : Control
                 hv.UpdatePlaque();
                 if (h.Resurrected > 0) _signs.Casualty(hv, hv.SignAnchor, h.Resurrected);
                 if (_tentHealer is int tent && CombatLogText.TentHeal(this, tent, h) is { } healLine) Hud.Log.AddLine(healLine);
+                else if (CombatLogText.Heal(this, h, _lastCast, _lastAbility) is { } spellHeal) Hud.Log.AddLine(spellHeal);
                 _tentHealer = null;
                 break;
 
@@ -558,7 +572,7 @@ public partial class CombatScreen : Control
                     if (v.Has("birth")) v.PlayAction("birth");
                     v.UpdatePlaque();
                 }
-                Hud.Log.AddLine(CombatLogText.Summoned(this, us));
+                if (CombatLogText.Summoned(this, us, _lastCast) is { } summonLine) Hud.Log.AddLine(summonLine);
                 break;
 
             case SpellCast sc:
@@ -593,13 +607,17 @@ public partial class CombatScreen : Control
                 Hud.Log.AddLine(CombatLogText.Simple(this, "Defend", df.Actor));
                 break;
 
-            case TurnSkipped ts:
-                Hud.Log.AddLine($"<body>{CombatLogText.ActorName(this, ts.Actor)}: {CombatLogText.Escape(ts.Reason)}");
+            case TurnSkipped:
+                // No CCombatLog class or spell text covers a turn lost to Blind, Sleep, Stun or diving: nothing is logged.
                 break;
 
             case AbilityTriggered at:
+                _lastAbility = at;
                 if (at.Ability == "FIRST_AID") _tentHealer = at.UnitId;
-                else if (CombatLogText.Ability(this, at) is { } abilityLine) Hud.Log.AddLine(abilityLine);
+                else if (at.Ability == FavoredCritical) _favoredHit = true;
+                else if (at.Ability == "HERO_SKILL_CRITICAL_STRIKE") _criticalStrike = true;
+                else if (at.Ability == "ABILITY_PURGER") _pendingPurge = at;
+                else if (CombatLogText.Ability(this, at, _lastCast) is { } abilityLine) Hud.Log.AddLine(abilityLine);
                 if (at.Ability == "ABILITY_DEADLY_STRIKE" && View(at.Target ?? at.UnitId) is { } dsv) _signs.Event(dsv, dsv.SignAnchor, "DeadlyStrike");
                 if (at.Ability == "CATAPULT_SHOT" && View(at.UnitId) is { } cat) await AnimateCatapult(cat);
                 break;
@@ -607,6 +625,11 @@ public partial class CombatScreen : Control
             case EffectAdded or EffectRemoved:
                 if (e is EffectAdded ea && View(ea.UnitId) is { } eav) UpdateEffectState(eav);
                 if (e is EffectRemoved er && View(er.UnitId) is { } erv) UpdateEffectState(erv);
+                if (e is EffectRemoved pr && _pendingPurge is { } purge && purge.Target == pr.UnitId)
+                {
+                    if (CombatLogText.Purged(this, purge, pr.Effect) is { } purgeLine) Hud.Log.AddLine(purgeLine);
+                    _pendingPurge = null;
+                }
                 break;
 
             case BuildingDamaged bd:
@@ -617,7 +640,7 @@ public partial class CombatScreen : Control
 
             case BattleEnded be:
                 await FinishAttack();
-                Hud.Log.AddLine(CombatLogText.Ended(this, be.Winner));
+                if (CombatLogText.Ended(this, be.Winner) is { } endLine) Hud.Log.AddLine(endLine);
                 foreach (var v in _units.Values)
                     if (!v.Dead && v.Side == be.Winner && v.Has("happy")) v.PlayAction("happy");
                 break;
@@ -811,8 +834,15 @@ public partial class CombatScreen : Control
         if (d.CountLeft > 0) v.PlayAction("hit");
         v.UpdatePlaque();
         if (d.Killed > 0) _signs.Casualty(v, v.SignAnchor, -d.Killed);
-        Hud.Log.AddLine(CombatLogText.Damage(this, d, Hud.PendingLuck, _lastCast));
+        if (d.By == "TREMORS")
+        {
+            _tremors = (d.Source, (_tremors?.Damage ?? 0) + d.Damage, (_tremors?.Dead ?? 0) + d.Killed);
+            return;
+        }
+        string? line = _criticalStrike && d.Kind == AttackKind.Hero ? CombatLogText.CriticalStrike(this, d, _favoredHit) : null;
+        if ((line ?? CombatLogText.Damage(this, d, Hud.PendingLuck, _lastCast, _favoredHit)) is { } damageLine) Hud.Log.AddLine(damageLine);
         Hud.PendingLuck = 0;
+        _favoredHit = _criticalStrike = false;
     }
 
     int _shotCount, _spellCount, _moveCount;

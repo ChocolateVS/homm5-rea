@@ -106,7 +106,8 @@ public sealed record Teleported(int UnitId, Cell From, Cell To) : BattleEvent;
 public sealed record AttackStarted(int Attacker, int Target, AttackKind Kind, string? Ability = null) : BattleEvent;
 public sealed record Missed(int Attacker, int Target, string Reason) : BattleEvent;
 public sealed record Damaged(int Target, int Damage, int Killed, int CountLeft, int TopHealth, int Source, AttackKind Kind, string? By = null) : BattleEvent;
-public sealed record Healed(int Target, int Amount, int Resurrected, int CountNow) : BattleEvent;
+/// <summary>Hit points restored (By: the healing source, as passed to Battle.Heal).</summary>
+public sealed record Healed(int Target, int Amount, int Resurrected, int CountNow, string? By = null) : BattleEvent;
 public sealed record UnitDied(int UnitId) : BattleEvent;
 public sealed record UnitSummoned(int UnitId, string CreatureId, int Count, int Side, Cell Cell, string By) : BattleEvent;
 public sealed record SpellCast(int Caster, string Spell, int? Target, Cell? Cell, IReadOnlyList<int> Affected) : BattleEvent;

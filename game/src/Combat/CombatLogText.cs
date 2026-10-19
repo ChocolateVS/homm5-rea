@@ -74,10 +74,11 @@ public static class CombatLogText
 
     // FUN_00559df0 fills only source_color, source, target_color, target, damage, dead and spell (FUN_0055a710 adds
     // element); <value=font> in the stock templates is never set, so it stays empty and the line keeps its colour.
-    static string FillEntry(CombatScreen s, string template, int? source, int? target, string? spell, int damage, int dead)
+    static string FillEntry(CombatScreen s, string template, int? source, int? target, string? spell, int damage, int dead, int? colorSide = null)
     {
         var vals = new List<(string, string)> { ("damage", damage.ToString()), ("dead", dead.ToString()), ("spell", spell ?? "") };
         if (source is int sr) { vals.Add(("source_color", Color(SideOfActor(s, sr)))); vals.Add(("source", ActorName(s, sr))); }
+        else if (colorSide is int cs) vals.Add(("source_color", Color(cs)));
         if (target is int tg) { vals.Add(("target_color", Color(SideOfActor(s, tg)))); vals.Add(("target", UnitName(s, tg))); }
         return Fill(template, vals.ToArray());
     }
@@ -89,7 +90,7 @@ public static class CombatLogText
     /// spell's per-target CCombatLogCastSpell (FUN_004e6600 / FUN_0097efd0 create it with the damage flag; selector
     /// FUN_00c9a440: damage &gt; 0 CastSpellTargetedDamage, 0 _NoDamage).
     /// </summary>
-    public static string Damage(CombatScreen s, Damaged d, int luck, SpellCast? lastCast)
+    public static string? Damage(CombatScreen s, Damaged d, int luck, SpellCast? lastCast, bool favored = false)
     {
         if (d.Kind is AttackKind.Spell or AttackKind.Other or AttackKind.Ability)
         {
@@ -99,14 +100,24 @@ public static class CombatLogText
             var texts = d.By == null ? null : AbilityLogTexts(d.By) ?? (spellId != null ? SpellLogTexts(spellId) : null);
             string? name = d.By == null ? null : Game.Instance.Db.Abilities.GetValueOrDefault(d.By)?.Name is { Length: > 0 } an ? an
                 : spellId != null ? s.SpellName(spellId) : null;
+            // Fiery Wrath / Cold Steel: CCombatLogBonusFireDamage / ColdDamage (FUN_00a5ed90 / FUN_00a5c000 build them with the
+            // attacker, target, damage and dead; selectors FUN_00c9a020 / FUN_00c9a060 take COMBAT_LOG_BONUS_ELEMENTAL_DAMAGE
+            // texts 2 and 3).
+            // Hellfire is dealt in the same function as Fiery Wrath (00a5ed90) and logs the same entry.
+            if (d.By is "FIERY_WRATH" or "COLD_STEEL" or "HELLFIRE")
+                return FillEntry(s, Template(d.By == "COLD_STEEL" ? "BonusColdDamage" : "BonusFireDamage"), src, d.Target, null, d.Damage, d.Killed);
             if (texts is { Count: > 0 } && HasDamage(texts[0]))
                 return FillEntry(s, texts[0], src, d.Target, name != null ? Escape(name) : null, d.Damage, d.Killed);
             if (spellId != null && name != null)
                 return FillEntry(s, Template(d.Damage > 0 ? "CastSpellTargetedDamage" : "CastSpellTargetedNoDamage"), src, d.Target, Escape(name), d.Damage, d.Killed);
-            return $"<body>{UnitName(s, d.Target)}: {d.Damage} damage ({d.Killed} died).";
+            // Sources without a traced entry (moat: COMBAT_LOG_MOAT_DAMAGE needs its <value=mine>; tower shots; Banish;
+            // Arcane Crystal; Armageddon rocks; scripted kills) write nothing rather than an invented line.
+            return null;
         }
         string tname = d.Kind == AttackKind.Retaliation ? "Retaliate" : "Attack";
         if (luck > 0) tname += "GoodLuck"; else if (luck < 0) tname += "BadLuck";
+        // +3 (the "Favored" texts) when the favoured-enemy critical fired (FUN_00a5ae40 result passed as the entry's +0x48).
+        if (favored) tname += "Favored";
         return FillEntry(s, Template(tname), d.Source, d.Target, null, d.Damage, d.Killed);
     }
 
@@ -117,6 +128,7 @@ public static class CombatLogText
     {
         if (by == null) return null;
         if (by == "FIRST_AID") return "SPELL_EFFECT_FIRST_AID_TENT_HEAL";
+        if (by == "ABILITY_REGENERATION") return "SPELL_EFFECT_REGENRATION";   // the stock id is misspelt
         var spells = Game.Instance.Db.Spells;
         foreach (var id in new[] { by, "SPELL_" + by, "SPELL_EFFECT_" + by, "SPELL_ABILITY_" + by })
             if (spells.ContainsKey(id)) return id;
@@ -177,22 +189,155 @@ public static class CombatLogText
     /// don't have (Purge, Hexing Attack, Whip Strike) falls back to COMBAT_LOG_APPLY_ABILITY: ApplyAbility, or
     /// ApplyAbilityTargeted with a target (FUN_00c9a240).
     /// </summary>
-    public static string? Ability(CombatScreen s, AbilityTriggered a)
+    public static string? Ability(CombatScreen s, AbilityTriggered a, SpellCast? lastCast)
     {
+        string id = a.Ability == "LAST_STAND" ? "HERO_SKILL_LAST_STAND" : a.Ability;
+        if (id.StartsWith("HERO_SKILL_", StringComparison.Ordinal) || id.StartsWith("HERO_SPEC_", StringComparison.Ordinal))
+            return HeroSkill(s, a, id, lastCast);
+        if (CreatureSpell(s, a) is { } spellLine) return spellLine;
+        // Purger names the removed spell: written when the effect goes (CombatScreen, PurgedLine).
+        if (a.Ability == "ABILITY_PURGER") return null;
         if (AbilityLogTexts(a.Ability) is { Count: > 0 } texts && !texts[0].Contains("<value=spell>"))
             return HasDamage(texts[0]) ? null : FillEntry(s, texts[0], a.UnitId, a.Target, null, 0, 0);
         var name = Game.Instance.Db.Abilities.TryGetValue(a.Ability, out var def) && def.Name.Length > 0 ? def.Name : a.Ability;
         return FillEntry(s, Template(a.Target is int ? "ApplyAbilityTargeted" : "ApplyAbility"), a.UnitId, a.Target, Escape(name), 0, 0);
     }
 
-    public static string Summoned(CombatScreen s, UnitSummoned us) =>
-        $"<body>{Color(us.Side)}{UnitName(s, us.UnitId)}<body> ({us.Count}) appear.";
-
-    public static string Ended(CombatScreen s, int? winner)
+    /// <summary>
+    /// A summon logs its spell's own text (CCombatLogSpell, spell CombatLogTexts index 0 — e.g. FUN_00861630 builds it
+    /// for Summon Elementals: caster, summoned stack as target, count as dead); summons without texts log nothing.
+    /// </summary>
+    public static string? Summoned(CombatScreen s, UnitSummoned us, SpellCast? lastCast)
     {
-        if (winner is not int w) return "<body>The battle ends in a draw.";
-        var h = s.Session.Battle.State.Heroes[w];
-        return Fill(Template("EndCombatPVP"), ("source_color", Color(w)), ("source", Escape(h.Name.Length > 0 ? h.Name : $"Player {w + 1}")));
+        if (ResolveSpell(us.By) is not { } spellId || SpellLogTexts(spellId) is not { Count: > 0 } texts) return null;
+        int? caster = lastCast != null && lastCast.Spell == spellId ? lastCast.Caster : null;
+        return FillEntry(s, texts[0], caster, us.UnitId, Escape(s.SpellName(spellId)), 0, us.Count, us.Side);
+    }
+
+    /// <summary>
+    /// Heals with their own spell text (CCombatLogSpell): Resurrect / Animate Dead "Resurrect" (spell, dead = raised),
+    /// Resurrect Allies, Lay Hands, the Hydra's regeneration (FUN_008a6e20 → SPELL_EFFECT_REGENRATION, damage = healed).
+    /// Heals whose source has no text log nothing; the tent keeps its own entry (TentHeal).
+    /// </summary>
+    public static string? Heal(CombatScreen s, Healed h, SpellCast? lastCast, AbilityTriggered? lastAbility)
+    {
+        if (h.By is null or "FIRST_AID") return null;
+        string? spellId = h.By == "RESURRECT" && lastCast != null && SpellLogTexts(lastCast.Spell) != null ? lastCast.Spell : ResolveSpell(h.By);
+        if (spellId == null || SpellLogTexts(spellId) is not { Count: > 0 } texts) return null;
+        int? caster = lastCast != null && lastCast.Spell == spellId ? lastCast.Caster : null;
+        var side = s.Session.Battle.State.Unit(h.Target)?.Side;
+        if (lastAbility != null && lastAbility.Ability == h.By)
+        {
+            // An ability's heal: its user is the source; a heal returned to the user takes the second text when there is
+            // one (Treant Union: "<target> restored <source> …, reciprocally").
+            if (h.Target == lastAbility.UnitId && lastAbility.Target is int other && texts.Count > 1)
+                return FillEntry(s, texts[1], lastAbility.UnitId, other, Escape(s.SpellName(spellId)), h.Amount, h.Resurrected);
+            caster = lastAbility.UnitId;
+        }
+        return FillEntry(s, texts[0], caster, h.Target, Escape(s.SpellName(spellId)), h.Amount, h.Resurrected, side);
+    }
+
+    static Dictionary<string, List<string>>? _skillTexts, _specTexts;
+
+    /// <summary>RPGRoot SkillTexts / SpecializationTexts (GameMechanics/RPGStats/RPGRoot.xdb), read by FUN_00bcb970 / FUN_00bcba80.</summary>
+    static List<string>? HeroTexts(string id)
+    {
+        if (_skillTexts == null)
+        {
+            _skillTexts = new(); _specTexts = new();
+            const string file = "GameMechanics/RPGStats/RPGRoot.xdb";
+            var root = Game.Instance.Xdb.Load(file).Root;
+            foreach (var item in root?.Element("SkillTexts")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+                if (item.Element("SkillID")?.Value is { } k) _skillTexts[k] = ReadTexts(item.Element("Texts"), file);
+            foreach (var item in root?.Element("SpecializationTexts")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+                if (item.Element("Specialization")?.Value is { } k) _specTexts![k] = ReadTexts(item.Element("Texts"), file);
+        }
+        return _skillTexts.GetValueOrDefault(id) ?? _specTexts!.GetValueOrDefault(id);
+    }
+
+    /// <summary>
+    /// COMBAT_LOG_HERO_USES_SKILL / _SPECIALIZATION_WORKS have no texts of their own: CCombatLogHeroUsesSkill (+0x4c skill,
+    /// +0x50 index) takes RPGRoot SkillTexts[skill][index] (selector FUN_00c999d0 → FUN_00bcb970), CCombatLogSpecializationWorks
+    /// SpecializationTexts (FUN_00c999e0 → FUN_00bcba80). Only the exe's call sites build them: Tap Runes 00419730, Stunning
+    /// Blow / Critical Strike / Offender 008cf270, Last Stand 00a594f0, Elemental Balance 00861630 / 00862130, Magic Mirror
+    /// 00983150, Lucky Spells 00983790, Remote Control 00bc0a30, Shake Ground 0097d7b0, Exploding Corpses 0097b690, Demonic
+    /// Rage 00a5b9d0, Sacred Hammer 00bbebd0 — any other skill logs nothing.
+    /// </summary>
+    static string? HeroSkill(CombatScreen s, AbilityTriggered a, string id, SpellCast? lastCast)
+    {
+        if (HeroTexts(id) is not { Count: > 0 } t || t[0].Length == 0) return null;
+        var st = s.Session.Battle.State;
+        switch (id)
+        {
+            case "HERO_SKILL_LAST_STAND":
+                return FillEntry(s, t[0], null, a.UnitId, null, 0, 0);
+            case "HERO_SKILL_MAGIC_MIRROR":   // the mirrored spell is the one just cast
+                return FillEntry(s, t[0], a.UnitId, a.Target, lastCast != null ? Escape(s.SpellName(lastCast.Spell)) : null, 0, 0);
+            case "HERO_SKILL_ELEMENTAL_BALANCE":
+                return FillEntry(s, t[0], a.UnitId, a.Target, null, 0, a.Target is int u && st.Unit(u) is { } su ? su.Count : 0);
+            case "HERO_SPEC_SACRED_HAMMER":
+                var hammer = Game.Instance.Db.Stats.Str("combat/HeroSpecializations/Runemage/SacredHammer_SpellToCast", "SPELL_BLOODLUST");
+                return FillEntry(s, t[0], a.UnitId, a.Target, hammer.Length > 0 ? Escape(s.SpellName(hammer)) : null, 0, 0);
+            case "HERO_SKILL_CRITICAL_STRIKE":
+                return null;   // the strike's damage entry uses the text (CombatScreen)
+            default:
+                return FillEntry(s, t[0], a.UnitId, a.Target, null, 0, 0);
+        }
+    }
+
+    /// <summary>Shake Ground (Tremors): one SkillTexts entry for the whole quake (0097d7b0 → 0097e6f3) with the total damage and dead.</summary>
+    public static string? Tremors(CombatScreen s, int hero, int damage, int dead) =>
+        HeroTexts("HERO_SKILL_SHAKE_GROUND") is { Count: > 0 } t ? FillEntry(s, t[0], hero, null, null, damage, dead) : null;
+
+    /// <summary>Hero strike with Excruciating Strike: SkillTexts HERO_SKILL_CRITICAL_STRIKE (008cfa47, index 1 against a favoured enemy).</summary>
+    public static string? CriticalStrike(CombatScreen s, Damaged d, bool favored) =>
+        HeroTexts("HERO_SKILL_CRITICAL_STRIKE") is { Count: > 0 } t
+            ? FillEntry(s, t[Math.Min(favored ? 1 : 0, t.Count - 1)], d.Source, d.Target, null, d.Damage, d.Killed) : null;
+
+    /// <summary>
+    /// Spells a creature puts on its target with an on-hit ability log that ability's text, with the spell named where the
+    /// text asks for it (Hexing Attack, Whip Strike): CCombatLogCombatAbility index 0 (FUN_00c99fa0).
+    /// </summary>
+    static readonly (string Ability, string[] Spells)[] SpellAbilities =
+    {
+        ("ABILITY_HEXING_ATTACK", new[] { "SPELL_CURSE", "SPELL_SLOW", "SPELL_WEAKNESS", "SPELL_DISRUPTING_RAY" }),
+        ("ABILITY_WHIP_STRIKE", new[] { "SPELL_SLOW", "SPELL_WEAKNESS", "SPELL_BERSERK" }),
+        ("ABILITY_CURSING_ATTACK", new[] { "SPELL_CURSE" }),
+        ("ABILITY_BLINDING_ATTACK", new[] { "SPELL_BLIND" }),
+        ("ABILITY_SORROW_STRIKE", new[] { "SPELL_SORROW" }),
+    };
+
+    static string? CreatureSpell(CombatScreen s, AbilityTriggered a)
+    {
+        if (!Game.Instance.Db.Spells.ContainsKey(a.Ability) || s.Session.Battle.State.Unit(a.UnitId) is not { } u) return null;
+        foreach (var (ability, spells) in SpellAbilities)
+            if (u.Abilities.Contains(ability) && spells.Contains(a.Ability) && AbilityLogTexts(ability) is { Count: > 0 } t)
+                return FillEntry(s, t[0], a.UnitId, a.Target, Escape(s.SpellName(a.Ability)), 0, 0);
+        return null;
+    }
+
+    /// <summary>Purger: "&lt;spell&gt; is purged from &lt;target&gt;" with the removed effect's spell.</summary>
+    public static string? Purged(CombatScreen s, AbilityTriggered a, string effect) =>
+        AbilityLogTexts("ABILITY_PURGER") is { Count: > 0 } t && Game.Instance.Db.Spells.ContainsKey(effect)
+            ? FillEntry(s, t[0], a.UnitId, a.Target, Escape(s.SpellName(effect)), 0, 0) : null;
+
+    /// <summary>
+    /// COMBAT_LOG_END_COMBAT (CCombatLogEndCombat, FUN_00af6680 → FUN_00c9af60 with the winner's and the loser's heroes;
+    /// selector FUN_00c9a300): both heroes → EndCombatPVP, no losing hero → EndCombatWin ("&lt;source&gt; wins"), no
+    /// winning hero → EndCombatDefeat ("&lt;target&gt; is defeated"). The exe always names a winner (FUN_00af2380 picks one
+    /// when the combat ends without), so a draw writes nothing here.
+    /// </summary>
+    public static string? Ended(CombatScreen s, int? winner)
+    {
+        if (winner is not int w) return null;
+        var st = s.Session.Battle.State;
+        var wh = st.Heroes[w]; var lh = st.Heroes[1 - w];
+        string Name(int side) => Escape(st.Heroes[side].Name);
+        if (wh.Present)
+            return Fill(Template(lh.Present ? "EndCombatPVP" : "EndCombatWin"), ("source_color", Color(w)), ("source", Name(w)));
+        if (lh.Present)
+            return Fill(Template("EndCombatDefeat"), ("target_color", Color(1 - w)), ("target", Name(1 - w)));
+        return null;
     }
 }
 

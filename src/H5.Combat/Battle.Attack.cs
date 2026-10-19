@@ -419,7 +419,10 @@ public sealed partial class Battle
         // when luck is normal or good, and with 1.0 on bad luck.
         if (!hit.Secondary && ah.FavoriteEnemies.Count > 0 && IsFavoredEnemy(ah, t) && hit.FixedRoll == null
             && S.Rng.Chance(0.4 + (ah.HasPerk("HERO_SKILL_CUNNING_OF_THE_WOODS") ? 0.1 : 0)))
+        {
             luckMult = luckMult >= 1 ? luckMult + 1 : 1;
+            Emit(new AbilityTriggered(a.Id, "FAVOURED_ENEMY_CRITICAL", t.Id));   // the log's "Favored" texts (FUN_00a5ae40 result)
+        }
 
         // ---- attacker stage (exe 00a58de0), starting from the luck multiplier
         double m = luckMult * hit.Multiplier;
@@ -1088,14 +1091,14 @@ public sealed partial class Battle
             int healed = total - u.TotalHealth;
             if (healed <= 0) return 0;
             SetTotalHealth(u, total);
-            Emit(new Healed(u.Id, healed, u.Count - before, u.Count));
+            Emit(new Healed(u.Id, healed, u.Count - before, u.Count, by));
             return healed;
         }
         if (u.Count <= 0) return 0;
         int h = Math.Min(amount, max - u.TopHealth);
         if (h <= 0) return 0;
         u.TopHealth += h;
-        Emit(new Healed(u.Id, h, 0, u.Count));
+        Emit(new Healed(u.Id, h, 0, u.Count, by));
         return h;
     }
 
