@@ -64,7 +64,22 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
         L.ErrorReported = (msg, label) => Errors.Add($"{label}: {msg}");
         game.ScriptHooks = this;
         game.CommandSink = Apply;
+        NameUnnamedObjects();
     }
+
+    /// <summary>
+    /// World objects left unnamed in the editor get "floor-x-y-tag-id" at creation
+    /// (H5_Game.exe FUN_00ce1020: "%i-%i-%i-%s-%i" with the cell, the class part of the object's
+    /// DBID such as AdvMapMonster, and the world object id, here the map index). Scripts see
+    /// every object by name (GetObjectNamesByType returns them).
+    /// </summary>
+    void NameUnnamedObjects()
+    {
+        foreach (var o in Map.Objects)
+            if (o.Name.Length == 0 && o.Kind != ObjectKind.Hero) o.Name = AutoName(o, o.Tag);
+    }
+
+    static string AutoName(MapObject o, string dbClass) => $"{o.Pos.Floor}-{o.Pos.X}-{o.Pos.Y}-{dbClass}-{o.Index}";
 
     /// <summary>Creates the host for a map opened from the game data (or an .h5m).</summary>
     public static AdventureScripting Create(H5.Adventure.Engine.Adventure game, MapFiles files, EnumTables ids, SharedCatalog catalog)
@@ -398,12 +413,13 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
 
     public bool InterceptVisit(HeroState hero, MapObject obj)
     {
-        if (!World.DisabledObjects.TryGetValue(obj.Index, out var mode)) return false;
+        if (!World.DisabledObjects.ContainsKey(obj.Index)) return false;
         // Disabled objects are "touched" (OBJECT_TOUCH fires from the ObjectVisited event the engine
-        // emits); heroes touching a disabled hero fire HERO_TOUCH.
+        // emits); heroes touching a disabled hero fire HERO_TOUCH. Nothing else happens: the
+        // SetDisabledObjectMode mode only selects the cursor (CSetDisabledObjectModeCmd 0x0042a1d0).
         if (obj.Kind == ObjectKind.Hero && obj.Hero?.Shared?.Id is { } heroName)
             Fire(TriggerTypes.HeroTouch, heroName, null, hero.DefId, heroName);
-        return mode != 1 || obj.Kind != ObjectKind.Monster; // DISABLED_ATTACK still fights monsters
+        return true;
     }
 
     public bool StopMovementAt(HeroState hero, Tile from, Tile to)

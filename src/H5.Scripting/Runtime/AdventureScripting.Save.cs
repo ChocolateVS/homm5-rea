@@ -60,6 +60,10 @@ public sealed partial class AdventureScripting
             if (index < Map.Objects.Count) Game.RestorePlacement(index, new Tile(p.X, p.Y, p.Floor), p.Rot);
         foreach (var (index, mc) in World.MonsterMoods)
             if (index < Map.Objects.Count && mc.Split('|') is [var mood, var courage]) { Map.Objects[index].Mood = mood; Map.Objects[index].Courage = courage; }
+        foreach (var (key, v) in World.Settings)
+            if (key.StartsWith("dwelling_replaced:", StringComparison.Ordinal) && int.TryParse(key["dwelling_replaced:".Length..], out var di)
+                && di < Map.Objects.Count && v.Split('|')[0] is { } dp && dp.Contains('/'))
+                ApplyDwellingShared(Map.Objects[di], dp, reset: false);
         Game.RestoreRemovedBlocking();
 
         LuaSnapshot.FromJson(data.Lua).Restore(L);

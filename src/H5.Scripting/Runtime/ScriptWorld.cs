@@ -41,12 +41,14 @@ public sealed class ScriptWorld
 {
     /// <summary>Objective states keyed by "name" (common, per player) as "name|player".</summary>
     public Dictionary<string, ObjectiveState> Objectives = new(StringComparer.Ordinal);
-    /// <summary>Region name → players (1-based) for whom it is blocked; 0 = every player.</summary>
+    /// <summary>Region name → players (1-based) for whom it is blocked (0 = every player, older saves).</summary>
     public Dictionary<string, HashSet<int>> BlockedRegions = new(StringComparer.Ordinal);
     /// <summary>Trigger key ("type|filter") → handler function name.</summary>
     public Dictionary<string, string> Triggers = new(StringComparer.Ordinal);
-    /// <summary>Objects disabled by SetObjectEnabled (map index) → DISABLED_* mode.</summary>
+    /// <summary>Objects disabled by SetObjectEnabled (map index); the value is unused (see DisabledModes).</summary>
     public Dictionary<int, int> DisabledObjects = new();
+    /// <summary>SetDisabledObjectMode: cursor mode per object index (DISABLED_DEFAULT..DISABLED_BLOCKED), independent of the enabled state.</summary>
+    public Dictionary<int, int> DisabledModes = new();
     /// <summary>Global game variables (SetGameVar), shared across a campaign.</summary>
     public Dictionary<string, string> GameVars = new(StringComparer.Ordinal);
     /// <summary>Regions each hero is currently inside (hero id → region names), for enter/exit triggers.</summary>
@@ -78,6 +80,8 @@ public sealed class PendingScriptCombat
 {
     public string Hero = "";
     public string FinishTrigger = "", CombatScript = "", Arena = "";
+    /// <summary>StartCombat's allowQuickCombat (any non-nil value).</summary>
+    public bool AllowQuickCombat;
 }
 
 public sealed class ObjectPlacement

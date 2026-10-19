@@ -139,6 +139,27 @@ public sealed partial class Adventure
 
     public void ScriptReveal(int player, Tile center, int radius) => Reveal(PlayerByIndex(player), center, radius);
 
+    /// <summary>OpenRegionFog (CModifyPlayerFogCmd): explores exactly the given cells.</summary>
+    public void ScriptRevealTiles(int player, IEnumerable<Tile> tiles)
+    {
+        var p = PlayerByIndex(player);
+        if (p == null) return;
+        foreach (var g in tiles.GroupBy(t => t.Floor))
+        {
+            var f = Map.Floor(g.Key);
+            if (f == null || g.Key >= p.Explored.Count) continue;
+            var ex = p.Explored[g.Key];
+            int n = 0;
+            foreach (var t in g)
+            {
+                if (!f.InBounds(t.X, t.Y)) continue;
+                int i = t.Y * f.Width + t.X;
+                if (!ex[i]) { ex[i] = true; n++; }
+            }
+            if (n > 0) Emit(new TilesRevealed(p.Index, g.Key, n));
+        }
+    }
+
     public void ScriptJoinArmy(HeroState h, List<Stack> creatures) => JoinArmy(h, creatures);
 
     /// <summary>Starts a battle like StartCombat/SiegeTown: the pending battle is resolved by the client or QuickCombat.</summary>
