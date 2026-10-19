@@ -93,7 +93,7 @@ public partial class AdventureScreen
         }
         if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } mb && !mb.CtrlPressed)
         {
-            if (TileAt(mb.Position) is { } tile) AdvClick(tile, mb.DoubleClick);
+            if (TileAt(mb.Position) is { } tile) AdvClick(tile, mb.DoubleClick, mb.Position);
             return true;
         }
         return false;
@@ -164,7 +164,7 @@ public partial class AdventureScreen
     /// double clicking moves the hero.</item>
     /// </list>
     /// </summary>
-    void AdvClick(Tile tile, bool doubleClick)
+    void AdvClick(Tile tile, bool doubleClick, Vector2 screen)
     {
         if (InputLocked) return;
         var s = Session.S;
@@ -194,7 +194,6 @@ public partial class AdventureScreen
             if (Selected == null) { World.Camera.CenterOn(town.Pos); return; }
         }
         if (Selected is not { } hero) return;
-        if (_plotted == tile) { SendMove(hero, tile); return; }
-        Plot(hero, tile);
+        ClickTarget(hero, tile, screen);
     }
 }

@@ -356,13 +356,13 @@ public partial class AdventureScreen : Control
         Plot(hero, tile);
     }
 
-    void Plot(HeroState hero, Tile dest)
+    void Plot(HeroState hero, Tile dest, bool? fightAtEnd = null)
     {
         var path = Session.Game.FindPath(hero, dest);
         if (Verbose) GD.Print($"[H5] plot hero {hero.Id} at {hero.Pos} → {dest}: {(path == null ? "no path" : $"{path.Count} steps")}");
         if (path == null || path.Count == 0) { World.ClearPath(); _plotted = null; return; }
         _plotted = dest;
-        bool fight = IsFight(hero, dest);
+        bool fight = fightAtEnd ?? IsFight(hero, dest);
         int mp = hero.MovePoints;
         var steps = new List<(Tile, AdvWorld.Marker)>();
         var prev = hero.Pos;
@@ -440,21 +440,13 @@ public partial class AdventureScreen : Control
         }
         var tile = TileAt(mouse);
         _hover = tile;
-        if (tile is not { } t || InputLocked || Selected is not { } hero || !World.IsExplored(t)) { AdvCursors.Set(AdvCursor.Default); return; }
-        var s = Session.S;
-        if (s.Heroes.Any(h => h.Alive && !h.Garrisoned && h.Pos == t && h.Owner == hero.Owner))
-        {
-            AdvCursors.Set(s.Heroes.First(h => h.Alive && h.Pos == t).Id == hero.Id ? AdvCursor.Default : AdvCursor.MeetHeroes);
-            return;
-        }
-        var path = Session.Game.FindPath(hero, t);
-        if (path == null) { AdvCursors.Set(AdvCursor.Default); return; }
-        int days = DaysTo(hero, path);
-        if (IsFight(hero, t)) AdvCursors.Set(AdvCursor.Attack, days);
-        else if (Session.Game.TownAt(t) is { } town) AdvCursors.Set(town.Owner == hero.Owner ? AdvCursor.Town : AdvCursor.Attack, days);
-        else if (Session.Map.Objects.Any(o => o.Kind != ObjectKind.Static && o.ActiveTiles.Contains(t) && !(s.Objects.TryGetValue(o.Index, out var os) && os.Removed)))
-            AdvCursors.Set(AdvCursor.Use, days);
-        else AdvCursors.Set(Water.BoatLayer.MoveCursor(Session.Game, hero, t), days);
+        // 0059e1f0: input locked → CURSOR_WAIT (actions 1/2), spell aiming → CURSOR_CAST (action 9),
+        // no pick (outside the map) → CURSOR_CANT_CAST.
+        if (InputLocked) { AdvCursors.Set(AdvCursor.Wait); return; }
+        if (_pendingSpell != null) { AdvCursors.Set(AdvCursor.Cast); return; }
+        if (tile is not { } t || !World.IsExplored(t)) { AdvCursors.Set(AdvCursor.CantGo); return; }
+        var target = HoverTarget(mouse, t);
+        AdvCursors.Set(CursorFor(target.Action), target.Days + 1);
     }
 
     // ---------------------------------------------------------------- frame loop / playback
@@ -470,7 +462,7 @@ public partial class AdventureScreen : Control
     {
         var tile = TileAt(screen);
         if (Verbose) GD.Print($"[H5] click {screen} → tile {tile?.ToString() ?? "none"}, selected hero {SelectedHeroId}, locked {InputLocked}");
-        if (tile is { } t) Click(t, false);
+        if (tile is { } t) AdvClick(t, false, screen);
     }
 
     void DrawFakeCursor()
@@ -478,8 +470,8 @@ public partial class AdventureScreen : Control
         if (FakeMouse is not { } p) return;
         _fakeCursor ??= new TextureRect { Name = "FakeCursor", MouseFilter = MouseFilterEnum.Ignore, ZIndex = 100 };
         if (_fakeCursor.GetParent() == null) AddChild(_fakeCursor);
-        var (c, days) = AdvCursors.Current;
-        if (AdvCursors.Texture(c, days) is { } cur)
+        var (c, days, red) = AdvCursors.Current;
+        if (AdvCursors.Texture(c, days, red) is { } cur)
         {
             _fakeCursor.Texture = cur.Tex;
             _fakeCursor.Size = cur.Tex.GetSize();
@@ -489,6 +481,7 @@ public partial class AdventureScreen : Control
 
     public override void _Process(double delta)
     {
+        DevHoverStep();
         UpdateHover();
         DrawFakeCursor();
         if (_playing || _modal > 0) return;

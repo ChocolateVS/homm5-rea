@@ -213,6 +213,7 @@ public static partial class AdventureLauncher
         if (arg == "--adventure-reveal") { AdvWorld.RevealAll = true; return true; }
         if (arg == "--adventure-go") { _go = true; return true; }
         if (arg == "--adventure-verbose") { AdventureScreen.Verbose = true; return true; }
+        if (arg.StartsWith("--adventure-hover=")) { AdventureScreen.DevHover = arg["--adventure-hover=".Length..]; return true; }
         if (arg.StartsWith("--adventure-fake-mouse="))
         {
             var p = arg["--adventure-fake-mouse=".Length..].Split(',');

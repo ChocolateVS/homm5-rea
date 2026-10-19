@@ -213,6 +213,38 @@ public partial class AdvWorld : Node3D
         return null;
     }
 
+    readonly Dictionary<Mesh, TriangleMesh?> _pickMeshes = new();
+
+    /// <summary>
+    /// The map object whose model the mouse ray hits first (the visual pick of 005913b0, which the
+    /// adventure hover/click handlers prefer over the tile under the cursor), or −1. Models are tested
+    /// in their bind pose; static decorations (MultiMesh) are not pickable, as the exe ignores statics.
+    /// </summary>
+    public int PickObject(Vector3 origin, Vector3 dir)
+    {
+        int best = -1;
+        float bestDist = float.MaxValue;
+        foreach (var (index, node) in _objects)
+        {
+            if (!node.IsInsideTree() || !node.IsVisibleInTree() || Map.Objects[index].Pos.Floor != Floor) continue;
+            foreach (var mi in node.FindChildren("*", nameof(MeshInstance3D), true, false).OfType<MeshInstance3D>())
+            {
+                if (mi.Mesh is not { } mesh) continue;
+                var inv = mi.GlobalTransform.AffineInverse();
+                var lo = inv * origin;
+                var ld = inv.Basis * dir;
+                if (mesh.GetAabb().IntersectsSegment(lo, lo + ld * 100000f) == null) continue;
+                if (!_pickMeshes.TryGetValue(mesh, out var tri)) _pickMeshes[mesh] = tri = mesh.GenerateTriangleMesh();
+                if (tri == null) continue;
+                var hit = tri.IntersectRay(lo, ld);
+                if (hit.Count == 0 || !hit.ContainsKey("position")) continue;
+                float d = (mi.GlobalTransform * hit["position"].AsVector3() - origin).Length();
+                if (d < bestDist) { bestDist = d; best = index; }
+            }
+        }
+        return best;
+    }
+
     public void SetFloor(int floor)
     {
         if (Map.Floor(floor) == null) floor = Map.Floor(0) != null ? 0 : 1;
