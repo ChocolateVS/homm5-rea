@@ -45,10 +45,17 @@ public class NewAbilityTests(GameDataFixture f)
         var h = s.Heroes[0];
         var druid = BattleSetup.AddCreature(f.Db, s, 0, "CREATURE_HIGH_DRUID", 40, new Cell(0, 0), summoned: false);
         var sp = f.Db.Spell("SPELL_LIGHTNING_BOLT")!;
+        b.Begin();
         double before = b.HeroSpellPower(h, sp);
-        h.Links[Ab.PowerFeed] = druid.Id;
+        s.Active = druid.Id;
+        var r = b.Apply(new UseAbilityCmd(druid.Id, Ab.PowerFeed) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
         double after = b.HeroSpellPower(h, sp);
-        Assert.Equal(Math.Min(Battle.CreatureSpellPower(40, druid.WeeklyGrowth), h.Knowledge), after - before, 3);
+        double value = Math.Min(Battle.CreatureSpellPower(40, druid.WeeklyGrowth), h.Knowledge);
+        Assert.Equal(value, after - before, 3);
+        // exe 00985559: stored once at the cast — losing creatures does not lower it; the stack's death ends it.
+        druid.Count = 1;
+        Assert.Equal(value, b.HeroSpellPower(h, sp) - before, 3);
         druid.Count = 0;
         Assert.Equal(before, b.HeroSpellPower(h, sp), 3);
     }

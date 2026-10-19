@@ -288,6 +288,13 @@ public sealed partial class Battle
         double luckMult = hit.NoLuck ? 1 : RollLuck(a, t);
 
         var targets = pattern ? StrikeTargets(a, t, hit, ranged, extraAdjacentAll) : new List<(Unit U, double Factor)> { (t, 1) };
+        // Chain Shot (exe 00a6748a → FUN_00a64ad0): a shot's targets are the chain instead, each with its share of ONE roll.
+        List<double>? chainRolls = null;
+        if (ranged && HasAbilityNow(a, Ab.ChainShot))
+        {
+            targets = ChainShotTargets(a, t).Select(u => (u, 1.0)).ToList();
+            chainRolls = ChainShotRolls(a, t, hit, targets.Select(x => x.U).ToList());
+        }
         // Lightning Breath (exe 00a67b2c–00a67ba5): outside retaliations ONE base roll is divided by the number of
         // targets (the main target included) and every target is struck with that share.
         double? sharedRoll = null;
@@ -296,8 +303,9 @@ public sealed partial class Battle
 
         int primaryDamage = 0, primaryKilled = 0;
         bool stunned = false;
-        foreach (var (target, factor) in targets)
+        for (int ti = 0; ti < targets.Count; ti++)
         {
+            var (target, factor) = targets[ti];
             if (!target.Alive) continue;
             bool primary = target.Id == t.Id;
             if (IncorporealMiss(a, target, ranged))
@@ -314,7 +322,7 @@ public sealed partial class Battle
             {
                 Kind = hit.Kind == AttackKind.Retaliation && ranged ? AttackKind.Retaliation : hit.Kind,
                 CellsWalked = hit.CellsWalked, Multiplier = hit.Multiplier, Secondary = !primary,
-                FixedRoll = hit.FixedRoll, IgnoreDefence = hit.IgnoreDefence, TotalRoll = sharedRoll ?? hit.TotalRoll,
+                FixedRoll = hit.FixedRoll, IgnoreDefence = hit.IgnoreDefence, TotalRoll = chainRolls?[ti] ?? sharedRoll ?? hit.TotalRoll,
             };
             int dmg = ComputeDamage(a, target, h, ranged, luckMult);
             // The pattern share is applied to the already truncated damage and truncated again (exe 00a67bf3).
@@ -608,23 +616,21 @@ public sealed partial class Battle
         }
         else
         {
+            // Death Cloud (exe FUN_00a64830 special 0xa9 → FUN_00a5fde0 / 0097a530 case 0xa9): the 3x3 area around the aimed
+            // cell (the target's exe cell), both sides; Undead skipped unless covering the aimed cell; every victim that
+            // does not cover the aimed cell takes ×0.5 (DAT_00e0ab70, 00a5fe40–00a5fe72).
             if (HasAbilityNow(a, Ab.DeathCloud))
-                foreach (var o in S.Living.Where(o => o.Id != t.Id && !IsUndeadLike(o) && !o.IsObject && Distance(o, t) <= 1 && CellsWithin(o, t, 1)))
-                    Add(o, 0.5, enemiesOnly: false);
+            {
+                var aim = ExePos(t);
+                bool Covers(Unit o) => o.Cells().Contains(aim);
+                foreach (var o in S.Living.Where(o => o.Id != t.Id && !o.IsObject && o.Cells().Any(c => c.Chebyshev(aim) <= 1)
+                                                     && (!IsUndeadLike(o) || Covers(o))))
+                    Add(o, Covers(o) ? 1 : 0.5, enemiesOnly: false);
+            }
             if (HasAbilityNow(a, Ab.MagicAttack))
                 foreach (var c in LineCells(a.Pos, t.Pos))
                     if (S.At(c) is { } lu && !EldritchFlag(lu)) Add(lu, 1, enemiesOnly: false);   // exe FUN_00a62030: flag 0x1000 skipped
-            if (HasAbilityNow(a, Ab.ChainShot) && !t.Has(Ab.Demonic))
-            {
-                double f = 0.5; var last = t;
-                for (int i = 0; i < 3; i++)
-                {
-                    var next = S.Living.Where(o => Controller(o) != Controller(a) && !seen.Contains(o.Id) && !o.Has(Ab.Demonic) && !o.IsObject)
-                        .OrderBy(o => Distance(o, last)).ThenBy(o => o.Id).FirstOrDefault();
-                    if (next == null) break;
-                    Add(next, f); f *= 0.5; last = next;
-                }
-            }
+            // Chain Shot is resolved in Strike (exe FUN_00a64ad0), not as a pattern.
         }
         return list;
     }

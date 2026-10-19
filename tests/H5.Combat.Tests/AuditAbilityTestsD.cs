@@ -254,4 +254,58 @@ public class AuditAbilityTestsD(GameDataFixture f)
         Assert.True(Offered("CREATURE_GOBLIN"));
         Assert.False(Offered("CREATURE_GOBLIN_TRAPPER"));
     }
+
+    [Fact]
+    public void ChainShotSharesOneRollHalvingDownTheChainAndSkipsInfernoCreatures()   // FUN_00a64ad0, FUN_00a5dbb0
+    {
+        // Main target an Imp (Inferno is allowed as the main target), then the nearest non-Inferno stacks.
+        var b = f.Duel("CREATURE_INFERNAL_SUCCUBUS", 10, "CREATURE_IMP", 100, 1, new Cell(2, 5), new Cell(6, 5));
+        var p1 = Add(b, 1, "CREATURE_PEASANT", 200, new Cell(6, 7));
+        var imp2 = Add(b, 1, "CREATURE_IMP", 100, new Cell(7, 5));      // nearest to the main target, but Inferno
+        var p2 = Add(b, 1, "CREATURE_PEASANT", 200, new Cell(6, 9));
+        b.Begin();
+        var u = b.State.Units[0]; var main = b.State.Units[1];
+        u.BaseMinDamage = u.BaseMaxDamage = 10;   // roll = 100
+        main.RetaliationsLeft = 0;
+        int d0 = b.ComputeDamage(u, main, new Battle.Hit { Kind = AttackKind.Ranged, TotalRoll = 100 }, true);
+        int d1 = b.ComputeDamage(u, p1, new Battle.Hit { Kind = AttackKind.Ranged, TotalRoll = 50 }, true);
+        int d2 = b.ComputeDamage(u, p2, new Battle.Hit { Kind = AttackKind.Ranged, TotalRoll = 25 }, true);
+        b.State.Active = u.Id;
+        var r = b.Apply(new ShootCmd(u.Id, main.Id) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        int Dmg(Unit x) => r.Events.OfType<Damaged>().Where(e => e.Target == x.Id).Sum(e => e.Damage);
+        Assert.Equal(d0, Dmg(main));
+        Assert.Equal(d1, Dmg(p1));
+        Assert.Equal(d2, Dmg(p2));
+        Assert.Equal(0, Dmg(imp2));
+    }
+
+    [Fact]
+    public void BondOfLightSkipsAntiMagicAndTeleportAndKeepsAHigherMastery()   // FUN_00983790 (00983ee3–00984058)
+    {
+        var b = f.Duel("CREATURE_PEASANT", 10, "CREATURE_PEASANT", 10, 1, new Cell(1, 1), new Cell(10, 8));
+        var unicorn = Add(b, 0, "CREATURE_WHITE_UNICORN", 5, new Cell(1, 5));
+        b.Begin();
+        var t = b.State.Units[0];
+        b.AddEffect(t, new Effect { Id = "SPELL_ANTI_MAGIC", Positive = true, Remaining = 3, School = "MAGIC_SCHOOL_LIGHT", SpellLevel = 3, Mastery = Mastery.Expert });
+        Assert.False(unicorn.HasEffect("SPELL_ANTI_MAGIC"));
+        b.AddEffect(t, new Effect { Id = "SPELL_BLESS", Positive = true, Remaining = 3, School = "MAGIC_SCHOOL_LIGHT", SpellLevel = 1, Mastery = Mastery.Ultimate });
+        Assert.Equal(Mastery.Ultimate, unicorn.GetEffect("SPELL_BLESS")?.Mastery);
+    }
+
+    [Fact]
+    public void DeathCloudIsTheThreeByThreeAroundTheAimedCell()   // FUN_00a5fde0 (00a5fe40), 0097a530 case 0xa9
+    {
+        // 2x2 target at (6,4) is aimed at its exe cell (7,5): the cloud covers x 6..8, y 4..6.
+        var b = f.Duel("CREATURE_LICH", 10, "CREATURE_CAVALIER", 10, 1, new Cell(1, 1), new Cell(6, 4));
+        var inside = Add(b, 1, "CREATURE_PEASANT", 200, new Cell(8, 6));
+        var outside = Add(b, 1, "CREATURE_PEASANT", 200, new Cell(5, 6));   // next to (6,5) but 2 from (7,5)
+        b.Begin();
+        var u = b.State.Units[0];
+        b.State.Active = u.Id;
+        var r = b.Apply(new ShootCmd(u.Id, b.State.Units[1].Id) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        Assert.True(Hit(r, inside));
+        Assert.False(Hit(r, outside));
+    }
 }

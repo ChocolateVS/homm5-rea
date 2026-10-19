@@ -176,4 +176,60 @@ public sealed partial class Battle
             Strike(u, target, new Hit { Kind = AttackKind.Melee, Multiplier = mult, NoLuck = true }, pattern: true);
         }
     }
+
+    /// <summary>
+    /// Chain Shot order (exe FUN_00a5dbb0 with filter LAB_00a59ba0): the main target first, then up to 3 more, each the
+    /// candidate nearest (vf 0x118; the engine's stack distance) to the LAST chained stack among the living stacks of the
+    /// other side not yet chained, objects (vf 0x7c) and creatures of TOWN_INFERNO (creature +0x98 == 8, FUN_004ba910)
+    /// excluded; ties are broken by the battle RNG (two Range(0, n−1) draws, the second one picks).
+    /// </summary>
+    List<Unit> ChainShotTargets(Unit a, Unit t)
+    {
+        var chain = new List<Unit> { t };
+        for (int k = 0; k < 3; k++)
+        {
+            var last = chain[^1];
+            var cand = S.Living.Where(o => Controller(o) != Controller(a) && !o.IsObject && o.Town != Towns.Inferno && !chain.Contains(o)).ToList();
+            if (cand.Count == 0) break;
+            int best = cand.Min(o => Distance(o, last));
+            var tied = cand.Where(o => Distance(o, last) == best).ToList();
+            S.Rng.Range(0, tied.Count - 1);
+            chain.Add(tied[S.Rng.Range(0, tied.Count - 1)]);
+        }
+        return chain;
+    }
+
+    /// <summary>
+    /// Chain Shot damage (exe FUN_00a64ad0): the base roll is made once (FUN_00a597a0 against the main target); starting
+    /// from twice the roll, each chained target in turn multiplies the running value by its own range penalty
+    /// (FUN_00a5c5a0, so the penalties compound down the chain) and by 0.5 (DAT_00e0ab70), single precision; that value
+    /// enters the target's damage stages. Returned as the roll each target is struck with (its own range penalty is
+    /// applied again inside ComputeDamage, so it is divided out here).
+    /// </summary>
+    List<double> ChainShotRolls(Unit a, Unit t, Hit hit, List<Unit> chain)
+    {
+        var rolls = new List<double>();
+        float running = (float)(2 * BaseDamageRoll(a, t, hit, ranged: true));
+        foreach (var u in chain)
+        {
+            double pen = RangePenaltyFactor(a, u);
+            running = (float)(running * pen);
+            running = (float)(running * 0.5);
+            rolls.Add(running / pen);
+        }
+        return rolls;
+    }
+
+    /// <summary>The ranged distance / wall penalty factor of ComputeDamage (exe FUN_00a5c5a0).</summary>
+    double RangePenaltyFactor(Unit a, Unit t)
+    {
+        double m = 1;
+        if (!a.IsWarMachine && !HasAbilityNow(a, Ab.NoRangePenalty) && !HasAbilityNow(a, Ab.RangePenalty))
+        {
+            int half = S.Width / 2;
+            if (NearestCellDistanceSq(a, t) > half * half) m *= 0.5;
+        }
+        if (ShotCrossesWalls(a, t)) m *= 0.5;
+        return m;
+    }
 }

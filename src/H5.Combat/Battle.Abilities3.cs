@@ -35,8 +35,11 @@ public sealed partial class Battle
             {
                 // Hero Spell Power + the creature's own spell power, capped by the hero's Knowledge,
                 // until the end of combat or the creature's death; not cumulative.
+                // exe 00985559: the value min(hero Knowledge, the stack's spell power) is computed ONCE here and stored as
+                // the hero's permanent effect 0x14d linked to the stack (not recomputed when the stack shrinks).
                 var h = HeroOf(u);
                 h.Links[Ab.PowerFeed] = u.Id;
+                h.Links[PowerFeedValue] = (int)Math.Min(CreatureSpellPower(u.Count, Math.Max(1, u.WeeklyGrowth)), h.Knowledge);
                 Emit(new AbilityTriggered(u.Id, c.Ability));
                 return null;
             }
@@ -173,9 +176,11 @@ public sealed partial class Battle
     /// <summary>Power Feed bonus to the hero's spell power (≤ Knowledge) while the feeding stack lives.</summary>
     double PowerFeedBonus(HeroState h)
     {
-        if (!h.Links.TryGetValue(Ab.PowerFeed, out var id) || S.Unit(id) is not { Alive: true } u) return 0;
-        return Math.Min(CreatureSpellPower(u.Count, Math.Max(1, u.WeeklyGrowth)), h.Knowledge);
+        if (!h.Links.TryGetValue(Ab.PowerFeed, out var id) || S.Unit(id) is not { Alive: true }) return 0;
+        return h.Links.GetValueOrDefault(PowerFeedValue);
     }
+
+    const string PowerFeedValue = "POWER_FEED_VALUE";
 
     bool _bondCopying;
 
@@ -185,8 +190,11 @@ public sealed partial class Battle
     /// </summary>
     void BondOfLightCopy(Unit original, Effect e)
     {
+        // exe FUN_00983790 (00983ee3–00984058): Light school (FUN_00a34350 == 2) effect spells except Anti-Magic (0x1f) and
+        // Teleport (0x20); the copy's mastery is max(BondOfLight_MinDuplicatedEffectMastery, the cast's own mastery).
         if (_bondCopying || e.School != "MAGIC_SCHOOL_LIGHT" || e.SpellLevel <= 0 || Db.Spell(e.Id) is not { } sp) return;
-        var m = (Mastery)Math.Max((int)Mastery.Expert, (int)Stats.Get("combat/Creatures/Sylvan/BondOfLight_MinDuplicatedEffectMastery", 3));
+        if (e.Id is "SPELL_ANTI_MAGIC" or "SPELL_TELEPORT") return;
+        var m = (Mastery)Math.Max((int)e.Mastery, (int)Stats.Get("combat/Creatures/Sylvan/BondOfLight_MinDuplicatedEffectMastery", 3));
         _bondCopying = true;
         try
         {
