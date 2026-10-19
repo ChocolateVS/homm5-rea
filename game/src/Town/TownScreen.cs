@@ -223,18 +223,19 @@ public partial class TownScreen : Control
     public void Notice(string title, string text) => AdvDialogs.Message(_dialogLayer, title, text, null);
 
     /// <summary>
-    /// The town shipyard: the stock shipyard offer (Text/Interface/Shipyard, cost from the engine) and,
-    /// if accepted, <see cref="BuildShipCmd"/> for this town — the boat appears on the town's slipway.
+    /// The town shipyard (enter_shipyard → exe 0061a1c0 / 00619af0): nothing happens until the shipyard is built;
+    /// then the stock shipyard box (<see cref="AdvDialogs.Shipyard"/>) for this town's slipway and, if accepted,
+    /// <see cref="BuildShipCmd"/> — the boat appears on the town's slipway.
     /// </summary>
     void OpenShipyard()
     {
-        if (Town.Level("TB_SHIPYARD") <= 0) { Notice(Town.Name, "This building has not been built yet."); return; }
+        if (Town.Level("TB_SHIPYARD") <= 0) return;
         var me = Session.S.Players.First(p => p.Index == Town.Owner);
-        Adventure.Water.BoatLayer.ShipyardOffer(_dialogLayer, me, yes =>
+        AdvDialogs.Shipyard(_dialogLayer, me, Session.Game.ShipyardStatus(Town.Object), yes =>
         {
             if (!yes) return;
             var r = Session.Apply(new BuildShipCmd(Town.Object) { Player = me.Index });
-            if (!r.Ok) Notice(Town.Name, char.ToUpperInvariant((r.Error ?? "Not possible")[0]) + (r.Error ?? "Not possible")[1..] + ".");
+            if (!r.Ok) GD.PushWarning($"[H5] build ship: {r.Error}");
             Refresh();
         });
     }

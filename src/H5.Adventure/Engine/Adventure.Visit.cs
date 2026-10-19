@@ -513,7 +513,7 @@ public sealed partial class Adventure
                 if (c.Accept)
                 {
                     var err = BuildShipAt(O(ch.Object), p);
-                    if (err != null) Emit(new Message("shipyard_no_money", "You do not have enough gold and wood to build another boat."));
+                    if (err == "not enough resources") Emit(new Message("shipyard_no_money", "You do not have enough gold and wood to build another boat."));
                 }
                 break;
             case "join_free":

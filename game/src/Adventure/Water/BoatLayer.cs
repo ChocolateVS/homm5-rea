@@ -126,18 +126,4 @@ public partial class BoatLayer : Node3D
         return water ? AdvCursor.ShipMove : AdvCursor.UnboardShip;
     }
 
-    // ---------------------------------------------------------------- shipyard dialog
-
-    /// <summary>
-    /// The stock shipyard offer (Text/Interface/Shipyard via UI/BuyShip texts): title, description with
-    /// the price, Build Boat / Refuse; "not enough resources" when the player cannot pay.
-    /// </summary>
-    public static void ShipyardOffer(Control layer, PlayerState p, Action<bool> answer)
-    {
-        string T(string file, string fallback) => AdvTexts.Get($"Text/Interface/Shipyard/{file}") is { Length: > 0 } s ? s : fallback;
-        var text = T("description_text.txt", "For a fee of 1000 gold and 10 wood you can build a boat to cross the sea.");
-        bool afford = p.Purse[Purse.Gold] >= H5.Adventure.Engine.Adventure.ShipCostGold && p.Purse[Purse.Wood] >= H5.Adventure.Engine.Adventure.ShipCostWood;
-        if (!afford) text += "<br>" + T("nores_text.txt", "Not enough resources!");
-        AdvDialogs.YesNo(layer, T("Title_Text.txt", "Shipyard"), text, null, y => answer(y && afford));
-    }
 }

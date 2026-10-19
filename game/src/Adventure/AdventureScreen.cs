@@ -941,7 +941,7 @@ public partial class AdventureScreen : Control
                     await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), AdvTexts.Get(AdvTexts.CreaturesJoin), null, y => { accept = y; done(); }));
                     break;
                 case "shipyard":
-                    await Dialog(done => Water.BoatLayer.ShipyardOffer(_dialogLayer, Session.S.Players.First(p => p.Index == Session.S.Hero(c.Hero)!.Owner), y => { accept = y; done(); }));
+                    await Dialog(done => AdvDialogs.Shipyard(_dialogLayer, Session.S.Players.First(p => p.Index == Session.S.Hero(c.Hero)!.Owner), Session.Game.ShipyardStatus(c.Object), y => { accept = y; done(); }));
                     break;
                 case "join_paid":
                     await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), AdvTexts.Get(AdvTexts.CreaturesJoinMoney) + $"<br>{c.Gold}", null, y => { accept = y; done(); }));

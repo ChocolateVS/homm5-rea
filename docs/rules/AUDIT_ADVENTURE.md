@@ -62,3 +62,25 @@ not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not
 | Hint | 00a7f8f0 / 00a7f710 | within 5 tiles (|dx|, |dy| ≤ 5, same floor): direction by |dx|·26 vs |dy|·10 (8 GRAAL_HINT_* ids, north = +y); otherwise GRAAL_NOTHING_HERE | `GrailHint` | FIXED (was: no hints) |
 | Dig confirmation | DIG_CONFIRMATION(_HEADER) 005a4860, adv_dig | Yes/No box | stock dig_graal texts | UNVERIFIED (text ids not cross-checked) |
 | Puzzle map screen | UI/PuzzleMap, CPuzzleMap@NUI | 36 PuzzleDesc pieces over the terrain around the Tear of Asha | built earlier (c144024) | UNVERIFIED |
+
+## Shipyard (town button and map shipyards)
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Town enter_shipyard | 0061bcf0 → 0061a1c0 → 00619af0 | only when TB_SHIPYARD (type 3) is built; otherwise nothing | same | FIXED (was an invented "not built yet" notice) |
+| Shipyard box window | 006a7840, 00676290 | Box2p when gold, wood and a free water slipway; Box1p when resources are short; Box0p otherwise | `AdvDialogs.Shipyard` | FIXED (was a Yes/No box) |
+| Box texts | UI/BuyShip/Texts.(WindowRelatedTexts) | ID_TITLE_TEXT, ID_HEADER_TEXT, ID_NORMAL/BLOCKED/DESERTED_DESCRIPTION, ID_ACCEPT_TEXT, ID_DECLINE/NORES/NOGOLD/NOWOOD_TEXT (both short / gold / wood) | same | FIXED |
+| Box textures / tooltips | 006a7840; UIGameRoot | ID_SHIPYARD_FACE/ACCEPT/DECLINE_TEXTURE; T_HEADER, T_BUILD_BOAT + T_REFUSE when buildable, T_NOT_ENOUGH_RESOURCES otherwise | same | FIXED |
+| Map shipyard visit | CBuildShipDialogLogEntry → 006a7840 | the box opens for every slipway state (description says deserted / blocked) | engine always offers the shipyard choice; the box decides | FIXED (was plain messages) |
+| Initial selection / OK enabling | vtable +0xc(0) on both choices; 00675760(2, !canBuild) | both choices unpressed; second index of 00675760 not decoded | OK builds only with Build Boat picked | UNVERIFIED |
+| Town building info | 0061a5d0 (building tooltip, type 3) | adds "shipyard_deserted" when the slipway is not water | not built | GAP |
+
+## Marketplace (from the earlier market commit 2859866)
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Exchange rates | FUN_008e7b80, tables at 00dc64a0.. | three 9×7 tables (wood/ore, rare, gold) by marketplace count 1..9 | `RatesCommon/Rare/Gold` | MATCH |
+| Exchange arithmetic | CExchangeResourcesCmd FUN_004f4c10 | non-gold: received = offer / rate, cost = received × rate; gold: received = offer × rate | same | MATCH |
+| Marketplace count | CPlayer vtable +0xb0 = 00500cf0 returns field +0x610 (setter +0xac = 00500cd0) | who fills the field is not traced | one per town with a marketplace, two with TOWN_BONUS_MARKETPLACE (manual) | UNVERIFIED |
+| Trading Post rate | — | manual: as with 3 marketplaces | same | UNVERIFIED |
+| Artifact selling | FUN_00623160, RPGStats+0x1c8 | gold cost × Marketplace_ArtifactSellCostOfGoldCoef (0.5) | same | MATCH |

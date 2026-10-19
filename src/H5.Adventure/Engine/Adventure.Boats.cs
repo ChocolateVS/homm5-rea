@@ -173,13 +173,12 @@ public sealed partial class Adventure
         return "ok";
     }
 
+    /// <summary>
+    /// A map shipyard visit opens the shipyard box whatever the slipway's state (CBuildShipDialogLogEntry →
+    /// exe 006a7840, which itself picks the deserted / blocked description and the buttons).
+    /// </summary>
     void VisitShipyard(HeroState h, MapObject o)
     {
-        switch (ShipyardStatus(o.Index))
-        {
-            case "deserted": Emit(new Message("shipyard_deserted", "The shipyard looks deserted, there is no sign of workers who could build a boat for you.")); return;
-            case "blocked": Emit(new Message("shipyard_blocked", "The new boat cannot be built as long as another boat is blocking the slipway.")); return;
-        }
         S.Choice = new PendingChoice { Kind = "shipyard", Hero = h.Id, Object = o.Index, Gold = ShipCostGold };
         Emit(new ChoiceOffered("shipyard", h.Id, o.Index, ShipCostGold, 0));
     }
