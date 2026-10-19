@@ -177,6 +177,10 @@ public sealed class HeroState
     public Dictionary<string, int> Links = new();
     public string? ImbuedSpell;
     public bool Fled;
+    /// <summary>Next-battle bonuses (exe hero vfunc 0x330, 7 ints): [0] luck, [1] morale, [2] creature attack (004bb170),
+    /// [3] creature defence (004bb2a0), [4] creature hit points percent (004bc470), [5] initiative (004bc190, war
+    /// machines 004bae60), [6] speed (004bc0b0).</summary>
+    public int[] BattleBonus = new int[7];
 
     public Mastery SkillLevel(string skillId) => Skills.Find(s => s.SkillId == skillId)?.Mastery ?? Mastery.None;
     public bool HasPerk(string perkId) => Perks.Contains(perkId);

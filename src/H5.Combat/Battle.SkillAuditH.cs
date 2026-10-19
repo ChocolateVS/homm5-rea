@@ -14,8 +14,8 @@ public static class SkillAuditH
     /// (large creatures) / Dragon Scale Shield (small) +5 each, Dragon Bone Greaves +10 each for walking non-shooting
     /// non-casters, Dragon Wing Mantle +10 each for flyers, Dragon Teeth Necklace +10 each for ABILITY_CASTER /
     /// ABILITY_RANDOM_CASTER creatures, Dragon Eye Ring +10 each for shooters, Ogre Club / Ogre Shield −5 each.
-    /// Without a hero only the week applies. (The per-creature permanent bonus byte and the script battle bonus
-    /// HERO_BATTLE_BONUS_INITIATIVE are not modelled.)
+    /// Without a hero only the week applies. The hero's next-battle initiative bonus (vfunc 0x330 +0x14) is
+    /// added before the clamp. (The per-creature permanent bonus byte is not modelled.)
     /// </summary>
     public static double CreatureInitiative(GameDatabase db, HeroState h, CreatureDef c, string week)
     {
@@ -29,6 +29,7 @@ public static class SkillAuditH
         }
         if (h.HasPerk(Sk.MarchOfGolems) && c.Id is "CREATURE_IRON_GOLEM" or "CREATURE_STEEL_GOLEM" or "CREATURE_OBSIDIAN_GOLEM")
             init += 2f;
+        init += h.BattleBonus[5];   // next-battle initiative bonus (hero vfunc 0x330 +0x14)
         if (init < 1f) init = 1f;
         int N(string art) => h.Artifacts.Count(a => a == art);
         bool caster = c.Abilities.Contains("ABILITY_CASTER") || c.Abilities.Contains("ABILITY_RANDOM_CASTER");
@@ -46,13 +47,14 @@ public static class SkillAuditH
     /// <summary>War machine initiative (the war machine's initiative getter 00a75930 → FUN_004bae60): record initiative
     /// × (0.1 · Dragon Talon Crowns + 1) + RunicMachines_InitiativeBonus with Runic Machines, × 1.1 (00e0d4b0) when the
     /// hero has a Ring of Celerity (any number). The rounded copy 004bd7b0 stores (+0x68) is not the combat value.
-    /// (The script battle bonus HERO_BATTLE_BONUS_INITIATIVE is not modelled.)</summary>
+    /// The next-battle initiative bonus (vfunc 0x330 +0x14) ends 004bae60, before the ring.</summary>
     public static double WarMachineInitiative(GameDatabase db, HeroState h, double baseInit)
     {
         float init = (float)baseInit;
         if (!h.Present) return init;
         init = (h.Artifacts.Count(a => a == "DRAGON_TALON_CROWN") * 0.1f + 1f) * init;
         if (h.HasPerk(Sk.RunicMachines)) init += (int)db.Stats.Get("combat/HeroSkills/Runemage/RunicMachines_InitiativeBonus", 3);
+        init += h.BattleBonus[5];   // 004bae60 ends with the next-battle initiative bonus (hero vfunc 0x330 +0x14)
         if (h.Artifacts.Contains("ARTIFACT_RING_OF_CELERITY")) init *= 1.1f;
         return init;
     }

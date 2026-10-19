@@ -47,6 +47,13 @@ public static class AdvTexts
     /// <summary>A text id of GameMechanics/RPGStats/RPGRoot.xdb (e.g. GRAAL_NOTHING_HERE), or "" when unknown.</summary>
     public static string Rpg(string id)
     {
+        var path = RpgPath(id);
+        return path.Length > 0 ? (Ui.UiResources.Instance.Text(path) ?? "").Trim() : "";
+    }
+
+    /// <summary>The text file behind an RPGRoot.xdb text id, or "".</summary>
+    public static string RpgPath(string id)
+    {
         if (_rpg == null)
         {
             _rpg = new(StringComparer.Ordinal);
@@ -55,7 +62,7 @@ public static class AdvTexts
                 if ((string?)item.Element("ID") is { } key && (string?)item.Element("TextFileRef")?.Attribute("href") is { } href)
                     _rpg.TryAdd(key, XdbRef.Parse(href, root).Path);
         }
-        return _rpg.TryGetValue(id, out var path) ? (Ui.UiResources.Instance.Text(path) ?? "").Trim() : "";
+        return _rpg.TryGetValue(id, out var path) ? path.TrimStart('/') : "";
     }
 
     public static string ResourceName(int index)

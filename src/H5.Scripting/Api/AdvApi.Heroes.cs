@@ -309,9 +309,17 @@ public sealed partial class AdventureScripting
         {
             var h = Hero(c, 0);
             int type = c.Int(1), amount = c.Int(2);
-            if (type == 0) h.NextBattleLuck += amount;
-            else if (type == 1) h.NextBattleMorale += amount;
-            else World.Settings[$"battle_bonus:{h.Id}:{type}"] = amount.ToString();
+            // HERO_BATTLE_BONUS_* index the hero's next-battle struct (luck, morale, attack, defence, hit points, initiative, speed).
+            switch (type)
+            {
+                case 0: h.NextBattleLuck += amount; break;
+                case 1: h.NextBattleMorale += amount; break;
+                case 2: h.NextBattleAttack += amount; break;
+                case 3: h.NextBattleDefence += amount; break;
+                case 4: h.NextBattleHitPoints += amount; break;
+                case 5: h.NextBattleInitiative += amount; break;
+                case 6: h.NextBattleSpeed += amount; break;
+            }
         });
 
         // 0x005c27f0: (hero, x, y, floor=0, rotation=0).

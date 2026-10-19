@@ -193,6 +193,7 @@ public static class BattleSetup
         // The hero fights with his current spell points (the exe's combat hero is the adventure CHero: the cast
         // FUN_00bbf610 subtracts from the hero's own mana field).
         if (hi.Mana >= 0) h.Mana = hi.Mana;
+        h.BattleBonus = hi.BattleBonus.ToArray();
         return h;
     }
 
@@ -264,6 +265,13 @@ public static class BattleSetup
                 u.BaseHealth += (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Dragonish_4_Creature_HitPoints", 20);
             }
             if (Specials.Pieces(h, Specials.Magis) >= 2) u.Mana = u.MaxMana = u.MaxMana * (int)db.Stats.Get("ArtifactsSetsEffectsConsts/Magis_2_Casters_SpellpowerMultiplier", 2);
+            // Next-battle bonuses (hero vfunc 0x330): attack +[2] (getter 004bb170), defence +[3] (004bb2a0), speed +[6]
+            // (004bc0b0), each getter clamped at 0; hit points (004bc470, last step) = (clamp(100 + [4], 0, 1000) · hp + 50) / 100.
+            u.BaseAttack = Math.Max(0, u.BaseAttack + h.BattleBonus[2]);
+            u.BaseDefence = Math.Max(0, u.BaseDefence + h.BattleBonus[3]);
+            u.BaseSpeed = Math.Max(0, u.BaseSpeed + h.BattleBonus[6]);
+            int hpPercent = Math.Clamp(100 + h.BattleBonus[4], 0, 1000);
+            u.BaseHealth = (hpPercent * u.BaseHealth + 50) / 100;
         }
         u.MaxHealthCache = u.BaseHealth;
         u.TopHealth = u.BaseHealth;

@@ -201,6 +201,9 @@ public sealed class HeroState
     public bool Garrisoned;
     /// <summary>Morale/luck bonuses that last until the next battle (fan manual p.261-264).</summary>
     public int NextBattleMorale, NextBattleLuck;
+    /// <summary>The rest of the exe's next-battle bonus struct (hero vfunc 0x200 adds, 0x330 reads in combat): creature
+    /// attack, defence, hit points percent, initiative, speed (Mother Earth Shrine, Fortuitous Sanctuary, GiveHeroBattleBonus).</summary>
+    public int NextBattleAttack, NextBattleDefence, NextBattleHitPoints, NextBattleInitiative, NextBattleSpeed;
     /// <summary>Permanent morale/luck changes made by map scripts (ChangeHeroStat STAT_MORALE/STAT_LUCK).</summary>
     public int ScriptMorale, ScriptLuck;
     /// <summary>Objects that may be visited once per hero (Mercenary Camp, Dolmen…).</summary>

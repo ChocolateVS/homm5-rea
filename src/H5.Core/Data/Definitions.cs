@@ -182,6 +182,9 @@ public sealed class HeroInstance
     public bool Ballista, FirstAidTent, AmmoCart;
     /// <summary>Current spell points the hero brings into battle; negative = full (duels, presets).</summary>
     public int Mana = -1;
+    /// <summary>Next-battle bonuses (the adventure hero's struct returned by vfunc 0x330): luck, morale, attack, defence,
+    /// hit points percent, initiative, speed. Morale and luck are applied by the adventure hand-off itself.</summary>
+    public int[] BattleBonus = new int[7];
     public string Class => Shared?.Class ?? "";
     public string Town => Shared?.Town ?? "";
 }

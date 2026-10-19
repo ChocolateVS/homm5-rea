@@ -533,6 +533,22 @@ public partial class AdventureScreen : Control
             case ObjectVisited ov when HumanCaused(player) && !Autoplay && VisitMessage(ov) is { Length: > 0 } visitText:
                 await Dialog(done => Message("", visitText, null, done));
                 break;
+            case ObjectVisited bb when bb.What.StartsWith("battlebonus:") && HumanCaused(player) && !Autoplay && s.Hero(bb.HeroId) is { } blessed:
+            {
+                // Next-battle bonus buildings (00af9a10 & co.): one flyoff per changed field over the hero (009c9120 with
+                // ICON_LUCK / ICON_MORALE / ICON_OFFENCE / ICON_DEFENCE / ICON_HITPOINTS / ICON_INITIATIVE / ICON_SPEED);
+                // hit points use RPGRoot APPLY_HIT_POINTS_EFFECT_FORMAT. A repeat visit flies messagesFileRef[3].
+                var at = World.TileCenter(blessed.Pos);
+                if (bb.What == "battlebonus:again") { FlyTextAt(at, ObjectMessage(bb.Object, 3)); break; }
+                foreach (var part in bb.What["battlebonus:".Length..].Split(','))
+                {
+                    var kv = part.Split('=');
+                    int field = int.Parse(kv[0]), amount = int.Parse(kv[1]);
+                    FlyTextAt(at, field == 4 ? AdvTexts.Get(AdvTexts.RpgPath("APPLY_HIT_POINTS_EFFECT_FORMAT"), ("hit_points", amount)) : $"+{amount}");
+                }
+                Hud.Refresh();
+                break;
+            }
             case ObjectVisited { What: "BUILDING_TRADING_POST" } tp when HumanCaused(player) && !Autoplay && s.Hero(tp.HeroId) is { } trader:
             {
                 // Trading Post: the marketplace screen at the 3-marketplace rates while the hero stands on it.

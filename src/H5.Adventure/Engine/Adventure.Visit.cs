@@ -212,6 +212,23 @@ public sealed partial class Adventure
                 break;
 
             // Next-battle morale/luck and movement locations (p.261-264).
+            case "BUILDING_NOMADS_SHAMAN":
+                // 00b02740 case 0x76 → 00af9d30(…, 10): +10 to the hit points percent ([4]) until the next battle.
+                BattleBonusVisit(h, o, (4, 10));
+                break;
+            case "BUILDING_FORTUITOUS_SANCTUARY":
+                // Case 0x77: the day counter (world vfunc 0xa8) % 7 picks the bonus (jump table 00b06618).
+                BattleBonusVisit(h, o, (S.DayOfWeek - 1) switch
+                {
+                    0 => new[] { (2, 3) },          // 00af9ba0: attack +3
+                    1 => new[] { (1, 1) },          // 00af9a10: morale +1
+                    2 => new[] { (3, 3) },          // defence +3
+                    3 => new[] { (0, 1) },          // luck +1
+                    4 => new[] { (5, 1) },          // 00af9e80: initiative +1
+                    5 => new[] { (2, 2), (3, 2) },  // attack +2, defence +2
+                    _ => new[] { (6, 1) },          // speed +1
+                });
+                break;
             case "BUILDING_BUOY": OncePerHero(h, o, () => h.NextBattleMorale += 1, untilBattle: true); break;
             case "BUILDING_FAERIE_RING": OncePerHero(h, o, () => h.NextBattleLuck += 1, untilBattle: true); break;
             case "BUILDING_MERMAIDS": OncePerHero(h, o, () => h.NextBattleLuck += 1, untilBattle: true); break;
@@ -344,6 +361,29 @@ public sealed partial class Adventure
         if (!set.Add(o.Index)) { Emit(new Message("already_visited", "Already visited.")); return; }
         effect();
         Emit(new ObjectVisited(h.Id, o.Index, o.Shared.Type));
+    }
+
+    /// <summary>
+    /// The next-battle bonus buildings (exe 00af9a10 / 00af9ba0 / 00af9d30 / 00af9e80): once per hero until the next battle
+    /// (hero vfunc 0x1fc on the object), the fields (index into luck, morale, attack, defence, hit points %, initiative,
+    /// speed) are added (vfunc 0x200); each changed field gets a flyoff. A repeat visit shows messagesFileRef[3]
+    /// (00ce14d0(3) → 009c90e0).
+    /// </summary>
+    void BattleBonusVisit(HeroState h, MapObject o, params (int Field, int Amount)[] bonus)
+    {
+        if (!h.VisitedSinceBattle.Add(o.Index)) { Emit(new ObjectVisited(h.Id, o.Index, "battlebonus:again")); return; }
+        foreach (var (field, amount) in bonus)
+            switch (field)
+            {
+                case 0: h.NextBattleLuck += amount; break;
+                case 1: h.NextBattleMorale += amount; break;
+                case 2: h.NextBattleAttack += amount; break;
+                case 3: h.NextBattleDefence += amount; break;
+                case 4: h.NextBattleHitPoints += amount; break;
+                case 5: h.NextBattleInitiative += amount; break;
+                case 6: h.NextBattleSpeed += amount; break;
+            }
+        Emit(new ObjectVisited(h.Id, o.Index, "battlebonus:" + string.Join(",", bonus.Select(b => $"{b.Field}={b.Amount}"))));
     }
 
     void Weekly(MapObject o, ObjState os, Action effect)

@@ -198,6 +198,13 @@ public sealed partial class Adventure
         return state;
     }
 
+    static void ClearBattleBonuses(HeroState h)
+    {
+        h.VisitedSinceBattle.Clear();
+        h.NextBattleMorale = h.NextBattleLuck = 0;
+        h.NextBattleAttack = h.NextBattleDefence = h.NextBattleHitPoints = h.NextBattleInitiative = h.NextBattleSpeed = 0;
+    }
+
     HeroInstance ToInstance(HeroState h)
     {
         Core.Heroes.TryGetValue(h.DefId, out var def);
@@ -209,6 +216,8 @@ public sealed partial class Adventure
             Skills = h.Skills.ToList(), Perks = h.Perks.ToList(), Spells = h.Spells.ToList(),
             Ballista = h.Ballista, FirstAidTent = h.FirstAidTent, AmmoCart = h.AmmoCart, Mana = h.Mana,
             FavoriteEnemies = h.FavoriteEnemies.Where(e => e.Length > 0).ToList(),
+            // Morale and luck ([0], [1]) are added to the combat heroes by CreatePendingBattle.
+            BattleBonus = new[] { 0, 0, h.NextBattleAttack, h.NextBattleDefence, h.NextBattleHitPoints, h.NextBattleInitiative, h.NextBattleSpeed },
         };
     }
 
@@ -252,11 +261,11 @@ public sealed partial class Adventure
         var (combatResult, savedArmies) = SavedCombatRecord(c, pb, att, defHero, attackerBefore);
 
         SetArmy(att.Army, c.AttackerSurvivors);
-        att.VisitedSinceBattle.Clear(); att.NextBattleMorale = 0; att.NextBattleLuck = 0;
+        ClearBattleBonuses(att);
         if (defHero != null)
         {
             SetArmy(defHero.Army, c.DefenderSurvivors);
-            defHero.VisitedSinceBattle.Clear(); defHero.NextBattleMorale = 0; defHero.NextBattleLuck = 0;
+            ClearBattleBonuses(defHero);
         }
 
         // Hero kill counters (hero vtable +0x60, read by the Avenger's Guild list check 009a8be0).
