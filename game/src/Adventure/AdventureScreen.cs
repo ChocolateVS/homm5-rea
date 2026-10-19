@@ -544,7 +544,7 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 break;
             }
-            case ObjectVisited { What: "BUILDING_HILL_FORT" or "BUILDING_WARMACHINE_FACTORY" or "BUILDING_BLACK_MARKET" } bv when HumanCaused(player) && !Autoplay && s.Hero(bv.HeroId) is { } visitor:
+            case ObjectVisited { What: "BUILDING_HILL_FORT" or "BUILDING_WARMACHINE_FACTORY" or "BUILDING_BLACK_MARKET" or H5.Adventure.Engine.Adventure.SacrificialAltar } bv when HumanCaused(player) && !Autoplay && s.Hero(bv.HeroId) is { } visitor:
             {
                 // Hill Fort / War Machine Factory / Artifact Merchant: their stock windows while the hero stands at the object.
                 Hud.Visible = false;
@@ -552,6 +552,7 @@ public partial class AdventureScreen : Control
                 {
                     "BUILDING_HILL_FORT" => new HillFortScreen(this, visitor.Id, bv.Object),
                     "BUILDING_BLACK_MARKET" => new BlackMarketScreen(this, visitor.Id, bv.Object),
+                    H5.Adventure.Engine.Adventure.SacrificialAltar => new SacrificeAltarScreen(this, visitor.Id, bv.Object),
                     _ => new WarMachineFactoryScreen(this, visitor.Id, bv.Object),
                 };
                 AddChild(screen);
@@ -1105,6 +1106,10 @@ public partial class AdventureScreen : Control
         if (hero == null || o == null) { GD.PushWarning($"[H5] visit test: no hero or no {type} on this map"); return; }
         if (own) { var os = s.Obj(o.Index); os.Owner = Session.Human.Index; os.Guards.Clear(); }
         var target = o.ActiveTiles.FirstOrDefault(o.Pos);
+        // :own also clears wandering monsters guarding the object (dev screenshots).
+        if (own)
+            foreach (var m in Session.Map.Objects.Where(m => m.Kind == H5.Adventure.Map.ObjectKind.Monster && Math.Abs(m.Pos.X - target.X) <= 2 && Math.Abs(m.Pos.Y - target.Y) <= 2))
+                s.Obj(m.Index).Removed = true;
         // A varied army so upgrade prices show for several tiers.
         var db = Game.Instance.Db;
         for (int tier = 1; tier <= 7; tier++)

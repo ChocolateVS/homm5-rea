@@ -149,11 +149,13 @@ public class TownSpecialTests(Fixture f)
         Assert.Equal(TrainStatus.Ok, status);
         Assert.Equal(10L * hp, exp);
         Assert.Equal(TrainStatus.NoHero, g.SacrificeQuote(t, null, 0, growth: false).Status);
+        // FUN_00cd07f0 mode 1 adds the value through hero +0x198 without the +0x19c modifiers: Learning adds nothing.
+        h.Skills.Add(new SkillEntry("HERO_SKILL_LEARNING", Mastery.Expert));
         long before = h.Experience;
         var r = g.Apply(new SacrificeForExperienceCmd(t.Object, h.Id, 0) { Player = g.Current.Index });
         Assert.True(r.Ok, r.Error);
         Assert.Null(h.Army[0]);
-        Assert.True(h.Experience > before);
+        Assert.Equal(before + 10L * hp, h.Experience);
     }
 
     [Fact]

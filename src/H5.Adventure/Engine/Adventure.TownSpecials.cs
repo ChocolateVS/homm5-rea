@@ -296,8 +296,9 @@ public sealed partial class Adventure
         army[slot] = null;
         if (growth) t.SacrificedHitPoints = (int)Math.Min(int.MaxValue, t.SacrificedHitPoints + value);
         Emit(new ArmyChanged(h?.Id ?? -1, h == null ? t.Object : -1));
-        // Mode 1: hero +0x198 (add experience). TODO(exe): whether that call applies the experience modifiers.
-        if (!growth) GainExperience(h!, value);
+        // Mode 1 (FUN_00cd07f0): hero +0x198 (add) with the quote's value, without +0x19c (the experience modifiers
+        // FUN_00b4bbb0 that the Sacrificial Altar applies, 00b00e30).
+        if (!growth) GainExperience(h!, value, modifiersApplied: true);
         return null;
     }
 
