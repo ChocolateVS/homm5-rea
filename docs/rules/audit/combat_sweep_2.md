@@ -1,8 +1,8 @@
-# Combat audit — sweep 2: surrender hand-off, moat field, effect durations, boss spells
+# Combat audit — sweep 2: surrender hand-off, moat field, effect durations, boss spells, Summon Hive
 
 Per-ID rows merged into `docs/rules/AUDIT_COMBAT.md` by `tools/re/audit/ledger.py` (rows here override the earlier
 fragments). Exe references are H5_Game.exe (GOG 3.1) addresses, analysed headless with Ghidra 12.1.4
-(`tools/re/audit_sweep/ghidra.sh`, private project copy).
+(`tools/re/audit_sweep/ghidra.sh`, private project copy). Tests are in `tests/H5.Combat.Tests/AuditSweepTests.cs`.
 
 ## Core mechanics (not ID rows)
 
@@ -19,3 +19,4 @@ fragments). Exe references are H5_Game.exe (GOG 3.1) addresses, analysed headles
 | `SPELL_UBER_CHAIN_LIGHTNING` | N/A | 0097c9f0 | boss spell 0xee: no shipped creature, hero or script casts it (only spell lists in multiplayer maps, GameMechanics/RefTables/UndividedSpells.xdb and the scripts/common.lua constant); immunity-table entries ported (combat_spells_s.md) |  |
 | `SPELL_BOSS_FIREWALL` | N/A | 0097c9f0 | boss spell 0xef (Demonic targets immune): not cast by shipped content (same references as above) |  |
 | `SPELL_UBER_METEOR_SHOWER` | N/A | 0097c9f0 | boss spell 0x11d: not cast by shipped content (same references as above) |  |
+| `SPELL_SUMMON_HIVE` | GAP | 0097d7b0 case 0x11b → FUN_008b1090; 008b07f0, 008b08a0, 00bbc310, 00bbcec0, 00af2d60, 00b5f550, 008b07d0, 008b0af0 | hive: defence DefensePerCasterLevel·level + DefenseBase, hit points trunc(Eval(Health at mastery)), initiative Eval(Initiative), spell SummonHive/Spell (Wasp Swarm, Expert), initial ATB = battle RNG float in [0.5, 1); acts only while its hero has the spell's base cost FUN_00a34740 and pays it (combat_spells_s.md). Target (FUN_00bbc310 → FUN_00bbcec0, "pick first" 0): every candidate other than the hive that FUN_00982010 accepts for the spell, at the smallest trunc(combat vf 0x118) = minimum over cell pairs of dx² + dy² (FUN_00af2d60 / FUN_00b5f550); ties → battle RNG Random(n) — FIXED (the engine used the Chebyshev distance and the unit id). Open: the cast power passed to FUN_00983790 (the hive stores the caster's power at +0xc0, FUN_008b07d0; SummonHive/Power = 10000 is read by FUN_008b0af0) — the engine casts with the caster's spell power; and which units vf 0x10 → vf 0x64 lists (the engine: enemy living creatures, not invisible) | AuditSpellSTests.HivePaysTheBaseSpellCost, AuditSweepTests.HiveAimsAtTheSmallestSquaredDistance |

@@ -1228,8 +1228,7 @@ public sealed partial class Battle
         {
             var caster = S.Heroes[u.Side];
             var spell = Db.Spell("SPELL_WASP_SWARM");
-            var target = S.Living.Where(o => o.Side != u.Side && o.Kind == UnitKind.Creature && IsLiving(o) && !o.HasEffect(H5.Combat.Fx.Invisible))
-                .OrderBy(o => Distance(o, u)).ThenBy(o => o.Id).FirstOrDefault();
+            var target = HiveTarget(u, S.Living.Where(o => o.Side != u.Side && o.Kind == UnitKind.Creature && IsLiving(o) && !o.HasEffect(H5.Combat.Fx.Invisible)));
             if (spell != null && target != null && caster.Mana >= HeroBaseManaCost(caster, spell))   // exe FUN_008b07f0 (FUN_00a34740)
             {
                 caster.Mana -= HeroBaseManaCost(caster, spell);                                         // exe FUN_008b08a0

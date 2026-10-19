@@ -107,4 +107,20 @@ public class AuditSweepTests(GameDataFixture f)
         Assert.True(pe2.HasEffect(Fx.RuneMagicControl));
         Assert.True(fm2.HasEffect("SPELL_HASTE"));
     }
+
+    // exe FUN_00bbcec0 (Summon Hive target, from FUN_00bbc310): the smallest squared cell distance (combat vf 0x118 =
+    // FUN_00af2d60 → FUN_00b5f550: dx² + dy², minimum over the cell pairs), ties by the battle RNG. A stack 4 cells straight
+    // ahead (16) beats one 3 cells diagonally (18), which the engine's Chebyshev distance preferred.
+    [Fact]
+    public void HiveAimsAtTheSmallestSquaredDistance()
+    {
+        var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 20), ("CREATURE_ARCHER", 10) });
+        var hive = b.State.Units.First(x => x.Side == 0);
+        var diag = Theirs(b, "CREATURE_PEASANT");
+        var straight = Theirs(b, "CREATURE_ARCHER");
+        hive.Pos = new Cell(2, 5); diag.Pos = new Cell(5, 8); straight.Pos = new Cell(6, 5);
+        Assert.Equal(18, Battle.SquaredCellDistance(diag, hive));
+        Assert.Equal(16, Battle.SquaredCellDistance(straight, hive));
+        Assert.Same(straight, b.HiveTarget(hive, new[] { diag, straight }));
+    }
 }

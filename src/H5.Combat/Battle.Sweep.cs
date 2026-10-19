@@ -21,4 +21,31 @@ public sealed partial class Battle
         AddEffect(a, new Effect { Id = stolen.Id, Value = stolen.Value, Value2 = stolen.Value2, Remaining = stolen.Remaining,
             Positive = true, SourceSide = a.Side, Mastery = stolen.Mastery, Power = stolen.Power, School = stolen.School, SpellLevel = stolen.SpellLevel });
     }
+
+    /// <summary>
+    /// Squared cell distance of the combat (vf 0x118 = FUN_00af2d60): the minimum of dx² + dy² (FUN_00b5f550) over every
+    /// pair of cells the two units cover (vf 0xc4).
+    /// </summary>
+    internal static int SquaredCellDistance(Unit a, Unit b)
+    {
+        int best = int.MaxValue;
+        foreach (var p in a.Cells())
+            foreach (var q in b.Cells())
+                best = Math.Min(best, (p.X - q.X) * (p.X - q.X) + (p.Y - q.Y) * (p.Y - q.Y));
+        return best;
+    }
+
+    /// <summary>
+    /// Summon Hive's target (exe FUN_00bbc310 → FUN_00bbcec0 with "pick first" 0): among the valid targets the ones at the
+    /// smallest SquaredCellDistance (truncated, chop) from the hive; ties are broken with the battle RNG Random(n). The
+    /// engine took the smallest Chebyshev distance and broke ties by unit id.
+    /// </summary>
+    internal Unit? HiveTarget(Unit hive, IEnumerable<Unit> valid)
+    {
+        var list = valid.ToList();
+        if (list.Count == 0) return null;
+        int best = list.Min(o => SquaredCellDistance(o, hive));
+        var ties = list.Where(o => SquaredCellDistance(o, hive) == best).ToList();
+        return ties[S.Rng.Next(ties.Count)];
+    }
 }
