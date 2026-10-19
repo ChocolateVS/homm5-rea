@@ -183,6 +183,10 @@ its port, or list it on a master.
   lockstep replica with state hash, like `DuelSession`/`DuelReplica`) and register it in
   `LobbyService.HostAsync` and `SessionFactories.All`. Transport, lobby, reconnect/replay and
   online listing need no changes.
+* **Concurrent adventure battles** (simultaneous turns, `docs/rules/SIMULTANEOUS.md` §8): the
+  host runs several interactive battles at once; battle commands go to the battle of the
+  sender's side, each participant gets only its own battle's updates, and a reconnecting
+  client rebuilds a running battle from the replayed updates.
 
 ## Tests
 `tests/H5.Net.Tests` (plus `tests/H5.Tests`):

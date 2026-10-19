@@ -3,7 +3,7 @@
 Reverse-engineered from `H5_Game.exe` (TotE 3.1, Ghidra 12.1.4; project copy
 `tools/ghidra-projects/simul`, scripts and helpers in `tools/simul`). Texts from `data/texts.pak`.
 Implementation: `src/H5.Adventure/Engine/Adventure.Simultaneous.cs` (areas, turn order hook),
-`src/H5.AdvNet/SimultaneousTurns.cs` + `AdventureNetSession.cs` (phase, conflicts, approvals),
+`src/H5.AdvNet/SimultaneousTurns.cs` + `AdventureNetSession.cs` (phase, conflicts, approvals, concurrent battles §8),
 client `game/src/AdvNet/*` and `game/src/Adventure/AdvHud.cs`.
 
 ## 1. The option
@@ -33,9 +33,14 @@ Player turn states (`CPlayer` vf `+0x44/+0x48`, field `+0x634`, debug letters in
   When all current players have ended, `GiveTurnToNextPlayers` runs.
 * Ended players see the enemy-turn box with `T_WAIT_FOR_PLAYERS`
   (`UI/AdventureScreen/EnemyTurnBox/WaitForPlayers.txt` "Wait for other players, please").
-* Turn timer: the tick checks the world's time-limit methods (vf `+0x1c8/+0x1cc`) against one turn
-  start time (`CWorld+0x104`), so the whole simultaneous phase shares one timer; when it runs out
-  `GiveTurnToNextPlayers` runs for everybody (`00998520`, branch `0x1cc() == 0`).
+* Turn timer: one turn start time (`CWorld+0x104`) for the whole phase, but each current player runs out
+  on its own: the tick (`00998520`) ends the turn (slot 52) of a current player whose time left
+  (`CWorld` vf `+0x1c4` = `0098e4e0`) is 0. Time left = limit (`CWorld+0x94`) - max(0, now - turn start -
+  the player's combat credit (`CPlayer` vf `+0x5c`, section 8)); for a player that is not current it is 0 in
+  sequential turns and uses the largest credit of the alive humans in simultaneous turns. A current player
+  that holds a combat is skipped: its end flag is cleared instead (vf `+0x50(0)`), so the phase cannot
+  pass while it fights. (vf `+0x1c8`/`+0x1cc` = `CWorld+0x184` and a 5000 ms countdown from `+0x180`
+  (`0098c4c0`/`0098c4d0`): a separate path that passes the turn at once.)
 * Loading a network save restarts turns (`00997f60` → `0098f7a0`) and adds 20000 ms to the turn timer.
 
 ## 3. Areas and the conflict check (`CWorld` vtable slot 7 `009c2660`)
@@ -106,6 +111,11 @@ standard turn based mode now." (`UI/AdventureScreen/EnemyTurnBox/Texts.(WindowRe
   an MMH55 install, since the user's 5.5 setup launches `bin/H5_Game_PEST.exe`; stock otherwise; `H5_EXE=pest|stock`
   overrides). It is not a lobby control: the stock two-state checkbox is unchanged. `H5_ADVNET_SIMUL=1` ticks the
   checkbox for screenshots.
+* Concurrent battles (§8): the session keeps a list of running battles. A battle's engine `PendingBattle` is parked
+  in its entry while it runs (the engine stays free for the other humans) and put back, with the attacker made
+  current, to apply the result when it ends. Pending choices are parked per player during the phase. Each side's
+  view and events are built with its own battle and choice in the engine's slots (`AdventureNetSession.ViewFor`).
+  The attack gate is the engine hook `Adventure.AttackRefused`, set by the session.
 
 ## 6. Audit ledger
 
@@ -117,7 +127,7 @@ standard turn based mode now." (`UI/AdventureScreen/EnemyTurnBox/Texts.(WindowRe
 | 4 | Humans move concurrently; AIs afterwards in order; then new day | FIXED | `00998060`, `0098f7a0` |
 | 5 | Ending the turn in the phase only marks the player; phase ends when all ended | FIXED | `00998760`, `00998520` |
 | 6 | Ended player sees "Wait for other players, please" | FIXED | `T_WAIT_FOR_PLAYERS` |
-| 7 | Shared phase timer; expiry ends every human's turn | FIXED | `00998520` |
+| 7 | One turn start for the phase; each current human times out on its own time (combat credit), a fighting one never | FIXED | `00998520`, `0098e4e0` (§2) |
 | 8 | Hero area = max daily MP + max movement bonus, pathfinder flood | FIXED | `009c2660`, `0095e8f0` |
 | 9 | Boat heroes flood on water | FIXED | vf `+0x24` flag |
 | 10 | Angel Wings flight / Boots of Levitation water walk in the area flood | GAP | engine has no flying/levitation movement |
@@ -143,16 +153,28 @@ standard turn based mode now." (`UI/AdventureScreen/EnemyTurnBox/Texts.(WindowRe
 | 30 | `CWorld+0x84` suppression during multi-step operations | MATCH | our commands are atomic; checks run after each command |
 | 31 | General sequential turn order "humans first" in non-simultaneous games | GAP | engine still uses map player order there |
 | 32 | PEST exe (5.5 target): simultaneous turns never break; no area check at any trigger | FIXED | §7, `PestSimultaneousPolicy` |
-| 33 | Other humans keep moving while one human of the phase fights a battle | GAP | stock: each player holds its own combat (`CPlayer` vf `+0x8c`; vf `+0x90` a second reference) and the attack gate `00426b30` exists for concurrent combats (§7.3). The session runs one interactive battle at a time and holds every other command until it ends |
-| 34 | A pending adventure choice of one human (e.g. a chest) does not block the others | GAP | the engine has one shared choice slot; others get "another player is deciding" until it is answered |
+| 33 | Other humans keep moving while one human of the phase fights a battle; several battles at once | FIXED | each player holds its own combat (`CPlayer` vf `+0x8c` = `CPlayer+0x24`, set by vf `+0x88` `004fdb00`), §8. `ConcurrentBattleTests` |
+| 34 | A pending adventure choice of one human (e.g. a chest) does not block the others | FIXED | offers are interface events sent to the visiting player only (join offers `008e1860`/`008e1a80` -> `00a7d1d0` -> `00a7d0e0(player, event)`), answered by that player's command (`CJoinCreaturesCmd`, `CRefuseJoinMonsterCmd`, `CTakeChestCmd`); no world-level slot. Choices are parked per player in the phase; the owner cannot end its turn before answering |
 | 35 | PEST active only in network games with the option ticked; no effect in hot-seat / single player | MATCH | every patched site is behind `settings+8` (`CWorld+0x90`), which `0098f740` clears unless `+0x88` (network), §7.2 |
 | 36 | PEST: `break_simultaneous_turns` / `CBreakSimultaneousTurnsCmd` still break (deferred `009c25c0`, approvals, slot 8: not patched) | GAP | dev console not built (#28) |
-| 37 | Simultaneous phase: an attack is refused when the target's owner has a combat (vf `+0x8c`/`+0x90` non-null) or the target is the side-`+0x90` army of any player's running combat (`00426b30` from `00433440`) | GAP | unreachable here while battles are serialised (#33); to be added with concurrent battles |
+| 37 | Simultaneous turns: an attack is refused when the target's owner has a combat (vf `+0x8c`/`+0x90` non-null) or the target is the side-`+0x90` army of any player's running combat (`00426b30` from `00433440`) | FIXED | owner = hero owner / town owner / object owner (`00426aa0`); defender = `CCombat+0x90` (vf `+0x84(false)` `00af2140`). A refused attack does nothing: the hero stays where its move stopped (hero meeting, neutral encounter incl. guard zones, town, guarded object, declined join). Only while `CWorld+0x90` is set |
 | 38 | Heroes of two humans meeting / attacking during the phase: ordinary attack, interactive battle for both humans (`00432d30`: interactive when either side is human and `CWorld` vf `+0x138` is false, else quick) | MATCH | `NetBattle` gives each human side to its player; the stock engine does not block or queue contact |
 | 39 | Two humans heading for the same object / town: commands apply in the order the host receives them | MATCH | no extra rule in the exe's command path; the session applies commands in arrival order |
-| 40 | Turn transitions wait while a combat runs (tick `00998520` returns while `CWorld+0x54` or `0098e150`: an entry of `CWorld+0xec` with vf `+0x6c` == 2) | GAP | `+0xec` list identity unresolved; our phase end waits for the single battle (`Step`), equivalent while battles are serialised |
+| 40 | The humans' phase does not pass while a human of it fights; the others may end and wait | FIXED | the tick `00998520` clears the end flag of every current player holding a combat (vf `+0x8c` -> vf `+0x50(0)`), so "all current ended" (`0098d570`) waits for it. (Earlier reading corrected: `0098e150` tests players, not combats, #50) |
+| 41 | Both side owners hold the combat; each participant gets its combat screen | FIXED | `008545b0`: attacker-army and defender-army owners (`CCombatArmy` vf `+0x4`) get vf `+0x88(combat)` and a `CCreateCombatScreen` / `CCreateQuickCombatScreen` sent with `00a7d0e0`. Neutral defenders have no owner |
+| 42 | A player in a combat (attacker or defender) gives no adventure commands meanwhile | FIXED | its client is on the combat screen; the host refuses ("a battle is in progress"). A human whose turn has ended may still be attacked and fights |
+| 43 | Adventure state of the fighting hero and the defender is unchanged until the result | MATCH | results are applied only by `CFinishCombat` (execute `004e0520` -> `CCombat` slot 55 `00af6680`); others keep seeing the hero where it stopped and the defender in place |
+| 44 | Results of concurrent battles apply in the order the battles end | MATCH | each end is its own `CFinishCombat` command in the command stream |
+| 45 | Turn time left per player, the combat credit counted (§2) | FIXED | `0098e4e0`; `turn.msLeft` is per side in the phase |
+| 46 | Combat credit: `CCloseCombat` (`004e0f10`) clears each owner's combat and, if the combat began in this turn (`CCombat+0xd0` == `CWorld+0x12c`), adds duration (`00af1c00`) minus the side's own acting time (`CCombatArmy+0x7c`, added each update for the active army by vf `+0x130`, `00af5930`) | FIXED | `NetBattle.ActingMs`; duration from the battle start to its end |
+| 47 | Second combat reference `CPlayer` vf `+0x90` (`CPlayer+0x28`, set by vf `+0x94`) | GAP | identity not resolved (quick-combat result screen likely); the gate uses running battles only |
+| 48 | `00423d00`: attack refused when the target's (or attacker's) object state vf `+0x6c` is 2 or 3 | GAP | state meaning not identified |
+| 49 | Reconnect / resume mid-battle | FIXED | the replayed side updates carry the battle start and every battle update; the rebuilt replica matches the host (`ReconnectingClientRebuildsTheRunningBattle`) |
+| 50 | The tick does nothing while `CWorld+0x54` (vf `+0xc` `0098c490`) is set or a player of the `CWorld+0xec` list has status vf `+0x6c` == 2 (`0098e150`; `0098e010` walks the same list's heroes) | GAP | neither the flag nor the status is identified (a paused / reconnecting player is likely); not reproduced |
+| 51 | What other clients show of a hero in a combat (marker, animation) | GAP | not traced; the view shows it unchanged (#43) |
+| 52 | Combat credit details: where the credit is reset, `CWorld+0x12c` identity, tactics phase, `CCloseCombat` timing | GAP | reset at each turn start; "this turn" = the current turn/phase; tactics time counts for nobody (no active army); credited at the battle end, the exe credits when each human closes its result screen (`CCloseCombat+0x10` player) |
 
-Counts: MATCH 6, FIXED 19, GAP 15 (40 items).
+Counts: MATCH 8, FIXED 28, GAP 16 (52 items).
 
 ## 7. H5_Game_PEST.exe, "permanent endless simultaneous turns" (the 5.5 target)
 
@@ -197,8 +219,31 @@ inside it. Traced in the stock exe:
   interactive when either side is human and `CWorld` vf `+0x138` is false (`combat vf+0x10c`).
 * So heroes of two humans meeting or attacking each other fight an ordinary human-versus-human battle; nothing is
   blocked or queued. The per-player combat reference and the gate above show that the stock engine lets battles run
-  while the other humans keep moving (GAP #33/#37: H5Reborn serialises them).
+  while the other humans keep moving (§8).
 * Captures and races for objects: no extra rule; commands apply in arrival order.
-* Timers: unchanged, one shared phase timer (§2); turn transitions wait for running combats (#40).
+* Timers: unchanged (§2): one turn start, per-player time with combat credit; the phase waits for running combats (#40).
 * AI: unchanged, computer players move after every human ended (§2).
 * Ghost mode: unchanged (#27).
+
+## 8. Concurrent battles (the stock engine's, kept by PEST)
+
+Traced in the stock exe (copy `tools/ghidra-projects/conc`, scripts `tools/conc`).
+
+* **Who holds a combat.** `CPlayer` keeps a combat reference (vf `+0x8c` getter, field `CPlayer+0x24`; setter vf `+0x88`
+  `004fdb00`) and a second one (vf `+0x90`/`+0x94`, `+0x28`, #47). At the start (`008545b0`) the owners of both
+  combat armies (`CCombat` vf `+0x84(true/false)` -> `CCombat+0x8c`/`+0x90`, then the army's owner vf `+0x4`) get the
+  combat and their combat screen. A human attacking a neutral holds one; human versus human both hold the same one.
+* **While it runs.** The adventure map is not touched (#43). The fighting players are on their combat screens (#42).
+  The others keep playing; their attacks pass the gate `00426b30` (#37): refused when the target's owner holds a
+  combat or the target defends a running combat; a refused attack does nothing.
+* **Turn end.** A current player holding a combat cannot end: every tick clears its end flag (#40). Others may end
+  and wait; the phase passes once every current human ended, i.e. after the last battle of the phase. The fighting
+  player is never timed out; its timer is credited afterwards (#46).
+* **End.** `CFinishCombat` (`004e0520`) -> `CCombat` slot 55 (`00af6680`) applies the result; `CCloseCombat`
+  (`004e0f10`) logs `last_combat_duration`, credits the timer and clears the owners' combat (vf `+0x88(0)`; a human
+  side only by its own close command). Concurrent battles therefore apply in the order they end (#44).
+* **H5Reborn.** `AdventureNetSession` keeps `RunningBattle` entries (battle, parked `PendingBattle`, owners, turn
+  stamp). Battle commands go to the battle of the sender's side; dynamic-battle timeouts and leavers are handled per
+  battle. The result is applied with the attacker made current, then the previous current player is restored.
+  Determinism: the host is authoritative; each participant checks the battle hash after every update and each side
+  checks its redacted view hash (its own battle and choice included).
