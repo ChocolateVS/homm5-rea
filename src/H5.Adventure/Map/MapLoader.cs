@@ -404,6 +404,7 @@ public sealed class MapLoader
         // Campaign variants reuse a stock hero's InternalName (RedHeaven07_Orlando is "Orlando"):
         // keep both definitions, the variant under its file path; scripts still see def.Id.
         if (!_db.Heroes.TryAdd(def.Id, def)) _db.Heroes[path] = def;
+        _db.HeroesByPath[def.SourcePath] = def;
     }
 
     /// <summary>"BLD_UPG_NONE" → 0, "BLD_UPG_1" → 1 … "BLD_UPG_5" → 5.</summary>

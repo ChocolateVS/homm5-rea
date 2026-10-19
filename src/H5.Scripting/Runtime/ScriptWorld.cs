@@ -97,13 +97,24 @@ public sealed class CreatedObject
     public int Count;
 }
 
+/// <summary>
+/// A saved combat (exe world vector +0x1b4, 16-byte records): the COMBAT_RESULT_* value and the armies,
+/// [0] the winner and [1] the loser. The GetSavedCombatArmy* functions read the armies only when both
+/// are recorded; an unknown index reads the world's empty default record (result 0, no armies).
+/// </summary>
 public sealed class SavedCombat
 {
     public int Index;
-    public int Winner;               // side 0 attacker / 1 defender
-    public int[] Players = new int[2];
-    public string[] Heroes = new string[2];
-    public List<SavedStack>[] Armies = { new(), new() };
+    public int Result;
+    public int Winner;               // engine side 0 attacker / 1 defender
+    public List<SavedArmy> Armies = new();
+}
+
+public sealed class SavedArmy
+{
+    public int Player;               // script player id, 0 = PLAYER_NONE
+    public string Hero = "";         // hero script name, "" = no hero
+    public List<SavedStack> Stacks = new();
 }
 
 public sealed class SavedStack

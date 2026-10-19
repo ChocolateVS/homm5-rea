@@ -56,6 +56,8 @@ public sealed record AnswerChoiceCmd(bool Accept, int Option = 0) : AdvCommand;
 /// <summary>Reports the outcome of the pending battle (run by H5.Combat). Survivors are full armies after combat.</summary>
 public sealed record ResolveBattleCmd(int WinnerSide, List<ArmySlot> AttackerSurvivors, List<ArmySlot> DefenderSurvivors, bool AttackerFled = false) : AdvCommand
 {
+    /// <summary>How the battle ended (H5.Combat EndReason: "army destroyed", "fled", "surrender"…); "" = unknown (a win).</summary>
+    public string EndReason { get; init; } = "";
     /// <summary>Spell points the two heroes have left at the end of the battle (attacker, defender); null = unchanged.</summary>
     public int[]? HeroMana { get; init; }
 }
@@ -125,7 +127,17 @@ public sealed record ExperienceGained(int HeroId, long Amount, long Total) : Adv
 public sealed record LevelUpOffered(int HeroId, int Level, string Attribute, IReadOnlyList<SkillEntry> Skills, IReadOnlyList<string> Perks) : AdvEvent;
 public sealed record SkillLearned(int HeroId, string Skill, Mastery Mastery) : AdvEvent;
 public sealed record BattleRequested(int AttackerHero, int DefenderHero, int DefenderObject, Tile Where, IReadOnlyList<ArmySlot> DefenderArmy) : AdvEvent;
-public sealed record BattleResolved(int WinnerSide, long ExperienceAwarded) : AdvEvent;
+public sealed record BattleResolved(int WinnerSide, long ExperienceAwarded) : AdvEvent
+{
+    /// <summary>Script combat result (COMBAT_RESULT_*): 1 win, 2 retreat, 3 surrender (exe FUN_00996d50 maps the engine code).</summary>
+    public int Result { get; init; } = 1;
+    /// <summary>The two armies as the exe's saved combat records them (FUN_00996ac0): [0] the winner, [1] the loser.</summary>
+    public IReadOnlyList<BattleSideRecord>? Armies { get; init; }
+}
+/// <summary>One side of a finished battle: owner (script player id, 0 = none), hero script name ("" = none) and stacks.</summary>
+public sealed record BattleSideRecord(int Player, string Hero, IReadOnlyList<BattleStackRecord> Stacks);
+/// <summary>A stack that fought: creature, count at the start of the combat, and how many of them died.</summary>
+public sealed record BattleStackRecord(string Creature, int Count, int Died);
 public sealed record ChoiceOffered(string Kind, int HeroId, int Object, int Gold, int Experience) : AdvEvent;
 public sealed record BuildingBuilt(int TownObject, string Building, int Level) : AdvEvent;
 public sealed record CreaturesRecruited(int TownObject, string Creature, int Count) : AdvEvent;

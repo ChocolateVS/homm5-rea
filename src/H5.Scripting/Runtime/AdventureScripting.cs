@@ -373,7 +373,14 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
 
     void RecordCombat(BattleResolved br)
     {
-        World.SavedCombats.Add(new SavedCombat { Index = World.SavedCombats.Count, Winner = br.WinnerSide });
+        var sc = new SavedCombat { Index = World.SavedCombats.Count, Result = br.Result, Winner = br.WinnerSide };
+        foreach (var side in br.Armies ?? Array.Empty<BattleSideRecord>())
+            sc.Armies.Add(new SavedArmy
+            {
+                Player = side.Player, Hero = side.Hero,
+                Stacks = side.Stacks.Select(s => new SavedStack { Creature = Ids.Creatures.Id(s.Creature), Count = s.Count, Died = s.Died }).ToList(),
+            });
+        World.SavedCombats.Add(sc);
     }
 
     // ---- IAdventureScriptHooks ---------------------------------------------------------------

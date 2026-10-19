@@ -34,6 +34,10 @@ public sealed class ObjectiveDef
     public bool InitiallyVisible = true;
     public int ProgressSteps;
     public List<string> Dependencies = new();
+    /// <summary>IsHidden: SetObjectiveVisible refuses it.</summary>
+    public bool Hidden;
+    /// <summary>CanUncomplete: SetObjectiveState may take it back from completed.</summary>
+    public bool CanUncomplete;
 }
 
 /// <summary>An adventure-map dialog (StartAdvMapDialog index): sentences with text and voice.</summary>
@@ -106,6 +110,7 @@ public sealed class MapScriptData
                     Name = quest.Str("Name"), Player = -1, Primary = false, Kind = quest.Str("Kind"),
                     InitiallyActive = false, InitiallyVisible = true,
                     ProgressSteps = quest.Element("ProgressCommentsFileRef")?.Elements("Item").Count() ?? 0,
+                    Hidden = quest.Bool("IsHidden", false), CanUncomplete = quest.Bool("CanUncomplete", false),
                 });
             var cs = e.Element("CombatScript");
             var csHref = (string?)cs?.Attribute("href");
@@ -153,6 +158,8 @@ public sealed class MapScriptData
         InitiallyVisible = o.Bool("IsInitialyVisible", true),
         ProgressSteps = o.Element("ProgressCommentsFileRef")?.Elements("Item").Count() ?? 0,
         Dependencies = o.StrItems("Dependencies"),
+        Hidden = o.Bool("IsHidden", false),
+        CanUncomplete = o.Bool("CanUncomplete", false),
     };
 
     static string TriggerFunction(XElement? trigger) =>

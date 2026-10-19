@@ -247,6 +247,7 @@ public sealed partial class Adventure
         }
         // exe FUN_00af3430: +500 for a defeated hero, Talented Warrior, neutral coefficient, Enlightenment & co, week.
         expAtt = BattleExperience(att, expAtt, opponentHeroLost: defHero != null, neutralCoef);
+        var (combatResult, savedArmies) = SavedCombatRecord(c, pb, att, defHero, attackerBefore);
 
         SetArmy(att.Army, c.AttackerSurvivors);
         att.VisitedSinceBattle.Clear(); att.NextBattleMorale = 0; att.NextBattleLuck = 0;
@@ -258,7 +259,7 @@ public sealed partial class Adventure
 
         if (attackerWon)
         {
-            Emit(new BattleResolved(0, expAtt));
+            Emit(new BattleResolved(0, expAtt) { Result = combatResult, Armies = savedArmies });
             if (defHero != null) RemoveHero(defHero, "defeated");
             if (pb.DefenderObject >= 0)
             {
@@ -288,7 +289,7 @@ public sealed partial class Adventure
         }
         else
         {
-            Emit(new BattleResolved(1, 0));
+            Emit(new BattleResolved(1, 0) { Result = combatResult, Armies = savedArmies });
             if (defHero != null)
             {
                 // +500 only when the attacking hero is lost, not when he fled or surrendered (exe 004d99b0 via 00af3430).
@@ -307,6 +308,40 @@ public sealed partial class Adventure
         }
         CheckEliminations();
         return null;
+    }
+
+    /// <summary>
+    /// The saved-combat record the exe makes when a battle ends (FUN_00996d50, read by the GetSavedCombat*
+    /// script functions): the result (engine 1 win → COMBAT_RESULT_WIN, 2 surrender → 3, 3 retreat → 2) and
+    /// the winner's then the loser's army (FUN_00996ac0: owner, hero, stacks with their start count and
+    /// losses; the loser of a win or a surrender is recorded with every creature dead).
+    /// </summary>
+    (int Result, List<BattleSideRecord> Armies) SavedCombatRecord(ResolveBattleCmd c, PendingBattle pb, HeroState att,
+        HeroState? defHero, List<Stack> attackerBefore)
+    {
+        int result = c.EndReason switch { "fled" => 2, "surrender" => 3, _ => 1 };
+        int defOwner = defHero?.Owner ?? (pb.DefenderObject >= 0 && S.Town(pb.DefenderObject) is { } town ? town.Owner : -1);
+        BattleSideRecord Side(int owner, HeroState? hero, List<Stack> before, List<ArmySlot> survivors, bool allDied)
+        {
+            var left = survivors.GroupBy(s => s.Creature).ToDictionary(g => g.Key, g => g.Sum(s => s.Count));
+            var stacks = new List<BattleStackRecord>();
+            foreach (var s in before.Where(s => s.Count > 0))
+            {
+                int alive = Math.Min(s.Count, left.GetValueOrDefault(s.Creature));
+                left[s.Creature] = left.GetValueOrDefault(s.Creature) - alive;
+                stacks.Add(new BattleStackRecord(s.Creature, s.Count, allDied ? s.Count : s.Count - alive));
+            }
+            return new BattleSideRecord(owner < 0 ? 0 : owner + 1, hero?.DefId ?? "", stacks);
+        }
+        bool loserAllDied = result is 1 or 3;
+        var attSide = (Owner: att.Owner, Hero: (HeroState?)att, Before: attackerBefore, Survivors: c.AttackerSurvivors);
+        var defSide = (Owner: defOwner, Hero: defHero, Before: pb.DefenderArmy, Survivors: c.DefenderSurvivors);
+        var (w, l) = c.WinnerSide == 0 ? (attSide, defSide) : (defSide, attSide);
+        return (result, new List<BattleSideRecord>
+        {
+            Side(w.Owner, w.Hero, w.Before, w.Survivors, allDied: false),
+            Side(l.Owner, l.Hero, l.Before, l.Survivors, allDied: loserAllDied),
+        });
     }
 
     static void SetArmy(Stack?[] army, List<ArmySlot> survivors)

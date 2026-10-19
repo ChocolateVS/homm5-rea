@@ -32,7 +32,8 @@ public sealed partial class AdventureScripting
         Reg("IsTutorialEnabled", c => c.ReturnBool(TutorialsEnabled));
         Reg("IsTutorialItemEnabled", c => c.ReturnBool(TutorialsEnabled && !World.Settings.ContainsKey("tutorial_done:" + c.Str(0))));
         Reg("TutorialActivateHint", c => { if (TutorialsEnabled) Emit("tutorial_hint", ("id", c.Str(0))); });
-        Reg("TutorialSetBlink", c => Emit("tutorial_blink", ("id", c.Str(0)), ("on", c.Bool(1))));
+        // 0x00773ee0: the second argument is a number, blinking while it is non-zero.
+        Reg("TutorialSetBlink", c => Emit("tutorial_blink", ("id", c.Str(0)), ("on", c.Int(1) != 0)));
         Reg("TutorialMessageBox", c =>
         {
             if (!TutorialsEnabled) return;

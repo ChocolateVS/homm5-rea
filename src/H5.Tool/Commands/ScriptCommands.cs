@@ -46,6 +46,21 @@ sealed class LuaCompileCommand : ICommand
 
 sealed class ScriptRunCommand : ICommand
 {
+    /// <summary>
+    /// Errors the stock engine raises the same way (docs/mmh55/SCRIPTS.md "Expected errors"): MMH55's AI
+    /// probe calls EnableHeroAI on human heroes on purpose (H55-Core prints a note about it), GetPlayerResource
+    /// on empty player slots in H55_UpdateGameMode, and the two broken script files in the original data.
+    /// </summary>
+    static readonly string[] StockErrors =
+    {
+        "is not belong to AI player",
+        "doesn't taking part in the current game",
+        "A1C3M1/a1c3m1.lua",
+        "A1C3M5/script_combat.lua",
+    };
+
+    static bool IsStockError(string e) => StockErrors.Any(e.Contains);
+
     public string Name => "script-run";
     public string Help => "script-run <map|all|campaign> [days=14] [seed=1] [-v] [--no-map-script-check] [--include-user]  - play maps with their Lua scripts (bots for every player) and report script errors";
 
@@ -64,7 +79,7 @@ sealed class ScriptRunCommand : ICommand
         var maps = pos[0] == "all"
             ? MapCatalog.All(ctx.Fs, ctx.Install).Where(m => includeUser || !m.IsUserMap).ToList()
             : new List<MapCatalog.MapRef> { MapCatalog.Find(ctx.Fs, ctx.Install, pos[0]) ?? throw new ArgumentException("map not found") };
-        int totalErrors = 0, crashed = 0, clean = 0;
+        int totalErrors = 0, totalExpected = 0, crashed = 0, clean = 0;
         foreach (var mref in maps)
         {
           try
@@ -118,9 +133,11 @@ sealed class ScriptRunCommand : ICommand
                 turns++;
             }
             foreach (var cs in combatHosts) host.Errors.AddRange(cs.Errors.Select(e => "combat: " + e));
-            totalErrors += host.Errors.Count;
-            if (host.Errors.Count == 0) clean++;
-            Console.WriteLine($"{mref.Id,-40} script={(src != null ? "yes" : "no "),-3} day {g.S.Day,3} threads {host.L.Threads.Count,3} ui {host.World.PendingUi.Count} combats {combatHosts.Count} events {host.Events.Count,5} errors {host.Errors.Count} ({sw.ElapsedMilliseconds} ms){(g.S.Finished ? " finished" : "")}");
+            int expected = host.Errors.Count(IsStockError);
+            totalErrors += host.Errors.Count - expected;
+            totalExpected += expected;
+            if (host.Errors.Count == expected) clean++;
+            Console.WriteLine($"{mref.Id,-40} script={(src != null ? "yes" : "no "),-3} day {g.S.Day,3} threads {host.L.Threads.Count,3} ui {host.World.PendingUi.Count} combats {combatHosts.Count} events {host.Events.Count,5} errors {host.Errors.Count - expected} stock-too {expected} ({sw.ElapsedMilliseconds} ms){(g.S.Finished ? " finished" : "")}");
             foreach (var e in host.Errors.Distinct().Take(verbose ? 50 : 5)) Console.WriteLine("    " + e);
             if (verbose) foreach (var l in host.Log.Take(40)) Console.WriteLine("    | " + l);
           }
@@ -132,7 +149,7 @@ sealed class ScriptRunCommand : ICommand
               Console.WriteLine("    " + e.StackTrace?.Split((char)10).FirstOrDefault()?.Trim());
           }
         }
-        Console.WriteLine($"maps {maps.Count}, clean {clean}, engine exceptions {crashed}, total script errors: {totalErrors}");
+        Console.WriteLine($"maps {maps.Count}, clean {clean}, engine exceptions {crashed}, script errors {totalErrors} (+{totalExpected} that the stock exe raises too)");
         return totalErrors == 0 ? 0 : 1;
     }
 }

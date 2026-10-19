@@ -444,7 +444,7 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
     {
         var b = _battle!;
         var cmd = new ResolveBattleCmd(b.Battle.State.Winner ?? 1, b.Survivors(0), b.Survivors(1), b.AttackerFled)
-        { Player = _g.Current.Index, HeroMana = b.Battle.State.Heroes.Select(h => h.Mana).ToArray() };
+        { Player = _g.Current.Index, HeroMana = b.Battle.State.Heroes.Select(h => h.Mana).ToArray(), EndReason = b.Battle.State.EndReason ?? "" };
         foreach (var side in b.Participants) Out(side).Add(new JsonObject { ["end"] = new JsonObject { ["winner"] = b.Battle.State.Winner } });
         _battlePausedMs += _clock() - _battleStartMs;
         _battle = null;
