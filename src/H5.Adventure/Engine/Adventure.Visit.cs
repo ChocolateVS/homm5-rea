@@ -142,33 +142,54 @@ public sealed partial class Adventure
         Emit(new ObjectRemoved(index));
     }
 
+    /// <summary>
+    /// Fortunate Adventurer on a treasure amount (CHero vcall 0x178 = FUN_00b4b540): with skill 0x21 the amount
+    /// grows by max(1, rand(5..25) · amount / 100).
+    /// </summary>
+    int FortunateAdventurer(HeroState h, int amount)
+    {
+        if (!h.HasPerk(FortunateAdventurerPerk)) return amount;
+        return amount + Math.Max(1, S.Rng.Range(5, 25) * amount / 100);
+    }
+
+    // Treasure visit 00a82c40 with the rewards of FUN_00a82720 (the amount goes through vcall 0x178, see above).
     void VisitTreasure(HeroState h, PlayerState p, MapObject o, ObjState os)
     {
         switch (o.Shared.Type)
         {
             case "TREASURE_CAMPFIRE":
-                GiveOne(p, os.ResourceKind, os.Amount);
-                GiveOne(p, Purse.Gold, 100 * os.Amount);
+            {
+                int n = FortunateAdventurer(h, os.Amount);
+                GiveOne(p, os.ResourceKind, n);
+                GiveOne(p, Purse.Gold, 100 * n);
                 RemoveObject(o.Index);
                 break;
+            }
             case "TREASURE_CHEST":
+            {
                 if (os.ArtifactId != null) { GiveArtifact(h, os.ArtifactId); RemoveObject(o.Index); break; }
-                int[] gold = { 1000, 1500, 2000 }, exp = { 500, 1000, 1500 };
-                int v = Math.Clamp(os.Variant, 0, 2);
-                S.Choice = new PendingChoice { Kind = "chest", Hero = h.Id, Object = o.Index, Gold = gold[v], Experience = exp[v] };
-                Emit(new ChoiceOffered("chest", h.Id, o.Index, gold[v], exp[v]));
+                // Gold (amount' + 1) · 500 with amount' after vcall 0x178; experience amount · 500 through the
+                // hero's experience modifiers (vcall 0x19c), added unchanged by CTakeChestCmd (00426c60, +0x198).
+                int a = os.Variant + 1;
+                int gold = (FortunateAdventurer(h, a) + 1) * 500;
+                int exp = (int)ExperienceModifiers(h, a * 500L);
+                S.Choice = new PendingChoice { Kind = "chest", Hero = h.Id, Object = o.Index, Gold = gold, Experience = exp };
+                Emit(new ChoiceOffered("chest", h.Id, o.Index, gold, exp));
                 break;
+            }
             case "TREASURE_FLOATSAM":
-                switch (os.Variant)
+                // amount' 2: 5 wood; 3: 5 wood + 200 gold; 4: 10 wood + 500 gold; anything else nothing.
+                switch (FortunateAdventurer(h, os.Variant + 1))
                 {
-                    case 1: GiveOne(p, Purse.Wood, 5); break;
-                    case 2: GiveOne(p, Purse.Wood, 5); GiveOne(p, Purse.Gold, 200); break;
-                    case 3: GiveOne(p, Purse.Wood, 10); GiveOne(p, Purse.Gold, 500); break;
+                    case 2: GiveOne(p, Purse.Wood, 5); break;
+                    case 3: GiveOne(p, Purse.Wood, 5); GiveOne(p, Purse.Gold, 200); break;
+                    case 4: GiveOne(p, Purse.Wood, 10); GiveOne(p, Purse.Gold, 500); break;
                 }
                 RemoveObject(o.Index);
                 break;
             case "TREASURE_SEA_CHEST":
-                if (os.Variant > 0) GiveOne(p, Purse.Gold, 1500);
+                // 1500 gold unless amount' is 1.
+                if (FortunateAdventurer(h, os.Variant + 1) != 1) GiveOne(p, Purse.Gold, 1500);
                 RemoveObject(o.Index);
                 break;
             case "TREASURE_SHIPWRECK":
@@ -177,7 +198,7 @@ public sealed partial class Adventure
                 RemoveObject(o.Index);
                 break;
             default:
-                if (os.ResourceKind >= 0 && os.Amount > 0) GiveOne(p, os.ResourceKind, os.Amount);
+                if (os.ResourceKind >= 0 && os.Amount > 0) GiveOne(p, os.ResourceKind, FortunateAdventurer(h, os.Amount));
                 RemoveObject(o.Index);
                 break;
         }
@@ -577,7 +598,7 @@ public sealed partial class Adventure
         switch (ch.Kind)
         {
             case "chest":
-                if (c.Option == 1) GainExperience(h, ch.Experience); else GiveOne(p, Purse.Gold, ch.Gold);
+                if (c.Option == 1) GainExperience(h, ch.Experience, modifiersApplied: true); else GiveOne(p, Purse.Gold, ch.Gold);
                 RemoveObject(ch.Object);
                 break;
             case "attack_or_defence_2": AddStat(h, c.Option == 1 ? "Defence" : "Attack", 2); break;

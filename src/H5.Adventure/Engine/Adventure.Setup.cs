@@ -332,12 +332,19 @@ public sealed partial class Adventure
         return pool.Count == 0 ? null : pool[S.Rng.Next(pool.Count)];
     }
 
-    /// <summary>Treasure contents (fan manual p.269-270); custom amounts from the map win.</summary>
+    /// <summary>
+    /// Treasure contents as the exe's reward roller FUN_00a82720 reads them: the amount is the object's own
+    /// (IsCustom / Amount, object +0xc8 / +0xcc) or a roll in the shared MinResource..MaxResource (+0xf0 / +0xf4);
+    /// the campfire always rolls. Per type: resource piles give the amount (gold × 100); the campfire's roll r gives
+    /// r / 6 of resource r % 6 and 100 gold per unit; the chest, sea chest and flotsam keep the amount
+    /// (<see cref="ObjState.Variant"/> = amount − 1) and resolve it on the visit (<see cref="VisitTreasure"/>).
+    /// The exe rolls on the visit; the hero's Fortunate Adventurer bonus is applied there.
+    /// </summary>
     void RollTreasure(MapObject o)
     {
         var os = S.Obj(o.Index);
         int min = o.Shared.MinResource, max = Math.Max(o.Shared.MinResource, o.Shared.MaxResource);
-        int Roll() => o.TreasureCustom && o.TreasureAmount > 0 ? o.TreasureAmount : S.Rng.Range(min, max);
+        int Roll() => o.TreasureCustom ? o.TreasureAmount : S.Rng.Range(min, max);
         switch (o.Shared.Type)
         {
             case "TREASURE_WOOD": os.ResourceKind = Purse.Wood; os.Amount = Roll(); break;
@@ -346,13 +353,11 @@ public sealed partial class Adventure
             case "TREASURE_CRYSTAL": os.ResourceKind = Purse.Crystal; os.Amount = Roll(); break;
             case "TREASURE_SULFUR": os.ResourceKind = Purse.Sulfur; os.Amount = Roll(); break;
             case "TREASURE_GEMS": os.ResourceKind = Purse.Gem; os.Amount = Roll(); break;
-            case "TREASURE_GOLD":
-                os.ResourceKind = Purse.Gold;
-                // Gold piles are 500–1000 in steps of 100 (manual p.269); data stores 5..10.
-                os.Amount = o.TreasureCustom && o.TreasureAmount > 0 ? o.TreasureAmount : S.Rng.Range(min, max) * (max <= 20 ? 100 : 1);
-                break;
+            // 00a82a64: the amount (data 5..10, maps' custom amounts 1..60) is in hundreds.
+            case "TREASURE_GOLD": os.ResourceKind = Purse.Gold; os.Amount = Roll() * 100; break;
             case "TREASURE_RANDOM":
             {
+                // TODO(exe): how TREASURE_RANDOM is resolved is not traced (the roller has no case for it).
                 os.ResourceKind = S.Rng.Next(7);
                 os.Amount = os.ResourceKind switch
                 {
@@ -363,23 +368,25 @@ public sealed partial class Adventure
                 break;
             }
             case "TREASURE_CAMPFIRE":
-                // N of a random resource and 100·N gold; N is 4–6 for wood/ore, 4–5 otherwise (p.269).
-                os.ResourceKind = S.Rng.Next(6);
-                os.Amount = os.ResourceKind is Purse.Wood or Purse.Ore ? S.Rng.Range(4, 6) : S.Rng.Range(4, 5);
-                break;
-            case "TREASURE_CHEST":
             {
-                // 4% minor artifact (DefaultStats ChestMinorArtifactChance), else gold or experience:
-                // 1000/500, 1500/1000 or 2000/1500 (p.270).
-                int chance = Db.Stats.Root.Element("adventure").Int("ChestMinorArtifactChance", 4);
-                if (S.Rng.Next(100) < chance) os.ArtifactId = RandomArtifact("ARTF_CLASS_MINOR");
-                os.Variant = S.Rng.Range(Math.Max(1, min), Math.Max(1, max)) - 1;   // data: MinResource 1, MaxResource 3
+                // 00a82a75: r in MinResource..MaxResource (data 24..36), custom amount ignored (00a8289d);
+                // resource r % 6 (wood, ore, mercury, crystal, sulfur, gems), count r / 6.
+                int r = S.Rng.Range(min, max);
+                os.ResourceKind = r % 6;
+                os.Amount = r / 6;
                 break;
             }
-            // Variants 1..4 (data Min/MaxResource): nothing / 5 wood / 5 wood+200 gold / 10 wood+500 gold (p.270).
-            case "TREASURE_FLOATSAM": os.Variant = S.Rng.Range(Math.Max(1, min), Math.Max(1, max)) - 1; break;
-            // TODO(exe): sea chest variants 1..4; the manual only documents "may provide 1500 gold".
-            case "TREASURE_SEA_CHEST": os.Variant = S.Rng.Range(Math.Max(1, min), Math.Max(1, max)) - 1; break;
+            case "TREASURE_CHEST":
+            {
+                // 00a829bd: a minor artifact when a roll of 1..99 is below ChestMinorArtifactChance (RPGStats +0xc0,
+                // 2 without stats); otherwise gold or experience by the amount (data 1..3).
+                int chance = Db.Stats.Root.Element("adventure").Int("ChestMinorArtifactChance", 2);
+                if (S.Rng.Range(1, 99) < chance) os.ArtifactId = RandomArtifact("ARTF_CLASS_MINOR");
+                os.Variant = Roll() - 1;
+                break;
+            }
+            case "TREASURE_FLOATSAM": os.Variant = Roll() - 1; break;
+            case "TREASURE_SEA_CHEST": os.Variant = Roll() - 1; break;
             case "TREASURE_SHIPWRECK": RollShipwreck(os, footman: min == 1); break;
             default: os.Amount = Roll(); break;
         }
