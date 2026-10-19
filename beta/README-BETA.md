@@ -5,7 +5,20 @@ on the Godot 4 engine (C#/.NET 8). This is an early, testable beta: expect missi
 
 **No original game assets are included.** H5Reborn reads the data (`data/*.pak`, music, video,
 maps, cursors…) directly from **your own installed copy of Heroes V: Tribes of the East, version 3.1**
-(GOG, Ubisoft or Steam). Nothing in your game folder is modified.
+(GOG, Ubisoft or Steam), with or without **Might & Magic: Heroes 5.5** installed on top. Nothing in
+your game folder is modified.
+
+## What's new in this build
+
+- **MMH 5.5 is the default target.** An install with MMH 5.5 is played with 5.5 rules and data;
+  MMH 5.5 map scripts run (only on maps that have a map script, as on the original engine).
+  To play plain 3.1 instead, point H5Reborn at a 3.1 install (see below) or set `H5_TARGET=stock`.
+- Network games: simultaneous turns (PEST, as in MMH 5.5) that never break; several battles can run at the same time.
+- Battles: tactics phase can leave a stack out or split it.
+- Adventure map: Seer Huts, Sphinx, grail digging, shipyards; faction special buildings (Haven
+  training, Necropolis shrine, sacrifice pits, slave market); map objects are picked as whole
+  objects with entrance routing and the original cursors; fog of war drawn as in the original game.
+- Fix: props held by creatures and heroes animate correctly.
 
 ## Downloads
 
@@ -20,7 +33,7 @@ nothing else needs installing.
 
 ## Requirements
 
-- Your own Heroes V: Tribes of the East 3.1 installation (the folder that contains `data/data.pak`).
+- Your own Heroes V: Tribes of the East 3.1 installation, optionally with MMH 5.5 (the folder that contains `data/data.pak`).
 - A GPU with Vulkan support. Without a Vulkan driver, use OpenGL 3.3 with `--rendering-driver opengl3` (see below).
 - 1920x1080 or larger display recommended.
 
@@ -32,8 +45,8 @@ The game folder is searched in this order:
 2. `game_dir.txt` next to the executable: the first line that is not blank and does not start with `#`.
    Example: `C:\GOG Games\Heroes of Might and Magic V - Tribes of the East`,
    or on Linux `~/Games/heroic/Heroes of Might and Magic V - Tribes of the East`.
-3. Common install locations:
-   - Windows: `GOG Games`, `GOG Galaxy\Games`, `Ubisoft`, and Steam `steamapps\common` on drives C: to G:.
+3. Common install locations (with `H5_TARGET=stock`, MMH 5.5 installs are skipped here):
+   - Windows: `G:\HoMM 5 - Tribes of the East (5.5)` first, then `GOG Games`, `Games`, `GOG Galaxy\Games`, `Ubisoft`, and Steam `steamapps\common` on drives C: to G:.
    - Linux: `~/.wine`, Steam (`steamapps/common` and Proton `steamapps/compatdata/*/pfx`), Heroic (`~/Games/Heroic`),
      Lutris prefixes in `~/Games/*`, Bottles, `~/Games` and `~/GOG Games`.
 
