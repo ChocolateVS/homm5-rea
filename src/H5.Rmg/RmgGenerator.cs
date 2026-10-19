@@ -21,6 +21,11 @@ public sealed class RmgOptions
     public int Seed;
     /// <summary>Races chosen per player on the setup screen (preset index, 1 = random). Missing entries are random.</summary>
     public List<int> PlayerRaces = new();
+    /// <summary>
+    /// The screen's EP_GRAAL_ON_MAP check box (InitialParams.Grail, generator +0xb5, saved as
+    /// "sRMGProps.InitialParams.Grail"): a Tear of Asha in one random zone and "obelisks" in every zone.
+    /// </summary>
+    public bool Grail;
 }
 
 /// <summary>A zone during generation (NRMG::CGameZone; offsets are the exe's).</summary>

@@ -45,6 +45,8 @@ public partial class RmgDialog : UiScreen
             int i = _templates.IndexOf(_s.Template);
             _s.Template = _templates.Count == 0 ? "" : _templates[(i + 1) % _templates.Count];
         }));
+        // EP_GRAAL_ON_MAP (UIGameRoot RMG options: ECT_CHECKBOX, name TemplateInfo/Grail/Name.txt, tooltip Graal/Tooltip.txt).
+        _rows.Add((T("Grail/Name.txt"), () => _s.Grail ? "Yes" : "No", () => _s.Grail = !_s.Grail));
 
         if (Find("OptionsContainer") is { } box)
         {

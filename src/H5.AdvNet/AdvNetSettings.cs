@@ -27,11 +27,13 @@ public sealed class RmgSettings
     public int Monsters = 2;
     /// <summary>Non-zero; the host fills it when the room is created.</summary>
     public int Seed;
+    /// <summary>The RMG screen's EP_GRAAL_ON_MAP check box.</summary>
+    public bool Grail;
 
     public RmgOptions ToOptions() => new()
     {
         Template = Template, Size = Size, Players = Players, Underground = Underground,
-        WaterAmount = Water, MonsterLevel = Monsters, Seed = Seed == 0 ? 1 : Seed,
+        WaterAmount = Water, MonsterLevel = Monsters, Seed = Seed == 0 ? 1 : Seed, Grail = Grail,
     };
 }
 

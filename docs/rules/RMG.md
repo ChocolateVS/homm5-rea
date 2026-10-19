@@ -141,6 +141,8 @@ match exactly on every map; dwellings, shrines, monsters, statics and treasures 
   details in `0x00919be0` / `0x00b0be60`, and the water/terrain stages `0x00915dc0` / `0x00918270`).
 * No `.h5m` writer yet (the original writes `Maps/RMG/<guid>/` with map.xdb, GroundTerrain.bin, texts,
   minimap); maps exist in memory as `AdvMap`.
-* Water zones, shipyards, lakes, grail/obelisks, Den of Thieves / Redwood Observatory densities,
+* Grail/obelisks follow the screen's EP_GRAAL_ON_MAP option (0x00907150 / 0x00921a50 / 0x00921a10, see
+  AUDIT_ADVENTURE.md "Random maps"); their candidate filters are not ported.
+* Water zones, shipyards, lakes, Den of Thieves / Redwood Observatory densities,
   cartographers, the two-stack guard templates and per-zone point lights are not generated.
 * Terrain is flat and uses only each race's default and road tiles (no transitive/secondary tiles).

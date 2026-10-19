@@ -366,6 +366,10 @@ public sealed partial class RmgGenerator
 
     void PlaceMainObjects(RmgResult r)
     {
+        // exe 0x00907150: with the Graal option one zone index is drawn up front (Next(template zones)),
+        // otherwise one draw is spent.
+        int grailZone = -1;
+        if (_o.Grail) grailZone = Rng.Next(_t.Zones.Count); else Rng.Advance();
         foreach (var z in Zones.OrderBy(z => z.Def.Index))
         {
             var race = _db.Race(z.Race);
@@ -376,6 +380,7 @@ public sealed partial class RmgGenerator
                 if (o != null && r.Access.TryGetValue(o, out var acc)) PlaceGuard(r, z, acc.X, acc.Y, GuardPower(_db.Params.Mine2LevelGuardLevel), "mine guard");
             }
             PlaceDwellings(r, z, race);
+            if (_o.Grail) PlaceGrailAndObelisks(r, z, z.Def.Index == grailZone);
             // Upgrade buildings scale with the 0x00907150 switch on +0xb0 (0.2 .. 4); calibrated to x1
             // against the stock RMG maps in the user's Maps folder (see docs/rules/RMG.md).
             PlaceByDensity(r, z, race.Upgrades, z.Def.UpgBuildingsDensity, "upgrade building");
@@ -390,6 +395,37 @@ public sealed partial class RmgGenerator
             PlaceTreasures(r, z, (int)MathF.Round(z.Def.TreasureDensity * Multipliers[ResourceMultiplier]), chests: false);
             PlaceTreasures(r, z, (int)MathF.Round(z.Def.TreasureChestDensity * Multipliers[ChestMultiplier]), chests: true);
         }
+    }
+
+    /// <summary>
+    /// Graal option, per zone after the dwellings (exe 0x00907150): the drawn zone gets the Graal artifact
+    /// (RMG/Params Grail) by 0x00921a50 — at most 100 attempts of a random candidate tile and a random quarter turn;
+    /// then every zone gets (zone tiles · k) / (W · H) + 2 "obelisks" (RMG/Params Obelisk, which the stock data
+    /// points at the Learning Stone) through 0x00921a10 → 0x009216f0, k = 10 / 18 / 26 for size index 0 / 1 / larger.
+    /// TODO(exe): the candidate filters of 0x0091bb10 and 0x009216f0, and the second test 0x00914a60 (radius 5),
+    /// are not ported; candidates are the zone's tiles.
+    /// </summary>
+    void PlaceGrailAndObelisks(RmgResult r, RmgZone z, bool grail)
+    {
+        if (grail && _db.Params.Grail is { } g)
+        {
+            var d = Catalog.Get(g);
+            var pool = z.Tiles.ToList();
+            bool placed = false;
+            for (int tries = 0; tries < 100 && pool.Count > 0 && !placed; tries++)
+            {
+                int i = Rng.Next(pool.Count);
+                var (x, y) = pool[i];
+                int q = Rng.Next(4);
+                if (CanPlace(z, d, x, y, q, out var access, null)) { Commit(r, z, g, d, x, y, q, access, "graal"); placed = true; }
+                else pool.RemoveAt(i);
+            }
+            if (!placed) r.Warnings.Add($"Can't place building {g} at zone #{z.Id}, floor {z.Floor}");
+        }
+        if (_db.Params.Obelisk is not { } ob) return;
+        int k = SizeIndex == 0 ? 10 : SizeIndex == 1 ? 18 : 26;
+        int n = z.Tiles.Count * k / (W * H) + 1;
+        for (int i = 0; i <= n; i++) PlaceRandom(r, z, ob, z.Tiles.ToList(), "obelisk");
     }
 
     /// <summary>exe 0x0091c4a0: wood/ore near the town (Mine1 radii), the rest further out (Mine2 radii), each guarded.</summary>

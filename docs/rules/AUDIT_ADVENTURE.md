@@ -4,7 +4,7 @@ Every adventure mechanic / screen element checked against `H5_Game.exe` (Ghidra 
 the original data. Status: **MATCH** (already as the exe), **FIXED** (changed to match), **GAP** (known difference or
 not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not traced).
 
-Rows at 2026-10-20: 49 FIXED, 5 MATCH, 18 GAP, 22 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
+Rows at 2026-10-20: 51 FIXED, 5 MATCH, 18 GAP, 24 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
 
 ## Seer Huts
 
@@ -53,7 +53,9 @@ Rows at 2026-10-20: 49 FIXED, 5 MATCH, 18 GAP, 22 UNVERIFIED (rows carrying two 
 | Item | Evidence | Original | Ours | Status |
 |---|---|---|---|---|
 | Where it is buried | map init 009960e0 | one of the map's Graal artifact objects (both floors) picked at random; all of them removed; no Graal → no Tear of Asha; warnings when obelisks and Graal don't match | same (`PlaceGrail`) | FIXED (was: random open land tile) |
-| Random maps | RMG `GraalOnMap` / `Grail` (RmgData) | the generator places a Graal | H5.Rmg does not place one yet, so generated maps have no Tear of Asha | GAP (RMG workstream) |
+| Random maps: option | UIGameRoot RMG option EP_GRAAL_ON_MAP (ECT_CHECKBOX, name TemplateInfo/Grail/Name.txt "Do not use!", tooltip Graal/Tooltip.txt); InitialParams.Grail = generator +0xb5 (saved by 0090a980 as sRMGProps.InitialParams.Grail); the template's GraalOnMap (+0x74) is only read by its loaders and copy constructor | a check box on the RMG screen decides | `RmgOptions.Grail`, `RmgSettings.Grail`, a row in the RMG dialog | FIXED / the check box's default (0079e6f0 → option +0x2c) UNVERIFIED (ours: off) |
+| Random maps: placement | 0x00907150 (Next(template zones) up front, else one discarded draw), 0x00921a50 (Graal: ≤ 100 attempts, random candidate and quarter turn, tile marked 4), 0x00921a10 → 0x009216f0 (obelisks: (zone tiles·k)/(W·H) + 2 per zone, k 10 / 18 / 26 by size index) | Graal artifact (RMG/Params Grail) in the drawn zone; "obelisks" = RMG/Params Obelisk, which the stock data points at Learning_Stone | `PlaceGrailAndObelisks` after the dwellings of every zone; the adventure map then buries the Tear of Asha there (`PlaceGrail`) | FIXED / candidate filters (0x0091bb10, 0x009216f0) and the radius-5 test 0x00914a60 UNVERIFIED |
+| Random maps: grail objective | RMG/Params DefaultGrailObjective | — | not traced | GAP |
 | Puzzle pieces | 00a7f8c0, obelisk visit 00a7f880 | each of N obelisks visited (capped at N) opens (36 − open) / (obelisks left) | `PuzzlePiecesFor` | FIXED (was 36·v/N; differs e.g. N = 8) |
 | Pieces without a Tear of Asha | 009960e0 (puzzle object only created with a Graal) | none | none | FIXED |
 | Dig checks | 0098ec30 | hole on the tile → GRAAL_HAS_HOLE (no cost, command succeeds); tile not clear → GRAAL_TRY_ON_CLEAR; movement < cost → GRAAL_NOT_ENOUGH_MOVEMENT (RPGRoot texts) | same messages | FIXED |

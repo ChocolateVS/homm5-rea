@@ -181,6 +181,24 @@ public class GeneratorTests(RmgFixture f)
     }
 
     [StockFact]
+    public void GraalOptionBuriesATearOfAshaAndPlacesObelisks()
+    {
+        var o = new RmgOptions { Template = "S1-2P2-4Z4K1S", Size = 1, Seed = 5150, Players = 4, Grail = true };
+        var r = new RmgGenerator(f.Db, o).Generate();
+        var graal = r.Objects.Where(x => x.Shared == f.Db.Params.Grail).ToList();
+        Assert.Single(graal);
+        // (zone tiles · 18) / (W · H) + 2 per zone at size index 1.
+        int expected = r.Generator.Zones.Sum(z => z.Tiles.Count * 18 / (r.Generator.W * r.Generator.H) + 2);
+        Assert.True(r.Objects.Count(x => x.Shared == f.Db.Params.Obelisk) <= expected);
+        var map = r.ToAdvMap(new SharedCatalog(f.Xdb));
+        var (game, _) = Adventure.Engine.Adventure.NewGame(f.Adventure, map, GameSetup.AllPlayers(map, 0, 1));
+        Assert.NotNull(game.S.Grail);
+        // Without the option no Graal is generated.
+        var plain = f.Generate("S1-2P2-4Z4K1S", 1, 5150, 4);
+        Assert.DoesNotContain(plain.Objects, x => x.Shared == f.Db.Params.Grail);
+    }
+
+    [StockFact]
     public void GeneratedMapPlaysInTheAdventureEngine()
     {
         var r = f.Generate("S0-1P2Z2K3T", 0, 2024, 2);
