@@ -4,6 +4,8 @@ Every adventure mechanic / screen element checked against `H5_Game.exe` (Ghidra 
 the original data. Status: **MATCH** (already as the exe), **FIXED** (changed to match), **GAP** (known difference or
 not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not traced).
 
+Rows at 2026-10-19: 31 FIXED, 5 MATCH, 17 GAP, 15 UNVERIFIED (a few rows carry two statuses, e.g. rules FIXED / visual GAP).
+
 ## Seer Huts
 
 | Item | Evidence | Original | Ours | Status |
@@ -84,3 +86,22 @@ not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not
 | Marketplace count | CPlayer vtable +0xb0 = 00500cf0 returns field +0x610 (setter +0xac = 00500cd0) | who fills the field is not traced | one per town with a marketplace, two with TOWN_BONUS_MARKETPLACE (manual) | UNVERIFIED |
 | Trading Post rate | — | manual: as with 3 marketplaces | same | UNVERIFIED |
 | Artifact selling | FUN_00623160, RPGStats+0x1c8 | gold cost × Marketplace_ArtifactSellCostOfGoldCoef (0.5) | same | MATCH |
+
+## Kingdom overview (MissionObjectives box, built in c144024)
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Objectives / Kingdom Overview tabs, town and hero templates, resources with daily income, moon week, date | UI/MissionObjectives (townview1 / heroview1 templates) | — | MissionBoxScreen | UNVERIFIED (exe screen code not traced in this pass) |
+
+## Faction special buildings (town "enter_special")
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Haven Training Grounds | UI/HavenTraining; CTrainCreatureCmd (vtable 00e0e3fc, execute 00427fb0 → town interface +0x90 → +0x10); DefaultStats Knight/Training (TrainingPointsPerWeek 7 / 20 upgraded, BaseCostMultiplier 3, SkillTraining_CostDiscountPerLevel 15, ExpertTrainer_CostDiscount 35, Suserain_CostDiscount) read by 0094fa40; UI cost text "training_cost" (0065fb60) | train creatures into the next tier for a cost | not built | GAP |
+| Sylvan Avenger's Guild (favoured enemies) | UI/FavoredEnemy | choose favoured enemies | not built | GAP |
+| Necropolis creature transformer | UI/NecropolisTransformCreature | transform creatures into undead | not built | GAP |
+| Dungeon / Inferno sacrifice altars | UI/DungeonSacrifice, UI/InfernoSacrifice, UI/SacrificeAltar | sacrifice creatures / artifacts | not built | GAP |
+| Stronghold slave market | UI/StrongholdSlaveMarket | trade creatures | not built | GAP |
+| Academy creature artifacts / Tower of Astrologer | UI/AcademyCreatureArtifacts, UI/ArtefactMagic, UI/TowerOfAstrologer | creature artifacts; astrologer | not built | GAP |
+| Academy Artifact Merchant | TB_SPECIAL_3 | buy artifacts | built earlier (ArtifactMerchantScreen) | UNVERIFIED |
+| Town "enter_special" for unbuilt screens | — | each opens its screen | our notice "This building's screen is not available yet." (placeholder text, not from the game) | GAP |
