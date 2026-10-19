@@ -112,6 +112,7 @@ public partial class CombatScreen : Control
                     tip.Position = n.GetGlobalRect().Position + new Vector2(0, -60);
                 }
             };
+        if (CombatLauncher.TacticsDemo is { } td) GetTree().CreateTimer(1.0).Timeout += () => RunTacticsDemo(td);
         if (CombatLauncher.RetreatDialogCost is { } rdc)
             GetTree().CreateTimer(1.0).Timeout += () => { _devRansom = rdc; RetreatDialog.Open(this, Hud); };
         if (CombatLauncher.TooltipUnit is { } tu && Session.Battle.State.Unit(tu.Unit) is { } tUnit)
@@ -129,6 +130,34 @@ public partial class CombatScreen : Control
 
     TextureRect? _fakeCursor;
     int _attackCount;
+
+    /// <summary>Dev: scripted tactics army bar steps (--tactics-demo).</summary>
+    void RunTacticsDemo(string steps)
+    {
+        int side = Hud.BarSide;
+        Unit Stack(string n) => Session.Battle.TacticsStacks(side).ElementAt(int.Parse(n));
+        foreach (var step in steps.Split(','))
+        {
+            var p = step.Split(':');
+            switch (p[0])
+            {
+                case "reserve": Submit(new ReserveCmd(Stack(p[1]).Id) { Side = side }); break;
+                case "split": Submit(new SplitStackCmd(Stack(p[1]).Id, int.Parse(p[2])) { Side = side }); break;
+                case "dialog":
+                    int slot = int.Parse(p[2]);
+                    var tu = Hud.BarSlots[slot] is int t ? Session.Battle.State.Unit(t) : null;
+                    TacticsSplitDialog.Open(this, Hud, Stack(p[1]), tu, side, slot);
+                    break;
+                case "start": CmdEndTactics(); break;
+                case "remove":   // dev only: drop a stack from the army to free a bar slot
+                    var gone = Stack(p[1]);
+                    gone.Removed = true;
+                    if (View(gone.Id) is { } gv) { gv.Visible = false; gv.UpdatePlaque(); }
+                    Hud.FillPlacementBar();
+                    break;
+            }
+        }
+    }
 
     Vector2 MousePos => CombatLauncher.FakeMouse ?? GetViewport().GetMousePosition();
 
@@ -447,9 +476,32 @@ public partial class CombatScreen : Control
                 ApplyPhaseCamera(p.Phase, instant: false);
                 break;
 
-            case Deployed d when View(d.UnitId) is { } dv:
-                dv.Cell = d.Cell;
-                dv.Position = Arena.Grid.StackCenter(new Vector2I(d.Cell.X, d.Cell.Y), dv.Size);
+            case Deployed d:
+                // A stack made by a tactics split gets its model when it is first placed.
+                if ((View(d.UnitId) ?? (s.Unit(d.UnitId) is { } nu ? AddUnitView(nu) : null)) is { } dv)
+                {
+                    dv.Cell = d.Cell;
+                    dv.Position = Arena.Grid.StackCenter(new Vector2I(d.Cell.X, d.Cell.Y), dv.Size);
+                    dv.Count = s.Unit(d.UnitId)?.Count ?? dv.Count;
+                    dv.Visible = true;
+                    dv.UpdatePlaque();
+                }
+                if (s.Phase == BattlePhase.Tactics) Hud.FillPlacementBar();
+                break;
+
+            case Reserved rs:
+                if (View(rs.UnitId) is { } rsv) { rsv.Visible = false; rsv.UpdatePlaque(); }
+                Hud.FillPlacementBar();
+                break;
+
+            case StackChanged sch:
+                if (View(sch.UnitId) is { } scv)
+                {
+                    scv.Count = sch.Count;
+                    if (sch.Count == 0) scv.Visible = false;
+                    scv.UpdatePlaque();
+                }
+                Hud.FillPlacementBar();
                 break;
 
             case Moved m when View(m.UnitId) is { } mv:
@@ -1012,7 +1064,8 @@ public partial class CombatScreen : Control
         if (s.Phase == BattlePhase.Tactics)
         {
             var (minX, maxX) = b.DeployZone(side);
-            if (occupant != null && occupant.Side == side && !occupant.IsWarMachine) { cursor = CombatCursor.Interact; return null; }
+            if (_deploySelected == null && occupant != null && occupant.Side == side && !occupant.IsWarMachine) { cursor = CombatCursor.Interact; return null; }
+            // Carrying a stack: dropping it covers whatever stands there (those stacks go back to the bar, FUN_00576cd0).
             if (_deploySelected is int sel && s.Unit(sel) is { } su && cell.X >= minX && cell.X <= maxX)
             {
                 var dest = new Cell(Math.Min(cell.X, maxX - su.Size + 1), Math.Min(cell.Y, s.Height - su.Size));
@@ -1237,15 +1290,36 @@ public partial class CombatScreen : Control
         if (mb.ButtonIndex != MouseButton.Left) return;
         if (MySideToAct() is not int side) return;
         var s = Session.Battle.State;
-        if (s.Phase == BattlePhase.Tactics && cell is { } tc && s.At(new Cell(tc.X, tc.Y)) is { } own && own.Side == side && !own.IsWarMachine)
+        if (s.Phase == BattlePhase.Tactics)
         {
-            _deploySelected = own.Id;
-            _lastHover = null;
-            ShowStaticHighlights(null);
-            return;
+            var own = cell is { } tc && s.At(new Cell(tc.X, tc.Y)) is { } o && o.Side == side && !o.IsWarMachine ? o : null;
+            // Double click on a placed stack sends it back to the army bar (exe win_left_button_dblclk -> FUN_005784c0).
+            if (mb.DoubleClick && own != null)
+            {
+                _deploySelected = null;
+                _dragFrom = null;
+                Submit(new ReserveCmd(own.Id) { Side = side });
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+            // win_left_button_down -> FUN_005779d0: pick a stack up, or drop the carried one.
+            if (_deploySelected == null)
+            {
+                if (own == null) return;
+                _deploySelected = own.Id;
+                _dragFrom = own.Pos;
+                _lastHover = null;
+                ShowStaticHighlights(null);
+                return;
+            }
         }
         var action = Resolve(cell, mb.Position, out _, out _);
-        if (action == null) return;
+        if (action == null)
+        {
+            // A drop outside the deployment zone ends the drag (FUN_005779d0 resets the carried entry).
+            if (s.Phase == BattlePhase.Tactics) { _deploySelected = null; _dragFrom = null; _lastHover = null; ShowStaticHighlights(null); }
+            return;
+        }
         Submit(action.Command);
         GetViewport().SetInputAsHandled();
     }
@@ -1296,7 +1370,7 @@ public partial class CombatScreen : Control
         _pendingSpell = null;
         _pendingAbility = null;
         _lastHover = null;
-        if (cmd is DeployCmd) _deploySelected = null;
+        if (cmd is DeployCmd) { _deploySelected = null; _dragFrom = null; }
         Session.Submit(cmd);
         if (Session.LastRejection is { } why) Hud.Log.AddLine($"<body><color=FFFF6040>{CombatLogText.Escape(why)}");
     }
@@ -1337,12 +1411,77 @@ public partial class CombatScreen : Control
         foreach (var side in Session.LocalSides)
         {
             if (s.TacticsDone[side]) continue;
-            foreach (var (id, cell) in BattleSetup.AutoPlacement(Game.Instance.Db, s, side))
-                if (s.Unit(id) is { } u && u.Pos != cell) Session.Submit(new DeployCmd(id, cell) { Side = side });
+            Session.Submit(new AutoplaceCmd { Side = side });
             break;
         }
         _deploySelected = null;
+        _dragFrom = null;
         _lastHover = null;
+    }
+
+    /// <summary>Where the carried tactics stack was picked up (a field cell or an army bar slot), for drag-and-drop.</summary>
+    object? _dragFrom;
+
+    /// <summary>
+    /// Tactics army bar clicks (exe FUN_005779d0 with the bar slot under the cursor, FUN_005764a0): pick a stack up, or
+    /// drop the carried one on the slot. With the modifier key the split window opens; on a stack of the same creature
+    /// the two merge; otherwise the carried stack leaves the field for that slot and swaps slots with its occupant.
+    /// </summary>
+    void TacticsBarClick(int slot, int side)
+    {
+        var s = Session.Battle.State;
+        int? target = Hud.BarSlots[slot];
+        if (_deploySelected is not int sel || s.Unit(sel) is not { } su)
+        {
+            if (target is int t && s.Unit(t) is { } tu0 && tu0.Side == side) { _deploySelected = t; _dragFrom = slot; _lastHover = null; ShowStaticHighlights(null); }
+            return;
+        }
+        _deploySelected = null;
+        _dragFrom = null;
+        _lastHover = null;
+        var tu = target is int tid ? s.Unit(tid) : null;
+        if (Input.IsKeyPressed(Key.Shift))
+        {
+            if (tu?.Id != su.Id) TacticsSplitDialog.Open(this, Hud, su, tu, side, slot);
+        }
+        else if (tu != null && tu.Id != su.Id && tu.CreatureId == su.CreatureId)
+            Submit(new SplitStackCmd(su.Id, su.Count, tu.Id) { Side = side });
+        else
+        {
+            if (su.Alive) Submit(new ReserveCmd(su.Id) { Side = side });
+            int from = Array.IndexOf(Hud.BarSlots, (int?)su.Id);
+            if (from >= 0) Hud.BarSlots[from] = tu?.Id == su.Id ? null : tu?.Id;
+            Hud.BarSlots[slot] = su.Id;
+        }
+        Hud.FillPlacementBar();
+        ShowStaticHighlights(null);
+    }
+
+    public override void _Input(InputEvent e)
+    {
+        if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } mb || _playing) return;
+        if (Session.Battle.State.Phase != BattlePhase.Tactics || MySideToAct() is not int side) return;
+        var slot = Hud.BarSlotAt(mb.Position);
+        if (mb.Pressed)
+        {
+            if (slot is int si && !mb.DoubleClick) { TacticsBarClick(si, side); GetViewport().SetInputAsHandled(); }
+            return;
+        }
+        // Releasing a carried stack somewhere else drops it there (win_left_button_up -> FUN_00577dc0 -> FUN_005779d0).
+        if (_dragFrom == null || _deploySelected is not int carried) return;
+        if (slot is int rs)
+        {
+            if (!Equals(_dragFrom, rs)) { TacticsBarClick(rs, side); GetViewport().SetInputAsHandled(); }
+            return;
+        }
+        if (Arena.CellAtScreen(mb.Position) is not { } rc) return;
+        var at = new Cell(rc.X, rc.Y);
+        if (Session.Battle.State.Unit(carried) is { Alive: true } cu && cu.Occupies(at)) return;   // released where it was picked up
+        if (Resolve(rc, mb.Position, out _, out _) is { } drop)
+        {
+            Submit(drop.Command);
+            GetViewport().SetInputAsHandled();
+        }
     }
 
     /// <summary>
@@ -1350,11 +1489,26 @@ public partial class CombatScreen : Control
     /// FUN_00545260). The exe first asks T_NOT_ALL_CREATURES_PLACED when a stack was left off the field;
     /// every stack is placed in this engine, so the confirmation never arises.
     /// </summary>
-    internal void CmdEndTactics()
+    internal void CmdEndTactics(bool confirmed = false)
     {
         var s = Session.Battle.State;
         foreach (var side in Session.LocalSides)
-            if (s.Phase == BattlePhase.Tactics && !s.TacticsDone[side]) Submit(new EndTacticsCmd { Side = side });
+        {
+            if (s.Phase != BattlePhase.Tactics || s.TacticsDone[side]) continue;
+            var stacks = Session.Battle.TacticsStacks(side).ToList();
+            // FUN_00541fa0 starts only with a stack on the field (FUN_00576130).
+            if (stacks.Count > 0 && stacks.All(u => u.Reserve)) return;
+            // FUN_00545260: a stack left in the bar asks T_NOT_ALL_CREATURES_PLACED (Yes/No box, FUN_00679150).
+            if (!confirmed && stacks.Any(u => u.Reserve))
+            {
+                const string texts = "UI/CombatScreen-Heavy/Texts.(WindowRelatedTexts).xdb";
+                Options.MessageBoxes.YesNo(Hud, UiGameRoot.RelatedTextAt(texts, "T_NOT_ALL_CREATURES_PLACED_HEADER") ?? "",
+                    UiGameRoot.RelatedTextAt(texts, "T_NOT_ALL_CREATURES_PLACED_QUESTION") ?? "", yes => { if (yes) CmdEndTactics(confirmed: true); });
+                return;
+            }
+            Submit(new EndTacticsCmd { Side = side });
+            confirmed = false;
+        }
     }
 
     (int Cost, int Gold)? _devRansom;

@@ -10,6 +10,9 @@ namespace H5.Combat;
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$t")]
 [JsonDerivedType(typeof(DeployCmd), "deploy")]
 [JsonDerivedType(typeof(EndTacticsCmd), "end_tactics")]
+[JsonDerivedType(typeof(ReserveCmd), "reserve")]
+[JsonDerivedType(typeof(SplitStackCmd), "split_stack")]
+[JsonDerivedType(typeof(AutoplaceCmd), "autoplace")]
 [JsonDerivedType(typeof(MoveCmd), "move")]
 [JsonDerivedType(typeof(AttackCmd), "attack")]
 [JsonDerivedType(typeof(ShootCmd), "shoot")]
@@ -28,6 +31,15 @@ public abstract record BattleCommand
 /// <summary>Tactics phase: place a unit (top-left cell for large creatures) inside the deployment zone.</summary>
 public sealed record DeployCmd(int UnitId, Cell Cell) : BattleCommand;
 public sealed record EndTacticsCmd : BattleCommand;
+/// <summary>Tactics: take a stack off the field back to the army bar (exe FUN_005779d0 drop on the bar, FUN_005784c0 double click).</summary>
+public sealed record ReserveCmd(int UnitId) : BattleCommand;
+/// <summary>
+/// Tactics: move Count creatures from UnitId into IntoId (same creature), or into a new stack in the army bar when IntoId
+/// is null (exe FUN_004dbd70). Moving a whole stack into another merges them.
+/// </summary>
+public sealed record SplitStackCmd(int UnitId, int Count, int? IntoId = null) : BattleCommand;
+/// <summary>Tactics: auto place every stack of the side, army bar included (exe FUN_00578510).</summary>
+public sealed record AutoplaceCmd : BattleCommand;
 public sealed record MoveCmd(int UnitId, Cell To) : BattleCommand;
 /// <summary>Melee attack; From is where the attacker stands to strike (null = attack from current position).</summary>
 public sealed record AttackCmd(int UnitId, int TargetId, Cell? From = null) : BattleCommand;
@@ -51,6 +63,8 @@ public sealed record SurrenderCmd : BattleCommand
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$t")]
 [JsonDerivedType(typeof(PhaseChanged), "phase")]
 [JsonDerivedType(typeof(Deployed), "deployed")]
+[JsonDerivedType(typeof(Reserved), "reserved")]
+[JsonDerivedType(typeof(StackChanged), "stack_changed")]
 [JsonDerivedType(typeof(TurnStarted), "turn")]
 [JsonDerivedType(typeof(MoraleProc), "morale")]
 [JsonDerivedType(typeof(LuckProc), "luck")]
@@ -79,6 +93,10 @@ public abstract record BattleEvent;
 
 public sealed record PhaseChanged(BattlePhase Phase) : BattleEvent;
 public sealed record Deployed(int UnitId, Cell Cell) : BattleEvent;
+/// <summary>Tactics: the stack went back to the army bar.</summary>
+public sealed record Reserved(int UnitId) : BattleEvent;
+/// <summary>Tactics: a stack's size changed by a split or merge (Count 0 = merged away); new stacks start in the army bar.</summary>
+public sealed record StackChanged(int UnitId, string CreatureId, int Count, bool New) : BattleEvent;
 public sealed record TurnStarted(int Actor, double Time) : BattleEvent;
 public sealed record MoraleProc(int UnitId, bool Good) : BattleEvent;
 public sealed record LuckProc(int UnitId, bool Good) : BattleEvent;

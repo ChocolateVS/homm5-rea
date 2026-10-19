@@ -138,7 +138,7 @@ public sealed class NetBattle
     }
 
     public List<ArmySlot> Survivors(int side) => Battle.State.Units
-        .Where(u => u.Side == side && u.Alive && !u.Summoned && !u.IsWarMachine)
+        .Where(u => u.Side == side && (u.Alive || u.Reserve) && !u.Summoned && !u.IsWarMachine)
         .GroupBy(u => u.CreatureId).Select(g => new ArmySlot(g.Key, g.Sum(u => u.Count))).ToList();
 
     public bool AttackerFled => Battle.State.EndReason?.Contains("fled", StringComparison.OrdinalIgnoreCase) == true

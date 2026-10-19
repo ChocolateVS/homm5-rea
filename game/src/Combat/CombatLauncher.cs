@@ -63,6 +63,12 @@ public static class CombatLauncher
     public static (int Unit, int Clicks)? TooltipUnit;
     /// <summary>`--hud-tooltip=WINDOW`: shows the stock tooltip of a HUD window (screenshots; real hover needs a mouse).</summary>
     public static string? HudTooltip;
+    /// <summary>
+    /// `--tactics-demo=STEPS`: tactics army bar steps run after 1 s, comma separated: reserve:N (send the side's Nth stack
+    /// to the bar), split:N:C (C creatures of stack N into a new stack), dialog:N:SLOT (open the split window for stack N
+    /// dropped on bar slot SLOT), start (press Start combat).
+    /// </summary>
+    public static string? TacticsDemo;
     /// <summary>`--retreat-dialog=COST[:GOLD]` opens the Flee/Surrender box (screenshots; -1 = no ransom possible).</summary>
     public static (int Cost, int Gold)? RetreatDialogCost;
 
@@ -100,6 +106,7 @@ public static class CombatLauncher
         if (arg.StartsWith("--hover-target=")) { HoverTarget = arg["--hover-target=".Length..]; return true; }
         if (arg.StartsWith("--info-unit=")) { InfoUnit = int.Parse(arg["--info-unit=".Length..]); return true; }
         if (arg.StartsWith("--hud-tooltip=")) { HudTooltip = arg["--hud-tooltip=".Length..]; return true; }
+        if (arg.StartsWith("--tactics-demo=")) { TacticsDemo = arg["--tactics-demo=".Length..]; return true; }
         if (arg.StartsWith("--retreat-dialog="))
         {
             var rp = arg["--retreat-dialog=".Length..].Split(':');

@@ -93,8 +93,13 @@ public sealed class Unit
     public Dictionary<string, int> AbilityUses = new();
     public bool HasActed;
     public bool Removed;   // fled, unsummoned, or a destroyed obstacle object
+    /// <summary>
+    /// Tactics: the stack sits in the army bar instead of on the field (exe placement entry +0x10 = 0, FUN_00576170).
+    /// It stays out of the battle (Removed at combat start) and returns with the army afterwards.
+    /// </summary>
+    public bool Reserve;
 
-    [JsonIgnore] public bool Alive => Count > 0 && !Removed;
+    [JsonIgnore] public bool Alive => Count > 0 && !Removed && !Reserve;
     [JsonIgnore] public bool IsWarMachine => Kind == UnitKind.WarMachine;
     [JsonIgnore] public bool IsObject => Kind == UnitKind.Obstacle;
     [JsonIgnore] public bool IsLarge => Size >= 2;

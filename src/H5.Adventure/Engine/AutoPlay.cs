@@ -17,7 +17,7 @@ public static class QuickCombat
         battle.Begin();
         BattleRunner.RunToEnd(battle, ai, ai);
         List<ArmySlot> Survivors(int side) => state.Units
-            .Where(u => u.Side == side && u.Alive && !u.Summoned && !u.IsWarMachine)
+            .Where(u => u.Side == side && (u.Alive || u.Reserve) && !u.Summoned && !u.IsWarMachine)
             .GroupBy(u => u.CreatureId).Select(g => new ArmySlot(g.Key, g.Sum(u => u.Count))).ToList();
         int winner = state.Winner ?? 1;
         return new ResolveBattleCmd(winner, Survivors(0), Survivors(1))

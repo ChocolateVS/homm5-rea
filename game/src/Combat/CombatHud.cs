@@ -56,7 +56,7 @@ public partial class CombatHud : Control
         bus.On("Combat_SpecialAbility", _screen.CmdSpecial);
         bus.On("autoplace_army", _screen.CmdAutoplace);   // OnJog-StartCombat: "Auto place creatures"
         bus.On("autoplace_army_force", _screen.CmdAutoplace);
-        bus.On("confirm_placement", _screen.CmdEndTactics);
+        bus.On("confirm_placement", () => _screen.CmdEndTactics());
         bus.On("switch_atb_log", ToggleLog);
         // ATB scroll buttons (ATBBar/ScrollLeft|Right → UISRunReaction atb_scroll_left|right).
         bus.On("atb_scroll_left", () => AtbScrollMessage(true, false));
@@ -479,27 +479,78 @@ public partial class CombatHud : Control
 
     // ---------------------------------------------------------------- tactics placement bar
 
-    void FillPlacementBar()
+    /// <summary>
+    /// Army bar slots 1..7 of the deploying side (exe CPlacementInfo entries: +4 bar slot, +8 count, +0x10 placed):
+    /// the unit shown in each slot. Stacks keep their slot; drops on the bar swap slots (FUN_005779d0).
+    /// </summary>
+    internal readonly int?[] BarSlots = new int?[7];
+    int _barSide = -1;
+    /// <summary>Bar slot a stack created by a split goes to (the slot it was dropped on).</summary>
+    internal int? PendingNewSlot;
+
+    /// <summary>The side currently deploying (hot-seat: player 1, then player 2), else the viewer's side.</summary>
+    internal int BarSide
+    {
+        get
+        {
+            var s = _screen.Session.Battle.State;
+            return _screen.Session.LocalSides.Where(sd => !s.TacticsDone[sd]).Cast<int?>().FirstOrDefault() ?? _screen.Session.ViewSide;
+        }
+    }
+
+    internal void SyncBar()
+    {
+        int side = BarSide;
+        var stacks = _screen.Session.Battle.TacticsStacks(side).Select(u => u.Id).ToList();
+        if (side != _barSide) { Array.Fill(BarSlots, null); _barSide = side; }
+        for (int i = 0; i < 7; i++) if (BarSlots[i] is int id && !stacks.Contains(id)) BarSlots[i] = null;
+        foreach (var id in stacks)
+        {
+            if (BarSlots.Contains(id)) continue;
+            int slot = PendingNewSlot is int p && BarSlots[p] == null ? p : Array.IndexOf(BarSlots, null);
+            PendingNewSlot = null;
+            if (slot >= 0) BarSlots[slot] = id;
+        }
+    }
+
+    /// <summary>The army bar slot (0-based) under the mouse, if the bar is shown.</summary>
+    internal int? BarSlotAt(Vector2 mouse)
+    {
+        if (_phase != BattlePhase.Tactics) return null;
+        for (int i = 0; i < 7; i++)
+            if (Screen.Find($"PlacementBar/Slot_{i + 1}") is { } n && n.IsVisibleInTree() && n.GetGlobalRect().HasPoint(mouse)) return i;
+        return null;
+    }
+
+    /// <summary>
+    /// exe FUN_00577420: each slot shows its stack's icon and count; a stack already on the field is drawn at 0.3 alpha,
+    /// one waiting in the bar at full alpha.
+    /// </summary>
+    internal void FillPlacementBar()
     {
         var s = _screen.Session.Battle.State;
-        // The side currently deploying (hot-seat: player 1, then player 2), else the viewer's side.
-        int side = _screen.Session.LocalSides.Where(sd => !s.TacticsDone[sd]).Cast<int?>().FirstOrDefault() ?? _screen.Session.ViewSide;
-        var units = s.Units.Where(u => u.Side == side && u.Alive && !u.IsWarMachine && !u.IsObject).ToList();
+        SyncBar();
         for (int i = 1; i <= 7; i++)
         {
             var slot = Screen.Find($"PlacementBar/Slot_{i}");
             var pic = Screen.Find($"PlacementBar/Slot_{i}/Pic");
             if (slot == null || pic == null) continue;
-            if (i - 1 < units.Count)
+            if (BarSlots[i - 1] is int id && s.Unit(id) is { } u)
             {
-                var u = units[i - 1];
                 SetTex(pic, UiResources.Instance.Texture(CombatIcons.Creature(u.CreatureId, false)));
                 pic.SetValue("count", u.Count.ToString());
+                pic.Modulate = new Color(1, 1, 1, u.Reserve ? 1f : 0.3f);
                 slot.Visible = true;
             }
-            else slot.Visible = false;
+            else
+            {
+                // Empty slots keep their frame; the exe only clears the icon and count (FUN_00577420).
+                SetTex(pic, null);
+                pic.SetValue("count", "");
+                slot.Visible = true;
+            }
         }
-        var h = s.Heroes[side];
+        var h = s.Heroes[BarSide];
         if (h.Present) SetTex(Screen.Find("PlacementBar/Hero"), UiResources.Instance.Texture(CombatIcons.Hero(h.HeroId, true)));
     }
 

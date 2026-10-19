@@ -45,6 +45,9 @@ public sealed partial class Battle
         {
             DeployCmd c => DoDeploy(c),
             EndTacticsCmd c => DoEndTactics(c),
+            ReserveCmd c => DoReserve(c),
+            SplitStackCmd c => DoSplitStack(c),
+            AutoplaceCmd c => DoAutoplace(c),
             SurrenderCmd c => DoSurrender(c),
             _ when S.Phase != BattlePhase.Combat => "not in combat phase",
             MoveCmd c => DoMove(c),
@@ -89,31 +92,28 @@ public sealed partial class Battle
         if (S.Phase != BattlePhase.Tactics) return "not in tactics phase";
         if (S.TacticsDone[c.Side]) return "tactics already finished";
         var u = S.Unit(c.UnitId);
-        if (u == null || u.Side != c.Side || !u.Alive || u.IsWarMachine) return "invalid unit";
+        if (u == null || u.Side != c.Side || !(u.Alive || u.Reserve) || u.IsWarMachine) return "invalid unit";
         var (minX, maxX) = DeployZone(c.Side);
         foreach (var cell in u.CellsAt(c.Cell))
         {
             if (!S.InBounds(cell) || cell.X < minX || cell.X > maxX) return "outside deployment zone";
             if (S.Obstacles.Contains(cell)) return "blocked by obstacle";
         }
-        // Swapping with a single same-size friendly stack is allowed, as in the original tactics phase.
+        // Friendly stacks under the new footprint go back to the army bar (exe FUN_005779d0 → FUN_00576cd0).
         var others = S.Units.Where(o => o.Alive && o.Id != u.Id && !o.IsWarMachine && u.CellsAt(c.Cell).Any(o.Occupies)).ToList();
-        if (others.Count > 1 || (others.Count == 1 && (others[0].Side != u.Side || others[0].Size != u.Size)))
-            return "cell occupied";
-        if (others.Count == 1)
-        {
-            var o = others[0];
-            o.Pos = o.StartPos = u.Pos;
-            Emit(new Deployed(o.Id, o.Pos));
-        }
+        if (others.Any(o => o.Side != u.Side || o.IsObject)) return "cell occupied";
+        u.Reserve = false;
         u.Pos = u.StartPos = c.Cell;
         Emit(new Deployed(u.Id, u.Pos));
+        foreach (var o in others) { o.Reserve = true; Emit(new Reserved(o.Id)); }
         return null;
     }
 
     string? DoEndTactics(EndTacticsCmd c)
     {
         if (S.Phase != BattlePhase.Tactics) return "not in tactics phase";
+        if (TacticsStacks(c.Side).Any() && !S.LivingOf(c.Side).Any(u => !u.IsWarMachine && !u.IsObject))
+            return "no creatures placed";
         S.TacticsDone[c.Side] = true;
         if (S.TacticsDone[0] && S.TacticsDone[1]) StartCombat();
         return null;
@@ -122,6 +122,8 @@ public sealed partial class Battle
     void StartCombat()
     {
         S.Phase = BattlePhase.Combat;
+        // Stacks left in the army bar sit the battle out (exe FUN_00541fa0 sends only the placed entries).
+        foreach (var u in S.Units) if (u.Reserve) u.Removed = true;
         Emit(new PhaseChanged(BattlePhase.Combat));
         foreach (var u in S.Units)
         {
