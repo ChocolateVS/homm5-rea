@@ -245,7 +245,8 @@ MECH = [
     ('Siege: catapult, towers, walls, earthquake, moat', 'MATCH', '00b3b7d0, 00bfdfb0, 00a5c5a0, 0097d7b0', 'EXE_FINDINGS (moat trigger unverified)'),
     ('ATB continuous time (ATBMin/Max dead code)', 'MATCH', 'EXE_FINDINGS', 'EXE_FINDINGS'),
     ('Spell damage rounding / empowered ×1.5', 'MATCH', '00976b90', 'EXE_FINDINGS'),
-    ('Surrender / retreat costs, battle-end experience', 'UNVERIFIED', '', 'adventure hand-off; not compared'),
+    ('Surrender / retreat costs', 'UNVERIFIED', '', 'adventure hand-off; not compared'),
+    ('Battle-end experience (winner)', 'FIXED', '00af3430, 004d9c60, 004d99b0, 00b4bbb0, 00bcdc60', 'AuditBattleExpTests (combat_heroes_skills_h.md)'),
     ('Tactics phase rules', 'UNVERIFIED', '', 'deploy zones verified (DeploymentAxisTests); Tactics perk row count not compared'),
 ]
 

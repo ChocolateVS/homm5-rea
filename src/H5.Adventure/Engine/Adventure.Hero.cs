@@ -9,15 +9,11 @@ public sealed partial class Adventure
 {
     public const int MaxSkills = 6;
 
-    /// <summary>Adds experience (with Enlightenment and artifact bonuses) and queues level-up offers.</summary>
-    public void GainExperience(HeroState h, long amount)
+    /// <summary>Adds experience (with Enlightenment and artifact bonuses unless already applied) and queues level-up offers.</summary>
+    public void GainExperience(HeroState h, long amount, bool modifiersApplied = false)
     {
         if (amount <= 0) return;
-        // Enlightenment +5/10/15% (p.298); Turban (HELM_OF_ENLIGHTMENT) +10%, Scale Mail (CHAIN_MAIL_OF_ENLIGHTMENT) +20% (set bonus not modelled).
-        double mul = 1 + 0.05 * Math.Min(3, (int)h.MasteryOf("HERO_SKILL_LEARNING"));
-        if (h.HasArtifact("HELM_OF_ENLIGHTMENT")) mul += 0.10;
-        if (h.HasArtifact("CHAIN_MAIL_OF_ENLIGHTMENT")) mul += 0.20;
-        long gained = (long)(amount * mul);
+        long gained = modifiersApplied ? amount : ExperienceModifiers(h, amount);
         h.Experience += gained;
         Emit(new ExperienceGained(h.Id, gained, h.Experience));
         int maxLevel = Map.HeroMaxLevel > 0 ? Map.HeroMaxLevel : 40;

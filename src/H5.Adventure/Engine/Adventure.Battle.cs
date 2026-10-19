@@ -221,12 +221,14 @@ public sealed partial class Adventure
             foreach (var g in before.GroupBy(s => s.Creature))
             {
                 int start = g.Sum(s => s.Count), left = after.Where(a => a.Creature == g.Key).Sum(a => a.Count);
-                if (Core.Creatures.TryGetValue(g.Key, out var cd)) sum += (long)Math.Max(0, start - left) * cd.Exp;
+                // exe FUN_004d9c60: the creature's Exp (record +0x80), its hit points when Exp < 1.
+                if (Core.Creatures.TryGetValue(g.Key, out var cd)) sum += (long)Math.Max(0, start - left) * (cd.Exp >= 1 ? cd.Exp : cd.Health);
             }
             return sum;
         }
 
         long expAtt = ExpFor(pb.DefenderArmy, c.DefenderSurvivors);
+        double neutralCoef = 1;
         // Captured before the survivors replace the attacker's army (the defender's experience and necromancy
         // need the attacker's pre-battle stacks).
         var attackerBefore = att.Army.Live().Select(s => new Stack(s.Creature, s.Count)).ToList();
@@ -235,10 +237,10 @@ public sealed partial class Adventure
         if (defHero == null && pb.DefenderObject >= 0 && O(pb.DefenderObject).Kind == ObjectKind.Monster)
         {
             var coefs = Db.Stats.Node(S.Campaign ? "adventure/NeutralsInCampaign/ExpCoefs" : "adventure/NeutralsNotInCampaign/ExpCoefs")?.Elements("Item").ToList();
-            if (coefs is { Count: > 0 }) expAtt = (long)(expAtt * XmlHelpers.ParseDouble(coefs[Math.Min(S.Difficulty, coefs.Count - 1)].Value, 1));
+            if (coefs is { Count: > 0 }) neutralCoef = XmlHelpers.ParseDouble(coefs[Math.Min(S.Difficulty, coefs.Count - 1)].Value, 1);
         }
-        expAtt = (long)(expAtt * (S.MoonWeek switch { "WEEK_OF_FOLLY" => 0.5, "WEEK_OF_HONOR" => 2.0, _ => 1.0 }));
-        if (attackerWon && defHero != null) expAtt += 500;
+        // exe FUN_00af3430: +500 for a defeated hero, Talented Warrior, neutral coefficient, Enlightenment & co, week.
+        expAtt = BattleExperience(att, expAtt, opponentHeroLost: defHero != null, neutralCoef);
 
         SetArmy(att.Army, c.AttackerSurvivors);
         att.VisitedSinceBattle.Clear(); att.NextBattleMorale = 0; att.NextBattleLuck = 0;
@@ -273,7 +275,7 @@ public sealed partial class Adventure
                         break;
                 }
             }
-            GainExperience(att, expAtt);
+            GainExperience(att, expAtt, modifiersApplied: true);
             NecromancyRaise(att, Killed(pb.DefenderArmy, c.DefenderSurvivors));   // exe FUN_00c26be0
             if (att.Army.StackCount() == 0) RemoveHero(att, "army destroyed");
             if (att.Perks.Contains("HERO_SKILL_PATH_OF_WAR")) att.MovePoints += 350;   // Warpath (p.300)
@@ -283,7 +285,9 @@ public sealed partial class Adventure
             Emit(new BattleResolved(1, 0));
             if (defHero != null)
             {
-                GainExperience(defHero, ExpFor(attackerBefore, c.AttackerSurvivors) + 500);
+                // +500 only when the attacking hero is lost, not when he fled or surrendered (exe 004d99b0 via 00af3430).
+                GainExperience(defHero, BattleExperience(defHero, ExpFor(attackerBefore, c.AttackerSurvivors), opponentHeroLost: !c.AttackerFled, 1),
+                    modifiersApplied: true);
                 NecromancyRaise(defHero, Killed(attackerBefore, c.AttackerSurvivors));
             }
             if (pb.DefenderObject >= 0 && O(pb.DefenderObject).Kind != ObjectKind.Town)

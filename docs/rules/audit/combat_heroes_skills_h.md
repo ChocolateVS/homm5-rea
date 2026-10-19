@@ -73,3 +73,18 @@ array of `GiveHeroBattleBonus` (advmap-startup.lua: HERO_BATTLE_BONUS_LUCK 0, MO
 HITPOINTS 4 (+0x10, percent), INITIATIVE 5 (+0x14, added to the initiative before the artifact percent), SPEED 6).
 GAP: the engine's GiveHeroBattleBonus stores types 2..6 in settings only; when the bonus is cleared and how attack,
 defence and speed use it is not traced.
+
+## Battle-end experience
+
+The award is CCombat (`.?AVCCombat@NWorld@@`, vtable 00e79d3c) slot 0xf8 = `FUN_00af3430`, per winning side; the
+sides are CCombatArmy objects (interface vtable 00e17bcc at object +0x20). Steps, in this order:
+
+| Step | Status | Exe | Original behaviour | Test |
+|---|---|---|---|---|
+| Base | FIXED | 004d9c60 (side vcall 0x90 on the opponent) | Σ killed × creature Exp (record +0x80), or its hit points (+0x64) when Exp < 1. Engine had no fallback | (data: no shipped creature has Exp < 1) |
+| +500 for the enemy hero | FIXED | 00af34bc..00af34d1, 004d99b0 | only when the opponent had a hero that is lost: not fled / surrendered (vcall 0xbc / 0xec) and not saved by Guardian Angel. Engine gave the defending winner +500 also when the attacker fled or surrendered | AuditBattleExpTests.BattleExperienceAppliesTheWeekLast |
+| second +500 | GAP | 00af34d9..00af34e4 | +500 more when the opponent's field +0x38 (vcall 0x14) is set — the object it holds is not identified (setter not found); not modelled | |
+| Talented Warrior | FIXED | 00af34ec..00af353b | hero spec 0x1b HERO_SPEC_TALENTED_WARRIOR: exp = trunc((level · 0.02 + 1.0) · exp) (doubles 00e79ac8 / 00e12e00). Was missing | AuditBattleExpTests.BattleExperienceAppliesTheWeekLast |
+| Neutral coefficient | MATCH | 00af353f..00af35ae, 0098ded0 | when the opponent is a map monster: × the difficulty's ExpCoefs float (chop) — the engine's NeutralsNotInCampaign / InCampaign table, now applied after +500 / Talented Warrior | |
+| Hero modifier | FIXED | CHero vcall 0x19c = 00b4bbb0 | exp + (5·Enlightenment mastery (≤ 4) + 10·Turban of Enlightenment + 20·Chain Mail of Enlightenment (per copy) + Educational_2_GainExperienceBonusPercents with 2+ Educational set pieces)·exp / 100 in integers. Engine used a double multiplier (100 → 114 instead of 115), capped Enlightenment at 3 and lacked the set bonus. GainExperience uses it for every source (whether other exp sources call vcall 0x19c is not traced) | AuditBattleExpTests.ExperienceModifierIsIntegerPercent |
+| Week | FIXED | 00bcdc60 (00af35c9) | Week of Folly exp / 2, Week of Honor exp × 2 on the final amount (after +500 and the modifier); engine applied it to the base only | AuditBattleExpTests.BattleExperienceAppliesTheWeekLast |
