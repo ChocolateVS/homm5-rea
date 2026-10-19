@@ -757,8 +757,12 @@ public sealed partial class Battle
             RageEvent(t, "ReceiveFearRP");
         }
         if (!t.Alive) return;
-        if (melee && HasAbilityNow(a, Ab.BlindingAttack) && living && !t.Has(Ab.ImmuneBlind)
-            && ProcRoll(a, t, Stats.Get("combat/Creatures/Sylvan/BlindingAttack_ProcFactor", 1)))
+        // Blinding Attack (exe FUN_00a629b0 → FUN_00a5e440): the proc is rolled first, on any strike; the blind then goes
+        // through the spell application check (FUN_00a5ddb0 → FUN_00bbf160 → FUN_00982010), whose immunity table gives
+        // SPELL_BLIND to the derived Immunity to Blind (undead / mechanical / elemental / immune to magic, HasAbilityExe).
+        if (HasAbilityNow(a, Ab.BlindingAttack)
+            && ProcRoll(a, t, Stats.Get("combat/Creatures/Sylvan/BlindingAttack_ProcFactor", 1))
+            && !HasAbilityExe(t, Ab.ImmuneBlind))
         {
             Emit(new AbilityTriggered(a.Id, Ab.BlindingAttack, t.Id));
             ApplySpellEffectFromCreature(a, t, "SPELL_BLIND", Mastery.Basic, (int)Stats.Get("combat/Creatures/Sylvan/BlindingAttackSpellPower", 8));
@@ -825,11 +829,14 @@ public sealed partial class Battle
         if (HasAbilityNow(a, Ab.SorrowStrike))
             ApplySpellEffectFromCreature(a, t, "SPELL_SORROW", (Mastery)Math.Clamp((int)Stats.Get("combat/Creatures/Necropolis/SorrowStrike_SpellTrained", 3), 0, 4),
                 CreatureSpellPower(a.Count, Math.Max(1, a.WeeklyGrowth)));
-        // Sleeping Strike (exe FUN_00a629b0 → FUN_00a5e4f0): immune are IMMUNITY_TO_BLIND, mechanical and elemental
-        // (undead are NOT immune); no melee/ranged restriction.
-        if (HasAbilityNow(a, Ab.SleepingStrike) && !t.Has(Ab.ImmuneBlind) && !t.Has(Ab.Mechanical) && !t.Has(Ab.Elemental)
-            && !t.IsWarMachine && !t.IsObject
-            && ProcRoll(a, t, Stats.Get("combat/Creatures/Necropolis/SleepingStrike_ProcFactor", 3)))
+        // Sleeping Strike (exe FUN_00a629b0 → FUN_00a5e4f0): the proc is rolled first; then immune are UNDEAD (PUSH 0xa at
+        // 00a5e518 — not Immunity to Blind), MECHANICAL and ELEMENTAL, and the effect goes through the spell application
+        // check (FUN_00a5ddb0 → FUN_00982010: Immunity to Magic, war machines, ... — ExeSpellImmune). No melee restriction.
+        if (HasAbilityNow(a, Ab.SleepingStrike)
+            && ProcRoll(a, t, Stats.Get("combat/Creatures/Necropolis/SleepingStrike_ProcFactor", 3))
+            && !t.Has(Ab.Undead) && !t.Has(Ab.Mechanical) && !t.Has(Ab.Elemental)
+            && !(Db.Spell("SPELL_EFFECT_SLEEPING_STRIKE") is { } sleepSp
+                 ? ExeSpellImmune(t, sleepSp, "SPELL_EFFECT_SLEEPING_STRIKE", null) : t.IsWarMachine || t.IsObject))
         {
             Emit(new AbilityTriggered(a.Id, Ab.SleepingStrike, t.Id));
             AddEffect(t, new Effect { Id = H5.Combat.Fx.Sleep, Remaining = Stats.Get("combat/Creatures/Necropolis/SleepingStrike_Duration", 2), SourceSide = a.Side });

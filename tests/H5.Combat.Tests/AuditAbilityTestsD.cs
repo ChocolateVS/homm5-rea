@@ -207,4 +207,24 @@ public class AuditAbilityTestsD(GameDataFixture f)
         Assert.Contains(enemyMage.Id, b.GetLegalActions()!.Shoot);   // the aura is not on the mage itself
         Assert.Contains(lone.Id, b.GetLegalActions()!.Shoot);
     }
+
+    [Fact]
+    public void BlindingAttackUsesTheDerivedBlindImmunity()   // FUN_00a629b0 → FUN_00a5e440 → FUN_00982010 (HasAbilityExe)
+    {
+        bool Blinded(string target, bool vampirism)
+        {
+            for (ulong seed = 1; seed <= 40; seed++)
+            {
+                var b = f.Duel("CREATURE_WAR_UNICORN", 10, target, 300, seed, new Cell(5, 5), new Cell(6, 5));
+                b.Begin();
+                var t = b.State.Units[1];
+                if (vampirism) b.AddEffect(t, new Effect { Id = "SPELL_VAMPIRISM", Remaining = 5, Positive = true });
+                Attack(b, b.State.Units[0], t);
+                if (t.HasEffect("SPELL_BLIND")) return true;
+            }
+            return false;
+        }
+        Assert.False(Blinded("CREATURE_SKELETON", false));   // undead: derived Immunity to Blind
+        Assert.True(Blinded("CREATURE_PEASANT", true));      // Vampirism's dynamic undead does not feed the derived flags
+    }
 }

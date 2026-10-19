@@ -45,11 +45,14 @@ public class AuditAbilityTests(GameDataFixture f)
     }
 
     [Fact]
-    public void SleepingStrikeImmunityIsBlindMechanicalElementalNotUndead()   // FUN_00a5e4f0
+    public void SleepingStrikeImmunityIsUndeadMechanicalElementalNotBlindImmunity()   // FUN_00a5e4f0: PUSH 0xa (UNDEAD) at 00a5e518
     {
         foreach (var (b, _) in Attacks("CREATURE_NOSFERATU", 20, "CREATURE_STONE_GARGOYLE", 50, L, R))
             Assert.False(b.State.Units[1].HasEffect(Fx.Sleep));
-        Assert.Contains(Attacks("CREATURE_NOSFERATU", 20, "CREATURE_SKELETON", 60, L, R), x => x.b.State.Units[1].HasEffect(Fx.Sleep));
+        foreach (var (b, _) in Attacks("CREATURE_NOSFERATU", 20, "CREATURE_SKELETON", 60, L, R))
+            Assert.False(b.State.Units[1].HasEffect(Fx.Sleep));
+        // Griffins have IMMUNITY_TO_BLIND, which does not protect against Sleeping Strike.
+        Assert.Contains(Attacks("CREATURE_NOSFERATU", 20, "CREATURE_GRIFFIN", 30, L, R), x => x.b.State.Units[1].HasEffect(Fx.Sleep));
     }
 
     [Fact]
