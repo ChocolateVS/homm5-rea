@@ -101,9 +101,9 @@ public sealed partial class Battle
         if (u.Has(Ab.AmmoSteal) && !u.AbilityUses.ContainsKey(Ab.AmmoSteal)) yield return new(Ab.AmmoSteal, AbilityTargeting.Enemy);
         if (u.Has(Ab.SyphonMana) && Enemy(Controller(u)).Mana > 0) yield return new(Ab.SyphonMana, AbilityTargeting.None);
         if (u.Has(Ab.Scavenger)) yield return new(Ab.Scavenger, AbilityTargeting.DeadFriend);
-        // Goblin Thrower (exe FUN_008a4b70, 008a4d38–008a4dbc): only stacks of creature 0x75 (CREATURE_GOBLIN) among the
-        // adjacent allies count — trappers and defilers do not.
-        if (u.Has(Ab.GoblinThrower) && Adjacent(u).Any(o => o.Side == u.Side && o.CreatureId == "CREATURE_GOBLIN"))
+        // Goblin Thrower (exe FUN_008a4b70, 008a4d38–008a4dbc): adjacent allied stacks of the goblin FAMILY (FUN_004babf0:
+        // the creature's BaseCreature when set, else its id, == 0x75 CREATURE_GOBLIN) — goblins, trappers and defilers.
+        if (u.Has(Ab.GoblinThrower) && Adjacent(u).Any(o => o.Side == u.Side && IsGoblinFamily(o)))
             yield return new(Ab.GoblinThrower, AbilityTargeting.Enemy);
         foreach (var more in UnitAbilities3(u)) yield return more;
     }
@@ -191,7 +191,7 @@ public sealed partial class Battle
             }
             case Ab.GoblinThrower:
             {
-                var goblins = Adjacent(u).Where(o => o.Side == u.Side && o.CreatureId == "CREATURE_GOBLIN").OrderByDescending(o => o.TopHealth).First();
+                var goblins = Adjacent(u).Where(o => o.Side == u.Side && IsGoblinFamily(o)).OrderByDescending(o => o.TopHealth).First();
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
                 DealDamage(goblins, goblins.TopHealth, u.Id, AttackKind.Ability, c.Ability);
                 Strike(u, t!, new Hit { Kind = AttackKind.Ranged }, pattern: false, rangedRetaliation: true);
@@ -200,4 +200,8 @@ public sealed partial class Battle
         }
         return DoAbilities3(u, c, t, out handled);
     }
+
+    /// <summary>FUN_004babf0 == 0x75: the creature's family (BaseCreature, or its own id for a base creature) is CREATURE_GOBLIN.</summary>
+    bool IsGoblinFamily(Unit o) => o.CreatureId == "CREATURE_GOBLIN"
+        || Db.Creatures.TryGetValue(o.CreatureId, out var d) && d.BaseCreature == "CREATURE_GOBLIN";
 }

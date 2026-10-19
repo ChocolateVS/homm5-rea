@@ -242,7 +242,7 @@ public class AuditAbilityTestsD(GameDataFixture f)
     }
 
     [Fact]
-    public void GoblinThrowerCountsOnlyPlainGoblins()   // FUN_008a4b70: creature 0x75 (CREATURE_GOBLIN) next to the cyclops
+    public void GoblinThrowerCountsTheGoblinFamily()   // FUN_008a4b70: FUN_004babf0 (family = BaseCreature or id) == 0x75
     {
         bool Offered(string helper)
         {
@@ -252,7 +252,8 @@ public class AuditAbilityTestsD(GameDataFixture f)
             return b.UnitAbilities(b.State.Units[0]).Any(a => a.Id == Ab.GoblinThrower);
         }
         Assert.True(Offered("CREATURE_GOBLIN"));
-        Assert.False(Offered("CREATURE_GOBLIN_TRAPPER"));
+        Assert.True(Offered("CREATURE_GOBLIN_TRAPPER"));   // BaseCreature CREATURE_GOBLIN
+        Assert.False(Offered("CREATURE_ORC_WARRIOR"));
     }
 
     [Fact]

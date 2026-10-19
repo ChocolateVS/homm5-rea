@@ -48,9 +48,14 @@ public static class BattleSetup
         {
             var h = s.Heroes[side];
             var slots = sides[side].Army.Where(a => a.Count > 0 && db.Creatures.ContainsKey(a.Creature)).Take(7).ToList();
-            var placed = DefaultPlacement(db, s, side, slots);
+            // Auto placement per the exe (FUN_0085a190, ExeAutoPlacement); a stack it removes from the arena stays in reserve.
+            var placed = ExeAutoPlacement.Place(db, s, side, slots);
             for (int i = 0; i < slots.Count; i++)
-                AddCreature(db, s, side, slots[i].Creature, slots[i].Count, placed[i], summoned: false).ArtifactEffects = slots[i].ArtifactEffects;
+            {
+                var u = AddCreature(db, s, side, slots[i].Creature, slots[i].Count, placed[i] ?? new Cell(-1, -1), summoned: false);
+                u.ArtifactEffects = slots[i].ArtifactEffects;
+                if (placed[i] == null) u.Reserve = true;
+            }
             if (h.Present && sides[side].Hero is { } hi)
             {
                 if (hi.Ballista) AddWarMachine(db, s, side, "WAR_MACHINE_BALLISTA");
@@ -315,44 +320,16 @@ public static class BattleSetup
     }
 
     /// <summary>
-    /// Tactics "auto place creatures" (exe autoplace_army → FUN_00578510 re-runs the start placement):
-    /// cells for the side's placeable stacks, in unit order, by the same rule as the battle start.
+    /// Tactics "auto place creatures" (exe autoplace_army → FUN_00578510 re-runs the start placement FUN_0085a190):
+    /// cells for the side's placeable stacks in unit order (null: removed from the arena), by the same rule as the battle
+    /// start (ExeAutoPlacement); the side's war machines occupy their cells.
     /// </summary>
-    public static List<(int UnitId, Cell Cell)> AutoPlacement(GameDatabase db, BattleState s, int side)
+    public static List<(int UnitId, Cell? Cell)> AutoPlacement(GameDatabase db, BattleState s, int side)
     {
-        var units = s.Units.Where(u => u.Side == side && u.Alive && !u.IsWarMachine && !u.IsObject).ToList();
-        var probe = new BattleState { Width = s.Width, Height = s.Height, Obstacles = s.Obstacles.ToList() };
-        var cells = DefaultPlacement(db, probe, side, units.Select(u => new ArmySlot(u.CreatureId, u.Count)).ToList());
+        var units = s.Units.Where(u => u.Side == side && u.Count > 0 && !u.Removed && !u.IsWarMachine && !u.IsObject).ToList();
+        var machines = s.Units.Where(u => u.Side == side && u.Alive && (u.IsWarMachine || u.IsObject)).SelectMany(u => u.Cells());
+        var cells = ExeAutoPlacement.Place(db, s, side, units.Select(u => new ArmySlot(u.CreatureId, u.Count)).ToList(), machines);
         return units.Select((u, i) => (u.Id, cells[i])).ToList();
-    }
-
-    /// <summary>Spreads stacks along the deployment edge, large creatures on even rows.</summary>
-    static List<Cell> DefaultPlacement(GameDatabase db, BattleState s, int side, List<ArmySlot> slots)
-    {
-        var result = new List<Cell>();
-        var taken = new HashSet<Cell>(s.Obstacles);
-        int n = slots.Count;
-        for (int i = 0; i < n; i++)
-        {
-            int size = db.Creature(slots[i].Creature).CombatSize;
-            // Preferred row: evenly spaced (original duel layout spreads 7 stacks over 10 rows).
-            int pref = n == 1 ? s.Height / 2 - 1 : (int)Math.Round(i * (s.Height - size) / (double)Math.Max(1, n - 1));
-            Cell? best = null;
-            int bestScore = int.MaxValue;
-            for (int col = 0; col < 2; col++)
-            for (int y = 0; y <= s.Height - size; y++)
-            {
-                int x = side == 0 ? col : s.Width - size - col;
-                var p = new Cell(x, y);
-                if (!Fits(s, taken, p, size)) continue;
-                int score = Math.Abs(y - pref) * 10 + col;
-                if (score < bestScore) { bestScore = score; best = p; }
-            }
-            var cell = best ?? new Cell(side == 0 ? 0 : s.Width - size, 0);
-            for (int dx = 0; dx < size; dx++) for (int dy = 0; dy < size; dy++) taken.Add(new Cell(cell.X + dx, cell.Y + dy));
-            result.Add(cell);
-        }
-        return result;
     }
 
     static bool Fits(BattleState s, HashSet<Cell> taken, Cell p, int size)

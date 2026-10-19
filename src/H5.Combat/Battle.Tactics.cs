@@ -69,8 +69,9 @@ public sealed partial class Battle
         foreach (var (id, cell) in BattleSetup.AutoPlacement(Db, S, c.Side))
             if (S.Unit(id) is { } u)
             {
-                u.Pos = u.StartPos = cell;
-                Emit(new Deployed(u.Id, cell));
+                if (cell is not Cell at) { u.Reserve = true; continue; }   // removed from the arena (FUN_00859b40)
+                u.Pos = u.StartPos = at;
+                Emit(new Deployed(u.Id, at));
             }
         return null;
     }
