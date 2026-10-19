@@ -125,4 +125,55 @@ public class TownSpecialTests(Fixture f)
         t.Built["TB_DWELLING_4"] = 1;
         Assert.Equal("CREATURE_VAMPIRE", g.TransformQuote(t, null, 2).Target);
     }
+
+    [Fact]
+    public void InfernoPitTurnsHitPointsIntoExperience()
+    {
+        var g = f.NewGame();
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == g.Current.Index);
+        var t = g.S.Towns.First(x => x.Owner == h.Owner);
+        t.Type = "TOWN_INFERNO";
+        h.Pos = g.EntranceOf(t);
+        h.InTown = t.Object;
+        h.Perks.Clear();
+        h.Skills.Clear();
+        h.Artifacts.Clear();
+        Array.Fill(h.Army, null);
+        h.Army[0] = new Stack("CREATURE_IMP", 10);
+        h.Army[1] = new Stack("CREATURE_IMP", 1);
+        t.Built.Remove("TB_SPECIAL_5");
+        Assert.Equal(TrainStatus.NoBuilding, g.SacrificeQuote(t, h, 0, growth: false).Status);
+        t.Built["TB_SPECIAL_5"] = 1;
+        int hp = f.Core.Creatures["CREATURE_IMP"].Health;
+        var (status, exp) = g.SacrificeQuote(t, h, 0, growth: false);
+        Assert.Equal(TrainStatus.Ok, status);
+        Assert.Equal(10L * hp, exp);
+        Assert.Equal(TrainStatus.NoHero, g.SacrificeQuote(t, null, 0, growth: false).Status);
+        long before = h.Experience;
+        var r = g.Apply(new SacrificeForExperienceCmd(t.Object, h.Id, 0) { Player = g.Current.Index });
+        Assert.True(r.Ok, r.Error);
+        Assert.Null(h.Army[0]);
+        Assert.True(h.Experience > before);
+    }
+
+    [Fact]
+    public void RitualPitBonusesFollowTheExeThresholds()
+    {
+        Assert.Equal((0, 0), Engine.Adventure.RitualPitBonus(299));
+        Assert.Equal((1, 0), Engine.Adventure.RitualPitBonus(300));       // 150·2
+        Assert.Equal((2, 0), Engine.Adventure.RitualPitBonus(1199));      // 150·4 ≤ 1199 < 150·8 and < 400·3
+        Assert.Equal((3, 1), Engine.Adventure.RitualPitBonus(1200));      // 150·8 and 400·3
+        Assert.Equal((5, 2), Engine.Adventure.RitualPitBonus(4800));      // 150·32; 400·9 ≤ 4800 < 400·27
+        var g = f.NewGame();
+        var t = g.S.Towns.First(x => x.Owner == g.Current.Index);
+        t.Type = "TOWN_DUNGEON";
+        t.Built["TB_SPECIAL_3"] = 1;
+        Array.Fill(t.Garrison, null);
+        t.Garrison[0] = new Stack("CREATURE_PEASANT", 30);
+        int hp = f.Core.Creatures["CREATURE_PEASANT"].Health;
+        var r = g.Apply(new SacrificeForGrowthCmd(t.Object, -1, 0) { Player = g.Current.Index });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(30 * hp, t.SacrificedHitPoints);
+        Assert.Null(t.Garrison[0]);
+    }
 }

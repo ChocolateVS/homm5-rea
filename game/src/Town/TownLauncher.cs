@@ -140,6 +140,7 @@ public static class TownLauncher
                 for (int k = 0; k < 10; k++) await tree.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
                 var town = adv.MyTowns().FirstOrDefault();
                 if (town == null) { GD.PushWarning("[H5] --town-open: the human player has no town"); return; }
+                GD.Print($"[H5] --town-open: {town.Name} {town.Type}");
                 if (BuildAll) TownData.GrantAllBuildings(adv.Session, town);
                 var screen = TownScreen.Open(adv, town);
                 if (Goto != null) screen.OpenSub(Goto);

@@ -260,6 +260,8 @@ public sealed class TownState
     public string? Specialization;
     /// <summary>Haven training points left this week (exe CAdvMapTown +0x2d0, see Adventure.TownSpecials).</summary>
     public int TrainingPoints;
+    /// <summary>Dungeon Ritual Pit: hit points sacrificed so far (exe transformer +0x6c).</summary>
+    public int SacrificedHitPoints;
     /// <summary>BlockTownGarrisonForAI: AI heroes do not exchange creatures with this garrison.</summary>
     public bool AiGarrisonBlocked;
     /// <summary>AllowHeroHiringByRaceInTown / AllowHiringOfHeroInTown (town +0x224), for every player.</summary>

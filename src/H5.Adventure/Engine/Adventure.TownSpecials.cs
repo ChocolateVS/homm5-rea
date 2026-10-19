@@ -17,6 +17,18 @@ public sealed record TrainCreatureCmd(int TownObject, int HeroId, int Slot) : Ad
 /// </summary>
 public sealed record TransformCreatureCmd(int TownObject, int HeroId, int Slot) : AdvCommand;
 
+/// <summary>
+/// Inferno Sacrificial Pit: sacrifice a stack of the hero's army for experience.
+/// Exe: CSacrificeCreatureForExperienceCmd (vtable 0xe0e420, execute 0x428030) → transformer mode 1.
+/// </summary>
+public sealed record SacrificeForExperienceCmd(int TownObject, int HeroId, int Slot) : AdvCommand;
+
+/// <summary>
+/// Dungeon Ritual Pit: sacrifice a stack for the town's growth bonus. <paramref name="HeroId"/> −1 = the garrison.
+/// Exe: CSacrificeCreatureForGrowthCmd (vtable 0xe0e444, execute 0x4280b0) → transformer mode 2.
+/// </summary>
+public sealed record SacrificeForGrowthCmd(int TownObject, int HeroId, int Slot) : AdvCommand;
+
 /// <summary>Result of the transformer's quote FUN_00cd36c0 (first field of its output).</summary>
 public enum TrainStatus
 {
@@ -187,6 +199,96 @@ public sealed partial class Adventure
         army[c.Slot] = new Stack(q.Target!, q.Count);
         Emit(new CreatureUpgraded(h?.Id ?? -1, h == null ? t.Object : -1, c.Slot, from, q.Target!));
         Emit(new ArmyChanged(h?.Id ?? -1, h == null ? t.Object : -1));
+        return null;
+    }
+
+    /// <summary>Town abilities 9 (Inferno TB_SPECIAL_5) and 0x1c (Dungeon TB_SPECIAL_3) of the table at 00f7c998.</summary>
+    public const string SacrificialPit = "TB_SPECIAL_5", RitualPit = "TB_SPECIAL_3";
+
+    /// <summary>
+    /// Hit points of one creature of the stack with the hero's bonuses (FUN_004bc470, as in H5.Combat.BattleSetup):
+    /// base HP (Week of Toughness), Toughness perk +2, 2 per Ring of Life, Wyvern Tamer / Defender specialisations
+    /// on the base creature, Ogres 2 and Dragonish 4 (tier) set bonuses. TODO(exe): the final percentage
+    /// (hero +0x330 → +0x10, (p·hp + 50) / 100 with p clamped 0..1000) is not decoded and not applied.
+    /// </summary>
+    public int CreatureHitPoints(HeroState? h, string creature)
+    {
+        if (!Core.Creatures.TryGetValue(creature, out var c)) return 0;
+        int hp = H5.Combat.MoonWeek.Health(c.Health, S.MoonWeek);
+        if (h == null) return hp;
+        if (h.HasPerk("HERO_SKILL_TOUGHNESS") || h.MasteryOf("HERO_SKILL_TOUGHNESS") > Mastery.None) hp += 2;
+        hp += 2 * h.Artifacts.Count(a => a == "RING_OF_LIFE");
+        string hpBase = c.BaseCreature is { Length: > 0 } bc && bc != "CREATURE_UNKNOWN" ? bc : c.Id;
+        if (h.Specialization == "HERO_SPEC_WYVERN_TAMER" && hpBase == "CREATURE_WYVERN")
+        {
+            const string w = "combat/HeroSpecializations/Barbarian/WyvernTamer_HealthBonus";
+            int div = Math.Max(1, (int)Core.Stats.Get(w + "/LevelDivisor", 1));
+            hp += (h.Level - 1) / div * (int)Core.Stats.Get(w + "/PerDividedLevel", 2) + (int)Core.Stats.Get(w + "/Base", 1);
+        }
+        if (h.Specialization == "HERO_SPEC_DEFENDER" && hpBase == "CREATURE_DEFENDER") hp += h.Level / 5;
+        int Pieces(string set) => Core.ArtifactSets.GetValueOrDefault(set)?.Count(h.Artifacts.Contains) ?? 0;
+        if (Pieces("ARTFSET_EFFECT_OGRES") >= 2) hp += (int)Core.Stats.Get("ArtifactsSetsEffectsConsts/Ogres_2_Creature_HitPoints", 2);
+        if (Pieces("ARTFSET_EFFECT_DRAGONISH") >= 4 && c.Tier == (int)Core.Stats.Get("ArtifactsSetsEffectsConsts/Dragonish_4_Creature_Tier", 7))
+            hp += (int)Core.Stats.Get("ArtifactsSetsEffectsConsts/Dragonish_4_Creature_HitPoints", 20);
+        return hp;
+    }
+
+    /// <summary>
+    /// Sacrifice quote. Mode 1 (Inferno, FUN_00cd36c0): hero required (2), Sacrificial Pit (3); value =
+    /// experience = hit points × count. Mode 2 (Dungeon): Ritual Pit (3); value = hit points × count added to
+    /// the town's sacrifice total (FUN_00cd07f0). The army is the hero's (mode 1) or the hero's / garrison (mode 2).
+    /// </summary>
+    public (TrainStatus Status, long Value) SacrificeQuote(TownState t, HeroState? h, int slot, bool growth)
+    {
+        if (!growth && h == null) return (TrainStatus.NoHero, 0);
+        var army = growth ? TownArmy(t, h) : h!.Army;
+        if (army == null || slot is < 0 or >= State.Army.Slots || army[slot] is not { Count: > 0 } s) return (TrainStatus.NoStack, 0);
+        bool built = growth ? t.Type == "TOWN_DUNGEON" && t.Level(RitualPit) >= 1 : t.Type == "TOWN_INFERNO" && t.Level(SacrificialPit) >= 1;
+        if (!built) return (TrainStatus.NoBuilding, 0);
+        return (TrainStatus.Ok, (long)CreatureHitPoints(h, s.Creature) * s.Count);
+    }
+
+    /// <summary>
+    /// Ritual Pit growth bonuses (FUN_00cd07f0 mode 2, getters CAdvMapTown +0x94 / +0x98 shown as
+    /// ritual_pit_info_witches / _minotaurs): witches = largest n ≤ 30 with total ≥ 150·2ⁿ, minotaurs = largest
+    /// n ≤ 20 with total ≥ 400·3ⁿ (32-bit products as in the exe).
+    /// </summary>
+    public static (int Witches, int Minotaurs) RitualPitBonus(int total)
+    {
+        int w = 0, m = 0;
+        unchecked
+        {
+            while (w < 30 && total >= (1 << (w + 1)) * 150) w++;
+            while (m < 20)
+            {
+                int p = 1;
+                for (int k = 0; k <= m; k++) p *= 3;
+                if (total < p * 400) break;
+                m++;
+            }
+        }
+        return (w, m);
+    }
+
+    string? DoSacrifice(int townObject, int heroId, int slot, bool growth)
+    {
+        var p = Current;
+        var t = S.Town(townObject);
+        if (t == null || t.Owner != p.Index) return "not your town";
+        HeroState? h = null;
+        if (heroId >= 0)
+        {
+            h = S.Hero(heroId);
+            if (h == null || h.Owner != p.Index || h.InTown != t.Object) return "hero must be in your town";
+        }
+        var (status, value) = SacrificeQuote(t, h, slot, growth);
+        if (status != TrainStatus.Ok) return $"cannot sacrifice ({status})";
+        var army = growth ? TownArmy(t, h)! : h!.Army;
+        army[slot] = null;
+        if (growth) t.SacrificedHitPoints = (int)Math.Min(int.MaxValue, t.SacrificedHitPoints + value);
+        Emit(new ArmyChanged(h?.Id ?? -1, h == null ? t.Object : -1));
+        // Mode 1: hero +0x198 (add experience). TODO(exe): whether that call applies the experience modifiers.
+        if (!growth) GainExperience(h!, value);
         return null;
     }
 

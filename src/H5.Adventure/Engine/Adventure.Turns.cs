@@ -171,6 +171,14 @@ public sealed partial class Adventure
         double g = cr.WeeklyGrowth;
         int fort = t.Level("TB_FORT");
         if (fort >= 3) g *= 2; else if (fort >= 2) g *= 1.5;
+        // Ritual Pit growth (growth list field +0x24 "T_GROWTH_SACRIFICE", after castle, before the moon week).
+        // TODO(exe): the filler of that field is not traced; the bonuses go to the Blood Maiden (tier 2) and
+        // Minotaur (tier 3) dwellings as the building tooltip names them (ritual_pit_info_witches / _minotaurs).
+        if (t.Type == "TOWN_DUNGEON" && t.Level(RitualPit) >= 1 && tier is 2 or 3)
+        {
+            var (witches, minotaurs) = RitualPitBonus(t.SacrificedHitPoints);
+            g += tier == 2 ? witches : minotaurs;
+        }
         g *= S.MoonWeek switch
         {
             "WEEK_OF_LIFE" => 2, "WEEK_OF_CONJUNCTION" => 3, "WEEK_OF_DISEASE" => 1.0 / 3, "WEEK_OF_FEVER" => 0.5, "WEEK_OF_PLAGUE" => 0,

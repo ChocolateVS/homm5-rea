@@ -291,11 +291,13 @@ public partial class TownScreen : Control
     {
         "TOWN_HEAVEN" => HavenTrainingScreen.CanOpen(this) ? new HavenTrainingScreen(this) : null,
         "TOWN_NECROMANCY" => new NecropolisTransformScreen(this),
+        "TOWN_INFERNO" => new SacrificeScreen(this, growth: false),
+        "TOWN_DUNGEON" => new SacrificeScreen(this, growth: true),
         _ => null,
     };
 
     /// <summary>Town types whose enter_special screen is built here (the rest still show the placeholder notice).</summary>
-    static bool SpecialScreenBuilt(string townType) => townType is "TOWN_HEAVEN" or "TOWN_NECROMANCY";
+    static bool SpecialScreenBuilt(string townType) => townType is "TOWN_HEAVEN" or "TOWN_NECROMANCY" or "TOWN_INFERNO" or "TOWN_DUNGEON";
 
     /// <summary>
     /// Screen of a special building double-clicked in the 3D town (FUN_0061b760: the building's town ability
@@ -305,6 +307,8 @@ public partial class TownScreen : Control
     {
         ("TOWN_HEAVEN", "TB_SPECIAL_1") => "training",
         ("TOWN_NECROMANCY", "TB_SPECIAL_2") => "special",
+        ("TOWN_INFERNO", "TB_SPECIAL_5") => "special",
+        ("TOWN_DUNGEON", "TB_SPECIAL_3") => "special",
         _ => null,
     };
 
