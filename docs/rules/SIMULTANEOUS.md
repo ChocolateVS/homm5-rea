@@ -102,7 +102,9 @@ standard turn based mode now." (`UI/AdventureScreen/EnemyTurnBox/Texts.(WindowRe
   with simultaneous turns.
 * Break policy seam: `ISimultaneousPolicy.BreakOnIntersection`. `OriginalSimultaneousPolicy` (default)
   breaks as above. `AlwaysOnSimultaneousPolicy` = lobby option "Simultaneous turns: always on (MMH 5.5)"
-  (`AdvNetSettings.SimultaneousAlwaysOn`): areas are never checked.
+  (`AdvNetSettings.SimultaneousAlwaysOn`, off by default): areas are never checked. Not an original
+  control: the stock checkbox gets a third click state captioned "Simultaneous (MMH 5.5)"
+  (off → on → MMH 5.5 → off; explained in its tooltip). `H5_ADVNET_SIMUL=0|1|2` presets it for screenshots.
 
 ### MMH 5.5 "always on" — GAP
 The fan mod Might & Magic: Heroes 5.5 keeps simultaneous turns on for the whole game. Its rules are
