@@ -55,7 +55,7 @@ public static class CombatLauncher
     }
     /// <summary>`--autoplay-turns=N`: the AI plays the local side's first N commands, then hands over.</summary>
     public static int AutoplayTurns;
-    /// <summary>`--hover-target=melee|shoot`: point the simulated mouse at the first such legal target.</summary>
+    /// <summary>`--hover-target=melee|shoot|spell:ID|ability:ID`: point the simulated mouse at the first such legal target.</summary>
     public static string? HoverTarget;
     /// <summary>`--info-unit=ID`: opens the creature info screen for that unit at start.</summary>
     public static int? InfoUnit;

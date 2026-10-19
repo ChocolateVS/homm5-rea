@@ -821,7 +821,8 @@ public sealed partial class Battle
         }
     }
 
-    static HashSet<Cell> AreaCells(string id, Cell c)
+    /// <summary>Cells an area spell hits around the aimed cell (also marked while aiming).</summary>
+    public static HashSet<Cell> AreaCells(string id, Cell c)
     {
         var set = new HashSet<Cell>();
         switch (id)

@@ -369,8 +369,12 @@ public partial class CombatScreen : Control
         var la = Session.Battle.GetLegalActions();
         if (la == null) return;
         int? id;
+        if (kind.StartsWith("spellok:")) kind = "spell:" + kind[8..] + ":ok";
         if (kind.StartsWith("spell:"))
         {
+            // "spell:SPELL_ID[:ok]": with ":ok" the first enemy stack is hovered instead of a refused one.
+            bool hoverEnemy = kind.EndsWith(":ok");
+            if (hoverEnemy) kind = kind[..^3];
             // "spell:SPELL_ID": on the hero's turn, arm that spell and hover a stack it is refused on.
             if (!la.IsHero) { if (!Session.Busy && !_playing) Session.Submit(new DefendCmd(la.Actor) { Side = la.Side }); return; }
             if (la.Spells.Find(o => o.Spell == kind[6..]) is not { } opt)
@@ -381,8 +385,24 @@ public partial class CombatScreen : Control
             }
             _mode = InputMode.Spell;
             _pendingSpell = opt;
-            id = Session.Battle.State.Living.Where(u => !u.IsWarMachine && Session.Battle.SpellTargetRefusalKey(la.Actor, la.Side, opt.Spell, opt.Mastery, u.Id) != null)
+            id = hoverEnemy
+                ? Session.Battle.State.Living.Where(u => !u.IsWarMachine && !u.IsObject && u.Side != la.Side)
+                    .OrderBy(u => Math.Abs(u.Pos.Y - Session.Battle.State.Height / 2)).Select(u => (int?)u.Id).FirstOrDefault()
+                : Session.Battle.State.Living.Where(u => !u.IsWarMachine && Session.Battle.SpellTargetRefusalKey(la.Actor, la.Side, opt.Spell, opt.Mastery, u.Id) != null)
                 .Select(u => (int?)u.Id).FirstOrDefault();
+        }
+        else if (kind.StartsWith("ability:"))
+        {
+            // "ability:ABILITY_ID": wait (defending) for a turn of a stack with that ability, arm it and hover its first target.
+            var ak = kind[8..].Split(':');   // "ability:ID[:CREATURE_PART]" picks the first target whose creature id contains the part
+            if (la.Abilities.Find(o => o.Ability == ak[0]) is not { } abo)
+            {
+                if (!Session.Busy && !_playing) Session.Submit(new DefendCmd(la.Actor) { Side = la.Side });
+                return;
+            }
+            _mode = InputMode.Ability;
+            _pendingAbility = abo;
+            id = abo.Targets.Where(t => ak.Length < 2 || (Session.Battle.State.Unit(t)?.CreatureId.Contains(ak[1]) ?? false)).Cast<int?>().FirstOrDefault();
         }
         else id = kind == "shoot" ? la.Shoot.Cast<int?>().FirstOrDefault() : la.Melee.Keys.Cast<int?>().FirstOrDefault();
         if (id is not int tid || Session.Battle.State.Unit(tid) is not { } t) return;
@@ -1131,7 +1151,10 @@ public partial class CombatScreen : Control
                     return null;
                 case Battle.SpellTargeting.Cell:
                     cursor = CombatCursor.Cast;
-                    hl.Add((cell, CellMark.Affected));
+                    // Area spells mark the cells they will hit (the engine's area for the spell), others the aimed cell.
+                    var area = Battle.AreaCells(sp.Spell, cell);
+                    if (area.Count == 0) area.Add(cell);
+                    foreach (var ac in area) if (s.InBounds(ac)) hl.Add((ac, CellMark.Affected));
                     var castC = new CastSpellCmd(la.Actor, sp.Spell, null, cell) { Side = side };
                     return new PlannedAction(castC, SpellName(sp.Spell), null, CombatPredictions.Spell(b, castC, CombatLogText.Escape(SpellName(sp.Spell)), null));
             }
