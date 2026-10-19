@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 249 |
-| MATCH | 122 |
-| GAP | 8 |
-| UNVERIFIED | 205 |
+| FIXED | 250 |
+| MATCH | 123 |
+| GAP | 7 |
+| UNVERIFIED | 204 |
 | N/A | 56 |
 
 ## Core mechanics
@@ -596,11 +596,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_EFFECT_MAGMA_SHIELD` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_RUNE_OF_CHARGE` | FIXED | 00b40aa0, 008a1e50, 00b40a60 | vf 0x25c(id, 1): one action; speed ×2 after Wound and Storm Wind, before the Necromancers set, rage and Battlecry (see core row); removed by 00b40a60 at the end of the creature's action | AuditRuneWarcryTests.SpeedAppliesChargeBeforeBattlecry |
 | `SPELL_RUNE_OF_BERSERKING` | FIXED | 008a0f90 | +1 strike (was ×2) | tests/H5.Combat.Tests/AuditStrikeTests.RuneOfBerserkingAddsOneStrike |
-| `SPELL_RUNE_OF_MAGIC_CONTROL` | GAP | 00862a50, 00a5ca80 → 004e6470 / 004e4000 | whole battle until consumed (0x7fffffff); on attack the candidates come from FUN_004e4000 for the target's opposite side — every beneficial, timed, dispellable effect (any school). The engine only steals Light-school effects; the choice and transfer code was dropped by the decompiler (unreachable blocks in 00a5ca80) and is not ported |  |
+| `SPELL_RUNE_OF_MAGIC_CONTROL` | FIXED | 00862a50, 00a5ca80 (disassembly 00a5caa8..00a5cb46), 00a5cb80 → 004e6470 / 004e4000 | whole battle until consumed (0x7fffffff); when the holder attacks, the candidates are the target's effects FUN_004e4000 accepts as beneficial for its side (dispellable, timed, not a warcry effect, not never-dispelled — any school); one is chosen with the battle RNG (Random(n)), added to the attacker (vf 0x264) and removed from the target (vf 0x270); FUN_00a5cb80 removes the rune (and Rune of Battle Rage). The engine only stole Light-school effects. Open: the exe runs this before the strike loop (FUN_00a65260), the engine on the first hit | AuditSpellSTests.MagicControlStealsAnySchool |
 | `SPELL_RUNE_OF_EXORCISM` | FIXED | 008d9b30 → 004e6470 / 004e4000, 004e3960, 004e3ac0 | removes every effect FUN_004e4000 accepts for the caster's own side: harmful (spell kind ≠ positive), timed (duration not 0x7ffffffd/e/f), no "undispellable" flag, not from a warcry, and not Holy Charge, Demonic Strike, Dash, Poisonous Attack, Wound, Venom, goblin Sacrifice, Powerful Blow, Prepared Position or Battle Rage. No spell-level limit — the engine only removed level ≤ 3 effects | AuditRuneWarcryTests.ExorcismHasNoSpellLevelLimit |
 | `SPELL_RUNE_OF_ELEMENTAL_IMMUNITY` | FIXED | 00c54620, 00c546b0, 00ad02b0 | for the whole battle (0x7fffffff); value = b + 8a with a = 1 + Random(4), r = Random(3), b = r + 1 (r + 2 when a ≤ b), in the exe element enum 1 air, 2 fire, 3 water, 4 earth; the spell-immunity check (0097c9f0 → 00c546b0) compares the spell's element with both. The engine drew a different pair from the same RNG calls ((a + 1 + r) mod 4 over a fire/water/air/earth list) | AuditRuneWarcryTests.ElementalImmunityRollsTwoDistinctExeElements |
 | `SPELL_RUNE_OF_STUNNING` | FIXED | 00c9d290, 00a59a90, 00a5d370, 00a5af10 | vf 0x25c(id, 1): one action. Shares Bash's chance (FUN_00a59990 with Bash_ProcFactor, Soldier's Luck doubles, no second roll) and its MECHANICAL immunity: one roll when the creature has Bash or the rune; Bash only off retaliation, the rune on any strike; the stun zeroes ATB and cancels the retaliation. The engine rolled the rune separately after the blow (old ProcChance), with no mechanical immunity and no duration | (Battle.Attack Bash/rune block) |
-| `SPELL_RUNE_OF_BATTLERAGE` | UNVERIFIED | 00a5fee0 00a64e90 00a65260 | implemented; not yet compared with the exe |  |
+| `SPELL_RUNE_OF_BATTLERAGE` | MATCH | 00a69bd0 (registration 00a69c00), 00a64e90, 00a643b0, 00a5fee0, 00a65260 | vf 0x260(id, 0x7ffffffe): lasts until used; the next melee strike (not ranged) is replaced by FUN_00a643b0 — every adjacent enemy creature (object kinds 1 / 3 / 9 passing FUN_00b3d3f0) is struck with its own damage resolution (FUN_00a673c0, effects FUN_00a629b0); no retaliation (00a5fee0: "COMBAT_NO_RETALIATE"). Engine: one pattern strike on all adjacent enemies, no retaliation, effect removed after the attack ("once", RuneOfBattleRageDesc) |  |
 | `SPELL_RUNE_OF_ETHEREALNESS` | MATCH | 0041a640, 008a34c0 | one turn (round of time per turn); grants ABILITY_INCORPOREAL through the dynamic HasAbility (engine Unit.Has) |  |
 | `SPELL_RUNE_OF_REVIVE` | MATCH | 00c20690 | revived = trunc((float)(initial − current count) · max(0, ReviveSpellPercent)); engine (int)(dead·0.4) gives the same integers (0.4f > 0.4, products of multiples of 5 are exact) |  |
 | `SPELL_RUNE_OF_DRAGONFORM` | FIXED | 004b4460 → 004bb000, 004b4400, 0097af50 | refused ("COMBAT_RUNIC_SPELL_CANT_DRAGONFORM") when the creature's base creature is id 0x29 / 0x37 / 0x53 / 0x68 (Bone, Green, Deep, Fire Dragon — every dragon line); the engine matched "Dragon" in the (localised) name. Lasts one turn (round of time per turn) | AuditRuneWarcryTests.DragonformRefusesDragonLinesById |

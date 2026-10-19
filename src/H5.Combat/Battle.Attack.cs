@@ -884,7 +884,7 @@ public sealed partial class Battle
             StormStrikeChain(a, t, dmg);
         if (a.HasEffect(H5.Combat.Fx.RuneMagicControl))
         {
-            var bless = t.Effects.Where(e => e.Positive && e.School == "MAGIC_SCHOOL_LIGHT").ToList();
+            var bless = t.Effects.Where(MagicControlCandidate).ToList();   // any school (exe FUN_00a5ca80 → FUN_004e4000)
             RemoveEffect(a, H5.Combat.Fx.RuneMagicControl);
             if (bless.Count > 0)
             {

@@ -137,4 +137,17 @@ public class AuditSpellSTests(GameDataFixture f)
         Assert.Equal(p0.BaseHealth, p1.BaseHealth);
         Assert.Equal(p0.BaseAttack, p1.BaseAttack);
     }
+
+    // exe FUN_00a5ca80 → FUN_004e4000: Rune of Magic Control steals any beneficial dispellable timed effect (any school),
+    // never whole-battle ones, warcry effects or the never-dispelled list.
+    [Fact]
+    public void MagicControlStealsAnySchool()
+    {
+        Assert.True(Battle.MagicControlCandidate(new Effect { Id = "SPELL_HASTE", Positive = true, Remaining = 3, School = "MAGIC_SCHOOL_LIGHT" }));
+        Assert.True(Battle.MagicControlCandidate(new Effect { Id = "SPELL_BLOODLUST", Positive = true, Remaining = 3, School = "MAGIC_SCHOOL_DESTRUCTIVE" }));
+        Assert.False(Battle.MagicControlCandidate(new Effect { Id = "SPELL_SLOW", Positive = false, Remaining = 3 }));
+        Assert.False(Battle.MagicControlCandidate(new Effect { Id = "SPELL_CELESTIAL_SHIELD", Positive = true }));          // whole battle
+        Assert.False(Battle.MagicControlCandidate(new Effect { Id = Fx.RallyingCry, Positive = true, Remaining = 3 }));
+        Assert.False(Battle.MagicControlCandidate(new Effect { Id = "SPELL_HASTE", Positive = true, Remaining = 3, Dispellable = false }));
+    }
 }

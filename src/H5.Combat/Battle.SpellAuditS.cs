@@ -145,4 +145,15 @@ public sealed partial class Battle
         if (u != null) Emit(new AbilityTriggered(Actor.Hero(1 - casterSide), "HERO_SKILL_ELEMENTAL_BALANCE", u.Id));
         return u;
     }
+
+    /// <summary>
+    /// Rune of Magic Control (exe FUN_00a5ca80, decoded from the disassembly 00a5caa8..00a5cb46): when the rune holder attacks,
+    /// FUN_004e6470 / FUN_004e4000 list the target's effects that count as beneficial for its side — dispellable, timed
+    /// (not a whole-battle duration), not a warcry effect, not in FUN_004e3ac0's never-dispelled list, of any school; one is
+    /// picked with the battle RNG (Random(n)), added to the attacker (vf 0x264) and removed from the target (vf 0x270).
+    /// The rune itself is removed by FUN_00a5cb80 together with Rune of Battle Rage. The engine took Light-school effects only.
+    /// </summary>
+    internal static bool MagicControlCandidate(Effect e) =>
+        e.Positive && e.Dispellable && !double.IsPositiveInfinity(e.Remaining) && !NeverDispelled.Contains(e.Id)
+        && e.Id is not (H5.Combat.Fx.RallyingCry or H5.Combat.Fx.Battlecry);
 }
