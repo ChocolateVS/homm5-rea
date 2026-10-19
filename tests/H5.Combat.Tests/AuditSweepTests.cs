@@ -1,0 +1,55 @@
+using H5.Core.Data;
+
+namespace H5.Combat.Tests;
+
+/// <summary>Core mechanics and spell leftovers confirmed against H5_Game.exe (docs/rules/audit/combat_sweep_*.md).</summary>
+[Collection("game")]
+public class AuditSweepTests(GameDataFixture f)
+{
+    Battle Make((string id, int count)[] mine, (string id, int count)[] theirs)
+    {
+        var s = BattleSetup.Create(f.Db,
+            new ArmySetup { Hero = f.Db.DuelPresets[0].Hero, Army = mine.Select(a => new ArmySlot(a.id, a.count)).ToList() },
+            new ArmySetup { Hero = f.Db.DuelPresets[3].Hero, Army = theirs.Select(a => new ArmySlot(a.id, a.count)).ToList() },
+            7, skipTactics: true, arena: "Grass_Big_01");
+        foreach (var h in s.Heroes) { h.Specialization = ""; h.Artifacts.Clear(); h.Perks.Clear(); }
+        return new Battle(f.Db, s);
+    }
+
+    static Unit Theirs(Battle b, string id) => b.State.Units.Single(x => x.Side == 1 && x.CreatureId == id);
+
+    // exe FUN_0098ade0 field object, interface vtable 00e61818: every Firewall hit — cast (FUN_0085b790), entry
+    // (FUN_0085bfe0 → FUN_0085b530) — computes vf 0x1c = FUN_0098abf0 (FUN_0097d600 with the caster stored at +0x64, so the
+    // caster's Phoenix Feather Cape counts) and deals it with vf 0x24 = FUN_0098a920 → the fire rider FUN_004e6770 (Master
+    // of Fire). The engine's field hits had no caster: no artifact bonus, no Master of Fire.
+    [Fact]
+    public void FirewallFieldHitsKeepTheCaster()
+    {
+        var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 200) });
+        var pe = Theirs(b, "CREATURE_PEASANT");
+        var h = b.State.Heroes[0];
+        b.ResolveSpell(Actor.Hero(0), 0, f.Db.Spell("SPELL_FIREWALL")!, Mastery.Basic, 1, null, new Cell(0, 0), fromHero: true);
+        var field = b.State.Fields.Single(x => x.Kind == "FIREWALL");
+        Assert.True(field.HeroCaster);
+        int plain = b.FirewallHit(pe, field);
+        h.Artifacts.Add("PHOENIX_FEATHER_CAPE");
+        int cape = b.FirewallHit(pe, field);
+        Assert.True(plain > 0 && cape > plain, $"{plain} -> {cape}");
+        h.Perks.Add(Sk.MasterFire);
+        pe.Effects.RemoveAll(e => e.Id == Fx.ArmorCrushed);
+        b.FirewallHit(pe, field);
+        Assert.True(pe.HasEffect(Fx.ArmorCrushed));
+    }
+
+    // exe FUN_0085b790: the cast hits creature stacks (vf 0x6c) and spawns (vf 0x8c) on the cells; war machines answer
+    // neither (vtable 00e70594 slots 0x6c / 0x8c = FUN_00a76cf0 → null) and are not hit.
+    [Fact]
+    public void FirewallCastSkipsWarMachines()
+    {
+        var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 200) });
+        var wm = BattleSetup.AddWarMachine(f.Db, b.State, 1, "WAR_MACHINE_BALLISTA");
+        int count = wm.Count, top = wm.TopHealth;
+        b.ResolveSpell(Actor.Hero(0), 0, f.Db.Spell("SPELL_FIREWALL")!, Mastery.Expert, 20, null, wm.Pos, fromHero: true);
+        Assert.Equal((count, top), (wm.Count, wm.TopHealth));
+    }
+}

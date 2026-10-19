@@ -1150,7 +1150,7 @@ public sealed partial class Battle
         foreach (var f in S.Fields.Where(f => (f.Kind is "FIREWALL" or "LIQUID_FLAME") && f.Cells.Any(u.Occupies)).ToList())
         {
             if (!u.Alive) break;
-            if (f.Kind == "FIREWALL") DealSpellDamage(u, Db.Spell("SPELL_FIREWALL")!, f.Damage, f.Side, ignoreResist: false);
+            if (f.Kind == "FIREWALL") FirewallHit(u, f);
             else DealElementalDamage(u, (int)f.Damage, Elements.Fire, f.SourceUnit, Ab.LiquidFlameBreath);
         }
     }

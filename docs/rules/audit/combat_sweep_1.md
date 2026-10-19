@@ -1,0 +1,18 @@
+# Combat audit — sweep 1: Firewall field, resistance roll
+
+Per-ID rows merged into `docs/rules/AUDIT_COMBAT.md` by `tools/re/audit/ledger.py` (rows here override the earlier
+fragments). Exe references are H5_Game.exe (GOG 3.1) addresses, analysed headless with Ghidra 12.1.4
+(`tools/re/audit_sweep/ghidra.sh`, private project copy). Tests are in `tests/H5.Combat.Tests/AuditSweepTests.cs`.
+
+## Core mechanics (not ID rows)
+
+| Mechanic | Status | Exe | Original behaviour | Test |
+|---|---|---|---|---|
+| Firewall field hits | FIXED | 0085cda0, 0098ade0, 0098abf0, 0098a920, 0085b790, 0085bbf0, 0085bed0, 0085b530, 00a66050 | the field object (0x8c bytes, ctor FUN_0098ade0) keeps the caster (+0x64), the spell (+0x68), the cells (x, y−1..y+1), the duration FUN_004e57d0 (+0x74) and the base damage FUN_00976b90 at the cast (+0x78). Its damage interface (vtable 00e61818) is the only damage code: vf 0x1c = FUN_0098abf0 → FUN_0097d600(stored damage, caster, target) — caster artifacts (FUN_00976db0), Exorcism / Cold Death (FUN_00977a80), protection and Irresistible Magic (FUN_0097d2a0) — plus Elemental Chains (FUN_00977e60); vf 0x24 = FUN_0098a920 deals it through the fire rider FUN_004e6770 (Master of Fire, Set Afire). The cast (FUN_0085b790) and a unit entering (FUN_00a66050 → FUN_0085bfe0 / FUN_0085c0c0 → FUN_0085bbf0 / FUN_0085bed0 → FUN_0085b530) both use it. The engine's entry / end-of-turn hits passed no caster (no artifact ×1.5, no chains, no Irresistible Magic, no fire rider) and its cast hit skipped the fire rider. The exe trigger of a hit at a turn was not located (engine: end of the unit's turn, same damage path) | AuditSweepTests.FirewallFieldHitsKeepTheCaster |
+| Firewall cast victims | FIXED | 0085b790, vtable 00e70594 (+0x6c / +0x8c = FUN_00a76cf0 → FUN_00c98940 = null), 00e502ac (+0x8c FUN_008b18c0) | the cast damages every unit of FUN_00af4450 that is a creature stack (vf 0x6c) or a spawn (vf 0x8c), on either side, whose cells meet the field; war machines answer neither and are never hit. The engine hit war machines and skipped spawns | AuditSweepTests.FirewallCastSkipsWarMachines |
+
+## IDs
+
+| ID | Status | Exe | Original behaviour / note | Test |
+|---|---|---|---|---|
+| `SPELL_FIREWALL` | FIXED | 0097a530 (case 0xec), 0085cda0, 0098ade0, 0098abf0, 0098a920, 0085b790, 004e6770 | cells (x, y−1), (x, y), (x, y+1); every hit (cast, entry) recomputes FUN_0097d600 from the damage stored at the cast with the caster (artifacts, protection, Irresistible Magic) + Elemental Chains and deals it through the fire rider (Master of Fire, Set Afire); the cast rolls resistance (vf 0x1c second argument 0 → FUN_0097d600 roll flag 1) and hits creatures and spawns, not war machines. Engine fixed (core rows above); the turn-hit trigger was not located | AuditSweepTests.FirewallFieldHitsKeepTheCaster, FirewallCastSkipsWarMachines |

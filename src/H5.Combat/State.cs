@@ -195,6 +195,7 @@ public sealed class FieldObject
     public Mastery Mastery;
     public int SourceUnit = -1;
     public bool HiddenFromEnemy;
+    public bool HeroCaster;       // FIREWALL: cast by the side's hero (exe field +0x64 holds the caster for every hit)
 }
 
 public sealed class Corpse

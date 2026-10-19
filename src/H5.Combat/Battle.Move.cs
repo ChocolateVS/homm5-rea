@@ -166,7 +166,7 @@ public sealed partial class Battle
                 DealSpellDamage(u, Db.Spell("SPELL_LAND_MINE")!, f.Damage, f.Side, ignoreResist: false);
             }
             else if (f.Kind == "FIREWALL")
-                DealSpellDamage(u, Db.Spell("SPELL_FIREWALL")!, f.Damage, f.Side, ignoreResist: false);
+                FirewallHit(u, f);
         }
         if (u.Alive) EnterMoat(u, touched);
         if (u.HasEffect(H5.Combat.Fx.Invisible) && S.LivingOf(1 - u.Side).Any(e => AreAdjacent(u, e)))

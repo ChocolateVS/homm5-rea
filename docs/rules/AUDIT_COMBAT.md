@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 280 |
+| FIXED | 281 |
 | MATCH | 146 |
 | GAP | 12 |
-| UNVERIFIED | 154 |
+| UNVERIFIED | 153 |
 | N/A | 55 |
 
 ## Core mechanics
@@ -587,7 +587,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_MASS_HASTE` | MATCH | 0097a530 | whole own army (TARGET_FRIEND → caster vf +0xc); effect as SPELL_HASTE |  |
 | `SPELL_ABILITY_CALL_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_CONJURE_PHOENIX` | GAP | 0097d7b0 case 0xeb → 00862130, 00861f90, 00862970, 00861340 | summon info CUniqueCreatureSummonInfo (vtable 00e15b24) from ConjuredPhoenix.xdb (RPG stats +0x530: Health 300 + 30/power, damage 0 + 10 / 15 per power, offence / defence 10 + 2/level, initiative 15, speed 7, Fire Shield + fire immunity) with power = hero vf 0x244, level vf 0x23c, a third value (army hero vf 0x1c, 1 without), divisor trunc(Eval(damage table)) = 4/3/2/1 and a flag. The code that turns these into stats (how power and divisor combine; engine: ceil(SP/divisor)) was not located — reader of the summon info unknown. Re-cast: FUN_00861340 handles an existing linked phoenix (FUN_00a6e310) instead of refusing as the engine does — removal not decoded. Elemental Balance second phoenix: see HERO_SKILL_ELEMENTAL_BALANCE (FIXED) | AuditSpellSTests.ElementalBalanceCounterSummons |
-| `SPELL_FIREWALL` | UNVERIFIED | 0097a530 (case 0xec), 0085cda0, 0098ade0, 0098a920 / 0098aa40 → 004e6770 | cells = (x, y−1), (x, y), (x, y+1) — matches; the field object (0x8c bytes, ctor 0098ade0) forwards entry/turn damage to the fire rider 004e6770, which deals the amount it is given without a new protection step — the caller computing that amount was not traced, so whether the engine's protection on each hit matches is open |  |
+| `SPELL_FIREWALL` | FIXED | 0097a530 (case 0xec), 0085cda0, 0098ade0, 0098abf0, 0098a920, 0085b790, 004e6770 | cells (x, y−1), (x, y), (x, y+1); every hit (cast, entry) recomputes FUN_0097d600 from the damage stored at the cast with the caster (artifacts, protection, Irresistible Magic) + Elemental Chains and deals it through the fire rider (Master of Fire, Set Afire); the cast rolls resistance (vf 0x1c second argument 0 → FUN_0097d600 roll flag 1) and hits creatures and spawns, not war machines. Engine fixed (core rows above); the turn-hit trigger was not located | AuditSweepTests.FirewallFieldHitsKeepTheCaster, FirewallCastSkipsWarMachines |
 | `SPELL_STONE_SPIKES` | FIXED | 00976b90, 0085eaa0, 0097a530 (case 0xed) | as Fireball, area = centre + 4 orthogonal cells | SpellBaseDamageTruncates |
 | `SPELL_UBER_CHAIN_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_BOSS_FIREWALL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |

@@ -678,9 +678,11 @@ public sealed partial class Battle
                 var cells = Enumerable.Range(-1, 3).Select(dy => new Cell(c.X, c.Y + dy)).Where(S.InBounds).ToList();
                 double dmg = SpellBaseDamage(baseDef, sp, m, power);
                 var f = AddField("FIREWALL", side, cells, baseDef.DurationAt(m).Eval(power), dmg);
-                f.Power = power; f.Mastery = m;
-                foreach (var v in S.Living.Where(u => !u.IsObject && u.Cells().Any(cells.Contains)).ToList())
-                    if (SpellHits(side, baseDef, v, true, hero, area: true)) { affected.Add(v.Id); DealSpellDamage(v, baseDef, dmg, side, false, hero, m); }
+                f.Power = power; f.Mastery = m; f.HeroCaster = hero != null;
+                // exe FUN_0085cda0 → FUN_0085b790: every creature stack (vf 0x6c) or spawn (vf 0x8c) on the cells — not war
+                // machines or siege objects — gets the field's damage (vf 0x1c, resistance rolled) and the fire rider (vf 0x24).
+                foreach (var v in S.Living.Where(u => FirewallVictim(u) && u.Cells().Any(cells.Contains)).ToList())
+                    if (SpellHits(side, baseDef, v, true, hero, area: true)) { affected.Add(v.Id); FirewallHit(v, f, hero, rollLuck: true); }
                 break;
             }
             case "SPELL_LAND_MINE":
@@ -874,14 +876,15 @@ public sealed partial class Battle
         or "SPELL_WASP_SWARM" or "SPELL_DIVINE_VENGEANCE" or "SPELL_PLAGUE";
 
     /// <summary>Spell damage with magic protection, Irresistible Magic, Warlock's Luck, Exorcism and Cold Death.</summary>
-    int DealSpellDamage(Unit t, SpellDef sp, double dmg, int side, bool ignoreResist, HeroState? hero = null, Mastery mastery = Mastery.None)
+    int DealSpellDamage(Unit t, SpellDef sp, double dmg, int side, bool ignoreResist, HeroState? hero = null, Mastery mastery = Mastery.None,
+        bool rollLuck = true)
     {
         if (!t.Alive) return 0;
-        return SpellDamageFinal(t, sp, dmg, side, ignoreResist, hero) is double d ? ApplySpellDamageFinal(t, sp, d, side, ignoreResist) : 0;
+        return SpellDamageFinal(t, sp, dmg, side, ignoreResist, hero, rollLuck) is double d ? ApplySpellDamageFinal(t, sp, d, side, ignoreResist) : 0;
     }
 
     /// <summary>The damage a spell would deal to <paramref name="t"/> after protection, luck and chains (null: none).</summary>
-    double? SpellDamageFinal(Unit t, SpellDef sp, double dmg, int side, bool ignoreResist, HeroState? hero)
+    double? SpellDamageFinal(Unit t, SpellDef sp, double dmg, int side, bool ignoreResist, HeroState? hero, bool rollLuck = true)
     {
         string id = BaseSpell(sp.Id);
         bool fullProtection = _resistedFullProtection;
@@ -902,7 +905,7 @@ public sealed partial class Battle
             // Irresistible Magic (p.140, p.322): reduces protection, and immune / resisted targets still take a share.
             dmg = ApplyProtectionPercent(dmg, mult, immune || fullProtection, inv);
         }
-        if (hero != null)
+        if (hero != null && rollLuck)
         {
             if (hero.HasPerk(Sk.WarlocksLuck) && sp.School == "MAGIC_SCHOOL_DESTRUCTIVE")
             {
@@ -931,6 +934,27 @@ public sealed partial class Battle
         RageEvent(t, "ReceiveDDSpellRP");
         return amount;
     }
+
+    static bool FirewallVictim(Unit u) =>
+        !u.IsWarMachine && (!u.IsObject || !u.CreatureId.StartsWith("SIEGE_", StringComparison.Ordinal));
+
+    /// <summary>
+    /// One Firewall hit (the field object of exe FUN_0098ade0, interface vtable 00e61818): vf 0x1c (FUN_0098abf0) takes the
+    /// base damage stored at the cast (+0x78, FUN_00976b90) through FUN_0097d600 with the caster kept in the field (+0x64) —
+    /// caster artifacts, Exorcism / Cold Death, protection, Irresistible Magic — plus Elemental Chains (FUN_00977e60); vf 0x24
+    /// (FUN_0098a920) deals it through the fire rider FUN_004e6770 (Master of Fire, Set Afire). Same path on the cast
+    /// (FUN_0085b790) and on entering (FUN_00a66050 → FUN_0085bfe0 / FUN_0085c0c0 → FUN_0085b530); the engine's end-of-turn
+    /// hit uses it too (its exe trigger was not traced). The engine's entry / turn hits used no caster at all.
+    /// </summary>
+    internal int FirewallHit(Unit u, FieldObject f, HeroState? hero, bool rollLuck = false)
+    {
+        var sp = Db.Spell("SPELL_FIREWALL")!;
+        int dealt = DealSpellDamage(u, sp, f.Damage, f.Side, false, hero, f.Mastery, rollLuck);
+        if (u.Alive) SpellSideEffects(sp.Id, u, f.Mastery, f.Power, hero, true, f.Side, dealt: dealt);
+        return dealt;
+    }
+
+    internal int FirewallHit(Unit u, FieldObject f) => FirewallHit(u, f, f.HeroCaster ? S.Heroes[f.Side] : null);
 
     void DealSpellDamageRaw(Unit t, int dmg, string by) => DealDamage(t, dmg, -1, AttackKind.Spell, by);
 
