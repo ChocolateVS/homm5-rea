@@ -12,9 +12,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 254 |
+| FIXED | 255 |
 | MATCH | 130 |
-| GAP | 7 |
+| GAP | 6 |
 | UNVERIFIED | 196 |
 | N/A | 56 |
 
@@ -610,8 +610,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_DEEP_FREEZE` | MATCH | 00a5a900 (0x117) | frozen target takes ×max(value·0.01, 1) |  |
 | `SPELL_REGENERATION` | MATCH | 0097c9f0 (0x118) | immune: Undead, Elemental, Mechanical |  |
 | `SPELL_DIVINE_VENGEANCE` | FIXED | 00976b90, 0097d7b0 | truncated base; the engine's ×sqrt(frags) (manual p.191) not located in the exe — extra damage term 00977e60 not decompiled | SpellBaseDamageTruncates |
-| `SPELL_ARCANE_CRYSTAL` | GAP | 0097d7b0 case 0x11a → FUN_00c55a40 → FUN_008b1090, 00a60e20 | spawn at the target cell with hit points ArcaneCrystal/Health (1), defence 0 (ArcaneCrystal/Defence is not read), tier ArcaneCrystal/Tier, caster's spell power / level / mastery stored — engine matches. The explosion when it is destroyed (FUN_00a60e20: spawn 0x11a, damage Eval(damage table 40/60/80/100 + 8/12/16/20 per power), FUN_00af4450) is not ported — the engine's crystal never explodes; its area / damage path was not decoded |  |
-| `SPELL_SUMMON_HIVE` | GAP | 0097d7b0 case 0x11b → FUN_008b1090, 008b07d0, 008b0af0 | hive: defence DefensePerCasterLevel·level + DefenseBase, hit points trunc(Eval(Health at mastery)), initiative Eval(Initiative), spell SummonHive/Spell (Wasp Swarm, Expert), initial ATB = battle RNG float in [0.5, 1) — engine matches. Its turn (which target, which power: caster's spell power via 008b07d0 or SummonHive/Power 10000 via 008b0af0, whether the hero's mana is spent — the engine spends it) was not traced |  |
+| `SPELL_ARCANE_CRYSTAL` | FIXED | 0097d7b0 case 0x11a → FUN_00c55a40 → FUN_008b1090; 00a61310 → 00a60e20 (disassembly 00a60e4f..00a6105d), 00af4450, 00b3d3f0 | spawn at the target cell with hit points ArcaneCrystal/Health (1), defence 0 (ArcaneCrystal/Defence is not read), tier ArcaneCrystal/Tier, caster's spell power / level / mastery stored — engine matches. When destroyed it explodes: trunc(Eval(damage table 40/60/80/100 + 8/12/16/20 per power)) (chop) to every creature, war machine or spawn of either army adjacent to it, straight through the stack damage call (no resistance / protection). The engine's crystal never exploded | AuditSpellSTests.ArcaneCrystalExplodesOnAdjacentUnits |
+| `SPELL_SUMMON_HIVE` | GAP | 0097d7b0 case 0x11b → FUN_008b1090; 008b07f0, 008b08a0, 00bbc310 | hive: defence DefensePerCasterLevel·level + DefenseBase, hit points trunc(Eval(Health at mastery)), initiative Eval(Initiative), spell SummonHive/Spell (Wasp Swarm, Expert), initial ATB = battle RNG float in [0.5, 1) — engine matches. It acts only while its hero has the mana for the spell's base cost FUN_00a34740 (008b07f0) and pays it from the hero (008b08a0) — FIXED: the engine compared and paid the raw ManaCost (no week / Arcane Training / Ring of Magi). Open: the target choice (FUN_00bbc310 → FUN_00bbcec0) and the cast power (FUN_00983790; caster power 008b07d0 vs SummonHive/Power 10000 008b0af0) were not decoded — engine: nearest living enemy, the caster's spell power | AuditSpellSTests.HivePaysTheBaseSpellCost |
 | `SPELL_BLADE_BARRIER` | MATCH | 0097d7b0 case 0x11c → FUN_008b1090 | three spawns at (x, y−1), (x, y), (x, y+1); hit points trunc(Eval(Health at mastery)), duration FUN_004e57d0; BladeBarrier/MagicProof 0.75 — as the engine |  |
 | `SPELL_UBER_METEOR_SHOWER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_PREPARATION` | UNVERIFIED | 00a5fee0 00a64e90 | implemented; not yet compared with the exe |  |

@@ -220,6 +220,31 @@ public sealed partial class Battle
     public int HeroManaCost(HeroState h, SpellDef sp)
     {
         if (sp.School == "MAGIC_SCHOOL_RUNIC") return 0;
+        if (sp.School == "MAGIC_SCHOOL_WARCRIES") return HeroBaseManaCost(h, sp);
+        int c = HeroBaseManaCost(h, sp);
+        int adjust = 0;
+        if (S.LivingOf(h.Side).Any(u => u.Has(Ab.EnergyChannel)))
+        {
+            int r = ExeChop(c * 0.75);
+            adjust = r != c ? 0 : -1;    // guarantees at least one point of discount
+            c = r;
+        }
+        var e = Enemy(h.Side);
+        if (e.Present && (sp.School == "MAGIC_SCHOOL_DARK" && e.HasPerk(Sk.SealOfDarkness) || sp.School == "MAGIC_SCHOOL_LIGHT" && e.HasPerk(Sk.SuppressLight)))
+        {
+            if (c * 2 == c) adjust++;
+            c *= 2;
+        }
+        if (sp.School == "MAGIC_SCHOOL_LIGHT" && h.Specialization == "HERO_SPEC_WHITE_KNIGHT") c -= 1;
+        if (e.Present && CorruptPerk(sp.School) is { Length: > 0 } corrupt && e.HasPerk(corrupt))
+            c = ExeChop((1 + Stats.Get("combat/HeroSkills/Barbarian/CorruptMagic_SpellCostIncrease", 0.5)) * c);
+        return Math.Max(0, c + adjust);
+    }
+
+    /// <summary>The base part of the hero's spell cost (exe FUN_00a34740): week, warcry or school discounts — no combat
+    /// modifiers. A Summon Hive hive pays its spell with this (FUN_008b07f0 / FUN_008b08a0).</summary>
+    internal int HeroBaseManaCost(HeroState h, SpellDef sp)
+    {
         int c = MoonWeek.SpellCost(sp.ManaCost, S.Week);   // exe 00a347b9 → 00bcddf0, before every discount
         if (sp.School == "MAGIC_SCHOOL_WARCRIES")
         {
@@ -242,25 +267,7 @@ public sealed partial class Battle
             c = ExeChop(Math.Clamp(f, 0.5, 1.0) * c);
         }
         if (h.HasPerk(Sk.ArcaneTraining)) c = ExeChop(Math.Min(c * (double)0.8f, c - 1.0));
-        c = Math.Max(0, c);
-
-        int adjust = 0;
-        if (S.LivingOf(h.Side).Any(u => u.Has(Ab.EnergyChannel)))
-        {
-            int r = ExeChop(c * 0.75);
-            adjust = r != c ? 0 : -1;    // guarantees at least one point of discount
-            c = r;
-        }
-        var e = Enemy(h.Side);
-        if (e.Present && (sp.School == "MAGIC_SCHOOL_DARK" && e.HasPerk(Sk.SealOfDarkness) || sp.School == "MAGIC_SCHOOL_LIGHT" && e.HasPerk(Sk.SuppressLight)))
-        {
-            if (c * 2 == c) adjust++;
-            c *= 2;
-        }
-        if (sp.School == "MAGIC_SCHOOL_LIGHT" && h.Specialization == "HERO_SPEC_WHITE_KNIGHT") c -= 1;
-        if (e.Present && CorruptPerk(sp.School) is { Length: > 0 } corrupt && e.HasPerk(corrupt))
-            c = ExeChop((1 + Stats.Get("combat/HeroSkills/Barbarian/CorruptMagic_SpellCostIncrease", 0.5)) * c);
-        return Math.Max(0, c + adjust);
+        return Math.Max(0, c);
     }
 
     static string CorruptPerk(string school) => school switch

@@ -156,4 +156,20 @@ public sealed partial class Battle
     internal static bool MagicControlCandidate(Effect e) =>
         e.Positive && e.Dispellable && !double.IsPositiveInfinity(e.Remaining) && !NeverDispelled.Contains(e.Id)
         && e.Id is not (H5.Combat.Fx.RallyingCry or H5.Combat.Fx.Battlecry);
+
+    /// <summary>
+    /// Arcane Crystal explosion (exe FUN_00a60e20, from the death handler FUN_00a61310; decoded from the disassembly
+    /// 00a60e4f..00a6105d): damage = trunc(Eval(the crystal spell's damage table at the caster's mastery, caster's power))
+    /// in chop mode — stored at creation; every creature, war machine or spawn of either army adjacent to the crystal
+    /// (FUN_00af4450 lists both armies, FUN_00b3d3f0 the footprint adjacency) takes it straight through the stack damage
+    /// call (no resistance or protection).
+    /// </summary>
+    void ArcaneCrystalExplosion(Unit crystal)
+    {
+        int dmg = crystal.Power;
+        if (dmg <= 0) return;
+        Emit(new AbilityTriggered(crystal.Id, "SPELL_ARCANE_CRYSTAL"));
+        foreach (var u in S.Living.Where(o => o.Id != crystal.Id && AreAdjacent(crystal, o)).ToList())
+            if (u.Alive) DealDamage(u, dmg, crystal.Id, AttackKind.Other, "ARCANE_CRYSTAL");
+    }
 }

@@ -150,4 +150,35 @@ public class AuditSpellSTests(GameDataFixture f)
         Assert.False(Battle.MagicControlCandidate(new Effect { Id = Fx.RallyingCry, Positive = true, Remaining = 3 }));
         Assert.False(Battle.MagicControlCandidate(new Effect { Id = "SPELL_HASTE", Positive = true, Remaining = 3, Dispellable = false }));
     }
+
+    // exe FUN_00a60e20 (death handler FUN_00a61310): a destroyed Arcane Crystal deals trunc(Eval(damage, power)) to every
+    // adjacent unit of either side, without protection — Basic, power 5: 60 + 12·5 = 120.
+    [Fact]
+    public void ArcaneCrystalExplodesOnAdjacentUnits()
+    {
+        var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 100) });
+        var pe = Theirs(b, "CREATURE_PEASANT");
+        var cell = new Cell(pe.Pos.X - 1, pe.Pos.Y);
+        b.ResolveSpell(Actor.Hero(0), 0, Sp("SPELL_ARCANE_CRYSTAL"), Mastery.Basic, 5, null, cell, fromHero: true);
+        var crystal = b.State.Units.Single(u => u.CreatureId == "ARCANE_CRYSTAL");
+        Assert.Equal(120, crystal.Power);
+        int before = pe.TotalHealth;
+        b.Kill(crystal, Actor.Hero(1));
+        Assert.Equal(before - 120, pe.TotalHealth);
+    }
+
+    // exe FUN_008b07f0 / FUN_008b08a0: a hive needs and spends its hero's base spell cost (FUN_00a34740 — e.g. Arcane
+    // Training applies, the enemy's Corrupt Magic does not).
+    [Fact]
+    public void HivePaysTheBaseSpellCost()
+    {
+        var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 10) });
+        var h = b.State.Heroes[0];
+        var wasp = Sp("SPELL_WASP_SWARM");
+        Assert.Equal(wasp.ManaCost, b.HeroBaseManaCost(h, wasp));
+        h.Perks.Add(Sk.ArcaneTraining);
+        Assert.Equal((int)Math.Min(wasp.ManaCost * 0.8f, wasp.ManaCost - 1.0), b.HeroBaseManaCost(h, wasp));
+        b.State.Heroes[1].Perks.Add(Sk.CorruptSummoning);
+        Assert.True(b.HeroManaCost(h, wasp) > b.HeroBaseManaCost(h, wasp));
+    }
 }

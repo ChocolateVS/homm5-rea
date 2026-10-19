@@ -39,16 +39,18 @@ try:
     for p in paths:
         os.makedirs(os.path.dirname(f'{WT}/{p}') or '.', exist_ok=True)
         shutil.copyfile(f'{REPO}/{p}', f'{WT}/{p}')
-    for path, old, new in spec.get('edits', []):
-        raw = open(f'{WT}/{path}', encoding='utf-8', newline='').read()
-        crlf = '\r\n' in raw
-        t = raw.replace('\r\n', '\n')
-        old, new = old.replace('\r\n', '\n'), new.replace('\r\n', '\n')
-        if t.count(old) != 1:
-            raise SystemExit(f'anchor not unique in HEAD:{path}: {old[:80]!r}')
-        t = t.replace(old, new)
-        open(f'{WT}/{path}', 'w', encoding='utf-8', newline='').write(t.replace('\n', '\r\n') if crlf else t)
-        if path not in paths: paths.append(path)
+    def apply_edits():
+        for path, old, new in spec.get('edits', []):
+            raw = open(f'{WT}/{path}', encoding='utf-8', newline='').read()
+            crlf = '\r\n' in raw
+            t = raw.replace('\r\n', '\n')
+            old, new = old.replace('\r\n', '\n'), new.replace('\r\n', '\n')
+            if t.count(old) != 1:
+                raise SystemExit(f'anchor not unique in HEAD:{path}: {old[:80]!r}')
+            t = t.replace(old, new)
+            open(f'{WT}/{path}', 'w', encoding='utf-8', newline='').write(t.replace('\n', '\r\n') if crlf else t)
+            if path not in paths: paths.append(path)
+    apply_edits()
     if spec.get('ledger'):
         env = dict(os.environ, H5_TREE=WT)
         print(run(sys.executable, f'{WT}/tools/re/audit/ledger.py', EXTRACT, env=env).stdout.strip())
@@ -74,10 +76,11 @@ try:
         head = run('git', 'rev-parse', 'refs/heads/main').stdout.strip()
         touched = set(run('git', 'diff', '--name-only', old, head).stdout.split())
         print(f'main moved to {head[:8]} - rebuilding on it')
+        verbatim = list(spec.get('files', []))
+        if touched & set(verbatim): raise SystemExit(f'main changed my files {touched & set(verbatim)} - redo by hand')
         run('git', 'reset', '-q', '--hard', head, cwd=WT)
-        own = [p for p in paths if p != 'docs/rules/AUDIT_COMBAT.md']
-        if touched & set(own): raise SystemExit(f'main changed my paths {touched & set(own)} - redo by hand')
-        run('git', 'checkout', mine, '--', *own, cwd=WT)
+        if verbatim: run('git', 'checkout', mine, '--', *verbatim, cwd=WT)
+        apply_edits()                       # text-anchored edits are re-applied to the new main's version
         if spec.get('ledger'):
             print(run(sys.executable, f'{WT}/tools/re/audit/ledger.py', EXTRACT, env=dict(os.environ, H5_TREE=WT)).stdout.strip())
         # The full suite already passed on the earlier base with these changes; the intervening commits are disjoint from

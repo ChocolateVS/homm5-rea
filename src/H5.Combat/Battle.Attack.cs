@@ -1051,6 +1051,7 @@ public sealed partial class Battle
         foreach (var h in S.Heroes)
             foreach (var key in h.Links.Where(kv => kv.Value == t.Id).Select(kv => kv.Key).ToList())
                 h.Links.Remove(key);
+        if (t.CreatureId == "ARCANE_CRYSTAL") ArcaneCrystalExplosion(t);   // exe FUN_00a61310 → FUN_00a60e20
         if (t.Kind != UnitKind.Creature) return;
         if (!t.Summoned) DeathSummons(t);
         // Enraged: friendly Enraged stacks gain Attack (p.321).
@@ -1248,9 +1249,9 @@ public sealed partial class Battle
             var spell = Db.Spell("SPELL_WASP_SWARM");
             var target = S.Living.Where(o => o.Side != u.Side && o.Kind == UnitKind.Creature && IsLiving(o) && !o.HasEffect(H5.Combat.Fx.Invisible))
                 .OrderBy(o => Distance(o, u)).ThenBy(o => o.Id).FirstOrDefault();
-            if (spell != null && target != null && caster.Mana >= spell.ManaCost)
+            if (spell != null && target != null && caster.Mana >= HeroBaseManaCost(caster, spell))   // exe FUN_008b07f0 (FUN_00a34740)
             {
-                caster.Mana -= spell.ManaCost;
+                caster.Mana -= HeroBaseManaCost(caster, spell);                                         // exe FUN_008b08a0
                 Emit(new ManaChanged(Actor.Hero(u.Side), caster.Mana));
                 ResolveSpell(u.Id, u.Side, spell, Mastery.Expert, u.Power, target, target.Pos, fromHero: false);
             }
