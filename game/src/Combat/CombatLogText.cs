@@ -11,9 +11,6 @@ namespace H5Reborn.Combat;
 /// </summary>
 public static class CombatLogText
 {
-    // Player colours as the stock log uses them (player 1 red, player 2 blue).
-    static readonly string[] SideColor = { "<color=FFFF5A46>", "<color=FF5A96FF>" };
-
     static string Template(string name) => UiResources.Instance.Text($"Text/CombatLog/{name}.txt") ?? "";
 
     public static string Escape(string s) => s.Replace('<', '‹').Replace('>', '›');
@@ -60,46 +57,132 @@ public static class CombatLogText
     static int SideOfActor(CombatScreen s, int actor) =>
         Actor.IsHero(actor) ? Actor.HeroSide(actor) : s.Session.Battle.State.Unit(actor)?.Side ?? 0;
 
-    static string Color(int side) => SideColor[Math.Clamp(side, 0, 1)];
+    /// <summary>
+    /// &lt;value=source_color&gt; / &lt;value=target_color&gt;: the exe (FUN_00559df0) inserts UIGameRoot LOG_PLAYER_SELF
+    /// (Text/CombatLog/PlayerSelf.txt "&lt;body&gt;&lt;color_positive&gt;") when the actor's owner is the viewing player,
+    /// LOG_PLAYER_ENEMY (PlayerEnemy.txt "&lt;body&gt;&lt;color_negative&gt;") otherwise.
+    /// </summary>
+    static string Color(int side) =>
+        Template(side == _viewSide ? "PlayerSelf" : "PlayerEnemy") is { Length: > 0 } c ? c : "<body>";
 
-    public static string Simple(CombatScreen s, string template, int actor) =>
-        Fill(Template(template), ("source_color", Color(SideOfActor(s, actor))), ("source", ActorName(s, actor)));
+    static int _viewSide;
 
-    public static string Damage(CombatScreen s, Damaged d, int luck)
+    /// <summary>The viewing player's side for the self/enemy log colours (set by the combat screen).</summary>
+    public static void SetViewSide(int side) => _viewSide = side;
+
+    public static string Simple(CombatScreen s, string template, int actor) => FillEntry(s, Template(template), actor, null, null, 0, 0);
+
+    // FUN_00559df0 fills only source_color, source, target_color, target, damage, dead and spell (FUN_0055a710 adds
+    // element); <value=font> in the stock templates is never set, so it stays empty and the line keeps its colour.
+    static string FillEntry(CombatScreen s, string template, int? source, int? target, string? spell, int damage, int dead)
     {
-        string name = d.Kind == AttackKind.Retaliation ? "Retaliate" : "Attack";
+        var vals = new List<(string, string)> { ("damage", damage.ToString()), ("dead", dead.ToString()), ("spell", spell ?? "") };
+        if (source is int sr) { vals.Add(("source_color", Color(SideOfActor(s, sr)))); vals.Add(("source", ActorName(s, sr))); }
+        if (target is int tg) { vals.Add(("target_color", Color(SideOfActor(s, tg)))); vals.Add(("target", UnitName(s, tg))); }
+        return Fill(template, vals.ToArray());
+    }
+
+    /// <summary>
+    /// A damage entry. Attacks and retaliations: COMBAT_LOG_ATTACK / _RETALIATE, text index luck + 1 (FUN_00c99f40;
+    /// "Favored" variants +3 not produced). Spell and ability damage: the spell's or ability's own CombatLogTexts
+    /// (CCombatLogSpell FUN_00c99fd0 index 0 = damage; CCombatLogCombatAbility FUN_00c99fa0 index 0), otherwise the
+    /// spell's per-target CCombatLogCastSpell (FUN_004e6600 / FUN_0097efd0 create it with the damage flag; selector
+    /// FUN_00c9a440: damage &gt; 0 CastSpellTargetedDamage, 0 _NoDamage).
+    /// </summary>
+    public static string Damage(CombatScreen s, Damaged d, int luck, SpellCast? lastCast)
+    {
         if (d.Kind is AttackKind.Spell or AttackKind.Other or AttackKind.Ability)
+        {
+            int src = d.Source;
+            if (lastCast != null && d.By != null && lastCast.Spell.EndsWith(d.By)) src = lastCast.Caster;
+            var spellId = ResolveSpell(d.By);
+            var texts = d.By == null ? null : AbilityLogTexts(d.By) ?? (spellId != null ? SpellLogTexts(spellId) : null);
+            string? name = d.By == null ? null : Game.Instance.Db.Abilities.GetValueOrDefault(d.By)?.Name is { Length: > 0 } an ? an
+                : spellId != null ? s.SpellName(spellId) : null;
+            if (texts is { Count: > 0 } && HasDamage(texts[0]))
+                return FillEntry(s, texts[0], src, d.Target, name != null ? Escape(name) : null, d.Damage, d.Killed);
+            if (spellId != null && name != null)
+                return FillEntry(s, Template(d.Damage > 0 ? "CastSpellTargetedDamage" : "CastSpellTargetedNoDamage"), src, d.Target, Escape(name), d.Damage, d.Killed);
             return $"<body>{UnitName(s, d.Target)}: {d.Damage} damage ({d.Killed} died).";
-        if (luck > 0) name += "GoodLuck"; else if (luck < 0) name += "BadLuck";
-        int src = d.Source;
-        return Fill(Template(name),
-            ("source_color", Color(SideOfActor(s, src))), ("source", ActorName(s, src)),
-            ("target", UnitName(s, d.Target)), ("font", "<body>"),
-            ("damage", d.Damage.ToString()), ("dead", d.Killed.ToString()));
+        }
+        string tname = d.Kind == AttackKind.Retaliation ? "Retaliate" : "Attack";
+        if (luck > 0) tname += "GoodLuck"; else if (luck < 0) tname += "BadLuck";
+        return FillEntry(s, Template(tname), d.Source, d.Target, null, d.Damage, d.Killed);
     }
 
-    public static string Spell(CombatScreen s, SpellCast sc)
+    static bool HasDamage(string template) => template.Contains("<value=damage>") || template.Contains("<value=dead>");
+
+    /// <summary>Engine damage/heal sources ("FIRST_AID", "SOIL_BURN", spell ids) to the spell that carries the log texts.</summary>
+    static string? ResolveSpell(string? by)
     {
-        var spell = Escape(s.SpellName(sc.Spell));
-        var t = sc.Target is int target ? Template("CastSpellTargeted") : Template("CastSpell");
-        return Fill(t, ("source_color", Color(SideOfActor(s, sc.Caster))), ("source", ActorName(s, sc.Caster)),
-            ("spell", spell), ("target", sc.Target is int tt ? UnitName(s, tt) : ""));
+        if (by == null) return null;
+        if (by == "FIRST_AID") return "SPELL_EFFECT_FIRST_AID_TENT_HEAL";
+        var spells = Game.Instance.Db.Spells;
+        foreach (var id in new[] { by, "SPELL_" + by, "SPELL_EFFECT_" + by, "SPELL_ABILITY_" + by })
+            if (spells.ContainsKey(id)) return id;
+        return null;
     }
+
+    static readonly Dictionary<string, List<string>?> _spellTexts = new();
+    static Dictionary<string, List<string>>? _abilityTexts;
+
+    /// <summary>Templates of a spell's CombatLogTexts (its GameMechanics/Spell xdb).</summary>
+    static List<string>? SpellLogTexts(string spellId)
+    {
+        if (_spellTexts.TryGetValue(spellId, out var cached)) return cached;
+        List<string>? list = null;
+        if (Game.Instance.Db.Spells.GetValueOrDefault(spellId)?.SourcePath is { Length: > 0 } path && Game.Instance.Fs.Exists(path))
+            list = ReadTexts(Game.Instance.Xdb.Load(path).Root?.Element("CombatLogTexts"), path);
+        return _spellTexts[spellId] = list is { Count: > 0 } ? list : null;
+    }
+
+    /// <summary>Templates of a creature ability's CombatLogTexts (GameMechanics/RefTables/CombatAbilities.xdb).</summary>
+    static List<string>? AbilityLogTexts(string abilityId)
+    {
+        if (_abilityTexts == null)
+        {
+            _abilityTexts = new();
+            const string table = "GameMechanics/RefTables/CombatAbilities.xdb";
+            foreach (var item in Game.Instance.Xdb.Load(table).Root?.Element("objects")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+                if (item.Element("ID")?.Value is { } id && ReadTexts(item.Element("obj")?.Element("CombatLogTexts"), table) is { Count: > 0 } l)
+                    _abilityTexts[id] = l;
+        }
+        return _abilityTexts.GetValueOrDefault(abilityId);
+    }
+
+    static List<string> ReadTexts(System.Xml.Linq.XElement? el, string file) =>
+        el?.Elements("Item").Select(i => Game.Instance.Xdb.ReadText((string?)i.Attribute("href"), file)?.Trim() ?? "").ToList() ?? new();
+
+    /// <summary>
+    /// First Aid Tent heal: SPELL_EFFECT_FIRST_AID_TENT_HEAL's CombatLogTexts index 1 (EffectFirstAidTentHeal,
+    /// CCombatLogSpell built with the non-damage flag, FUN_00c9a6a0).
+    /// </summary>
+    public static string? TentHeal(CombatScreen s, int tent, Healed h) =>
+        SpellLogTexts("SPELL_EFFECT_FIRST_AID_TENT_HEAL") is { Count: > 1 } t
+            ? FillEntry(s, t[1], tent, h.Target, null, h.Amount, h.Resurrected) : null;
+
+    /// <summary>COMBAT_LOG_CAST_SPELL without damage: CastSpell, or CastSpellTargeted with a target (FUN_00c9a440).</summary>
+    public static string Spell(CombatScreen s, SpellCast sc) =>
+        FillEntry(s, Template(sc.Target is int ? "CastSpellTargeted" : "CastSpell"), sc.Caster, sc.Target, Escape(s.SpellName(sc.Spell)), 0, 0);
 
     public static string Resisted(CombatScreen s, SpellResisted r) =>
-        Fill(Template("SpellResisted"), ("target_color", Color(SideOfActor(s, r.Target))), ("target", UnitName(s, r.Target)),
-            ("spell", Escape(s.SpellName(r.Spell))));
+        FillEntry(s, Template("SpellResisted"), null, r.Target, Escape(s.SpellName(r.Spell)), 0, 0);
 
     public static string Morale(CombatScreen s, MoraleProc m) =>
-        Fill(Template(m.Good ? "Spells/EffectGoodMorale" : "Spells/EffectBadMorale"),
-            ("source_color", Color(SideOfActor(s, m.UnitId))), ("source", UnitName(s, m.UnitId)));
+        FillEntry(s, Template(m.Good ? "Spells/EffectGoodMorale" : "Spells/EffectBadMorale"), m.UnitId, null, null, 0, 0);
 
-    public static string Ability(CombatScreen s, AbilityTriggered a)
+    /// <summary>
+    /// An ability use. Abilities with CombatLogTexts log their own text (CCombatLogCombatAbility, index 0, FUN_00c99fa0);
+    /// a text with damage values is written by the damage entry instead (null here), and one needing a spell name we
+    /// don't have (Purge, Hexing Attack, Whip Strike) falls back to COMBAT_LOG_APPLY_ABILITY: ApplyAbility, or
+    /// ApplyAbilityTargeted with a target (FUN_00c9a240).
+    /// </summary>
+    public static string? Ability(CombatScreen s, AbilityTriggered a)
     {
+        if (AbilityLogTexts(a.Ability) is { Count: > 0 } texts && !texts[0].Contains("<value=spell>"))
+            return HasDamage(texts[0]) ? null : FillEntry(s, texts[0], a.UnitId, a.Target, null, 0, 0);
         var name = Game.Instance.Db.Abilities.TryGetValue(a.Ability, out var def) && def.Name.Length > 0 ? def.Name : a.Ability;
-        var t = a.Target is int ? Template("ApplyAbilityTargeted") : Template("ApplyAbility");
-        return Fill(t, ("source_color", Color(SideOfActor(s, a.UnitId))), ("source", ActorName(s, a.UnitId)),
-            ("spell", Escape(name)), ("target", a.Target is int tt ? UnitName(s, tt) : ""));
+        return FillEntry(s, Template(a.Target is int ? "ApplyAbilityTargeted" : "ApplyAbility"), a.UnitId, a.Target, Escape(name), 0, 0);
     }
 
     public static string Summoned(CombatScreen s, UnitSummoned us) =>

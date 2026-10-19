@@ -402,9 +402,30 @@ public partial class CombatScreen : Control
         foreach (var v in _units.Values) if (!v.Dead && v.Character?.Player.IsPlaying() == false) v.Idle();
     }
 
+    /// <summary>The last spell cast (damage entries name its caster) and its not yet written cast entry.</summary>
+    SpellCast? _lastCast;
+    string? _pendingCastLine;
+    /// <summary>First Aid Tent whose heal entry waits for the Healed event.</summary>
+    int? _tentHealer;
+
+    /// <summary>
+    /// A spell that damages logs one CastSpellTargetedDamage (or its own text) per target instead of the plain cast
+    /// entry (exe FUN_004e6600 / FUN_0097efd0 create the CCombatLogCastSpell with the damage flag); the plain entry is
+    /// held until the next event shows the spell did no damage.
+    /// </summary>
+    void FlushCastLine(BattleEvent e)
+    {
+        if (_pendingCastLine == null || e is EffectAdded or EffectRemoved or ManaChanged or AtbChanged or SpellResisted or Missed) return;
+        bool damagedBySpell = e is Damaged { Kind: AttackKind.Spell, By: { } by } && _lastCast != null && _lastCast.Spell.EndsWith(by);
+        if (!damagedBySpell) Hud.Log.AddLine(_pendingCastLine);
+        _pendingCastLine = null;
+    }
+
     async Task Play(BattleEvent e)
     {
         var s = Session.Battle.State;
+        CombatLogText.SetViewSide(Session.ViewSide);
+        FlushCastLine(e);
         switch (e)
         {
             case TurnStarted t:
@@ -452,6 +473,8 @@ public partial class CombatScreen : Control
                 hv.Visible = true;
                 hv.UpdatePlaque();
                 if (h.Resurrected > 0) _signs.Casualty(hv, hv.SignAnchor, h.Resurrected);
+                if (_tentHealer is int tent && CombatLogText.TentHeal(this, tent, h) is { } healLine) Hud.Log.AddLine(healLine);
+                _tentHealer = null;
                 break;
 
             case UnitDied ud when View(ud.UnitId) is { } dead:
@@ -515,7 +538,8 @@ public partial class CombatScreen : Control
                 break;
 
             case AbilityTriggered at:
-                Hud.Log.AddLine(CombatLogText.Ability(this, at));
+                if (at.Ability == "FIRST_AID") _tentHealer = at.UnitId;
+                else if (CombatLogText.Ability(this, at) is { } abilityLine) Hud.Log.AddLine(abilityLine);
                 if (at.Ability == "ABILITY_DEADLY_STRIKE" && View(at.Target ?? at.UnitId) is { } dsv) _signs.Event(dsv, dsv.SignAnchor, "DeadlyStrike");
                 if (at.Ability == "CATAPULT_SHOT" && View(at.UnitId) is { } cat) await AnimateCatapult(cat);
                 break;
@@ -727,7 +751,7 @@ public partial class CombatScreen : Control
         if (d.CountLeft > 0) v.PlayAction("hit");
         v.UpdatePlaque();
         if (d.Killed > 0) _signs.Casualty(v, v.SignAnchor, -d.Killed);
-        Hud.Log.AddLine(CombatLogText.Damage(this, d, Hud.PendingLuck));
+        Hud.Log.AddLine(CombatLogText.Damage(this, d, Hud.PendingLuck, _lastCast));
         Hud.PendingLuck = 0;
     }
 
@@ -780,7 +804,8 @@ public partial class CombatScreen : Control
 
     async Task AnimateSpell(SpellCast sc)
     {
-        Hud.Log.AddLine(CombatLogText.Spell(this, sc));
+        _lastCast = sc;
+        _pendingCastLine = CombatLogText.Spell(this, sc);
         Node3D? casterNode = Actor.IsHero(sc.Caster) ? _heroes.GetValueOrDefault(Actor.HeroSide(sc.Caster)) : View(sc.Caster);
         if (Participant(casterNode) is { } caster)
         {

@@ -86,6 +86,22 @@ exe yet). Addresses are H5_Game.exe virtual addresses.
 | White glowing Griffin (reported by pass 1) | (no original counterpart) | not reproduced in four samples of the seed-7 AI battle; the white puff seen there is Raise Dead's own effect | UNVERIFIED (not reproduced) |
 | "Playback can only happen when a node is inside the scene tree" log line | AudioStreamPlayer.Play on a node outside the tree | not reproduced in a full AI battle run | UNVERIFIED (not reproduced) |
 
+## Combat log
+
+| Element | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Entry classes and texts | NWorld::CCombatLog* (20 RTTI classes); GameMechanics/RefTables/CombatLog.xdb COMBAT_LOG_* text lists; spells and creature abilities carry their own CombatLogTexts (Spell xdbs, RefTables/CombatAbilities.xdb) | CombatLogText builds every entry from those texts | FIXED (pass 3) |
+| Self/enemy colours | FUN_00559df0: `<value=source_color>` / `<value=target_color>` = UIGameRoot LOG_PLAYER_SELF (Text/CombatLog/PlayerSelf.txt `<body><color_positive>`) when the actor's owner is the viewing player, else LOG_PLAYER_ENEMY (`<body><color_negative>`) | was fixed red/blue per side; now self/enemy via `CombatSession.ViewSide` | FIXED (viewing-player fallback when no local player, vtable+0x84(1) in FUN_0054ad10, not decoded) |
+| Values filled | FUN_00559df0 sets source_color, source, target_color, target, damage, dead, spell (FUN_0055a710 adds element for bonus elemental damage); `<value=font>` is never set | `font` was filled with `<body>` (recoloured the tail); now left empty | FIXED |
+| Attack / retaliation | COMBAT_LOG_ATTACK / _RETALIATE, index luck + 1, +3 for Favored (FUN_00c99f40) | luck variants; Favored (favoured enemy) variants not produced | FIXED (Favored: GAP) |
+| Spell cast entry | CCombatLogCastSpell selector FUN_00c9a440: no target CastSpell, target without damage flag CastSpellTargeted, with flag damage > 0 TargetedDamage, 0 NoDamage, < 0 DamageInverted | same for casts; plain entry dropped when the spell then damages | FIXED |
+| Spell damage | FUN_004e6600 (single target) and FUN_0097efd0 (per affected unit) create CCombatLogCastSpell with the damage flag → "X casts S on T: D damage (K died)." per target; spells with own CombatLogTexts use CCombatLogSpell (FUN_00c99fd0, index 0 for damage, clamped) | was an invented "T: D damage (K died)."; now CastSpellTargetedDamage per target or the spell's text (Firewall, Plague, Sun Fire, …) | FIXED (DamageInverted heal entries and whether area spells also write a plain cast entry: not traced) |
+| Ability entries | CCombatLogCombatAbility FUN_00c99fa0: ability CombatLogTexts[0]; COMBAT_LOG_APPLY_ABILITY FUN_00c9a240: ApplyAbility / ApplyAbilityTargeted | own text when the ability has one (Cleave, Bash, Deadly Strike, Acid Blood, …; damage texts from the damage event); texts needing a spell name (Purge, Hexing, Whip) and abilities without texts use ApplyAbility | FIXED (spell-name values: GAP) |
+| First Aid Tent | SPELL_EFFECT_FIRST_AID_TENT_HEAL CombatLogTexts [LastAid, Heal]; CCombatLogSpell index 1 for the non-damage flag (FUN_00c9a6a0) | "First Aid Tent: D hitpoints of T healed (K resurrected)." (was "uses ability FIRST_AID") | FIXED |
+| War machine names | CreatureVisual CreatureNameFileRef via RefTables/WarMachines.xdb Visual | same (was "BALLISTA"); also in the creature tooltip and info panel | FIXED |
+| Remaining invented lines | summon "X (N) appear.", "Actor: reason" for skipped turns, draw end text, hero skills (COMBAT_LOG_HERO_USES_SKILL / _SPECIALIZATION_WORKS have no texts; e.g. "uses ability BENEDICTION"), bonus elemental damage (BonusFire/Cold/Elemental texts; Hellfire perk falls back), Resurrect/Resurrect Allies/Regeneration heal texts | not built from the exe's entries | GAP |
+| EndCombat | COMBAT_LOG_END_COMBAT [PVP, Win, Defeat]; selector not traced | EndCombatPVP always | UNVERIFIED |
+
 ## Not yet audited
 
 ATB bar hover/click (IconContainer is used by 0055df40 / 007af660 / 007afe50; handlers not traced),
