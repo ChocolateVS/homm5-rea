@@ -330,6 +330,9 @@ public sealed partial class Battle
             if (u.Town == h.Town) m += 1;
             else if (!Towns.Allied(u.Town, h.Town)) m -= 2;
         }
+        // Week of the month on the base morale (exe 004ba9d0 → 00bcdd00); Balance also drops the effects (00a6acd0).
+        m = MoonWeek.MoraleLuck(m, u.Town, S.Week);
+        int weekBase = m;
         m -= (int)Fx(u, "SPELL_SORROW");
         if (u.GetEffect(H5.Combat.Fx.Benediction) is { } prayer) m += (int)prayer.Value;
         m += (int)Fx(u, H5.Combat.Fx.RallyingCry);
@@ -343,6 +346,7 @@ public sealed partial class Battle
             m -= (int)Stats.Get("combat/Creatures/Necropolis/HorrorOfDeath_MoraleDecrease", 1);
         if (!IsUndeadLike(u) && Adjacent(u).Any(o => o.Has(Ab.WeakeningAura)))
             m -= (int)Stats.Get("combat/Creatures/Necropolis/WeakeningAuraMoraleDec", 1);
+        if (MoonWeek.IsBalance(S.Week)) m = weekBase;
         // Minimum-morale effects come last.
         if (u.Has(Ab.Bravery)) m = Math.Max(m, 1);
         if (Adjacent(u).Any(o => o.Side == u.Side && o.Has(Ab.AuraBravery)) || u.Has(Ab.AuraBravery))
@@ -355,7 +359,9 @@ public sealed partial class Battle
     {
         if (u.IsObject) return 0;
         var h = HeroOf(u);
-        int l = (h.Present ? h.Luck : 0) + Side(u).Luck;
+        // Week of the month on the base luck (exe 004ba970 → 00bcdcf0); Balance also drops the effects (00a6abf0).
+        int l = MoonWeek.MoraleLuck((h.Present ? h.Luck : 0) + Side(u).Luck, u.Town, S.Week);
+        if (MoonWeek.IsBalance(S.Week)) return l;
         var eh = Enemy(u.Side);
         if (eh.Present && eh.HasPerk(Sk.DeadLuck)) l -= 1;
         l -= (int)Fx(u, "SPELL_SORROW");

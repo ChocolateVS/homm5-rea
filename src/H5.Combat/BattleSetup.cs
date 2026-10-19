@@ -17,9 +17,10 @@ public static class BattleSetup
     /// Obstacles are generated from the DefaultStats obstacle rules unless provided.
     /// </summary>
     public static BattleState Create(GameDatabase db, ArmySetup attacker, ArmySetup defender, ulong seed,
-        IEnumerable<Cell>? obstacles = null, bool skipTactics = false, string? arena = null, SiegeSetup? siege = null)
+        IEnumerable<Cell>? obstacles = null, bool skipTactics = false, string? arena = null, SiegeSetup? siege = null,
+        string? week = null)
     {
-        var s = new BattleState { Rng = new Rng(seed) };
+        var s = new BattleState { Rng = new Rng(seed), Week = week ?? MoonWeek.Nothing };
         var sides = new[] { attacker, defender };
         for (int side = 0; side < 2; side++)
             s.Heroes[side] = MakeHero(db, sides[side].Hero, side);
@@ -194,8 +195,11 @@ public static class BattleSetup
         {
             Id = s.NextId++, Side = side, Kind = UnitKind.Creature, CreatureId = c.Id, Name = c.Name, Town = c.Town,
             Tier = c.Tier, Level = c.Level, Upgraded = c.Upgrade,
-            BaseAttack = c.Attack, BaseDefence = c.Defence, BaseMinDamage = c.MinDamage, BaseMaxDamage = c.MaxDamage,
-            BaseHealth = c.Health, BaseSpeed = c.Speed, BaseInitiative = c.Initiative,
+            // Week of the month on the creature record's base values (exe 004bb2a0 defence, 004bbfb0/004bc020 damage,
+            // 004bc470 hit points, 004bc190 initiative), before any hero bonus.
+            BaseAttack = c.Attack, BaseDefence = MoonWeek.Defence(c.Defence, c.Town, s.Week),
+            BaseMinDamage = MoonWeek.MightDamage(c.MinDamage, s.Week), BaseMaxDamage = MoonWeek.MightDamage(c.MaxDamage, s.Week),
+            BaseHealth = MoonWeek.Health(c.Health, s.Week), BaseSpeed = c.Speed, BaseInitiative = MoonWeek.Initiative(c.Initiative, c.Town, s.Week),
             MaxShots = c.Shots, Shots = c.Shots, Flying = c.Flying, Size = c.CombatSize, Power = c.Power, WeeklyGrowth = c.WeeklyGrowth,
             Abilities = c.Abilities.OrderBy(a => a, StringComparer.Ordinal).ToList(),
             Spells = c.KnownSpells.Select(k => new KnownSpell { Spell = k.Spell, Mastery = k.Mastery }).ToList(),
@@ -283,6 +287,7 @@ public static class BattleSetup
         double mult = h.Attack + h.Knowledge;
         int minD = wm != null && wm.MinDamageFactor.Length > 0 ? (int)Math.Round(wm.MinDamageFactor[Math.Min(m, wm.MinDamageFactor.Length - 1)] * mult) : 0;
         int maxD = wm != null && wm.MaxDamageFactor.Length > 0 ? (int)Math.Round(wm.MaxDamageFactor[Math.Min(m, wm.MaxDamageFactor.Length - 1)] * mult) : 0;
+        minD = MoonWeek.MightDamage(minD, s.Week); maxD = MoonWeek.MightDamage(maxD, s.Week);   // exe 004bc710 / 004bc780
         double init = wm?.Initiative ?? 10;
         if (h.HasPerk(Sk.RunicMachines)) init += db.Stats.Get("combat/HeroSkills/Runemage/RunicMachines_InitiativeBonus", 3);
         // War machines stand just outside the grid behind their army (column -1 / Width).

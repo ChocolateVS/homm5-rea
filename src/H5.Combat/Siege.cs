@@ -153,7 +153,7 @@ public static class SiegeBuilder
         {
             int baseDamage = b.Type == "BIG_TOWER" ? 70 : 50;
             if (setup.TowersSpecialization) baseDamage = (int)(baseDamage * 1.25);
-            int damage = (int)(sg.TownLevelRatio * baseDamage);
+            int damage = MoonWeek.MightDamage((int)(sg.TownLevelRatio * baseDamage), s.Week);   // exe 00bfdfb0 → 00bcdf10
             var u = new Unit
             {
                 Id = s.NextId++, Side = 1, Kind = UnitKind.Obstacle, CreatureId = "SIEGE_" + b.Type,

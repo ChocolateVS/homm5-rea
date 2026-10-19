@@ -86,11 +86,11 @@ public sealed partial class Battle
         {
             var sp = Db.Spell(ks.Spell);
             if (sp == null || unit.Mana < CreatureManaCost(unit, sp)) continue;
-            var opt = new SpellOption { Spell = sp.Id, ManaCost = CreatureManaCost(unit, sp), Mastery = ks.Mastery, Targeting = TargetingOf(sp) };
+            var opt = new SpellOption { Spell = sp.Id, ManaCost = CreatureManaCost(unit, sp), Mastery = MoonWeek.SpellMastery(ks.Mastery, sp.School, S.Week), Targeting = TargetingOf(sp) };
             if (opt.Targeting is SpellTargeting.Unit)
             {
                 foreach (var u in S.Units)
-                    if (ValidateSpellTarget(a, la.Side, sp, ks.Mastery, u.Id, null) == null) opt.Targets.Add(u.Id);
+                    if (ValidateSpellTarget(a, la.Side, sp, MoonWeek.SpellMastery(ks.Mastery, sp.School, S.Week), u.Id, null) == null) opt.Targets.Add(u.Id);
                 if (opt.Targets.Count == 0) continue;
             }
             la.Spells.Add(opt);

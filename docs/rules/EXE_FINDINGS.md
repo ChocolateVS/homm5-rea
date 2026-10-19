@@ -237,7 +237,8 @@ match the fan manual's formula (p.137): heal (and resurrect) 10 × level × (1 +
 * **Tower damage** `FUN_00bfdfb0`: 0 for non-towers; 50 if the battle has no town; base 70 (BIG_TOWER) or 50
   (side towers); if the tower has `SPELL_TOWN_TOWERS` (town specialisation) base = trunc(base × 1.25); damage =
   trunc(town level ratio (town vcall +0x74, float) × base); then `FUN_00bcdf10` adds half (×1.5) when a battle
-  value (vcall +0x3c) is 0x49 or 0x4b — **unidentified**, not applied.
+  value (vcall +0x3c) is 0x49 or 0x4b — the week of the month (WEEK_OF_MIGHT / WEEK_OF_MIGHTNMAGIC), applied
+  (`docs/rules/audit/combat_heroes_skills_h.md`).
 * **Catapult** `FUN_00b3b7d0`: chance 20 without hero, else (WarMachines mastery + 2) × 10, plus
   `((level + 2) / 3) × 2` with HERO_SPEC_WAR_MACHINES (0x08, the only reference to that spec). Unless forced,
   `Range(1,100) > chance` retargets to a random entry of `FUN_00b3b560`'s list (targetable buildings including
@@ -260,7 +261,7 @@ match the fan manual's formula (p.137): heal (and resurrect) 10 × level × (1 +
 
 ## Still open
 
-* Exact hero / war machine cells (see Placement); the tower ×1.5 condition (`00bcdf10`); moat trigger code;
+* Exact hero / war machine cells (see Placement); moat trigger code;
   tower initiative / targeting; automatic catapult targeting.
 
 ## Deployment axis and combat views (resolved)

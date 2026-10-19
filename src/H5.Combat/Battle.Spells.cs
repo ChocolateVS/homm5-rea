@@ -138,7 +138,7 @@ public sealed partial class Battle
             else if (sm >= Mastery.Expert) drop = sp.Level <= 3 ? 2 : 1;
             m = (Mastery)Math.Max(0, (int)m - drop);
         }
-        return m;
+        return MoonWeek.SpellMastery(m, sp.School, S.Week);   // exe 00a6a700 → 00bcde10, after the caster's own mastery
     }
 
     /// <summary>Spell power reduction from enemy shatter below "None" mastery (p.126).</summary>
@@ -220,7 +220,7 @@ public sealed partial class Battle
     public int HeroManaCost(HeroState h, SpellDef sp)
     {
         if (sp.School == "MAGIC_SCHOOL_RUNIC") return 0;
-        int c = sp.ManaCost;
+        int c = MoonWeek.SpellCost(sp.ManaCost, S.Week);   // exe 00a347b9 → 00bcddf0, before every discount
         if (sp.School == "MAGIC_SCHOOL_WARCRIES")
         {
             if (h.HasPerk(Sk.ShoutTraining))
@@ -273,7 +273,7 @@ public sealed partial class Battle
     /// division; enemy Suppress/Corrupt apply as for heroes.</summary>
     int CreatureManaCost(Unit u, SpellDef sp)
     {
-        int c = sp.ManaCost, adjust = 0;
+        int c = MoonWeek.SpellCost(sp.ManaCost, S.Week), adjust = 0;   // exe 009781e0 → 00a34740 → 00bcddf0
         var e = Enemy(u.Side);
         if (e.Present && (sp.School == "MAGIC_SCHOOL_DARK" && e.HasPerk(Sk.SealOfDarkness) || sp.School == "MAGIC_SCHOOL_LIGHT" && e.HasPerk(Sk.SuppressLight)))
         {
@@ -344,7 +344,7 @@ public sealed partial class Battle
         if (u.Mana < ucost) return "not enough mana";
         int cp = CreatureSpellPower(u.Count, Math.Max(1, u.WeeklyGrowth));
         if (Specials.Pieces(HeroOf(u), Specials.Magis) >= 2) cp *= (int)Stats.Get("ArtifactsSetsEffectsConsts/Magis_2_Casters_SpellpowerMultiplier", 2);
-        if (ValidateSpellTarget(u.Id, Controller(u), sp, known.Mastery, c.TargetId, c.Cell) is { } te2) return te2;
+        if (ValidateSpellTarget(u.Id, Controller(u), sp, MoonWeek.SpellMastery(known.Mastery, sp.School, S.Week), c.TargetId, c.Cell) is { } te2) return te2;
         var castTarget = c.TargetId is int t2 ? S.Unit(t2) : null;
         var castCell = c.Cell;
         // Defile Magic (p.324): 1 fails, 2 halves spell power, 3 doubles the cost, 4 backfires onto the goblins.
@@ -366,7 +366,7 @@ public sealed partial class Battle
         RageEvent(u, "CastSpellRP");
         if (defile == 1) { Emit(new SpellResisted(castTarget?.Id ?? u.Id, sp.Id)); EndAction(u.Id, 0); return null; }
         _castingCreature = u;
-        try { ResolveSpell(u.Id, Controller(u), sp, known.Mastery, cp, castTarget, castCell, fromHero: false); }
+        try { ResolveSpell(u.Id, Controller(u), sp, MoonWeek.SpellMastery(known.Mastery, sp.School, S.Week), cp, castTarget, castCell, fromHero: false); }
         finally { _castingCreature = null; }
         ManaBurst(u);
         EndAction(u.Id, 0);
@@ -483,7 +483,7 @@ public sealed partial class Battle
     {
         double dmg = ExeChop(Math.Max(1, baseDef.DamageAt(m).Eval(power)));
         if (cast.Id.StartsWith("SPELL_EMPOWERED_")) dmg = ExeChop(dmg * 1.5);
-        return dmg;
+        return MoonWeek.SpellDamage((int)dmg, cast.Element, S.Week);   // exe 00976c73 → 00bcde80
     }
 
     void ResolveSpellCore(int caster, int side, SpellDef sp, Mastery m, double power, Unit? target, Cell? cell, bool fromHero)
@@ -674,7 +674,7 @@ public sealed partial class Battle
                 string kind = hero != null && hero.HasPerk("HERO_SKILL_FIRE_AFFINITY") ? "CREATURE_FIRE_ELEMENTAL" : TerrainElemental();
                 double count = baseDef.DamageAt(m).Eval(power);
                 if (hero != null && hero.HasPerk("HERO_SKILL_FIRE_AFFINITY")) count *= 1.4;
-                SummonStack(side, kind, Math.Max(1, (int)count), sp.Id, atb: S.Rng.Next(6) * 0.05);
+                SummonStack(side, kind, MoonWeek.SummonCount(Math.Max(1, (int)count), Db.Creature(kind).Element1, S.Week), sp.Id, atb: S.Rng.Next(6) * 0.05);
                 break;
             }
             case "SPELL_CONJURE_PHOENIX":

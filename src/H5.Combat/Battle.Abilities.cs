@@ -28,6 +28,7 @@ public sealed partial class Battle
     public int HeroStrikeDamage(HeroState h, Unit t, int levelBonus)
     {
         int dmg = Math.Max(1, (int)Math.Floor(HeroKills(h.Level + levelBonus, t.IsObject ? 8 : t.Tier) * MaxHealthOf(t)));
+        dmg = MoonWeek.MightDamage(dmg, S.Week);   // exe 00bc1c78: Might weeks, after the base strike
         if (h.Specialization == "HERO_SPEC_OFFENDER")
             dmg = (int)(((float)h.Level * (float)Stats.Get("combat/HeroSpecializations/Barbarian/Offender_HeroAttackDamageBonusPerLevel", 0.05) + 1f) * dmg);
         return Math.Max(1, dmg);

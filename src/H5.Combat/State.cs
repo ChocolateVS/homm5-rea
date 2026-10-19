@@ -213,6 +213,8 @@ public sealed class BattleState
     public List<Unit> Units = new();
     /// <summary>Town fortifications, moat and towers when the battle is a siege; null for field battles.</summary>
     public SiegeState? Siege;
+    /// <summary>Week of the month the battle is fought in (MoonWeeks.xdb id, battle vcall +0x3c); see MoonWeek.</summary>
+    public string Week = MoonWeek.Nothing;
     public HeroState[] Heroes = { new() { Side = 0 }, new() { Side = 1 } };
     /// <summary>
     /// Bonuses for all creatures of a side that do not depend on a hero being present: town buildings and

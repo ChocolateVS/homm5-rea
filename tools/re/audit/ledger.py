@@ -221,6 +221,9 @@ for kind in ('ability', 'skill', 'spec', 'spell'):
         rows[kind].append((ident,) + st)
 for ident in ('ARTIFACT_RING_OF_MACHINE_AFFINITY', 'RING_OF_MAGI', 'UNICORN_HORN_BOW', 'ARTIFACT_SHAWL_OF_GREAT_LICH'):
     rows['artifact'].append((ident,) + status(ident, 'artifact', [], ours(ident), True))
+# Week-of-the-month effects (MoonWeek ids) exist only as fragment rows.
+for ident in sorted(i for i in FRAG if i.startswith('WEEK_OF_')):
+    rows['week'].append((ident,) + FRAG[ident])
 
 MECH = [
     ('Damage pipeline (base roll, attack/defence factor uncapped, truncation)', 'MATCH', '00a597a0, 00a58de0, 00a5c5a0, 00a5a900', 'EXE_FINDINGS'),
@@ -262,8 +265,9 @@ for k in ('FIXED', 'MATCH', 'GAP', 'UNVERIFIED', 'N/A'): lines.append(f'| {k} | 
 lines += ['', '## Core mechanics', '', '| Mechanic | Status | Exe | Evidence |', '|---|---|---|---|']
 for m in MECH: lines.append(f'| {m[0]} | {m[1]} | {m[2]} | {m[3]} |')
 titles = {'ability': 'Creature abilities', 'skill': 'Hero skills and perks', 'spec': 'Hero specialisations',
-          'spell': 'Spells and spell effects', 'artifact': 'Artifacts (combat effects found in this audit)'}
-for kind in ('ability', 'skill', 'spec', 'spell', 'artifact'):
+          'spell': 'Spells and spell effects', 'artifact': 'Artifacts (combat effects found in this audit)',
+          'week': 'Week of the month (combat effects)'}
+for kind in ('ability', 'skill', 'spec', 'spell', 'artifact', 'week'):
     lines += ['', f'## {titles[kind]}', '', '| ID | Status | Exe functions | Original behaviour / note | Regression test |', '|---|---|---|---|---|']
     for ident, st, exe, note, test in rows[kind]:
         lines.append(f'| `{ident}` | {st} | {exe} | {note} | {test} |')
