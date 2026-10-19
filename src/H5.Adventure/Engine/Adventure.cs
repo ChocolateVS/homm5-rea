@@ -92,6 +92,7 @@ public sealed partial class Adventure
             TransformCreatureCmd c => DoTransformCreature(c),
             SacrificeForExperienceCmd c => DoSacrifice(c.TownObject, c.HeroId, c.Slot, growth: false),
             SacrificeForGrowthCmd c => DoSacrifice(c.TownObject, c.HeroId, c.Slot, growth: true),
+            SellCreatureCmd c => DoSellCreature(c),
             DigCmd c => DoDig(c),
             CompleteSeerQuestCmd c => DoCompleteSeerQuest(c),
             AcceptSeerQuestCmd c => DoAcceptSeerQuest(c),

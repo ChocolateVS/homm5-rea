@@ -176,4 +176,28 @@ public class TownSpecialTests(Fixture f)
         Assert.Equal(30 * hp, t.SacrificedHitPoints);
         Assert.Null(t.Garrison[0]);
     }
+
+    [Fact]
+    public void SlaveMarketPaysTheGoldShareByMarketplaces()
+    {
+        var g = f.NewGame();
+        var t = g.S.Towns.First(x => x.Owner == g.Current.Index);
+        foreach (var other in g.S.Towns.Where(x => x.Owner == g.Current.Index && x != t)) other.Built.Remove("TB_MARKETPLACE");
+        t.Type = "TOWN_STRONGHOLD";
+        t.Specialization = null;
+        t.Built["TB_SPECIAL_5"] = 1;
+        t.Built.Remove("TB_MARKETPLACE");
+        Array.Fill(t.Garrison, null);
+        t.Garrison[0] = new Stack("CREATURE_ARCHER", 10);       // 50 gold each
+        var q = g.SlaveMarketQuoteFor(t, null, 0);
+        Assert.True(q.Removable && q.Sellable);
+        Assert.Equal(500 * 95 / 100, q.Price.Gold);
+        t.Built["TB_MARKETPLACE"] = 1;
+        Assert.Equal(500 * 100 / 100, g.SlaveMarketQuoteFor(t, null, 0).Price.Gold);
+        int gold = g.Current.Purse[Purse.Gold];
+        var r = g.Apply(new SellCreatureCmd(t.Object, -1, 0) { Player = g.Current.Index });
+        Assert.True(r.Ok, r.Error);
+        Assert.Null(t.Garrison[0]);
+        Assert.Equal(gold + 500, g.Current.Purse[Purse.Gold]);
+    }
 }

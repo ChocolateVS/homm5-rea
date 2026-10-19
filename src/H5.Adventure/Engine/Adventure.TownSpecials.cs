@@ -29,6 +29,15 @@ public sealed record SacrificeForExperienceCmd(int TownObject, int HeroId, int S
 /// </summary>
 public sealed record SacrificeForGrowthCmd(int TownObject, int HeroId, int Slot) : AdvCommand;
 
+/// <summary>
+/// Stronghold Slave Market: sell a stack. <paramref name="HeroId"/> −1 = the garrison.
+/// Exe: CSellCreatureAtSlaveMarketAtTownCmd (vtable 0xe0ed68, execute 0x4298b0).
+/// </summary>
+public sealed record SellCreatureCmd(int TownObject, int HeroId, int Slot) : AdvCommand;
+
+/// <summary>Slave Market quote: whether the stack may leave its army, whether the town buys it, and the price.</summary>
+public sealed record SlaveMarketQuote(bool Removable, bool Sellable, Resources Price);
+
 /// <summary>Result of the transformer's quote FUN_00cd36c0 (first field of its output).</summary>
 public enum TrainStatus
 {
@@ -289,6 +298,61 @@ public sealed partial class Adventure
         Emit(new ArmyChanged(h?.Id ?? -1, h == null ? t.Object : -1));
         // Mode 1: hero +0x198 (add experience). TODO(exe): whether that call applies the experience modifiers.
         if (!growth) GainExperience(h!, value);
+        return null;
+    }
+
+    /// <summary>Town ability 0x2d (table 00f7c998): Stronghold TB_SPECIAL_5.</summary>
+    public const string SlaveMarket = "TB_SPECIAL_5";
+
+    /// <summary>
+    /// Marketplaces counted by the Slave Market (CPlayer +0xf8 = FUN_004fbd80): per owned town, 1 when a
+    /// marketplace is built plus 1 when the town's bonus (+0xdc) is TOWN_BONUS_MARKETPLACE.
+    /// </summary>
+    public int SlaveMarketMarketplaces(PlayerState p) =>
+        S.Towns.Where(t => t.Owner == p.Index).Sum(t => (t.Level("TB_MARKETPLACE") > 0 ? 1 : 0) + (SpecializationBonus(t) == "TOWN_BONUS_MARKETPLACE" ? 1 : 0));
+
+    /// <summary>
+    /// Slave Market (screen 007b99c0, price CAdvMapTown +0x120 = FUN_00cd0bc0, command 004298b0): the stack must be
+    /// removable from its army (army +0x18; a hero keeps at least one stack — TODO(exe): +0x18 not decoded) and
+    /// the town must have the market (ability 0x2d) with the stack in its garrison or a hero's army there
+    /// (FUN_00cd0340). Price = creature cost × count; p = SlaveMarketConsts BasePercents + BonusPercentsPerMarketplace
+    /// × marketplaces; with AffectResources the whole price is × p / 100, otherwise only the gold (integer division).
+    /// </summary>
+    public SlaveMarketQuote SlaveMarketQuoteFor(TownState t, HeroState? h, int slot)
+    {
+        var none = new Resources(0, 0, 0, 0, 0, 0, 0);
+        var army = TownArmy(t, h);
+        if (army == null || slot is < 0 or >= State.Army.Slots || army[slot] is not { Count: > 0 } s) return new(false, false, none);
+        bool removable = h == null || h.Army.StackCount() > 1;
+        bool sellable = t.Type == "TOWN_STRONGHOLD" && t.Level(SlaveMarket) >= 1;
+        if (!sellable) return new(removable, false, none);
+        var cost = Purse.Scale(Core.Creatures.GetValueOrDefault(s.Creature)?.Cost ?? none, s.Count);
+        var owner = S.Players.First(p => p.Index == t.Owner);
+        int pct = (int)Core.Stats.Get("SlaveMarketConsts/BasePercents", 95)
+                  + (int)Core.Stats.Get("SlaveMarketConsts/BonusPercentsPerMarketplace", 5) * SlaveMarketMarketplaces(owner);
+        var price = Core.Stats.Bool("SlaveMarketConsts/AffectResources")
+            ? new Resources(cost.Wood * pct / 100, cost.Ore * pct / 100, cost.Mercury * pct / 100, cost.Crystal * pct / 100,
+                cost.Sulfur * pct / 100, cost.Gem * pct / 100, cost.Gold * pct / 100)
+            : cost with { Gold = cost.Gold * pct / 100 };
+        return new(removable, true, price);
+    }
+
+    string? DoSellCreature(SellCreatureCmd c)
+    {
+        var p = Current;
+        var t = S.Town(c.TownObject);
+        if (t == null || t.Owner != p.Index) return "not your town";
+        HeroState? h = null;
+        if (c.HeroId >= 0)
+        {
+            h = S.Hero(c.HeroId);
+            if (h == null || h.Owner != p.Index || h.InTown != t.Object) return "hero must be in your town";
+        }
+        var q = SlaveMarketQuoteFor(t, h, c.Slot);
+        if (!q.Removable || !q.Sellable) return "cannot sell";
+        TownArmy(t, h)![c.Slot] = null;
+        Give(p, q.Price);
+        Emit(new ArmyChanged(h?.Id ?? -1, h == null ? t.Object : -1));
         return null;
     }
 

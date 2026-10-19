@@ -36,6 +36,7 @@ namespace H5.Adventure.Engine;
 [JsonDerivedType(typeof(TransformCreatureCmd), "transform_creature")]
 [JsonDerivedType(typeof(SacrificeForExperienceCmd), "sacrifice_for_experience")]
 [JsonDerivedType(typeof(SacrificeForGrowthCmd), "sacrifice_for_growth")]
+[JsonDerivedType(typeof(SellCreatureCmd), "sell_creature")]
 [JsonDerivedType(typeof(DigCmd), "dig")]
 [JsonDerivedType(typeof(CompleteSeerQuestCmd), "complete_seer_quest")]
 [JsonDerivedType(typeof(AcceptSeerQuestCmd), "accept_seer_quest")]

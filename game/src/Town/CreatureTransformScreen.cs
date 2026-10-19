@@ -29,10 +29,13 @@ public abstract partial class CreatureTransformScreen : TownSubScreen
     protected Stack?[]? RowArmy(int row) => row == 0 ? Owner.GarrisonHero()?.Army ?? Owner.Town.Garrison : Owner.VisitingHero()?.Army;
 
     /// <summary>The transformer quote for a row's stack.</summary>
-    protected abstract TrainQuote Quote(int row, int slot);
+    protected virtual TrainQuote Quote(int row, int slot) => new(TrainStatus.NoStack, null, 0, new H5.Core.Data.Resources(0, 0, 0, 0, 0, 0, 0));
 
     /// <summary>Button state, enabling and tooltip for a quote (the screen's status switch).</summary>
-    protected abstract (int State, bool Enabled, string? Tip) Button(TrainQuote q);
+    protected virtual (int State, bool Enabled, string? Tip) Button(TrainQuote q) => (0, false, null);
+
+    /// <summary>Button of a row's stack; the transformer screens map their quote, others override.</summary>
+    protected virtual (int State, bool Enabled, string? Tip) ButtonFor(int row, int slot) => Button(Quote(row, slot));
 
     protected abstract void Clicked(int row, int slot);
 
@@ -62,7 +65,7 @@ public abstract partial class CreatureTransformScreen : TownSubScreen
                 if (Ui.Find($"armyholder{row}/creature{i}/button") is not { } b) continue;
                 b.Visible = s is { Count: > 0 };
                 if (s is not { Count: > 0 }) continue;
-                var (state, enabled, tip) = Button(Quote(row, i));
+                var (state, enabled, tip) = ButtonFor(row, i);
                 b.Enabled = enabled;
                 b.SetState(state);
                 b.SetTooltip(tip);

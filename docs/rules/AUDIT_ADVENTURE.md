@@ -4,7 +4,7 @@ Every adventure mechanic / screen element checked against `H5_Game.exe` (Ghidra 
 the original data. Status: **MATCH** (already as the exe), **FIXED** (changed to match), **GAP** (known difference or
 not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not traced).
 
-Rows at 2026-10-20: 46 FIXED, 5 MATCH, 19 GAP, 20 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
+Rows at 2026-10-20: 49 FIXED, 5 MATCH, 18 GAP, 22 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
 
 ## Seer Huts
 
@@ -116,7 +116,9 @@ Rows at 2026-10-20: 46 FIXED, 5 MATCH, 19 GAP, 20 UNVERIFIED (rows carrying two 
 | Dungeon Ritual Pit: growth | growth list field +0x24 T_GROWTH_SACRIFICE (006dc714, after castle/horde/dwelling/specialisation/grail, before the moon week); building tooltip 0061a5d0 ritual_pit_info_witches / _minotaurs; Ritual Pit description names the Blood Maiden and Minotaur lines | bonus added to the tier 2 / tier 3 weekly growth | added after the castle multiplier, before the moon week | UNVERIFIED (the filler of +0x24 not traced) |
 | Sacrifice screens | UI/InfernoSacrifice, UI/DungeonSacrifice on CInfernoDungeonSacrificeScreenBase (layout 00653ca0: Hero%d Levelup/ExpView, Creature%d_%02d Icon/CountView/SacrificeBtn/Highlight); BUTTON_TOOLTIP with creature_name / creature_exp (00656b80); GrowthPanel_%d (0064fa30); close inferno_dungeon_sacrifice_close | as listed | `SacrificeScreen`: rows garrison hero (or garrison for the Ritual Pit) / visiting hero, button → command directly | FIXED (layout, tooltips, panels) / caption source, drag-and-drop, Levelup/ExpView preview and SacrificeFX GAP |
 | Sacrificial altar (map building) | BUILDING_SACRIFICIAL_ALTAR; UI/SacrificeAltar; CSacrificeCreatureOnAltar (0xe0edd4, 00429cb0) / CSacrificeArtifactOnAltar (0xe0edf8, 00429d20); DefaultStats SacrificialAltar_CreatureHitsToExpCoef 3, _ArtifactCostOfGoldToExpCoef 0.5 | creatures / artifacts for experience | not built | GAP |
-| Stronghold slave market | UI/StrongholdSlaveMarket | trade creatures | not built | GAP |
+| Stronghold Slave Market: price | CAdvMapTown +0x120 = FUN_00cd0bc0; SlaveMarketConsts at RPGStats +0x11cc/+0x11d0/+0x11d4 | ability 0x2d (TB_SPECIAL_5); stack in the town's garrison or a hero's army there (FUN_00cd0340); cost × count; p = BasePercents + BonusPercentsPerMarketplace × marketplaces (CPlayer +0xf8 = FUN_004fbd80: per town 1 with a marketplace + 1 with TOWN_BONUS_MARKETPLACE); AffectResources → all × p / 100, else gold only (integer division) and the other resources in full | `SlaveMarketQuoteFor`, `SlaveMarketMarketplaces` | FIXED |
+| Stronghold Slave Market: sale | CSellCreatureAtSlaveMarketAtTownCmd (vtable 0xe0ed68, execute 004298b0) | stack must be removable (army +0x18), price computed, stack removed, price added to the purse | `DoSellCreature`; "removable" = not a hero's last stack | FIXED / army +0x18 UNVERIFIED |
+| Stronghold Slave Market: screen | UI/StrongholdSlaveMarket (CStrongholdSlaveMarket@NUI 0xe43174); enter_special → FUN_00618dc0 (needs TB_SPECIAL_5) → FUN_007b9fc0; button switch FUN_007b99c0 | not removable → state 2 T_BUTTON_RED_UNREMOVEABLE; not sellable → state 2 T_BUTTON_RED_UNSELLABLE; else state 0 T_BUTTON_GREEN; enabled; sell_gain tooltip | `SlaveMarketScreen`; building double-click (ability 0x2d) | FIXED / click confirmation (FUN_007b9d30) not traced, sells directly UNVERIFIED |
 | Academy creature artifacts / Tower of Astrologer | UI/AcademyCreatureArtifacts, UI/ArtefactMagic, UI/TowerOfAstrologer | creature artifacts; astrologer | not built | GAP |
 | Academy Artifact Merchant | TB_SPECIAL_3 | buy artifacts | built earlier (ArtifactMerchantScreen) | UNVERIFIED |
 | Town "enter_special" for unbuilt screens | — | each opens its screen | our notice "This building's screen is not available yet." (placeholder text, not from the game) | GAP |
