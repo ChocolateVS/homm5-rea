@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 277 |
-| MATCH | 144 |
+| FIXED | 278 |
+| MATCH | 146 |
 | GAP | 11 |
-| UNVERIFIED | 159 |
+| UNVERIFIED | 157 |
 | N/A | 55 |
 
 ## Core mechanics
@@ -322,8 +322,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_LAST_STAND` | FIXED | 00a59490, 00a594f0, 00a61600 | a stack of 2+ creatures (vfunc 0x1c count > 1) hit for ≥ its total HP (vfunc 0x1dc) keeps 1 HP; no once-per-combat flag (re-triggers whenever the stack is back to 2+). Applies in the common damage pipeline (strikes, hero strike, damage spells, Corrupted Soil). Engine allowed it only once per stack | AuditSkillTests.LastStandHasNoOncePerCombatLimit |
 | `HERO_SKILL_SUN_FIRE` | UNVERIFIED | 00983790 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_SOIL_BURN` | FIXED | 00a61a60, 00a66050 | once per move of an enemy stack (called at the start of the move routine); flying stacks (vfunc 0x190) are exempt; damage round(level · clamp(SoilBurnDamagePerHeroLevel, 0.1, 1000)) through the stack damage pipeline. Engine also hurt flyers | AuditSkillTests.CorruptedSoilSparesFlyers |
-| `HERO_SKILL_STORM_WIND` | UNVERIFIED | 008a1e50 008a4330 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_FOG_VEIL` | UNVERIFIED | 008a2630 008a4330 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_STORM_WIND` | MATCH | 008a4330 (008a457f..008a45ae), 008a1e50 | enemy hero's perk: flyers' initiative × (1 − StormWind_InitiativePenalty); speed in 008a1e50 (see the engine's SpeedOf) |  |
+| `HERO_SKILL_FOG_VEIL` | MATCH | 008a4330 (008a45b2..008a45f0), 008a2630 | enemy hero's perk: shooters' (004bb150) initiative × (1 − FogVeil_InitiativePenalty) and damage range × (1 − FogVeil_DamageDecrease) |  |
 | `HERO_SKILL_ABSOLUTE_LUCK` | MATCH | 008a3ef0, 00a6a680 | every strike is lucky (good-luck multiplier) unless the target's hero has Absolute Protection (then a normal roll) |  |
 | `HERO_SKILL_MARCH_OF_THE_MACHINES` | MATCH | 004bc0b0, 004bc190 | +2 speed for mechanical creatures; +2 initiative for Iron/Steel/Obsidian Golems (creatures 61/62/161) |  |
 | `HERO_SKILL_REMOTE_CONTROL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
@@ -670,6 +670,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `NIGHTMARISH_RING` | FIXED | 00989fd0 (tail) | −2 morale per ring to the stacks facing the hero (army vcall 0x10 = enemy army's hero). Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
 | `PEDANT_OF_MASTERY` | FIXED | 00b4d150, 00875550 | GetSkillMastery: for the hero class's racial skill (Knight Training, Ranger Avenger, Wizard Artificier, Demon Lord Gating, Necromancer Necromancy, Warlock Invocation, Runemage Runelore, Barbarian Blood Rage) +1 with the artifact (also from none), results outside 0..4 → 0. Was ignored | AuditSkillTestsH.PendantOfMasteryRaisesTheRacialSkill |
 | `RING_OF_HASTE` | FIXED | 004bc190 (004bc2c4) | army creatures' initiative +20 % (any number of rings), inside the artifact percent p: init = (p + 100)·init·0.01 with p ≥ −100. Was missing | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `STAFF_OF_VEXINGS` | FIXED | 008a4330 (008a4619..008a4647) | the enemy hero's Staff of Vexings: stack initiative factor × (1 − 0.2 (float 00e12ff8) · staffs), after Storm Wind / Fog Veil. Was missing | AuditSkillTestsH.EnemyStaffOfVexingsSlowsTheArmy |
 
 ## Week of the month (combat effects)
 

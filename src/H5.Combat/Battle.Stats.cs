@@ -175,6 +175,8 @@ public sealed partial class Battle
             mult *= 1 - Stats.Get("combat/HeroSkills/Ranger/StormWind_InitiativePenalty", 0.2);
         if (eh.Present && u.MaxShots > 0 && !u.IsWarMachine && (eh.HasPerk(Sk.FogVeil) || eh.HasPerk(Sk.BarbFogVeil)))
             mult *= 1 - Stats.Get("combat/HeroSkills/Ranger/FogVeil_InitiativePenalty", 0.1);
+        // Staff of Vexings of the enemy hero: × (1 − 0.2 · staffs) (exe 008a4619..008a4647).
+        if (eh.Present) mult *= 1 - 0.2f * eh.Artifacts.Count(a => a == "STAFF_OF_VEXINGS");
         double init = u.BaseInitiative * Math.Max(0.1, mult);
         init += Fx(u, H5.Combat.Fx.BattleRage) > 0 ? Stats.Get("combat/Creatures/Fortress/BattleRage_InitiativeBonus", 2) : 0;
         if (u.HasEffect(H5.Combat.Fx.RageOfForest)) init += Stats.Get("combat/Creatures/Sylvan/RageOfTheForestInitiativeInc", 5);

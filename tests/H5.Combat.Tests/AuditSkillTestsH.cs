@@ -225,4 +225,15 @@ public class AuditSkillTestsH(GameDataFixture f)
         Assert.True(b.Apply(new CastSpellCmd(Actor.Hero(0), "SPELL_MAGIC_ARROW", imp.Id) { Side = 0 }).Ok);
         Assert.Equal(before + cost / 2, enemy.Mana);
     }
+
+    // exe 008a4330 (008a4619..008a4647): the enemy hero's Staff of Vexings (artifact 6) multiplies the stack's initiative
+    // by (1 − 0.2 · staffs). Was missing.
+    [Fact]
+    public void EnemyStaffOfVexingsSlowsTheArmy()
+    {
+        var (b0, s0) = Setup(Hero(0), Hero(3), "CREATURE_FOOTMAN");
+        var (b1, s1) = Setup(Hero(0), Hero(3, "STAFF_OF_VEXINGS"), "CREATURE_FOOTMAN");
+        double plain = b0.InitiativeOf(Of(s0, "CREATURE_FOOTMAN"));
+        Assert.Equal(plain * 0.8f, b1.InitiativeOf(Of(s1, "CREATURE_FOOTMAN")), 4);
+    }
 }
