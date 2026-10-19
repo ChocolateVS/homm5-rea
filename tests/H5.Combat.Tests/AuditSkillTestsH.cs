@@ -100,7 +100,11 @@ public class AuditSkillTestsH(GameDataFixture f)
         var mine = Hero(0, "DRAGON_TALON_CROWN"); mine.Ballista = true;
         var (_, s) = Setup(mine, Hero(3), "CREATURE_FOOTMAN");
         var ballista = s.Units.First(u => u.CreatureId == "WAR_MACHINE_BALLISTA");
-        Assert.Equal((int)(f.Db.WarMachines["WAR_MACHINE_BALLISTA"].Initiative * 1.1f + 0.5f), ballista.BaseInitiative);
+        Assert.Equal(f.Db.WarMachines["WAR_MACHINE_BALLISTA"].Initiative * 1.1f, ballista.BaseInitiative, 4);
+        // Ring of Celerity: × 1.1 once for war machines (00a75930), not +10 % per ring as for creatures
+        var mine2 = Hero(0, "ARTIFACT_RING_OF_CELERITY", "ARTIFACT_RING_OF_CELERITY"); mine2.Ballista = true;
+        var (_, s2) = Setup(mine2, Hero(3), "CREATURE_FOOTMAN");
+        Assert.Equal(f.Db.WarMachines["WAR_MACHINE_BALLISTA"].Initiative * 1.1f, s2.Units.First(u => u.CreatureId == "WAR_MACHINE_BALLISTA").BaseInitiative, 4);
     }
 
     // exe 00bbf610 (hero cast end): Magis set with 4+ pieces (any class) or 2+ for a Wizard: ATB reset

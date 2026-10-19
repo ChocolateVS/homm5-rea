@@ -43,16 +43,18 @@ public static class SkillAuditH
         return (float)((p + 100) * init * 0.01f);
     }
 
-    /// <summary>War machine initiative (exe FUN_004bae60, stored as trunc(x + 0.5) by 004bd7b0): record initiative ×
-    /// (0.1 · Dragon Talon Crowns + 1) + RunicMachines_InitiativeBonus with Runic Machines (the script battle bonus
-    /// HERO_BATTLE_BONUS_INITIATIVE is not modelled).</summary>
+    /// <summary>War machine initiative (the war machine's initiative getter 00a75930 → FUN_004bae60): record initiative
+    /// × (0.1 · Dragon Talon Crowns + 1) + RunicMachines_InitiativeBonus with Runic Machines, × 1.1 (00e0d4b0) when the
+    /// hero has a Ring of Celerity (any number). The rounded copy 004bd7b0 stores (+0x68) is not the combat value.
+    /// (The script battle bonus HERO_BATTLE_BONUS_INITIATIVE is not modelled.)</summary>
     public static double WarMachineInitiative(GameDatabase db, HeroState h, double baseInit)
     {
         float init = (float)baseInit;
         if (!h.Present) return init;
         init = (h.Artifacts.Count(a => a == "DRAGON_TALON_CROWN") * 0.1f + 1f) * init;
         if (h.HasPerk(Sk.RunicMachines)) init += (int)db.Stats.Get("combat/HeroSkills/Runemage/RunicMachines_InitiativeBonus", 3);
-        return (int)(init + 0.5f);
+        if (h.Artifacts.Contains("ARTIFACT_RING_OF_CELERITY")) init *= 1.1f;
+        return init;
     }
 
     /// <summary>Erratic Mana (HERO_SKILL_CHAOTIC_SPELLS, exe 00bbf6a6..00bbf751): for a positive cost, an ability roll of

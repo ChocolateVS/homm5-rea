@@ -657,14 +657,14 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `ARTIFACT_JINXING_BAND` | FIXED | 00989c40 (tail) | −2 luck per band to the enemy stacks. Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
 | `ARTIFACT_OGRE_CLUB` | FIXED | 004bc190 (004bc3ce) | −5 % each | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `ARTIFACT_OGRE_SHIELD` | FIXED | 004bc190 (004bc3e3) | −5 % each | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
-| `ARTIFACT_RING_OF_CELERITY` | FIXED | 004bc190 (004bc2d8) | +10 % per ring | (same helper) |
+| `ARTIFACT_RING_OF_CELERITY` | FIXED | 004bc190 (004bc2d8), 00a75930 (00a7597e) | creatures: +10 % per ring inside the army artifact percent; war machines: × 1.1 (00e0d4b0) with any number of rings. Was missing | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative, AuditSkillTestsH.DragonTalonCrownSpeedsUpWarMachines |
 | `ARTIFACT_TWISTING_NEITHER` | FIXED | 00983790 (artifact 0x43 check) | Pendant of Conflux: when an enemy HERO casts (caster vcall 0x74 non-null), the artifact's owner gets (mana before − mana after) / 2 spell points (setter vcall 0x22c; whether it caps at the maximum is not traced — the engine does not cap). Was missing | AuditSkillTestsH.PendantOfConfluxGainsHalfTheEnemysSpentMana |
 | `CLOAK_OF_MOURNING` | FIXED | 00989fd0, 00989c40 (tails) | −2 morale and −2 luck per cloak to the enemy stacks. Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
 | `DRAGON_BONE_GRAVES` | FIXED | 004bc190 (004bc31e..004bc35d) | +10 % each for creatures without shots, not ABILITY_CASTER / ABILITY_RANDOM_CASTER, not flying | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `DRAGON_EYE_RING` | FIXED | 004bc190 (004bc3b1) | +10 % each for shooters (record shots > 0) | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `DRAGON_SCALE_ARMOR` | FIXED | 004bc190 (004bc2ef) | +5 % each for creatures with combat size > 1 (record +0xdc) | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `DRAGON_SCALE_SHIELD` | FIXED | 004bc190 (004bc309) | +5 % each for size-1 creatures | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
-| `DRAGON_TALON_CROWN` | FIXED | 004bae60, 004bd7b0 (+0x68) | war machine initiative × (0.1 · crowns + 1), + RunicMachines_InitiativeBonus, stored round-half-up as an integer. Was missing | AuditSkillTestsH.DragonTalonCrownSpeedsUpWarMachines |
+| `DRAGON_TALON_CROWN` | FIXED | 00a75930 → 004bae60 | war machine initiative × (0.1 · crowns + 1), + RunicMachines_InitiativeBonus (float; the rounded copy at 004bd7b0 +0x68 is not the combat value). Was missing | AuditSkillTestsH.DragonTalonCrownSpeedsUpWarMachines |
 | `DRAGON_TEETH_NECKLACE` | FIXED | 004bc190 (004bc380) | +10 % each for ABILITY_CASTER / ABILITY_RANDOM_CASTER creatures | (same helper) |
 | `DRAGON_WING_MANTLE` | FIXED | 004bc190 (004bc363) | +10 % each for flyers | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
 | `NIGHTMARISH_RING` | FIXED | 00989fd0 (tail) | −2 morale per ring to the stacks facing the hero (army vcall 0x10 = enemy army's hero). Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
