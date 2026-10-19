@@ -93,8 +93,13 @@ public partial class Game : Node
     {
         _elapsed += delta;
         if (_screenshotPath == null || _elapsed < _screenshotAfter) return;
-        GetViewport().GetTexture().GetImage().SavePng(_screenshotPath);
-        GD.Print($"[H5] Screenshot saved to {_screenshotPath}");
+        // Headless (dummy renderer) has no framebuffer to read back: just quit on time.
+        if (DisplayServer.GetName() != "headless" && GetViewport().GetTexture()?.GetImage() is { } shot && !shot.IsEmpty())
+        {
+            shot.SavePng(_screenshotPath);
+            GD.Print($"[H5] Screenshot saved to {_screenshotPath}");
+        }
+        else GD.Print($"[H5] No framebuffer (headless?); screenshot skipped: {_screenshotPath}");
         _screenshotPath = null;
         GetTree().Quit();
     }

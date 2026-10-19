@@ -525,8 +525,8 @@ public static class MusicPlayer
         var root = Game.Instance.Xdb.Load(path).Root!;
         var file = (string?)root.Element("FileName");
         if (string.IsNullOrWhiteSpace(file)) return null;
-        var full = System.IO.Path.GetFullPath(System.IO.Path.Combine(Game.Instance.Install.Root, "bin", file.Replace('\\', '/')));
-        if (!System.IO.File.Exists(full)) return null;
+        var full = H5.Core.IO.InstallPath.ResolveFile(Game.Instance.Install.Root, "bin", file);
+        if (full == null) return null;
         var stream = AudioStreamOggVorbis.LoadFromFile(full);
         if (stream == null) return null;
         stream.Loop = loop;

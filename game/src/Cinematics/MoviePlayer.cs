@@ -32,8 +32,8 @@ public partial class MoviePlayer : Control
     public static List<MovieEntry> LoadList(string movieDesc)
     {
         var install = Game.Instance.Install;
-        var path = System.IO.Path.GetFullPath(System.IO.Path.Combine(install.Root, "bin", movieDesc.Replace('\\', '/')));
-        if (!System.IO.File.Exists(path)) return new();
+        var path = H5.Core.IO.InstallPath.ResolveFile(install.Root, "bin", movieDesc);
+        if (path == null) return new();
         try { return MovieList.Parse(System.IO.File.ReadAllText(path)); }
         catch (System.Xml.XmlException e) { GD.PushWarning($"[H5] bad movie list {path}: {e.Message}"); return new(); }
     }

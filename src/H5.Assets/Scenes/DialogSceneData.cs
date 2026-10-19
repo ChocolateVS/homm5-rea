@@ -272,10 +272,8 @@ public static class MovieList
     /// </summary>
     public static string? Resolve(GameInstall install, string fileName)
     {
-        var rel = fileName.Replace('\\', '/');
-        var full = Path.GetFullPath(Path.Combine(install.Root, "bin", rel));
-        foreach (var cand in new[] { full, full + ".ogg", full + ".ogv" })
-            if (File.Exists(cand)) return cand;
+        foreach (var cand in new[] { fileName, fileName + ".ogg", fileName + ".ogv" })
+            if (InstallPath.ResolveFile(install.Root, "bin", cand) is { } found) return found;
         return null;
     }
 }

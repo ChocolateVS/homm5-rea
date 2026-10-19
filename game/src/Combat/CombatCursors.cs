@@ -62,7 +62,7 @@ public static class CombatCursors
     {
         if (_cache.TryGetValue(c, out var cached)) return cached;
         (ImageTexture Tex, Vector2 Hotspot)? result = null;
-        var dir = System.IO.Path.Combine(Game.Instance.Install.Root, "hwcursors");
+        var dir = H5.Core.IO.InstallPath.ResolveOrCombine(Game.Instance.Install.Root, "hwcursors");
         var path = System.IO.Path.Combine(dir, Files[c]);
         // File names differ in case (.cur/.CUR); Windows is case-insensitive but be safe elsewhere.
         if (!System.IO.File.Exists(path) && System.IO.Directory.Exists(dir))

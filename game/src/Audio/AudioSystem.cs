@@ -40,8 +40,8 @@ public static class AudioSystem
     {
         try
         {
-            var cfg = Path.Combine(Game.Instance.Install.Root, "profiles", "autoexec_a2.cfg");
-            if (!File.Exists(cfg)) return fallback;
+            var cfg = H5.Core.IO.InstallPath.ResolveFile(Game.Instance.Install.Root, "profiles", "autoexec_a2.cfg");
+            if (cfg == null) return fallback;
             foreach (var line in File.ReadLines(cfg))
             {
                 var t = line.Trim();

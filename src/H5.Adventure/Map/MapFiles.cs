@@ -114,9 +114,8 @@ public static class MapCatalog
                 list.Add(new MapRef(p[..^"/map.xdb".Length], p, false));
         if (install != null)
         {
-            var dir = Path.Combine(install.Root, "Maps");
-            if (Directory.Exists(dir))
-                foreach (var f in Directory.EnumerateFiles(dir, "*.h5m").Order(StringComparer.OrdinalIgnoreCase))
+            if (InstallPath.ResolveDirectory(install.Root, "Maps") is { } dir)
+                foreach (var f in InstallPath.EnumerateFiles(dir, "*.h5m").Order(StringComparer.OrdinalIgnoreCase))
                     list.Add(new MapRef("user:" + Path.GetFileNameWithoutExtension(f), f, true));
         }
         return list;

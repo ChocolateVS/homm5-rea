@@ -1,0 +1,10 @@
+<Project>
+  <!--
+    Godot exports build the game and every referenced library with Configuration=ExportRelease.
+    Microsoft.NET.Sdk only turns the optimizer on for "Release", so without this the exported
+    game would ship unoptimized rules/AI/asset libraries.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'ExportRelease'">
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+</Project>

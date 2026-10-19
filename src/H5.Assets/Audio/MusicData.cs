@@ -200,28 +200,6 @@ public sealed class MusicData(XdbLoader xdb)
     /// "..\Music\a1\Campaign-Dungeon.ogg" → &lt;install&gt;/music/a1/Campaign-Dungeon.ogg.
     /// The install folder is lower-case "music" on GOG; lookup is case-insensitive per segment.
     /// </summary>
-    public static string? ResolveFile(string installRoot, string fileName)
-    {
-        var rel = fileName.Replace('\\', '/');
-        var parts = new List<string> { "bin" };
-        foreach (var seg in rel.Split('/', StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (seg == ".") continue;
-            if (seg == "..") { if (parts.Count > 0) parts.RemoveAt(parts.Count - 1); continue; }
-            parts.Add(seg);
-        }
-        var dir = installRoot;
-        for (int i = 0; i < parts.Count; i++)
-        {
-            var exact = Path.Combine(dir, parts[i]);
-            bool last = i == parts.Count - 1;
-            if (last ? File.Exists(exact) : Directory.Exists(exact)) { dir = exact; continue; }
-            if (!Directory.Exists(dir)) return null;
-            var match = (last ? Directory.EnumerateFiles(dir) : Directory.EnumerateDirectories(dir))
-                .FirstOrDefault(p => string.Equals(Path.GetFileName(p), parts[i], StringComparison.OrdinalIgnoreCase));
-            if (match == null) return null;
-            dir = match;
-        }
-        return dir;
-    }
+    public static string? ResolveFile(string installRoot, string fileName) =>
+        H5.Core.IO.InstallPath.ResolveFile(installRoot, "bin", fileName);
 }

@@ -53,7 +53,7 @@ public static class AdvCursors
             or AdvCursor.UnboardShip or AdvCursor.ShipMove or AdvCursor.Garrison ? Math.Clamp(days, 1, 6) : 1);
         if (_cache.TryGetValue(key, out var cached)) return cached;
         (ImageTexture, Vector2)? result = null;
-        var dir = Path.Combine(Game.Instance.Install.Root, "hwcursors");
+        var dir = H5.Core.IO.InstallPath.ResolveOrCombine(Game.Instance.Install.Root, "hwcursors");
         if (FileFor(key.Item1, key.Item2) is { } name)
         {
             var file = Directory.Exists(dir) ? Directory.EnumerateFiles(dir).FirstOrDefault(f => Path.GetFileName(f).Equals(name, StringComparison.OrdinalIgnoreCase)) : null;

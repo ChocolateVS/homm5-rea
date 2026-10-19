@@ -68,12 +68,8 @@ public static class KeyBindings
             var root = Game.Instance.Install.Root;
             // A profile's own copy wins when present (the stock game writes one per profile).
             var profile = Profiles.ProfileManager.CurrentName;
-            var candidates = new[]
-            {
-                System.IO.Path.Combine(root, "profiles", profile ?? "", "input_a2.cfg"),
-                System.IO.Path.Combine(root, "profiles", "default_profile", "input_a2.cfg"),
-            };
-            path = candidates.FirstOrDefault(System.IO.File.Exists);
+            path = (profile != null ? H5.Core.IO.InstallPath.ResolveFile(root, "profiles", profile, "input_a2.cfg") : null)
+                ?? H5.Core.IO.InstallPath.ResolveFile(root, "profiles", "default_profile", "input_a2.cfg");
         }
         catch { /* no install: no bindings */ }
         if (path == null) return map;
