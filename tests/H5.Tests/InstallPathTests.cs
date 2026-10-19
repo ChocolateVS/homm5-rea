@@ -61,7 +61,8 @@ public sealed class InstallPathTests : IDisposable
         Assert.True(GameInstall.IsInstall(_root));
         var install = GameInstall.Locate(_root);
         var paks = install.EnumeratePaks().Select(p => Path.GetFileName(p).ToLowerInvariant()).ToList();
-        Assert.Equal(new[] { "data.pak", "a.pak", "b.h5u" }, paks);
+        // The exe mounts UserMODs/*.h5u and *.zip, not *.pak (PakLoadOrder).
+        Assert.Equal(new[] { "data.pak", "b.h5u" }, paks);
     }
 
     [Fact]

@@ -1,0 +1,123 @@
+/MMH55/Tables (9): dword@939fd1/4=17b; dword@93ed10/4=17b; jmp@96a777/4->100230b0; jmp@9681f6/4->10023110; dword@93ee90/4=fb; dword@939ff1/4=fb; dword@bc316f/4=fb; jmp@96cd0b/8->1001bcf0; jmp@96b576/8->1001bd50
+/MMH55/Modifiers/PowerOfStone (2): byte@8d5cb6/1=r:EAX; dword@a007df/4=r:EAX
+/MMH55/QaiFixes (4): jmp@999805/5->100283d0; jmp@8b37b0/13->100283f0; jmp@acb895/1b->10028410; jmp@8b5a1c/5->100283b0
+/MMH55/IgniteChanges (3): jmp@98817a/7->10026600; hex@988124/3[509090..]; hex@98812c/1
+/MMH55/ArcaneRenewalFix (1): jmp@8ba851/5->10028830
+/MMH55/Modifiers/BattleDiveDamage (1): call@993cf1/7->10029e70
+/MMH55/PawStrikeDivisor (1): jmp@991123/8->10029f80
+/MMH55/ChainShotImmunityForCrystalScales (1): jmp@98da75/5->10029fa0
+/MMH55/ColdDeathImmunityForCrystalScalesAndMechanical (1): jmp@8b3bb2/a->10029fc0
+/MMH55/ConsumeCorpseSqrtHp (4): call@8b788a/8->1002a000; call@8b78aa/8->1002a000; call@8b7904/8->1002a000; call@8b7924/8->1002a000
+/MMH55/DisableMagicResistForNonDamagingSpells (2): jmp@8b93b6/8->1002a010; jmp@8b9068/6->1002a030
+/MMH55/EmpoweredArmageddonFix (3): call@a6ec98/6->1002a060; hex@a6ec9e/1[74..]; hex@a6eabe/2[9090..]
+/MMH55/FlamingArrowsDamageAndDefense (3): call@992e6b/8->1002a070; hex@98e966/8; jmp@98ea3f/30->1002a090
+/MMH55/CreatureStatsModifiers/Initiative (2): jmp@8759b0/90->1002a130; hex@a6443d/a[9090..]
+/MMH55/CreatureStatsModifiers/Health (1): jmp@875c94/6->1002a220
+/MMH55/InstantTravelMovementRequirements (2): jmp@9c9e32/a->1002a600; jmp@9ca2a1/5->1002a620
+/MMH55/CreatureStatsModifiers/Luck (1): jmp@8c16fa/a->1002a630
+/MMH55/CreatureStatsModifiers/Resistance (2): nop@8b8ebd/29f; jmp@8b8ebd/5->1002b110
+/MMH55/CreatureStatsModifiers/Morale (4): jmp@a76df5/5->10029e90; jmp@8c6025/a->10029f10; jmp@87427e/9->10029f50; byte@a76d76/1=r:EAX
+/MMH55/CreatureStatsModifiers/Speed (1): jmp@8da279/e->1001bdd0
+/MMH55/PendantMasteryAndGating (4): hex@9f8cc0/1; hex@9faa15/1; jmp@a64b78/7->1002b0b0; jmp@a702ee/6->1002b0e0
+/MMH55/SpellCost (2): jmp@8d5f72/11->1002b4d0; jmp@8d60aa/7->1002b500
+/MMH55/SpiritLink (1): jmp@8df17e/23->10030210
+/MMH55/SummonElementalsPerks (1): jmp@a70be4/5->10030300
+/MMH55/HavenTraining (4): hex@95806c/2[9090..]; hex@95cc9a/1[EB..]; call@729fde/a->10026640; call@72a017/d->10026660
+/MMH55/WarMachines/Health (1): jmp@875fe5/7->10038f60
+/MMH55/CreatureAbilitiesChance (4): byte@98e1ee/1=r:EAX; byte@98e1d8/1=r:EAX; hex@98e1e9/1; hex@98e1d2/1
+/MMH55/Modifiers/AbsoluteCharge (1): jmp@b466c6/9->10030380
+/MMH55/WarMachines/BalistaAndCatapultShots (5): byte@b42bd4/1=63; byte@b42c23/1=1; dword@b42be0/4=3; dword@b42c03/4=3; jmp@b1677c/6->10006560
+/MMH55/SwapBarbarianSpellbook (1): hex@5bf47b/1[EB..]
+/MMH55/BattlefieldSize (2): dword@97e2e6/4=r:EAX; dword@97e2ec/4=r:EAX
+/MMH55/Modifiers/ChillingBones (1): 4@98fa2f/4
+/MMH55/Modifiers/ChillingSteel (1): 4@98ff34/4
+/MMH55/EarthquakeTremors (3): hex@8ba55e/6[9090..]; hex@8b843c/6[0090..]; hex@8ba624/6[9090..]
+/MMH55/Modifiers/EnergyChannel (2): 4@8b436c/4; jmp@8b4477/5->1001e7a0
+/MMH55/Modifiers/Enlightenment (1): dword@9f79da/4=r:EAX
+/MMH55/Modifiers/ErraticMana (5): byte@9f8073/1=r:EAX; 4@9f809d/4; byte@b443fb/1=r:EAX; dword2@b44432/4=0; dword2@b44437/4=0
+/MMH55/Modifiers/ExpertFrenzy (1): call@8b9994/d->1001e7c0
+/MMH55/EnlightenmentForBarbsFix (1): byte@a017d0/1=0
+/MMH55/Modifiers/HeroAlignmentMoraleBonus (1): byte@94d303/1=r:EAX
+/MMH55/HeroModifiers/Hero8Skills (3): byte@5f5296/1=8; byte@7b7cd3/1=8; hex@9f8ec7/3[909090..]
+/MMH55/Modifiers/LastStandTrigger (1): byte@98d3a1/1=r:EAX
+/MMH55/HeroModifiers/MasterOfElementsDisableSummon (1): hex@98e4fe/6[0090..]
+/MMH55/Modifiers/MatronSalvo (3): hex@8b4f10/12[9090..]; hex@8b5010/3[689090..]; byte@8b5011/1=r:EAX
+/MMH55/TowerDamage (3): jmp@95b6cd/e->10030340; dword@b4fe43/4=r:ESI; dword@b4fe4d/4=r:EDI
+/MMH55/Modifiers/SpellProof (3): dword2@8b7075/4=0; 4@8b70ab/4; 4@8b720c/4
+/MMH55/ProtectorSpecialization (1): dword@875ccb/4=33333334
+/MMH55/PyromancyBonus (1): hex@a71dcf/1[EB..]
+/MMH55/DjinDarkLightAbility (2): hex@8b5695/2[EB62..]; nop@8b5697/62
+/MMH55/RangedRetaliationStrike (1): nop@999353/2
+/MMH55/AvatarOfDeathNoMana (1): hex@8df66c/1[EB..]
+/MMH55/RuneOfTheDragonForm (2): hex@874813/b[077C15..]; nop@87481e/11
+/MMH55/SacrificialPitHealth (4): byte@959e17/1=r:ESI; hex@959e1b/10; byte@959e49/1=r:ESI; hex@959e4f/13[909090..]
+/MMH55/SnareFix (1): hex@b47f9a/e[7469..]
+/MMH55/SpellShrineExperience (1): nop@ae1430/2
+/MMH55/OneStackSplit (2): hex@6d71d6/6[00C3..]; hex@6d756b/8
+/MMH55/Modifiers/StaffOfTheNetherworld (1): 4@8dc7f5/4
+/MMH55/SufferingStrikeToMasterOfCurses (3): byte@99e80a/1=2e; byte@948356/1=e; jmp@99e813/6->10023150
+/MMH55/WarMachines/Tier (1): dword@b46413/1=r:EAX
+/MMH55/Modifiers/StormWind (1): 4@8dc811/4
+/MMH55/MultiplayerCombatScripts (1): nop@548949/2
+/MMH55/HellfireTriggerChance (1): dword@992d30/4=63
+/MMH55/HeroSpecFireballAttackFix (1): jmp@99edb1/19->1001e7d0
+/MMH55/VampirismFix (2): byte@a7265f/1=0; jmp@a72641/6->10038a80
+/MMH55/DisableManaDestroyerForPhantomForces (2): jmp@a74552/8->1001e270; jmp@990a70/c->1001e2b0
+/MMH55/CastersLuckDamage_base (1): jmp@8bfa86/7->1000f360
+/MMH55/ShowPlayerTurnTimerInCombat (1): nop@5f2beb/2
+/MMH55/Modifiers/SorrowStrikeDuration (2): call@992575/8->10021730; jmp@993d50/6->1001f9c0
+/MMH55/RuneOfBerserkingChange (3): hex@8d922e/2[EB24..]; nop@8d9230/24; hex@b1a4e0/5[00..]
+/MMH55/BookOfPowerLevelUpFix (2): jmp@a05d12/5->1000e8f0; jmp@a05cf7/5->1000e8f0
+/MMH55/MagicMirror (2): nop@8bf143/c; hex@8bf152/8
+/MMH55/EncourageFix (1): byte@8d5928/1=1
+/MMH55/EnableRootsForSavageTreants (1): nop@8db7c1/6
+/MMH55/SkillsAddingBuffEffecsToCreatures (3): jmp@a6443d/e->1001fd60; jmp@a66118/5->1001fd80; jmp@a65899/5->100207e0
+/MMH55/CreatureStatsModifiers/SpellsAndAbilities (6): hex@8e392f/1[EB..]; jmp@8e3984/5->1001c650; jmp@8e38ea/5->1001c5f0; jmp@876d9f/5->1001bc70; jmp@9b4c38/5->1001bcd0; jmp@876ead/5->1001bc90
+/MMH55/add_creature_active_spelleffects_to_its_SCreatureInfoTooltip_array_init (2): hex@6e51bc/2[594E..]; jmp@a1fe60/6->100016f0
+/MMH55/Modifiers/PerkStats (2): byte@a00186/1=r:ESI; byte@a0159a/1=r:ESI
+/MMH55/GUI (2): jmp@9d0947/5->1000f870; jmp@66713b/5->1000f910
+/MMH55/Borderless (5): jmp@4cf377/5->1000f3a0; call@40d78b/c8->1000f440; jmp@40f885/5->1000f6b0; jmp@40fe6c/8->1000f6d0; call@401a76/5->1000f760
+/MMH55/PowerfeedCapped (1): jmp@8b834c/6->1000fca0
+/MMH55/Modifiers/RuneOfBattleRageDamageModifier (1): dword2@99831b/4=0
+/MMH55/CreatureFramework (3): dword@849941/4=r:ESI; dword@861f40/4=r:ESI; jmp@d126d4/8->1000fc80
+/MMH55/Modifiers/ResurrectAllies (1): jmp@8b4c75/c->1000e1c0
+/MMH55/CalculateRangePenalty (1): hex@8db848/4[2E..]
+/MMH55/Adventure/ResourcePiles (1): jmp@a9e4c9/c->1000e1b0
+/MMH55/CreatureAbilities/Fear (5): byte@996b51/1=3; byte@992969/1=4; hex@b0815f/1[7C..]; jmp@b08850/a->1000a9a0; jmp@993905/6->1000ac70
+/MMH55/CreatureStatsModifiers/Attack (2): jmp@a7726f/15->10006480; jmp@8dcbb4/99->10006490
+/MMH55/EffectsCleansedByHeal_init (3): jmp@8bcae6/1f->10039420; call@8c2d64/5->10039440; jmp@8c323b/5->10039410
+/MMH55/DwellingFramework (5): byte@4fa4a6/1=7; dword@4fa4aa/4=7; nop@d1d6a7/7; jmp@950040/6->1000a800; jmp@d1d8c0/8->1000a810
+/MMH55/CanCastSpell (1): jmp@8be4a7/6->100077b0
+/MMH55/Modifiers/OccultismPenetration (2): jmp@8b9340/6->1000ac90; hex@9dcc68/6[9090..]
+/MMH55/DestructionSkill (5): jmp@987eb0/6->1000a6b0; dword@a1f8b1/4=17a; dword@8c97b0/4=17a; dword@a1f7d7/4=17a; jmp@9874d0/6->1000a630
+/MMH55/DwarfFormationsForAll (3): nop@8dab9e/6; nop@8dac16/2; jmp@8dd40d/32->1000b910
+/MMH55/SoilBurn (1): jmp@995962/8->1001bd90
+/MMH55/RemoveMapScriptCheck (4): nop@89ad1a/6; jmp@89ada1/7->1000e130; jmp@89ae33/8->1000e150; jmp@89ae5f/a->1000e180
+/MMH55/System/Networking (1): dword2@d2d683/4=0
+/MMH55/ExpireSpelleffectsThatShouldEndAfterCreatureTurn (1): call@8dd9dc/5->1000a820
+/MMH55/CombatCameraLimits (6): dword2@5c30c7/4=0; dword2@5c30d5/4=0; dword2@5c30dd/4=0; dword2@5c30e5/4=0; 4@5c2f22/4; 4@5c2e72/4
+/MMH55/CombatAI (15): jmp@97eae0/5->10008220; jmp@b14cf2/5->10008270; jmp@b161b0/15->10008340; jmp@b14177/11->100083f0; jmp@b13a35/a->10008420; jmp@b1449b/a->10008440; jmp@b14819/15->10008460; call@b0fd33/5->10008490; call@b168e6/5->10008960; jmp@b10e90/5->10009480; jmp@b16858/5->10009580; jmp@b13fbb/5->1000a030; jmp@b13f58/7->1000a0a0; nop@b0b080/8; jmp@b14871/7->10007fc0
+/MMH55/CreatureArtifacts/CanBeEquippedOnNeutralCreatures (5): jmp@7d6038/5->1000a540; jmp@7d6509/6->1000a570; jmp@8ed751/5->1000a5a0; jmp@7d7281/5->1000a5d0; jmp@8efc48/5->1000a600
+/MMH55/CreatureArtifacts/CanBeEquippedOnAllCreatures (5): jmp@7d6038/5->1000a560; jmp@7d6509/6->1000a590; jmp@8ed751/5->1000a5c0; jmp@7d7281/5->1000a5f0; jmp@8efc48/5->1000a620
+/MMH55/QaiWideScreen (39): dword2@f7b534/4=0; hex@ca5093/4; hex@ca50d5/4; hex@ca5193/4; hex@ca51b2/4; hex@ca51d2/4; hex@ca5516/4; hex@ca53ca/4; hex@ca5022/4; hex@ca5231/4; hex@ca526f/4; hex@ca52c2/4; hex@ca52dc/4; hex@ca5334/4; hex@ca534e/4; hex@ca538a/4; hex@ca5408/4; hex@ca5606/4; hex@ca561e/4; hex@65704e/1; hex@d015fa/1; hex@d0170d/1; hex@d0173b/1; hex@d01867/1; hex@d014fa/1; jmp@656d0e/3e->1000cb10; jmp@401986/34->1000cd30; call@cb2358/5->1000cba0; jmp@4cea70/a9->1000c990; jmp@ca554b/16->1000c9b0; jmp@62500e/8->1000c9d0; jmp@c9e5cd/8->1000c9f0; jmp@cdd3d1/8->1000ca00; jmp@cdd95e/5->1000d0a0; call@6afe38/5->1000d120; jmp@6af180/5->1000d150; jmp@40f6d5/a->1000d160; call@40da1a/5->1000d1c0; jmp@4108fb/5->1000d250
+/MMH55/CreatureArtifacts (3): jmp@9b4c72/3e->1001d250; nop@9b4d4a/5a; t10@9b4d03/4
+/MMH55/CreatureStatsModifiers/Defense (6): byte@a76750/1=7; byte@a76754/1=0; byte@a76836/1=9; jmp@8da824/d->1001dd10; jmp@a76675/15->1001dd00; jmp@8da715/9f->1001dd50
+/MMH55/DisruptorMerge (5): hex@98758b/2[EB10..]; hex@8b8b6d/1; hex@8b3001/2[9090..]; hex@8b304c/1; hex@8b3036/9
+/MMH55/DisableMagicOpposites (5): byte@a1f0f3/1=64; hex@a1eb01/3[B00090..]; hex@a1eaf3/3[B00090..]; hex@a1eb0f/3[B00090..]; hex@a1eae5/3[B00090..]
+/MMH55/EmpoweredSpellsDamage_base (9): nop@8b2dce/2c; jmp@8b3dce/5->1001e640; jmp@8be71e/5->1001e660; jmp@a6e016/5->1001e680; jmp@a6e498/5->1001e6a0; jmp@a720ed/5->1001e6c0; jmp@a6eaa9/5->1001e6e0; jmp@8b9ef6/5->1001e700; jmp@a6eafc/26->1001e720
+/MMH55/HeroUI (15): hex@644205/1; hex@64420a/1; hex@64422e/1; hex@644233/2[E9F9..]; hex@644245/1; hex@64424a/1; hex@644276/1; hex@64427b/2[91D4..]; hex@64427f/2[EB2A..]; hex@63b6a4/26; hex@63b73b/e[EB38..]; hex@6403b8/30; hex@77d1fa/31; hex@77d25b/5; hex@77d283/5
+/MMH55/HeroModifiers/Levels (13): hex@9f81e0/2d; hex@9f820d/13[909090..]; dword@9f8220/4=63; dword@9f8224/4=41; dword@9f8228/4=11e1a300; dword@9f822c/4=2faf080; dword@9f8230/4=0; dword@9f8234/4=r:EAX; dword@89fc80/4=63; byte@88f913/1=63; dword@88f917/4=63; byte@894376/1=63; dword@89437a/4=63
+/MMH55/Modifiers/Movement (13): 4@9f997c/4; 4@9f99b7/4; 4@b24b38/4; 4@b24b72/4; 4@b24bba/4; 4@9f9a3b/4; dword@b24a9d/4=r:ESI; dword@b24ae7/4=r:EDI; dword@b24b9d/4=r:EBX; byte@b24b99/1=r:EAX; dword@b24b11/4=r:EAX; dword@b24b1b/4=r:EAX; hex@9fe6a2/c
+/MMH55/Pest (7): hex@a09dc0/1; hex@8975d9/1; hex@9ca3a6/6[0090..]; hex@9f7234/2[EB12..]; hex@980440/2[EB07..]; hex@8f32c2/2[EB14..]; hex@9ca4b9/2[EB7F..]
+/MMH55/WarMachines/Tent (11): byte@b429f6/1=r:EAX; dword@8b32e6/4=r:EDI; dword@8b32f4/4=r:EAX; dword@8b3302/4=r:EAX; dword@8b3310/4=r:EAX; byte@8b3308/1=0; byte@8b3316/1=0; jmp@8b3330/6->100239c0; hex@8b3358/9[02..]; jmp@b42004/5->10023a40; jmp@8b337f/8->10023a60
+/MMH55/ExtendedElementalArtifacts (8): 4@8b310a/4; 4@8b3159/4; 4@8b31a8/4; 4@8b31f7/4; jmp@8b3219/b->10023e10; je@8b3091/6->10023fa0; je@8b30b2/6->10023fa0; je@8b30ce/6->10023fa0
+/MMH55/CreatureStatsModifiers/Immunity (9): jmp@8b8ba8/10->100280a0; hex@8b9218/28; jmp@8b8eca/5->10028110; jmp@8b3783/6->10028170; hex@8b9248/4; jmp@8ba122/6->100281b0; nop@8b92d4/14; byte@8b931a/1=5; jmp@8b8d4f/7->100281e0
+/MMH55/AbilitiesAtbReset (6): jmp@8c441c/5->10028760; jmp@8c39e0/8->100287d0; dword2@b4459f/4=0; dword2@8c688c/4=0; dword2@8cf2f1/4=0; 4@b445e9/4
+/MMH55/Avenger (8): byte@98edb6/1=r:EAX; byte@98edb9/1=r:EAX; 4@99b860/4; 4@998ae3/4; dword@99e668/1=r:EAX; jmp@99e673/d->10028b20; jmp@b46562/5->10028b50; jmp@a3ded1/16->10028b80
+/MMH55/MassSpells (16): jmp@a1fd52/7->10029220; jmp@a1f98f/5->10029260; jmp@a7315b/5->10029280; jmp@988a87/7->100292c0; jmp@a7231c/8->100292a0; jmp@a771a9/e->10029c90; jmp@a771fa/e->10029cc0; jmp@a76527/a->10029cf0; jmp@8b99cd/6->10029d10; jmp@a1f126/c->10029d30; jmp@a1f15d/c->10029d60; jmp@8da956/b->10029d90; jmp@8da9bd/b->10029dc0; jmp@8b2cc1/b->10029df0; jmp@8b2cf1/b->10029e20; jmp@a729d6/6->10029e50
+/MMH55/ImbueBalistaATB (8): hex@98da8e/1; hex@98da9a/1; hex@98daae/1; hex@98dac8/1; hex@98dad7/1; call@98dad8/8->1002a590; call@98dae5/7->1002a5e0; hex@98daec/e[0800..]
+/MMH55/HeroModifiers/SpellpowerBonuses (2): jmp@b44e26/31->1002fd60; byte@a00eef/1=3
+/MMH55/CreatureStatsModifiers/Spellproof (8): jmp@8b722b/5->100301f0; 4@8b71e9/4; 4@8b72bd/4; 4@8b71b8/4; 4@8b728c/4; 4@8b72f0/4; hex@8b735c/2[FD00..]; hex@a72049/1[EB..]
+/MMH55/WandArtifact (3): dword@9f6f51/4=r:EAX; dword@e4fb30/4=r:EAX; dword@r:ECX/4=r:EAX
+/MMH55/Weeks (12): 4@a3553f/4; hex@a35444/2[EBF5..]; byte@a3543d/1=r:ESI; hex@a35630/1; hex@a35654/16[F8B9..]; hex@a3566b/17[CCCCCC..]; byte@a3566a/1=r:EDI; 4@a354e5/4; 4@a354f7/4; hex@a356ab/6[53BB..]; dword@a356b1/4=r:EBX; hex@a356b5/8
+/MMH55/Modifiers/WhipStrike (5): dword@99216f/4=r:ESI; hex@992175/1[BB..]; dword@992176/4=r:EDI; hex@99217a/8; dword@992182/4=r:EAX

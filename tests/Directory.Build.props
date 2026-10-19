@@ -1,0 +1,7 @@
+<Project>
+  <!-- Test assertions are written against stock Tribes of the East 3.1 data: pin the stock install
+       (H5_TARGET=stock) unless H5_GAME_DIR names another one. See docs/mmh55/PLAN.md. -->
+  <PropertyGroup>
+    <RunSettingsFilePath>$(MSBuildThisFileDirectory)stock.runsettings</RunSettingsFilePath>
+  </PropertyGroup>
+</Project>

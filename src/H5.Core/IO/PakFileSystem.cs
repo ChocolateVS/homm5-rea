@@ -4,9 +4,9 @@ namespace H5.Core.IO;
 
 /// <summary>
 /// Read-only view over the original game's .pak archives (zip files).
-/// Archives are layered in load order: an entry in a later archive overrides
-/// the same path in an earlier one, matching how the original engine applies
-/// expansion patches (a2p1-*) and user mods on top of data.pak.
+/// Like the original engine, a path found in several archives resolves per file to the entry with the
+/// newest zip timestamp (ties: the archive mounted first); that is how expansion patches (a2p1-*),
+/// MMH55's data/MMH55-*.pak and user mods override data.pak.
 /// Paths are case-insensitive and use '/' separators without a leading slash.
 /// Thread-safe for concurrent reads.
 /// Archives over async-only sources (browser Blobs) are mounted with <see cref="MountAsync"/>; their
@@ -46,7 +46,11 @@ public sealed class PakFileSystem : IDisposable
         foreach (var e in archive.Entries)
         {
             if (e.Name.EndsWith('/')) continue;
-            _index[Normalize(e.Name)] = (archive, e);
+            // H5_Game.exe FUN_009def50: when two archives hold the same path, the entry with the strictly
+            // newer DOS date/time wins; on a tie the one mounted first stays (see PakLoadOrder).
+            var key = Normalize(e.Name);
+            if (_index.TryGetValue(key, out var old) && e.DosTime <= old.Entry.DosTime) continue;
+            _index[key] = (archive, e);
         }
     }
 

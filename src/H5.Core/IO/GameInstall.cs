@@ -9,13 +9,6 @@ public sealed class GameInstall
     public string Root { get; }
     public string DataDir => InstallPath.ResolveDirectory(Root, "data") ?? Path.Combine(Root, "data");
 
-    // Load order of the stock archives; later entries override earlier ones.
-    static readonly string[] StockPaks =
-    {
-        "data.pak", "texts.pak", "sound.pak", "soundsfx.pak",
-        "a2p1-data.pak", "a2p1-texts.pak",
-    };
-
     /// <summary>Name of the optional text file (next to the executable) holding the game folder.</summary>
     public const string GameDirFile = "game_dir.txt";
 
@@ -29,7 +22,9 @@ public sealed class GameInstall
     {
         var candidates = new List<string?> { explicitRoot, Environment.GetEnvironmentVariable("H5_GAME_DIR") };
         candidates.AddRange(GameDirFileCandidates());
-        foreach (var c in candidates.Concat(DefaultLocations()))
+        // H5_TARGET=stock: skip MMH55 installs among the well-known locations (tests pin stock 3.1 this way).
+        var defaults = DefaultLocations().Where(c => !PakLoadOrder.StockOnlyRequested || !PakLoadOrder.IsMmh55Install(c));
+        foreach (var c in candidates.Concat(defaults))
             if (!string.IsNullOrWhiteSpace(c) && IsInstall(c.Trim()))
                 return new GameInstall(Path.GetFullPath(c.Trim()));
         throw new DirectoryNotFoundException(
@@ -89,6 +84,8 @@ public sealed class GameInstall
         var bases = new List<string>();
         if (OperatingSystem.IsWindows())
         {
+            // The target is Tribes of the East 3.1 + Might & Magic: Heroes 5.5 when present (docs/mmh55/PLAN.md).
+            yield return @"G:\HoMM 5 - Tribes of the East (5.5)";
             yield return @"G:\HoMM 5 - Tribes of the East";
             foreach (var drive in new[] { "C:", "D:", "E:", "F:", "G:" })
             {
@@ -182,15 +179,10 @@ public sealed class GameInstall
         return Convert.ToHexString(hash, 0, 8);
     }
 
-    public IEnumerable<string> EnumeratePaks()
-    {
-        var data = DataDir;
-        foreach (var name in StockPaks)
-            if (InstallPath.ResolveFile(data, name) is { } p) yield return p;
-        // User mods are applied last, in name order, like the original engine.
-        // (Extension match ignores case so "*.H5U" mods load on Linux too.)
-        if (InstallPath.ResolveDirectory(Root, "UserMODs") is { } mods)
-            foreach (var p in InstallPath.EnumerateFiles(mods, "*.h5u").Concat(InstallPath.EnumerateFiles(mods, "*.pak")).Order())
-                yield return p;
-    }
+    /// <summary>True when the install carries the Might &amp; Magic: Heroes 5.5 mod (data/MMH55-Data.pak).</summary>
+    public bool IsMmh55 => PakLoadOrder.IsMmh55Install(Root);
+
+    /// <summary>Archives in the original engine's mount order (see <see cref="PakLoadOrder"/>).</summary>
+    public IEnumerable<string> EnumeratePaks() =>
+        PakLoadOrder.Enumerate(DataDir, InstallPath.ResolveDirectory(Root, "UserMODs") ?? Path.Combine(Root, "UserMODs"));
 }

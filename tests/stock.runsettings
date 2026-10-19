@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <H5_TARGET>stock</H5_TARGET>
+    </EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>

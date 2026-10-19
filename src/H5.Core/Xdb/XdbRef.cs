@@ -42,8 +42,9 @@ public sealed class XdbLoader(PakFileSystem fs)
         lock (_cache)
         {
             if (_cache.TryGetValue(path, out var doc)) return doc;
-            using var ms = new MemoryStream(fs.ReadAllBytes(path));
-            doc = XDocument.Load(ms);
+            var bytes = fs.ReadAllBytes(path);
+            try { doc = XDocument.Load(new MemoryStream(bytes)); }
+            catch (System.Xml.XmlException) { doc = XdbRepair.Load(bytes); }
             _cache[path] = doc;
             return doc;
         }

@@ -1,0 +1,30 @@
+== ADVENTURE system scripts: natives 120, missing 11
+EnableHeroAI	10	stock-native	H55-Core.lua:10
+DenyAIHeroesFlee	2	stock-native	H55-AdvMap.lua:2
+H55_SPMap_WeeklyEvent	1	MMH55-only	H55-Core.lua:1
+H55_SPMap_DailyEvent	1	MMH55-only	H55-Core.lua:1
+H55_SPMap_ContinuesEvent	1	MMH55-only	H55-Core.lua:1
+H55_TriggerDaily	1	MMH55-only	H55-Core.lua:1
+H55_SecTriggerDaily	1	MMH55-only	H55-Core.lua:1
+H55_ThrTriggerDaily	1	MMH55-only	H55-Core.lua:1
+H55_FrtTriggerDaily	1	MMH55-only	H55-Core.lua:1
+H55_FifTriggerDaily	1	MMH55-only	H55-Core.lua:1
+SetAIPlayerAttractor	1	stock-native	H55-AdvMap.lua:1
+== COMBAT system scripts: natives 26, missing 0
+== MAP scripts (h5u), excluding funcs defined in stock/system scripts: natives 178, missing 16
+EnableHeroAI	187	stock-native	MapScript.lua:82, mapscript.lua:39, script.lua:29, A1C2M4_MapScript.lua:7, C3M3.lua:7
+SetAIHeroAttractor	74	stock-native	mapscript.lua:31, MapScript.lua:19, A2S4.(Script).lua:16, A1C3M4_MapScript.lua:3, MapScript.1.lua:3
+SetAIPlayerAttractor	44	stock-native	MapScript.lua:16, script.lua:10, A2S4.(Script).lua:8, mapscript.lua:7, MapScript.1.lua:3
+AllowHeroHiringByRaceForAI	28	stock-native	A2C2M5.lua:12, MapScript.lua:8, a2c2m3.lua:8
+DenyAIHeroFlee	27	stock-native	MapScript.lua:9, A2S4.(Script).lua:6, MapScript.1.lua:3, A2C1M3_script.lua:2, A2C2M5.lua:2
+EnableCinematicCamera	25	stock-native	biara_godric.lua:2, biara_heam.lua:2, biara_raelag.lua:2, biara_zehir.lua:2, sovereign_godric.lua:2
+AllowPlayerTavernHero	21	stock-native	MapScript.lua:15, a2c2m3.lua:6
+BlockTownGarrisonForAI	16	stock-native	MapScript.lua:8, script.lua:6, mapscript.lua:2
+AllowPlayerTavernRace	16	stock-native	A2C2M5.lua:7, A2S1_MapScript.lua:7, A2C1M3_script.lua:2
+EnableAIHeroHiring	15	stock-native	MapScript.lua:6, script.lua:5, A1C2M4_MapScript.lua:1, mapscript.lua:1, A1C3M4_MapScript.lua:1
+DoNotGiveTurnToPlayerAIIfNoTownsAndActiveHeroes	9	stock-native	MapScript.lua:8, script.lua:1
+AllowHeroHiringByRaceInTown	8	stock-native	A2C3M2_script.lua:7, MapScript.lua:1
+SetPlayerHeroesCountNotForHire	6	stock-native	MapScript.lua:2, A2C3M2_script.lua:1, mapscript.lua:1, C6M3_Script.lua:1, A2S1_MapScript.lua:1
+DenyAIHeroesFlee	4	stock-native	MapScript.lua:4
+AllowHiringOfHeroInTown	2	stock-native	MapScript.lua:2
+DeployEnemy	1	MMH55-only	script.lua:1

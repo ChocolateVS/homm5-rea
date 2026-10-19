@@ -13,7 +13,8 @@ namespace H5.Core.IO;
 /// </summary>
 public sealed class PakArchive : IDisposable
 {
-    public readonly record struct Entry(string Name, long LocalHeaderOffset, int Method, long CompressedSize, long Size);
+    /// <param name="DosTime">Central-directory modification stamp as (date &lt;&lt; 16) | time; decides path clashes (see PakFileSystem).</param>
+    public readonly record struct Entry(string Name, long LocalHeaderOffset, int Method, long CompressedSize, long Size, uint DosTime = 0);
 
     readonly IRandomAccessSource _source;
     public string FilePath => _source.Name;
@@ -78,9 +79,10 @@ public sealed class PakArchive : IDisposable
             ushort extraLen = BitConverter.ToUInt16(cd, p + 30);
             ushort commentLen = BitConverter.ToUInt16(cd, p + 32);
             uint local = BitConverter.ToUInt32(cd, p + 42);
+            uint dosTime = (uint)BitConverter.ToUInt16(cd, p + 14) << 16 | BitConverter.ToUInt16(cd, p + 12);
             var enc = (flags & 0x800) != 0 ? Encoding.UTF8 : Encoding.Latin1;
             var name = enc.GetString(cd, p + 46, nameLen);
-            list.Add(new Entry(name, local, method, csize, usize));
+            list.Add(new Entry(name, local, method, csize, usize, dosTime));
             p += 46 + nameLen + extraLen + commentLen;
         }
         return list;
