@@ -8,8 +8,8 @@ namespace H5Reborn.Town;
 /// Stronghold Slave Market (UI/StrongholdSlaveMarket, CStrongholdSlaveMarket@NUI vtable 0xe43174; enter_special →
 /// FUN_00618dc0 (only with TB_SPECIAL_5 built) → FUN_007b9fc0). Button switch FUN_007b99c0: stack not removable →
 /// state 2 + T_BUTTON_RED_UNREMOVEABLE; not sellable → state 2 + T_BUTTON_RED_UNSELLABLE; else state 0 +
-/// T_BUTTON_GREEN (button enabled in every case); the creature tooltip shows sell_gain. Click (FUN_007b9d30) →
-/// <see cref="SellCreatureCmd"/>.
+/// T_BUTTON_GREEN (button enabled in every case); the creature tooltip shows sell_gain. Click (base 0064b9b0: state 0
+/// only → FUN_007b9d30) → <see cref="SellCreatureCmd"/> + FORTHILL_UPGRADE_CREATURES_SOUND.
 /// </summary>
 public sealed partial class SlaveMarketScreen : CreatureTransformScreen
 {
@@ -34,6 +34,8 @@ public sealed partial class SlaveMarketScreen : CreatureTransformScreen
         var hero = RowHero(row);
         var q = Owner.Session.Game.SlaveMarketQuoteFor(Owner.Town, hero, slot);
         if (!q.Removable || !q.Sellable) return;
-        Apply(new SellCreatureCmd(Owner.Town.Object, hero?.Id ?? -1, slot) { Player = Me.Index });
+        // FUN_007b9d30: validate, send, FORTHILL_UPGRADE_CREATURES_SOUND; no confirmation.
+        if (Apply(new SellCreatureCmd(Owner.Town.Object, hero?.Id ?? -1, slot) { Player = Me.Index }))
+            Audio.AudioSystem.PlayNamed("FORTHILL_UPGRADE_CREATURES_SOUND");
     }
 }

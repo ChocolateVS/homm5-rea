@@ -204,6 +204,28 @@ public class TownSpecialTests(Fixture f)
     }
 
     [Fact]
+    public void SlaveMarketKeepsAHerosLastStack()
+    {
+        var g = f.NewGame();
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == g.Current.Index);
+        var t = g.S.Towns.First(x => x.Owner == h.Owner);
+        t.Type = "TOWN_STRONGHOLD";
+        t.Built["TB_SPECIAL_5"] = 1;
+        h.Pos = g.EntranceOf(t);
+        h.InTown = t.Object;
+        Array.Fill(h.Army, null);
+        h.Army[0] = new Stack("CREATURE_GOBLIN", 10);
+        h.Army[3] = new Stack("CREATURE_GOBLIN", 2);
+        // CArmy +0x18 (FUN_00c66e90) asks the army owner's policy; a hero keeps one stack, a garrison none.
+        Assert.True(g.SlaveMarketQuoteFor(t, h, 3).Removable);
+        Assert.True(g.Apply(new SellCreatureCmd(t.Object, h.Id, 3) { Player = g.Current.Index }).Ok);
+        var q = g.SlaveMarketQuoteFor(t, h, 0);
+        Assert.False(q.Removable);
+        Assert.False(g.Apply(new SellCreatureCmd(t.Object, h.Id, 0) { Player = g.Current.Index }).Ok);
+        Assert.Equal(10, h.Army[0]!.Count);
+    }
+
+    [Fact]
     public void FavoredEnemiesNeedTwiceTheWeeklyGrowthKilledOfTheLine()
     {
         var g = f.NewGame();

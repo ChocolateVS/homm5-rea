@@ -8,9 +8,9 @@ namespace H5Reborn.Town;
 /// Haven Training Grounds (UI/HavenTraining, CHavenTraining@NUI, opened by enter_special → FUN_006184f0 →
 /// FUN_006580d0). Each stack's button shows the transformer quote (FUN_00657820): Ok → state 0 + T_BUTTON_GREEN,
 /// 1/4 → disabled + T_BUTTON_DISABLED, 5/7 → state 1 + T_BUTTON_RED, 6 → state 2 + T_BUTTON_YELLOW, 8 → state 1 +
-/// T_BUTTON_RED_NO_MONEY, 9 → state 1 + T_BUTTON_RED_LIMIT_REACHED, others disabled. A green button asks for
-/// confirmation and sends <see cref="TrainCreatureCmd"/> (FUN_00657e50, FORTHILL_UPGRADE_CREATURES_SOUND);
-/// a red one plays FORTHILL_NO_RESOURCES_SOUND (FUN_00657580).
+/// T_BUTTON_RED_NO_MONEY, 9 → state 1 + T_BUTTON_RED_LIMIT_REACHED, others disabled. A green button sends
+/// <see cref="TrainCreatureCmd"/> at once (FUN_00657e50, FORTHILL_UPGRADE_CREATURES_SOUND); a red one plays
+/// FORTHILL_NO_RESOURCES_SOUND (FUN_00657580).
 /// </summary>
 public sealed partial class HavenTrainingScreen : CreatureTransformScreen
 {
@@ -50,16 +50,19 @@ public sealed partial class HavenTrainingScreen : CreatureTransformScreen
         return (state, enabled, tip);
     }
 
+    /// <summary>
+    /// Base click 0064b9b0: button state 0 (or 3) → the screen's action (+0x40 = 00657e50: validate, send
+    /// <see cref="TrainCreatureCmd"/>, FORTHILL_UPGRADE_CREATURES_SOUND); state 1 (or 4) → +0x3c = 00657580
+    /// (FORTHILL_NO_RESOURCES_SOUND); state 2 (yellow) does nothing. No confirmation box.
+    /// </summary>
     protected override void Clicked(int row, int slot)
     {
         var hero = RowHero(row);
         var q = Quote(row, slot);
-        if (q.Status != TrainStatus.Ok || hero == null)
-        {
-            Audio.AudioSystem.PlayNamed("FORTHILL_NO_RESOURCES_SOUND");
-            return;
-        }
-        Confirm(q.Target!, $"{TownUi.Text(CostLabel, "Training cost:")} {MapBuildingScreen.CostText(q.Cost)}",
-            () => new TrainCreatureCmd(Owner.Town.Object, hero.Id, slot) { Player = Me.Index }, "FORTHILL_UPGRADE_CREATURES_SOUND");
+        int state = Button(q).State;
+        if (state == 1) { Audio.AudioSystem.PlayNamed("FORTHILL_NO_RESOURCES_SOUND"); return; }
+        if (state != 0 || q.Status != TrainStatus.Ok || hero == null) return;
+        if (Apply(new TrainCreatureCmd(Owner.Town.Object, hero.Id, slot) { Player = Me.Index }))
+            Audio.AudioSystem.PlayNamed("FORTHILL_UPGRADE_CREATURES_SOUND");
     }
 }

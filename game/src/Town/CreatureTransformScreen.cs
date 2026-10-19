@@ -72,23 +72,14 @@ public abstract partial class CreatureTransformScreen : TownSubScreen
             }
         }
     }
-
-    /// <summary>Asks for confirmation with the target creature's icon, then sends the command.</summary>
-    protected void Confirm(string target, string text, Func<AdvCommand> command, string? sound)
-    {
-        string name = Game.Instance.Db.Creatures.TryGetValue(target, out var td) ? td.Name : target;
-        AdvDialogs.YesNo(this, name, text, TownUi.CreatureIcon(target), yes =>
-        {
-            if (yes && Apply(command()) && sound != null) Audio.AudioSystem.PlayNamed(sound);
-        });
-    }
 }
 
 /// <summary>
 /// Necropolis Shrine of the Netherworld (UI/NecropolisTransformCreature, CNecropolisTransformCreature@NUI,
 /// enter_special → FUN_00619e80 → FUN_0064ec40). Status switch FUN_0064e860: 0 → state 0 enabled; 4 → state 2
 /// disabled + DENY_REASON_IMPOSSIBLE; 5 → state 4 disabled + DENY_REASON_NO_DWELLING_TEXT; others state 0
-/// disabled. Click (FUN_0064e630): confirmation, then <see cref="TransformCreatureCmd"/> (no sound).
+/// disabled. Click (base 0064b9b0 → +0x40 = FUN_0064e630): validate and send <see cref="TransformCreatureCmd"/>, no
+/// confirmation and no sound.
 /// </summary>
 public sealed partial class NecropolisTransformScreen : CreatureTransformScreen
 {
@@ -110,8 +101,6 @@ public sealed partial class NecropolisTransformScreen : CreatureTransformScreen
     {
         var q = Quote(row, slot);
         if (q.Status != TrainStatus.Ok) return;
-        var hero = RowHero(row);
-        Confirm(q.Target!, TownUi.Text("UI/NecropolisTransformCreature/ArmyHolder/TTTransformButton.txt", ""),
-            () => new TransformCreatureCmd(Owner.Town.Object, hero?.Id ?? -1, slot) { Player = Me.Index }, null);
+        Apply(new TransformCreatureCmd(Owner.Town.Object, RowHero(row)?.Id ?? -1, slot) { Player = Me.Index });
     }
 }
