@@ -16,7 +16,8 @@ public partial class AdventureScreen
 {
     (Tile Tile, int Object, int Hero)? _plotPick;
 
-    MapObject? PickAt(Vector2 screen, Tile tile)
+    /// <summary>The object under the mouse: model pick first, then the object on / covering the tile (005913b0).</summary>
+    public MapObject? PickAt(Vector2 screen, Tile tile)
     {
         int idx = World.PickObject(World.Camera.ProjectRayOrigin(screen), World.Camera.ProjectRayNormal(screen));
         if (idx >= 0 && idx < Session.Map.Objects.Count && Session.Map.Objects[idx] is { } o && o.Kind != ObjectKind.Static
@@ -28,6 +29,14 @@ public partial class AdventureScreen
     /// <summary>The action for the selected hero pointing at a screen position over a map tile.</summary>
     AdvTarget HoverTarget(Vector2 screen, Tile tile) =>
         Session.Game.Target(Session.Human.Index, Selected, tile, PickAt(screen, tile));
+
+    /// <summary>
+    /// Boat cases of the cursor switch (0059e594, byte table 0059e6bc): action 6 (visit) goes to 0059e5a7, which
+    /// shows the UNBOARD family (14) when the route lands (action +0x39) or the hero sails (hero movement type 2);
+    /// moves (0) go to 0059e5d3: landing → 14, sailing → SHIP_MOVE (12) — already decided by Adventure.Target.
+    /// </summary>
+    public static AdvAction CursorAction(AdvAction a, bool heroInBoat) =>
+        a == AdvAction.Use && heroInBoat ? AdvAction.UnboardShip : a;
 
     /// <summary>
     /// Cursor per action (0059e1f0 switch, jump table 0059e694/0059e6bc; day families via 0058c500).

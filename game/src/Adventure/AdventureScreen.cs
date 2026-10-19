@@ -446,7 +446,7 @@ public partial class AdventureScreen : Control
         if (_pendingSpell != null) { AdvCursors.Set(AdvCursor.Cast); return; }
         if (tile is not { } t || !World.IsExplored(t)) { AdvCursors.Set(AdvCursor.CantGo); return; }
         var target = HoverTarget(mouse, t);
-        AdvCursors.Set(CursorFor(target.Action), target.Days + 1);
+        AdvCursors.Set(CursorFor(CursorAction(target.Action, Selected?.InBoat == true)), target.Days + 1);
     }
 
     // ---------------------------------------------------------------- frame loop / playback

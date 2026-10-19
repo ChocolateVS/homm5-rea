@@ -59,7 +59,7 @@ public partial class AdvTooltip : Control
         if (_adv.DialogLayer.GetChildCount() == 0 && GetViewport().GuiGetHoveredControl() is not { MouseFilter: MouseFilterEnum.Stop }
             && _adv.World.TileAtRay(_adv.World.Camera.ProjectRayOrigin(mouse), _adv.World.Camera.ProjectRayNormal(mouse)) is { } tile
             && _adv.World.IsExplored(tile))
-            (key, build) = Describe(tile);
+            (key, build) = Describe(tile, _adv.PickAt(mouse, tile));
         if (key != _key)
         {
             _key = key;
@@ -121,12 +121,19 @@ public partial class AdvTooltip : Control
 
     // ---------------------------------------------------------------- content
 
-    (string?, Func<bool, Control?>?) Describe(Tile tile)
+    (string?, Func<bool, Control?>?) Describe(Tile tile, MapObject? picked)
     {
         var s = _adv.Session.S;
         var game = _adv.Session.Game;
         if (s.Heroes.FirstOrDefault(h => h.Alive && !h.Garrisoned && h.Pos == tile) is { } hero)
             return ($"h{hero.Id}", full => HeroContent(hero, full));
+        // The tooltip follows the same pick as the cursor (model first, then the tile's object).
+        if (picked != null && !(s.Objects.TryGetValue(picked.Index, out var ps) && ps.Removed))
+        {
+            if (picked.Kind == ObjectKind.Town && s.Town(picked.Index) is { } pt) return ($"t{pt.Object}", full => TownContent(pt));
+            if (picked.Kind == ObjectKind.Monster) return ($"m{picked.Index}", full => MonsterContent(picked, full));
+            if (picked.Shared.Messages.Count > 0) return ($"o{picked.Index}", full => ObjectContent(picked));
+        }
         var townAt = game.TownAt(tile) ?? s.Towns.FirstOrDefault(tw => _adv.Session.Map.Objects.FirstOrDefault(o => o.Index == tw.Object) is { } to
             && (to.BlockedTiles.Contains(tile) || to.ActiveTiles.Contains(tile)));
         if (townAt is { } town)
