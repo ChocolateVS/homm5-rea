@@ -37,7 +37,8 @@ for p in "$@"; do
   fi
 done
 tree=$(GIT_INDEX_FILE="$idx" git write-tree); rm -f "$idx"
-printf '%s\n\nCo-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>\n' "$msg" > "$SCR/msg.txt"
+printf '%s\n\nCo-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FWTqTU1tQESu5xj2cE7AqR\n' "$msg" > "$SCR/msg.txt"
 c=$(git -c user.email=office@rennacs.com -c user.name=H5Reborn commit-tree "$tree" -p "$head" -F "$SCR/msg.txt")
 wt="$SCR/wt"
 git worktree remove --force "$wt" 2>/dev/null || rm -rf "$wt"

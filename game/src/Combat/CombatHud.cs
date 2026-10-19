@@ -688,31 +688,59 @@ public partial class CombatHud : Control
         }
         var h = s.Heroes[me];
         if (h.Present) SetTex(res.Find("Header/Icon"), UiResources.Instance.Texture(CombatIcons.Hero(h.HeroId, true)));
+        _lossOffsets.Clear();
         FillLosses(res, "LostUnits", me);
         FillLosses(res, "DestroyedUnits", enemy);
-        foreach (var n in res.FindAll("UnitsButtons")) n.Visible = false;
+        // Left/Right scroll a list by one icon (exe FUN_00585920 / FUN_00585940, refreshed by FUN_00580ee0).
+        void Scroll(UiNode? from, int step)
+        {
+            foreach (var (group, side) in new[] { ("LostUnits", me), ("DestroyedUnits", enemy) })
+                if (from != null && res.Find(group + "/UnitsButtons") is { } ub && ub.IsAncestorOf(from))
+                {
+                    _lossOffsets[group] = _lossOffsets.GetValueOrDefault(group) + step;
+                    FillLosses(res, group, side);
+                }
+        }
+        res.Bus.On("Left", (_, n) => Scroll(n, -1));
+        res.Bus.On("Right", (_, n) => Scroll(n, +1));
         res.Bus.On("Close", _screen.ReturnToMenu);
         _resultsPanel = res;
         AddChild(res);
     }
 
+    readonly Dictionary<string, int> _lossOffsets = new();
+
+    /// <summary>
+    /// One results list (exe icon list FUN_005814d0 / FUN_00580ee0): CreatureIcon_0..n-1 show entries offset..offset+n-1,
+    /// Left is enabled while offset &gt; 0, Right while offset &lt; entries − icons, and UnitsButtons is shown only when
+    /// either can scroll.
+    /// </summary>
     void FillLosses(UiScreen res, string group, int side)
     {
         var s = _screen.Session.Battle.State;
         var losses = s.Units.Where(u => u.Side == side && u.Kind == UnitKind.Creature && !u.Summoned)
             .Select(u => (u.CreatureId, Lost: u.InitialCount - Math.Max(0, u.Count))).Where(x => x.Lost > 0).ToList();
-        for (int i = 0; i < 7; i++)
+        int icons = 0;
+        while (res.Find($"{group}/Units/CreatureIcon_{icons}") != null) icons++;
+        int maxOffset = Math.Max(0, losses.Count - icons);
+        int offset = Math.Clamp(_lossOffsets.GetValueOrDefault(group), 0, maxOffset);
+        _lossOffsets[group] = offset;
+        for (int i = 0; i < icons; i++)
         {
-            var slot = res.Find($"{group}/Units/CreatureIcon_{i}");
-            if (slot == null) continue;
-            if (i < losses.Count)
+            var slot = res.Find($"{group}/Units/CreatureIcon_{i}")!;
+            int k = offset + i;
+            if (k < losses.Count)
             {
-                SetTex(slot, UiResources.Instance.Texture(CombatIcons.Creature(losses[i].CreatureId, false)));
-                res.Find($"{group}/Units/CreatureIcon_{i}/Number")?.SetValue("Number", losses[i].Lost.ToString());
+                SetTex(slot, UiResources.Instance.Texture(CombatIcons.Creature(losses[k].CreatureId, false)));
+                res.Find($"{group}/Units/CreatureIcon_{i}/Number")?.SetValue("Number", losses[k].Lost.ToString());
                 slot.Visible = true;
             }
             else slot.Visible = false;
         }
+        bool left = offset > 0, right = offset < maxOffset;
+        if (res.Find($"{group}/UnitsButtons/Left") is { } l) l.Enabled = left;
+        if (res.Find($"{group}/UnitsButtons/Right") is { } r) r.Enabled = right;
+        if (res.Find($"{group}/UnitsButtons") is { } ubs) ubs.Visible = left || right;
     }
 
     /// <summary>A centred dialog on the original parchment dialog texture.</summary>
