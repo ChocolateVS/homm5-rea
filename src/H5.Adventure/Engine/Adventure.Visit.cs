@@ -684,11 +684,7 @@ public sealed partial class Adventure
         Emit(new ArtifactGained(h.Id, id));
     }
 
-    /// <summary>
-    /// Learns a spell. Shrines and guilds require the right school mastery for higher circles
-    /// (level 3: Basic, 4: Advanced, 5: Expert); Barbarians cannot learn spells.
-    /// TODO(exe): confirm the mastery thresholds and Wisdom-like rules for TotE.
-    /// </summary>
+    /// <summary>Learns a spell (unless <paramref name="force"/>, only when <see cref="CanLearnSpell"/> allows it).</summary>
     bool LearnSpell(HeroState h, string spell, bool force)
     {
         if (h.Spells.Contains(spell)) return false;
@@ -698,24 +694,53 @@ public sealed partial class Adventure
         return true;
     }
 
-    bool CanLearnSpell(HeroState h, string spell)
+    /// <summary>Mass spells and the Master perk each needs (FUN_00a33e20 / FUN_00a33cf0).</summary>
+    static readonly Dictionary<string, string> MassSpellPerk = new()
+    {
+        ["SPELL_MASS_CURSE"] = "HERO_SKILL_MASTER_OF_CURSES", ["SPELL_MASS_WEAKNESS"] = "HERO_SKILL_MASTER_OF_CURSES",
+        ["SPELL_MASS_SLOW"] = "HERO_SKILL_MASTER_OF_MIND", ["SPELL_MASS_FORGETFULNESS"] = "HERO_SKILL_MASTER_OF_MIND",
+        ["SPELL_MASS_DISRUPTING_RAY"] = "HERO_SKILL_MASTER_OF_SICKNESS", ["SPELL_MASS_PLAGUE"] = "HERO_SKILL_MASTER_OF_SICKNESS",
+        ["SPELL_MASS_BLESS"] = "HERO_SKILL_MASTER_OF_BLESSING", ["SPELL_MASS_DISPEL"] = "HERO_SKILL_MASTER_OF_BLESSING",
+        ["SPELL_MASS_STONESKIN"] = "HERO_SKILL_MASTER_OF_ABJURATION", ["SPELL_MASS_DEFLECT_ARROWS"] = "HERO_SKILL_MASTER_OF_ABJURATION",
+        ["SPELL_MASS_HASTE"] = "HERO_SKILL_MASTER_OF_WRATH", ["SPELL_MASS_BLOODLUST"] = "HERO_SKILL_MASTER_OF_WRATH",
+    };
+
+    /// <summary>
+    /// Whether a hero can learn a spell (hero spell interface vfunc 0xe0 = FUN_00b4b8c0, used by guilds, shrines and
+    /// the spell shop through vfunc 0xe4): never SPELL_ABILITY_DARK_RITUAL or a MAGIC_SCHOOL_SPECIAL / NONE spell;
+    /// runic spells need Runelore, warcries Blood Rage (HERO_SKILL_DEMONIC_RAGE), other spells a hero without Blood
+    /// Rage (FUN_00b4b810); hero level ≥ RequiredHeroLevel; runes: Runelore mastery ≥ 1 (circle ≤ 2), 2 (3–4), 3 (5)
+    /// (FUN_00419960); warcries: yes; mass spells need their Master perk, empowered spells Empowered Spells; circles
+    /// 1–2: yes; Wisdom: circle 3 (circle 4 also when hero vfunc 0x31c &gt; 0 — not identified, not applied); the four
+    /// combat schools need mastery + 2 ≥ circle; adventure spells: yes.
+    /// </summary>
+    public bool CanLearnSpell(HeroState h, string spell)
     {
         var def = Core.Spell(spell);
-        if (def != null)
+        if (def == null) return true;
+        // Hero vfunc 0x174: skill mastery (EffectiveMastery) or a learned perk.
+        bool Has(string id) => EffectiveMastery(h, id) > 0 || h.HasPerk(id);
+        if (spell == "SPELL_ABILITY_DARK_RITUAL" || def.School is "MAGIC_SCHOOL_SPECIAL" or "MAGIC_SCHOOL_NONE" or "") return false;
+        bool rage = Has("HERO_SKILL_DEMONIC_RAGE");
+        if (def.School == "MAGIC_SCHOOL_RUNIC" ? !Has("HERO_SKILL_RUNELORE") : def.School == "MAGIC_SCHOOL_WARCRIES" ? !rage : rage) return false;
+        if (h.Level < def.RequiredHeroLevel) return false;
+        if (def.School == "MAGIC_SCHOOL_RUNIC")
+            return EffectiveMastery(h, "HERO_SKILL_RUNELORE") >= (def.Level < 3 ? 1 : def.Level > 4 ? 3 : 2);
+        if (def.School == "MAGIC_SCHOOL_WARCRIES") return true;
+        if (MassSpellPerk.TryGetValue(spell, out var perk) && !Has(perk)) return false;
+        if (spell.StartsWith("SPELL_EMPOWERED_", StringComparison.Ordinal) && !Has("HERO_SKILL_EMPOWERED_SPELLS")) return false;
+        if (def.Level < 3) return true;
+        if (def.Level == 3 && Has("HERO_SKILL_WISDOM")) return true;
+        var skill = def.School switch
         {
-            if (h.Class == "HERO_CLASS_BARBARIAN" && def.School != "MAGIC_SCHOOL_WARCRIES") return false;
-            var skill = def.School switch
-            {
-                "MAGIC_SCHOOL_DESTRUCTIVE" => "HERO_SKILL_DESTRUCTIVE_MAGIC",
-                "MAGIC_SCHOOL_DARK" => "HERO_SKILL_DARK_MAGIC",
-                "MAGIC_SCHOOL_LIGHT" => "HERO_SKILL_LIGHT_MAGIC",
-                "MAGIC_SCHOOL_SUMMONING" => "HERO_SKILL_SUMMONING_MAGIC",
-                _ => null,
-            };
-            int need = def.Level <= 2 ? 0 : def.Level - 2;
-            if (skill != null && (int)h.MasteryOf(skill) < need) return false;
-        }
-        return true;
+            "MAGIC_SCHOOL_DESTRUCTIVE" => "HERO_SKILL_DESTRUCTIVE_MAGIC",
+            "MAGIC_SCHOOL_DARK" => "HERO_SKILL_DARK_MAGIC",
+            "MAGIC_SCHOOL_LIGHT" => "HERO_SKILL_LIGHT_MAGIC",
+            "MAGIC_SCHOOL_SUMMONING" => "HERO_SKILL_SUMMONING_MAGIC",
+            _ => null,
+        };
+        if (skill == null) return def.School == "MAGIC_SCHOOL_ADVENTURE";
+        return def.Level <= EffectiveMastery(h, skill) + 2;
     }
 
     string? DoAnswer(AnswerChoiceCmd c)

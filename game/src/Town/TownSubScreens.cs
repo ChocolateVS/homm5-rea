@@ -159,61 +159,43 @@ public sealed partial class TownBuildScreen : TownSubScreen
                 if (def == null || Ui.Find($"building_{x}_{y}/button") is not { } btn) continue;
                 var view = TownData.View(def);
                 TownUi.SetPicture(btn, view.IconHref != null ? Game.Instance.LoadTexture(view.IconHref) : null);
-                bool built = t.Level(def.Type) >= def.Level;
                 var state = TownData.Check(Owner.Session, t, def);
-                btn.Modulate = CellTint(state, built);
+                // Built and buildable cells show in full colour; the rest are dimmed.
+                // TODO(exe): confirm the exact visual of unavailable cells in FUN_0065bab0.
+                btn.Modulate = state is TownData.BuildState.Built or TownData.BuildState.CanBuild ? Colors.White : new Color(0.55f, 0.55f, 0.55f);
                 btn.TooltipText = Tooltip(view, state);
             }
         var show = _selected ?? _hover;
         var sel = show is { } s ? CellDef(s) : null;
         TownUi.SetCostStrip(Ui.Find("CreatureCountHolder"),
-            sel != null && t.Level(sel.Type) < sel.Level ? CostArray(sel) : null, Me);
+            sel != null && TownData.Check(Owner.Session, t, sel) != TownData.BuildState.Built ? CostArray(sel) : null, Me);
         UpdateFrames();
     }
 
     static int[] CostArray(BuildingDef def) =>
         new[] { def.Cost.Wood, def.Cost.Ore, def.Cost.Mercury, def.Cost.Crystal, def.Cost.Sulfur, def.Cost.Gem, def.Cost.Gold };
 
-    /// <summary>
-    /// Cell tint per state (0065bab0 → 0065b190: colour table 00f37cd8, 12 bytes per state; the second value is the
-    /// factor passed with it). Built levels: state 0 (255,255,255 ×1.0). Next level by check code: 0 → state 2
-    /// (128,255,128) or 4 (0,128,255) — the blue case's condition is not traced; 1 and 9 → state 1 (255,90,90);
-    /// 2 → state 3 (255,255,255 ×0.5); 3 → state 0; 5, 6 → state 1; 4, 7, 8, 10 and levels past the next one → the
-    /// colour at 00f37cfc (255,255,255) with factor 0.5. The factor is read here as a brightness for white tints.
-    /// </summary>
-    static Color CellTint(BuildDenial code, bool built)
+    string Tooltip(BuildingView v, TownData.BuildState state)
     {
-        if (built) return Colors.White;
-        return code switch
+        string reason = state switch
         {
-            BuildDenial.CanBuild => new Color(128 / 255f, 1, 128 / 255f),
-            BuildDenial.AlreadyBuilt => Colors.White,
-            BuildDenial.CantBuild or BuildDenial.Grail or BuildDenial.NoMoney or BuildDenial.BuiltThisTurn => new Color(1, 90 / 255f, 90 / 255f),
-            _ => new Color(0.5f, 0.5f, 0.5f),
+            TownData.BuildState.Built => "already_build",
+            TownData.BuildState.CanBuild => "can_build",
+            TownData.BuildState.NoResources => "no_money",
+            TownData.BuildState.BuiltToday => "build_thisturn",
+            TownData.BuildState.Forbidden => "limit_upgrade",
+            _ => v.Def.Type == "TB_GRAIL" ? "grail" : "prereq",
         };
-    }
-
-    /// <summary>
-    /// The building tooltip (006596a0, UI/TownBuildNew/ToolTips/ToBuild): name, description, "Requirements:" with every
-    /// prerequisite (prereq_%d, red when not met), the price, "Required town level", and the deny line — the text of
-    /// the check code (red except can_build / already_build). Shown here as a plain tooltip.
-    /// </summary>
-    string Tooltip(BuildingView v, BuildDenial state)
-    {
-        var db = Owner.Session.Db;
-        var t = Owner.Town;
-        string T(string path, string fb) => UiResources.StripMarkup(TownUi.Text(path, fb)).Trim();
-        var lines = new List<string> { v.Name, UiResources.StripMarkup(v.Description) };
-        if (v.Def.Dependencies.Count > 0)
+        var text = TownUi.Text($"UI/TownBuildNew/Texts/{reason}.txt", reason);
+        var lines = new List<string> { v.Name, UiResources.StripMarkup(v.Description), UiResources.StripMarkup(text) };
+        if (state is TownData.BuildState.Requirements)
         {
-            lines.Add(T("UI/TownBuildNew/ToolTips/Common/prereq_header.txt", "Requirements:"));
-            foreach (var d in v.Def.Dependencies)
-                lines.Add((t.Level(d.Type) < d.Level ? "! " : "  ") + (db.Building(t.Type, d.Type, d.Level)?.Name ?? d.Type));
+            var db = Owner.Session.Db;
+            var missing = v.Def.Dependencies.Where(d => Owner.Town.Level(d.Type) < d.Level)
+                .Select(d => db.Building(Owner.Town.Type, d.Type, d.Level)?.Name ?? d.Type).ToList();
+            if (missing.Count > 0) lines.Add(string.Join(", ", missing));
+            if (Owner.Town.DevLevel < v.Def.DevLevelNeeded) lines.Add($"Town level {v.Def.DevLevelNeeded}");
         }
-        var lvl = T("UI/TownBuildNew/ToolTips/Common/RequiredTownLevel.txt", "Required town level:");
-        lines.Add(lvl.Replace("<value=red_val>", "").Replace("<value=normal_val>", "").TrimEnd() + " " + v.Def.DevLevelNeeded);
-        var reason = H5.Adventure.Engine.Adventure.BuildDenialText(state);
-        lines.Add(T($"UI/TownBuildNew/Texts/{reason}.txt", reason));
         return string.Join("\n", lines.Where(l => l.Length > 0));
     }
 
@@ -235,7 +217,7 @@ public sealed partial class TownBuildScreen : TownSubScreen
     {
         var def = CellDef(cell);
         if (def == null) return;
-        if (_selected == cell && TownData.Check(Owner.Session, Owner.Town, def) == BuildDenial.CanBuild)
+        if (_selected == cell && TownData.Check(Owner.Session, Owner.Town, def) == TownData.BuildState.CanBuild)
         {
             if (Apply(new BuildCmd(Owner.Town.Object, def.Type))) _selected = null;
             return;
@@ -357,7 +339,7 @@ public sealed partial class MageGuildScreen : TownSubScreen
     }
 }
 
-/// <summary>The blacksmith (UI/BuyWarMachine): three war machines, the town's native one at normal price, the rest ×3.</summary>
+/// <summary>The blacksmith (UI/BuyWarMachine): ballista, first aid tent, ammo cart at <see cref="H5.Adventure.Engine.Adventure.WarMachinePrice"/>.</summary>
 public sealed partial class BlacksmithScreen : TownSubScreen
 {
     static readonly string[] Machines = { "WAR_MACHINE_BALLISTA", "WAR_MACHINE_FIRST_AID_TENT", "WAR_MACHINE_AMMO_CART" };
@@ -384,12 +366,11 @@ public sealed partial class BlacksmithScreen : TownSubScreen
     {
         base.Refresh();
         var db = Game.Instance.Db;
-        var native = Owner.Session.Db.NativeWarMachine.GetValueOrDefault(Owner.Town.Type);
         Ui.Find("MainHeaderText")?.SetValue("Value", "Blacksmith");
         for (int i = 0; i < Machines.Length; i++)
         {
             TownUi.SetPicture(Ui.Find($"Choice_{i}/Icon"), TownUi.CreatureIcon(Machines[i]));
-            int price = db.WarMachines.TryGetValue(Machines[i], out var wm) ? wm.Cost.Gold * (Machines[i] == native ? 1 : 3) : 0;
+            int price = Owner.Session.Game.WarMachinePrice(Owner.Town, Machines[i]);
             // The stock text carries filler digits after the value; show the price alone.
             Ui.Find($"Price_{i}")?.SetText($"<center><value_value>{price}");
             Ui.Find($"Choice_{i}")?.SetState(i == _choice && (Ui.Find($"Choice_{i}")?.Window.ButtonStates.Count ?? 0) > 1 ? 1 : 0);

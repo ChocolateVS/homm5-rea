@@ -58,12 +58,16 @@ public sealed partial class Adventure
     {
         var t = S.Town(c.TownObject);
         if (t == null || t.Owner != Current.Index) return "not your town";
-        var p = Current;
-        var why = BuildCheck(t, c.Building, p.Purse);
-        if (why != BuildDenial.CanBuild) return BuildDenialText(why);
+        if (t.BuiltToday) return "already built today";
         int next = t.Level(c.Building) + 1;
-        var def = Db.Building(t.Type, c.Building, next)!;
-        if (c.Building == "TB_GRAIL") ConsumeTearOfAsha(t);
+        if (next > t.MaxLevel.GetValueOrDefault(c.Building)) return "cannot build further";
+        var def = Db.Building(t.Type, c.Building, next);
+        if (def == null) return "unknown building";
+        if (t.DevLevel < def.DevLevelNeeded) return $"requires town level {def.DevLevelNeeded}";
+        foreach (var (type, level) in def.Dependencies)
+            if (t.Level(type) < level) return $"requires {type} {level}";
+        var p = Current;
+        if (!p.Purse.CanAfford(def.Cost)) return "not enough resources";
         Give(p, Purse.Scale(def.Cost, -1));
         int trainingBefore = TrainingPointsMax(t);
         t.Built[c.Building] = next;
@@ -94,11 +98,16 @@ public sealed partial class Adventure
         if (t.BuiltToday) return TownBuildState.BuiltToday;
         var purse = PlayerByIndex(t.Owner)?.Purse;
         bool anyLeft = false;
-        foreach (var building in t.MaxLevel.Keys)
+        foreach (var (building, max) in t.MaxLevel)
         {
-            var why = BuildCheck(t, building, purse);
-            if (why == BuildDenial.CanBuild) return TownBuildState.CanBuild;
-            if (why is not (BuildDenial.AlreadyBuilt or BuildDenial.LimitUpgrade or BuildDenial.CantBuild or BuildDenial.NoWater)) anyLeft = true;
+            int next = t.Level(building) + 1;
+            if (next > max) continue;
+            var def = Db.Building(t.Type, building, next);
+            if (def == null) continue;
+            anyLeft = true;
+            if (t.DevLevel < def.DevLevelNeeded) continue;
+            if (def.Dependencies.Any(d => t.Level(d.Type) < d.Level)) continue;
+            if (purse != null && purse.CanAfford(def.Cost)) return TownBuildState.CanBuild;
         }
         return anyLeft ? TownBuildState.NoResources : TownBuildState.AllComplete;
     }
@@ -205,7 +214,26 @@ public sealed partial class Adventure
         Emit(new HeroRemoved(h.Id, reason));
     }
 
-    /// <summary>Blacksmith: the town's native war machine at normal price, the others at triple price (p.225).</summary>
+    /// <summary>
+    /// Blacksmith price (town vfunc 0xec = FUN_00cceae0, listed by FUN_00cd3f50 for ballista, first aid tent, ammo cart
+    /// in that order): the machine's gold cost when it is native to the town (FUN_00ccea20: the town specialisation
+    /// TOWN_BONUS_BALLISTA / _FIRST_AID_TENT / _AMMO_CART names it, or TownTypesInfo NativeWarMachine), else ×3.
+    /// Only gold is charged (CBuyWarMachineCmd carries a gold amount, execute 004f4d10).
+    /// </summary>
+    public int WarMachinePrice(TownState t, string machine)
+    {
+        int gold = Core.WarMachines.TryGetValue(machine, out var wm) ? wm.Cost.Gold : 0;
+        bool native = (machine, SpecializationBonus(t)) switch
+        {
+            ("WAR_MACHINE_BALLISTA", "TOWN_BONUS_BALLISTA") => true,
+            ("WAR_MACHINE_AMMO_CART", "TOWN_BONUS_AMMO_CART") => true,
+            ("WAR_MACHINE_FIRST_AID_TENT", "TOWN_BONUS_FIRST_AID_TENT") => true,
+            _ => Db.NativeWarMachine.GetValueOrDefault(t.Type) == machine,
+        };
+        return native ? gold : gold * 3;
+    }
+
+    /// <summary>Blacksmith: buy a war machine the hero lacks for <see cref="WarMachinePrice"/>.</summary>
     string? DoBuyWarMachine(BuyWarMachineCmd c)
     {
         var t = S.Town(c.TownObject);
@@ -222,8 +250,7 @@ public sealed partial class Adventure
             _ => true,
         };
         if (owned) return "already owned";
-        int mul = Db.NativeWarMachine.GetValueOrDefault(t.Type) == c.Machine ? 1 : 3;
-        var cost = Purse.Scale(wm.Cost, mul);
+        var cost = new Resources(0, 0, 0, 0, 0, 0, WarMachinePrice(t, c.Machine));
         if (!p.Purse.CanAfford(cost)) return "not enough resources";
         Give(p, Purse.Scale(cost, -1));
         switch (c.Machine)
@@ -252,7 +279,8 @@ public sealed partial class Adventure
         if (wFrom is { } a && wTo is { } b && Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y)) > 1) return "armies are not together";
         if (c.FromSlot is < 0 or >= State.Army.Slots || c.ToSlot is < 0 or >= State.Army.Slots) return "invalid slot";
         var src = from[c.FromSlot];
-        if (src is not { Count: > 0 } || c.Count <= 0 || c.Count > src.Count) return "invalid count";
+        if (c.Count == 0) return null;   // CSplitStackCmd / CTransferCreaturesCmd (00432160 / 0042ae70): moving 0 succeeds, no change
+        if (src is not { Count: > 0 } || c.Count < 0 || c.Count > src.Count) return "invalid count";
         var dst = to[c.ToSlot];
         if (dst is { Count: > 0 } && dst.Creature != src.Creature) return "slot holds other creatures";
         // A hero must keep at least one stack.
