@@ -1622,6 +1622,12 @@ public partial class CombatScreen : Control
         _resultsShown = true;
         ClearHighlights();
         CombatCursors.Reset();
+        // The results screen replaces the battle input: the last hover's cursor prediction label and any
+        // creature tooltip go away with it (no hover state survives into UI/CombatResults).
+        HideTooltip();
+        _hoverPrediction = null;
+        _lastHover = null;
+        Hud.SetPrediction(null);
         var (winner, reason) = Session.EndResult!.Value;
         GD.Print($"[H5] combat finished: winner side {winner?.ToString() ?? "none"} ({reason}) hash {Session.Battle.State.ComputeHash()} desync={Session.Desynced}");
         Hud.ShowResults(winner, reason);

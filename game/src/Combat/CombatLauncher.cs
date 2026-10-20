@@ -84,6 +84,8 @@ public static class CombatLauncher
         if (arg.StartsWith("--combat-seed=")) { _seed = ulong.Parse(arg["--combat-seed=".Length..]); return true; }
         if (arg.StartsWith("--camera-script=")) { CombatCamera.DevScript = arg["--camera-script=".Length..]; return true; }
         if (arg == "--no-cinematic") { CinematicCameras.Enabled = false; return true; }
+        // `--combat-extended-camera`: turns the Extended combat camera option on for this run (not saved).
+        if (arg == "--combat-extended-camera") { Options.OptionsStore.Set(CombatCamera.ExtendedVar, "1"); return true; }
         if (arg.StartsWith("--move-frames="))
         {
             // --move-frames=N:PREFIX : frames from the start of the Nth move (count/interval below).

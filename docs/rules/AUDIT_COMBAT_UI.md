@@ -92,6 +92,7 @@ exe yet). Addresses are H5_Game.exe virtual addresses.
 | Esc menu | UI/EscMenu; esc_menu bindsection close_menu 'ESC'/'E'; Options opens the game options | stock window; ESC/E close it; Options opens the stock data-driven GameOptionsScreen (as on the adventure map) | FIXED |
 | Keyboard shortcuts | input_a2.cfg combat_screen: options ESC/F4/F10, Defend ENTER/NUM_ENTER/SPACE/D, Wait W, AutoCombat A/V, Retreat R, Cast C/S, switch_atb_log TAB, camera lift INS/DEL; combat_screen_tactic: start combat ENTER/NUM_ENTER/SPACE, autoplace A/V | all mapped; tactics A/V corrected from "start combat" to auto place | FIXED (chat keys BACKSPACE/CTRL+ENTER/CTRL+A/T/R: GAP — the game has no in-game chat window (UI/MPChatInGame) anywhere yet) |
 | Results screen text | FUN_005836a0: DescriptionHeader Victory/Defeat; DescriptionText_Format = outcome (type 1 defeated / 2 fled / 3 surrendered; Hero*/Enemy*/Ghost* texts) + `<value=no_army>` WINNER_HAS_NO_ARMY when the winner kept no troops; `<value=player_hint>` ResultForPlayer in multi-human games; DescriptionExp_Format HeroExp (own victory) / EnemyExp with the winner's experience | outcome text, no-army note, experience line (CombatSession.WinnerExperience: slain creatures' Exp + 500 for a defeated hero; the adventure host can override) | FIXED (player_hint and Ghost texts not produced: GAP) |
+| Hover state on the results screen (beta report: the last hovered enemy's tooltip stayed up) | UI/CombatResults replaces the battle input; no hover/tooltip window of the arena survives into it | ShowResults left the cursor_prediction label and a right-click creature tooltip up (the hover update stops once the battle ends); now cleared when the results open | FIXED |
 | Results lists | Lost / Destroyed units: icon list FUN_005814d0 / FUN_00580ee0 (icon i shows entry offset+i; Left enabled while offset > 0, Right while offset < entries − icons; UnitsButtons visible only if either is); Left/Right step one (FUN_00585920 / FUN_00585940); range set in FUN_005827f0 (00583630) | same rule in CombatHud.FillLosses, Left/Right messages per list (7-kind result checked: no buttons) | FIXED (two-row variant and the always-show flag +0x35 not used by the results screen; >7-kind scroll not captured) |
 | Retaliation in predictions | engine rules: only Expert Blind stops retaliation, any Hypnotize does | prediction treated any Blind as "no retaliation" and Hypnotize only for the same controller | FIXED (UiPredictionTests) |
 | Strikes in predictions (Rune of Berserking) | FUN_008a0f90: Double Attack 2, Berserking +1 | prediction doubled the strikes for Berserking | FIXED (UiPredictionTests) |
@@ -126,3 +127,11 @@ exe yet). Addresses are H5_Game.exe virtual addresses.
 ATB bar hover/click (IconContainer is used by 0055df40 / 007af660 / 007afe50; handlers not traced),
 spellbook targeting flow (mass spells, cast on cell, invalid-target messages: the SpellStrings texts exist
 but are not shown), creature ability activation flows, combat log behaviour (scrolling, hover): **UNVERIFIED**.
+
+## Camera
+
+| Element | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Limits, rotation, zoom, pan (beta report: "camera more free") | CArenaCameraConfigurator 007d3730 with limits on (combat init 00544100): rod tables 007d34c0/007d3650/007d35a0, pitch −60°..−35°, yaw ±90°, pan = field ±1 unit; default pose 007d3990 (fully zoomed out); operator 007d4ee0 (docs/rules/CAMERA.md) | CombatCamera uses the same constants; screenshot cam2_stock: right-drag 1300 px stops at the 90° yaw limit, pitch at −60° | MATCH |
+| "Extended combat camera" option | not in the original (H5Reborn extension, like "Extended map zoom") | Game options → Display, off by default (`h5r_combat_extended_camera`): free yaw, pitch −85°..−10°, rod 0.5×min..1.6×max, pan +8 units; off = stock limits | EXTENSION |
+

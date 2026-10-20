@@ -318,6 +318,24 @@ public partial class GameOptionsScreen : UiScreen
             };
             _refreshers.Add(() => zoomBox.SetState(OptionsStore.GetBool(H5Reborn.Adventure.AdvCamera.ExtendedZoomVar, true) ? on : 1 - on));
         }
+        // Extended combat camera: user-requested extension (not in the original) relaxing the combat
+        // camera limits (free rotation, wider pitch and zoom, more pan); off by default, so the stock
+        // limits apply. Stored per profile as h5r_combat_extended_camera.
+        var camRow = cursor.Add("CheckBoxPanelTemplate");
+        Child(camRow, "DescView")?.SetText("<body>Extended combat camera");
+        camRow.TooltipText = "Lets the combat camera rotate freely and zoom and tilt beyond the original limits (H5Reborn extension).";
+        if (Child(camRow, "Button") is { } camBox)
+        {
+            int on = CheckedState(camBox);
+            camBox.Clicked += _ =>
+            {
+                bool now = !H5Reborn.Combat.CombatCamera.Extended;
+                OptionsStore.Set(H5Reborn.Combat.CombatCamera.ExtendedVar, now ? "1" : "0");
+                OptionsStore.Save();
+                RefreshAll();
+            };
+            _refreshers.Add(() => camBox.SetState(H5Reborn.Combat.CombatCamera.Extended ? on : 1 - on));
+        }
         _refreshers.Add(() => mode?.SetItems(Modes, (int)VideoSettings.Mode));
         _refreshers.Add(() =>
         {

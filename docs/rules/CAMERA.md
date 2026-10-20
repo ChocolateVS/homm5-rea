@@ -70,6 +70,13 @@ So the battle starts **fully zoomed out**.
 * Soft and hard limits are the same struct (`+0x3c` and `+0x40` with one argument), so the soft-limit
   spring-back of 007d4340 never acts in combat.
 
+### Extension: "Extended combat camera" (H5Reborn option, off by default)
+
+User-requested, not in the original. Game options → Display → "Extended combat camera" (profile var
+`h5r_combat_extended_camera`, default 0; dev switch `--combat-extended-camera`). Off = the stock limits above.
+On: yaw unlimited (wrapped to ±π), pitch −85°..−10°, rod 0.5 × min .. 1.6 × max of the table above, pan
+rectangle grown by 8 units on every side. Speeds, glide and the default pose are unchanged.
+
 ## Hand camera input (CCameraOperator::Update 007d4ee0)
 
 * Frame step capped at 100 ms.

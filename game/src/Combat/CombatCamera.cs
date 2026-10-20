@@ -71,6 +71,26 @@ public sealed class CombatCamera
     /// <summary>A cinematic (combat track camera) pose overrides the operator while set.</summary>
     CinematicPose? _cinematic;
 
+    // ---- "Extended combat camera" (H5Reborn extension, off by default) ---------------------------
+
+    /// <summary>
+    /// Profile variable of the "Extended combat camera" option: a user-requested extension (not in the
+    /// original) that relaxes the arena camera limits. Off by default, so the stock limits of 007d3730
+    /// stay in force unless the player opts in.
+    /// </summary>
+    public const string ExtendedVar = "h5r_combat_extended_camera";
+    public static bool Extended => H5Reborn.Options.OptionsStore.GetBool(ExtendedVar, false);
+
+    /// <summary>Extended limits: free rotation, pitch −85°..−10°, rod ×0.5 .. ×1.6 of the stock range, 8 more units of pan.</summary>
+    const float ExtMinPitch = -1.4835298f, ExtMaxPitch = -0.17453292f;
+    const float ExtMinRodFactor = 0.5f, ExtMaxRodFactor = 1.6f, ExtPanMargin = 8f;
+
+    float LimMinPitch => Extended ? ExtMinPitch : MinPitch;
+    float LimMaxPitch => Extended ? ExtMaxPitch : MaxPitch;
+    float LimMinRod => Extended ? _minRod * ExtMinRodFactor : _minRod;
+    float LimMaxRod => Extended ? _maxRod * ExtMaxRodFactor : _maxRod;
+    Rect2 LimPan => Extended ? _pan.Grow(ExtPanMargin) : _pan;
+
     public CombatCamera(ArenaScene arena)
     {
         _arena = arena;
@@ -202,13 +222,16 @@ public sealed class CombatCamera
         if (Mathf.Abs(rotateIn) * AxisDominance < Mathf.Abs(pitchIn)) rotateIn = 0;
 
         // Speeds scale from ×1 (fully zoomed in) to ×2 (fully out) (007d49e0).
-        float zoomFrac = _maxRod > _minRod ? Mathf.Clamp((_current.Rod - _minRod) / (_maxRod - _minRod), 0, 1) : 0;
+        float minRod = LimMinRod, maxRod = LimMaxRod;
+        float zoomFrac = maxRod > minRod ? Mathf.Clamp((_current.Rod - minRod) / (maxRod - minRod), 0, 1) : 0;
         float f = 1f + zoomFrac;
 
-        _target.Pitch = Mathf.Clamp(_target.Pitch + pitchIn * PitchSpeed, MinPitch, MaxPitch);
-        _target.Yaw = Mathf.Clamp(_target.Yaw - rotateIn * f * RotateSpeed, MinYaw, MaxYaw);
+        _target.Pitch = Mathf.Clamp(_target.Pitch + pitchIn * PitchSpeed, LimMinPitch, LimMaxPitch);
+        _target.Yaw -= rotateIn * f * RotateSpeed;
+        // Stock: yaw ±π/2. Extended: free rotation, kept in ±π (the glide turns the short way, 007cccb0).
+        _target.Yaw = Extended ? Mathf.PosMod(_target.Yaw + Mathf.Pi, Mathf.Tau) - Mathf.Pi : Mathf.Clamp(_target.Yaw, MinYaw, MaxYaw);
         zoomIn = Mathf.Clamp(zoomIn, -MaxZoomInput, MaxZoomInput);
-        _target.Rod = Mathf.Clamp(_target.Rod + (Mathf.Abs(_current.Rod) * ZoomRodFactor + 1f) * ZoomScale * zoomIn, _minRod, _maxRod);
+        _target.Rod = Mathf.Clamp(_target.Rod + (Mathf.Abs(_current.Rod) * ZoomRodFactor + 1f) * ZoomScale * zoomIn, minRod, maxRod);
         _target.Anchor.Z = Mathf.Clamp(_target.Anchor.Z + liftIn * LiftUnitsPerInput, _minZ, _maxZ);
 
         // Edge scrolling: speed ramps at combat_scroll_speed per second up to combat_max_scroll_speed,
@@ -233,8 +256,9 @@ public sealed class CombatCamera
             _target.Anchor.X += d.X;
             _target.Anchor.Y += d.Y;
         }
-        _target.Anchor.X = Mathf.Clamp(_target.Anchor.X, _pan.Position.X, _pan.End.X);
-        _target.Anchor.Y = Mathf.Clamp(_target.Anchor.Y, _pan.Position.Y, _pan.End.Y);
+        var pan = LimPan;
+        _target.Anchor.X = Mathf.Clamp(_target.Anchor.X, pan.Position.X, pan.End.X);
+        _target.Anchor.Y = Mathf.Clamp(_target.Anchor.Y, pan.Position.Y, pan.End.Y);
 
         if (_cinematic != null) return;
         Glide(dt);
