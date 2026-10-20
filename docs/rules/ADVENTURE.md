@@ -47,7 +47,7 @@ Marked `TODO(exe)` in code where behaviour is approximated pending disassembly:
 - Random neutral stack size when the map leaves it random (currently ~1–2 weeks of growth × 4 × difficulty coef).
   Lead: `RMG/Params/Default.xdb` `CreatureStackParams` (BasicAmount 25, MinAmount 6, MaxAmount 100) and the
   exe readers at `0049ed10`/`0049edb0`; the adventure-map generator itself is not yet located.
-- Neutral join threshold random range (`FUN_008e1ad0`: `rand(100)·0.1·MoodCoef` seen; manual says `random(1;7)·MoodCoef`).
+- Neutral join threshold: resolved — `FUN_008e1ad0` draws rand(40..100)·0.1·MoodCoef (inclusive); see AUDIT_ADVENTURE.md, Monsters.
 - Guard zones (8 neighbours) and whether destination or source tile sets step cost.
 - Tavern offer rules; hero hire cost (2500) and cap (8).
 - Map hero `OverrideMask` bit meanings (only bit 1 = name observed); empty editable sections fall back to the shared hero.

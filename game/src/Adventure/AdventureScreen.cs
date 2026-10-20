@@ -1048,6 +1048,12 @@ public partial class AdventureScreen : Control
                     await Dialog(done => AdvDialogs.Choose2(_dialogLayer, sel.Title, sel.Desc, Session.S.Hero(c.Hero) is { } sh ? AdvDialogs.HeroFace(sh) : null,
                         sel.V1, sel.V2, p => { option = p; done(); }, sel.Header));
                     break;
+                case "monster_flee" when Session.S.Choice?.Creatures is { Count: > 0 } fleeing:
+                    // CFleeFightDialogLogEntry (008e1a80): Text/Interface/JoinFlee Flee_Title / Flee_Desc; yes = Pursue!, no = Leave them.
+                    await Dialog(done => AdvDialogs.YesNo(_dialogLayer, AdvTexts.Get("Text/Interface/JoinFlee/Flee_Title_Text.txt"),
+                        AdvTexts.Get("Text/Interface/JoinFlee/Flee_Desc_Text.txt", ("count", fleeing.Sum(f => f.Count)), ("name", CreatureName(fleeing[0].Creature))),
+                        null, y => { accept = y; done(); }));
+                    break;
                 case "join_free":
                     await Dialog(done => AdvDialogs.YesNo(_dialogLayer, ObjectName(c.Object), AdvTexts.Get(AdvTexts.CreaturesJoin), null, y => { accept = y; done(); }));
                     break;

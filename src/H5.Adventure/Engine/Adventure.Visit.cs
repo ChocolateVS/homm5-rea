@@ -748,6 +748,11 @@ public sealed partial class Adventure
             case "border_guard":
                 if (c.Accept) { RemoveObject(ch.Object); Emit(new ObjectVisited(h.Id, ch.Object, "border_guard_open")); }
                 break;
+            case "monster_flee":
+                // CFleeFightDialogLogEntry: Pursue! → the fight; Leave them → CMonsterFleeCmd.
+                if (c.Accept) { if (!Refused(h, -1, ch.Object)) StartBattle(h, -1, ch.Object, O(ch.Object).Pos, S.Obj(ch.Object).Guards.Select(g => new Stack(g.Creature, g.Count)).ToList(), siege: false); }
+                else LetMonstersFlee(h, ch.Object);
+                break;
             case "join_free":
                 if (c.Accept) JoinArmy(h, ch.Creatures);
                 RemoveObject(ch.Object);

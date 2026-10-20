@@ -44,11 +44,14 @@ public sealed partial class Adventure
     };
 
     /// <summary>
-    /// Join / flee / fight decision for neutral stacks (fan manual p.319-320, exe FUN_008e1ad0 and
-    /// FUN_008dc380). Mood coefficients 0.5/1.0/1.5/2.0 minus 0.2 per Diplomacy level and the
-    /// ×3 (×2 with Diplomacy) join price are confirmed from the executable (FUN_008da210, constants
-    /// 0x3f000000…0x40000000, 0x3e4ccccd). TODO(exe): the exact random range of the join threshold
-    /// (the manual's random(1;7)·Mood_Coef is used).
+    /// Join / flee / fight decision for neutral stacks (exe FUN_008e1ad0). Diplomacy level d = 1 + (Crown of Leadership)
+    /// when the hero has Diplomacy (hero vcall 0x174(0x1e) / 0x310), else 0; mood coefficient M = 0.5 / 1 / 1.5 / 2 − 0.2·d
+    /// (008da210); threshold T = rand(40..100) · 0.1 · M (008e7840 inclusive); R = hero / creature strength (004eabb0).
+    /// R ≥ T: flee or join for free; T − 3/M ≤ R &lt; T: fight or join for money; below: fight. The join roll is
+    /// rand(1..100) ≤ chance (008dc380). A money join costs the army's price × max(0, 3 − d) and is offered only when
+    /// affordable, else the monsters fight; a zero price (Week of Diplomacy, d ≥ 3) joins for free.
+    /// TODO(exe): the Courtier factor on R (hero vcall 0x190(0x3b), RPGStats +0x928 per level); the join-offer builder
+    /// 008dd0d0 (its 0 / 1 / 2 result, courage, the Estates and 0x66 count/upgrade changes) is not decoded.
     /// </summary>
     void StartNeutralEncounter(HeroState h, MapObject mon)
     {
@@ -65,34 +68,60 @@ public sealed partial class Adventure
                 StartBattle(h, -1, mon.Index, mon.Pos, guards, siege: false);
                 return;
         }
+        // TODO(exe): mixed armies (the chance 008dc380 counts several creature types) — kept as a fight until 008dd0d0 is decoded.
         if (mixed) { StartBattle(h, -1, mon.Index, mon.Pos, guards, siege: false); return; }
 
-        int diplomacy = h.HasPerk("HERO_SKILL_DIPLOMACY") ? 1 : 0;
-        if (h.HasArtifact("ARTIFACT_CROWN_OF_LEADER")) diplomacy++;
+        int diplomacy = DiplomacyLevel(h);
         double moodCoef = new[] { 0.5, 1.0, 1.5, 2.0 }[MoodIndex(mon.Mood)];
         if (diplomacy > 0) moodCoef -= 0.2 * diplomacy;
         double ratio = ArmyPower(h.Army.Live(), h) / Math.Max(1, ArmyPower(guards, null));
-        double joinThreshold = S.Rng.Range(1, 7) * moodCoef;
-        double fightLimit = joinThreshold + 3 * moodCoef;
-
-        if (ratio < joinThreshold) { StartBattle(h, -1, mon.Index, mon.Pos, guards, siege: false); return; }
-        bool freeCase = ratio > fightLimit;
+        double threshold = S.Rng.Range(40, 100) * 0.1 * moodCoef;
+        bool fleeCase = ratio >= threshold;
+        if (!fleeCase && threshold - 3.0 / moodCoef > ratio) { StartBattle(h, -1, mon.Index, mon.Pos, guards, siege: false); return; }
         int chance = ChanceToJoin(h, guards[0].Creature, mon.Mood, diplomacy);
-        if (S.Rng.Next(100) < chance)
+        if (S.Rng.Range(1, 100) <= chance)
         {
-            OfferJoin(h, mon, guards, paid: !freeCase && S.MoonWeek != "WEEK_OF_DIPLOMACY", priceMul: Math.Max(0, 3 - diplomacy));
-            return;
+            int mul = diplomacy > 0 ? Math.Max(0, 3 - diplomacy) : 3;
+            if (fleeCase || mul == 0 || S.MoonWeek == "WEEK_OF_DIPLOMACY") { OfferJoin(h, mon, guards, paid: false); return; }
+            if (JoinPrice(guards, mul) <= (PlayerByIndex(h.Owner)?.Purse[Purse.Gold] ?? 0)) { OfferJoin(h, mon, guards, paid: true, priceMul: mul); return; }
+            // 008e210d: not enough money → the monsters fight.
         }
-        if (freeCase)
+        if (fleeCase)
         {
-            // The neutrals flee.
-            Emit(new ObjectVisited(h.Id, mon.Index, "monster_fled"));
-            RemoveObject(mon.Index);
+            // 008e1a80: CFleeFightDialogLogEntry — Pursue (fight) or Leave them (CMonsterFleeCmd).
+            S.Choice = new PendingChoice { Kind = "monster_flee", Hero = h.Id, Object = mon.Index, Creatures = guards };
+            Emit(new ChoiceOffered(S.Choice.Kind, h.Id, mon.Index, 0, 0));
         }
         else StartBattle(h, -1, mon.Index, mon.Pos, guards, siege: false);
     }
 
-    /// <summary>Chance to join (p.320): mood base 10/5/0/−5 % plus alignment, faction, army and Diplomacy modifiers.</summary>
+    /// <summary>008e1ad0: hero vcall 0x174(0x1e) (Diplomacy) &gt; 0 → 1 + (Crown of Leadership, vcall 0x310 &gt; 0), else 0.</summary>
+    public int DiplomacyLevel(HeroState h) =>
+        h.HasPerk("HERO_SKILL_DIPLOMACY") ? 1 + (h.HasArtifact("ARTIFACT_CROWN_OF_LEADER") ? 1 : 0) : 0;
+
+    int JoinPrice(List<Stack> guards, int mul) =>
+        guards.Sum(g => Core.Creatures.TryGetValue(g.Creature, out var c) ? c.Cost.Gold * g.Count : 0) * mul;
+
+    /// <summary>
+    /// CMonsterFleeCmd (execute 0042ad40): the hero lets the monsters go and gains half of Σ count · (creature Exp, or
+    /// Health when Exp is 0; FUN_0045a600 / 004baad0) through +0x198. TODO(exe): the value first passes vcall 0x1b4 of
+    /// the command's +0xc object, not decoded (taken unchanged).
+    /// </summary>
+    void LetMonstersFlee(HeroState h, int monster)
+    {
+        long total = 0;
+        foreach (var g in S.Obj(monster).Guards)
+            if (Core.Creatures.TryGetValue(g.Creature, out var c)) total += (long)g.Count * (c.Exp != 0 ? c.Exp : c.Health);
+        RemoveObject(monster);
+        Emit(new ObjectVisited(h.Id, monster, "monster_fled"));
+        GainExperience(h, total / 2, modifiersApplied: true);
+    }
+
+    /// <summary>
+    /// Chance to join (008dc380): mood 10 / 5 / 0 / −5; +5 when all the stacks share one alignment, the hero's; +5 when
+    /// they share one town, the hero's; + 5 · (stacks of creatures the hero has) / stacks; + 5 · (stacks the hero has
+    /// upgraded / related) / stacks; + 10 · diplomacy level; +20 for the hero's creature specialisation.
+    /// </summary>
     int ChanceToJoin(HeroState h, string creature, string mood, int diplomacy)
     {
         int chance = new[] { 10, 5, 0, -5 }[MoodIndex(mood)];
@@ -106,7 +135,7 @@ public sealed partial class Adventure
             if (h.Army.Live().Any(s => s.Creature == creature)) chance += 5;
             if (h.Army.Live().Any(s => cd.Upgrades.Contains(s.Creature))) chance += 5;
         }
-        if (diplomacy > 0) chance += 10;
+        chance += 10 * diplomacy;
         // TODO: +20% for a matching creature specialisation (hero specialisation table).
         return chance;
     }
