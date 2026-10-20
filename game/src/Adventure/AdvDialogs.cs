@@ -116,9 +116,19 @@ public static partial class AdvDialogs
         Control? blocker = null;
         var s = Open(parent, LevelUpBox, b => blocker = b);
         var db = Game.Instance.Db;
-        s.Find("Who")?.SetText($"<body>{hero.Name} has reached level {offer.NewLevel}.");
+        // 006a8f50: Who = the box's related text "levelup" with name, level and profession (class name); SkillBack shows
+        // the gained attribute's UI/HeroAttributes entry (DescriptionFileRef as heroattribute, Texture on Face_1).
+        if (s.Find("Who") is { } who)
+        {
+            who.SetText(UiGameRoot.RelatedText("N_LEVEL_UP_WINDOW_ID", "levelup") ?? UiResources.Instance.Text("UI/LevelUPBox/levelup.txt") ?? "");
+            who.SetValue("name", hero.Name);
+            who.SetValue("level", offer.NewLevel.ToString());
+            who.SetValue("profession", Hero.HeroScreen.ClassName(hero.Class));
+        }
         SetFace(s, "Face", HeroFace(hero));
-        s.Find("SkillBack/Skill")?.SetValue("heroattribute", $"+1 {AttributeName(offer.Attribute)}");
+        var (attrText, attrIcon) = HeroAttribute(offer.Attribute);
+        s.Find("SkillBack/Skill")?.SetValue("heroattribute", attrText);
+        SetFace(s, "SkillBack/Face_1", attrIcon);
         // Options are numbered skills first, then perks, as ChooseLevelUpCmd expects.
         var options = new List<(string Name, Texture2D? Icon)>();
         foreach (var sk in offer.Skills)
@@ -173,6 +183,20 @@ public static partial class AdvDialogs
     }
 
     // ---------------------------------------------------------------- text and icons
+
+    /// <summary>UI/HeroAttributes/HeroAttributes.(UIHeroAttributes).xdb entry of a level-up attribute: description text and icon.</summary>
+    static (string Text, Texture2D? Icon) HeroAttribute(string attr)
+    {
+        const string table = "UI/HeroAttributes/HeroAttributes.(UIHeroAttributes).xdb";
+        var key = attr switch { "Attack" => "HERO_ATTRIB_OFFENCE", "Defence" => "HERO_ATTRIB_DEFENCE", "SpellPower" => "HERO_ATTRIB_SPELLPOWER", "Knowledge" => "HERO_ATTRIB_KNOWLEDGE", _ => "" };
+        var item = Game.Instance.Fs.Exists(table)
+            ? Game.Instance.Xdb.Load(table).Root?.Element("attributes")?.Elements("Item").FirstOrDefault(i => (string?)i.Element("Attribute") == key)
+            : null;
+        if (item == null) return ($"+1 {AttributeName(attr)}", null);
+        var text = Game.Instance.Xdb.ReadText((string?)item.Element("DescriptionFileRef")?.Attribute("href"), table) ?? "";
+        var tex = (string?)item.Element("Texture")?.Attribute("href");
+        return (text.Trim(), string.IsNullOrEmpty(tex) ? null : Game.Instance.LoadTexture(H5.Core.Xdb.XdbRef.Parse(tex, table).Path));
+    }
 
     public static string AttributeName(string a) => a switch
     {

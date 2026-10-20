@@ -52,6 +52,8 @@ public sealed class PerkDef
     public string BasicSkill = "";         // parent skill (BasicSkillID)
     public string HeroClass = "";
     public Dictionary<string, List<string>> PrereqByClass = new();
+    /// <summary>Engine enum value: the item index in Skills.xdb (HERO_SKILL_NONE = 0).</summary>
+    public int Index;
 
     public bool IsSkill => Type == "SKILLTYPE_SKILL";
     public bool IsStandardPerk => Type == "SKILLTYPE_STANDART_PERK";
@@ -256,12 +258,14 @@ public sealed partial class AdventureDb
     void LoadPerks(XdbLoader x)
     {
         const string table = "GameMechanics/RefTables/Skills.xdb";
+        int index = -1;
         foreach (var item in x.Load(table).Root!.Element("objects")!.Elements("Item"))
         {
+            index++;
             var id = item.Str("ID");
             var o = item.Element("obj");
             if (id.Length == 0 || id == "HERO_SKILL_NONE" || o == null) continue;
-            var p = new PerkDef { Id = id, Type = o.Str("SkillType"), BasicSkill = o.Str("BasicSkillID"), HeroClass = o.Str("HeroClass") };
+            var p = new PerkDef { Id = id, Index = index, Type = o.Str("SkillType"), BasicSkill = o.Str("BasicSkillID"), HeroClass = o.Str("HeroClass") };
             foreach (var pre in o.Items("SkillPrerequisites"))
                 p.PrereqByClass[pre.Str("Class")] = pre.StrItems("dependenciesIDs");
             Perks[id] = p;

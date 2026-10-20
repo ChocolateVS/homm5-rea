@@ -117,6 +117,8 @@ public partial class HeroScreen : Control
                 if (Find(p, $"Army/ArmyStacks/Slot_{i}") is { } slot)
                     _army.Add(new ArmySlotView { Node = slot, Hero = p.Hero.Id, Slot = i - 1 });
         foreach (var p in _panels) ShowPage(p, "Army");
+        // Dev (screenshots): `--hero-page=Inventory|Skills|Abilities|Biography` opens that bookmark.
+        if (OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--hero-page=")) is { } pg) ShowPage(_panels[0], pg["--hero-page=".Length..]);
         if (_mentor) SetUpMentor();
     }
 
@@ -203,8 +205,16 @@ public partial class HeroScreen : Control
         name?.SetValue("HeroName", h.Name);
         name?.SetValue("HeroLevel", h.Level.ToString());
         name?.SetValue("HeroClass", ClassName(h.Class));
-        long next = Game.Instance.Db.Experience.For(h.Level + 1);
-        if (Find(panel, "HeroInfo/Experience") is { } bar) bar.TooltipText = $"{h.Experience} / {next}";
+        // 006bed90: the bar shows (exp − T(level)) / (T(level + 1) − T(level)); its tooltip (ExpTooltip.txt) gets
+        // current = exp and next = T(level + 1).
+        long cur = Game.Instance.Db.Experience.For(h.Level), next = Game.Instance.Db.Experience.For(h.Level + 1);
+        if (Find(panel, "HeroInfo/Experience") is { } bar)
+        {
+            SetProgress(bar, next > cur ? (float)(h.Experience - cur) / (next - cur) : 0f);
+            var tip = bar.Window.TooltipPath is { } tp ? UiResources.Instance.Text(tp) : null;
+            bar.TooltipText = string.IsNullOrEmpty(tip) ? $"{h.Experience}/{next}"
+                : UiResources.StripMarkup(tip.Replace("<value=current>", h.Experience.ToString()).Replace("<value=next>", next.ToString()));
+        }
 
         var (morale, luck) = (h.NextBattleMorale + h.ScriptMorale, h.NextBattleLuck + h.ScriptLuck);
         foreach (var attrs in panel.Page.FindChildren("Attributes", "", true, false).OfType<UiNode>())
@@ -237,7 +247,7 @@ public partial class HeroScreen : Control
             node.SetMeta("artifact", art ?? "");
             node.SetMeta("backpack", false);
             node.SetMeta("hero", h.Id);
-            TownUi.SetPicture(node, art != null ? ArtifactIcon(art) : null);
+            TownUi.SetPicture(SlotPicture(node), art != null ? ArtifactIcon(art) : null);
             node.TooltipText = art != null ? ArtifactName(art) : "";
         }
         int pages = Math.Max(1, (h.Backpack.Count + 9) / 10);
@@ -250,7 +260,7 @@ public partial class HeroScreen : Control
             node.SetMeta("artifact", art ?? "");
             node.SetMeta("backpack", true);
             node.SetMeta("hero", h.Id);
-            TownUi.SetPicture(node, art != null ? ArtifactIcon(art) : null);
+            TownUi.SetPicture(SlotPicture(node), art != null ? ArtifactIcon(art) : null);
             node.TooltipText = art != null ? ArtifactName(art) : "";
         }
 
@@ -303,6 +313,48 @@ public partial class HeroScreen : Control
         }
     }
 
+    /// <summary>
+    /// Artifact slots (doll and backpack) carry a "Pic" child window that draws the empty slot; the artifact icon goes on
+    /// it (drawn under it, the icon was hidden).
+    /// </summary>
+    static Control SlotPicture(UiNode slot) => slot.FindChild("Pic", false, false) as Control ?? slot;
+
+    /// <summary>WindowProgressBar: its Forward texture (BackgroundSimpleScallingTexture) cropped to the fraction.</summary>
+    static void SetProgress(UiNode bar, float fraction)
+    {
+        bar.SetMeta("progress", Math.Clamp(fraction, 0f, 1f));
+        if (bar.GetNodeOrNull<Control>("_Fill") is not { } clip)
+        {
+            clip = new Control { Name = "_Fill", ClipContents = true, MouseFilter = MouseFilterEnum.Ignore };
+            clip.AddChild(new TextureRect
+            {
+                Texture = ProgressTexture(bar), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = MouseFilterEnum.Ignore,
+            });
+            bar.AddChild(clip);
+            bar.Resized += () => LayoutProgress(bar, clip);
+        }
+        LayoutProgress(bar, clip);
+    }
+
+    static void LayoutProgress(UiNode bar, Control clip)
+    {
+        float f = bar.HasMeta("progress") ? bar.GetMeta("progress").AsSingle() : 0f;
+        ((TextureRect)clip.GetChild(0)).Size = bar.Size;
+        clip.Size = new Vector2(bar.Size.X * f, bar.Size.Y);
+    }
+
+    static Texture2D? ProgressTexture(UiNode bar)
+    {
+        var fwd = (string?)bar.Window.RawShared?.Element("Forward")?.Attribute("href");
+        var from = bar.Window.SharedPath ?? bar.Window.SourcePath;
+        if (string.IsNullOrEmpty(fwd) || string.IsNullOrEmpty(from)) return null;
+        var bg = XdbRef.Parse(fwd, from).Path;
+        if (!Game.Instance.Fs.Exists(bg)) return null;
+        var tex = (string?)Game.Instance.Xdb.Load(bg).Root?.Element("Texture")?.Attribute("href");
+        return string.IsNullOrEmpty(tex) ? null : Game.Instance.LoadTexture(XdbRef.Parse(tex, bg).Path);
+    }
+
     static void Set(UiNode attrs, string name, int value)
     {
         if (attrs.FindChild(name, true, false) is UiNode n) n.SetValue("Attribute", value.ToString());
@@ -329,7 +381,7 @@ public partial class HeroScreen : Control
         AddChild(book);
     }
 
-    static string ClassName(string cls)
+    internal static string ClassName(string cls)
     {
         const string table = "GameMechanics/RefTables/HeroClass.xdb";
         var item = Game.Instance.Xdb.Load(table).Root?.Element("objects")?.Elements("Item").FirstOrDefault(i => (string?)i.Element("ID") == cls);

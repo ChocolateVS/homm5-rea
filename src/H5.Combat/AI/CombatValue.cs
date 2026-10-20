@@ -83,21 +83,18 @@ public sealed class CombatValue
     public int EnemyPower => Enemy.Power(My);
 
     /// <summary>
-    /// True when <paramref name="x"/> is a better position than <paramref name="y"/>: exe FUN_00bfae20(this = y, arg = x),
-    /// which answers "is the argument better" (the comparator FUN_008d0030 and the start-value exclusion call it so).
-    /// The value's first half is the enemy (FUN_00bfc2a0 fills it with combat vf 0xe0(side)), the second (+0x48) our side.
-    /// Outside kamikaze mode (value +0x90 → +0x18 ≠ 1) a position that has lost all OWN troops (+0x68, [8] of our half)
-    /// is worse than one that has not (0x00bfaf33..0x00bfaf57). Otherwise the enemy-minus-own changes in damage, troop
-    /// HP and war-machine HP are weighted and summed; x wins when that total exceeds threshold·total,
-    /// threshold = clamp(CompareTreshold·0.01, 0, 1).
+    /// True when <paramref name="x"/> is a better position than <paramref name="y"/> (exe FUN_00bfae20).
+    /// Outside kamikaze mode, wiping out the enemy's troops beats everything. Otherwise the enemy-minus-own
+    /// changes in damage, troop HP and war-machine HP are weighted by the mode coefficients and summed;
+    /// x wins when that total exceeds threshold·total, threshold = clamp(CompareTreshold·0.01, 0, 1).
     /// </summary>
     public static bool IsBetter(CombatValue x, CombatValue y, CombatModeCoefs c, CombatMode mode)
     {
         if (mode != CombatMode.Kamikaze)
         {
-            bool xLost = x.My.TroopsHealth <= 0, yLost = y.My.TroopsHealth <= 0;
-            if (yLost && !xLost) return true;
-            if (xLost && !yLost) return false;
+            bool xWiped = x.Enemy.TroopsHealth <= 0, yWiped = y.Enemy.TroopsHealth <= 0;
+            if (xWiped && !yWiped) return true;
+            if (!xWiped && yWiped) return false;
         }
         double enemyDmg = y.Enemy.DamageMeasure(y.My) - x.Enemy.DamageMeasure(x.My);
         double myDmg = y.My.DamageMeasure(y.Enemy) - x.My.DamageMeasure(x.Enemy);
@@ -128,14 +125,13 @@ public sealed class CombatValue
         var v = new SideValue();
         double accAtk = 0, accBonus = 0, accDef = 0, accTroopDef = 0, accShoot = 0, accFly = 0, accWalk = 0;
         var enemies = s.Living.Where(e => b.Controller(e) != side && !e.IsObject).ToList();
-        int unitCount = s.Living.Count(u => !u.IsObject);
         foreach (var u in s.Living)
         {
             if (u.IsObject || b.Controller(u) != side) continue;
             var (min, max) = b.DamageRangeOf(u);
             double dmg = u.Count * (min + max) * 0.5;
             bool shooter = b.CanShoot(u);
-            if (shooter) dmg = Math.Round((1 - ThreatShare(b, u, enemies, unitCount) + 1) * dmg);
+            if (shooter) dmg = Math.Round((1 - ShooterPenalty(b, u, enemies) + 1) * dmg);
             int atk = b.AttackOf(u);
             v.Damage += dmg;
             accAtk += (atk + 1) * dmg;
@@ -168,25 +164,22 @@ public sealed class CombatValue
     }
 
     /// <summary>
-    /// FUN_00bfb950, the shooter factor f of (2 − f)·damage: 1 for a war machine or with fewer than two units on the field;
-    /// otherwise the share, weighted by expected damage (FUN_00bfb880), of the enemy stacks that cannot shoot and
-    /// threaten the shooter (FUN_004b1660 on the matrix FUN_004b23b0 builds) among all enemy stacks that cannot shoot,
-    /// 1 when there are none. An unthreatened shooter counts double. GAP-detail: the threat matrix is not decoded; ours
-    /// counts a stack as threatening when it can come next to the shooter within its speed.
+    /// Fraction of a shooter's damage lost to penalties (exe FUN_00bfb950 feeds (2 − f)·damage): 1 when an
+    /// enemy stands adjacent (melee penalty, no shot), else half the share of enemy HP beyond the range limit.
     /// </summary>
-    static double ThreatShare(Battle b, Unit u, List<Unit> enemies, int unitCount)
+    static double ShooterPenalty(Battle b, Unit u, List<Unit> enemies)
     {
-        if (u.IsWarMachine || unitCount < 2) return 1;
-        double total = 0, threat = 0;
+        if (enemies.Count == 0) return 0;
+        if (enemies.Any(e => !e.IsWarMachine && Battle.AreAdjacent(u, e))) return 1;
+        if (u.IsWarMachine || u.Has(Ab.NoRangePenalty) || u.Has(Ab.RangePenalty)) return 0;
+        int half = b.State.Width / 2;
+        double total = 0, far = 0;
         foreach (var e in enemies)
         {
-            if (b.CanShoot(e)) continue;
-            var (min, max) = b.DamageRangeOf(e);
-            double w = e.Count * (min + max) * 0.5;
-            total += w;
-            if (Battle.Distance(e, u) <= b.SpeedOf(e) + 1) threat += w;
+            total += e.TotalHealth;
+            if (Battle.NearestCellDistanceSq(u, e) > half * half) far += e.TotalHealth;
         }
-        return total != 0 ? threat / total : 1;
+        return total > 0 ? 0.5 * far / total : 0;
     }
 
     /// <summary>Expected multiplier from luck (×2 / ×0.5) and morale (extra / lost half turn), 10% per point, capped at 50%.</summary>

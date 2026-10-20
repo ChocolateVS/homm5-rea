@@ -1,6 +1,6 @@
 # AI audit ledger (H5_Game.exe vs H5.Adventure/AI and H5.Combat/AI)
 
-Adventure-map AI (NWorld::CPlayerAI, `src/H5.Adventure/AI/OriginalAdventureAI*.cs`) and the
+Adventure-map AI (NWorld::CPlayerAI, `src/H5.Adventure/AI/OriginalAdventureAI*.cs`) and a high-level pass over the
 combat AI (NWorld::CCombatAI, `src/H5.Combat/AI`), against the GOG 3.1 `H5_Game.exe` (Ghidra 12.1.4, private copy of
 `tools/ghidra-projects/ai`). Addresses are VAs. Tunables: `docs/rules/AI.md` (offsets) and
 `tools/aire/out/aichain.txt`; per-field readers were mapped with `GetterFieldUse` on the row getter 00c02a90
@@ -14,13 +14,11 @@ occur in our setup.
 
 | Status | Count |
 |---|---|
-| FIXED | 20 |
+| FIXED | 19 |
 | MATCH | 12 |
-| GAP | 33 |
+| GAP | 45 (11 of them combat AI) |
 | UNVERIFIED | 2 |
 | N/A | 2 |
-
-Adventure AI only; the combat AI has its own count in "Combat AI" below.
 
 Tests: `tests/H5.Adventure.Tests/AiAuditTests.cs` (A), `OriginalAdventureAiTests.cs` (O), `AiDirectiveTests.cs` (D).
 
@@ -115,7 +113,7 @@ Tests: `tests/H5.Adventure.Tests/AiAuditTests.cs` (A), `OriginalAdventureAiTests
 | Area | Status | Exe | Original | Ours / evidence |
 |---|---|---|---|---|
 | Start resources per difficulty | UNVERIFIED | StartHuman/ComputerResources (DefaultStats) | — | `Adventure.Setup.cs` (reader not traced in this audit) |
-| Combat AI difficulty | FIXED | 008d0840, 004f66c0, 00a2f0d0 | think level from the side (human 5) and the engine difficulty; level ≤ 3 → Normal row, ≥ 4 → Heroic row | see "Combat AI" (rows "Think level", "Difficulty* row", "Difficulty source") |
+| Combat AI difficulty | GAP | CCombatAI +0x1ac / +0x1b4 / +0x1b7 from AI/Combat/Difficulty* | per-difficulty switches and spell level | every `OriginalBattleAI` (adventure quick combat, sessions, net) runs with `AiDifficulty.Normal`; the exe's row choice for combat is not traced |
 | EnableHeroAI | GAP | see "AI-disabled hero" | — | — |
 | MoveHero on an AI hero | GAP | 005cef50 | sets an AI move target | moves at once (SCRIPTS.md) |
 | DenyAIHeroesFlee | MATCH | 005e2760, 00c9741e | — | see "AI flee / surrender decision" |
@@ -123,71 +121,21 @@ Tests: `tests/H5.Adventure.Tests/AiAuditTests.cs` (A), `OriginalAdventureAiTests
 | DoNotGiveTurnToPlayerAIIfNoTownsAndActiveHeroes | MATCH | 0098e410 | — | `GetsTurn` (D) |
 | Determinism | N/A | — | the exe AI is single-machine | private RNG per day/player/hero; O: `PlaysDeterministicallyWithoutStalling` |
 
-## Combat AI
+## Combat AI (high level): behaviour not from the exe
 
-NWorld::CCombatAI (vtable 00e91d38; constructor 00c977e0, think vf 00c97930) builds a think object on the stack
-(FUN_008d27a0) and runs FUN_008d6a70: generate (008d6940) → evaluate (008d5eb0) → choose (008d1cb0). The think object
-holds a settings block at +0x114 (FUN_00a303f0 / FUN_00a30460; settings +0x98 → think +0x1ac, +0xa0 → +0x1b4, +0xa3 →
-+0x1b7, …). Code: `src/H5.Combat/AI/OriginalBattleAI.cs`, `CombatValue.cs`, `AiStats.cs`. Tests:
-`tests/H5.Combat.Tests/OriginalAiExeTests.cs` (X), `OriginalAiTests.cs` (T).
+The combat AI (`OriginalBattleAI`, `CombatValue`) follows the exe structure documented in `AI.md` (think loop
+008d6a70, comparator 008d0030, combat value 00bfc2a0, compare 00bfae20, mode 00a2f4d0). Parts that are ours:
 
-| Status | Count |
-|---|---|
-| FIXED | 18 |
-| MATCH | 4 |
-| UNVERIFIED | 2 |
-| GAP | 14 |
-
-### Think level, difficulty row, compare
-
-| Decision | Status | Exe | Original | Ours / evidence |
-|---|---|---|---|---|
-| Think level | FIXED | 008d27a0 (+0x18 = 4), 008d0840, 004f66c0 | nested look-ahead think → 2; combat vf 0x110 (CCombat+0x138) 1 → 3, 2 → 1; else a human side (side player vf 0x190) → max(level, 5) = 5; a computer side → FUN_004f66c0(combat vf 0x38): 0, 1 → 0; 2 → 4; 3 → 5; 4 → 6 | `ExeThinkLevel` (was: no level; the row came from a constructor argument every caller left at Normal). X: `ThinkLevelAndRowFollowTheExe` |
-| Difficulty* row | FIXED | 00a2f0d0 (`CMP ECX,3; JG` / `CMP ECX,4; JGE`) | level ≤ 3 → DifficultyNormal (RPGStats+0xb60); ≥ 4 → DifficultyHeroic (+0xb78); the Hard branch (3 &lt; level &lt; 4, +0xb6c) is dead and DifficultyEasy (+0xb54) is never read. Stock rows: Easy = Normal (spell level 3, creature-only area centres, shortest path only), Hard = Heroic (level 5, free centres, every strike cell): Easy/Normal computer → Normal row; Hard/Heroic computer and any human side (auto combat) → Heroic row | `ExeRow`, used by `Decide` (`LastLevel`, `LastRow`). X: `DecisionsUseTheRowOfTheGameDifficultyAndSide` |
-| Difficulty source | UNVERIFIED | combat vf 0x38 = 00af7e70 (CCombat+0x94; the constructor 00af7280 stores 4) | no other direct store found (likely the serialized combat setup); its five values match the engine difficulty (script map 00a33780: engine 0→1, 1→0, 2→2, 3/4→3) | the adventure difficulty mapped to the engine scale (`EngineDifficulty`). Wired: quick combat (`QuickCombat.Resolve` → `OriginalBattleAI.For(S.Difficulty, QuickCombat.HumanSides)`, used by the adventure AI and the net session) and `AdventureCombatSession(…, gameDifficulty)`; duels and the combat screen use Normal. GAP-detail: `AdventureScreen` does not pass `Session.S.Difficulty` to `AdventureCombatSession` yet (file owned by another workstream) |
-| Combat kind vf 0x110 | GAP | 00af7f30 (CCombat+0x138, 0 in 00af7280) | values 1 / 2 give levels 3 / 1 | meaning not traced; our battles behave as 0 |
-| Candidate cap | FIXED | 008d6940, 008d5eb0 | every generated candidate is evaluated | `MaxCandidates` (96, 24 in quick combat) removed; identical commands are simulated once (same value) |
-| Compare weights | FIXED | 00bfae20 (0x00bfaf5d..0x00bfaf8a) | the mode switch falls through every case (three calls of the AI/Combat getter, one `ADD EAX,0x80`): PowerSavingMode (RPGStats+0xbd0) for every mode | `CombatAiStats.CompareCoefs` (was: the current mode's row). X: `TheCompareAlwaysReadsPowerSavingWeights` |
-| Own-troops rule | FIXED | 00bfae20 (0x00bfaf33..0x00bfaf57), halves 00bfc37d / 00bfc390 | outside kamikaze, a position without OWN creature HP (+0x68 = [8] of the second half, which FUN_00bfc2a0 fills with our side; the first half is combat vf 0xe0(side), the enemy) loses to one with | `IsBetter` (was: wiping out the enemy wins). T: `LosingAllOwnTroopsIsWorseOutsideKamikaze` |
-| Compare formula, threshold | MATCH | 00bfae20 | Σ (Δenemy·EnemyCoef − Δown·MyCoef) over damage / troops / war machines; better if total &gt; clamp(threshold·0.01, 0, 1)·total. FUN_00bfae20(this, arg) answers "is arg better" (008d0030 at 0x008d0068..0x008d0086) | `IsBetter(x, y)` = FUN_00bfae20(y, x) |
-| Mode | MATCH | 00a2f4d0 | kamikaze / normal / power saving from the power ratio | `SelectMode`; the mode now only gates the own-troops rule |
-| Comparator | MATCH | 008d0030 | fewer Turns (both ≥ 0) → lower Priority → better value → non-spell → lower MovePrice | `CandidateBetter`. T: `ComparatorPrefersFewerTurnsThenPriorityThenNonSpellThenCheaperMove` |
-| Candidate defaults | FIXED | 008d7550 | Turns 0, MovePrice 0, Priority 2, compare type 0, spell flag 0 | `Candidate` (was: Turns −1, Priority 0) |
-| Start-value exclusion | FIXED | 008d1cb0 (0x008d1d27..0x008d1d3b) | compare type 1 is dropped when FUN_00bfae20(candidate, start): the start is strictly better; ties stay | `Excluded` (was: dropped unless strictly better). X: `ExclusionDropsOnlyWhatTheStartBeats` |
-| Start-health exclusion | FIXED | 008d1cb0 | compare type 2 is dropped as type 1, or when own Health [6] after (+0x74) &lt; at the start (think +0x98) | `Excluded` (was not used). X: same |
-| Spell compare types | FIXED | 008d02b0 (set by every spell generator) | 1: RESURRECT_ALLIES, SCATTER_SHOT, GATING, SUMMON_BALOR, EXPLOSION, RANDOM_CAST_DARK(_LIGHT), DASH, WORD_OF_THE_CHIEF, DEATH_WAIL, ORDER_OF_THE_CHIEF; 2: BERSERKER_RAGE, SUMMON_OTHER; else 0 | `SpellCompareType` (was: every spell and ability had to beat the start). X: `SpellCompareTypesComeFromTheExeTable`. Our ability ids are mapped to SPELL_ABILITY_* by name |
-| Mana limit | GAP | 00a2f280 (settings +0x9c → think +0x1b0), 008d1cb0 | spell candidates with mana after (+0xa8) &lt; limit are dropped. Limit: hero vf 0x18c → 0; a human hero whose vf 0x144 string is empty → M; our damage (FUN_00bfa1b0) &lt; enemy Health → 0; ≤ 10 × Health → round((1 − Health / damage) · M); else M. M = hero vf 0 → vf 4 (not identified) | not ported: limit 0 (no spell is dropped) |
-| Survivor order | GAP | 008d1cb0 (FUN_008c06c0, FUN_008d70f0) | the surviving indices are shuffled with the combat RNG before the comparator scan | generation order (deterministic); differs only on exact ties |
-| Too weak | FIXED | 00a2f430 ("We are too weak to win"), 008d6670, 008d0bd0, 008d6940 retry | ratio &lt; clamp(KamikazeModeTreshold): only damage spells (FUN_00977c80) and BATTLE_DIVE, SCATTER_SHOT, EXPLOSION, BERSERKER_RAGE, STORMBOLT, DEATH_WAIL, LEAP, PACK_DIVE, INVISIBILITY; when nothing is generated the switches are cleared and generation repeats | `TooWeak`, `AllowedWhenTooWeak`, retry in `Decide` (was not ported) |
-
-### Generators
-
-| Decision | Status | Exe | Original | Ours / evidence |
-|---|---|---|---|---|
-| Dispatch | FIXED | 008d6940, 008d6850, 008d68c0 | hero: strikes + spells; a creature that can shoot (vf 0x1e0): spells + shots only; otherwise spells, guard/block, attacks, and the approach only when those added nothing | `Generate` (was: shooters also got melee, approach and guard moves). X: `ShooterGeneratesOnlyShotsAndSpells`, `ApproachOnlyWithoutAttacksAndWithTurns` |
-| Dispatch: war machines, fallbacks | GAP | 008d6940 (vf 0x7c type 1 → 008d3950(1) skipping SPELL_BLIND / SLEEPING_STRIKE targets, then (0); 2 → 008d5c00; 3 → spells), 008d4f70 (invisible enemies), 008d4ce0 ("Conserve-rage") | — | war machines use the shooter / spell path; the two fallbacks are not ported (nothing left → defend) |
-| Spell level | MATCH | 008d6670 (FUN_00a34330 ≤ row +4) | MaxSpellLevelToCast | `def.Level` check |
-| Other spell gates | GAP | 008d6670 | FUN_00a345b0 (spell +0x88 == 5) unless think +0x1b5; a shooter with think +0x1ac only FUN_00a34550 spells; MELT_ARTIFACT skipped when think +8 → vf 4 → vf 0x18c; level 2 → only the 008d0bd0 list; GATING → 008d28e0; untargeted 008d30e0; single targets 008d3380 | not applied; targets from our legal actions |
-| Area spell centres | FIXED | 008d61b0, 008d12a0, 008d6ce0, 008d04c0 | CenterAreaSpellsOnCreatureOnly (except FROST_RING) or kind 0 → single-target generator; else every centre (x 2..W−3, y 1..H−2) is tried, the stacks hit are split into own / enemy (spell +0xd0 class: a hostile spell needs an enemy), and only centres not dominated (enemies ⊆ and own ⊇ another's; equal keeps the first) are kept | `SpellCells` (was: enemy cells plus midpoints of close pairs). X: `AreaCentresKeepOnlyUndominatedCells`. GAP-detail: our whole field is scanned (exe border offsets vs our grid not traced); only the 4 spells with an engine area take part; the 008d3380 target list is taken as the enemy creature cells |
-| Spell priority | FIXED | 008d08f0 | 2, lowered to the minimum FUN_008d00d0(target, caster, 0) over the stacks hit | `SpellPriority` (was 0) |
-| Target priority | UNVERIFIED | 008d00d0 | war machine: flag 0 → 1, else HP &gt; 2·damage (FUN_00a5c870) → 2, Ballista 0, Ammo Cart 2 if FUN_00a2f8f0, others 1; a creature with vf 0x58 and no SPELL_PHANTOM → 1; Turns &gt; 0 and MovePrice &gt; 0 → 1 when round(init·speed) &lt; round(target init·speed·2/3); else 0 | `TargetPriority` (was 0). GAP-detail: vf 0x58 and FUN_00a2f8f0 not applied; damage = our mean damage × count |
-| Strike cells | FIXED | 008d4330, 008d3c40, 00b3d010, 008d6dd0 | per enemy, the ring of anchor cells (right column, top row right to left, left column, bottom row) sorted by path cost (stable); each valid one is a candidate (Turns 0); with ConsiderOnlyShortestPathToEnemy (level ≠ 2) only the first valid one per enemy | `Attacks`, `Ring` (was: every strike cell, no per-target limit). X: `RingCellsFollowTheExeOrder`, `ConsiderOnlyShortestPathKeepsOneStrikeCellPerTarget`. GAP-detail: compare type 1 when the target's vf 0x8c is set; catapult targets (+0x1b6); the +0x1b7 target filter (FUN_008d0440); STRIKE_AND_RETURN "Move-no-attack" |
-| Approach | FIXED | 008d5b90 → 008d4330 (whole-path map +0xfc) | as strike cells, on the whole-path map; the command walks as far as this turn allows; Turns = turns to the cell | `ApproachMoves` (was: one closest cell per enemy, or only the nearest enemy). GAP-detail: the planner FUN_00c53f60 / 00c540c0 is approximated (budget-free Dijkstra, turns = ⌈cost/budget⌉ − 1, flyers stop at the reachable cell nearest the ring cell); the +0x1ac gate and the siege branch 008d4610 are not ported |
-| Guard / block gate | FIXED | 008d64e0, 00bf9eb0 | only when !think +0x1b7, the actor's vf 0x58 is false and the enemy's shooter power (FUN_00bf9d30) exceeds ours | shooter-power gate in `Generate` (was: always). GAP-detail: +0x1b7 (FUN_00a2f840 count ≤ 2 at 0x00a3060c) and vf 0x58 not applied |
-| Defend shooter | FIXED | 008d58c0, 008d4070 | for every other friendly stack that can shoot and lacks NO_MELEE_PENALTY, every ring cell reachable now: Turns = turns + 1, Priority 2 | `DefendShooterMoves` (was: one cell next to a threatened shooter). GAP-detail: the extra rage candidate (+0x1bd) |
-| Block enemy | FIXED | 008d4500 → 008d3c40 (no attack) | for every enemy that can shoot, moves to its ring cells; first only with ConsiderOnlyShortestPathToEnemy | `BlockEnemyMoves` (was: one cell). GAP-detail: enemy side vf 0x1a0 gate, FUN_00b3e1c0 filter (+0x1bc) |
-| Strategy "defensive" | GAP | 00a2fd40 ("Ranged advantage", +0x98 → +0x1ac) | set when FUN_00a2f710(enemy, enemy shooter power 0) or (OurShootersMinRelativePower &lt; our shooter power / our damage and OurShootersMinRelativeAdvantage &lt; our / enemy shooter power), unless FUN_00a2f710(us, ours 0); stops the approach and limits shooters' spells | not ported (flag false) |
-
-### Combat value and the rest
-
-| Decision | Status | Exe | Original | Ours / evidence |
-|---|---|---|---|---|
-| Shooter factor | UNVERIFIED | 00bfb950 | (2 − f)·damage; f = 1 for a non-creature or with &lt; 2 units, else the expected-damage share of enemy non-shooters that threaten the shooter (FUN_004b1660 on the FUN_004b23b0 matrix), 1 without such enemies | `ThreatShare` (was: 1 if blocked, else half the far-HP share). GAP-detail: the threat matrix is not decoded (ours: within speed + 1) |
-| Expected damage | GAP | 00bfb880, 00bfa280, 00a314c0 | round(f · round((min + max)·count·0.5)); f = 0 for a walker that can reach nobody (FUN_004b1770 / 004b1810) | mean damage × count |
-| Luck / morale bonus [5] | GAP | 00bfb4b0 | luck/morale (FUN_004e4920), initiative, speed − 5, shooter / range / NO_MELEE_PENALTY factors, clamp 0..13 | 10 % per point, ≤ 50 % |
-| Hero potential [1] | GAP | 00bfbe50, 0085b4a0, 00af1c00, 00a2d700 | Σ vf 0x1c of the side's kind 0/3/5 units that can act, ÷ n = clamp(round(time to act / ATB + 1), 1, 2); none when n &gt; 2 | mean hero strike over targets |
-| Slots [0], [2], [16], HP adjustments | GAP | 00bfba50, 00bfa360, 00bfa610 | per-unit extras, spell potential, INCORPOREAL / CELESTIAL_SHIELD / DEFLECT_ARROWS / INVISIBILITY HP adjustments | 0 / not applied |
-| Rune purchase | GAP | 008d0960 | buy a rune when cost · priceScale &lt; MaxRuneMoneyEstimate | not ported |
-| Tactics phase | GAP | 00a2fd40 / 00a30730 strategy flags | the AI's own tactics placement | the AI ends tactics at once; the battle-start placement itself is ported (`ExeAutoPlacement`, AUDIT_COMBAT `AUTO_PLACEMENT`) |
-| Look-ahead | GAP | 008d10e0 | lookAheadTime &gt; 0 | not ported (0 in normal play) |
-| Flee / surrender | GAP | 00c97930 → 00c972d0 (+0x10 flee, +0x11 surrender) | the think vf decides retreat before thinking | never flees; the deny gate is MATCH (see "AI flee / surrender decision") |
+| Item | Status | Exe | Notes |
+|---|---|---|---|
+| Candidate cap `MaxCandidates` (96; 24 for adventure quick combat) | GAP | 008d6940 | no cap known in the exe; ours truncates the generated list |
+| Approach moves (closest reachable cell per enemy, Turns = rounds to strike range) | GAP | 008d5b90 | reconstructed |
+| UseDefendShootersMoves / UseBlockEnemyMoves cell choice | GAP | 008d6940 generators | reconstructed (cell next to a threatened friendly shooter / an enemy shooter) |
+| Area-spell centres between enemy pairs | GAP | 008d61b0 | reconstructed (CenterAreaSpellsOnCreatureOnly honoured) |
+| Shooter penalty share, luck/morale bonus (10 %/point, ≤ 50 %), hero strike potential (mean over targets) | GAP | 00bfb950, 00bfba50 | approximations; value slots [0], [2], [16] are 0 |
+| Health compare rule (compare type 2 vs +0x98) | GAP | 008d1cb0 | not used |
+| Rune purchase (MaxRuneMoneyEstimate) | GAP | 008d0960 | not ported |
+| Tactics autoplacement | GAP | 00a2fd40 | not ported: tactics end at once with the default placement |
+| Look-ahead search | GAP | 008d10e0 | not ported (lookAheadTime 0 in normal play) |
+| Flee / surrender | GAP | 00c972d0 | never flees |
+| Difficulty | GAP | — | always Normal (see above) |

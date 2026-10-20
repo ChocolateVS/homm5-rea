@@ -9,12 +9,11 @@ public static class BattleAiRegistry
     public const string Original = "original", Greedy = "greedy";
     public static readonly string[] Names = { Original, Greedy };
 
-    /// <summary><paramref name="difficulty"/> is the game difficulty (the enum order is the script scale 0..3).</summary>
     public static IBattleAI Create(string? name = null, AiDifficulty difficulty = AiDifficulty.Normal) =>
         (name ?? Original).ToLowerInvariant() switch
         {
             Greedy => new GreedyBattleAI(),
-            Original => new OriginalBattleAI { GameDifficulty = (int)difficulty },
+            Original => new OriginalBattleAI { Difficulty = difficulty },
             var other => throw new ArgumentException($"unknown combat AI '{other}' (expected {string.Join("/", Names)})"),
         };
 

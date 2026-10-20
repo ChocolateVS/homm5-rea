@@ -4,7 +4,8 @@ using H5.Core.Data;
 
 namespace H5.Adventure.Engine;
 
-// Experience and level-ups (fan manual "Hero Development", p.294-298).
+// Experience and level-ups per H5_Game.exe: level-up driver 00b52b10, offer generator 00b52810, confirm 00b575d0,
+// on-learn effects 00b54770 (undone by 00b55d80).
 public sealed partial class Adventure
 {
     public const int MaxSkills = 6;
@@ -21,19 +22,21 @@ public sealed partial class Adventure
             LevelUp(h);
     }
 
+    /// <summary>
+    /// One level (00b52b10 rolls the attribute with hero vfunc 0x308(0, 1) and the offer with 00b52810; 00b575d0 adds
+    /// the attribute, sets the level, learns the choice and re-applies Enlightenment). The attribute is applied here
+    /// at once and the choice later (<see cref="DoChooseLevelUp"/>); the exe rolls each level after the previous choice.
+    /// </summary>
     void LevelUp(HeroState h)
     {
         h.Level++;
         var offer = new LevelUpOffer { NewLevel = h.Level };
-        // Primary attribute by class probability (HeroClass.xdb AttributeProbs, p.294).
-        // TODO(exe): Enlightenment's extra attribute points every few levels.
-        if (Core.HeroClasses.TryGetValue(h.Class, out var cls))
+        if (Core.HeroClasses.ContainsKey(h.Class))
         {
-            string[] names = { "Attack", "Defence", "SpellPower", "Knowledge" };
-            int pick = PickWeighted(cls.AttributeChances);
-            offer.Attribute = names[Math.Max(0, pick)];
+            offer.Attribute = RollLevelUpAttribute(h);
             AddStat(h, offer.Attribute, 1);
         }
+        ApplyLearningBonus(h);
         BuildOffer(h, offer);
         if (offer.Skills.Count + offer.Perks.Count > 0)
         {
@@ -43,83 +46,195 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// Up to two skills (one new, one improvement) and two perks (one common, one class-specific);
-    /// missing categories are replaced by a second option of the other kind within skills or perks,
-    /// never across (p.294). New skills are drawn with the class probabilities rescaled over unknown
-    /// skills; improvements and perks are uniform (p.295).
+    /// Hero vfunc 0x308 = 00b50a50 with (no RNG override, limit on): class AttributeProbs (Offence, Defence, Spellpower,
+    /// Knowledge at class +0x20..+0x2c) drawn by 00b509b0 (r = rand[0, sum - 1], first cumulative weight above r). A
+    /// Spellpower roll gives Knowledge instead unless Spellpower &gt; 2 or Knowledge + 1 &lt;= 4 * Spellpower (hero +0x3c /
+    /// +0x38, read as the base Spellpower / Knowledge in HeroAttribute order). No weight at all reads Defence (switch default).
     /// </summary>
-    void BuildOffer(HeroState h, LevelUpOffer offer)
+    string RollLevelUpAttribute(HeroState h)
     {
-        var known = h.Skills.Where(s => s.Mastery > Mastery.None).ToDictionary(s => s.SkillId, s => s.Mastery);
-        var probs = Db.SkillProbs.GetValueOrDefault(h.Class) ?? new();
-        var newPool = probs.Where(p => !known.ContainsKey(p.Skill) && p.Prob > 0).ToList();
-        var improvePool = known.Where(k => k.Value < Mastery.Expert).Select(k => k.Key).OrderBy(k => k, StringComparer.Ordinal).ToList();
-        bool slotFree = known.Count < MaxSkills;
-
-        string? DrawNew(IList<(string Skill, int Prob)> pool)
+        var w = Core.HeroClasses.TryGetValue(h.Class, out var cls) ? cls.AttributeChances : new int[4];
+        int pick = -1, sum = w.Sum();
+        if (sum > 0)
         {
-            if (!slotFree || pool.Count == 0) return null;
-            int i = PickWeighted(pool.Select(p => p.Prob).ToList());
-            var s = pool[i].Skill;
-            pool.RemoveAt(i);
-            return s;
+            int r = S.Rng.Next(sum), acc = 0;
+            for (int i = 0; i < w.Length && pick < 0; i++) if (r < (acc += w[i])) pick = i;
         }
-        string? DrawImprove(IList<string> pool)
-        {
-            if (pool.Count == 0) return null;
-            int i = S.Rng.Next(pool.Count);
-            var s = pool[i];
-            pool.RemoveAt(i);
-            return s;
-        }
+        return LevelUpAttribute(pick, h.SpellPower, h.Knowledge);
+    }
 
-        var n1 = DrawNew(newPool);
-        var i1 = DrawImprove(improvePool);
-        if (i1 == null) n1 ??= DrawNew(newPool);
-        var n2 = i1 == null ? DrawNew(newPool) : null;
-        var i2 = n1 == null ? DrawImprove(improvePool) : null;
-        foreach (var s in new[] { n1, n2 }.Where(s => s != null)) offer.Skills.Add(new SkillEntry(s!, Mastery.Basic));
-        foreach (var s in new[] { i1, i2 }.Where(s => s != null)) offer.Skills.Add(new SkillEntry(s!, known[s!] + 1));
+    /// <summary>00b50a50's result for the drawn AttributeProbs index (-1: none).</summary>
+    public static string LevelUpAttribute(int pick, int spellPower, int knowledge) => pick switch
+    {
+        0 => "Attack",
+        2 => spellPower > 2 || knowledge + 1 <= spellPower * 4 ? "SpellPower" : "Knowledge",
+        3 => "Knowledge",
+        _ => "Defence",
+    };
 
-        var common = EligiblePerks(h, known, special: false);
-        var adv = EligiblePerks(h, known, special: true);
-        string? Take(List<string> pool)
+    /// <summary>
+    /// Enlightenment (00b54770 case 3, run on learning the skill and on every level-up by 00b575d0): the hero holds
+    /// level / max(2, 5 - mastery) (00b4bea0; Basic every 4 levels, Advanced 3, Expert 2) extra primary stats, each drawn
+    /// as a level-up attribute (vfunc 0x308) and remembered (+0x2b0) so that 00b55d80 can take the newest back.
+    /// </summary>
+    void ApplyLearningBonus(HeroState h)
+    {
+        int target = LearningBonus(h);
+        while (h.LearningStats.Count < target)
         {
-            if (pool.Count == 0) return null;
-            int i = S.Rng.Next(pool.Count);
-            var p = pool[i];
-            pool.RemoveAt(i);
-            return p;
+            var stat = RollLevelUpAttribute(h);
+            h.LearningStats.Add(stat);
+            AddStat(h, stat, 1);
         }
-        var c1 = Take(common);
-        var a1 = Take(adv);
-        if (c1 == null) a1 ??= Take(adv);
-        var c2 = a1 == null ? Take(common) : null;
-        var a2 = c1 == null ? Take(adv) : null;
-        foreach (var p in new[] { c1, c2, a1, a2 }.Where(p => p != null)) offer.Perks.Add(p!);
+    }
+
+    int LearningBonus(HeroState h)
+    {
+        int mastery = (int)RawMastery(h, "HERO_SKILL_LEARNING");
+        return mastery <= 0 ? 0 : h.Level / Math.Max(2, 5 - mastery);
+    }
+
+    /// <summary>00b55d80 case 3: drop the newest Enlightenment stats until no more than the current bonus remain.</summary>
+    void RevokeLearningBonus(HeroState h)
+    {
+        int target = LearningBonus(h);
+        while (h.LearningStats.Count > target)
+        {
+            var stat = h.LearningStats[^1];
+            h.LearningStats.RemoveAt(h.LearningStats.Count - 1);
+            AddStat(h, stat, -1);
+        }
     }
 
     /// <summary>
-    /// Perks a hero may be offered: parent skill known, fewer perks taken in that branch than the
-    /// branch's mastery level (Basic allows 1, Advanced 2, Expert 3), and the class prerequisites met.
-    /// Standard perks are common to all classes; special and class perks need the hero's class listed.
+    /// 00875410: the Barbarian copies of standard perks count as the original (BARBARIAN_LEARNING = LEARNING, ...) when the
+    /// hero's skill list is searched (00b4d0b0) and when the on-learn effect is chosen (00b54770).
     /// </summary>
-    List<string> EligiblePerks(HeroState h, Dictionary<string, Mastery> known, bool special)
+    static string CanonicalSkill(string id) => id switch
     {
-        var list = new List<string>();
-        foreach (var p in Db.Perks.Values.OrderBy(p => p.Id, StringComparer.Ordinal))
+        "HERO_SKILL_BARBARIAN_LEARNING" => "HERO_SKILL_LEARNING",
+        "HERO_SKILL_BARBARIAN_ANCIENT_SMITHY" => "HERO_SKILL_ANCIENT_SMITHY",
+        "HERO_SKILL_BARBARIAN_WEAKENING_STRIKE" => "HERO_SKILL_WEAKENING_STRIKE",
+        "HERO_SKILL_BARBARIAN_SOIL_BURN" => "HERO_SKILL_SOIL_BURN",
+        "HERO_SKILL_BARBARIAN_FOG_VEIL" => "HERO_SKILL_FOG_VEIL",
+        "HERO_SKILL_BARBARIAN_INTELLIGENCE" => "HERO_SKILL_INTELLIGENCE",
+        "HERO_SKILL_BARBARIAN_MYSTICISM" => "HERO_SKILL_MYSTICISM",
+        "HERO_SKILL_BARBARIAN_ELITE_CASTERS" => "HERO_SKILL_ELITE_CASTERS",
+        "HERO_SKILL_BARBARIAN_STORM_WIND" => "HERO_SKILL_STORM_WIND",
+        "HERO_SKILL_BARBARIAN_FIRE_PROTECTION" => "HERO_SKILL_FIRE_PROTECTION",
+        "HERO_SKILL_BARBARIAN_SUN_FIRE" => "HERO_SKILL_SUN_FIRE",
+        "HERO_SKILL_BARBARIAN_DISTRACT" => "HERO_SKILL_DISTRACT",
+        "HERO_SKILL_BARBARIAN_DARK_REVELATION" => "HERO_SKILL_DARK_REVELATION",
+        "HERO_SKILL_BARBARIAN_MENTORING" => "HERO_SKILL_MENTORING",
+        _ => id,
+    };
+
+    /// <summary>00b4d0b0: stored mastery of a skill (a perk the hero has reads 1), matching Barbarian copies.</summary>
+    static Mastery RawMastery(HeroState h, string id)
+    {
+        foreach (var s in h.Skills)
+            if (s.Mastery > Mastery.None && (s.SkillId == id || CanonicalSkill(s.SkillId) == id)) return s.Mastery;
+        foreach (var p in h.Perks)
+            if (p == id || CanonicalSkill(p) == id) return Mastery.Basic;
+        return Mastery.None;
+    }
+
+    /// <summary>
+    /// 00b52810: skill 1 is a new skill (00b50db0); without one, two upgrades (00b4f400, the second excluding the
+    /// first); with one, an upgrade, or a second new skill when nothing can be upgraded. Perk 1 is a standard perk
+    /// (00b4f5c0(-, 1, 0)), else any perk; perk 2 a special perk (00b4f5c0(perk 1, 0, 1)), else any perk but perk 1.
+    /// </summary>
+    void BuildOffer(HeroState h, LevelUpOffer offer)
+    {
+        var n1 = DrawNewSkill(h, null);
+        if (n1 == null)
         {
-            if (p.IsSkill || p.IsUltimate || h.Perks.Contains(p.Id)) continue;
-            if (special != (p.IsSpecialPerk || p.IsClassPerk)) continue;
-            if (!known.TryGetValue(p.BasicSkill, out var mastery)) continue;
+            var u1 = DrawUpgrade(h, null);
+            if (u1 != null) offer.Skills.Add(new SkillEntry(u1, RawMastery(h, u1) + 1));
+            var u2 = DrawUpgrade(h, u1);
+            if (u2 != null) offer.Skills.Add(new SkillEntry(u2, RawMastery(h, u2) + 1));
+        }
+        else
+        {
+            offer.Skills.Add(new SkillEntry(n1, Mastery.Basic));
+            var u = DrawUpgrade(h, null);
+            if (u != null) offer.Skills.Add(new SkillEntry(u, RawMastery(h, u) + 1));
+            else if (DrawNewSkill(h, n1) is { } n2) offer.Skills.Add(new SkillEntry(n2, Mastery.Basic));
+        }
+
+        var candidates = PerkCandidates(h);
+        var p1 = DrawPerk(candidates, null, standard: true, special: false) ?? DrawPerk(candidates, null, true, true);
+        if (p1 != null) offer.Perks.Add(p1);
+        var p2 = DrawPerk(candidates, p1, standard: false, special: true) ?? DrawPerk(candidates, p1, true, true);
+        if (p2 != null) offer.Perks.Add(p2);
+    }
+
+    /// <summary>The hero's skills (hero vfunc 0x17c = 00b4f020: list entries of type skill with mastery &gt; 0).</summary>
+    List<string> KnownSkills(HeroState h) =>
+        h.Skills.Where(s => s.Mastery > Mastery.None && (!Db.Perks.TryGetValue(s.SkillId, out var d) || d.IsSkill)).Select(s => s.SkillId).ToList();
+
+    /// <summary>
+    /// 00b50db0: none once the hero has six skills. Candidates (00875e20) are the skills without a hero class in
+    /// enum order, then the hero's racial skill (00875550); those the hero does not know and other than
+    /// <paramref name="except"/>. 00b50be0 weighs them by the class SkillsProbs (0 when not listed) and draws
+    /// with 00b509b0; when every weight is 0 it returns the first candidate.
+    /// </summary>
+    string? DrawNewSkill(HeroState h, string? except)
+    {
+        if (KnownSkills(h).Count > MaxSkills - 1) return null;
+        var list = Db.Perks.Values.Where(d => d.IsSkill && (d.HeroClass.Length == 0 || d.HeroClass == "HERO_CLASS_NONE"))
+            .OrderBy(d => d.Index).Select(d => d.Id).ToList();
+        if (RacialSkills.GetValueOrDefault(h.Town) is { } racial) list.Add(racial);
+        var cands = list.Where(s => RawMastery(h, s) == Mastery.None && s != except).ToList();
+        if (cands.Count == 0) return null;
+        var probs = Db.SkillProbs.GetValueOrDefault(h.Class) ?? new();
+        var weights = cands.Select(s => probs.FirstOrDefault(p => p.Skill == s).Prob).ToList();
+        return cands[PickWeighted(weights)];
+    }
+
+    /// <summary>00b4f400: a uniform pick (00b4f2f0) among the hero's skills below Expert, other than <paramref name="except"/>.</summary>
+    string? DrawUpgrade(HeroState h, string? except)
+    {
+        var pool = KnownSkills(h).Where(s => RawMastery(h, s) < Mastery.Expert && s != except).ToList();
+        return pool.Count == 0 ? null : pool[S.Rng.Next(pool.Count)];
+    }
+
+    /// <summary>
+    /// 00b4f5c0: a uniform pick among the open perks other than <paramref name="except"/>; types 1 (standard) and 3
+    /// (class) are allowed by <paramref name="standard"/>, types 2 (special) and 4 (ultimate) by <paramref name="special"/>.
+    /// </summary>
+    string? DrawPerk(List<PerkDef> candidates, string? except, bool standard, bool special)
+    {
+        var pool = candidates.Where(p => p.Id != except && ((p.IsStandardPerk || p.IsClassPerk) ? standard : special)).ToList();
+        return pool.Count == 0 ? null : pool[S.Rng.Next(pool.Count)].Id;
+    }
+
+    /// <summary>
+    /// The perks 00b50ff0 leaves open in the hero's list. Unlocked (00876160 -> 008766a0 -> 00875b30): a perk of a skill
+    /// the hero knows that he does not have; standard always, class perk when its HeroClass is the hero's, special and
+    /// ultimate when Skills.xdb SkillPrerequisites has an entry for the hero's class whose every dependency he knows
+    /// (00875a40). Locked (00875f20): the hero has as many perks of that skill as its mastery (vfunc 0x174, the Pendant
+    /// of Mastery adds 1 to the racial skill), the limit being 4 for perks with a hero class once the skill is Expert.
+    /// </summary>
+    public List<string> OpenPerks(HeroState h) => PerkCandidates(h).Select(p => p.Id).ToList();
+
+    List<PerkDef> PerkCandidates(HeroState h)
+    {
+        var known = KnownSkills(h).Select(CanonicalSkill).ToHashSet();
+        var list = new List<PerkDef>();
+        foreach (var p in Db.Perks.Values.OrderBy(p => p.Index))
+        {
+            if (p.IsSkill || RawMastery(h, p.Id) > Mastery.None || !known.Contains(p.BasicSkill)) continue;
+            bool open = p.IsStandardPerk
+                || (p.IsClassPerk && p.HeroClass == h.Class)
+                || ((p.IsSpecialPerk || p.IsUltimate) && p.PrereqByClass.TryGetValue(h.Class, out var deps)
+                    && deps.All(d => RawMastery(h, d) > Mastery.None));
+            if (!open) continue;
+            int limit = EffectiveMastery(h, p.BasicSkill);
+            if (limit > 2 && p.HeroClass.Length > 0 && p.HeroClass != "HERO_CLASS_NONE") limit = 4;
             int taken = h.Perks.Count(id => Db.Perks.TryGetValue(id, out var d) && d.BasicSkill == p.BasicSkill);
-            if (taken >= (int)mastery) continue;
-            if (special)
-            {
-                if (!p.PrereqByClass.TryGetValue(h.Class, out var deps) && p.HeroClass != h.Class) continue;
-                if (deps != null && !deps.All(h.Perks.Contains)) continue;
-            }
-            list.Add(p.Id);
+            if (taken >= limit) continue;
+            list.Add(p);
         }
         return list;
     }
@@ -141,6 +256,7 @@ public sealed partial class Adventure
             h.Skills.RemoveAll(x => x.SkillId == s.SkillId);
             h.Skills.Add(s);
             Emit(new SkillLearned(h.Id, s.SkillId, s.Mastery));
+            ApplyPerkOnLearn(h, s.SkillId);
         }
         else
         {
@@ -160,18 +276,55 @@ public sealed partial class Adventure
         return null;
     }
 
-    /// <summary>One-time effects of perks when learned (p.298).</summary>
+    /// <summary>Primary stats a perk gives while known (00b54770 -> 00b4cbc0; undone by 00b55d80 -> vfunc 0x1bc).</summary>
+    static (string Stat, int Amount)? PerkStat(string perk) => CanonicalSkill(perk) switch
+    {
+        "HERO_SKILL_STUDENT_AWARD" or "HERO_SKILL_SECRETS_OF_DESTRUCTION" => ("Knowledge", 2),
+        "HERO_SKILL_LORD_OF_UNDEAD" => ("Knowledge", 1),
+        "HERO_SKILL_CASTER_CERTIFICATE" or "HERO_SKILL_MASTER_OF_SECRETS" or "HERO_SKILL_ACADEMY_AWARD" or "HERO_SKILL_INSIGHTS" => ("SpellPower", 2),
+        "HERO_SKILL_FOREST_GUARD_EMBLEM" => ("Attack", 2),
+        "HERO_SKILL_SEAL_OF_PROTECTION" or "HERO_SKILL_DEFEND_US_ALL" or "HERO_SKILL_BODYBUILDING" => ("Defence", 2),
+        _ => null,
+    };
+
+    /// <summary>
+    /// On-learn effects (00b54770, called by vfunc 0x1c8 after the skill/perk is stored): Enlightenment's stats; the
+    /// attribute perks of <see cref="PerkStat"/>; once per hero (flags never cleared): Graduate +1000 experience through
+    /// the experience modifiers (+0x2a8), Academy Award +1000 gold (+0x2a9), Dark Revelation (+0x2ab) - with L the level
+    /// of the current experience (00b4c840) and M the map's level cap: L + 1 &lt; M adds one level's width
+    /// (T(L + 1) - T(L)), L + 1 = M sets the experience to T(M), else nothing.
+    /// </summary>
     void ApplyPerkOnLearn(HeroState h, string perk)
     {
-        switch (perk)
+        var id = CanonicalSkill(perk);
+        if (id == "HERO_SKILL_LEARNING") { ApplyLearningBonus(h); return; }
+        if (PerkStat(id) is { } st) AddStat(h, st.Stat, st.Amount);
+        if (id is not ("HERO_SKILL_STUDENT_AWARD" or "HERO_SKILL_ACADEMY_AWARD" or "HERO_SKILL_DARK_REVELATION")) return;
+        if (!h.PerkRewardsClaimed.Add(id)) return;
+        switch (id)
         {
-            case "HERO_SKILL_STUDENT_AWARD":     // Graduate: +1000 experience once
+            case "HERO_SKILL_STUDENT_AWARD":
                 GainExperience(h, 1000);
                 break;
-            case "HERO_SKILL_DARK_REVELATION":   // Dark Revelation: a free level
-            case "HERO_SKILL_BARBARIAN_DARK_REVELATION":
-                GainExperience(h, Math.Max(0, Core.Experience.For(h.Level + 1) - h.Experience));
+            case "HERO_SKILL_ACADEMY_AWARD":
+                if (PlayerByIndex(h.Owner) is { } p) GiveOne(p, Purse.Gold, 1000);
                 break;
+            case "HERO_SKILL_DARK_REVELATION":
+            {
+                int maxLevel = Map.HeroMaxLevel > 0 ? Map.HeroMaxLevel : 40;
+                int l = Core.Experience.LevelFor(h.Experience);
+                if (l + 1 < maxLevel) GainExperience(h, Core.Experience.For(l + 1) - Core.Experience.For(l), modifiersApplied: true);
+                else if (l + 1 == maxLevel) GainExperience(h, Core.Experience.For(maxLevel) - h.Experience, modifiersApplied: true);
+                break;
+            }
         }
+    }
+
+    /// <summary>00b55d80 (Memory Mentor): takes back the stats of <see cref="ApplyPerkOnLearn"/>; one-time rewards stay.</summary>
+    void RevertOnUnlearn(HeroState h, string skill)
+    {
+        var id = CanonicalSkill(skill);
+        if (id == "HERO_SKILL_LEARNING") { RevokeLearningBonus(h); return; }
+        if (PerkStat(id) is { } st) AddStat(h, st.Stat, -st.Amount);
     }
 }

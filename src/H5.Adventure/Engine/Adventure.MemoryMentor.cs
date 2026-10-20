@@ -111,6 +111,7 @@ public sealed partial class Adventure
             else h.Skills[i] = new SkillEntry(skill, lower);
         }
         else h.Perks.Remove(skill);
+        RevertOnUnlearn(h, skill);
         Emit(new SkillLearned(h.Id, skill, def.IsSkill ? h.MasteryOf(skill) : Mastery.None));
         h.UnlearnedPoints++;
         h.RelearnOffer = new LevelUpOffer { NewLevel = h.Level };
@@ -137,6 +138,7 @@ public sealed partial class Adventure
                 h.Skills.RemoveAll(x => x.SkillId == s.SkillId);
                 h.Skills.Add(s);
                 Emit(new SkillLearned(h.Id, s.SkillId, s.Mastery));
+                ApplyPerkOnLearn(h, s.SkillId);
             }
             else
             {

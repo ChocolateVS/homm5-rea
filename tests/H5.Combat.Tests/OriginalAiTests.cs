@@ -33,13 +33,13 @@ public class OriginalAiTests(GameDataFixture f)
     }
 
     [Fact]
-    public void LosingAllOwnTroopsIsWorseOutsideKamikaze()   // FUN_00bfae20 0x00bfaf33..0x00bfaf57 (own half +0x68)
+    public void WipingOutEnemyTroopsBeatsEverythingOutsideKamikaze()
     {
         var st = CombatAiStats.Load(f.Db);
-        var lost = new CombatValue { My = new SideValue { TroopsHealth = 0, Damage = 500 }, Enemy = new SideValue() };
-        var alive = new CombatValue { My = new SideValue { TroopsHealth = 1, Damage = 1 }, Enemy = new SideValue { TroopsHealth = 1000, Damage = 500 } };
-        Assert.True(CombatValue.IsBetter(alive, lost, st.CompareCoefs, CombatMode.Normal));
-        Assert.False(CombatValue.IsBetter(lost, alive, st.CompareCoefs, CombatMode.Normal));
+        var wiped = new CombatValue { My = new SideValue { TroopsHealth = 10, Damage = 1 }, Enemy = new SideValue() };
+        var strong = new CombatValue { My = new SideValue { TroopsHealth = 1000, Damage = 500 }, Enemy = new SideValue { TroopsHealth = 1, Damage = 1 } };
+        Assert.True(CombatValue.IsBetter(wiped, strong, st.Normal, CombatMode.Normal));
+        Assert.False(CombatValue.IsBetter(strong, wiped, st.Normal, CombatMode.Normal));
     }
 
     [Fact]
@@ -75,6 +75,6 @@ public class OriginalAiTests(GameDataFixture f)
     {
         Assert.IsType<OriginalBattleAI>(BattleAiRegistry.Create());
         Assert.IsType<GreedyBattleAI>(BattleAiRegistry.Create("greedy"));
-        Assert.Equal(2, ((OriginalBattleAI)BattleAiRegistry.Create("original", AiDifficulty.Hard)).GameDifficulty);
+        Assert.Equal(AiDifficulty.Hard, ((OriginalBattleAI)BattleAiRegistry.Create("original", AiDifficulty.Hard)).Difficulty);
     }
 }

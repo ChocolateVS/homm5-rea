@@ -229,6 +229,10 @@ public sealed class HeroState
     public List<LevelUpOffer> PendingLevelUps = new();
     /// <summary>Memory Mentor: skill points forgotten and not yet relearned (hero +0x2a4) and the current relearn offer.</summary>
     public int UnlearnedPoints;
+    /// <summary>Primary stats granted by Enlightenment (HERO_SKILL_LEARNING), in order (exe hero +0x2b0 list).</summary>
+    public List<string> LearningStats = new();
+    /// <summary>One-time perk rewards already claimed (exe flags +0x2a8..+0x2ab, +0x2bc: Graduate, Academy Award, …).</summary>
+    public HashSet<string> PerkRewardsClaimed = new();
     public LevelUpOffer? RelearnOffer;
     public bool Alive = true;
     /// <summary>EnableHeroAI (CHero AI settings +0): an AI player's hero the AI moves; false leaves it to scripts.</summary>

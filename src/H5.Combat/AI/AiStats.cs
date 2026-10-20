@@ -41,14 +41,6 @@ public sealed class CombatAiStats
     public double OurShootersMinRelativePower { get; init; }
     public double OurShootersMinRelativeAdvantage { get; init; }
 
-    /// <summary>
-    /// The weights the position compare really uses (FUN_00bfae20 at 0x00bfaf5d..0x00bfaf8a): the mode switch falls through
-    /// every case (three calls of the AI/Combat getter, a single +0x80), so every mode reads PowerSavingMode
-    /// (RPGStats+0xbd0). The mode still decides the own-troops rule (skipped in kamikaze mode).
-    /// </summary>
-    public CombatModeCoefs CompareCoefs => PowerSaving;
-
-    /// <summary>The weighting row of a mode as the data defines it (not what the compare reads, see <see cref="CompareCoefs"/>).</summary>
     public CombatModeCoefs Coefs(CombatMode m) => m switch
     {
         CombatMode.Kamikaze => Kamikaze,

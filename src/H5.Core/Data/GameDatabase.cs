@@ -375,18 +375,36 @@ public sealed class GameDatabase
     }
 }
 
-/// <summary>Hero experience thresholds (Editor Documentation, HOMM5_Hero_Level_and_Experience.pdf).</summary>
+/// <summary>
+/// Hero experience thresholds as H5_Game.exe builds them (00b4c6b0, table at 01026d90 indexed by level): levels 1..12
+/// are the constants at 00f755e0; each later step is the previous step × 1.2 (00e12f1c) up to level 24, then
+/// × (level − 13) × 0.1 (00e12f10), rounded to nearest and clamped to [0, 2³¹−1]; level 41 and above read 2³¹−1.
+/// The products are single precision: D3D9 CreateDevice (00a3fe20, flags 0x50 / 0x20) is called without
+/// D3DCREATE_FPU_PRESERVE, so the x87 runs at 24-bit precision (only levels 37–40 depend on this). The Editor
+/// Documentation table (HOMM5_Hero_Level_and_Experience.pdf) used before is 1 lower from level 18 on and drifts.
+/// </summary>
 public sealed class ExperienceTable
 {
-    static readonly long[] _levels =
+    static readonly long[] _levels = Build();
+
+    static long[] Build()
     {
-        0, 1000, 2000, 3200, 4600, 6200, 8000, 10000, 12200, 14700, 17500, 20600, 24320, 28784, 34141, 40569,
-        48283, 57539, 68647, 81977, 97972, 117166, 140200, 167839, 201007, 244126, 304491, 395040, 539917, 786208,
-        1229533, 2071850, 3756484, 7294215, 15077224, 32978144, 75940353, 183345874, 462600229, 1216586989,
-    };
+        int[] first = { 0, 1000, 2000, 3200, 4600, 6200, 8000, 10000, 12200, 14700, 17500, 20600 };
+        var t = new long[40];
+        for (int i = 0; i < first.Length; i++) t[i] = first[i];
+        int step = first[^1] - first[^2], total = first[^1];
+        for (int level = 13; level <= 40; level++)
+        {
+            float x = level <= 24 ? (float)step * 1.2f : (float)(level - 13) * (float)step * 0.1f;
+            step = (int)MathF.Round(x, MidpointRounding.ToEven);
+            total = (int)Math.Clamp((long)total + step, 0, int.MaxValue);
+            t[level - 1] = total;
+        }
+        return t;
+    }
 
     /// <summary>Experience needed for a level (1-based).</summary>
-    public long For(int level) => _levels[Math.Clamp(level, 1, _levels.Length) - 1];
+    public long For(int level) => level > _levels.Length ? int.MaxValue : _levels[Math.Max(level, 1) - 1];
 
     public int LevelFor(long exp)
     {
