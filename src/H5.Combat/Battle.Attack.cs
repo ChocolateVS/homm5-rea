@@ -326,6 +326,8 @@ public sealed partial class Battle
                 CellsWalked = hit.CellsWalked, Multiplier = hit.Multiplier, Secondary = !primary,
                 FixedRoll = hit.FixedRoll, IgnoreDefence = hit.IgnoreDefence, TotalRoll = chainRolls?[ti] ?? sharedRoll ?? hit.TotalRoll,
             };
+            if (h.TotalRoll == null && HasAbilityNow(a, Ab.StormStrike)) h.TotalRoll = BaseDamageRoll(a, target, h, ranged);
+            stormStrikeHit = (h.TotalRoll ?? 0, luckMult, h.Kind);   // exe 00a68348: Storm Strike reuses this roll and luck
             int dmg = ComputeDamage(a, target, h, ranged, luckMult);
             // The pattern share is applied to the already truncated damage and truncated again (exe 00a67bf3).
             if (factor != 1) dmg = (int)(dmg * (float)factor);
@@ -879,7 +881,7 @@ public sealed partial class Battle
         if (MicroArtifacts.Bonus(a, MicroEffect.ArmorCrushing) is var crush && crush > 0)
             AddEffect(t, new Effect { Id = MicroArtifacts.ArmorCrushingEffect, Value = Fx(t, MicroArtifacts.ArmorCrushingEffect) + crush, SourceSide = a.Side, SourceUnit = a.Id });
         if (HasAbilityNow(a, Ab.StormStrike) && melee)
-            StormStrikeChain(a, t, dmg);
+            StormLightning(a, t, stormStrikeHit.Roll, stormStrikeHit.Luck, stormStrikeHit.Kind);
         // Bear Roar only fires while the struck target would still retaliate (exe FUN_00a5e800 checks *param_2).
         if (HasAbilityNow(a, Ab.BearRoar) && melee && !retaliation && !stunned && CanRetaliate(t, a))
         {
@@ -906,24 +908,6 @@ public sealed partial class Battle
             var cells = t.Cells().ToList();
             AddField("LIQUID_FLAME", a.Side, cells, Stats.Get("combat/Creatures/Fortress/LiquidFlameBreath_MinDuration", 2),
                 Stats.Get("combat/Creatures/Fortress/LiquidFlameBreath_DamagePerCreature", 10) * a.Count, a.Id);
-        }
-    }
-
-    /// <summary>Thane Storm Strike: lightning chain from the target through adjacent enemies, same force as the attack (p.181).</summary>
-    void StormStrikeChain(Unit a, Unit t, int dmg)
-    {
-        var hitIds = new HashSet<int> { t.Id };
-        var cur = t;
-        int force = dmg;
-        Emit(new AbilityTriggered(a.Id, Ab.StormStrike, t.Id));
-        for (int i = 0; i < 10 && force > 0; i++)
-        {
-            var next = S.Living.Where(o => Controller(o) != Controller(a) && !o.IsObject && !hitIds.Contains(o.Id) && AreAdjacent(o, cur))
-                .OrderBy(o => o.Id).FirstOrDefault();
-            if (next == null) break;
-            hitIds.Add(next.Id);
-            DealDamage(next, force, a.Id, AttackKind.Ability, Ab.StormStrike);
-            cur = next;
         }
     }
 
@@ -1148,11 +1132,13 @@ public sealed partial class Battle
     void EndOfTurnFieldDamage(Unit u)
     {
         if (!u.Alive) return;
-        foreach (var f in S.Fields.Where(f => (f.Kind is "FIREWALL" or "LIQUID_FLAME") && f.Cells.Any(u.Occupies)).ToList())
+        // Firewall never hits a stack standing in it (exe: its field interface vtable 00e61818 deals damage only from the
+        // cast FUN_0085b790 and from movement / placement FUN_0085bfe0 / FUN_0085c0c0 → FUN_0085b530; its turn tick
+        // FUN_0098a950 only counts the duration down) — see combat_sweep_8.md.
+        foreach (var f in S.Fields.Where(f => f.Kind == "LIQUID_FLAME" && f.Cells.Any(u.Occupies)).ToList())
         {
             if (!u.Alive) break;
-            if (f.Kind == "FIREWALL") FirewallHit(u, f);
-            else DealElementalDamage(u, (int)f.Damage, Elements.Fire, f.SourceUnit, Ab.LiquidFlameBreath);
+            DealElementalDamage(u, (int)f.Damage, Elements.Fire, f.SourceUnit, Ab.LiquidFlameBreath);
         }
     }
 

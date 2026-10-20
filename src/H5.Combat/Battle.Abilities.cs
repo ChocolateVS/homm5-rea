@@ -550,9 +550,9 @@ public sealed partial class Battle
             {
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
                 u.AbilityUses[c.Ability] = 1;
-                int dmg = ComputeDamage(u, t, new Hit { Kind = AttackKind.Ability }, ranged: false);
-                DealDamage(t, dmg, u.Id, AttackKind.Ability, c.Ability);
-                if (t.Alive) StormStrikeChain(u, t, dmg);
+                // exe FUN_00a60b60: one base roll, then the Storm Strike lightning (FUN_00a608d0) with luck 1.0.
+                var bolt = new Hit { Kind = AttackKind.Ability };
+                StormLightning(u, t, BaseDamageRoll(u, t, bolt, ranged: false), 1, AttackKind.Ability);
                 break;
             }
             case Ab.CallStorm:
