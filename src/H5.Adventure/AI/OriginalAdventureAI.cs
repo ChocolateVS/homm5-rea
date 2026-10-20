@@ -327,17 +327,22 @@ public sealed partial class OriginalAdventureAI
     {
         double myPower = g.ArmyPower(h.Army.Live(), h);
         int? remembered = _lastTarget.ContainsKey(h.Id) && _lastCost.TryGetValue(h.Id, out int lc) ? lc : null;
-        foreach (int limit in SearchLimits(role, diff, remembered, h.MovePoints, PlayerInDanger(g, h.Owner)))
+        var limits = SearchLimits(role, diff, remembered, h.MovePoints, PlayerInDanger(g, h.Owner));
+        // The wave spread (exe FUN_00c08be0 from 0086c010): one flood of the hero's path costs up to the widest limit;
+        // each attempt keeps the destinations within its own limit.
+        var costs = g.ReachableCosts(h, limits.Max());
+        var danger = diff.CheckHeroesDanger ? DangerTiles(g, h, st, myPower) : new HashSet<Tile>();
+        foreach (int limit in limits)
         {
-            var best = ChooseWithin(g, h, diff, st, claimed, myPower, limit);
+            var best = ChooseWithin(g, h, diff, st, claimed, myPower, limit, costs, danger);
             if (best != null && g.FindPath(h, best.Value.Tile) != null) return best;
         }
         return SeaTravel(g, h, myPower, diff, st, claimed);
     }
 
-    Destination? ChooseWithin(Engine.Adventure g, HeroState h, AdventureDifficulty diff, AdventureAiStats st, HashSet<int> claimed, double myPower, int maxCost)
+    Destination? ChooseWithin(Engine.Adventure g, HeroState h, AdventureDifficulty diff, AdventureAiStats st, HashSet<int> claimed, double myPower, int maxCost,
+                              Dictionary<Tile, int> costs, HashSet<Tile> danger)
     {
-        var dangers = diff.CheckHeroesDanger ? EnemyDangers(g, h, st) : new List<(Tile Pos, int Reach, double Power)>();
         var rng = new Rng(Mix(g.S.Rng.S0, (ulong)g.S.Day, (ulong)h.Owner, (ulong)h.Id));
         Destination? best = null;
         int bestState = 0;
@@ -361,18 +366,15 @@ public sealed partial class OriginalAdventureAI
             else if (attract == 1) value += st.SearchPositiveAttractorValue;
             if (value <= 0 && state == 0) continue;
             var tile = o.Kind is ObjectKind.Monster or ObjectKind.Hero ? o.Pos : o.ActiveTiles.FirstOrDefault(o.Pos);
-            int d = Math.Max(Math.Abs(tile.X - h.Pos.X), Math.Abs(tile.Y - h.Pos.Y));
-            if (d == 0) continue;
-            // GAP: the exe's cost is the pathfinder's move cost to the destination; approximated here.
-            int cost = d * st.SearchAverageTerrainCost;
-            if (cost > maxCost) continue;
+            // Move cost = the flood's path cost to the destination tile (record +0x18); unreached tiles are not found.
+            if (tile == h.Pos || !costs.TryGetValue(tile, out int cost) || cost > maxCost) continue;
             if (state == 0)
             {
                 // Guards on the way: never walk into a stack we would lose to (reconstructed).
                 if (o.Kind != ObjectKind.Monster && g.GuardingMonster(tile) is { } guard &&
                     g.S.Objects.TryGetValue(guard.Index, out var gs) && g.ArmyPower(gs.Guards, null) > myPower * (1 - diff.CowardiceVersusComputer)) continue;
-                // Danger zones of stronger enemy heroes (FUN_00872330 reach; the flood fill is approximated).
-                if (dangers.Any(z => z.Power > myPower && Math.Max(Math.Abs(z.Pos.X - tile.X), Math.Abs(z.Pos.Y - tile.Y)) * st.SearchAverageTerrainCost <= z.Reach)) continue;
+                // Danger zones of stronger enemy heroes (FUN_00872330 reach flooded over their path costs).
+                if (danger.Contains(tile)) continue;
             }
             // GAP-detail: whether state-3 destinations skip the danger checks is not traced (they do here).
             long v = (long)value;
@@ -397,6 +399,19 @@ public sealed partial class OriginalAdventureAI
         int p = AiAttractor.Get(h.AiAttractors, o.Name);
         if (p == 0 && h.Owner >= 0 && g.Player(h.Owner) is { } pl) p = AiAttractor.Get(pl.AiAttractors, o.Name);
         return p;
+    }
+
+    /// <summary>Value standing for a negative state (a refused fight): never chosen unless an attractor sets state 3.</summary>
+    const double Refused = -1e15;
+
+    /// <summary>No human player in the game has explored the tile (exe FUN_0098dbf0: player vf 0x19c(floor) fog byte).</summary>
+    public static bool UnseenByHumans(Engine.Adventure g, Tile t)
+    {
+        var f = g.Map.Floor(t.Floor);
+        if (f == null) return true;
+        foreach (var p in g.S.Players)
+            if (p.Alive && p.Human && t.Floor < p.Explored.Count && p.Explored[t.Floor][t.Y * f.Width + t.X]) return false;
+        return true;
     }
 
     /// <summary>Gold-equivalent value of visiting an object, using the AI/Adventure ValueOf* tunables.</summary>
@@ -425,10 +440,9 @@ public sealed partial class OriginalAdventureAI
                 return h.Spells.Count < 64 ? st.ValueOfSpellPerLevel * 2 : 0;
             case ObjectKind.Monster:
             {
+                // Exe provider 004eee00 → FUN_00bc3af0 (see MonsterFightValue); a refused fight is state −1.
                 if (os == null) return 0;
-                double enemy = g.ArmyPower(os.Guards, null);
-                if (enemy * (1 + diff.CowardiceVersusComputer) >= myPower * diff.AttackComputerAggressivityCoef) return 0;
-                return enemy * 0.5;
+                return MonsterFightValue(g, st, diff, h, os.Guards, UnseenByHumans(g, o.Pos)) ?? Refused;
             }
             case ObjectKind.Town:
             {
@@ -459,14 +473,23 @@ public sealed partial class OriginalAdventureAI
         }
     }
 
-    /// <summary>Enemy heroes with their danger reach (exe FUN_00872330: movePoints·mult + bonus) and army power.</summary>
-    static List<(Tile Pos, int Reach, double Power)> EnemyDangers(Engine.Adventure g, HeroState h, AdventureAiStats st)
+    /// <summary>
+    /// Tiles in reach of a stronger enemy hero: its path-cost flood up to reach = move points ·
+    /// SearchDangerEnemyMobilityMultiplier + SearchDangerEnemyMobilityBonus (exe FUN_00872330). GAP-detail: which
+    /// heroes count as dangerous (here: army power above ours) is reconstructed.
+    /// </summary>
+    static HashSet<Tile> DangerTiles(Engine.Adventure g, HeroState h, AdventureAiStats st, double myPower)
     {
         var team = g.S.Players[h.Owner].Team;
-        return g.S.Heroes.Where(x => x.Alive && x.Owner >= 0 && x.Owner != h.Owner && g.S.Players[x.Owner].Team != team && x.Pos.Floor == h.Pos.Floor)
-            .Select(x => (x.Pos, (int)Math.Round(x.MaxMovePoints * st.SearchDangerEnemyMobilityMultiplier + st.SearchDangerEnemyMobilityBonus),
-                          g.ArmyPower(x.Army.Live(), x)))
-            .ToList();
+        var set = new HashSet<Tile>();
+        foreach (var x in g.S.Heroes)
+        {
+            if (!x.Alive || x.Owner < 0 || x.Owner == h.Owner || g.S.Players[x.Owner].Team == team || x.Pos.Floor != h.Pos.Floor || x.Garrisoned) continue;
+            if (g.ArmyPower(x.Army.Live(), x) <= myPower) continue;
+            int reach = (int)Math.Round(x.MaxMovePoints * st.SearchDangerEnemyMobilityMultiplier + st.SearchDangerEnemyMobilityBonus);
+            set.UnionWith(g.ReachableCosts(x, reach).Keys);
+        }
+        return set;
     }
 
     static ulong Mix(params ulong[] parts)

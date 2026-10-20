@@ -56,6 +56,9 @@ public sealed class AdventureAiStats
     public int ValueOfGrailMin { get; init; }
     public int ValueOfHeroLevelPow2 { get; init; }
     public int ValueOfHero { get; init; }
+    /// <summary>SiegeShootersCoef (+0x2e0) / SiegeFlyerCoef (+0x2f4), read by the army sum 004ea5c0.</summary>
+    public double SiegeShootersCoef { get; init; }
+    public double SiegeFlyerCoef { get; init; }
 
     public static AdventureAiStats Load(GameDatabase db)
     {
@@ -119,6 +122,7 @@ public sealed class AdventureAiStats
             ValueOfGrailMin = I("ValueOfGrailMin", 100),
             ValueOfHeroLevelPow2 = I("ValueOfHeroLevelPow2", 1000),
             ValueOfHero = I("ValueOfHero", 250),
+            SiegeShootersCoef = D("SiegeShootersCoef", 2), SiegeFlyerCoef = D("SiegeFlyerCoef", 2),
         };
     }
 

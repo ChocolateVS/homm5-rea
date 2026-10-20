@@ -216,4 +216,39 @@ public class AiAuditTests(Fixture f)
         Assert.Equal(new[] { 1500, 3000, 6000, 12000, 24000, 48000 }, OriginalAdventureAI.SearchLimits(HeroRole.Freelancer, diff, 100, 1000, false));
         Assert.Equal(new[] { 32000 }, OriginalAdventureAI.SearchLimits(HeroRole.Freelancer, diff, null, 2000, true));
     }
+
+    [Fact]
+    public void Fight_estimate_uses_power_sums_square_law_survival_and_experience_value()
+    {
+        var g = f.NewGame("A2M1", 5);
+        var st = AdventureAiStats.Load(f.Core);
+        var diff = st.Difficulty[1] with { ArmyPowerCoefBonusPerHeroLevel = 0.1 };
+        // 004ea520: the level factor is truncated: 1 below level 10, 2 from level 10.
+        Assert.Equal(1, OriginalAdventureAI.HeroLevelFactor(new HeroState { Level = 9 }, diff));
+        Assert.Equal(2, OriginalAdventureAI.HeroLevelFactor(new HeroState { Level = 10 }, diff));
+        // 00bc3f90: Lanchester survival, quartered losses when no human sees the tile.
+        Assert.Equal(1.0, OriginalAdventureAI.Survival(100, 10, false));
+        Assert.Equal(System.Math.Sqrt(3) / 2, OriginalAdventureAI.Survival(2, 1, false), 12);
+        Assert.Equal(1 - (1 - System.Math.Sqrt(3) / 2) * 0.25, OriginalAdventureAI.Survival(2, 1, true), 12);
+        // 004e9fe0: ValueOfHeroLevelPow2 · (level + progress)².
+        Assert.Equal(st.ValueOfHeroLevelPow2, OriginalAdventureAI.LevelValue(g, st, 0));
+        Assert.Equal((long)(st.ValueOfHeroLevelPow2 * 1.5 * 1.5), OriginalAdventureAI.LevelValue(g, st, 500));
+        // 00bc3af0 for a monster with no rival armies (m = 0): the experience value of the kill.
+        int me = g.Current.Index;
+        g.S.Heroes.RemoveAll(x => x.Owner != me);
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == me);
+        h.Level = 1; h.Experience = 0;
+        System.Array.Fill(h.Army, null);
+        h.Army[0] = new Stack("CREATURE_ARCHANGEL", 10);
+        var peasants = new List<Stack> { new("CREATURE_PEASANT", 20) };
+        var c = f.Core.Creatures["CREATURE_PEASANT"];
+        int gained = 20 * (c.Exp != 0 ? c.Exp : c.Health);
+        long expect = OriginalAdventureAI.LevelValue(g, st, gained) - OriginalAdventureAI.LevelValue(g, st, 0);
+        Assert.Equal(expect, OriginalAdventureAI.MonsterFightValue(g, st, diff, h, peasants, false));
+        // A ≤ E refuses (state −1).
+        Assert.Null(OriginalAdventureAI.MonsterFightValue(g, st, diff, h, new List<Stack> { new("CREATURE_ARCHANGEL", 10) }, false));
+        // Survival below 0.75 refuses: E = 0.7 A gives sqrt(1 − 0.49) ≈ 0.71.
+        int power = f.Core.Creatures["CREATURE_ARCHANGEL"].Power * 10, pp = System.Math.Max(1, c.Power);
+        Assert.Null(OriginalAdventureAI.MonsterFightValue(g, st, diff, h, new List<Stack> { new("CREATURE_PEASANT", power * 7 / 10 / pp) }, false));
+    }
 }
