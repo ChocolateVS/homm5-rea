@@ -218,6 +218,9 @@ public sealed class HeroState
     public bool DrankFromWellToday;
     /// <summary>Pending level-up choices; resolved one at a time with ChooseLevelUpCmd.</summary>
     public List<LevelUpOffer> PendingLevelUps = new();
+    /// <summary>Memory Mentor: skill points forgotten and not yet relearned (hero +0x2a4) and the current relearn offer.</summary>
+    public int UnlearnedPoints;
+    public LevelUpOffer? RelearnOffer;
     public bool Alive = true;
     /// <summary>EnableHeroAI (CHero AI settings +0): an AI player's hero the AI moves; false leaves it to scripts.</summary>
     public bool AiEnabled = true;

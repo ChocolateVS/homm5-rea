@@ -578,6 +578,36 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 break;
             }
+            case ObjectVisited { What: H5.Adventure.Engine.Adventure.MapTavern or H5.Adventure.Engine.Adventure.DenOfThieves or H5.Adventure.Engine.Adventure.DenOfThieves + ":captured" } tv when HumanCaused(player) && !Autoplay && s.Hero(tv.HeroId) is { } guest:
+            {
+                // Map tavern / den of thieves: the tavern screen (00639580 map mode / 00639740 thieves mode); a den
+                // changing owner first shows messagesFileRef[2] (00bca4f0).
+                bool den = tv.What != H5.Adventure.Engine.Adventure.MapTavern;
+                if (tv.What.EndsWith(":captured") && ObjectMessage(tv.Object, 2) is { Length: > 0 } capturedText)
+                    await Dialog(done => Message(ObjectTitle(tv.Object), capturedText, null, done));
+                Hud.Visible = false;
+                var tavern = new MapTavernScreen(this, guest.Id, tv.Object, den);
+                AddChild(tavern);
+                await ToSignal(tavern, Node.SignalName.TreeExited);
+                Hud.Visible = true;
+                Hud.Refresh();
+                break;
+            }
+            case ObjectVisited { What: H5.Adventure.Engine.Adventure.MemoryMentor } mv when HumanCaused(player) && !Autoplay && s.Hero(mv.HeroId) is { } pupil:
+            {
+                // Memory Mentor: the hero screen in its unlearn mode (006c4460); forgotten points are then spent on
+                // relearn offers (CRelearnHeroSkillCmd; the exe's relearn UI is not traced — the level-up box here).
+                var mentor = Hero.HeroScreen.OpenMentor(this, pupil);
+                await ToSignal(mentor, Node.SignalName.TreeExited);
+                while (pupil.UnlearnedPoints > 0 && pupil.RelearnOffer is { } offer)
+                {
+                    int pick = 0;
+                    await Dialog(done => AdvDialogs.LevelUp(_dialogLayer, pupil, offer, p => { pick = p; done(); }));
+                    if (!Session.Apply(new H5.Adventure.Engine.RelearnHeroSkillCmd(pupil.Id, pick) { Player = pupil.Owner }).Ok) break;
+                }
+                Hud.Refresh();
+                break;
+            }
             case ObjectVisited { What: "garrison" } gv when HumanCaused(player) && !Autoplay && s.Hero(gv.HeroId) is { } keeper:
             {
                 // Own garrison / mine: leave or take troops (exe 005a5d90 case 0x1c).

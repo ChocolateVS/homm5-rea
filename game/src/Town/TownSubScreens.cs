@@ -241,7 +241,8 @@ public sealed partial class TavernScreen : TownSubScreen
         Ui.Bus.On("click_hero1", () => { _slot = 0; Refresh(); });
         Ui.Bus.On("click_hero2", () => { _slot = 1; Refresh(); });
         Ui.Bus.On("rumors", () => Owner.Notice("Tavern", "There are no rumours this week."));
-        Ui.Bus.On("thiefs", () => Owner.Notice("Thieves' Guild", "The thieves have nothing to tell yet."));
+        // 00637b50: ThiefsBookmark needs a thieves' guild level > 0, which only the den of thieves passes.
+        if (Ui.Find("ThiefsBookmark") is { } thieves) thieves.Enabled = false;
         Ui.SetVisible("tavern-thieves-window", false);
         if (Ui.Find("HeroInfo/Face") is { } face)
         {
@@ -270,7 +271,7 @@ public sealed partial class TavernScreen : TownSubScreen
         }
         var defId = _slot < offers.Length ? offers[_slot] : null;
         var db = Game.Instance.Db;
-        Ui.Find("price")?.SetValue("price", H5.Adventure.Engine.Adventure.HeroHireCost.ToString());
+        Ui.Find("price")?.SetValue("price", Owner.Session.Game.HireCost(Me, Owner.Town).ToString());
         if (defId == null || !db.Heroes.TryGetValue(defId, out var def))
         {
             Ui.SetVisible("HeroInfo", false);

@@ -117,6 +117,7 @@ public partial class HeroScreen : Control
                 if (Find(p, $"Army/ArmyStacks/Slot_{i}") is { } slot)
                     _army.Add(new ArmySlotView { Node = slot, Hero = p.Hero.Id, Slot = i - 1 });
         foreach (var p in _panels) ShowPage(p, "Army");
+        if (_mentor) SetUpMentor();
     }
 
     void Add3DStand()

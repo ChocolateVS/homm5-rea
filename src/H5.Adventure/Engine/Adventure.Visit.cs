@@ -420,6 +420,15 @@ public sealed partial class Adventure
             case "BUILDING_LIGHTHOUSE":
                 Capture(o, os, p);
                 break;
+            case DenOfThieves:
+            {
+                // 00bca4f0: a den not yet the visitor's changes owner (dens owned, player vfunc 0x134 ∓1) and shows
+                // messagesFileRef[2]; every visit then opens the thieves' guild (00b04c72: dens owned + 1).
+                bool denCaptured = os.Owner != p.Index;
+                Capture(o, os, p);
+                Emit(new ObjectVisited(h.Id, o.Index, denCaptured ? type + ":captured" : type));
+                break;
+            }
 
             case "BUILDING_WITCH_HUT":
                 VisitWitchHut(h, p, o, os);

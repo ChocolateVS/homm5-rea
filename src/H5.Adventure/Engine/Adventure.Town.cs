@@ -7,7 +7,8 @@ namespace H5.Adventure.Engine;
 // Towns: building, recruiting, taverns, blacksmith, mage guild, armies.
 public sealed partial class Adventure
 {
-    public const int HeroHireCost = 2500;   // TODO(exe): confirm (2500 gold as in the stock tavern UI)
+    /// <summary>The hire price with one hero (exe 00b4ced0 is 500 × (heroes + 4), see <see cref="HireCost"/>).</summary>
+    public const int HeroHireCost = 2500;
     public const int MaxHeroesPerPlayer = 8; // TODO(exe): confirm the TotE hero cap
 
     void VisitTown(HeroState h, TownState t)
@@ -174,7 +175,8 @@ public sealed partial class Adventure
         if (S.Heroes.Count(h => h.Alive && h.Owner == p.Index) >= HiringHeroLimit(p)) return "too many heroes";
         var entrance = EntranceOf(t);
         if (HeroAt(entrance) != null) return "the town entrance is occupied";
-        if (p.Purse[Purse.Gold] < HeroHireCost) return "not enough gold";
+        int cost = HireCost(p, t);
+        if (p.Purse[Purse.Gold] < cost) return "not enough gold";
         var def = Core.Heroes[defId];
         var h = HeroFromDef(def, p.Index, entrance);
         GiveStartingArmy(h);
@@ -184,7 +186,7 @@ public sealed partial class Adventure
         S.Heroes.Add(h);
         S.HeroPool.Remove(defId);
         foreach (var other in S.Players) for (int i = 0; i < other.Tavern.Length; i++) if (other.Tavern[i] == defId) other.Tavern[i] = null;
-        GiveOne(p, Purse.Gold, -HeroHireCost);
+        GiveOne(p, Purse.Gold, -cost);
         Emit(new HeroHired(h.Id, defId, t.Object));
         LearnFromGuild(h, t);
         RevealAround(h);

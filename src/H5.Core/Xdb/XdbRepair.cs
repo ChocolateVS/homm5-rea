@@ -19,9 +19,14 @@ public static partial class XdbRepair
     [GeneratedRegex(@"<--(?!>)[^>]*>")]
     private static partial Regex BrokenComment();
 
+    /// <summary>MMH55-Skillwheel.pak (UI/Doc/SkillWheel/…/PerkButton2…) declares version="2.0" / "3.0" / "X.0", which XmlReader rejects (only 1.x parses).</summary>
+    [GeneratedRegex(@"^(\s*<\?xml\s+version\s*=\s*[""'])(?!1\.)[^""']*")]
+    private static partial Regex XmlVersionAbove1();
+
     public static string Repair(string xml)
     {
         xml = UnclosedDeclaration().Replace(xml, "$1>", 1);
+        xml = XmlVersionAbove1().Replace(xml, "${1}1.0", 1);
         return BrokenComment().Replace(xml, "");
     }
 
