@@ -142,7 +142,7 @@ public sealed partial class Adventure
             {
                 if (t.Level($"TB_DWELLING_{tier}") <= 0) continue;
                 if (plague < 1) t.Available[tier - 1] = plague == 0 ? 0 : Math.Max(1, (int)(t.Available[tier - 1] * plague));
-                t.Available[tier - 1] += WeeklyGrowth(t, tier);
+                t.Available[tier - 1] += OwnerAdjustedGrowth(t, WeeklyGrowth(t, tier));
             }
         foreach (var (idx, os) in S.Objects)
         {
@@ -158,6 +158,33 @@ public sealed partial class Adventure
                 foreach (var g in os.Guards) g.Count = Math.Max(g.Count + 1, (int)(g.Count * k));
             }
         }
+    }
+
+    AI.AdventureAiStats? _aiStats;
+    AI.AdventureAiStats AiStats => _aiStats ??= AI.AdventureAiStats.Load(Core);
+
+    /// <summary>
+    /// Owner adjustment of a town's weekly growth (exe FUN_00cd27b0, town vtable slot 0x00e95828): for a town of a
+    /// computer player (player vf 0x184 false) n = round((float)n·c + ((week)·c − round(0.01f + week·c))) with
+    /// c = clamp(AI/Adventure Difficulty*/TownCreatureGrowthCoef, 0, 10) (FUN_00465610 / FUN_00465640; stock Easy
+    /// 0.5, others 1) and week = day counter / 7 + 1 (x87 rounding, half to even); then a positive count of a
+    /// neutral town (owner 0) is halved. GAP-detail: the exe's day counter is taken as 0-based (= S.Week here).
+    /// </summary>
+    public int OwnerAdjustedGrowth(TownState t, int n)
+    {
+        if (t.Owner >= 0 && PlayerByIndex(t.Owner) is { Human: false })
+            n = ComputerTownGrowth(n, AiStats.Difficulty[Math.Clamp(S.Difficulty, 0, 3)].TownCreatureGrowthCoef, S.Week);
+        if (n > 0 && t.Owner < 0) n /= 2;
+        return n;
+    }
+
+    /// <summary>FUN_00cd27b0's computer-town formula (see <see cref="OwnerAdjustedGrowth"/>).</summary>
+    public static int ComputerTownGrowth(int n, double coef, int week)
+    {
+        float c = Math.Clamp((float)coef, 0f, 10f);
+        float f2 = week * c;
+        float carry = f2 - (float)Math.Round(0.01f + f2, MidpointRounding.ToEven);
+        return (int)Math.Round((float)n * c + carry, MidpointRounding.ToEven);
     }
 
     /// <summary>

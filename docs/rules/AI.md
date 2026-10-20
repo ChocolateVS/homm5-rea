@@ -72,11 +72,14 @@ Full map: `tools/aire/out/aichain.txt` (regenerate with `ReaderChain.java 0096f2
 * Artifact value by class FUN_004eb840 (minor +0x2b0, major +0x2b4, relic +0x2b8, grail +0x2d0). **exact**
 * Enemy danger reach FUN_00872330 = moves·SearchDangerEnemyMobilityMultiplier + SearchDangerEnemyMobilityBonus,
   flood-filled from the enemy hero. **exact** formula; the flood is approximated by Chebyshev distance × SearchAverageTerrainCost.
-* Destination search (FUN_00a7c3b0 "Adventure AI destinations choose log. Search Distance %d", FUN_00a78400/
-  a78940/a79700/a7b630), threats ("CHeck threats: %d ms", FUN_0086d750), town hero swaps ("swap town heroes for
-  better defender"), building period, hiring limits, aggressivity/cowardice, old-target bonus, random factor:
-  **data**-driven, **reconstructed** in `OriginalAdventureAI`. Mine/dwelling/treasure gold equivalents are
-  reconstructed. TownCreatureGrowthCoef (easy-difficulty growth handicap) needs an engine hook and is not applied.
+* Turn loop: a 15-phase state machine (CPlayerAI +0x128) pumped in 30 ms slices and cut by `ai_time_limit`;
+  heroes act one at a time, lowest attack+defence+spell power+knowledge first (FUN_00869770); hiring
+  (FUN_0086b0a0) after the heroes, then the town phase. Destination values are (state, value) pairs: old-target
+  bonus ×SearchOldTargetMultiplier + 20, random factor (Range(1,R) + 100 − R)·0.01f, distance discount v·T/cost,
+  higher state first (FUN_00a78940 / FUN_00a7b630); script attractor priority 2 = state 3. **exact** (ported).
+  Computer towns grow by TownCreatureGrowthCoef (FUN_00cd27b0), neutral towns at half. **exact**
+* Still **reconstructed**: object values, roles, search limits, threats, town building/recruiting, boats, map
+  spells, level-ups. Per-area ledger with addresses: `docs/rules/AUDIT_AI.md`.
 
 ## Validation (`h5tool duel-matrix --stride 3`, seed 1, 184 games each)
 
