@@ -99,6 +99,11 @@ public sealed class SkillDef
     public string HeroClass = "";
     public string BasicSkillId = "";
     public List<string> Prerequisites = new();
+    /// <summary>
+    /// AIRacesValues (exe skill record +0x70 + 0x10·(town type − 3)): per town type TOWN_HEAVEN..TOWN_STRONGHOLD,
+    /// [3·i] CommanderValue (+4), [3·i + 1] CollectorSupplierValue (+8), [3·i + 2] FreelancerValue (+0xc).
+    /// </summary>
+    public int[] AiRaceValues = new int[24];
     public bool IsPerk => SkillType is "SKILLTYPE_STANDART_PERK" or "SKILLTYPE_SPECIAL_PERK" or "SKILLTYPE_PERK";
 }
 

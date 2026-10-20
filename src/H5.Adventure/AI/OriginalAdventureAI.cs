@@ -54,12 +54,16 @@ public sealed partial class OriginalAdventureAI
         // not-yet-finished one with the LOWEST attack + defence + spell power + knowledge (hero vf 0x10..0x1c;
         // strict <, so the earlier hero in the player's list wins ties). A finished hero is never picked again.
         var all = g.S.Heroes.Where(h => h.Alive && h.Owner == me).ToList();
-        var roles = AssignRoles(g, all);
+        var roles = AssignRoles(g, all, st, diff);
         var claimed = new HashSet<int>();
         var done = new HashSet<int>();
         MoveHeroes(g, battleSeedBase, me, diff, st, roles, claimed, done, ref actions);
         if (HireHeroes(g, towns, diff))
+        {
+            // After a hire the exe goes back to the role phase 12 (0x0086b39a), so the new hero gets a role too.
+            roles = AssignRoles(g, g.S.Heroes.Where(h => h.Alive && h.Owner == me).ToList(), st, diff);
             MoveHeroes(g, battleSeedBase, me, diff, st, roles, claimed, done, ref actions);
+        }
         if ((g.S.Day - 1) % diff.TownBuildPeriodInDays == 0)
             foreach (var t in towns) TryBuild(g, t, st);
         foreach (var t in towns) Recruit(g, t, st);
@@ -76,7 +80,7 @@ public sealed partial class OriginalAdventureAI
             var h = NextHero(g, me, done);
             if (h == null) break;
             done.Add(h.Id);
-            if (!roles.ContainsKey(h.Id)) roles[h.Id] = HeroRole.Collector;
+            if (!roles.ContainsKey(h.Id)) roles[h.Id] = _role.GetValueOrDefault(h.Id, HeroRole.Freelancer);
             for (int step = 0; step < 8 && actions < MaxActionsPerTurn && h.Alive && !g.S.Finished; step++)
             {
                 ResolvePending(g, battleSeedBase + (ulong)actions);
@@ -99,20 +103,71 @@ public sealed partial class OriginalAdventureAI
 
     // ---------------------------------------------------------------- roles
 
+    // Hero role (hero vf 0x2bc; exe 0 = our Freelancer) and partner (vf 0x2c0) kept from day to day, as the exe keeps
+    // them on the hero. GAP-detail: not saved with the game (a loaded game starts with every hero a freelancer).
+    readonly Dictionary<int, HeroRole> _role = new();
+    readonly Dictionary<int, int> _partner = new();
+
     /// <summary>
-    /// Role per hero: the strongest army commands; when there are three or more heroes the weakest supplies
-    /// troops from towns; the rest collect. (Role ids and spread multipliers are the exe's; the assignment
-    /// rule itself is reconstructed.)
+    /// Role assignment (exe phase 12, FUN_00869ad0 over FUN_00868a40):
+    ///   • every hero gets weight RolesSpread[current role] · (1 + level · ArmyPowerCoefBonusPerHeroLevel) and the
+    ///     list is sorted ascending (comparator 00866650 a &lt; b, merge sort FUN_0086f6a0: stable);
+    ///   • k = min((heroes + 1) / 3 + 1, list size, heroes), at least 1, heroes are taken from the END of the list
+    ///     (the heaviest first) as commanders (role 1);
+    ///   • each commander, in that order, keeps its current partner when that hero still has role 2 / 3 and is in the
+    ///     remaining list (FUN_00866810), else takes the remaining hero nearest to it (FUN_008668c0: squared distance
+    ///     FUN_00a33600 dx² + dy² + (floors · map +0x6c)², strict &lt;, heroes without a map position skipped);
+    ///     the partner becomes its collector (2) or supplier (3) and leaves the list;
+    ///   • everybody left becomes a freelancer (role 0).
+    /// GAP-details: the collector / supplier test FUN_00c5af30 (army value FUN_004eb050 before / after a simulated
+    /// transfer, ratio vs DAT_00e72bf8) is not ported — partners are collectors; the floor factor (map +0x6c) is not
+    /// traced (taken as 0); heroes fixed by SetHeroRoleMode (vf 0x2d4 ∈ {1, 2}, left out of the list and given role 0)
+    /// are not separated because the script setting is not visible to the engine.
     /// </summary>
-    static Dictionary<int, HeroRole> AssignRoles(Engine.Adventure g, List<HeroState> heroes)
+    public Dictionary<int, HeroRole> AssignRoles(Engine.Adventure g, List<HeroState> heroes, AdventureAiStats st, AdventureDifficulty diff)
     {
+        var list = heroes.OrderBy(h => SpreadWeight(st, diff, _role.GetValueOrDefault(h.Id, HeroRole.Freelancer), h)).ToList();
+        int k = Math.Max(1, Math.Min(Math.Min((heroes.Count + 1) / 3 + 1, list.Count), heroes.Count));
+        var commanders = new List<HeroState>();
+        for (int i = 0; i < k && list.Count > 0; i++) { commanders.Add(list[^1]); list.RemoveAt(list.Count - 1); }
         var roles = new Dictionary<int, HeroRole>();
-        var byPower = heroes.OrderByDescending(h => g.ArmyPower(h.Army.Live(), h)).ThenBy(h => h.Id).ToList();
-        for (int i = 0; i < byPower.Count; i++)
-            roles[byPower[i].Id] = i == 0 ? HeroRole.Commander
-                : byPower.Count >= 3 && i == byPower.Count - 1 ? HeroRole.Supplier
-                : HeroRole.Collector;
+        var partners = new Dictionary<int, int>();
+        foreach (var c in commanders)
+        {
+            var partner = KeptPartner(c, list) ?? NearestHero(c, list);
+            roles[c.Id] = HeroRole.Commander;
+            if (partner == null) continue;
+            partners[c.Id] = partner.Id;
+            roles[partner.Id] = HeroRole.Collector;
+            partners[partner.Id] = c.Id;
+            list.Remove(partner);
+        }
+        foreach (var h in list) roles[h.Id] = HeroRole.Freelancer;
+        foreach (var h in heroes) { _role.Remove(h.Id); _partner.Remove(h.Id); }
+        foreach (var (id, r) in roles) _role[id] = r;
+        foreach (var (id, p) in partners) _partner[id] = p;
         return roles;
+    }
+
+    HeroState? KeptPartner(HeroState c, List<HeroState> list)
+    {
+        if (_role.GetValueOrDefault(c.Id, HeroRole.Freelancer) != HeroRole.Commander || !_partner.TryGetValue(c.Id, out int pid)) return null;
+        var p = list.FirstOrDefault(x => x.Id == pid);
+        return p != null && p.Owner == c.Owner && _role.GetValueOrDefault(p.Id) is HeroRole.Collector or HeroRole.Supplier ? p : null;
+    }
+
+    static HeroState? NearestHero(HeroState c, List<HeroState> list)
+    {
+        if (c.Garrisoned) return null;
+        HeroState? best = null;
+        long bestD = 0;
+        foreach (var x in list)
+        {
+            if (x.Garrisoned) continue;
+            long dx = x.Pos.X - c.Pos.X, dy = x.Pos.Y - c.Pos.Y, d = dx * dx + dy * dy;
+            if (best == null || d < bestD) { best = x; bestD = d; }
+        }
+        return best;
     }
 
     /// <summary>Exe FUN_00868a40 × FUN_004e9a80: RolesSpread[role] · (1 + level · ArmyPowerCoefBonusPerHeroLevel).</summary>
@@ -379,7 +434,7 @@ public sealed partial class OriginalAdventureAI
     ///     FUN_0086aa50, which then only accepts heroes its AI-hiring settings object marks (vf 0x88) — GAP: that
     ///     test is not traced, so over the limit nobody is hired here;
     ///   • the two tavern offers (player vf 0x14c(0..1)) are tried in order; with heroes &gt; 0 an offer is skipped
-    ///     when the hire cost exceeds the gold (FUN_00b4ced0 vs resources +0x18);
+    ///     when the hire cost without a town exceeds the gold (FUN_00b4ced0(player, null) vs resources +0x18);
     ///   • FUN_0086aa50 then keeps the best town: AI-hiring enabled for it (settings vf 0x54, EnableAIHeroHiring),
     ///     the hero passes the player's AI filter and the town's filter (FUN_00c069d0), the town is not in danger
     ///     (FUN_008672d0 — GAP: not modelled) and the hire check FUN_004f4570 passes. GAP: the score (race coef
@@ -394,7 +449,8 @@ public sealed partial class OriginalAdventureAI
         for (int slot = 0; slot < me.Tavern.Length && slot < 2; slot++)
         {
             if (me.Tavern[slot] is not { } id) continue;
-            if (heroes > 0 && Engine.Adventure.HeroHireCost > me.Purse[Purse.Gold]) continue;
+            // 0x0086b2db: the offer gate passes no town (no TOWN_BONUS_HEROES discount here).
+            if (heroes > 0 && g.HireCost(me) > me.Purse[Purse.Gold]) continue;
             if (!Engine.Adventure.FilterAccepts(g.Core, me.AiHireFilter, id)) continue;
             foreach (var t in towns.Where(t => t.Level("TB_TAVERN") > 0 && !me.AiHiringDisabledTowns.Contains(t.Object)))
             {
@@ -432,23 +488,62 @@ public sealed partial class OriginalAdventureAI
         }
     }
 
-    /// <summary>Takes the level-up option with the highest ValueOfSkillPerMastery / ValueOfPerkFeat value.</summary>
-    static void LevelUps(Engine.Adventure g, HeroState h, AdventureAiStats st)
+    /// <summary>
+    /// Level-up choice (exe FUN_004e6d30 case 3, "level up" / "selected skill/perk %s (mastery %d, value %d)"): every
+    /// offered skill or perk is valued with <see cref="SkillAiValue"/> (the mastery is only logged); the options
+    /// whose value is the maximum (the running maximum starts at 0, a value ≥ it joins the list, a higher one first
+    /// clears it) are collected in offer order and one of them is taken at random (FUN_008e7840 over [0, n − 1]).
+    /// Our option order is skills then perks (the exe offer order is the engine's, not traced here); the random draw
+    /// uses the AI's private generator.
+    /// </summary>
+    void LevelUps(Engine.Adventure g, HeroState h, AdventureAiStats st)
     {
         for (int guard = 0; guard < 16 && h.Alive && h.PendingLevelUps.Count > 0; guard++)
         {
             var offer = h.PendingLevelUps[0];
-            int n = offer.Skills.Count + offer.Perks.Count;
-            int bestOpt = 0;
-            double bestVal = double.MinValue;
-            for (int i = 0; i < n; i++)
-            {
-                double v = i < offer.Skills.Count ? st.ValueOfSkillPerMastery * (int)offer.Skills[i].Mastery : st.ValueOfPerkFeat;
-                if (v > bestVal) { bestVal = v; bestOpt = i; }
-            }
-            if (n == 0 || !Send(g, new ChooseLevelUpCmd(h.Id, bestOpt) { Player = h.Owner }).Ok) break;
+            var ids = offer.Skills.Select(x => x.SkillId).Concat(offer.Perks).ToList();
+            var role = _role.GetValueOrDefault(h.Id, HeroRole.Freelancer);
+            var best = BestLevelUpOptions(ids.Select(id => SkillAiValue(g, h.Town, role, id)).ToList());
+            if (best.Count == 0) break;
+            var rng = new Rng(Mix(g.S.Rng.S0, (ulong)g.S.Day, (ulong)h.Owner, (ulong)h.Id, (ulong)offer.NewLevel, 0x1E7E1));
+            int pick = best[best.Count == 1 ? 0 : rng.Range(0, best.Count - 1)];
+            if (!Send(g, new ChooseLevelUpCmd(h.Id, pick) { Player = h.Owner }).Ok) break;
         }
     }
+
+    /// <summary>
+    /// The indices FUN_004e6d30 keeps: max starts at 0; v ≥ max (or the list empty) adds the index, v &gt; max first
+    /// clears the list and raises max.
+    /// </summary>
+    public static List<int> BestLevelUpOptions(IReadOnlyList<int> values)
+    {
+        var list = new List<int>();
+        int max = 0;
+        for (int i = 0; i < values.Count; i++)
+        {
+            int v = values[i];
+            if (list.Count != 0 && v < max) continue;
+            if (v > max) { list.Clear(); max = v; }
+            list.Add(i);
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// Skill / perk value for a hero (exe FUN_00c5abd0): the skill's AIRacesValues entry for the hero's town type
+    /// (hero vf 0x254 = +0x84, TOWN_HEAVEN 3 … TOWN_STRONGHOLD 10; other → −1), by role (hero vf 0x2bc): 1 Commander
+    /// → CommanderValue, 2 / 3 → CollectorSupplierValue, 0 (our Freelancer) → FreelancerValue.
+    /// </summary>
+    public static int SkillAiValue(Engine.Adventure g, string town, HeroRole role, string skill)
+    {
+        int r = Array.IndexOf(TownTypes, town);
+        if (r < 0 || !g.Core.Skills.TryGetValue(skill, out var sd)) return -1;
+        int slot = role switch { HeroRole.Commander => 0, HeroRole.Collector or HeroRole.Supplier => 1, _ => 2 };
+        return sd.AiRaceValues[3 * r + slot];
+    }
+
+    static readonly string[] TownTypes =
+        { "TOWN_HEAVEN", "TOWN_PRESERVE", "TOWN_ACADEMY", "TOWN_DUNGEON", "TOWN_NECROMANCY", "TOWN_INFERNO", "TOWN_FORTRESS", "TOWN_STRONGHOLD" };
 
     void ResolvePending(Engine.Adventure g, ulong seed)
     {

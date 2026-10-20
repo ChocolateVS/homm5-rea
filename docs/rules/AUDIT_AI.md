@@ -14,9 +14,9 @@ occur in our setup.
 
 | Status | Count |
 |---|---|
-| FIXED | 13 |
+| FIXED | 16 |
 | MATCH | 12 |
-| GAP | 50 (11 of them combat AI) |
+| GAP | 47 (11 of them combat AI) |
 | UNVERIFIED | 3 |
 | N/A | 2 |
 
@@ -43,7 +43,7 @@ Tests: `tests/H5.Adventure.Tests/AiAuditTests.cs` (A), `OriginalAdventureAiTests
 | BlockTownGarrisonForAI | UNVERIFIED | 0x008687a0 (in FUN_00868640) | the reader sits on the hero-into-garrison move | we apply it to the creature pickup `TakeGarrison` (the garrison move is not ported) |
 | Commander finish command | GAP | FUN_00868640 (role vf 0x2bc == 1 → FUN_0086e920 command) | a finished role-1 hero posts an extra command | not ported |
 | Hero spread weight | MATCH | 00868a40, 00866670, 004e9a80 | RolesSpread[role] · (1 + level · ArmyPowerCoefBonusPerHeroLevel); heroes with vf 0x2d4 ∈ {1, 2} are left out of the spread | `SpreadWeight` (O: `ExeConfirmedFormulas`); GAP-detail: the vf 0x2d4 exclusion (SetHeroRoleMode?) is not applied |
-| Role assignment | GAP | hero vf 0x2bc (role), SetHeroRoleMode 005e7260 | role stored on the hero; assignment code not traced | reconstructed: strongest army = Commander, weakest of ≥ 3 = Supplier, rest Collector |
+| Role assignment | FIXED | phase 12 00869ad0 → 00868a40 (weights), comparator 00866650, merge sort 0086f6a0, partner 00866810 / 008668c0, distance 00a33600 | weight RolesSpread[current role] · (1 + level · coef), sorted ascending (stable); k = min((heroes + 1) / 3 + 1, list, heroes) ≥ 1 commanders (role 1) taken from the top; each keeps its role-2/3 partner if still listed, else takes the nearest remaining hero (dx² + dy² + (floors · map +0x6c)², strict <, heroes without a map tile skipped) as collector / supplier; the rest freelancers (role 0); roles persist from day to day; a hire re-runs the phase | `AssignRoles` (was: strongest ArmyPower commands, weakest of ≥ 3 supplies). A: `Roles_pick_the_heaviest_commanders_and_give_each_the_nearest_partner`. GAP-details: supplier test 00c5af30 (FUN_004eb050 before / after a simulated transfer vs DAT_00e72bf8) not ported (partners are collectors); floor factor map +0x6c taken as 0; SetHeroRoleMode heroes (vf 0x2d4 ∈ {1, 2} → role 0) not separated; roles not saved |
 | Destination value: state merge | GAP | 00a78940 | (state, value64) pairs; parts merged with "negative state dominates, else max"; value = own + strategic parts (+0x28, +0x38) | only state 0 and 3 (attractor 2) exist here |
 | Old-target bonus | FIXED | 00a78940 (0x00a78a67) | destination == the hero's remembered target (AI record +8): v ≥ 0 → ftol(v · SearchOldTargetMultiplier) + 20, else ftol((float)v / mult) + 20; no random factor | `OldTargetValue` (was: × mult, random applied too). A: `Old_target_bonus_multiplies_and_adds_twenty` |
 | Random factor | FIXED | 00a78940 (0x00a78ab7), RNG vf 0xc = inclusive Range | r = Range(1, SearchBestPositionRandomFactor) + 100 − R; v > 0 → max(1, ftol(r·v·0.01f)) (0.01f = 0.0099999998, so 76·1000 → 759), else ftol(v / r · 100) | `RandomizedValue` (was: × (1 ± U·R/100)). A: `Random_factor_only_lowers_a_positive_value`. Our RNG stream is private (seeded per day/player/hero), not Nival's |
@@ -90,7 +90,7 @@ Tests: `tests/H5.Adventure.Tests/AiAuditTests.cs` (A), `OriginalAdventureAiTests
 | Over-limit exception | GAP | 0086aa50 (settings object player vf 0x28 → vf 0x88(hero); coef 10.0) | over the soft limit only heroes the AI-hiring settings mark are hired, with coef 10 | nobody is hired over the limit |
 | Hire score | GAP | 0086aa50, race coefs 008683f0 ("calculated hire heroes races coefs", "H%0.2f P%0.2f A%0.2f D%0.2f N%0.2f I%0.2f"), 004eae60, 004ea050 | coef[race] · hero value · (1.0 same race town / 0.1) / (distance + 1), best town per offer | not ported |
 | Town in danger | GAP | 008672d0 | towns under threat are skipped | not ported |
-| Hire cost | GAP | 00b4ced0 | 500 · (heroes + 4); × 0.9 when the third argument's vf 0xdc is 0x25 | engine `HeroHireCost` = 2500 flat (engine audit item; the AI uses the engine cost) |
+| Hire cost | FIXED | 00b4ced0 (callers 004f4570 / 004f53ec town, 0086ac3f hire score town, 0086b2db AI offer gate / 004f46a0 / 004f5700 map tavern / 00c9758a surrender: no town) | 500 · (heroes + 4); with a town whose vf 0xdc (00cd3640: STownSpecialization +0x5c, the Bonus) is 0x25 = TOWN_BONUS_HEROES: (heroes + 4) · 4500 / 10 | engine `Adventure.HireCost(player, town?)` (780b222, tavern helper); the AI offer gate uses `HireCost(me)` with no town (was the flat 2500). Test: `TavernMentorTests` |
 | Tavern filters (EnableAIHeroHiring, AllowHeroHiringByRaceForAI, AllowHiringOfHeroForAI, …InTown) | MATCH | 0086aa50 (settings vf 0x54 town, vf 0x7c → 00c069d0, town vf 0x134 → 00c069d0) | per offer and town | `HireHeroes` checks `AiHiringDisabledTowns`, `AiHireFilter`, the town filter via `TownTavernOffers` |
 | AllowPlayerTavernRace / Hero reader | GAP | player +0x644 | not found in this audit | applied at tavern roll (SCRIPTS.md) |
 | SetPlayerHeroesCountNotForHire reader | MATCH | 0086b0e7 (vf 0xb0), 004f4570 | heroes < max − count | `HiringHeroLimit`, `HiringAllowed` |
@@ -104,7 +104,7 @@ Tests: `tests/H5.Adventure.Tests/AiAuditTests.cs` (A), `OriginalAdventureAiTests
 | Adventure spells | GAP | DimDoorStartCostLimit +0x228 (00ceb190, called by 00a79700) | Dimension Door / Town Portal etc. in the search | our AI casts no map spell |
 | Artifact pickup | MATCH | 004eb840 | by class | `ObjectValue` |
 | Artifact equip / exchange | GAP | — | — | engine defaults only |
-| Level-up choice | GAP | 004ead50 (ValueOfSkillPerMastery +0x288, ValueOfPerkFeat +0x28c) | formula not traced | max of mastery · ValueOfSkillPerMastery vs ValueOfPerkFeat |
+| Level-up choice | FIXED | 004e6d30 case 3 ("level up", "selected skill/perk %s (mastery %d, value %d)"), value 00c5abd0, skill table 008481f0 (0xfc-byte records) | each offered skill/perk is worth Skills.xdb AIRacesValues[hero town type (vf 0x254 = +0x84) − 3]: role 1 CommanderValue, 2 / 3 CollectorSupplierValue, 0 FreelancerValue (other town type / role → −1; the mastery is only logged); the options at the maximum (running max starts at 0, ≥ joins, > clears) are kept and one is drawn at random (008e7840 over [0, n − 1]) | `LevelUps`, `BestLevelUpOptions`, `SkillAiValue`, `SkillDef.AiRaceValues` (was: mastery · ValueOfSkillPerMastery vs ValueOfPerkFeat; those two belong to the hero value 004ead50). A: `Level_up_keeps_every_option_with_the_maximum_value`, `Skill_value_reads_the_races_table_by_role`. GAP-detail: option order is ours (skills, then perks); the draw uses our private RNG |
 | Grail search | GAP | GrailSearchOpenPartsMinimum / PercentMatchNeed row +0x48 / +0x4c (00a79700, 00bc6530), grail values 00bc7340 | the AI digs when enough of the puzzle is open | not ported |
 | Boats | GAP | — (not traced) | — | `OriginalAdventureAI.Sea.cs` reconstructed (walk to an empty boat when nothing is reachable, sail to the shore nearest the best target) |
 

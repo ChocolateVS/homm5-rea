@@ -204,6 +204,9 @@ public sealed class GameDatabase
         }
     }
 
+    /// <summary>AIRacesValues children in town-type order (TOWN_HEAVEN = 3 … TOWN_STRONGHOLD = 10).</summary>
+    static readonly string[] AiRaces = { "Haven", "Sylvan", "Academy", "Dungeon", "Necropolis", "Inferno", "Fortress", "Stronghold" };
+
     void LoadSkills()
     {
         foreach (var (id, o, f) in ReadTable(SkillTable, "obj"))
@@ -217,6 +220,14 @@ public sealed class GameDatabase
             };
             foreach (var p in o.Items("SkillPrerequisites"))
                 s.Prerequisites.AddRange(p.StrItems("dependenciesIDs"));
+            if (o.Element("AIRacesValues") is { } ai)
+                for (int r = 0; r < AiRaces.Length; r++)
+                {
+                    var v = ai.Element(AiRaces[r]);
+                    s.AiRaceValues[3 * r] = v.Int("CommanderValue");
+                    s.AiRaceValues[3 * r + 1] = v.Int("CollectorSupplierValue");
+                    s.AiRaceValues[3 * r + 2] = v.Int("FreelancerValue");
+                }
             Skills[id] = s;
         }
     }

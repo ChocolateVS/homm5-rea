@@ -130,4 +130,47 @@ public class AiAuditTests(Fixture f)
         Assert.Equal(Engine.Adventure.ComputerTownGrowth(8, 0.5, g.S.Week), g.OwnerAdjustedGrowth(t, 8));
         Assert.Equal(4, g.OwnerAdjustedGrowth(t, 8));
     }
+
+    [Fact]
+    public void Level_up_keeps_every_option_with_the_maximum_value()
+    {
+        // FUN_004e6d30 case 3: max starts at 0, v ≥ max joins, v > max clears first.
+        Assert.Equal(new[] { 1, 3 }, OriginalAdventureAI.BestLevelUpOptions(new[] { 100, 300, 200, 300 }));
+        Assert.Equal(new[] { 0, 1 }, OriginalAdventureAI.BestLevelUpOptions(new[] { -1, 0 }));   // the empty list takes −1, 0 ≥ max 0 joins
+        Assert.Equal(new[] { 0 }, OriginalAdventureAI.BestLevelUpOptions(new[] { -1, -1 }));
+        Assert.Empty(OriginalAdventureAI.BestLevelUpOptions(System.Array.Empty<int>()));
+    }
+
+    [Fact]
+    public void Skill_value_reads_the_races_table_by_role()
+    {
+        // FUN_00c5abd0: Skills.xdb AIRacesValues[town type − 3], role 1 Commander, 2/3 CollectorSupplier, 0 Freelancer.
+        var g = f.NewGame("A2M1", 5);
+        Assert.Equal(3000, OriginalAdventureAI.SkillAiValue(g, "TOWN_PRESERVE", HeroRole.Commander, "HERO_SKILL_LOGISTICS"));
+        Assert.Equal(4000, OriginalAdventureAI.SkillAiValue(g, "TOWN_PRESERVE", HeroRole.Supplier, "HERO_SKILL_LOGISTICS"));
+        Assert.Equal(1000, OriginalAdventureAI.SkillAiValue(g, "TOWN_HEAVEN", HeroRole.Freelancer, "HERO_SKILL_LOGISTICS"));
+        Assert.Equal(-1, OriginalAdventureAI.SkillAiValue(g, "TOWN_NO_TYPE", HeroRole.Commander, "HERO_SKILL_LOGISTICS"));
+    }
+
+    [Fact]
+    public void Roles_pick_the_heaviest_commanders_and_give_each_the_nearest_partner()
+    {
+        // FUN_00869ad0: k = min((n + 1) / 3 + 1, n) commanders from the top of the ascending weight list; each takes the
+        // nearest remaining hero (squared distance) as its collector; the rest are freelancers.
+        var g = f.NewGame("A2M1", 5);
+        int me = g.Current.Index;
+        var st = AdventureAiStats.Load(f.Core);
+        var diff = st.Difficulty[1];
+        HeroState H(int id, int level, int x) => new() { Id = id, Owner = me, Level = level, Pos = new H5.Adventure.Map.Tile(x, 0, 0) };
+        var heroes = new List<HeroState> { H(1, 1, 0), H(2, 9, 10), H(3, 5, 20), H(4, 1, 12), H(5, 2, 40) };
+        var ai = new OriginalAdventureAI();
+        var roles = ai.AssignRoles(g, heroes, st, diff);
+        // n = 5 → k = 3: levels 9, 5, 2 command (all start as freelancers, so the weight follows the level).
+        Assert.Equal(HeroRole.Commander, roles[2]);
+        Assert.Equal(HeroRole.Commander, roles[3]);
+        Assert.Equal(HeroRole.Commander, roles[5]);
+        // hero 2 (x 10) takes hero 4 (x 12); hero 3 (x 20) then takes hero 1; hero 5 gets nobody.
+        Assert.Equal(HeroRole.Collector, roles[4]);
+        Assert.Equal(HeroRole.Collector, roles[1]);
+    }
 }
