@@ -15,12 +15,14 @@ public sealed class AdventureCombatSession : CombatSession
     readonly int[] _humanSides;
     readonly HashSet<int> _aiSides;
     readonly Queue<IReadOnlyList<BattleEvent>> _pending = new();
-    readonly IBattleAI _ai = H5.Combat.AI.BattleAiRegistry.Create("original");
+    readonly IBattleAI _ai;
     readonly ulong _seed;
 
-    public AdventureCombatSession(BattleState state, ulong seed, IEnumerable<int> humanSides)
+    /// <param name="gameDifficulty">Adventure difficulty (script scale); the original combat AI picks its row from it.</param>
+    public AdventureCombatSession(BattleState state, ulong seed, IEnumerable<int> humanSides, int gameDifficulty = 1)
     {
         _seed = seed;
+        _ai = new H5.Combat.AI.OriginalBattleAI { GameDifficulty = gameDifficulty };
         _battle = new Battle(Game.Instance.Db, state);
         _humanSides = humanSides.ToArray();
         _aiSides = new HashSet<int>(new[] { 0, 1 }.Except(_humanSides));

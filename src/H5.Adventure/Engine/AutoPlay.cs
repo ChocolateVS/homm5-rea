@@ -12,6 +12,8 @@ public static class QuickCombat
     public static ResolveBattleCmd Resolve(Adventure game, ulong seed, IBattleAI? ai = null)
     {
         ai ??= new GreedyBattleAI { MaxCandidates = 12 };
+        // The original combat AI picks its Difficulty* row from the game difficulty and whether the side is human.
+        if (ai is H5.Combat.AI.OriginalBattleAI o) ai = o.For(game.S.Difficulty, HumanSides(game));
         var state = game.CreatePendingBattle(seed);
         var battle = new Battle(game.Core, state);
         var scripts = game.BattleScripts?.Invoke(battle);
@@ -23,6 +25,16 @@ public static class QuickCombat
         int winner = state.Winner ?? 1;
         return new ResolveBattleCmd(winner, Survivors(0), Survivors(1))
         { Player = game.Current.Index, HeroMana = state.Heroes.Select(h => h.Mana).ToArray() };
+    }
+
+    /// <summary>Whether each side of the pending battle belongs to a human player (side 0 attacker, side 1 defender hero or town).</summary>
+    public static bool[] HumanSides(Adventure game)
+    {
+        var pb = game.S.Battle!;
+        bool Human(int owner) => owner >= 0 && owner < game.S.Players.Count && game.S.Players[owner].Human;
+        int def = pb.DefenderHero >= 0 && game.S.Hero(pb.DefenderHero) is { } dh ? dh.Owner
+            : pb.DefenderObject >= 0 && game.S.Town(pb.DefenderObject) is { } t ? t.Owner : -1;
+        return new[] { game.S.Hero(pb.AttackerHero) is { } a && Human(a.Owner), Human(def) };
     }
 }
 
