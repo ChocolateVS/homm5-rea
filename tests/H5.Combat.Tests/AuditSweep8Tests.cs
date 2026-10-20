@@ -78,4 +78,38 @@ public class AuditSweep8Tests(GameDataFixture f)
         Assert.True(b.Apply(new DefendCmd(pe.Id) { Side = 1 }).Ok);
         Assert.Equal(hp, pe.TotalHealth);
     }
+
+    // exe FUN_00861f90 / FUN_00862970 / FUN_004bcd60 … FUN_004bd1c0: the conjured phoenix's stats come from the DefaultStats
+    // ConjuredPhoenix record: Base + level·PerLevel / divisor + power·PerPower / divisor (divisor 4/3/2/1 from the spell's
+    // damage table), truncated; its abilities are only the record's (no Rebirth), its speed / initiative the record's.
+    [Fact]
+    public void ConjuredPhoenixStatsFollowTheUniqueCreatureRecord()
+    {
+        var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 20) });
+        b.Begin();
+        b.State.Heroes[0].Level = 5;
+        b.ResolveSpell(Actor.Hero(0), 0, f.Db.Spell("SPELL_CONJURE_PHOENIX")!, Mastery.Basic, 10, null, null, fromHero: true);
+        var ph = b.State.Units.Single(u => u.Side == 0 && u.Summoned && u.CreatureId == "CREATURE_PHOENIX");
+        // Basic: divisor 3 → health 300 + 30·10/3, damage 10·10/3 … 15·10/3, offence / defence 10 + 2·5/3.
+        Assert.Equal((400, 33, 50, 13, 13), (ph.BaseHealth, ph.BaseMinDamage, ph.BaseMaxDamage, ph.BaseAttack, ph.BaseDefence));
+        Assert.Equal(7, ph.BaseSpeed);
+        Assert.Equal(15, ph.BaseInitiative, 3);
+        Assert.Contains("ABILITY_FIRE_SHIELD", ph.Abilities);
+        Assert.DoesNotContain("ABILITY_REBIRTH", ph.Abilities);
+    }
+
+    // exe FUN_00861340: a second Conjure Phoenix kills the phoenix still linked to the caster (its whole health through
+    // the damage routine vf 0x1f4 = FUN_008a6e20) and places a new one. The engine refused the second cast.
+    [Fact]
+    public void ConjurePhoenixAgainReplacesTheLinkedPhoenix()
+    {
+        var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 20) });
+        b.Begin();
+        var sp = f.Db.Spell("SPELL_CONJURE_PHOENIX")!;
+        b.ResolveSpell(Actor.Hero(0), 0, sp, Mastery.Expert, 10, null, null, fromHero: true);
+        var first = b.State.Units.Single(u => u.Side == 0 && u.Summoned && u.CreatureId == "CREATURE_PHOENIX");
+        b.ResolveSpell(Actor.Hero(0), 0, sp, Mastery.Expert, 10, null, null, fromHero: true);
+        Assert.False(first.Alive);
+        Assert.Single(b.State.Units, u => u.Side == 0 && u.Alive && u.CreatureId == "CREATURE_PHOENIX");
+    }
 }

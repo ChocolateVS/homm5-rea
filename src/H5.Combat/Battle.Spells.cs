@@ -756,24 +756,8 @@ public sealed partial class Battle
                 break;
             }
             case "SPELL_CONJURE_PHOENIX":
-            {
-                if (S.Units.Any(u => u.Alive && u.Side == side && u.CreatureId == "CREATURE_PHOENIX" && u.Summoned)) return;
-                double div = Math.Max(1, baseDef.DamageAt(m).Base);
-                double p = Math.Ceiling(power / div);
-                void PhoenixStats(Unit ph)
-                {
-                    ph.BaseAttack = ph.BaseDefence = 10 + 2 * casterLevel;      // p.194
-                    ph.BaseMinDamage = (int)(10 * p); ph.BaseMaxDamage = (int)(15 * p);
-                    ph.BaseHealth = (int)(300 + 30 * p); ph.MaxHealthCache = ph.TopHealth = ph.BaseHealth;
-                }
-                if (SummonStack(side, "CREATURE_PHOENIX", 1, sp.Id, atb: S.Rng.Next(6) * 0.05) is { } ph)
-                {
-                    PhoenixStats(ph);
-                    // Elemental Balance on the opposing hero: a phoenix with the caster's stats (exe 00862130).
-                    if (ElementalBalanceSummon(side, "CREATURE_PHOENIX", 1, sp.Id) is { } ph2) PhoenixStats(ph2);
-                }
+                ConjurePhoenix(side, hero, sp.Id, power, casterLevel, (int)Math.Max(1, baseDef.DamageAt(m).Base));
                 break;
-            }
             case "SPELL_ARCANE_CRYSTAL":
             case "SPELL_SUMMON_HIVE":
             case "SPELL_BLADE_BARRIER":

@@ -44,6 +44,8 @@ public sealed class GameDatabase
     /// <summary>DefaultStats combat/Creatures/Haven/ChampionChargePattern and combat/Creatures/Dungeon/AcidicHydraPattern.</summary>
     public AttackPattern? ChampionChargePattern { get; private set; }
     public AttackPattern? AcidicHydraPattern { get; private set; }
+    /// <summary>DefaultStats combat/Creatures/ConjuredPhoenix: the RPGCombatUniqueCreatureStats record (exe RPGStats +0x530).</summary>
+    public System.Xml.Linq.XElement? ConjuredPhoenix { get; private set; }
     public ExperienceTable Experience { get; } = new();
     public List<string> Warnings { get; } = new();
 
@@ -182,6 +184,7 @@ public sealed class GameDatabase
         var creatures = _x.Load(StatsFile).Root?.Element("combat")?.Element("Creatures");
         ChampionChargePattern = ParsePattern(_x.Resolve(creatures?.Element("Haven")?.Element("ChampionChargePattern"), StatsFile));
         AcidicHydraPattern = ParsePattern(_x.Resolve(creatures?.Element("Dungeon")?.Element("AcidicHydraPattern"), StatsFile));
+        ConjuredPhoenix = _x.Resolve(creatures?.Element("ConjuredPhoenix"), StatsFile);
     }
 
     void LoadSpells()
