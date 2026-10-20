@@ -201,15 +201,21 @@ public sealed partial class MapTavernScreen : MapBuildingScreen
             var cat = cats[row];
             var line = Ui.Instantiate(template.Window, box.Window, new Int2(0, (row - _scroll) * lineH), $"line{row}");
             _lines.Add(line);
-            if (line.FindChild("InfoCaption", true, false) is UiNode cap) cap.SetValue("caption", TT(cat.Name));
+            if (line.FindChild("InfoCaption", true, false) is UiNode cap)
+            {
+                cap.SetValue("caption", TT(cat.Name));
+                // The template caption has no width; give it the container's (after the screen's layout pass).
+                Callable.From(() => { if (IsInstanceValid(cap)) { cap.Position = new Vector2(0, cap.Position.Y); cap.Size = new Vector2(box.Size.X, Math.Max(cap.Size.Y, 24)); } }).CallDeferred();
+            }
+            // The Boxes gathering stacks its children; the boxes go side by side under the caption instead.
             var boxes = line.FindChild("Boxes", true, false) as UiNode;
             var proto = boxes?.FindChild("InfoBox0", true, false) as UiNode;
             if (boxes == null || proto == null) continue;
-            proto.Visible = false;
+            boxes.Visible = false;
             for (int i = 0; i < cat.Entries.Count; i++)
             {
                 var e = cat.Entries[i];
-                var b = Ui.Instantiate(proto.Window, boxes.Window, new Int2(i * boxW, 0), $"InfoBox{i + 1}");
+                var b = Ui.Instantiate(proto.Window, line.Window, new Int2(i * boxW, 28), $"InfoBox{i + 1}");
                 string color = e.Player is >= 1 and <= 8 ? PlayerColors[e.Player - 1] : "UnknownPlayer";
                 TownUi.SetPicture(b.FindChild("inner", true, false) as Control, Game.Instance.LoadTexture($"UI/Tavern/{color}.(Texture).dds"));
                 Texture2D? pic = e.Hero != null && Combat.CombatIcons.Hero(e.Hero, false) is { } hf ? Game.Instance.LoadTexture(hf)
