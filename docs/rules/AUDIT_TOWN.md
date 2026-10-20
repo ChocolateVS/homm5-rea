@@ -1,0 +1,214 @@
+# Town and hero screen audit ledger
+
+Every town-screen and hero-screen element and rule compared with `H5_Game.exe` (Ghidra 12.1.4, image VAs) and the
+original UI layouts / data. Status: **MATCH** (already as the exe), **FIXED** (changed to match), **GAP** (known
+difference or not built), **UNVERIFIED** (implemented from data, exe path not traced). Rows carrying two statuses
+count once for each.
+
+Rows at 2026-10-20: 49 FIXED, 34 MATCH, 25 GAP, 21 UNVERIFIED.
+
+Commits: 9153b62 (dwelling growth incl. moon weeks), afe1e7b + 844ce53 (build check codes, town income),
+6690c81 (level-up offers, experience table, Enlightenment, perk effects, hero screen fixes),
+f65f434 + c6f0b5b (spell learning, blacksmith prices, zero-count transfers).
+Tests: `tests/H5.Adventure.Tests/TownGrowthTests.cs`, `SpellLearnTests.cs`, `LevelUpRulesTests.cs`, `TownBuildRulesTests.cs`;
+screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stock.
+
+# Town
+
+## Town build screen (UI/TownBuildNew) and build rules
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Build check entry | CTown slot +0xac of vtable 00e95844 = 00cd6a90; called by the build screen 0065bab0 (vcall +0xac on screen +0x24c) and by CUpgradeTownBuildingCmd (vtable 00e0d898, execute 0042fd40 → town +0x6c = 00cd4a40, which re-runs +0xac) | one function returns a code 0..10; the command refuses anything but 0 | `Adventure.BuildCheck` used by `DoBuild`, the HUD marker `BuildState` and the build screen | FIXED (was: three separate rule copies with our own error strings) |
+| Code → text | switch 00659ad0, jump table 0065a36c; UI/TownBuildNew/Texts/Texts.(WindowRelatedTexts) | 0 can_build, 1 cant_build, 2 limit_upgrade, 3 already_build, 4 prereq, 5 no_money, 6 build_thisturn, 7 no_water, 8 only_one_capitol, 9 grail, 10 town_points | `BuildDenial` / `BuildDenialText`; texts read from the same files | FIXED (no_water, only_one_capitol, town_points, cant_build were missing; town level was folded into prereq) |
+| Check order | 00cd6a90 | no record → 1; Stronghold (town type 10) magic guild (type 6) → 1; 00cd0e20 specials; level ≥ data max (rec +0x18) → 3; level ≥ map limit (rec +0x28) → 2; town points → 10; prerequisites (00cd6880) → 4; money (00cd4880) → 5; built today (00cce4e0, skipped by the cheat flag 010dbd84) → 6; else 0 | same order | FIXED (was: built-today first, money last; town level = prereq) |
+| Town level / town points | town +0x78 = 00cd2120 (sum of rec +0x14 over all buildings); requirement +0x58 = DevLevelNeeded | town level = sum of built levels; denied when below DevLevelNeeded | `TownState.DevLevel` = sum of levels | MATCH |
+| Shipyard needs water | 00cd0e20: type 3 and FUN_00c5a9d0(town) false (town branch FUN_00c5a480) → 7 | no_water | `SlipwayOf` + `IsWaterTile` (the shipyard's "deserted" test) | FIXED / exact tile test of 00c5a480 UNVERIFIED |
+| One Capitol | 00cd0e20: type 0, level+1 > 3, player vcall +0xd4 (owns a Capitol) → 8, or 3 when this town has town ability 0x2e (table 00f7c998: any type, TB_TOWN_HALL level 4) | only_one_capitol | `PlayerHasCapitol` | FIXED (was not checked) |
+| Grail needs the Tear of Asha | 00cd0e20 type 0xe: level = max → 3; neither town hero slot (+0x18(1), +0x18(0)) carries it (hero +0xa4) → 9 | grail | `GrailBearer` (worn or backpack) | FIXED (was: the grail was buildable for free) |
+| Grail uses the Tear | 00cd4a40 type 0xe: slot 1 hero +0xa4 → +0xa8, else slot 0 | the Tear is taken from the hero | `ConsumeTearOfAsha` | FIXED / which slot is visiting vs garrison not identified (only matters when both carry one) |
+| Money test | 00cd4880: FUN_009d0500(purse, cost) < 1.0 (00e0a7e4) | not affordable | `Purse.CanAfford` | MATCH |
+| One build per day | 00cce4e0: town counter +0x80 (reset to 0 on build, 00cd4a40) < vcall +0x80 = 00ccedf0 (1 for a human, the difficulty row's TownBuildPeriodInDays for a computer player) | build_thisturn | `BuiltToday` (one per day) | MATCH (human) / computer period: the consumer is this check (see AUDIT_AI "Build period"); the counter increment not traced — GAP |
+| Building effects on build | 00cd4a40 | magic guild (type 6) rolls its new level (FUN_00cd1b40(level+1, 5)); Fortress abilities 0x20 / Stronghold 0x27 levels give runes (FUN_00ccfd30 / 00ccfe90); ability 0x1d (Academy trade guild?) FUN_00cce410 | guild learning, artifact merchant stock, Haven training points | UNVERIFIED (fork B: guild; rune grants GAP) |
+| Cell tint | 0065bab0 → 0065b190, colour table 00f37cd8 (12 bytes/state) and factors 00f37ccc / 00f37cd0 (0.5) | built 0 (255,255,255 ×1); next level: code 0 → state 2 (128,255,128) or 4 (0,128,255, condition not traced); 1, 9, 5, 6 → state 1 (255,90,90); 2 → state 3; 3 → 0; 4, 7, 8, 10 and later levels → (255,255,255) × 0.5 | `CellTint` with those colours; the 0.5 factor read as brightness of the white tints | FIXED / factor semantics (+0xfc) and the blue state UNVERIFIED |
+| Tooltip | 006596a0, UI/TownBuildNew/ToolTips/ToBuild + Common/*.txt | name, description, prereq_header + every prerequisite (prereq_%d, red_val when unmet), price, "Required town level" (red when short), deny_code line (red except codes 0 and 3) | plain Godot tooltip with the same lines (unmet prerequisites marked "!") | FIXED (content) / styled window and colours GAP |
+| Cell layout, arrows, hover, selection, town level caption | 0065a830 / 0065aae0, TownBuildDefinition per faction | 5×6 grid, arrows Arrow_1..3, Hilight / Selection frames, TownLevel | as before | MATCH (earlier work; not re-traced) |
+| Click to build | 0065bab0 / screen messages | not traced here | select, click again to build | UNVERIFIED |
+| MMH 5.5 data | MMH55-Data / MMH55-Index (509 building files, own necropolis/stronghold TownBuildDefinition) | same screen | screen renders with 5.5 (default) and H5_TARGET=stock (shots hall_55.png, hall_stock.png) | MATCH |
+
+## Town screen: 3D scene, hotspots, hover
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Building pick | 0061a5d0: picked object must be a CArenaTownModObject whose ModObjectName matches a built building record (screen +0x3ec lookup) | hovering a built building's scene object | ray pick on the building's collision, `ViewFor` (highest built level with that ModObjectName) | MATCH |
+| Hover highlight colour | 0061a5d0 with param_3 = 0: highlighter (screen +0x174, vcall +4) colour (0.3961, 0.2196, 0, 0) | brownish-orange highlight | ours still (1, 0.9, 0.6) × 0.18; fix in A2_portal_highlight.patch, NOT committed | GAP |
+| Hover name line | TownScreen BuildingDesc | building name, town name when nothing is hovered | same | MATCH (earlier work) |
+| Open on double click | AUDIT_INPUT (click_pointer 00613130 no-op, dblclick_pointer 00619a30) | double click opens | same | MATCH |
+| Building tooltip extras | 0061a5d0 switch on the town ability: 0xc / 0xd mystic_pond_bonus, 0x1c ritual_pit_info_witches / _minotaurs, 0x1d trade_guild_income_bonus / trade_guild_this_week_bonus; shipyard_deserted; default name + description (006b9c10) | per-building extra lines | name + description only (right-click tooltip, AUDIT_INPUT) | GAP |
+
+## Town income
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Town income function | CTown 00cd43f0 (slot +0x38 via 00cd90b0), silo part 00cd31b0 | — | `Adventure.TownIncome` | FIXED |
+| No hall, no income | 00cd43f0: building interface +0x34(0) = 0 → return | a town without a hall yields nothing (no silo, grail, …) | same | FIXED |
+| Hall gold | jump table 00cd4658 | 1 → 500, 2 → 1000, 3 → 2000, 4 → 2000 + 2000 (two stats counters) | 500 / 1000 / 2000 / 4000 | MATCH |
+| Specialisation gold | 00cd44a2: specialisation +0x5c | 0x19 TOWN_BONUS_ELVEN_CAPITAL +500, 0x22 TOWN_BONUS_250_GOLD +250 | same | FIXED (was missing) |
+| Resource silo | 00cd31b0: TB_MARKETPLACE level > 1 → TownTypesInfo ResourceSiloIncome (+0xa4) | silo income | same | MATCH |
+| Extra ore / wood | 00cd3255: inside the silo branch, specialisation 7 → +1 ore, 8 → +1 wood | only with the silo | same | FIXED (was missing) |
+| Per-town extra income | building interface +0x88 = 00cce3c0: gold +0xe0, resource [+0xe4] += +0xe8 | filler not traced (no CTown writer found) | none | GAP |
+| Grail gold | 00cd4568: +0x34(0xe) > 0 → 0x1388 | +5000 gold | same | FIXED (was missing) |
+| Taxpayer | 00cd4593: town list +0x74 (garrison stacks), FUN_00b61ba0(0x46 = ABILITY_TAXPAYER, creature) → + count | 1 gold per Taxpayer creature in the town's garrison | same (`t.Garrison`; a garrisoned hero's army UNVERIFIED) | FIXED |
+| Academy Treasure Cave | 00cd4623: town ability 0x18 (table 00f7c998: Academy TB_SPECIAL_4) → +500 | +500 gold | same | FIXED (was missing) |
+| Moon week | FUN_00bcda40 / 00bcda60 / 00bcda80 / 00bcdaa0 per component | gold ×2 (0x3a) / ×3 (0x37); wood/ore 0x3c; mercury/sulfur 0x39; crystal/gems 0x38 | applied to the summed income (moon helper's area) | UNVERIFIED |
+| Town Info "income" | 005b64c0 / 006650c0: town +0x38(purse, 1, …) gold | whole town gold income | `TownInfoScreen` shows `TownIncome` gold (without the moon factor) | FIXED (was: hall only) |
+
+## Fort, Citadel, Castle
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Growth | growth tooltip lines 006dc5e8.. (T_GROWTH_WEEKLY, _CASTLE, _HORDE, _DWELLING, _SPECIALIZATION, _GRAIL, _SACRIFICE, _MOONWEEK_*) | castle line in the growth record | fork B's growth record (Adventure.Growth.cs) | see fork B rows |
+| Siege | combat ledger (EXE_FINDINGS walls/towers, Siege.cs FortLevel = TB_FORT 0..3) | fort level → walls, towers, moat | `SiegeSetup` | MATCH (audited in AUDIT_COMBAT) |
+| Town Info fortification text | 006650c0: town +0x34(1) = 0 → FortificationNone, else TownTypesInfo textFort / textCitadel / textCaste | text per fort level | `TownInfoScreen` (FortificationNone + textFort/textCitadel/textCaste) | MATCH |
+
+## Marketplace
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Rates | FUN_008e7b80 tables (Adventure.Market.cs) | three 9-row tables | same | MATCH (earlier audit) |
+| Marketplace count | CPlayer +0xf8 = FUN_004fbd80 (slave market row: per town 1 with a marketplace, +1 with TOWN_BONUS_MARKETPLACE); CPlayer +0xb0 = 00500cf0 field +0x610 set only through vtable slot +0xac (00500cd0, no direct caller) | count used by the exchange | one per marketplace town, two with TOWN_BONUS_MARKETPLACE | UNVERIFIED (exchange getter's filler not traced) |
+
+## Town portal
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Target town | 00427280 (cast cmd) → 008656e0 case 0x33 → 00865170 → FUN_00ccf6e0 | the owner's town (player +0xc4 list) with the smallest dx² + dy² + (DepthBetweenFloors (RPGStats +0x6c) × Δfloor)²; strict <, so the earlier town wins ties; no choice | `PortalTown` (patch A2_portal_highlight.patch, NOT committed) | GAP — fix written and tested, uncommitted (was: movement-cost distance, 10⁶ floor penalty, any town when given) |
+| Arrival | 008648b0: town hero slot +0x18(0) empty, else nothing happens | cast only when that slot is free | refused when the entrance is occupied | MATCH (slot ↔ entrance identity UNVERIFIED) |
+| Movement | hero +0x100(0) after the jump | movement points to 0 | same | MATCH |
+
+## Tavern (verify)
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Hire price, offers, filter | AUDIT_ADVENTURE tavern rows (00b4ced0, 00636a10, 00634de0) | — | unchanged | MATCH (verified, see AUDIT_ADVENTURE) |
+
+## Computer build period (found, not built)
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Build counter | 00cce2b0 (daily tick: counter = min(counter + 1, period)), reset to 0 by 00cd4a40, checked by 00cce4e0 against 00ccedf0 (1 human / TownBuildPeriodInDays computer) | a computer town builds again only once `period` days have passed since its last build | AI gate `(day − 1) % period == 0` in OriginalAdventureAI | GAP (initial counter value not traced) |
+
+## Dwelling growth and recruiting
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Growth record | FUN_00cd5180 (fill), FUN_00bce140 (moon part), hire tooltip 006dc57d (T_GROWTH_WEEKLY/_CASTLE/_HORDE/_DWELLING/_SPECIALIZATION/_GRAIL/_SACRIFICE/_MOONWEEK_*) | 8 parts summed: weekly, castle, horde, dwelling, specialization, grail, sacrifice, moon week | `Adventure.GrowthOf` → `TownGrowth` (same 8 parts, Total) | FIXED (was: base ×1.5/×2 × moon multiplier) |
+| Weekly (base) | 00cd5180: creature +0xa8 of the dwelling's base creature | WeeklyGrowth of the base creature | same | MATCH |
+| Citadel / Castle | 00cd5180: TB_FORT level 2 → weekly/2, 3 → weekly | integer half / full | same | FIXED (was float ×1.5 over the sum) |
+| Horde buildings | FUN_00cce610 over town ability table 00f7c998 (town type, TB, level) | Farms peasants +5, Spawn of Chaos demons +2, Halls of Horror nightmares +1, Unearthed Graves skeletons +6, Dragon Tombstone bone dragons +1, Blooming Grove pixies +4, Treant Saplings treants +1, Treasure Cave genies +2; Arena brawlers / TB_SPECIAL_5 rune mages / Garbage Pile goblins from DefaultStats TownBuildingBonuses (RPGStats +0x154/+0x158/+0x18c) | `HordeBuildings` table; stats from `adventure/TownBuildingBonuses/*` | FIXED (was missing) |
+| Dwelling part (town +0x154 list) | FUN_00ccf230 | per-creature count from a town list | 0; filler of +0x154 not traced | GAP |
+| Specialization: Recruitment | FUN_00cd3030: garrison/visiting hero (town +0x134/+0x138) with skill 0x1c → max(4−tier,0), ×2 when hero vfunc 0x310 > 0 | +3/+2/+1 for tiers 1–3 | same; ×2 condition not identified (×1) | FIXED / GAP (×2) |
+| Specialization: town bonus | FUN_00cd3030 + FUN_004a63b0 (+0x5c), FUN_00cd35c0 (town type) | TOWN_BONUS_TIER1..4_CREATURE: +2/+1/+1/+1, +1 more for tiers 1–2 in a Fortress (type 9) | same | FIXED (was missing) |
+| Grail | 00cd5180: building 0xe level ≠ 0 → (weekly+castle+horde+dwelling+spec)/2 | half of the sum, not moon-scaled | same | FIXED (was missing) |
+| Ritual Pit sacrifice | 00cd5180: CREATURE_WITCH (0x49) → town −0x1d0, CREATURE_MINOTAUR (0x4b) → −0x1cc | keyed by creature, no building check | `RitualPitBonus` by creature | FIXED (was tier-keyed with a pit check) |
+| Moon week growth | FUN_00bcdb90(week, S = weekly+castle+horde+spec, creature) | PLAGUE 0; DISEASE max(S/3,1); FEVER max(S/2,1) (S>0 only); LIFE ×2; CONJUNCTION ×3; creature week (00bcd640) ×2 when base creatures match (004baf90); moon part = result − S | `MoonWeekGrowth` with the calendar's week (MoonCalendar.CreatureOf) | FIXED (was ×multiplier on everything; creature weeks not applied) |
+| Week pool reduction | FUN_00bce0d0 at start of 00cd27b0 | PLAGUE empties pools; DISEASE / FEVER remove max(n/3,1) / max(n/2,1) from a positive pool | `MoonWeekPool` before growth | FIXED (was: keeps a third / half) |
+| Weekly update order | 00cd27b0 | pool reduction → total → AI coefficient (computer owner) → if > 0: halve for neutral owner, add | `WeeklyGrowthAll` + `OwnerAdjustedGrowth`; only positive totals added | FIXED |
+| 00cd27b0 second argument | disasm 00cd2830 ([esp+0x4c]) | false → only the moon part is added | always full (caller not traced) | UNVERIFIED |
+| New dwelling | 00cd4a40 at 00cd4e2c | when FUN_00cd0710 creates the pool: base creature's WeeklyGrowth | same | FIXED (was full weekly growth) |
+| Map-start pools | Setup | — | full weekly growth | UNVERIFIED |
+| Accumulation / cap | 00cd0710 adds to pool | no cap seen | no cap | MATCH |
+| Hire command | CHireCreaturesCmd execute 004f4dd0 | pool ≥ count, army fit (FUN_0045b240), cost × count paid (player vfunc 0xe0), pool − count | `DoRecruit` same checks | MATCH |
+| Hire all | CHireAllCreaturesCmd 0042b870 → FUN_009a52a0 | all dwellings from the highest down, each variant, limited by resources and free slots | FortScreen BuyAll hires the selected tier only | GAP |
+| Upgrade / alternative variants | 00cd46c0 builds the dwelling creature list (FUN_00ccf130) | base, upgrade, TotE alternative per built level | `DwellingCreature` variants 0/1/2 | UNVERIFIED |
+| Upgrade creature command | CUpgradeCreatureCmd execute 004f47e0 | callback / FUN_004bb420 check, "can't upgrade creature %s" | `UpgradeCreaturesScreen` + engine | UNVERIFIED |
+| Growth tooltip on plates | 006dc57d T_GROWTH_* lines | hover tooltip with the parts | plate shows the total only | GAP |
+
+## Mage guild
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Can-learn rule | hero spell vfunc 0xe0 = FUN_00b4b8c0 (0xe4 wrapper 00b4b890; vtable 00e7e484) | not DARK_RITUAL / SPECIAL / NONE; runic needs Runelore, warcry Blood Rage, other spells no Blood Rage (00b4b810); hero level ≥ RequiredHeroLevel; runes Runelore ≥1/2/3 by circle (00419960); mass spells need their Master perk (00a33e20/00a33cf0); empowered spells need Empowered Spells (00a33f70); circles 1–2 free; Wisdom: circle 3; school mastery + 2 ≥ circle; adventure free | `CanLearnSpell` same (mastery = EffectiveMastery, hero vfunc 0x174) | FIXED (was: barbarian class check, no Wisdom, no hero level) |
+| Wisdom circle 4 | 00b4ba2e: circle 4 with Wisdom when hero vfunc 0x31c > 0 | unknown condition | not applied | GAP |
+| MMH 5.5 Wisdom extras | 5.5 Wisdom description (random circle 4/5 at levels 15/25) | script behaviour | not built | GAP |
+| Learning on visit | LearnFromGuild | — | every built circle, spells passing CanLearnSpell | UNVERIFIED (visit handler not traced) |
+| Mana refill on visit | — | — | refill to max with a guild | UNVERIFIED |
+| Spell generation | shared MagicSchool_0/_1 at +0x124/+0x128 (reader 00a0d7ba); map spellIDs AdvMapTown +0xf4 (00a0a5d1, copied by 00cd1650) | generator not located | 3,3,3,2,2 per circle, map spells first, any combat school + adventure (Stronghold warcries) | GAP |
+
+## Blacksmith / war machines
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Offer list | FUN_00cd3f50, table 00f7c958 | ballista, first aid tent, ammo cart | same order | MATCH |
+| Price | town vfunc 0xec = FUN_00cceae0, FUN_00ccea20 | gold cost if native (TOWN_BONUS_BALLISTA/_FIRST_AID_TENT/_AMMO_CART specialisation or TownTypesInfo NativeWarMachine), else ×3; gold only | `WarMachinePrice`, used by engine and BlacksmithScreen | FIXED (specialisations ignored; all resources scaled) |
+| Buy command | CBuyWarMachineCmd execute 004f4d10 | fail if the hero has it (vfunc 0x70), pay gold (0xe0), give (0x68) | `DoBuyWarMachine` (plus the town/blacksmith checks the UI implies) | MATCH |
+| MMH 5.5 data | 5.5 TownTypesInfo NativeWarMachine (all ballista) | data-driven | data-driven | MATCH |
+| Screen header | 006ed200 MainHeader_Blacksmith / _WarMachineFactory text refs | localized header | literal "Blacksmith" | GAP |
+
+## Armies (garrison / visiting, split, merge)
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Split / move | CSplitStackCmd execute 00432160 | target counts; same creature only; a hero's single stack can't be emptied; count 0 succeeds | `DoTransfer` | FIXED (count 0 was an error) |
+| Transfer | CTransferCreaturesCmd 0042ae70 | n ≤ source, destination empty or same creature, both armies stay valid | `DoTransfer` | MATCH |
+| Swap | CSwapCreaturesCmd 00431d10 | swap slots, revert if an army becomes invalid | `DoSwap` (merges same creature across armies) | MATCH / UNVERIFIED (merge is UI behaviour) |
+| Dismiss stack | CDismissCreatureCmd 00427c40 | a hero's last stack can't be dismissed | — | UNVERIFIED |
+| Garrison ↔ visiting | "garrison visited / creatures swapped" (004e6d30) | not traced | `DoGarrison` merges the garrison into the hero | UNVERIFIED |
+
+# Hero screen
+
+## Hero development (experience, level-up rules)
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Experience table | 00b4c6b0 (table 01026d90 by level, constants 00f755e0, ×1.2 at 00e12f1c, ×0.1 at 00e12f10) | levels 1–12 from data (0 … 20600); steps × 1.2 up to level 24, then × (level − 13) × 0.1; round to nearest; clamp to 2³¹−1; level ≥ 41 reads 2³¹−1 | `ExperienceTable.Build` the same recurrence (was the Editor PDF table, 1 low from level 18 and drifting: L40 1216586989 → 1216634591) | FIXED |
+| Precision of the table products | 00a3fe20 CreateDevice flags 0x50 / 0x20 (no D3DCREATE_FPU_PRESERVE) | x87 left at 24-bit precision by D3D9 | float32 products (only levels 37–40 differ from 64-bit) | UNVERIFIED (assumes the table is first built on the device thread) |
+| Level cap | 00b4c6b0 index > 40 → 2³¹−1; map HeroMaxLevel (vfunc 0x170) | 40 unless the map caps lower | `For(level > 40)` = int.MaxValue, cap 40 / `HeroMaxLevel` | FIXED (For clamped to level 40 before) |
+| Level-up trigger | 00b52b10 | one level at a time: pending level (+0xd8) = level + 1, attribute vfunc 0x308(0,1), offer 00b52810, box; next level after the choice (00b575d0) | all levels rolled at once; later offers re-rolled after each choice; attribute applied immediately | MATCH (rules) / GAP (roll timing: the exe rolls level n+1's attribute after choice n) |
+| Attribute roll | 00b50a50, 00b509b0, enum HeroAttribute (types.xml: 0 Defence, 1 Offence, 2 Knowledge, 3 Spellpower) | class AttributeProbs (Offence, Defence, Spellpower, Knowledge) weighted; a Spellpower roll gives Knowledge unless SP > 2 or K + 1 ≤ 4·SP (hero +0x3c/+0x38); no weights → Defence | `RollLevelUpAttribute` / `LevelUpAttribute` same (was a plain weighted pick, Attack on no weights) | FIXED (offsets +0x38/+0x3c read as base Knowledge/Spellpower by the enum order: inferred) |
+| Offer composition | 00b52810 | skill 1 new (00b50db0); none → two upgrades (00b4f400, second excludes first); else an upgrade, or a 2nd new skill; perk 1 standard (00b4f5c0(·,1,0)) else any; perk 2 special (00b4f5c0(p1,0,1)) else any but p1 | `BuildOffer` same | FIXED (was manual p.294 version; equivalent except the perk slot types) |
+| New-skill candidates | 00b50db0, 00875e20, 00875550 | none with 6 skills; all skills (type 0) without a HeroClass in enum order + the hero's racial skill; not known, not excluded | `DrawNewSkill` same (enum = Skills.xdb index, `PerkDef.Index`) | FIXED (was only class-listed skills) |
+| New-skill weights | 00b50be0 → 00875ba0 (class SkillsProbs), 00b509b0 | weight = class prob (0 if unlisted); r = rand[0,sum−1]; all-zero → first candidate | same (`PickWeighted`) | FIXED (zero-weight skills were never offered) |
+| Upgrade pick | 00b4f400 | uniform among known skills below Expert, minus the excluded | same | MATCH |
+| Perk unlock | 00876160 → 008766a0 → 00875b30, 00875a40 | perk of a known skill: standard always; class perk iff HeroClass = hero class; special/ultimate iff SkillPrerequisites has the hero's class and all its dependencies are known (vfunc 0x174) | `PerkCandidates` same | FIXED (class perks used the prerequisite path; ultimates were never offered) |
+| Perk lock | 00875f20 | taken perks of the skill ≥ mastery (vfunc 0x174: Pendant of Mastery +1 on the racial); limit 4 for perks with a HeroClass once mastery > 2 | same (`EffectiveMastery`) | FIXED (ultimate 4th slot) |
+| Perk slot types | 00b4f5c0 (types 1/3 vs 2/4) | standard slot takes STANDART and CLASS perks; special slot SPECIAL and UNIQUE | same | FIXED (class perks were in the special slot) |
+| Barbarian perk copies | 00875410 | BARBARIAN_LEARNING etc. count as the original in lookups and on-learn effects | `CanonicalSkill` | FIXED |
+| Enlightenment (HERO_SKILL_LEARNING) stats | 00b54770 case 3, 00b4bea0, 00b575d0 loop, undo 00b55d80 | level / max(2, 5 − mastery) random primary stats (vfunc 0x308), given on learning and every level-up, newest taken back on unlearn (+0x2b0 list) | `ApplyLearningBonus` / `RevokeLearningBonus`, `HeroState.LearningStats` | FIXED (was TODO) |
+| Attribute perks | 00b54770 → 00b4cbc0; 00b55d80 → vfunc 0x1bc | Graduate, Secrets of Destruction +2 Kn; Lord of Undead +1 Kn; Caster Certificate, Master of Secrets, Academy Award, Insights +2 SP; Forest Guard Emblem +2 Att; Seal of Protection, Defend Us All, Bodybuilding +2 Def; undone by the Memory Mentor | `PerkStat`, `ApplyPerkOnLearn` / `RevertOnUnlearn` | FIXED (were missing) |
+| One-time perk rewards | 00b54770 cases 0x4f/0x7f/0x8c, flags +0x2a8/+0x2a9/+0x2ab | Graduate +1000 exp via modifiers; Academy Award +1000 gold; Dark Revelation: L+1 < cap adds T(L+1) − T(L), L+1 = cap sets T(cap); flags never cleared | same, `HeroState.PerkRewardsClaimed` | FIXED (Dark Revelation set exp to the next threshold; no once-flags; Academy gold missing) |
+| Other on-learn effects | 00b54770 (Caster Certificate +0x158 += 100 once; Forest Guard Emblem / Defend Us All creatures by week; Insights / Master of Secrets spells; perk ability spells via vfunc 0xec; Intelligence/Leadership/Luck refreshes) | as listed | not applied (derived values recomputed elsewhere) | GAP |
+| On-learn for non-level-up paths | vfunc 0x1c8 → 00b54770 | every learn path | level-up choice, Memory Mentor relearn, `ScriptLearnPerk`; Witch Hut / Seer Hut / `ScriptSetSkill` skills skip it (Enlightenment catches up at the next level-up) | GAP |
+| Starting perks | 00b56cd0 (00b54770 with param_4 = 1) | caller not traced | not applied | UNVERIFIED |
+
+## Hero screen (UI/HeroScreen3)
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Name / class / level | 006bed90 | HeroName, HeroClass (class name), HeroLevel values of HeroName.txt | same | MATCH |
+| Experience bar | 006bed90, HeroExperience.(WindowProgressBar) Forward texture | fill (exp − T(L)) / (T(L+1) − T(L)) | `SetProgress` (was never filled) | FIXED |
+| Experience tooltip | 006bed90 keys current / next; ExpTooltip.txt | `<value=current>/<value=next>` = exp / T(L+1) | from ExpTooltip.txt (was hard-coded "a / b") | FIXED |
+| "Experience:" label placement | HeroDescription (pos 132,36, shared HIGH_END) | — | drawn over the Attributes header | GAP (UiLayout HIGH_END semantics, not traced) |
+| Attribute values | 006be820 / 006be780 | each value compared with a second value: `_red` below, `_green` above; source pair (likely total vs base) not traced | base stats, no colouring, worn artifacts not added | GAP |
+| Mana | 006be820 Attribute / AttributeMax | current / max | `Mana` / `MaxMana` | MATCH |
+| Artifact doll and backpack icons | Inventory/*.(WindowMSButton) with a Pic child | icon shown in the slot | icon was put under the Pic child (invisible); now on Pic | FIXED |
+| Doll slot mapping | 006bf940 (Helm, Necklace, Cloak, Cirase, Weapon, Shield, Ring_1/2, Boots, Additional) | per artifact Slot | same names | MATCH |
+| Backpack paging | 006bf940 InvLeft / InvRight | 10 per page | same | MATCH (page clamp rules not traced) |
+| Skills table | 006c7a70 (6 cells), Racial_1..5, Racial_Desc | cells filled from the hero's skills | 6 cells; specialisation icon on Racial_1, name on Racial_Desc; Racial_2..5 unused | UNVERIFIED (fill code not traced) |
+| Abilities page | 006c9f30 Abilities%d / Perk%d | per skill row its perks | same (3 per skill) | UNVERIFIED (ultimate as a 4th perk not shown) |
+| Army / war machines | 006c8690 ArmyStacks, WarMachinesStacks | stacks and machines | same | MATCH (bindings) |
+| Bookmarks, dismiss, next/prev hero, cast | 006c4b40 (bookmark, dismiss_hero, cast_spell), 006c5380 (NextHero, PrevHero, DismissHero_Tooltip) | dismiss and hero cycling | bookmarks and cast; dismiss / next / prev not built | GAP |
+| Biography | 006c1890 biography / spec_name / spec_desc | values of the biography text view | same | MATCH |
+| MMH 5.5 layout | MMH55-Skillwheel.pak HeroScreen3 (adds Biography, FaceCover, Specialization, Pocket, Placeholder; Skills page = class skill & perks / specialisation / biography) | MMH55 screen | opens and shows Army / Inventory; the MMH Skills page leaves Specialization and Biography empty; Backpack header missing | GAP |
+| Spellbook from the hero screen | Inventory Cast → cast_spell (006c4b40) | adventure spellbook | `SpellBook3D` (combat book) with the hero's spells | UNVERIFIED |
+
+## Level-up box (UI/LevelUPBox)
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Header text | 006a8f50 (N_LEVEL_UP_WINDOW_ID related text "levelup" / "relearning", values name, level, profession) | "<name> is now a level <level> <profession>…" | related text + values (was an invented English line) | FIXED |
+| Attribute row | 006a8f50 SkillBack: UI/HeroAttributes (UIHeroAttributes) entry: heroattribute = DescriptionFileRef, Face_1 = Texture | e.g. "Attack<br>Skill +1" with its icon | same (was "+1 defence" text, no icon) | FIXED |
+| Options | 006a8f50 Skill%d, Choose / heroskill, FaceSkill | skills left, perks right | same | MATCH |
+| Relearning header | 006a8f50 (level −1 → relearning_header + tooltip, SkillBack hidden) | relearn mode | relearn offers shown through the normal box | GAP |
+| Sound | 006a8f50 HERO_LEVEL_UP_SOUND / HERO_RELEARNING_SOUND | — | audio pass (AUDIO.md) | MATCH |
+| MMH 5.5 box | MMH55 LevelUpBox override | extra skill-wheel button | box works; the extra button is unbound | GAP |
