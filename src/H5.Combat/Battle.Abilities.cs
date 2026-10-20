@@ -354,6 +354,8 @@ public sealed partial class Battle
                 allowMorale = false;
                 break;
             case "PLAGUE_TENT":
+                // exe 0097f610 (case 0xbd / 0x160): not a war machine, Mechanical, Elemental or Undead target.
+                if (!IsLiving(t!)) return "target cannot be harmed by the tent";
                 u.Shots = Math.Max(0, u.Shots - 1);
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
                 DealDamage(t, TentHealAmount(u), u.Id, AttackKind.Ability, c.Ability);

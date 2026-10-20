@@ -345,6 +345,7 @@ public sealed partial class Battle
         {
             Emit(new MoraleProc(u.Id, false));
             RageEvent(u, "BadMoraleRP");
+            EmpathyOnMorale(u, good: false);
             // exe 008a8140: the opposing hero's Necromancers set (4+ pieces) cripples a stack that fails its morale.
             if (Specials.Pieces(Enemy(u.Side), Specials.Necromancers) > 3)
                 AddEffect(u, new Effect { Id = NecromancersDebuff, SourceSide = 1 - u.Side, Dispellable = false });
@@ -398,8 +399,7 @@ public sealed partial class Battle
                 reset = Stats.Get("combat/LuckAndMorale/GoodMorale_ATBValue", 0.5);
                 Emit(new MoraleProc(u.Id, true));
                 RageEvent(u, "BattleElation");
-                var h = HeroOf(u);
-                if (h.HasPerk(Sk.Empathy)) AddAtb(Actor.Hero(u.Side), Stats.Get("combat/HeroSkills/Runemage/Empathy_ATBAffectionOnMorale", 0.1));
+                EmpathyOnMorale(u, good: true);
             }
         }
         if (u.Alive) SetAtb(u.Id, reset);

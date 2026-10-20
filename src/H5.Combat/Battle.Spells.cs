@@ -121,7 +121,8 @@ public sealed partial class Battle
         };
         if (m > Mastery.Expert) m = Mastery.Expert;
         // Power of Speed / Endurance cast at Advanced unless Expert in Light Magic.
-        if ((sp.Id == "SPELL_MASS_HASTE" && h.HasPerk(Sk.PowerOfSpeed) || sp.Id == "SPELL_MASS_STONESKIN" && h.HasPerk(Sk.PowerOfEndurance)) && m < Mastery.Advanced)
+        // exe 00b4b4c1..00b4b50e: the base spell (FUN_00a34110) is compared, so Haste / Stoneskin themselves count too.
+        if ((BaseSpell(sp.Id) == "SPELL_HASTE" && h.HasPerk(Sk.PowerOfSpeed) || BaseSpell(sp.Id) == "SPELL_STONESKIN" && h.HasPerk(Sk.PowerOfEndurance)) && m < Mastery.Advanced)
             m = Mastery.Advanced;
         return m;
     }
@@ -223,7 +224,7 @@ public sealed partial class Battle
         var e = Enemy(h.Side);
         if (e.Present)
         {
-            if (e.HasPerk(Sk.MightOverMagic)) p -= e.SpellPower / 2.0;
+            if (e.HasPerk(Sk.MightOverMagic)) p -= e.SpellPower / 2;   // exe 00c562f0: integer half stored as effect 0x135
             if (e.HasPerk(Sk.ShrugDarkness) && sp.School == "MAGIC_SCHOOL_DARK")
                 p = (int)(p * (float)Stats.Get("combat/HeroSkills/Runemage/ShrugDarkness_EnemySpellpowerMultiplier", 0.5));   // chop
         }
@@ -349,9 +350,7 @@ public sealed partial class Battle
             if (sp.School == "MAGIC_SCHOOL_RUNIC" && RuneError(h, sp, c.TargetId) is { } re) return re;
             if (ValidateSpellTarget(c.ActorId, h.Side, sp, mastery, c.TargetId, c.Cell) is { } te) return te;
             var target = c.TargetId is int tid ? S.Unit(tid) : null;
-            // Mark of the Wizard: spells on the marked stack are doubled when the hero can pay the cost twice.
-            bool doubled = target != null && h.Links.TryGetValue(LinkMarkOfWizard, out var markedId) && markedId == target.Id && h.Mana >= 2 * cost;
-            if (doubled) cost *= 2;
+            // Mark of the Wizard is a second, separately paid cast after this one (MarkOfTheWizardRecast, exe 009834b0).
             cost = SkillAuditH.ErraticManaSpend(cost, h.HasPerk(Sk.ErraticMana), HeroRoll, S.Rng);   // exe 00bbf6a6
             h.Mana -= cost;
             Emit(new ManaChanged(c.ActorId, h.Mana));
@@ -371,9 +370,7 @@ public sealed partial class Battle
                 EndAction(c.ActorId, counteredReset, false);
                 return null;
             }
-            if (doubled) _spellDamageScale *= 2;
             ResolveSpell(c.ActorId, h.Side, sp, mastery, power, target, c.Cell, fromHero: true);
-            _spellDamageScale = 1;
             MindCleanerCheck(h, sp);
             if (sp.School == "MAGIC_SCHOOL_RUNIC") { h.AbilityUses[$"{sp.Id}:{c.TargetId}"] = 1; TapRunes(h); }
             double reset = HeroCastAtbReset(h, sp);
@@ -415,7 +412,7 @@ public sealed partial class Battle
         finally { _castingCreature = null; }
         MarkOfTheDamnedTrigger(u);   // exe FUN_00983790 @ 009840a1: the marked caster is struck after its spell
         ManaBurst(u);
-        EndAction(u.Id, 0);
+        EndAction(u.Id, CreatureCastAtb(u, sp));
         return null;
     }
 
@@ -429,10 +426,11 @@ public sealed partial class Battle
         return null;
     }
 
-    void TapRunes(HeroState h)
+    internal void TapRunes(HeroState h)
     {
         if (!h.HasPerk(Sk.TapRunes)) return;
-        h.Mana = Math.Min(h.MaxMana, h.Mana + (int)(h.Knowledge * Stats.Get("combat/HeroSkills/Runemage/TapRunes_ManaRestorePerKnowledge", 0.5)));
+        // exe FUN_00419730: round(knowledge · TapRunes_ManaRestorePerKnowledge) (round half even), capped at the maximum.
+        h.Mana = Math.Min(h.MaxMana, h.Mana + ExeRound((float)h.Knowledge * (float)Stats.Get("combat/HeroSkills/Runemage/TapRunes_ManaRestorePerKnowledge", 0.5)));
         Emit(new ManaChanged(Actor.Hero(h.Side), h.Mana));
     }
 
@@ -460,11 +458,14 @@ public sealed partial class Battle
         return reset;
     }
 
-    void ManaBurst(Unit caster)
+    internal void ManaBurst(Unit caster)
     {
         var e = Enemy(caster.Side);
+        // exe 00983790 @ 0098410f..00984190: trunc(level · clamp(SunFireDamagePerHeroLevel, 0.1, 1000)) dealt straight through
+        // the stack damage path FUN_00a616e0 — no fire immunity / protection / Mark of Fire.
         if (caster.Alive && e.Present && (e.HasPerk(Sk.ManaBurst) || e.HasPerk(Sk.BarbManaBurst)))
-            DealElementalDamage(caster, (int)(Stats.Get("combat/HeroSkills/Ranger/SunFireDamagePerHeroLevel", 10) * e.Level), Elements.Fire, Actor.Hero(e.Side), "MANA_BURST");
+            DealDamage(caster, (int)(e.Level * Math.Clamp((float)Stats.Get("combat/HeroSkills/Ranger/SunFireDamagePerHeroLevel", 10), 0.1f, 1000f)),
+                Actor.Hero(e.Side), AttackKind.Ability, "MANA_BURST");
     }
 
     public string? ValidateSpellTarget(int caster, int side, SpellDef sp, Mastery m, int? targetId, Cell? cell)
@@ -513,15 +514,16 @@ public sealed partial class Battle
     /// <summary>Applies a spell. Caster is an actor id (hero or unit); side is the caster's controlling side.</summary>
     internal void ResolveSpell(int caster, int side, SpellDef sp, Mastery m, double power, Unit? target, Cell? cell, bool fromHero)
     {
-        double prevScale = _spellDamageScale;
+        double prevScale = _spellDamageScale, prevLuck = _warlockLuck;
         if (target != null) target = MagicMirror(side, sp, target);
-        try { ResolveSpellCore(caster, side, sp, m, power, target, cell, fromHero); }
-        finally { _spellDamageScale = prevScale; }
-        // Mark of the Wizard: a spell striking another creature affects the marked stack as well.
+        _warlockLuck = fromHero ? RollWarlocksLuck(S.Heroes[side], sp) : 1;   // once per cast (exe 00983ab3)
+        try
+        {
+            ResolveSpellCore(caster, side, sp, m, power, target, cell, fromHero);
+            MarkOfTheWizardRecast(caster, side, sp, m, power, fromHero);
+        }
+        finally { _spellDamageScale = prevScale; _warlockLuck = prevLuck; }
         var mh = fromHero ? S.Heroes[side] : null;
-        if (mh != null && target != null && mh.Links.TryGetValue(LinkMarkOfWizard, out var mid) && mid != target.Id
-            && S.Unit(mid) is { Alive: true } marked && TargetingOf(sp) == SpellTargeting.Unit && !IsMass(sp.Id))
-            ResolveSpellCore(caster, side, sp, m, power, marked, cell, fromHero);
         if (mh != null && target != null && IsDamageSpell(BaseSpell(sp.Id))) MatronSalvo(mh, target);
     }
 
@@ -872,7 +874,8 @@ public sealed partial class Battle
         // (0097da71 / 0097dec0 single target, 0085e8bf area, 0085ef3c chain, 0085f630 Armageddon / Words, 0098abf0 Firewall cast).
         // The engine rolled for enemy stacks only. (The caller's `hostile` no longer decides it.)
         bool resistible = sp.Target == "TARGET_HOSTILE" || Controller(t) != side;
-        if (resistible && !physical && !irresistible && RollResistance(t, MagicResistanceChance(t)))
+        int eternal = EternalLightResistance(t, sp);   // exe 004e41c0: 50 + the resistance additions, one roll
+        if (resistible && !physical && (eternal > 0 || !irresistible) && RollResistance(t, eternal + (irresistible ? 0 : MagicResistanceChance(t))))
         {
             // A resisted damage spell is 100 % protection; Irresistible Magic still lets its share through (0097d2a0,
             // fan manual p.322).
@@ -919,14 +922,7 @@ public sealed partial class Battle
             // Irresistible Magic (p.140, p.322): reduces protection, and immune / resisted targets still take a share.
             dmg = ApplyProtectionPercent(dmg, mult, immune || fullProtection, inv);
         }
-        if (hero != null && rollLuck)
-        {
-            if (hero.HasPerk(Sk.WarlocksLuck) && sp.School == "MAGIC_SCHOOL_DESTRUCTIVE")
-            {
-                int luck = hero.Luck;
-                if (luck > 0 && S.Rng.Chance(Math.Min(0.5, luck * 0.1))) { dmg *= 2; Emit(new LuckProc(Actor.Hero(side), true)); }
-            }
-        }
+        if (hero != null && rollLuck) dmg = ApplyWarlocksLuck(dmg, _warlockLuck);   // the cast's one roll (exe 0097d600)
         // Elemental Chains add their share on top of the protected damage (exe: FUN_0097d600 + FUN_00977e60 in the
         // bolt/chain/area resolvers 0085e7c0/0085edb0/0085f330); the Holy/Unholy Word resolver (00977600) has none.
         if (id is not ("SPELL_HOLY_WORD" or "SPELL_UNHOLY_WORD"))
@@ -1068,17 +1064,9 @@ public sealed partial class Battle
             case "SPELL_BLIND":
                 break;
         }
-        // Opposite spells dispel each other (p.315); Eternal Light gives 50% to resist.
-        if (Opposites.TryGetValue(id, out var opp) && t.GetEffect(opp) is { } oe)
-        {
-            var oppCaster = oe.SourceSide >= 0 ? S.Heroes[oe.SourceSide] : null;
-            if (oppCaster != null && oppCaster.HasPerk(Sk.EternalLight) && oe.School == "MAGIC_SCHOOL_LIGHT" && S.Rng.Chance(0.5))
-            {
-                Emit(new SpellResisted(t.Id, id));
-                return false;
-            }
+        // Opposite spells dispel each other (p.315); Eternal Light's 50 % is part of the resistance roll (SpellHits).
+        if (Opposites.TryGetValue(id, out var opp) && t.GetEffect(opp) != null)
             RemoveEffect(t, opp);
-        }
         bool positive = sp.Target == "TARGET_FRIEND";
         var eff = MakeSpellEffect(id, sp, m, power, side, casterLevel, value, duration, positive);
         if (id == "SPELL_CURSE" && hero != null && Spec(hero, "HERO_SPEC_MALEDICTOR") is var ml && ml >= 0) eff.Value2 = (ml + 2) / 3;

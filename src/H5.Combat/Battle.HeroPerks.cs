@@ -14,7 +14,7 @@ public sealed partial class Battle
     {
         if (h.HasPerk("HERO_SKILL_COUNTERSPELL") && !h.Links.ContainsKey(LinkCounterspell) && CounterspellArmable(h)) yield return new(LinkCounterspell, AbilityTargeting.None);
         if (h.HasPerk(Sk.MarkOfWizard)) yield return new("MARK_OF_WIZARD", AbilityTargeting.Enemy);
-        if (h.HasPerk(Sk.Banish) && S.Living.Any(u => u.Summoned && Controller(u) != h.Side)) yield return new("BANISH", AbilityTargeting.None);
+        if (h.HasPerk(Sk.Banish) && S.Living.Any(u => u.Summoned && u.Side != h.Side)) yield return new("BANISH", AbilityTargeting.None);
         if (h.HasPerk("HERO_SKILL_MELT_ARTIFACT") && S.Units.Any(u => u.Side == h.Side && u.Kind == UnitKind.Creature && u.ArtifactEffects >= 0 && !u.Removed))
             yield return new("CONSUME_ARTIFACT", AbilityTargeting.Friend);
         // Imbuing takes no turn, so it may be changed at most once per hero turn.
@@ -46,7 +46,8 @@ public sealed partial class Battle
                 // 10*(Level + Summoning mastery) to every enemy summoned or gated stack (fan manual, Banish).
                 int dmg = (int)(Stats.Get("combat/HeroSkills/Wizard/Unsummon_DamagePerHeroLevel", 10) * h.Level
                               + Stats.Get("combat/HeroSkills/Wizard/Unsummon_DamagePerSkillMastery", 10) * (int)h.SkillLevel(Sk.Summoning));
-                foreach (var u in S.Living.Where(u => u.Summoned && Controller(u) != h.Side).ToList())
+                // exe 00984a00 case 0x42: the opposing army's (vf 0x10 → vf 0x64) summoned stacks and spawns, by army not controller.
+                foreach (var u in S.Living.Where(u => u.Summoned && u.Side != h.Side).ToList())
                     DealDamage(u, dmg, Actor.Hero(h.Side), AttackKind.Ability, "BANISH");
                 return true;
             }
