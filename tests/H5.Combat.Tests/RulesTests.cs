@@ -137,13 +137,13 @@ public class RulesTests(GameDataFixture f)
     public void MovementCostsUseOctileBudget()
     {
         var b = f.Duel("CREATURE_FOOTMAN", 10, "CREATURE_FOOTMAN", 10, posA: new Cell(2, 2), posB: new Cell(11, 9));
-        var u = b.State.Units[0];   // speed 4 → budget 400
+        var u = b.State.Units[0];   // speed 4 → budget 8 (exe: 2 × speed, steps 2 / 3)
         var reach = b.Reachable(u);
-        Assert.True(reach.ContainsKey(new Cell(6, 2)));        // 4 orthogonal = 400
+        Assert.True(reach.ContainsKey(new Cell(6, 2)));        // 4 orthogonal = 8
         Assert.False(reach.ContainsKey(new Cell(7, 2)));
-        Assert.True(reach.ContainsKey(new Cell(4, 4)));        // 2 diagonal = 282
-        Assert.False(reach.ContainsKey(new Cell(5, 5)));       // 3 diagonal = 423
-        Assert.True(reach.ContainsKey(new Cell(5, 4)));        // 2 diag + 1 orth = 382
+        Assert.True(reach.ContainsKey(new Cell(4, 4)));        // 2 diagonal = 6
+        Assert.False(reach.ContainsKey(new Cell(5, 5)));       // 3 diagonal = 9
+        Assert.True(reach.ContainsKey(new Cell(5, 4)));        // 2 diag + 1 orth = 8
     }
 
     [Fact]

@@ -47,6 +47,7 @@ exe yet). Addresses are H5_Game.exe virtual addresses.
 
 | Element | Original | Ours | Status |
 |---|---|---|---|
+| Movement search (beta report: "troops should move diagonally") | FUN_00c536f0 → FUN_00c52cc0 (budget = speed vf 0x48 × 2), FUN_00b5f0d0 (8-connected, dx,dy table @00f757c8 N,S,W,E,NE,SE,NW,SW; step ((dx&dy)&1)+2 = 2/3; FIFO cost buckets; strictly cheaper relaxation; only the entered cell tested — no corner rule; size > 1 by obstacle inflation FUN_00b3efb0), FUN_00b5ed00 path; flyers search an empty board (FUN_00b3f120 flyer flag); self test FUN_00caa300 expects cost 82 for 26 diagonal + 2 orthogonal steps; highlight FUN_0055ba00 → FUN_00c53160 uses the same search | diagonals were already allowed, but costs were 100/141 vs speed × 100, a diagonal could not pass between two blocked cells, ties went by (cost, x, y): now `Battle.MoveSearch` ports the exe search (MovementExeTests) | FIXED (AI whole-path planner still on 100/141, GAP; stop-mask mode 2 of FUN_00c52cc0 — probably the moat — not ported, engine trims the path at the moat afterwards) |
 | Clip cross-fade | 0054d700: combat_anim_blend 300 ms idle→stir/move and any→idle; other changes cut | `UnitView.BlendSeconds` | FIXED |
 | Turn before moving | 008b8a70 → 008b88b0: turn in place to the first segment playing the move clip | `UnitView.TurnTo` | FIXED |
 | Turn duration | 00a44030: (1/speed[units/ms]) × angle/π, or 300 ms × angle/π | same | FIXED |

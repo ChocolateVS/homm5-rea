@@ -1,10 +1,28 @@
 namespace H5.Combat;
 
-// Movement and geometry. Steps cost 100 orthogonally and 141 diagonally against a budget of
-// Speed*100, as on the adventure map (fan manual p.299: "the system works the same in combat").
+// Movement and geometry. The movement search follows H5_Game.exe (pathfinder FUN_00c536f0 →
+// FUN_00c52cc0 setup, FUN_00b5f0d0 search, FUN_00b5ed00 path): 8-connected, integer step costs
+// 2 orthogonal / 3 diagonal against a budget of 2 × speed, only the entered cell is tested (no
+// corner rule), flyers search an empty board. Octile (100/141) stays as a generic distance metric.
 public sealed partial class Battle
 {
     public const int OrthCost = 100, DiagCost = 141;
+
+    /// <summary>Movement step costs (FUN_00b5f0d0: step = ((dx &amp; dy) &amp; 1) + 2) and budget per speed point (FUN_00c52cc0).</summary>
+    public const int MoveOrth = 2, MoveDiag = 3, MoveBudgetPerSpeed = 2;
+
+    /// <summary>Movement cost between two cells on an empty board: 2·max(dx,dy) + min(dx,dy).</summary>
+    public static int MoveDistance(Cell a, Cell b)
+    {
+        int dx = Math.Abs(a.X - b.X), dy = Math.Abs(a.Y - b.Y);
+        return MoveOrth * Math.Max(dx, dy) + (MoveDiag - MoveOrth) * Math.Min(dx, dy);
+    }
+
+    /// <summary>Neighbour order of the exe's search (dx,dy table @00f757c8): N, S, W, E, NE, SE, NW, SW.</summary>
+    public static readonly Cell[] MoveDirs =
+    {
+        new(0, -1), new(0, 1), new(-1, 0), new(1, 0), new(1, -1), new(1, 1), new(-1, -1), new(-1, 1),
+    };
 
     public static int Octile(Cell a, Cell b)
     {
@@ -74,7 +92,7 @@ public sealed partial class Battle
     {
         var result = new Dictionary<Cell, (int Cost, Cell Prev)>();
         if (!CanMove(u)) return result;
-        int budget = SpeedOf(u) * 100;
+        int budget = SpeedOf(u) * MoveBudgetPerSpeed;
         if (u.Flying)
         {
             for (int x = 0; x <= S.Width - u.Size; x++)
@@ -82,39 +100,51 @@ public sealed partial class Battle
             {
                 var p = new Cell(x, y);
                 if (p == u.Pos) continue;
-                int cost = Octile(u.Pos, p);
+                // Flyers: the same search on a board without obstacles (FUN_00b3f120 with the flyer flag), so the
+                // reach is the empty-board distance; the landing footprint must be free.
+                int cost = MoveDistance(u.Pos, p);
                 if (cost <= budget && Fits(u, p)) result[p] = (cost, u.Pos);
             }
             return result;
         }
-        // Dijkstra on the 8-connected grid (small: at most 120 nodes).
-        var dist = new Dictionary<Cell, int> { [u.Pos] = 0 };
-        var prev = new Dictionary<Cell, Cell>();
-        var open = new SortedSet<(int Cost, int X, int Y)> { (0, u.Pos.X, u.Pos.Y) };
-        while (open.Count > 0)
-        {
-            var (cost, cx, cy) = open.Min;
-            open.Remove(open.Min);
-            var cur = new Cell(cx, cy);
-            if (cost > dist[cur]) continue;
-            foreach (var d in Cell.Neighbours8)
-            {
-                var n = cur + d;
-                bool diag = d.X != 0 && d.Y != 0;
-                int nc = cost + (diag ? DiagCost : OrthCost);
-                if (nc > budget) continue;
-                if (!Fits(u, n)) continue;
-                // No squeezing diagonally between two blocked orthogonal steps.
-                if (diag && !Fits(u, new Cell(cur.X + d.X, cur.Y)) && !Fits(u, new Cell(cur.X, cur.Y + d.Y))) continue;
-                if (dist.TryGetValue(n, out var old) && old <= nc) continue;
-                dist[n] = nc;
-                prev[n] = cur;
-                open.Add((nc, n.X, n.Y));
-            }
-        }
+        var (dist, prev) = MoveSearch(u, budget);
         foreach (var (c, cost) in dist)
             if (c != u.Pos) result[c] = (cost, prev[c]);
         return result;
+    }
+
+    /// <summary>
+    /// The exe's walker search (FUN_00b5f0d0) from the unit's cell: costs and parents of every cell reached within
+    /// <paramref name="budget"/> (negative = unlimited, the AI's whole-path mode of FUN_00c52cc0).
+    /// </summary>
+    public (Dictionary<Cell, int> Dist, Dictionary<Cell, Cell> Prev) MoveSearch(Unit u, int budget)
+    {
+        // FUN_00b5f0d0: Dijkstra with FIFO cost buckets; neighbours in MoveDirs order; a cell takes a new parent
+        // only on a strictly cheaper cost (first found wins ties); only the entered footprint is tested.
+        var dist = new Dictionary<Cell, int> { [u.Pos] = 0 };
+        var prev = new Dictionary<Cell, Cell>();
+        var buckets = new SortedDictionary<int, Queue<Cell>> { [0] = new Queue<Cell>(new[] { u.Pos }) };
+        while (buckets.Count > 0)
+        {
+            var first = buckets.First();
+            var cur = first.Value.Dequeue();
+            if (first.Value.Count == 0) buckets.Remove(first.Key);
+            int cost = first.Key;
+            if (cost > dist[cur]) continue;
+            foreach (var d in MoveDirs)
+            {
+                var n = cur + d;
+                int nc = cost + (d.X != 0 && d.Y != 0 ? MoveDiag : MoveOrth);
+                if (budget >= 0 && nc > budget) continue;
+                if (dist.TryGetValue(n, out var old) && old <= nc) continue;
+                if (!Fits(u, n)) continue;
+                dist[n] = nc;
+                prev[n] = cur;
+                if (!buckets.TryGetValue(nc, out var q)) buckets[nc] = q = new Queue<Cell>();
+                q.Enqueue(n);
+            }
+        }
+        return (dist, prev);
     }
 
     List<Cell> PathTo(Unit u, Cell to)

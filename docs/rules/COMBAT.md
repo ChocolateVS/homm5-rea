@@ -35,7 +35,7 @@ IBattleAI ai = new GreedyBattleAI(); BattleCommand cmd = ai.Decide(battle, side)
 * ATB (p.309-313): start 0..0.25, rate = Initiative/10, wait → 0.5, defend → 0 (+30% defence, ×2 with Stand Your Ground),
   good morale → 0.5 after acting, bad morale → 0.5 and skip, hero initiative 10, spell durations in initiative-10 turns,
   Sorcery/mass-spell hero ATB resets, Swift Mind, Divine Guidance, Teleport Assault, Wasp Swarm/Lightning/Ice ATB effects.
-* Movement: 100/141 octile costs vs Speed×100, Dijkstra, flyers, entangle, mines/firewalls on the path.
+* Movement (exe FUN_00b5f0d0): 8-connected Dijkstra, steps 2 orthogonal / 3 diagonal vs Speed×2, no corner rule, flyers on an empty board; entangle, mines/firewalls on the path.
 * Damage (p.301-302): Count × random(min,max) × A/D factor (DefaultStats caps), range/melee penalties, Archery/Evasion,
   Offence/Defence skills, Training on retaliation, luck ×2/×0.5 (Elven Luck, Nature's Luck, Absolute Protection),
   Retribution, Jousting, Shield Wall, Rider Charge, Precise Shot, Large Shield / Shield Allies, Deflect Missile, Deep Freeze.
