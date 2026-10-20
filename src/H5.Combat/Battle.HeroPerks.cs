@@ -180,7 +180,9 @@ public sealed partial class Battle
     /// <summary>Seduction (fan manual p.181): duration 2 + log2(seducer power / target power) turns; unusable if ≤ 0.</summary>
     string? Seduce(Unit u, Unit t)
     {
-        if (MindImmune(t) || t.Has(Ab.ImmuneHypnotize) || t.CreatureId.Contains("SUCCUBUS")) return "target cannot be seduced";
+        // exe 0097f610 case 0x148: not Immunity to Mind Control (derived flag), a creature not of the CREATURE_SUCCUBUS family
+        // (FUN_004babf0 != 0x15) and not hypnotized (effect 0x14) — Immunity to Hypnotize is not tested.
+        if (MindImmune(t) || t.HasEffect("SPELL_HYPNOTIZE") || t.CreatureId.Contains("SUCCUBUS")) return "target cannot be seduced";
         // exe 00985b4e: the charge is spent, then FUN_009774a0 gives the duration; nothing happens when it is 0.
         u.AbilityUses["ABILITY_SEDUCE"] = 1;
         double duration = SeduceDuration(u.Count, u.Power, t.Count, t.Power);

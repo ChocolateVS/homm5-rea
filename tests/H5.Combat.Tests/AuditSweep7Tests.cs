@@ -107,6 +107,21 @@ public class AuditSweep7Tests(GameDataFixture f)
             b.ValidateSpellTarget(Actor.Hero(0), 0, f.Db.Spell("SPELL_HYPNOTIZE")!, Mastery.Expert, p.Id, null));
     }
 
+    // exe 0097f610 case 0x148: Seduce refuses a hypnotized target (effect 0x14), not one with Immunity to Hypnotize.
+    [Fact]
+    public void SeduceRefusesAHypnotizedTarget()
+    {
+        var b = f.Duel("CREATURE_SUCCUBUS_SEDUCER", 10, "CREATURE_PEASANT", 20, 1, new Cell(5, 5), new Cell(9, 5));
+        b.Begin();
+        var u = b.State.Units[0];
+        var t = b.State.Units[1];
+        b.AddEffect(t, new Effect { Id = "SPELL_HYPNOTIZE", SourceSide = 0, Remaining = 3 });
+        b.State.Active = u.Id;
+        var r = b.Apply(new UseAbilityCmd(u.Id, "ABILITY_SEDUCE") { Side = 0, TargetId = t.Id });
+        Assert.False(r.Ok);
+        Assert.False(t.HasEffect(Fx.Seduced));
+    }
+
     // exe FUN_00a597a0: against a sleeping target (0x150) an attacker of the CREATURE_VAMPIRE family (FUN_004babf0 ==
     // 0x23: BaseCreature, else own id) uses its maximum damage.
     [Fact]
