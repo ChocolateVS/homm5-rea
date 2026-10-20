@@ -15,7 +15,10 @@ public sealed class LuaSnapshot
     public sealed class Value
     {
         public LuaType T { get; set; }
+        /// <summary>Number value; ±infinity and NaN are written as the named literals.</summary>
         public double N { get; set; }
+        /// <summary>True for a negative zero (N itself is omitted as the default 0).</summary>
+        public bool Z { get; set; }
         public string? S { get; set; }
         /// <summary>Heap object id (tables, closures) or host function name in <see cref="S"/>.</summary>
         public int R { get; set; }
@@ -74,6 +77,8 @@ public sealed class LuaSnapshot
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
         WriteIndented = false,
+        // Scripts produce 1/0 and -1/0 (MMH55 uses them as limits); plain JSON cannot hold them.
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
     };
 
     public string ToJson() => JsonSerializer.Serialize(this, Json);
@@ -93,7 +98,7 @@ public sealed class LuaSnapshot
             switch (v.Type)
             {
                 case LuaType.Nil: return new Value { T = LuaType.Nil };
-                case LuaType.Number: return new Value { T = LuaType.Number, N = v.N };
+                case LuaType.Number: return new Value { T = LuaType.Number, N = v.N, Z = v.N == 0 && double.IsNegative(v.N) };
                 case LuaType.String: return new Value { T = LuaType.String, S = v.Str };
                 case LuaType.Table:
                 case LuaType.Userdata when v.O is LuaObject:
@@ -199,7 +204,7 @@ public sealed class LuaSnapshot
 
         LuaValue V(Value v) => v.T switch
         {
-            LuaType.Number => LuaValue.Number(v.N),
+            LuaType.Number => LuaValue.Number(v.Z ? -0.0 : v.N),
             LuaType.String => LuaValue.String(v.S ?? ""),
             LuaType.Table => LuaValue.Table(tables[v.R]),
             LuaType.Function when v.S != null => L.HostFunctions.TryGetValue(v.S, out var h)

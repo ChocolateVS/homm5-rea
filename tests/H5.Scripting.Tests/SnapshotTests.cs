@@ -75,4 +75,20 @@ public class SnapshotTests
         var tb = b.GetGlobal("t").TableValue.Pairs().Select(p => p.Key.ToString()).ToList();
         Assert.Equal(ta, tb);
     }
+
+    [Fact]
+    public void InfiniteNaNAndNegativeZeroSurviveRoundTrip()
+    {
+        // MMH55 map scripts keep 1/0 and -1/0 as limits; the save must hold them.
+        var (a, _) = NewState();
+        Assert.True(a.DoString("hi = 1/0 lo = -1/0 nan = 0/0 z = 0 z = -z lim = { max = hi, [1] = lo }", "inf"));
+        var json = LuaSnapshot.Capture(a).ToJson();
+        var (b, _) = NewState();
+        LuaSnapshot.FromJson(json).Restore(b);
+        Assert.Equal(double.PositiveInfinity, b.GetGlobal("hi").N);
+        Assert.Equal(double.NegativeInfinity, b.GetGlobal("lo").N);
+        Assert.True(double.IsNaN(b.GetGlobal("nan").N));
+        Assert.True(double.IsNegative(b.GetGlobal("z").N) && b.GetGlobal("z").N == 0);
+        Assert.Equal(json, LuaSnapshot.Capture(b).ToJson());
+    }
 }

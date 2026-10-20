@@ -12,7 +12,11 @@ public sealed partial class AdventureScripting
         public string World { get; set; } = "";
     }
 
-    static readonly JsonSerializerOptions WorldJson = new() { IncludeFields = true };
+    static readonly JsonSerializerOptions WorldJson = new()
+    {
+        IncludeFields = true,
+        NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals,
+    };
 
     /// <summary>Serialises everything script-side (Lua heap, threads, script world). Save it next to the AdvState.</summary>
     public string Save() => JsonSerializer.Serialize(new SaveData
