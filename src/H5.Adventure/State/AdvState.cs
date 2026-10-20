@@ -214,6 +214,8 @@ public sealed class HeroState
     public HashSet<int> VisitedSinceBattle = new();
     /// <summary>Stables bonus active for the rest of the week.</summary>
     public bool StablesThisWeek;
+    /// <summary>Drank from an Eldritch Well today (hero +0x174, any well; cleared by the new-day handler 00b50470).</summary>
+    public bool DrankFromWellToday;
     /// <summary>Pending level-up choices; resolved one at a time with ChooseLevelUpCmd.</summary>
     public List<LevelUpOffer> PendingLevelUps = new();
     public bool Alive = true;

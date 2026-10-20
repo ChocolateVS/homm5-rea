@@ -285,8 +285,14 @@ public sealed partial class Adventure
                 OncePerHero(h, o, () => { h.NextBattleMorale += 1; h.NextBattleLuck += 1; h.MovePoints += adv.Int("VisitRallyFlagMovementBonus", 400); }, untilBattle: true);
                 break;
             case "BUILDING_STABLES":
-                if (!h.StablesThisWeek) { h.StablesThisWeek = true; h.MovePoints += adv.Int("VisitStablesMovementBonus", 600); }
-                Emit(new ObjectVisited(h.Id, o.Index, type));
+                // 00b02740 case 0xf: the hero's stables flag (vcall 0x210 / 0x214, hero +0x18c; cleared by the hero's
+                // new-week handler 00b50880) set → [3]. Otherwise set it, movement + VisitStablesMovementBonus now
+                // (RPGStats +0x7c), [2]; while it is set the maximum land movement has ForWeekStablesMaxLandMovementBonus
+                // (+0x80, 00b4dd40).
+                if (h.StablesThisWeek) { Emit(new ObjectVisited(h.Id, o.Index, "msg:3")); break; }
+                h.StablesThisWeek = true;
+                h.MovePoints += adv.Int("VisitStablesMovementBonus", 600);
+                Emit(new ObjectVisited(h.Id, o.Index, "msg:2"));
                 break;
             case "BUILDING_TEMPLE":
                 OncePerHero(h, o, () => h.NextBattleMorale += S.DayOfWeek == 7 ? 2 : 1, untilBattle: true);
@@ -309,13 +315,27 @@ public sealed partial class Adventure
 
             // Mana.
             case "BUILDING_MAGIC_WELL":
-                if (h.VisitedDay.Add(o.Index)) h.Mana = Math.Max(h.Mana, MaxMana(h));
-                Emit(new ObjectVisited(h.Id, o.Index, type));
+            {
+                // Case 0x1c: one drink per hero per day from any well (vcall 0x208 / 0x20c, hero +0x174, cleared by the
+                // new-day handler 00b50470): set → [3]; max mana (vcall 0x12c) − mana < 1 → [4]; otherwise mana = max
+                // (vcall 0x128) with an ICON_MANA flyoff.
+                int max = MaxMana(h);
+                if (h.DrankFromWellToday) Emit(new ObjectVisited(h.Id, o.Index, "msg:3"));
+                else if (max - h.Mana < 1) Emit(new ObjectVisited(h.Id, o.Index, "msg:4"));
+                else { h.Mana = max; h.DrankFromWellToday = true; Emit(new ObjectVisited(h.Id, o.Index, type)); }
                 break;
+            }
             case "BUILDING_MAGIC_SPRING":
-                if (h.VisitedWeek.Add(o.Index)) h.Mana = Math.Max(h.Mana, 2 * MaxMana(h));
-                Emit(new ObjectVisited(h.Id, o.Index, type));
+            {
+                // Case 0x14: one hero per week per spring (the object's weekly flag +0xe8, cleared by its
+                // IAdvMapWeeklyUpdate 009ce1e0): set → [4]; 2 · max mana − mana < 1 → [3]; otherwise the flag, mana =
+                // 2 · max (vcall 0x128) with an ICON_MANA flyoff.
+                int twice = 2 * MaxMana(h);
+                if (os.LastVisitWeek == S.Week) Emit(new ObjectVisited(h.Id, o.Index, "msg:4"));
+                else if (twice - h.Mana < 1) Emit(new ObjectVisited(h.Id, o.Index, "msg:3"));
+                else { os.LastVisitWeek = S.Week; h.Mana = twice; Emit(new ObjectVisited(h.Id, o.Index, type)); }
                 break;
+            }
 
             // Weekly income buildings (per object).
             // 00b02740 cases 9 / 8 / 0x44: a weekly flag on the object ([3] while set); amounts through Fortunate
@@ -369,20 +389,28 @@ public sealed partial class Adventure
                 else if (RandomArtifact(null) is { } sa) GiveArtifact(h, sa);
                 break;
             case "BUILDING_TOMB_OF_THE_WARRIOR":
-                OncePerHero(h, o, () =>
-                {
-                    if (RandomArtifact(null) is { } ta) GiveArtifact(h, ta);
-                    h.NextBattleMorale -= 3;
-                });
+            {
+                // Case 0x67: morale −3 until the next battle (00af9a10, keyed on the object through vcall 0x1fc) unless
+                // already applied since the last battle. Looted (object +0xe9): [3] with the penalty, else [4]. Not
+                // looted: the penalty, then an artifact (00afa990 → 00afa7a0) shown with [2]; the tomb stays unlooted
+                // only when the hero cannot take it (00afa610 result 1).
+                // TODO(exe): which artifact 00afa7a0 draws (world vcall 0x124(2) → 008e7930) is not traced; any one is used.
+                bool penalty = h.VisitedSinceBattle.Add(o.Index);
+                if (penalty) h.NextBattleMorale -= 3;
+                if (os.TimesLooted > 0) { Emit(new ObjectVisited(h.Id, o.Index, penalty ? "msg:3" : "msg:4")); break; }
+                os.TimesLooted++;
+                if (RandomArtifact(null) is { } ta) { Emit(new ObjectVisited(h.Id, o.Index, "msg:2")); GiveArtifact(h, ta); }
                 break;
+            }
             case "BUILDING_SIRENS":
-                OncePerHero(h, o, () => Sirens(h));
+                Sirens(h, o);
                 break;
 
             // Exploration.
             case "BUILDING_REDWOORD_OBSERVATORY":
-                Reveal(p, h.Pos, 30);
-                Emit(new ObjectVisited(h.Id, o.Index, type));
+                // Case 0x20: radius 30 around the observatory's own position (object vcall 0xa4 → 0098f4e0), then [2].
+                Reveal(p, o.Pos, 30);
+                Emit(new ObjectVisited(h.Id, o.Index, "msg:2"));
                 break;
             case "BUILDING_HUT_OF_MAGI":
                 foreach (var eye in Map.Objects.Where(e => e.Shared.Type == "BUILDING_EYE_OF_MAGI" && e.Shared.Path.Contains("Eye_Of_Magi")))
@@ -490,18 +518,28 @@ public sealed partial class Adventure
         Emit(new ChoiceOffered(kind, h.Id, o.Index, 0, 0));
     }
 
-    /// <summary>Sirens kill 30% of the army and grant experience equal to the hit points taken (p.263).</summary>
-    void Sirens(HeroState h)
+    /// <summary>
+    /// Sirens (00b02740 case 0x3d): once per hero (vcall 0x1f4) else [3]. Every stack of more than one creature loses
+    /// (count · 30 + 50) / 100 (00b05761, FUN_004bad00); the experience is the creatures lost × the hit points with the
+    /// hero's bonuses (FUN_004bc470). None → [3] and the hero is not marked; otherwise the experience through +0x198
+    /// (no modifiers), the mark (vcall 0x1f8) and [2].
+    /// </summary>
+    void Sirens(HeroState h, MapObject o)
     {
-        long hp = 0;
+        if (h.VisitedOnce.Contains(o.Index)) { Emit(new ObjectVisited(h.Id, o.Index, "msg:3")); return; }
+        long exp = 0;
         foreach (var s in h.Army.Live().ToList())
         {
-            int killed = (int)(s.Count * 0.3);
-            if (Core.Creatures.TryGetValue(s.Creature, out var cd)) hp += (long)killed * cd.Health;
+            if (s.Count <= 1) continue;
+            int killed = Math.Min(s.Count, (s.Count * 30 + 50) / 100);
             s.Count -= killed;
+            exp += (long)killed * CreatureHitPoints(h, s.Creature);
         }
+        if (exp < 1) { Emit(new ObjectVisited(h.Id, o.Index, "msg:3")); return; }
         Emit(new ArmyChanged(h.Id, -1));
-        GainExperience(h, hp);
+        GainExperience(h, exp, modifiersApplied: true);
+        h.VisitedOnce.Add(o.Index);
+        Emit(new ObjectVisited(h.Id, o.Index, "msg:2"));
     }
 
     /// <summary>
