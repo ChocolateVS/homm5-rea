@@ -36,6 +36,12 @@ public sealed class AdvMap
     public int HeroMaxLevel;
     public bool CustomTeams;
     public bool RandomMoons;
+    /// <summary>The map's moons (position, step) used when RandomMoons is false (0041bdd0).</summary>
+    public List<(int Pos, int Step)> Moons = new();
+    /// <summary>The map's own SMoonCalendar (game path) or null for the default calendar.</summary>
+    public string? MoonCalendar;
+    /// <summary>MoonCalendarModifications/BlockMonstersWeeks: creature weeks become WEEK_OF_NOTHING.</summary>
+    public bool BlockMonstersWeeks;
     /// <summary>Objectives/Primary/Common/DieInWeekWithoutTowns: losing all towns eliminates after 7 days.</summary>
     public bool DieInWeekWithoutTowns;
     public List<MapPlayer> Players = new();

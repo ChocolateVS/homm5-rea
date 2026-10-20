@@ -192,7 +192,7 @@ public static partial class AdventureLauncher
         if (arg == "--adventure-test-attack") { _testAttack = true; return true; }
         if (arg == "--adventure-end-turn") { _endTurn = true; return true; }
         if (arg == "--adventure-meet-test") { _meetTest = true; return true; }
-        if (arg.StartsWith("--adventure-visit-test=")) { _visitTest = arg["--adventure-visit-test=".Length..]; return true; }
+        if (arg.StartsWith("--adventure-visit-test=")) { _visitTest = arg["--adventure-visit-test=".Length..]; AdventureScreen.DevAutoCloseBoxes = true; return true; }
         if (arg.StartsWith("--adventure-sphinx-page=")) { SphinxScreen.DevPage = int.Parse(arg["--adventure-sphinx-page=".Length..]); return true; }
         if (arg.StartsWith("--adventure-open=")) { _open = arg["--adventure-open=".Length..]; return true; }
         if (arg == "--adventure-spellbook") { _spellbook = true; return true; }

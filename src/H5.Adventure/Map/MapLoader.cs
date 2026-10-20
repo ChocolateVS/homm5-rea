@@ -44,6 +44,11 @@ public sealed class MapLoader
             InitialFloor = root.Int("InitialFloor"), CustomGameMap = root.Bool("CustomGameMap"),
             HeroMaxLevel = root.Int("HeroMaxLevel"), CustomTeams = root.Bool("CustomTeams"),
             RandomMoons = root.Bool("RandomMoons"),
+            // Map moons (State, RotationRate; read by 0041bdd0 via 00508680), MoonCalendar (+0x244) and
+            // MoonCalendarModifications/BlockMonstersWeeks (+0x224, reader 00ad6160).
+            Moons = root.Items("moons").Select(i => (i.Int("State"), i.Int("RotationRate"))).ToList(),
+            MoonCalendar = root.Href("MoonCalendar") is { Length: > 0 } mc ? XdbRef.Parse(mc, path).Path : null,
+            BlockMonstersWeeks = root.Element("MoonCalendarModifications").Bool("BlockMonstersWeeks"),
             Name = files.ReadText(root.Href("NameFileRef"))?.Trim() ?? "",
             Description = files.ReadText(root.Href("DescriptionFileRef"))?.Trim() ?? "",
             SpellIds = root.StrItems("spellIDs"), ArtifactIds = root.StrItems("artifactIDs"),

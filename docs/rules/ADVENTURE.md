@@ -49,7 +49,7 @@ Marked `TODO(exe)` in code where behaviour is approximated pending disassembly:
   exe readers at `0049ed10`/`0049edb0`; the adventure-map generator itself is not yet located.
 - Neutral join threshold random range (`FUN_008e1ad0`: `rand(100)·0.1·MoodCoef` seen; manual says `random(1;7)·MoodCoef`).
 - Guard zones (8 neighbours) and whether destination or source tile sets step cost.
-- Moon week draw weights and map `MoonCalendar` overrides; tavern offer rules; hero hire cost (2500) and cap (8).
+- Tavern offer rules; hero hire cost (2500) and cap (8).
 - Map hero `OverrideMask` bit meanings (only bit 1 = name observed); empty editable sections fall back to the shared hero.
 - Mana regeneration, Estates, town specialisations, hero specialisations on the adventure map, external dwelling
   growth bonuses, artifact set effects outside combat, Enlightenment's extra attribute points.

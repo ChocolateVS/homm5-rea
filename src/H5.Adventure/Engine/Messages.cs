@@ -37,6 +37,7 @@ namespace H5.Adventure.Engine;
 [JsonDerivedType(typeof(SacrificeCreatureOnAltarCmd), "altar_creature")]
 [JsonDerivedType(typeof(SacrificeArtifactOnAltarCmd), "altar_artifact")]
 [JsonDerivedType(typeof(BuySpellShopSpellCmd), "buy_spell_shop_spell")]
+[JsonDerivedType(typeof(ChangeMoonWeekCmd), "change_moon_week")]
 [JsonDerivedType(typeof(HireHeroInTavernCmd), "hire_hero_in_tavern")]
 [JsonDerivedType(typeof(PayThievesGuildCmd), "pay_thieves_guild")]
 [JsonDerivedType(typeof(UnlearnHeroSkillCmd), "unlearn_hero_skill")]

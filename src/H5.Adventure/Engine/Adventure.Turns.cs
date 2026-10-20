@@ -15,7 +15,7 @@ public sealed partial class Adventure
             int next = TurnOrder(S.CurrentPlayer);
             if (next < 0) { NewDay(); next = TurnOrder(-1); }
             if (next >= 0) S.CurrentPlayer = next;
-            if (!S.Finished) Emit(new TurnStarted(Current.Index, S.Day));
+            if (!S.Finished) EmitTurnStarted();
             return null;
         }
         // Next living player; wrapping around starts a new day.
@@ -26,7 +26,7 @@ public sealed partial class Adventure
             if (idx >= S.Players.Count) { idx = 0; NewDay(); }
         } while (!GetsTurn(S.Players[idx]) && S.Players.Any(GetsTurn));   // exe FUN_0098e410 (Adventure.AiDirectives.cs)
         S.CurrentPlayer = idx;
-        if (!S.Finished) Emit(new TurnStarted(Current.Index, S.Day));
+        if (!S.Finished) EmitTurnStarted();
         return null;
     }
 
@@ -35,10 +35,9 @@ public sealed partial class Adventure
         S.Day++;
         bool newWeek = S.DayOfWeek == 1;
         Emit(new DayStarted(S.Day));
+        MoonNewDay(newWeek);
         if (newWeek)
         {
-            ChooseMoonWeek();
-            Emit(new WeekStarted(S.Week, S.MoonWeek));
             WeeklyGrowthAll();
             foreach (var p in S.Players) RollTavern(p);
             RestockTownArtifactMerchants();
@@ -216,13 +215,15 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// Picks the next week. TODO(exe): the original draw weights/rules (and the map's MoonCalendar
-    /// overrides) are not decoded; weeks are drawn uniformly, with the first week neutral.
+    /// A player's turn starts. A human player (player vfunc 0x44 == 0) then gets the start-of-week notice when the
+    /// day of the week equals the notice day (world +0x1dc: 1, or the day a bought week took effect) — 00994920 →
+    /// 009946e0: START_OF_WEEK with weektype = the week's name, the creature icon of a creature week (00bcd640) or
+    /// TEXTURE_INFO, and NEW_WEEK_NEUTRAL/GOOD/BAD_SOUND by the week's Type.
     /// </summary>
-    void ChooseMoonWeek()
+    void EmitTurnStarted()
     {
-        if (S.Week == 1 || Db.MoonWeeks.Count == 0) { S.MoonWeek = "WEEK_OF_NOTHING"; return; }
-        S.MoonWeek = Db.MoonWeeks[S.Rng.Next(Db.MoonWeeks.Count)].Id;
+        Emit(new TurnStarted(Current.Index, S.Day));
+        if (Current.Human && S.DayOfWeek == S.WeekNoticeDay) Emit(new WeekStarted(S.Week, S.MoonWeek));
     }
 
     void ResetHeroDay(HeroState h, bool newWeek)

@@ -36,6 +36,9 @@ public partial class AdventureScreen : Control
 
     /// <summary>Dev/test: the local player's turns are played by the bot (`--adventure-autoplay`).</summary>
     public static bool Autoplay;
+    /// <summary>Dev runs that script a visit (`--adventure-visit-test`): message boxes close by themselves like in autoplay
+    /// (the first day's start-of-week notice would otherwise hold the visit).</summary>
+    public static bool DevAutoCloseBoxes;
     /// <summary>Dev/test: stop after this many days (`--adventure-days=N`).</summary>
     public static int AutoplayDays = 3;
 
@@ -560,7 +563,7 @@ public partial class AdventureScreen : Control
                 Hud.Refresh();
                 break;
             }
-            case ObjectVisited { What: "BUILDING_HILL_FORT" or "BUILDING_WARMACHINE_FACTORY" or "BUILDING_BLACK_MARKET" or H5.Adventure.Engine.Adventure.SacrificialAltar or H5.Adventure.Engine.Adventure.SpellShop } bv when HumanCaused(player) && !Autoplay && s.Hero(bv.HeroId) is { } visitor:
+            case ObjectVisited { What: "BUILDING_HILL_FORT" or "BUILDING_WARMACHINE_FACTORY" or "BUILDING_BLACK_MARKET" or H5.Adventure.Engine.Adventure.SacrificialAltar or H5.Adventure.Engine.Adventure.SpellShop or H5.Adventure.Engine.Adventure.AstrologerTower } bv when HumanCaused(player) && !Autoplay && s.Hero(bv.HeroId) is { } visitor:
             {
                 // Hill Fort / War Machine Factory / Artifact Merchant: their stock windows while the hero stands at the object.
                 Hud.Visible = false;
@@ -570,6 +573,7 @@ public partial class AdventureScreen : Control
                     "BUILDING_BLACK_MARKET" => new BlackMarketScreen(this, visitor.Id, bv.Object),
                     H5.Adventure.Engine.Adventure.SacrificialAltar => new SacrificeAltarScreen(this, visitor.Id, bv.Object),
                     H5.Adventure.Engine.Adventure.SpellShop => new SpellShopScreen(this, visitor.Id, bv.Object),
+                    H5.Adventure.Engine.Adventure.AstrologerTower => new AstrologerScreen(this, visitor.Id, bv.Object),
                     _ => new WarMachineFactoryScreen(this, visitor.Id, bv.Object),
                 };
                 AddChild(screen);
@@ -857,9 +861,12 @@ public partial class AdventureScreen : Control
             case WeekStarted ws when s.Players.Count > 0:
                 if (Session.IsHumanTurn)
                 {
-                    // Stock: "Start of Week: <value=weektype>" with the moon week name and its description.
+                    // 009946e0: START_OF_WEEK with weektype = the week's name and its description; a creature week
+                    // shows the creature's icon (00bcd640).
                     var week = AdvTexts.WeekName(ws.MoonWeek);
-                    await Dialog(done => Message(AdvTexts.Get(AdvTexts.StartOfWeek, ("weektype", week)), AdvTexts.WeekDescription(ws.MoonWeek), null, done));
+                    int cw = H5.Adventure.Engine.MoonCalendar.CreatureOf(Session.Db.MoonWeekIndex(ws.MoonWeek));
+                    var icon = cw != 0 && Session.Db.EnumName("CreatureType", cw) is { } cid ? H5Reborn.Town.TownUi.CreatureIcon(cid) : null;
+                    await Dialog(done => Message(AdvTexts.Get(AdvTexts.StartOfWeek, ("weektype", week)), AdvTexts.WeekDescription(ws.MoonWeek), icon, done));
                 }
                 break;
             case PlayerEliminated pe:
@@ -882,7 +889,7 @@ public partial class AdventureScreen : Control
         var tcs = new TaskCompletionSource();
         open(() => tcs.TrySetResult());
         // Automated runs close boxes by themselves after a moment (so screenshots still catch them).
-        if (Autoplay) GetTree().CreateTimer(0.6).Timeout += () =>
+        if (Autoplay || DevAutoCloseBoxes) GetTree().CreateTimer(0.6).Timeout += () =>
         {
             foreach (var c in _dialogLayer.GetChildren()) c.QueueFree();
             tcs.TrySetResult();

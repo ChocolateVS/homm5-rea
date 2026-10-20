@@ -97,6 +97,7 @@ public sealed partial class Adventure
             SacrificeCreatureOnAltarCmd c => DoSacrificeCreatureOnAltar(c),
             SacrificeArtifactOnAltarCmd c => DoSacrificeArtifactOnAltar(c),
             BuySpellShopSpellCmd c => DoBuySpellShopSpell(c),
+            ChangeMoonWeekCmd c => DoChangeMoonWeek(c),
             HireHeroInTavernCmd c => DoHireHeroInTavern(c),
             PayThievesGuildCmd c => DoPayThievesGuild(c),
             UnlearnHeroSkillCmd c => DoUnlearnHeroSkill(c),

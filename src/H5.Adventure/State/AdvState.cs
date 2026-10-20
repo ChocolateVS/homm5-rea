@@ -1,3 +1,4 @@
+using H5.Adventure.Engine;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using H5.Adventure.Map;
@@ -365,7 +366,18 @@ public sealed class AdvState
     public string MapId = "";
     public int Day = 1;
     public int CurrentPlayer;
+    /// <summary>CWorld +0x58: the week in effect (GetCurrentMoonWeek, world vfunc 0xb0).</summary>
     public string MoonWeek = "WEEK_OF_NOTHING";
+    /// <summary>CWorld +0x50: the game's random seed (world vfunc 0x124), from which the moon calendar draws.</summary>
+    public int WorldSeed;
+    /// <summary>CWorld +0x100: the moon calendar (null only for states saved before it existed).</summary>
+    public MoonCalendarState? Moon;
+    /// <summary>CWorld +0x198: players that bought a week at a Tower of Astrologer this week.</summary>
+    public List<int> AstrologerPlayers = new();
+    /// <summary>CWorld +0x1a4: a week was bought; the calendar jumps to it at the next day.</summary>
+    public bool AstrologerChanged;
+    /// <summary>CWorld +0x1dc: the day of the week (1..7) on which the start-of-week notice shows (009946e0).</summary>
+    public int WeekNoticeDay = 1;
     public int Difficulty = 1;            // 0 easy .. 3 heroic
     public bool Campaign;
     public Rng Rng = new(1);

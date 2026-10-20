@@ -15,7 +15,7 @@ public sealed partial class Adventure
     /// <summary>Creates the initial state for a map and returns the engine plus the opening events.</summary>
     public static (Adventure Game, List<AdvEvent> Opening) NewGame(AdventureDb db, AdvMap map, GameSetup setup)
     {
-        var s = new AdvState { MapId = map.Id, Rng = new Rng(setup.Seed), Difficulty = Math.Clamp(setup.Difficulty, 0, 3), Campaign = setup.Campaign };
+        var s = new AdvState { MapId = map.Id, Rng = new Rng(setup.Seed), WorldSeed = unchecked((int)setup.Seed), Difficulty = Math.Clamp(setup.Difficulty, 0, 3), Campaign = setup.Campaign };
         var g = new Adventure(db, map, s);
         g._ev = new List<AdvEvent>();
         g.SetupPlayers(setup);
@@ -25,7 +25,7 @@ public sealed partial class Adventure
         g.SetupBoats();
         g.SetupHeroPool();
         foreach (var p in s.Players) g.RollTavern(p);
-        g.ChooseMoonWeek();
+        g.SetupMoonCalendar();
         g.StockArtifactMerchants();
         g.StockSpellShops();
         g.ResetTrainingPoints();
@@ -33,7 +33,7 @@ public sealed partial class Adventure
         foreach (var h in s.Heroes) g.ResetHeroDay(h, newWeek: true);
         foreach (var p in s.Players) g.RevealOwned(p);
         s.CurrentPlayer = 0;
-        g.Emit(new TurnStarted(s.Players[0].Index, s.Day));
+        g.EmitTurnStarted();
         return (g, g._ev);
     }
 

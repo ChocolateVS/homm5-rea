@@ -152,6 +152,36 @@ public sealed class AdventureDb
         }
     }
 
+    Dictionary<string, int>? _weekIndex;
+    readonly Dictionary<string, int[]?> _calendars = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>MoonWeekID value of a week id (MoonWeeks.xdb is in enum order, types.xml MoonWeekID); 0 if unknown.</summary>
+    public int MoonWeekIndex(string? id)
+    {
+        lock (_calendars)
+        {
+            _weekIndex ??= MoonWeeks.Select((w, i) => (w.Id, i)).GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.First().i, StringComparer.Ordinal);
+            return id != null && _weekIndex.TryGetValue(id, out int i) ? i : 0;
+        }
+    }
+
+    /// <summary>The week id of a MoonWeekID value (WEEK_OF_NOTHING when out of range).</summary>
+    public string MoonWeekId(int index) => index >= 0 && index < MoonWeeks.Count ? MoonWeeks[index].Id : "WEEK_OF_NOTHING";
+
+    /// <summary>
+    /// A SMoonCalendar (125 MoonWeekID values, [a,b,c] flat) from the game data, or null when missing or not 5×5×5
+    /// (005088a0). Cached.
+    /// </summary>
+    public int[]? MoonCalendarData(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || _xdb == null) return null;
+        lock (_calendars)
+            if (_calendars.TryGetValue(path, out var c)) return c;
+        var data = _xdb.FileSystem.Exists(path) ? Engine.MoonCalendar.Parse(_xdb.Load(path).Root, MoonWeekIndex) : null;
+        lock (_calendars) _calendars[path] = data;
+        return data;
+    }
+
     readonly Dictionary<string, Dictionary<int, string>> _enums = new(StringComparer.Ordinal);
 
     /// <summary>
