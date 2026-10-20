@@ -10,15 +10,25 @@ your game folder is modified.
 
 ## What's new in this build
 
+- Fixes for reported problems: held items (props) glitching, fog of war, black characters in story
+  scenes, missing portraits, whole-object cursor and entrance routing on map objects.
+- Adventure map: moon calendar weeks and the Tower of the Astrologer; map tavern, Den of Thieves and
+  Memory Mentor; correct hero hire cost; map dwellings with the hire screen; garrisons; spell shop;
+  neutral monsters join or flee as in the original; wells, springs, stables and sirens fixed;
+  adventure AI fixes.
+- Towns: Arcane Forge and creature artifacts; faction buildings (Avengers' Guild, sacrificial altar).
+- Battles: shaman and sanctuary bonuses; many fixes from the combat audit.
+- Campaigns: carry-over between missions fixed; MMH 5.5 campaign menu. MMH 5.5 maps can be saved.
+
+Earlier in this beta:
+
 - **MMH 5.5 is the default target.** An install with MMH 5.5 is played with 5.5 rules and data;
   MMH 5.5 map scripts run (only on maps that have a map script, as on the original engine).
   To play plain 3.1 instead, point H5Reborn at a 3.1 install (see below) or set `H5_TARGET=stock`.
-- Network games: simultaneous turns (PEST, as in MMH 5.5) that never break; several battles can run at the same time.
+- Network games: simultaneous turns (PEST, as in MMH 5.5); several battles can run at the same time.
 - Battles: tactics phase can leave a stack out or split it.
-- Adventure map: Seer Huts, Sphinx, grail digging, shipyards; faction special buildings (Haven
-  training, Necropolis shrine, sacrifice pits, slave market); map objects are picked as whole
-  objects with entrance routing and the original cursors; fog of war drawn as in the original game.
-- Fix: props held by creatures and heroes animate correctly.
+- Adventure map: Seer Huts, Sphinx, grail digging, shipyards; Haven training, Necropolis shrine,
+  sacrifice pits, slave market.
 
 ## Downloads
 
