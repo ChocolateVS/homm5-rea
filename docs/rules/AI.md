@@ -26,42 +26,52 @@ Full map: `tools/aire/out/aichain.txt` (regenerate with `ReaderChain.java 0096f2
 
 ## Combat AI (NWorld::CCombatAI, RTTI `.?AVCCombatAI@NWorld@@`) — `OriginalBattleAI`
 
+Per-decision ledger with addresses and status: `docs/rules/AUDIT_AI.md`, section "Combat AI".
+
 * **Think loop** FUN_008d6a70 ("CombatAI start think", "CombatAI move by %f sec. lookAheadTime: %d, commands tried: %d"):
-  generate candidates (FUN_008d6940) → evaluate (FUN_008d5eb0 without look-ahead, FUN_008d10e0 with) → choose (FUN_008d1cb0). **exact structure**
-* **Candidate record** (0xd0 bytes): +8 command, +0xc Turns, +0x10 MovePrice, +0x14 combat value after the command,
-  +0x5c reference value, +0xa8 mana after, +0xac Priority, +0xb0 compare type (1 = must beat start value,
-  2 = health check), +0xb4 spell flag, +0xb8 command name, +0xc4 target.
-* **Generators**: hero (FUN_008d2e90 strikes; FUN_008d6670 spells/abilities: summon 0x9f → FUN_008d28e0,
-  untargeted → FUN_008d30e0, area → FUN_008d61b0, single → FUN_008d3380), shooter (FUN_008d6850 → FUN_008d3950
-  "Shoot"), melee (FUN_008d68c0 → FUN_008d64e0 attacks, FUN_008d5b90 approach), invisible enemies (FUN_008d4f70),
-  fallback (FUN_008d4ce0). The difficulty switches live at CCombatAI+0x1ac/+0x1b4/+0x1b7 and are cleared and the
-  generators re-run when they leave no candidate. **reconstructed** (`Generate`; per-target/per-cell candidates as in
-  the exe, spell level filter **data**, area centres honour CenterAreaSpellsOnCreatureOnly **data**)
-* **Exclusions** (FUN_008d1cb0 log: "Excluded by start value", "…by start health value", "…by mana limit");
-  nothing left → "End of choose. Chose defend.". **exact** for start value and defend fallback; mana reserve is
-  CCombatAI+0x1b0 (0 in normal play); the health rule (compare type 2 vs CCombatAI+0x98) is not used by the port.
-* **Comparator** FUN_008d0030: fewer Turns (when both ≥ 0 and different) → lower Priority value → better combat
-  value (FUN_00bfae20) → non-spell over spell → lower MovePrice. **exact**
-* **Combat value** (FUN_00bfc2a0): two 0x48-byte halves (own side via FUN_00bfbe50, enemy side), each holding
-  [0] extras, [1] hero potential, [2] spell potential, [3] Damage, [4] AttackLevel, [5] Bonus, [6] Health,
+  generate candidates (FUN_008d6940) → evaluate (FUN_008d5eb0 without look-ahead, FUN_008d10e0 with) → choose (FUN_008d1cb0).
+  The think object is built by FUN_008d27a0 from CCombatAI's think vf 00c97930; no candidate cap. **exact structure**
+* **Think level and difficulty row**: think +0x18 = 4, then FUN_008d0840: human side → 5, computer side →
+  FUN_004f66c0(engine difficulty: 0, 1 → 0; 2 → 4; 3 → 5; 4 → 6). Row getter FUN_00a2f0d0: level ≤ 3 → DifficultyNormal,
+  ≥ 4 → DifficultyHeroic (Easy and Hard rows are never read). **exact** (the engine difficulty's source field CCombat+0x94 is
+  UNVERIFIED)
+* **Candidate record** (0xd0 bytes, defaults FUN_008d7550): +8 command, +0xc Turns (0), +0x10 MovePrice (0), +0x14 combat value
+  after the command, +0xa8 mana after, +0xac Priority (2, set by FUN_008d00d0 / FUN_008d08f0), +0xb0 compare type (0; spells
+  FUN_008d02b0: 1 = not worse than the start, 2 = also keep own HP), +0xb4 spell flag, +0xb8 command name, +0xc4 target.
+* **Generators** (FUN_008d6940): hero strikes FUN_008d2e90 + spells FUN_008d6670 (summon 0x9f → FUN_008d28e0, untargeted →
+  FUN_008d30e0, area → FUN_008d61b0 / FUN_008d12a0 undominated centres, single → FUN_008d3380); a creature that can shoot:
+  spells + shots (FUN_008d6850 → FUN_008d3950) only; otherwise FUN_008d68c0: spells, guard friendly shooters (FUN_008d58c0) and
+  block enemy shooters (FUN_008d4500) while the enemy out-shoots us, attacks from the ring cells FUN_00b3d010 sorted by path
+  cost (FUN_008d4330 → FUN_008d3c40; ConsiderOnlyShortestPathToEnemy keeps the first per enemy), and the approach (FUN_008d5b90,
+  same on the whole-path map) only when nothing else was added; then invisible enemies (FUN_008d4f70) and FUN_008d4ce0.
+  "Too weak" (FUN_00a2f430) restricts spells to damage spells and a list (FUN_008d0bd0); empty → switches cleared, rerun.
+* **Exclusions** (FUN_008d1cb0): type 1 dropped when the start is better, type 2 also when own HP drops ("…by start health
+  value"), spells under the mana limit FUN_00a2f280 (not ported); the survivors are shuffled with the combat RNG (not ported)
+  and scanned with the comparator; nothing left → "End of choose. Chose defend.".
+* **Comparator** FUN_008d0030(cur, cand) — true = cand better: fewer Turns (when both ≥ 0 and different) → lower Priority →
+  better combat value (FUN_00bfae20(cur, cand)) → non-spell over spell → lower MovePrice. **exact**
+* **Combat value** (FUN_00bfc2a0): two 0x48-byte halves — first the ENEMY (FUN_00bfbe50 with combat vf 0xe0(side)), then
+  our side — each holding [0] extras, [1] hero potential, [2] spell potential, [3] Damage, [4] AttackLevel, [5] Bonus, [6] Health,
   [7] Defence, [8] TroopsHealth, [9] TroopsDefence, [10..15] shooter/flyer/walker damage and attack, [16] additive.
-  Per unit (FUN_00bfba50): Damage += expected damage (shooters × (2 − penalty), FUN_00bfb950);
+  Per unit (FUN_00bfba50): Damage += expected damage (shooters × (2 − f), FUN_00bfb950: f = share of threatening enemy walkers);
   AttackLevel/Bonus/Defence/TroopsDefence are damage- or HP-weighted means of (stat + 1) (FUN_00bf9ee0).
-  **exact** structure; expected damage, luck/morale bonus and hero potential **reconstructed**; [0], [2], [16]
-  not modelled (0).
+  **exact** structure; expected damage, luck/morale bonus, hero potential and the threat matrix **reconstructed**; [0], [2],
+  [16] not modelled (0).
 * **Measures**: damage FUN_00bfc4a0 = round(factor(AttackLevel,1)·Damage·Bonus) + hero share; troops
   FUN_00bf9a50 = round(TroopsHealth·max(0.1, 1/factor(1,TroopsDefence))); war machines FUN_00bf9ab0;
   power FUN_00bf9b80 = Health·max(0.1,1/factor(otherAttack,Defence)) + Damage·max(1,factor(AttackLevel,otherTroopsDefence)·Bonus) + extras. **exact**
-* **Compare** FUN_00bfae20: outside kamikaze mode, the position that leaves the enemy no troops wins; otherwise
-  Σ (Δenemy·EnemyCoef − Δown·MyCoef) over damage, troops and war machines with the mode's coefficients;
-  better if total > clamp(CompareTreshold·0.01, 0, 1)·total. **exact**
+* **Compare** FUN_00bfae20(this, arg) — true = arg better: outside kamikaze mode, the position that has lost all OWN troops
+  loses; otherwise Σ (Δenemy·EnemyCoef − Δown·MyCoef) over damage, troops and war machines; better if total &gt;
+  clamp(CompareTreshold·0.01, 0, 1)·total. The coefficients are PowerSavingMode for every mode (the mode switch falls through,
+  0x00bfaf5d..0x00bfaf8a). **exact**
 * **Mode** FUN_00a2f4d0 (from FUN_00a30460): ratio = our power / enemy power; kamikaze below
   clamp(KamikazeModeTreshold, 0, 1000), power saving above clamp(PowerSavingTreshold, 0, 1000). **exact**
 * **Rune purchase** FUN_008d0960: buy a rune when cost · priceScale < MaxRuneMoneyEstimate,
   priceScale piecewise in the power ratio (0.5 below 0.8; 7.5r−5.5 below 2; 6r−4 below 4; else 20). Not ported
   (runes are cast through the normal spell candidates).
-* **Autoplacement** FUN_00a2fd40 ("Our/enemy shooters = %f, Our: Shooters part = %f"): uses the Autoplacement
-  tunables for tactics deployment. Not ported; the AI ends tactics with the default placement.
+* **Strategy flags** FUN_00a2fd40 ("Ranged advantage", "Our: Shooters part = %f", "Strategy: %s %s"): the defensive flag
+  (think +0x1ac) and the spread/large flags from the Autoplacement tunables. Not ported in the think; the battle-start
+  placement is ported separately (`ExeAutoPlacement`).
 
 ## Adventure AI (NWorld::CPlayerAI) — `OriginalAdventureAI`
 
@@ -82,6 +92,10 @@ Full map: `tools/aire/out/aichain.txt` (regenerate with `ReaderChain.java 0096f2
   spells, level-ups. Per-area ledger with addresses: `docs/rules/AUDIT_AI.md`.
 
 ## Validation (`h5tool duel-matrix --stride 3`, seed 1, 184 games each)
+
+Measured before the combat AI audit (AUDIT_AI.md "Combat AI") and not re-run since. After it, an original-vs-original
+`duel-matrix 1 --stride 25` took 1.55x the time of the previous version on the same machine (no candidate cap, every
+strike cell in the Heroic row).
 
 | Side 0 AI | Side 1 AI | side 0 wins | side 1 wins | unfinished | errors |
 |---|---|---|---|---|---|
