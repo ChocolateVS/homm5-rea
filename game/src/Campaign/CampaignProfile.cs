@@ -61,10 +61,8 @@ public sealed class CampaignProfile
     public string Name = "Player";
     /// <summary>Campaign internal name → completed mission indices.</summary>
     public Dictionary<string, SortedSet<int>> Completed = new();
-    /// <summary>"&lt;campaign&gt;:&lt;targetMission&gt;" → heroes waiting for that mission.</summary>
+    /// <summary>"&lt;campaign&gt;:&lt;targetMission&gt;" (0-based) → heroes waiting for that mission.</summary>
     public Dictionary<string, List<SavedHero>> CarriedHeroes = new();
-    /// <summary>0 easy … 3 heroic (UIGameDifficultyInfo order).</summary>
-    public int Difficulty = 1;
 
     static readonly JsonSerializerOptions Json = new()
     {
@@ -114,5 +112,6 @@ public sealed class CampaignProfile
         s.Add(mission);
     }
 
-    public static string CarryKey(string campaign, int targetMission1Based) => $"{campaign}:{targetMission1Based}";
+    /// <summary>Key of the heroes waiting for a mission; <paramref name="targetMission"/> is 0-based like HeroesPool TargetMission.</summary>
+    public static string CarryKey(string campaign, int targetMission) => $"{campaign}:{targetMission}";
 }

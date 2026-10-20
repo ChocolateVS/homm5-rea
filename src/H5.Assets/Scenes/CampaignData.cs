@@ -24,7 +24,11 @@ public sealed class CampaignBonus
     public bool IsNone => Type == "E_BONUS_NONE";
 }
 
-/// <summary>A hero saved at the end of a mission and carried to a later one (HeroesPool).</summary>
+/// <summary>
+/// A hero saved at the end of a mission and carried to a later one (HeroesPool). TargetMission is a
+/// 0-based mission index (C1M5 sends Godric to C2 mission 0, C2M1); an empty TargetCampaign is the
+/// mission's own campaign.
+/// </summary>
 public sealed record CarryOverHero(string HeroScriptName, string? TargetCampaign, int TargetMission);
 
 public sealed class CampaignMission
@@ -49,6 +53,18 @@ public sealed class CampaignDef
     public List<CampaignMission> Missions = new();
     public string? AdventureMusic, WinMissionMusic, LoseMissionMusic, Icon;
     public bool UserCampaign;
+
+    /// <summary>
+    /// The campaign and 0-based mission a HeroesPool entry of this campaign carries its hero to, or
+    /// null when H5_Game.exe drops it (CCampaign 0045f460: the target mission must lie in
+    /// [0, missions of the target campaign), the target campaign must be known).
+    /// </summary>
+    public (CampaignDef Campaign, int Mission)? CarryTarget(CarryOverHero pool, IReadOnlyList<CampaignDef> all)
+    {
+        var target = pool.TargetCampaign is { } tc ? all.FirstOrDefault(x => x.Path.Equals(tc, StringComparison.OrdinalIgnoreCase)) : this;
+        if (target == null || pool.TargetMission < 0 || pool.TargetMission >= target.Missions.Count) return null;
+        return (target, pool.TargetMission);
+    }
 }
 
 /// <summary>

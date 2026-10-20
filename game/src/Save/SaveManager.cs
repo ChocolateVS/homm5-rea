@@ -30,7 +30,13 @@ public static class SaveManager
     // ---------------------------------------------------------------- saving
 
     /// <summary>Why the game cannot be saved right now, or null.</summary>
-    public static string? CannotSave(AdventureScreen screen) => AdventureSave.CannotSaveReason(screen.Session.Game);
+    /// <remarks>
+    /// The stock exe also saves network games (CSaveScreen&lt;SLanSaveHeaderInfo/SUbicomSaveHeaderInfo&gt;,
+    /// reloaded by the host through CMultiplayerHostLoadLogic); H5Reborn cannot restore a network game
+    /// yet, so it refuses instead of writing a single-player save of the replica (docs/rules/AUDIT_CAMPAIGN.md).
+    /// </remarks>
+    public static string? CannotSave(AdventureScreen screen) =>
+        screen.Session.Remote != null ? "network games cannot be saved yet" : AdventureSave.CannotSaveReason(screen.Session.Game);
 
     /// <summary>
     /// The save list's thumbnail (SaveInfo/ScreenShoot, 274x180): the current frame,
@@ -81,7 +87,7 @@ public static class SaveManager
                 Game = session.Game,
                 Map = AdventureSave.SpecFor(session.Map),
                 Name = name,
-                Kind = campaign != null ? SaveKind.Campaign : SaveKind.Scenario,
+                Kind = campaign != null ? SaveKind.Campaign : session.IsHotSeat ? SaveKind.HotSeat : SaveKind.Scenario,
                 DataFingerprint = Game.Instance.Install.DataFingerprint(),
                 Scripts = bridge?.Host?.Save(),
                 Campaign = campaignJson,

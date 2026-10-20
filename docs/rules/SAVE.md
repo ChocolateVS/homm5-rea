@@ -22,6 +22,9 @@ H5Reborn reproduces them.
   registered in `FUN_007f7190` dispatch to the save manager's vtable (+0x1c named save = `FUN_007ea770`,
   +0x20 quicksave, +0x24 quickload, +0x28 save screen, +0x2c load screen).
 - **Thumbnails**: SaveInfo/ScreenShoot (274×180) shows the save's screenshot.
+- **Network games**: the exe saves them (`CSaveScreen<SLanSaveHeaderInfo/SUbicomSaveHeaderInfo>`, host reload
+  through `CMultiplayerHostLoadLogic`); H5Reborn refuses to save a network game for now. Hot-seat games are
+  written with the hot-seat kind. Full ledger: `docs/rules/AUDIT_CAMPAIGN.md`.
 - **Not reproduced**: `save_before_combat` ("Before Combat <id>") — the var exists (`FUN_005aadc0`) but
   the engine marks the battle pending before the client can save; saving during combat is refused.
 

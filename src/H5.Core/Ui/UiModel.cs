@@ -139,6 +139,8 @@ public sealed class UiButtonState
 {
     public string Name = "";
     public List<UiCommand> OnEnter = new(), OnRightClick = new(), OnDoubleClick = new();
+    /// <summary>VisualOnEnterState of the shared visual state: run whenever the button shows this state.</summary>
+    public List<UiCommand> OnVisualEnter = new();
     public Dictionary<string, UiVisualState> Visuals = new(StringComparer.OrdinalIgnoreCase);
 }
 

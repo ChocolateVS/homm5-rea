@@ -43,15 +43,20 @@ public partial class PwlScreen : UiScreen
         Find("Progress")?.SetMeta("value", 0);
         Find("ProgressBarText")?.SetValue("val", "");
 
+        // 006b38d0: only the valid bonuses (006b25e0) are offered, packed into Bonus_0.. in order; no
+        // valid bonus → no selection panel. Nothing is preselected: Start stays disabled with the
+        // NO_BONUS tooltip until a bonus is chosen (006b1eb0, CAN_START once one is).
         var bonuses = mission.Bonuses;
-        bool anyBonus = bonuses.Any(b => !b.IsNone);
+        var valid = Enumerable.Range(0, bonuses.Count).Where(i => IsValidBonus(bonuses[i])).ToList();
         SetVisible("BonusSelection", true);
-        for (int i = 0; i < 3; i++)
+        for (int w = 0; w < 3; w++)
         {
-            var slot = Find($"Bonus_{i}");
+            var slot = Find($"Bonus_{w}");
             if (slot == null) continue;
-            if (i >= bonuses.Count || bonuses[i].IsNone && anyBonus) { slot.Visible = false; continue; }
+            if (w >= valid.Count) { slot.Visible = false; continue; }
+            int i = valid[w];
             slot.Visible = true;
+            slot.SetMeta("bonus", i);
             _bonusSlots.Add(i);
             var b = bonuses[i];
             FindIn(slot, "BonusDesc")?.SetText(BonusText(b));
@@ -59,13 +64,17 @@ public partial class PwlScreen : UiScreen
                 icon.AddChild(new TextureRect { Texture = tex, AnchorRight = 1, AnchorBottom = 1, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = MouseFilterEnum.Ignore });
         }
         if (_bonusSlots.Count == 0) SetVisible("BonusSelection", false);
-        else if (_bonusSlots.Count == 1) Select(_bonusSlots[0]);
+        UpdateStart();
 
-        Bus.On("select_bonus", (_, node) =>
+        void OnBonus(Node? node, bool start)
         {
-            for (var n = node as Node; n != null; n = n.GetParent())
-                if (n.Name.ToString().StartsWith("Bonus_") && int.TryParse(n.Name.ToString()[6..], out var idx)) { Select(idx); break; }
-        });
+            for (var n = node; n != null; n = n.GetParent())
+                if (n.Name.ToString().StartsWith("Bonus_") && n.HasMeta("bonus")) { Select(n.GetMeta("bonus").AsInt32()); break; }
+            if (start) Start();
+        }
+        Bus.On("select_bonus", (_, node) => OnBonus(node, false));
+        // 006b2ad0: select_bonus_and_start selects the bonus and starts at once.
+        Bus.On("select_bonus_and_start", (_, node) => OnBonus(node, true));
         Bus.On("start", Start);
     }
 
@@ -124,8 +133,37 @@ public partial class PwlScreen : UiScreen
     void Select(int index)
     {
         _selected = index;
-        foreach (var i in _bonusSlots)
-            if (Find($"Bonus_{i}") is { } slot && FindIn(slot, "BonusSelect") is { } btn) btn.SetState(i == index ? 1 : 0);
+        for (int w = 0; w < _bonusSlots.Count; w++)
+            if (Find($"Bonus_{w}") is { } slot && FindIn(slot, "BonusSelect") is { } btn) btn.SetState(_bonusSlots[w] == index ? 1 : 0);
+        UpdateStart();
+    }
+
+    bool CanStart => _bonusSlots.Count == 0 || _selected >= 0;
+
+    /// <summary>006b1eb0: Start is enabled once a bonus is chosen; its tooltip is NO_BONUS / CAN_START.</summary>
+    void UpdateStart()
+    {
+        if (_bonusSlots.Count == 0 || Find("Start") is not { } start) return;
+        start.Enabled = CanStart;
+        start.TooltipText = UiResources.StripMarkup(Text(CanStart ? "UI/pwlscreen/CAN_START.txt" : "UI/pwlscreen/NO_BONUS.txt"));
+    }
+
+    /// <summary>
+    /// 006b25e0: a bonus is offered when its payload exists — artifact / creature / spell known to the
+    /// database, a positive resource amount; buildings always (006b2270 not traced); E_BONUS_NONE never.
+    /// </summary>
+    static bool IsValidBonus(CampaignBonus b)
+    {
+        var db = Game.Instance.Db;
+        return b.Type switch
+        {
+            "E_BONUS_ARTIFACT" => db.Artifacts.ContainsKey(b.Artifact),
+            "E_BONUS_CREATURE" => db.Creatures.ContainsKey(b.Creature),
+            "E_BONUS_RESOURCE" => b.Resources.Any(r => r > 0),
+            "E_BONUS_SPELL" => db.Spells.ContainsKey(b.Spell),
+            "E_BONUS_BUILDING" => true,
+            _ => false,
+        };
     }
 
     static string Text(string path) => UiResources.Instance.Text(path) ?? "";
@@ -133,11 +171,7 @@ public partial class PwlScreen : UiScreen
     void Start()
     {
         if (_phase != Phase.Choose) return;
-        if (_bonusSlots.Count > 1 && _selected < 0)
-        {
-            Find("ProgressBarText")?.SetValue("val", UiResources.StripMarkup(Text("UI/pwlscreen/NO_BONUS.txt")));
-            return;
-        }
+        if (!CanStart) return;
         _phase = Phase.Loading;
         SetVisible("BonusSelection", false);
         Find("ProgressBarText")?.SetValue("val", UiResources.StripMarkup(Text("UI/pwlscreen/Loading.txt")));

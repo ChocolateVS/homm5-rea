@@ -80,6 +80,27 @@ public class CampaignTests(GameFixture g) : IClassFixture<GameFixture>
         Assert.Contains(c1.Missions[0].HeroesPool, h => h.HeroScriptName == "OrnellaNecro" && h.TargetMission == 2);
         Assert.Contains(c1.Missions[0].Bonuses, b => b.Type == "E_BONUS_CREATURE" && b.Creature == "CREATURE_VAMPIRE" && b.Count == 10);
     }
+
+    [StockFact]
+    public void HeroesPoolTargetsAreZeroBasedMissions()
+    {
+        var set = CampaignLoader.LoadStandardSet(g.Xdb);
+        var c1 = set.Single(c => c.InternalName == "A2C1");
+        // A2C1M1 sends Ornella to mission index 2 (A2C1M3), A2C1M2 sends Arantir there too.
+        var t = c1.CarryTarget(c1.Missions[0].HeroesPool.Single(h => h.HeroScriptName == "OrnellaNecro"), set)!.Value;
+        Assert.Same(c1, t.Campaign);
+        Assert.Equal("A2C1M3", t.Campaign.Missions[t.Mission].MapId);
+        // A2C2M4 sends Kujin to A2C3 mission index 3 (A2C3M4, the last mission).
+        var c2 = set.Single(c => c.InternalName == "A2C2");
+        var k = c2.CarryTarget(c2.Missions[3].HeroesPool.Single(h => h.HeroScriptName == "Kujin"), set)!.Value;
+        Assert.Equal("A2C3M4", k.Campaign.Missions[k.Mission].MapId);
+        // Every stock entry names an existing mission (0045f460 drops out-of-range targets).
+        foreach (var c in set)
+            foreach (var m in c.Missions)
+                foreach (var h in m.HeroesPool)
+                    Assert.NotNull(c.CarryTarget(h, set));
+        Assert.Null(c1.CarryTarget(new CarryOverHero("X", null, c1.Missions.Count), set));
+    }
 }
 
 public class DialogSceneTests(GameFixture g) : IClassFixture<GameFixture>

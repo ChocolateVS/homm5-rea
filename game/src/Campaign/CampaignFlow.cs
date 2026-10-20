@@ -24,12 +24,15 @@ public static class CampaignFlow
     public static CampaignDef? Find(string internalName) =>
         Campaigns.FirstOrDefault(c => c.InternalName.Equals(internalName, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>A campaign is open once every campaign it depends on is completed.</summary>
+    /// <summary>
+    /// A campaign is open once every campaign it depends on is completed (CCampaignsSet vf 0x10 =
+    /// 0050a350: a dependency without a progress entry in the set — not in it — keeps it locked).
+    /// </summary>
     public static bool IsUnlocked(CampaignDef c, CampaignProfile p) =>
-        c.DependentCampaigns.All(d => Campaigns.FirstOrDefault(x => x.Path.Equals(d, StringComparison.OrdinalIgnoreCase)) is not { } dep
-                                      || p.IsCampaignCompleted(dep));
+        c.DependentCampaigns.All(d => Campaigns.FirstOrDefault(x => x.Path.Equals(d, StringComparison.OrdinalIgnoreCase)) is { } dep
+                                      && p.IsCampaignCompleted(dep));
 
-    /// <summary>Completed missions can be replayed; the first uncompleted one is the next to play.</summary>
+    /// <summary>Completed missions can be replayed; the first uncompleted one is the next to play (CCampaign vf 0x1c = 0045ec40).</summary>
     public static bool IsMissionAvailable(CampaignDef c, int mission, CampaignProfile p) =>
         p.IsCompleted(c.InternalName, mission) || Enumerable.Range(0, mission).All(i => p.IsCompleted(c.InternalName, i));
 
@@ -69,7 +72,7 @@ public static class CampaignFlow
     {
         var profile = CampaignProfile.Current;
         var seed = (ulong)Time.GetTicksUsec();
-        var session = AdventureSession.Start(m.MapId, seed, difficulty: profile.Difficulty);
+        var session = AdventureSession.Start(m.MapId, seed, difficulty: CampaignMenu.Difficulty);
         ApplyCarryOver(session, c, m, profile);
         if (bonusIndex >= 0 && bonusIndex < m.Bonuses.Count) ApplyBonus(session, m.Bonuses[bonusIndex]);
         Active = new ActiveMission(c, m, bonusIndex, session);
@@ -116,14 +119,18 @@ public static class CampaignFlow
         });
     }
 
+    /// <summary>
+    /// Restores the heroes saved for this mission (CCampaign vf 0x20 = 0045f920 → 0045f080: records whose
+    /// target campaign and 0-based target mission are this mission's, from any campaign).
+    /// </summary>
     static void ApplyCarryOver(AdventureSession s, CampaignDef c, CampaignMission m, CampaignProfile p)
     {
-        if (!p.CarriedHeroes.TryGetValue(CampaignProfile.CarryKey(c.InternalName, m.Index + 1), out var heroes)) return;
+        if (!p.CarriedHeroes.TryGetValue(CampaignProfile.CarryKey(c.InternalName, m.Index), out var heroes)) return;
         foreach (var saved in heroes)
             if (s.Game.HeroByNameAnywhere(saved.ScriptName) is { } h) saved.ApplyTo(h);
     }
 
-    /// <summary>Called when the active mission's game ends; records progress and carries heroes forward.</summary>
+    /// <summary>Called when the active mission's game ends; records progress and carries heroes forward (CCampaign vf 0x24 = 0045fab0).</summary>
     public static void OnMissionEnded(bool won)
     {
         if (Active is not { } a) return;
@@ -135,8 +142,8 @@ public static class CampaignFlow
             {
                 var h = a.Session.Game.HeroByNameAnywhere(pool.HeroScriptName);
                 if (h == null) continue;
-                var target = pool.TargetCampaign != null ? Campaigns.FirstOrDefault(x => x.Path.Equals(pool.TargetCampaign, StringComparison.OrdinalIgnoreCase))?.InternalName ?? a.Campaign.InternalName : a.Campaign.InternalName;
-                var key = CampaignProfile.CarryKey(target, pool.TargetMission);
+                if (a.Campaign.CarryTarget(pool, Campaigns) is not { } target) continue;
+                var key = CampaignProfile.CarryKey(target.Campaign.InternalName, target.Mission);
                 if (!p.CarriedHeroes.TryGetValue(key, out var list)) p.CarriedHeroes[key] = list = new();
                 list.RemoveAll(x => x.ScriptName == h.DefId);
                 list.Add(SavedHero.From(h));

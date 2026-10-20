@@ -28,7 +28,7 @@ Text hrefs are relative to the campaign file; in the stock `texts.pak` some sit 
 | `NameCommentFileRef` | "Mission One"… |
 | `MissionTag` | `Maps/Scenario/<id>/map-tag.xdb` (`AdvMapDescTag`: map, name, `DescriptionFileRef` = briefing). |
 | `Bonuses/Item` | Up to 3 pre-mission bonuses: `Type` (E_BONUS_NONE/ARTIFACT/CREATURE/RESOURCE/SPELL/BUILDING), `Target/Hero` (empty in all stock bonuses = the main hero), `BonusArmy`, `BonusArtifactID`, `BonusResources`, `BonusSpellID`, `Building`. |
-| `HeroesPool` | `Count` and `Heroes/Item` (`HeroScriptName`, `TargetCampaign`, `TargetMission` — 1-based): heroes saved when the mission is won and restored in the target mission. |
+| `HeroesPool` | `Count` and `Heroes/Item` (`HeroScriptName`, `TargetCampaign`, `TargetMission` — 0-based mission index, e.g. C1M5 → C2 mission 0): heroes saved when the mission is won and restored in the target mission (`docs/rules/AUDIT_CAMPAIGN.md`). |
 | `startMusics`, `additional*Musics` | Music overrides. |
 
 Scripts read the chosen bonus with `GetPlayerSelectedCampaignBonusIndex()`.
@@ -51,4 +51,4 @@ Scripts read the chosen bonus with `GetPlayerSelectedCampaignBonusIndex()`.
 ## Not reproduced yet
 
 Mission statistics on the results screen, hall-of-fame scoring (UIGameRoot `CampaignMinPointCount`),
-user campaigns / Load Campaign, the difficulty combo.
+user campaigns / Load Campaign (see `docs/rules/AUDIT_CAMPAIGN.md`).

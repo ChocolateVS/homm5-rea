@@ -219,6 +219,7 @@ public sealed class UiLoader
         for (int i = 0; i < vs.Count; i++)
         {
             var bs = i < w.ButtonStates.Count ? w.ButtonStates[i] : AddState(w);
+            bs.OnVisualEnter.AddRange(Commands(vs[i].Element("VisualOnEnterState"), file));
             foreach (var sub in vs[i].Elements())
             {
                 if (sub.Element("Background") == null && sub.Element("TextFormat") == null) continue;
@@ -260,6 +261,11 @@ public sealed class UiLoader
                 break;
             case "UISRunReaction":
                 yield return new UiCommand("RunReaction", (string?)e.Element("szReactionForward")?.Element("First") ?? "", 0, f);
+                break;
+            case "UISSendUIMessage" when (string?)e.Element("szMessageID")?.Element("First") == "UI_SHOW_WINDOW":
+                // H5_Game.exe 00a51170: UI_SHOW_WINDOW shows (forward param 1) or hides the named window.
+                yield return new UiCommand("ShowWindow", (string?)e.Element("szParam")?.Element("First") ?? "",
+                    (int?)e.Element("nForwardParam")?.Element("First") ?? 0, f);
                 break;
             case "UISSendGameMessage":
             case "UISSendUIMessage":

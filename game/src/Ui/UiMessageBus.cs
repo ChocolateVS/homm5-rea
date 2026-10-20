@@ -27,6 +27,11 @@ public sealed class UiMessageBus
     public bool Dispatch(UiCommand cmd, UiNode? source)
     {
         if (cmd.Kind == "PlaySound") { UiAudio.PlaySound?.Invoke(cmd.Argument); return true; }
+        if (cmd.Kind == "ShowWindow")
+        {
+            foreach (var w in source?.Screen?.FindAll(cmd.Argument) ?? Enumerable.Empty<UiNode>()) w.Visible = cmd.IntParam != 0;
+            return true;
+        }
         for (var bus = this; bus != null; bus = bus._parent)
         {
             if (bus._handlers.TryGetValue(cmd.Argument, out var h)) { h(cmd, source); return true; }

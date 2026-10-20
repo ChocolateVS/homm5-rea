@@ -88,6 +88,7 @@ public partial class UiNode : Control
         if (Window.ButtonStates.Count == 0) return;
         State = Math.Clamp(state, 0, Window.ButtonStates.Count - 1);
         InvalidateText();
+        Fire(Window.ButtonStates[State].OnVisualEnter);
         if (fireCommands) Fire(Window.ButtonStates[State].OnEnter);
     }
 
