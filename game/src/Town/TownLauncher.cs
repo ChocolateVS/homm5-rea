@@ -154,6 +154,17 @@ public static class TownLauncher
             h.FavoriteEnemies = new() { "CREATURE_PEASANT", "" };
             town.Built[H5.Adventure.Engine.Adventure.AvengersGuild] = 1;
         }
+        // `--town-dev-hero=artificer`: Expert Artificer, Knowledge 12, a gremlin stack and two crafted creature artifacts.
+        if (what == "artificer")
+        {
+            h.Skills.RemoveAll(s => s.SkillId == H5.Adventure.Engine.Adventure.ArtificerSkill);
+            h.Skills.Add(new H5.Core.Data.SkillEntry(H5.Adventure.Engine.Adventure.ArtificerSkill, H5.Core.Data.Mastery.Expert));
+            h.Knowledge = 12;
+            h.Army[0] = new H5.Adventure.State.Stack("CREATURE_GREMLIN", 30);
+            foreach (var fx in new[] { new[] { H5.Core.Data.MicroEffect.Piercing }, new[] { H5.Core.Data.MicroEffect.Haste, H5.Core.Data.MicroEffect.Luck, H5.Core.Data.MicroEffect.Defence } })
+                if (H5.Adventure.Engine.Adventure.BuildMicroArtifact(h, fx) is { } a) H5.Adventure.Engine.Adventure.MicroBagAdd(h, a);
+            town.Built[H5.Adventure.Engine.Adventure.ArcaneForgeBuilding] = 1;
+        }
     }
 
     static async void WaitForAdventure()

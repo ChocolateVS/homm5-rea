@@ -18,6 +18,7 @@ public sealed partial class Adventure
             h.InTown = t.Object;
             LearnFromGuild(h, t);
             if (t.Level("TB_MAGIC_GUILD") > 0) h.Mana = Math.Max(h.Mana, MaxMana(h));
+            UpgradeMicroArtifacts(h, t);   // FUN_00cd2390 → FUN_00cd2310 (Arcane Forge)
             Emit(new ObjectVisited(h.Id, t.Object, "town"));
             return;
         }
@@ -78,6 +79,7 @@ public sealed partial class Adventure
         Emit(new BuildingBuilt(t.Object, c.Building, next));
         if (c.Building == ArtifactMerchantBuilding) StockArtifactMerchants();
         foreach (var h in S.Heroes.Where(h => h.Alive && h.InTown == t.Object && c.Building == "TB_MAGIC_GUILD")) LearnFromGuild(h, t);
+        if (c.Building == ArcaneForgeBuilding) foreach (var h in S.Heroes.Where(h => h.Alive && h.InTown == t.Object).ToList()) UpgradeMicroArtifacts(h, t);
         return null;
     }
 
@@ -263,6 +265,8 @@ public sealed partial class Adventure
         // A hero must keep at least one stack.
         if (ReferenceEquals(from, to) == false && c.FromHero >= 0 && c.Count == src.Count && from.StackCount() == 1) return "a hero cannot be left without troops";
         if (dst is { Count: > 0 }) dst.Count += c.Count; else to[c.ToSlot] = new Stack(src.Creature, c.Count);
+        // A whole stack takes its creature artifact along (FUN_00cdd180 / FUN_004bcad0); a split leaves it on the source.
+        if (c.Count == src.Count) MergeMicroArtifact(src, to[c.ToSlot]!, S.Hero(c.FromHero), S.Hero(c.ToHero));
         src.Count -= c.Count;
         if (src.Count == 0) from[c.FromSlot] = null;
         Emit(new ArmyChanged(c.FromHero, c.FromTown));

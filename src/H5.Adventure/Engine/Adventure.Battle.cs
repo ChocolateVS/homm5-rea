@@ -363,7 +363,12 @@ public sealed partial class Adventure
 
     static void SetArmy(Stack?[] army, List<ArmySlot> survivors)
     {
+        // Creature artifacts stay on the surviving stacks (survivors are reported per creature: the first artifact of
+        // that creature is kept).
+        var arts = army.Where(s => s is { Count: > 0 } && !MicroArtifact.IsEmpty(s.Artifact)).Select(s => (s!.Creature, s.Artifact)).ToList();
         for (int i = 0; i < army.Length; i++) army[i] = null;
         foreach (var s in survivors) if (s.Count > 0) army.TryAdd(s.Creature, s.Count);
+        foreach (var st in army)
+            if (st != null && arts.FindIndex(a => a.Creature == st.Creature) is var k && k >= 0) { st.Artifact = arts[k].Artifact; arts.RemoveAt(k); }
     }
 }

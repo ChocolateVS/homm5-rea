@@ -94,7 +94,7 @@ public sealed class BankDef
 /// Adventure-layer rules data loaded from the original archives on top of the shared
 /// <see cref="GameDatabase"/> (creatures, spells, skills, heroes, artifacts).
 /// </summary>
-public sealed class AdventureDb
+public sealed partial class AdventureDb
 {
     public GameDatabase Core { get; }
     /// <summary>Town type (TOWN_HEAVEN…) → every building level defined for it.</summary>

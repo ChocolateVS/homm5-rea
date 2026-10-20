@@ -39,6 +39,8 @@ public sealed class Stack
 {
     public string Creature = "";
     public int Count;
+    /// <summary>The Academy creature artifact the stack carries (army stack +0x2c), or null.</summary>
+    public MicroArtifact? Artifact;
     public Stack() { }
     public Stack(string creature, int count) { Creature = creature; Count = count; }
     public override string ToString() => $"{Count} {Creature}";
@@ -61,7 +63,7 @@ public static class Army
         return false;
     }
 
-    public static List<ArmySlot> ToSlots(this Stack?[] a) => a.Live().Select(s => new ArmySlot(s.Creature, s.Count)).ToList();
+    public static List<ArmySlot> ToSlots(this Stack?[] a) => a.Live().Select(s => new ArmySlot(s.Creature, s.Count) { MicroArtifact = s.Artifact }).ToList();
 }
 
 public sealed class PlayerState
@@ -191,6 +193,12 @@ public sealed class HeroState
     public List<string> Artifacts = new();
     /// <summary>Carried but not worn (hero screen backpack); worn ones are <see cref="Artifacts"/>.</summary>
     public List<string> Backpack = new();
+    /// <summary>
+    /// The creature-artifact bag (hero vf 0xb4, built by FUN_00c0b580): two rows of at least five entries; null = empty
+    /// entry (the exe's entry byte 1). See Adventure.ArcaneForge.
+    /// </summary>
+    public List<List<MicroArtifact?>> MicroBag = NewMicroBag();
+    public static List<List<MicroArtifact?>> NewMicroBag() => new() { new() { null, null, null, null, null }, new() { null, null, null, null, null } };
     public Stack?[] Army = State.Army.Empty();
     public bool Ballista, FirstAidTent, AmmoCart;
     public int Mana, MovePoints, MaxMovePoints;
