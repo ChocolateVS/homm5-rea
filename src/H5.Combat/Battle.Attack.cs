@@ -266,7 +266,8 @@ public sealed partial class Battle
             if (!HasAmmoCart(t.Side)) t.Shots--;
             Strike(t, u, new Hit { Kind = AttackKind.Retaliation }, pattern: true, rangedRetaliation: true);
         }
-        PowerfulBlowFollowUp(u, t, melee: false);
+        // No Powerful Blow follow-up after a shot: the exe tests SPELL_EFFECT_POWERFULL_BLOW (0x131) only in the melee
+        // attack routine FUN_00a65260 (00a65630, follow-up 00a65ad3); the ranged routine FUN_00a63020 has no such test.
     }
 
     // ------------------------------------------------------------------ strike resolution
@@ -824,7 +825,7 @@ public sealed partial class Battle
         // Evil Eye (exe FUN_00a5e770): melee strikes only, on every target the blow hits (permanent -3 Luck,
         // SPELL_EFFECT_UNLUCKY).
         if (!ranged && HasAbilityNow(a, Ab.EvilEye))
-            AddEffect(t, new Effect { Id = H5.Combat.Fx.EvilEye, Value = 3, SourceSide = a.Side });
+            AddEffect(t, new Effect { Id = H5.Combat.Fx.EvilEye, Value = (int)Stats.Get("combat/Creatures/Stronghold/EvilEye_LuckDecrease", 3), SourceSide = a.Side });   // exe 00989c40 case 0x153: RPGStats +0x524
         // Sorrow Strike (exe FUN_00a5e690): SPELL_SORROW at mastery SorrowStrike_SpellTrained (3 = Expert in data).
         if (HasAbilityNow(a, Ab.SorrowStrike))
             ApplySpellEffectFromCreature(a, t, "SPELL_SORROW", (Mastery)Math.Clamp((int)Stats.Get("combat/Creatures/Necropolis/SorrowStrike_SpellTrained", 3), 0, 4),

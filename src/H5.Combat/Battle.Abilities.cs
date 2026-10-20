@@ -110,10 +110,13 @@ public sealed partial class Battle
         if (!friendly) ImbuedCast(h, t);
         RageEvent(t, "ReceiveHeroAttackRP");
         if (!t.Alive || friendly) return;
-        LionsMark(h, t);
-        if (h.HasPerk(Sk.StunningBlow)) AddAtb(t.Id, -Stats.Get("combat/HeroSkills/Barbarian/StunningBlow_ATBDrop", 0.1), cap: 1);
+        // exe 008cf673..008cf8a1: Suffering Strike (HasSkill 0x5f → SPELL_WEAKNESS, 008cf692), then the Lions mark, then
+        // Stunning Blow (ATB − StunningBlow_ATBDrop, 008cf875); the barbarian twin passes HasSkill(0x5f) via FUN_00875410.
         if ((h.HasPerk(Sk.SufferingStrike) || h.HasPerk(Sk.BarbSufferingStrike)) && Db.Spell("SPELL_WEAKNESS") is { } suf)
             ApplyEffectSpell(actor, h.Side, suf, HeroMastery(h, suf), HeroSpellPower(h, suf), t, h.Level, h);
+        LionsMark(h, t);
+        // ATB setter vf 0x18c → FUN_00a2d6a0: min(x, 1.25) (FUN_00465610), no lower bound.
+        if (h.HasPerk(Sk.StunningBlow)) AddAtb(t.Id, -Stats.Get("combat/HeroSkills/Barbarian/StunningBlow_ATBDrop", 0.1), cap: 1.25);
     }
 
     // ------------------------------------------------------------------ hero linked abilities
@@ -445,8 +448,9 @@ public sealed partial class Battle
             case Ab.BerserkerRage:
             {
                 Emit(new AbilityTriggered(u.Id, c.Ability));
+                // exe 00988051: the cast only adds 0xf5 (vf 0x25c count 2) and ends through the common ability tail
+                // 00984cb6 — no attack in the casting action (the engine attacked at once).
                 AddEffect(u, new Effect { Id = H5.Combat.Fx.BerserkerRage, Value = DefenceOf(u), Actions = 2, Positive = true, Dispellable = false });
-                AutoBerserkAttack(u, anySide: false);
                 break;
             }
             case Ab.OrderOfChief:

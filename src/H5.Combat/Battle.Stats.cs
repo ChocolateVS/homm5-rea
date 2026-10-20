@@ -42,7 +42,7 @@ public sealed partial class Battle
         a += Fx(u, H5.Combat.Fx.Battlecry);
         a -= Fx(u, H5.Combat.Fx.WeakeningStrike);
         if (u.HasEffect(H5.Combat.Fx.RageOfForest)) a += DefenceOf(u, rageFull: true) / 2;   // exe 008a4800: + full defence / 2
-        a += Fx(u, H5.Combat.Fx.BerserkerRage);
+        if (u.HasEffect(H5.Combat.Fx.BerserkerRage)) a += DefenceOf(u, rageFull: true, ignoreBerserkerRage: true);   // exe 008a4a94: + FUN_008a22f0 (live defence)
         a += Fx(u, "FX_BLOODDRINKER");
         a += RageBonus(u, "DEMON_RAGE_BONUS_ATTACK");
         // Festering Aura of adjacent Rot Zombies: -2 attack (p.174 / DefaultStats WeakeningAuraOffenceDec).
@@ -73,7 +73,7 @@ public sealed partial class Battle
 
     bool HasAmmoCart(int side) => S.Units.Any(x => x.Alive && x.Side == side && x.CreatureId == "WAR_MACHINE_AMMO_CART");
 
-    public int DefenceOf(Unit u, Unit? vs = null, int attackerCellsWalked = 0, bool rageFull = false)
+    public int DefenceOf(Unit u, Unit? vs = null, int attackerCellsWalked = 0, bool rageFull = false, bool ignoreBerserkerRage = false)
     {
         var h = HeroOf(u);
         double raw = u.BaseDefence;
@@ -105,7 +105,7 @@ public sealed partial class Battle
             d -= Fx(u, H5.Combat.Fx.ArmorCrushed);
             d -= Fx(u, MicroArtifacts.ArmorCrushingEffect);   // MAE_ARMOR_CRUSHING (exe 00989790 case 0xb3, like 0xd / 0xca)   // Master of Fire: fixed half of the defence at application (exe 00989790 case 0xca)
             if (u.HasEffect(H5.Combat.Fx.RageOfForest) && !rageFull) d = RageOfForestDefence(Math.Max(0, (int)Math.Floor(d)));   // exe 008a32b0
-            if (u.HasEffect(H5.Combat.Fx.BerserkerRage)) d = 0;
+            if (u.HasEffect(H5.Combat.Fx.BerserkerRage) && !ignoreBerserkerRage) d = 0;   // exe 008a32b0
             // Rider Charge: -20% of target defence per cell walked (p.179).
             if (vs != null && vs.Has(Ab.RiderCharge) && attackerCellsWalked > 0)
                 d *= Math.Max(0, 1 - Stats.Get("combat/Creatures/Dungeon/RiderCharge_DefenceReducePerPathCell", 0.2) * attackerCellsWalked);
