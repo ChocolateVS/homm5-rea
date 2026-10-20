@@ -69,9 +69,11 @@ public sealed partial class Adventure
         t.Built[c.Building] = next;
         TrainingPointsAfterBuild(t, trainingBefore);
         t.BuiltToday = true;
-        // A new dwelling starts with one week of creatures (TODO(exe): confirm for H5).
-        if (c.Building.StartsWith("TB_DWELLING_") && next == 1 && int.TryParse(c.Building[^1..], out var tier))
-            t.Available[tier - 1] += WeeklyGrowth(t, tier);
+        // A new dwelling's pool starts with its base creature's WeeklyGrowth (00cd4a40 at 00cd4e2c: when
+        // FUN_00cd0710 creates the pool, creature +0xa8); no fort, horde or week bonuses.
+        if (c.Building.StartsWith("TB_DWELLING_") && next == 1 && int.TryParse(c.Building[^1..], out var tier)
+            && Db.Building(t.Type, c.Building, 1)?.Creature is { } dc && Core.Creatures.TryGetValue(dc, out var dcd))
+            t.Available[tier - 1] += dcd.WeeklyGrowth;
         Emit(new BuildingBuilt(t.Object, c.Building, next));
         if (c.Building == ArtifactMerchantBuilding) StockArtifactMerchants();
         foreach (var h in S.Heroes.Where(h => h.Alive && h.InTown == t.Object && c.Building == "TB_MAGIC_GUILD")) LearnFromGuild(h, t);
