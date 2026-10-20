@@ -12,10 +12,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 301 |
-| MATCH | 149 |
-| GAP | 18 |
-| UNVERIFIED | 132 |
+| FIXED | 314 |
+| MATCH | 157 |
+| GAP | 26 |
+| UNVERIFIED | 104 |
 | N/A | 61 |
 
 ## Core mechanics
@@ -240,10 +240,10 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_LIGHT_MAGIC` | MATCH | 00b4b440 | school 2 |  |
 | `HERO_SKILL_SUMMONING_MAGIC` | MATCH | 00b4b440 | school 3 |  |
 | `HERO_SKILL_TRAINING` | MATCH | 00a58de0 | retaliation strikes ×(1+clamp(Training Basic/Advanced/Expert/ExtraExpert DamageBonus,0,10)) by mastery 1..4 |  |
-| `HERO_SKILL_GATING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_GATING` | FIXED | 0085fe60, 00861840 (cast case of 00984a00 @ 0098798a) | the portion (mastery vf 0x174(0xe) → PortionOfSummonedByGatingLevel[m−1], bonuses — combat_heroes_specs.md) gives n = floor(count·portion) in single precision, then +1 when a battle-RNG float in [0,1) is below the fraction (0086051f..0086054f; skipped only when the cast record's +0x38 flag is set); n ≤ 0 places no stack (008619df) but the charge (vf 0x34/0x38) is spent and the caster's ATB set. The engine used max(1, floor(…)) and, when no cell was free, left the caster's action open. Open: the creature eligibility by mastery (the engine's tier ≤ 2/4/6/7 rule) was not located | AuditSweep5Tests.GatingRoundsRandomlyAndMayGateNothing |
 | `HERO_SKILL_NECROMANCY` | N/A | 00c26be0 (adventure) | post-battle raising only (adventure hand-off, `NecromancyRaise`); no combat use |  |
-| `HERO_SKILL_AVENGER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_ARTIFICIER` | MATCH | 004283b0, 00c0a700, 00c0a8f0, 00c0a450, 00cd2310 | no combat code: mastery (hero vf 0x174(0x11)) gates crafting (effects ≤ min(mastery, 3)), equipping (mastery > 0), the Ultimate half price (mastery ≥ 4) and the forge's upgrade to the hero's Knowledge; combat only reads the stack's artifact. Open: Melt Artifact consuming the artifact — the engine drops the effect count but keeps the hit point / attack / defence / speed / initiative part already in the stack's base values (the exe consumer was not traced) |  |
+| `HERO_SKILL_AVENGER` | MATCH | — (no HasSkill(0x10) in the combat ranges) | the racial skill is not tested by combat code; its combat effect is the hero's favoured-enemy list (hero vf 0x25c), used by FUN_00a5ae40 (see CUNNING_OF_THE_WOODS) and FUN_00bc1b90; the engine's only use is the Pendant of Mastery racial mapping (PEDANT_OF_MASTERY, FIXED) |  |
+| `HERO_SKILL_ARTIFICIER` | MATCH | — (no HasSkill(0x11) in the combat ranges) | not tested by combat code (its perks have their own rows); engine use = Pendant of Mastery mapping only |  |
 | `HERO_SKILL_INVOCATION` | MATCH | 0097d2a0 (0097d42c..0097d47f), 004e5cb0 | Irresistible Magic: for spells listed by FUN_004e5cb0, share' = (1 − {0,20,40,50,75}[caster hero mastery of 0x12] %) × share (table 00f46f18), also when fully resisted (share 1). Engine formula identical (ApplyProtectionPercent); spell-set difference noted below |  |
 | `HERO_SKILL_FIRST_AID` | FIXED | 00977190 | tent heal 10/20/50/100, Empiric, ring ×2 | tests/H5.Combat.Tests/WarMachineAuditTests |
 | `HERO_SKILL_BALLISTA` | FIXED | 00a75bf0, 00a65260 | one action = all shots at the chosen target; +1 shot | tests/H5.Combat.Tests/WarMachineAuditTests.BallistaShotsPerAction |
@@ -270,15 +270,15 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_MASTER_OF_QUAKES` | FIXED | 00bc0331 | +4 for SPELL_LAND_MINE (0x26), SPELL_ARCANE_CRYSTAL (0x11a) and SPELL_BLADE_BARRIER (0x11c) — not Earthquake (0x29 falls outside the table), despite the perk text. Engine used Land Mine + Earthquake | AuditSkillTestsH.HeroSpellPowerPerkTableFollowsTheExe |
 | `HERO_SKILL_MASTER_OF_CREATURES` | MATCH | 00bc0392 | +4 for Summon Elementals and Conjure Phoenix |  |
 | `HERO_SKILL_MASTER_OF_ANIMATION` | MATCH | 00bc0426 | +4 for Magic Fist and Animate Dead |  |
-| `HERO_SKILL_HOLY_CHARGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_HOLY_CHARGE` | FIXED | 00a65260 (00a65566..00a65587, 00a655a2..00a655bb, 00a65a19..00a65a75), 008cfb50, 00bc1b90 | Retaliation Strike: decided before the strikes — the attacked stack carries the hero's linked 0x35 effect, the attack is melee (the routine's 6th argument 0) and the attacker has no Rune of Battlerage (GetEffect(0xff) = 0); after the attack the target's army hero strikes the attacker (alive creature/spawn, FUN_008cfb50) with spell 0x35. Damage FUN_00bc1b90: base at level + 3 (FUN_00bc1a50), Cavalry Commander trunc((clamp(HolyChargeBonus, 0, 100)·level + 1)·dmg), Unstoppable Charge ×3, then the week of Might (00bc1c78), Offender, ≥ 1. The engine multiplied after the week / Offender and ignored the rune | AuditSweep5Tests.HolyChargeMultipliesBeforeTheWeekOfMight |
 | `HERO_SKILL_PRAYER` | FIXED | 00989fd0, 00989790, 0098a430 | bonus = Prayer_DefenceBonus (data), not hard-coded | tests/H5.Combat.Tests/AuditSpecTests.WhiteKnightDoublesPrayer |
 | `HERO_SKILL_CONSUME_CORPSE` | FIXED | 0097b690 | mana = round(max(1, HP/k)), capped by missing mana | (UseAbility CONSUME_CORPSE) |
-| `HERO_SKILL_DEMONIC_FIRE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_DEMONIC_STRIKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_DEMONIC_FIRE` | FIXED | 00a5ed90 (00a5ee3d..00a5ef85) | Hellfire: requires the attacker to carry SPELL_SKILL_DEMONIC_FIRE (0x5d, the perk's Skills.xdb spellBuffs; engine: the hero has the perk, war machines excluded); mana − max(0, ManaCost) ≥ 0; an ability roll of 30 (EDX = 0x1e literal, no attacker, Range(0,100) < 30); then mana −= cost and SP·DamagePerSpellPower + BaseDamage (integers, ≤ 0 → 0) is ADDED to Fiery Wrath's 0.1·damage: one fire hit through FUN_0097d740 (Fireball protections, rounded half up). The engine rolled a continuous 30 %, required mana ≥ 5 and dealt Hellfire through the spell damage path separately | AuditSweep5Tests.HellfireIsOneFireHitWithFieryWrath |
+| `HERO_SKILL_DEMONIC_STRIKE` | FIXED | 00a673c0 (00a68683..00a686aa), 00a5a120 (Chain Shot exit 00a6748e), 00983790 (009840a1), 00984a00 (0098862c), 008cfb50, 00bc1b90 | Mark of the Damned: the opponent's hero strikes the marked stack (FUN_00a6e270(unit, 0x38)) with spell 0x38 (level + 3) AFTER each strike it resolves — melee blows, shots, retaliations, Chain Shot — except strike special 0x9b (Battle Dive finish), and after its spell casts (00983790). The engine struck once before the attack / retaliation / volley. Also after creature ability casts (00984a00) — not ported | AuditSweep5Tests.MarkOfTheDamnedStrikesAfterTheMarkedStacksBlow |
 | `HERO_SKILL_DEATH_SCREAM` | FIXED | 00989c40, 00989fd0 | effect 0x3b: morale −= round(DeathScream_MoralePenalty · m), luck −= round(DeathScream_MoralePenalty · m), m = DarkEissary_DeathScreamMultiplier for the Dark Emissary (else 1) plus a set constant (RPGStats +0x1188 morale / +0x118c luck) with 2+ pieces of the necromancer set (FUN_004d8d60). Engine took a flat 1 luck point (Dark Emissary: should be 2). Set constant left to the artifacts audit | AuditSkillTests.DeathScreamLuckPenaltyScalesWithTheMultiplier |
-| `HERO_SKILL_MULTISHOT` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_MULTISHOT` | GAP | 00bc1b90 (case 0x3d), 00b54770 | Rain of Arrows: a hero spell (0x3d) whose strikes use level + 3 — as the engine. Open: the victim set (engine: every favoured-enemy stack of the opponent) and the strike flow (crit roll, hero ATB) were not located |  |
 | `HERO_SKILL_SNIPE_DEAD` | FIXED | 00bc1b90, 008cf48d | Deadeye Shot: plain strike level +3 (was missing); vs a favoured enemy the plain strike crits for sure (kills ≥ 1) and skips the generic 40 % favoured-enemy roll | AuditHeroStrikeTests.DeadeyeShotAddsThreeLevelsToThePlainStrike |
-| `HERO_SKILL_IMBUE_ARROW` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_IMBUE_ARROW` | GAP | 008cf270 (008cf51f..008cf593), 008ced40 | in the plain hero strike (spell 0) with the perk, the damage is not dealt by FUN_00a616e0 but by the imbued spell object (vf 0x14 → vf 0) and FUN_0097ea20, with the "IMBUED_ARROW" visual (008ced40). The engine deals the strike and then casts the spell; the exe flow (damage source, mana, which spells qualify) was not decoded |  |
 | `HERO_SKILL_MAGIC_BOND` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MELT_ARTIFACT` | MATCH | see EXE_FINDINGS | verified in EXE_FINDINGS.md |  |
 | `HERO_SKILL_MAGIC_MIRROR` | MATCH | 00983150 | chance round(level · MagicMirrorLevelMultiplier + 10), ability roll FUN_00a5a170 (Range(0,100) < chance); Spell Twister second roll round((Radiant_MirrorProb + level·Radiant_MirrorProbPerLevel)·100) |  |
@@ -286,25 +286,26 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_ELEMENTAL_VISION` | FIXED | 00977e60, 004b12c0, 004b0ef0, 004b0d40, 004b0d80, 004b0e90 | Elemental Chains on damage spells: Warlock (class 6) with Elemental Vision; spell element opposite to the target's; m = 1 + Invocation·0.1 + altars·0.1 (float), ×2 Absolute Chains, ×Runic_2Warlock_ElementalVisionMultiplier with ≥ 2 Runic pieces; extra = trunc(D·m − D) of the damage after protection; target element re-rolled. Engine: any class, Destructive school only, bonus before protection, no altars/Absolute Chains/Runic. Creature-attack chaining (Altar of Elements, 004b13e0 path) not implemented; re-roll picker (004b0e90 → 00877220) not traced | ElementalChainsUseTheExeMultiplier |
 | `HERO_SKILL_ROAD_HOME` | FIXED | 008a0e30, 008a1e50 | Familiar Ground: speed += max(0, RoadHome/SpeedBonus) when the battlefield terrain (battle vfunc 0x60) equals RoadHome/NativeTerrain (TT_GRASS). Engine had no implementation | AuditSkillTests.FamiliarGroundAddsSpeedOnGrassOnly |
 | `HERO_SKILL_TRIPLE_BALLISTA` | FIXED | 00a75bf0, 00a65260 | shots per action set to 2 (+1 Ballista = 3) — no extra actions | tests/H5.Combat.Tests/WarMachineAuditTests.TripleBallistaFiresThreeShotsInOneActionThenEndsItsTurn |
-| `HERO_SKILL_ENCOURAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ENCOURAGE` | MATCH | 00bbe760 (case 0x34) → 00bbe650 | Divine Guidance: the target's ATB becomes min(1, ATB + Encourage_ATBIncrease) (vf 0x18c), as the engine's AddAtb with cap 1 |  |
 | `HERO_SKILL_RETRIBUTION` | MATCH | 00a58de0 | non-retaliation strikes ×(1+clamp(max(0,morale)·Retribution_DamageBonusPerMorale,0,10)) |  |
 | `HERO_SKILL_HOLD_GROUND` | FIXED | 008a22f0 | multiplies the defend factor by HoldGround_DefendBonusMultiplier, or the Take Roots factor by HoldGround_TakeRootsBonusMultiplier (see Defend posture) | AuditHeroTests.TakeRootsReplacesTheDefendFactor |
-| `HERO_SKILL_GUARDIAN_ANGEL` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_GUARDIAN_ANGEL` | GAP | 004d99b0, 004da030 (004da067), 00988860 → 00984a00 (spell 0xf1) | the army is not "defeated" while the perk is unused (+0x35 flag); when the army has no living stack 004da030 sets the flag and FUN_00988860 picks among the army's stacks accepted by FUN_00977da0 the one with the largest vf 0x20 (first on ties), creates a temporary creature 0xe (count 1) at the field centre and casts Resurrect (0xf1) from it through the creature cast dispatcher. Open: the resurrected amount (engine 240 + 30·level, strongest by count·power) — the Resurrect path 00986fe0 with that caster was not decoded |  |
 | `HERO_SKILL_ANCIENT_SMITHY` | FIXED | 00a5ed90 (call 00a5effb), 0097d740 | Fiery Wrath: 0.1 × damage dealt (creatures only) as fire damage via FUN_0097d740 with stand-in spell Fireball (ECX = 5), no caster; no Mark of Fire multiplier (FUN_00977a80 is not on this path). Engine skipped protection and doubled it on Mark of Fire targets | AuditSkillTestsG.PerkElementalDamageIsReducedByProtectionOfItsStandInSpell |
 | `HERO_SKILL_PARIAH` | MATCH | 00b4cae0, 00bc04b8 | Fallen Knight: hero morale − 1 and +5 spell power for Dark spells (engine `Sk.FallenKnight`) |  |
 | `HERO_SKILL_ELEMENTAL_BALANCE` | FIXED | 00861630 (0086173c..008617aa), 00862130 (00862205..0086225e) | after a successful Summon Elementals / Conjure Phoenix, the caster's opponent (vf 0x10 → vf 0xc) with skill 0x54 summons for its own side: the opposite elemental of FUN_00861120's pair (Fire ↔ Water, Earth ↔ Air) in the same (week-adjusted, min 1) number, or a phoenix built from the caster's summon info (same stats); logged with skill 0x54. Engine had nothing. Placement of the counter-summon uses the engine's summon placement (exe position argument not decoded) | AuditSpellSTests.ElementalBalanceCounterSummons |
-| `HERO_SKILL_ABSOLUTE_CHARGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_QUICK_GATING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ABSOLUTE_CHARGE` | FIXED | 00bc1e47..00bc1e5f | Unstoppable Charge: ×3 (LEA EDI,[EDI+EDI*2]) right after the Cavalry Commander step, before the week of Might — see HOLY_CHARGE | AuditSweep5Tests.HolyChargeMultipliesBeforeTheWeekOfMight |
+| `HERO_SKILL_QUICK_GATING` | MATCH | 00861926 | caster ATB = clamp(QuickGatingStartATB, 0, 0.999 [0x3f7fbe77]) with the perk (hero of the caster's army, vf 0x290(0x56)), else clamp(CallerStartATB, 0, 0.999); the engine now applies the same clamp (data 0.75 / 0.5 are inside it) | AuditSweep5Tests.GatingAtbFollowsQuickAndAbsoluteGating |
 | `HERO_SKILL_TRIPLE_CATAPULT` | FIXED | 00a75bf0, 00b3bb50 | shots per action set to 2 (+1 Catapult) | tests/H5.Combat.Tests/WarMachineAuditTests |
-| `HERO_SKILL_GATING_MASTERY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_CRITICAL_GATING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_GATING_MASTERY` | MATCH | 0085ff87 | bonus = clamp(GatingMasteryPortionBonus, −1, 1000) added to the portion (engine GatingPortion) |  |
+| `HERO_SKILL_CRITICAL_GATING` | MATCH | 00860042..008601c5 | ability roll FUN_00a5a170 (battle, chance, no attacker) of trunc(clamp(100·(clamp(Const,0,1) + Luck·clamp(PerLuck,0,1) [luck vf 0x1ac > 0]), 0, 100)); success adds clamp(CriticalGatingPortionBonus, −1, 1000) × base — as the engine (fixed earlier, combat_heroes_specs.md) |  |
 | `HERO_SKILL_CRITICAL_STRIKE` | FIXED | 008cf406-008cf470 | hero strikes ×2 on CriticalStrike_ChanceToWork % using the exe ability roll (Range(0,100) < chance, no Soldier's Luck reroll); combined with Powerful Blow's 10 % into one roll | AuditHeroStrikeTests.CriticalChanceComposesCriticalStrikeAndPowerfulBlow |
-| `HERO_SKILL_DEMONIC_RETALIATION` | UNVERIFIED | 00a5ed90 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_DEMONIC_RETALIATION` | FIXED | 00a5ee2f | Hellwrath: Hellfire also on retaliation strikes (the flag argument is tested only without the perk) — the gate itself matched; fixed together with HERO_SKILL_DEMONIC_FIRE | AuditSweep5Tests.HellfireIsOneFireHitWithFieryWrath |
 | `HERO_SKILL_EXPLODING_CORPSES` | FIXED | 0097b690, 0085eaa0 | consumed corpse explodes: fire 1+SP to all adjacent units | (UseAbility CONSUME_CORPSE) |
-| `HERO_SKILL_DEMONIC_FLAME` | UNVERIFIED | 00a5ed90 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_DEMONIC_FLAME` | FIXED | 00a5ef6d | Searing Fires: when Hellfire triggers, the whole accumulated amount (Fiery Wrath part included) × 1.5 (float 00e3a3ac); the engine multiplied the Hellfire part only | AuditSweep5Tests.HellfireIsOneFireHitWithFieryWrath |
 | `HERO_SKILL_WEAKENING_STRIKE` | UNVERIFIED | 008cf270 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_FIRE_PROTECTION` | MATCH | 0097af50 (0097b142) | fire element: ×0.5 when the target carries the perk's buff SPELL_SKILL_FIRE_PROTECTION (0x61, the skill's spellBuffs), and ×0.5 again with FIRE_PROOF_50. The engine's perk ×0.5 is the same factor. Not compared: whether the buff can be dispelled |  |
 | `HERO_SKILL_FIRE_AFFINITY` | FIXED | 00861630 | always Fire Elementals; others by terrain | (ResolveSpell) |
+| `HERO_SKILL_ABSOLUTE_GATING` | FIXED | 00861b2e | Urgash's Call: the gated stack's ATB is set (vf 0x184) to 0x3f7fffef ("Gating immedately.") instead of 0 — the exe uses the constant 0, not GatedStartATB (also 0 in the data). Was missing | AuditSweep5Tests.GatingAtbFollowsQuickAndAbsoluteGating |
 | `HERO_SKILL_DEATH_TREAD` | FIXED | 008a0ea0 | siege attacker +4 speed | tests/H5.Combat.Tests/AuditSpecTests2.DeathTreadOnlyInSieges |
 | `HERO_SKILL_LAST_AID` | UNVERIFIED | 0097f610 | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_DEAD_LUCK` | MATCH | 00989c40 | luck −1 for stacks whose ENEMY hero (army vfunc 0x10) has the perk |  |
@@ -316,7 +317,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_TWILIGHT` | MATCH | 00bc0483, 00bc04e8 | +3 for Light and Dark spells |  |
 | `HERO_SKILL_ABSOLUTE_FEAR` | MATCH | 00989fd0 | under Death Scream (effect 0x3b) morale −6 more when the screaming (enemy) hero has the perk (constant 6 in code) |  |
 | `HERO_SKILL_IMBUE_BALLISTA` | MATCH | 00a59be0 | the war machine with id 1 (Ballista) casts the imbued spell (FUN_0097ea20) on its target when its hero has the perk |  |
-| `HERO_SKILL_CUNNING_OF_THE_WOODS` | UNVERIFIED | 00a5ae40 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_CUNNING_OF_THE_WOODS` | FIXED | 00a5ae40 (00a5aeb6..00a5af01) | Avenger critical: target is a creature in the hero's favoured list (vf 0x25c → vf 0xc(creature id)); chance 40, +10 with the perk (NEG/SBB/AND 0xa/ADD 0x28) + 10 × a value of the hero's owner (vf 0 → vf 0 → vf 0x20, +0x24; not identified, not ported); ability roll FUN_00a5a170 with no attacker. The engine rolled a continuous 40 / 50 % | AuditSweep5Tests.AvengerAndMatronSalvoUseIntegerChances |
 | `HERO_SKILL_ELVEN_LUCK` | MATCH | 00a6a680, 00a6b820 | good-luck multiplier = ElvenLuck_DamageMultiplier instead of GoodLuck_DamageMultiplier |  |
 | `HERO_SKILL_FOREST_RAGE` | MATCH | 004bc020 | +1 max damage for Sylvan creatures |  |
 | `HERO_SKILL_LAST_STAND` | FIXED | 00a59490, 00a594f0, 00a61600 | a stack of 2+ creatures (vfunc 0x1c count > 1) hit for ≥ its total HP (vfunc 0x1dc) keeps 1 HP; no once-per-combat flag (re-triggers whenever the stack is back to 2+). Applies in the common damage pipeline (strikes, hero strike, damage spells, Corrupted Soil). Engine allowed it only once per stack | AuditSkillTests.LastStandHasNoOncePerCombatLimit |
@@ -343,7 +344,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_POWER_OF_STONE` | GAP | 00b4b4eb..00b4b50e | the same with SPELL_STONESKIN (0x19) vs SPELL_MASS_STONESKIN; unchanged |  |
 | `HERO_SKILL_CHAOTIC_SPELLS` | FIXED | 00bbf6a6..00bbf751 | Erratic Mana: for a positive cost, ability roll of 50 (FUN_00a5a170), then the hero pays trunc(r · cost), r uniform in [0.6, 0.9], at most cost − 1, at least 0. Engine had no implementation | AuditSkillTestsH.ErraticManaPaysSixtyToNinetyPercent |
 | `HERO_SKILL_SECRETS_OF_DESTRUCTION` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_PAYBACK` | UNVERIFIED | 00977260 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_PAYBACK` | MATCH | 00977260 | Dark Renewal: HasSkill(0x93) and FUN_00a344a0(spell) — the countered caster keeps 0.2 + 0.1·Sorcery (combat_heroes.md, HERO_SKILL_COUNTERSPELL, FIXED); engine Battle.Spells.cs DoCast |  |
 | `HERO_SKILL_ELITE_CASTERS` | FIXED | 009781e0 | creature casters: integer half | (CreatureManaCost) |
 | `HERO_SKILL_ELEMENTAL_OVERKILL` | FIXED | 00977a80, 0097d600 | Exorcism: ×2 against summoned targets (target vfunc 0x70 summoner, its vfunc 0x58) after Cold Death and before protection, for every damage spell reaching FUN_00977a80 through FUN_0097d600 (bolt/chain/area resolvers, Holy/Unholy Word, Earthquake/Wasp 0097d7b0, 0097f610, 00984a00 …) — no school check. Engine limited it to Destructive spells | AuditSkillTestsG.ExorcismDoublesEveryDamageSpellAgainstSummonedStacks |
 | `HERO_SKILL_ABSOLUTE_CHAINS` | FIXED | 004b0d80 (skill 0x96) | doubles the Elemental Chains fraction x | ElementalChainsUseTheExeMultiplier |
@@ -364,8 +365,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_RUNIC_ARMOR` | MATCH | 00bc02db | + RunicArmor_SpellpowerBonus for Celestial Shield |  |
 | `HERO_SKILL_ABSOLUTE_PROTECTION` | MATCH | 008a3ef0 | enemy rolls normally; a lucky result becomes normal, anything else becomes BadLuck_DamageMultiplier — unless the attacker's hero has Absolute Luck |  |
 | `HERO_SKILL_EMPATHY` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_PREPARATION` | UNVERIFIED | 008a65e0 | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_DEMONIC_RAGE` | UNVERIFIED | 008a16b0 0097f610 | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_PREPARATION` | FIXED | 008a65e0 (008a68c1, from the Defend handler 008a6be0) | defending with the perk puts SPELL_EFFECT_PREPARATION (0x11e) on the stack (vf 0x25c(0x11e, duration 1)); the engine used the Defending flag for every attack until its next turn instead of the effect | AuditSweep5Tests.PreparationIsSpentByTheFirstAttack |
+| `HERO_SKILL_DEMONIC_RAGE` | MATCH | 008a16b0 (from the rage gain 008a2c20 and the warcry checks) | Blood Rage applies to a living stack whose creature is of town 10 (Stronghold, FUN_004ba910), base creature ≠ 0x7f (Wyvern) and whose hero has the skill (vf 0x290(0xac)) — exactly the data's ABILITY_DEMON_RAGED set (every Stronghold creature but the wyverns); without the skill the engine still counts points but caps the rage level at the skill mastery 0, so nothing observable differs |  |
 | `HERO_SKILL_MIGHT_OVER_MAGIC` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_MEMORY_OF_OUR_BLOOD` | FIXED | 008aaec0 | battle start (without Absolute Rage): rage += RNG Range(MinRP/Step, MaxRP/Step)·Step from DemonRage/MemoryOfOurBlood_* (engine hard-coded 10·Range(5,10) and also stacked it with Absolute Rage) | AuditSkillTests.AbsoluteRageReplacesMemoryOfOurBlood |
 | `HERO_SKILL_POWERFULL_BLOW` | FIXED | 00bc1b90, 008cf42b | the follow-up strike (SPELL_EFFECT_POWERFULL_BLOW) always gets +3 levels (engine: melee only) and adds PowerfullBlow_ChanceToCritical (10) to the critical chance (engine rolled 10 % × 4 separately) | AuditHeroStrikeTests.CriticalChanceComposesCriticalStrikeAndPowerfulBlow |
@@ -464,7 +465,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_RIDERS` | FIXED | 00a58de0 | Lizard Bite ×0.5·(1.2+0.01·lvl) | (LizardBites) |
 | `HERO_SPEC_DARK_ACOLYTE` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_POISONER` | FIXED | 009844e0 | per enemy stack (exe pre-filters valid targets with 00982010 — not ported), ability roll of trunc(100·clamp(Poisoner_PlagueProb + level·PerLevel, 0, 1)); hits get Plague (spell 0xe). Engine used a continuous unclamped chance | AuditSpecSetTests.PoisonerAndSacredHammerChancesAreClampedWholePercents |
-| `HERO_SPEC_MATRON_SALVO` | UNVERIFIED | 00978e10 | implemented; not yet compared with the exe |  |
+| `HERO_SPEC_MATRON_SALVO` | FIXED | 00978e10 | after the hero's spell (in the damage list 004e5cb0, FUN_00a344a0, not FUN_00a34670) on a living target that FUN_004e5750 does not exclude: each army stack of creature 0x51 / 0x52 (Matron, Matriarch — NOT the TotE Shadow Mistress) rolls the ability roll (no attacker) of 10 + 2·level; the passing stacks then attack the target together (FUN_00a68740, special 0x5f). The engine included Shadow Mistresses, required shots and rolled a continuous 0.1 + 0.02·level. Open: the joint attack FUN_00a68740 (engine: one ranged strike per stack) | AuditSweep5Tests.AvengerAndMatronSalvoUseIntegerChances |
 | `HERO_SPEC_SAVAGE` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_WITCHES` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_MINOTAURS` | N/A |  | no combat use found in exe or engine |  |
@@ -484,7 +485,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SPEC_CHOSEN_BY_GODS` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_GRIM_FIGHTER` | N/A |  | no combat use found in exe or engine |  |
 | `HERO_SPEC_RASH` | N/A |  | no combat use found in exe or engine |  |
-| `HERO_SPEC_CENTAUR_MISTRESS` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SPEC_CENTAUR_MISTRESS` | MATCH | 008aaec0 (008ab40c..008ab48f) | at battle start a stack whose base creature (FUN_004babf0) is 0x77 CREATURE_CENTAUR (Centaur, Nomad, Marauder) gets ATB min(ATB + level·CentaurMistress_StartATBBonusPerHeroLevel, 1.0) — as the engine (the cap is unreachable from the < 0.25 start) |  |
 | `HERO_SPEC_OFFENDER` | FIXED | 00bc1b90 (00bc1d20-00bc1d7f) | hero strike ×(level·Offender_HeroAttackDamageBonusPerLevel + 1), x87 truncation — was missing | AuditHeroStrikeTests.OffenderScalesTheStrikeByLevel |
 | `HERO_SPEC_WAR_LEADER` | FIXED | 00a34740 | warcry cost −(lvl/4·1+1) | (HeroManaCost) |
 | `HERO_SPEC_WYVERN_TAMER` | FIXED | 004bc470 | creatures whose base creature is Wyvern (Wyvern, Foul Wyvern, Paokai): +((level−1)/LevelDivisor)·PerDividedLevel + Base HP — engine used level/LevelDivisor (+2 HP too many) | AuditHeroTests.WyvernTamerHealthUsesLevelMinusOne |
@@ -546,16 +547,16 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_RESURRECT` | MATCH | 0097c9f0 (0x30), 009789b0 | immune: Undead, Elemental, Mechanical |  |
 | `SPELL_SUMMON_BOAT` | N/A | 009a2350 | adventure-map spell (H5.Adventure) |  |
 | `SPELL_DIMENSION_DOOR` | N/A | 009a2350 | adventure-map spell (H5.Adventure) |  |
-| `SPELL_ENCOURAGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_HOLY_CHARGE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `SPELL_ENCOURAGE` | GAP | 00bbe650, 00bbf610 | the effect MATCHES (HERO_SKILL_ENCOURAGE); open: the hero's ATB after the cast (engine 0 — a full turn; the hero cast command FUN_00bbf610 would keep 0.1·Sorcery) |  |
+| `SPELL_HOLY_CHARGE` | GAP | 00a65578 (FUN_00a6e270(target, 0x35)), 004e3ac0, 00bbf610 | the strike is FIXED (HOLY_CHARGE row). Open: the cast — a hero spell that puts a never-dispelled 0x35 effect on the guarded creature through the spell pipeline (its duration, what a second cast does to the first link) — and the hero's ATB after it: the hero cast command FUN_00bbf610 keeps 0.1·Sorcery mastery (0.5 for mass spells), while the engine uses 0.5; that this special goes through 00bbf610 was not confirmed |  |
 | `SPELL_DEMONIC_STRIKE_CAST` | N/A | 009a2350 | visual effect only (client) |  |
-| `SPELL_DEMONIC_STRIKE` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `SPELL_MULTISHOT` | UNVERIFIED | 009a2350 | implemented; not yet compared with the exe |  |
-| `SPELL_IMBUE_ARROW` | UNVERIFIED | 009a2350 | implemented; not yet compared with the exe |  |
+| `SPELL_DEMONIC_STRIKE` | GAP | 00a6e270, 004e3ac0, 00bbf610 | the strike is FIXED (DEMONIC_STRIKE row); open as SPELL_HOLY_CHARGE: the cast / link lifetime and the hero's ATB after it (engine 0.5) |  |
+| `SPELL_MULTISHOT` | GAP | 009a2350 (serialiser only), 00bc1b90 | see HERO_SKILL_MULTISHOT |  |
+| `SPELL_IMBUE_ARROW` | GAP | 009a2350 (serialiser only), 008ced40 | the selection spell (0x3e); engine: takes no ATB, at most once per hero turn — not compared |  |
 | `SPELL_ABILITY_COUNTERSPELL` | UNVERIFIED | 009785e0 00978670 0097c320 00bfbe50 | implemented; not yet compared with the exe |  |
 | `SPELL_SKILL_RESISTANCE` | MATCH | 0097c9f0 (effect 0x52) | +15 resistance | MagicResistanceChanceSumsLikeTheExe |
 | `SPELL_SKILL_FIRST_AID` | UNVERIFIED | 0097f610 | implemented; not yet compared with the exe |  |
-| `SPELL_SKILL_DEMONIC_FIRE` | UNVERIFIED | 00a5ed90 | implemented; not yet compared with the exe |  |
+| `SPELL_SKILL_DEMONIC_FIRE` | FIXED | 00a5ee43 (GetEffect(0x5d)) | the Hellfire buff (see HERO_SKILL_DEMONIC_FIRE). Open: which units receive the hero's spellBuffs (skill record +0x50) was not traced; the engine treats every non-war-machine creature of the hero as a carrier | AuditSweep5Tests.HellfireIsOneFireHitWithFieryWrath |
 | `SPELL_SKILL_FIRE_PROTECTION` | UNVERIFIED | 0097af50 | implemented; not yet compared with the exe |  |
 | `SPELL_TOWN_TOWERS` | MATCH | 00bfdfb0 | verified in EXE_FINDINGS.md |  |
 | `SPELL_ABILITY_BATTLE_DIVE` | UNVERIFIED | 008a3340 | implemented; not yet compared with the exe |  |
@@ -616,7 +617,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_SUMMON_HIVE` | GAP | 0097d7b0 case 0x11b → FUN_008b1090; 008b07f0, 008b08a0, 00bbc310, 00bbcec0, 00af2d60, 00b5f550, 008b07d0, 008b0af0 | hive: defence DefensePerCasterLevel·level + DefenseBase, hit points trunc(Eval(Health at mastery)), initiative Eval(Initiative), spell SummonHive/Spell (Wasp Swarm, Expert), initial ATB = battle RNG float in [0.5, 1); acts only while its hero has the spell's base cost FUN_00a34740 and pays it (combat_spells_s.md). Target (FUN_00bbc310 → FUN_00bbcec0, "pick first" 0): every candidate other than the hive that FUN_00982010 accepts for the spell, at the smallest trunc(combat vf 0x118) = minimum over cell pairs of dx² + dy² (FUN_00af2d60 / FUN_00b5f550); ties → battle RNG Random(n) — FIXED (the engine used the Chebyshev distance and the unit id). Open: the cast power passed to FUN_00983790 (the hive stores the caster's power at +0xc0, FUN_008b07d0; SummonHive/Power = 10000 is read by FUN_008b0af0) — the engine casts with the caster's spell power; and which units vf 0x10 → vf 0x64 lists (the engine: enemy living creatures, not invisible) | AuditSpellSTests.HivePaysTheBaseSpellCost, AuditSweepTests.HiveAimsAtTheSmallestSquaredDistance |
 | `SPELL_BLADE_BARRIER` | MATCH | 0097d7b0 case 0x11c → FUN_008b1090 | three spawns at (x, y−1), (x, y), (x, y+1); hit points trunc(Eval(Health at mastery)), duration FUN_004e57d0; BladeBarrier/MagicProof 0.75 — as the engine |  |
 | `SPELL_UBER_METEOR_SHOWER` | N/A | 0097c9f0 | boss spell 0x11d: not cast by shipped content (same references as above) |  |
-| `SPELL_EFFECT_PREPARATION` | UNVERIFIED | 00a5fee0 00a64e90 | implemented; not yet compared with the exe |  |
+| `SPELL_EFFECT_PREPARATION` | FIXED | 00a64e90 (00a64f3a..00a64fa6), 00a5fee0 | for a melee strike on a holder: retaliation FIRST when the verdict allows (FUN_00a5fee0, which lets it answer NO_ENEMY_RETALIATION attackers with Preparation_RetaliateToNER), then the effect is removed (vf 0x268) — spent by the first strike, answered or not — then the strike, then a normal retaliation if the stack still can (vf 0x1e4). The engine kept answering early for every attacker while defending; it now removes the effect after the first strike and at the stack's next turn | AuditSweep5Tests.PreparationIsSpentByTheFirstAttack |
 | `SPELL_EFFECT_EXPLODING_CORPSES` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_MASTER_OF_LIGHTNING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_WARCRY_RALLING_CRY` | FIXED | 009be6c0 case 0x122, 009bdaa0 | targets every own stack except Undead and Mechanical (elementals included); morale bonus ((level−1)/div·per + base) for RallingCry_Duration (004e57d0); army rage per core row. The engine also skipped elementals (NeutralMorale) | AuditRuneWarcryTests.RallyingCryAndWordOfTheChiefTargets |

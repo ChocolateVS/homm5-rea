@@ -16,6 +16,7 @@ public sealed partial class Battle
         public bool IgnoreDefence;
         public double? TotalRoll;          // the stack's base roll fixed by the caller (Lightning Breath's shared roll)
         public bool NoLuck;                // strike without a luck roll (FUN_00a673c0 flag param_5: helper strikes)
+        public bool BattleDiveFinish;      // strike special 0x9b (SPELL_ABILITY_BATTLE_DIVE_FINISH)
     }
 
     // ------------------------------------------------------------------ commands
@@ -116,18 +117,16 @@ public sealed partial class Battle
         RideByAttack(u, path, t);
         if (!u.Alive || !t.Alive) return;
         RemoveEffect(u, H5.Combat.Fx.Invisible);
-        MarkOfTheDamnedTrigger(u);
-        if (!u.Alive) return;
 
-        var th = HeroOf(t);
-        bool preparation = t.Defending && th.HasPerk(Sk.Preparation) && AreAdjacent(u, t);
+        bool preparation = t.HasEffect(PreparationEffect) && AreAdjacent(u, t);   // exe FUN_00a64e90 (effect 0x11e)
         bool retaliated = false;
         if (preparation && CanRetaliate(t, u, ignoreNoRetaliation: true))
         {
             Retaliate(t, u);
             retaliated = true;
-            if (!u.Alive) return;
         }
+        if (preparation) RemoveEffect(t, PreparationEffect);   // spent by the first strike it answers (exe 00a64fa0)
+        if (!u.Alive) return;
 
         RuneOfMagicControlSteal(u, t);   // exe FUN_00a65260 @ 00a65646, before the strike loop
         var hit = new Hit { Kind = AttackKind.Melee, CellsWalked = walked };
@@ -186,7 +185,7 @@ public sealed partial class Battle
 
         if (u.Alive && t.Alive) Flamewave(u, t);
         PowerfulBlowFollowUp(u, t, melee: true);
-        RetaliationStrikeTrigger(u, t);
+        if (!runeBattleRage) RetaliationStrikeTrigger(u, t);   // exe 00a655a2: not when the attacker had Rune of Battlerage
 
         // Strike and Return (p.181): not while held by Entangling Roots (exe FUN_00a65260 at 00a65924 checks
         // SPELL_ABILITY_ENTANGLING_ROOTS before walking back).
@@ -216,8 +215,6 @@ public sealed partial class Battle
     void Retaliate(Unit t, Unit attacker)
     {
         if (t.RetaliationsLeft != int.MaxValue) t.RetaliationsLeft--;
-        MarkOfTheDamnedTrigger(t);
-        if (!t.Alive) return;
         var hit = new Hit { Kind = AttackKind.Retaliation, Multiplier = t.FrenzyMultiplier };
         Strike(t, attacker, hit, pattern: true);
         if (t.Alive) StrikeHelpers(t, attacker, retaliation: true);   // Pack Hunter after a retaliation (exe FUN_00a646b0)
@@ -230,8 +227,6 @@ public sealed partial class Battle
     void PerformRangedAttack(Unit u, Unit t)
     {
         RemoveEffect(u, H5.Combat.Fx.Invisible);
-        MarkOfTheDamnedTrigger(u);
-        if (!u.Alive) return;
         RuneOfMagicControlSteal(u, t);   // exe FUN_00a65260 @ 00a65646, before the strike loop
         // Strikes per action (vtable slot 0x1c0): Double Shot for creatures, perks/ring for the Ballista.
         int shots = u.IsWarMachine ? WarMachineShotsPerAction(u) : HasAbilityNow(u, Ab.DoubleShot) ? 2 : 1;
@@ -351,6 +346,7 @@ public sealed partial class Battle
             if (primary) OnHitExtras(a, target, !ranged, hit.Kind == AttackKind.Retaliation, dmg);
             if (!a.Alive) break;
         }
+        if (!hit.BattleDiveFinish) MarkOfTheDamnedTrigger(a);   // exe FUN_00a673c0 (00a68686): after every strike, not 0x9b
         return new StrikeResult(primaryDamage, primaryKilled, stunned);
     }
 
@@ -430,7 +426,7 @@ public sealed partial class Battle
         // Avenger critical (exe 00a5ae40 / 00a673c0): replaces the luck multiplier with luck+1
         // when luck is normal or good, and with 1.0 on bad luck.
         if (!hit.Secondary && ah.FavoriteEnemies.Count > 0 && IsFavoredEnemy(ah, t) && hit.FixedRoll == null
-            && S.Rng.Chance(0.4 + (ah.HasPerk("HERO_SKILL_CUNNING_OF_THE_WOODS") ? 0.1 : 0)))
+            && HeroRoll(AvengerCritChance(ah)))   // exe FUN_00a5ae40: ability roll, no attacker
         {
             luckMult = luckMult >= 1 ? luckMult + 1 : 1;
             Emit(new AbilityTriggered(a.Id, "FAVOURED_ENEMY_CRITICAL", t.Id));   // the log's "Favored" texts (FUN_00a5ae40 result)
@@ -681,19 +677,9 @@ public sealed partial class Battle
         if (dmg > 0 && a.Alive)
         {
             // Extra elemental damage from hero perks.
-            if (t.Alive && (ah.HasPerk(Sk.FieryWrath) || ah.HasPerk(Sk.BarbFieryWrath)) && !a.IsWarMachine)
-                DealPerkElementalDamage(t, dmg * (double)0.1f, "SPELL_FIREBALL", a.Id, "FIERY_WRATH");   // exe FUN_00a5ed90 → 0097d740, ECX=5
+            if (t.Alive && !a.IsWarMachine) FieryWrathAndHellfire(a, t, ah, dmg, retaliation);   // exe FUN_00a5ed90 → 0097d740, ECX=5
             if (t.Alive && ah.HasPerk(Sk.ColdSteel) && !a.IsWarMachine)
                 DealPerkElementalDamage(t, dmg * (double)0.1f, "SPELL_ICE_BOLT", a.Id, "COLD_STEEL");   // exe FUN_00a5c000 → 0097d740, ECX=4
-            if (t.Alive && ah.HasPerk(Sk.Hellfire) && !a.IsWarMachine && (!retaliation || ah.HasPerk(Sk.Hellwrath)) && ah.Mana >= 5
-                && S.Rng.Chance(Stats.Get("combat/HeroSkills/DemonLord/CriticalStrike_ChanceToWork", 30) / 100.0))
-            {
-                double dmgH = Stats.Get("combat/HeroSkills/DemonLord/DemonicFire/BaseDamage", 10) + Stats.Get("combat/HeroSkills/DemonLord/DemonicFire/DamagePerSpellPower", 10) * ah.SpellPower;
-                if (ah.HasPerk(Sk.SearingFires)) dmgH *= 1.5;
-                ah.Mana -= (int)Stats.Get("combat/HeroSkills/DemonLord/DemonicFire/ManaCost", 5);
-                Emit(new ManaChanged(Actor.Hero(a.Side), ah.Mana));
-                DealElementalDamage(t, (int)dmgH, Elements.Fire, a.Id, "HELLFIRE");
-            }
             // Life Drain / Vampirism (exe FUN_00a59c60): heal = trunc(frac·damage + 0.5), resurrecting; frac = LifeDrainIntensity
             // for the ability + Vampirism value (·0.01); Undead, Mechanical and Elemental targets give nothing.
             if (HasAbilityNow(a, Ab.LifeDrain) || a.GetEffect("SPELL_VAMPIRISM") is { })

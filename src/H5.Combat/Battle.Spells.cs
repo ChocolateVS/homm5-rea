@@ -411,6 +411,7 @@ public sealed partial class Battle
         _castingCreature = u;
         try { ResolveSpell(u.Id, Controller(u), sp, MoonWeek.SpellMastery(known.Mastery, sp.School, S.Week), cp, castTarget, castCell, fromHero: false); }
         finally { _castingCreature = null; }
+        MarkOfTheDamnedTrigger(u);   // exe FUN_00983790 @ 009840a1: the marked caster is struck after its spell
         ManaBurst(u);
         EndAction(u.Id, 0);
         return null;

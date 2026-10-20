@@ -148,11 +148,14 @@ public sealed partial class Battle
     void MatronSalvo(HeroState h, Unit target)
     {
         if (h.Specialization != "HERO_SPEC_MATRON_SALVO" || !target.Alive) return;
-        double chance = 0.1 + 0.02 * h.Level;                         // fan manual p.98
-        foreach (var w in S.LivingOf(h.Side).Where(w => w.CreatureId is "CREATURE_MATRON" or "CREATURE_MATRIARCH" or "CREATURE_SHADOW_MISTRESS").ToList())
+        // exe FUN_00978e10: every stack of creature 0x51 / 0x52 (Matron, Matriarch — not the Shadow Mistress) rolls the
+        // ability roll (no attacker) with chance 10 + 2·level; the stacks that pass then attack the target together.
+        var shooters = S.LivingOf(h.Side).Where(w => w.CreatureId is "CREATURE_MATRON" or "CREATURE_MATRIARCH").ToList()
+            .Where(_ => HeroRoll(MatronSalvoChance(h))).ToList();
+        foreach (var w in shooters)
         {
             if (!target.Alive) break;
-            if (!w.Alive || w.MaxShots <= 0 || !S.Rng.Chance(chance)) continue;
+            if (!w.Alive) continue;
             Emit(new AbilityTriggered(w.Id, "MATRON_SALVO", target.Id));
             Strike(w, target, new Hit { Kind = AttackKind.Ranged }, pattern: true);
         }

@@ -329,7 +329,7 @@ public sealed partial class Battle
         if (f.Kind == "BATTLE_DIVE")
         {
             if (S.At(target) is { } v && v.Id != u.Id)
-                Strike(u, v, new Hit { Kind = AttackKind.Melee, Multiplier = 2 }, pattern: false);   // ×2 on anyone, friend or foe
+                Strike(u, v, new Hit { Kind = AttackKind.Melee, Multiplier = 2, BattleDiveFinish = true }, pattern: false);   // ×2 on anyone, friend or foe
             // Return to a random free cell.
             var free = new List<Cell>();
             for (int x = 0; x < S.Width; x++) for (int y = 0; y < S.Height; y++) { var c = new Cell(x, y); if (Fits(u, c)) free.Add(c); }

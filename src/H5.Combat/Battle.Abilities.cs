@@ -25,9 +25,10 @@ public sealed partial class Battle
     /// Hero strike base damage (exe FUN_00bc1b90): kills fraction for (level + bonus) x target health, then the
     /// Offender specialisation trunc((level x Offender_HeroAttackDamageBonusPerLevel + 1) x damage); at least 1.
     /// </summary>
-    public int HeroStrikeDamage(HeroState h, Unit t, int levelBonus)
+    public int HeroStrikeDamage(HeroState h, Unit t, int levelBonus, bool holyCharge = false)
     {
         int dmg = Math.Max(1, (int)Math.Floor(HeroKills(h.Level + levelBonus, t.IsObject ? 8 : t.Tier) * MaxHealthOf(t)));
+        if (holyCharge) dmg = HolyChargeDamage(h, dmg);   // exe 00bc1dc9..00bc1e5f: before the week and Offender
         dmg = MoonWeek.MightDamage(dmg, S.Week);   // exe 00bc1c78: Might weeks, after the base strike
         if (h.Specialization == "HERO_SPEC_OFFENDER")
             dmg = (int)(((float)h.Level * (float)Stats.Get("combat/HeroSpecializations/Barbarian/Offender_HeroAttackDamageBonusPerLevel", 0.05) + 1f) * dmg);
@@ -82,11 +83,11 @@ public sealed partial class Battle
             AddEffect(t, new Effect { Id = LionsDemoralized, SourceSide = h.Side, Dispellable = false });
     }
 
-    void HeroStrike(HeroState h, Unit t, int levelBonus, bool friendly, double extraMult = 1, bool plain = false, bool powerfulBlow = false)
+    void HeroStrike(HeroState h, Unit t, int levelBonus, bool friendly, double extraMult = 1, bool plain = false, bool powerfulBlow = false, bool holyCharge = false)
     {
         int actor = Actor.Hero(h.Side);
         Emit(new AttackStarted(actor, t.Id, AttackKind.Hero));
-        double dmg = HeroStrikeDamage(h, t, levelBonus) * extraMult;
+        double dmg = HeroStrikeDamage(h, t, levelBonus, holyCharge) * extraMult;
         if (!friendly)
         {
             // exe 008cf3f8-008cf470: one critical roll, chance = Critical Strike's CriticalStrike_ChanceToWork (if
@@ -121,7 +122,7 @@ public sealed partial class Battle
     void MarkOfTheDamnedTrigger(Unit attacker)
     {
         var e = Enemy(Controller(attacker));
-        if (e.Present && e.Links.TryGetValue(Sk.MarkOfDamned, out var id) && id == attacker.Id)
+        if (attacker.Alive && e.Present && e.Links.TryGetValue(Sk.MarkOfDamned, out var id) && id == attacker.Id)
         {
             Emit(new AbilityTriggered(Actor.Hero(e.Side), Sk.MarkOfDamned, attacker.Id));
             HeroStrike(e, attacker, levelBonus: 3, friendly: false);
@@ -134,9 +135,7 @@ public sealed partial class Battle
         var h = S.Heroes[target.Side];
         if (!attacker.Alive || !h.Present || !h.Links.TryGetValue(Sk.RetaliationStrike, out var id) || id != target.Id) return;
         Emit(new AbilityTriggered(Actor.Hero(h.Side), Sk.RetaliationStrike, attacker.Id));
-        double mult = h.HasPerk(Sk.UnstoppableCharge) ? 3 : 1;
-        if (h.Specialization == "HERO_SPEC_JOUSTING") mult *= 1 + Stats.Get("combat/HeroSpecializations/Knight/CavalryCommander_HolyChargeBonus", 0.01) * h.Level;
-        HeroStrike(h, attacker, levelBonus: 3, friendly: false, extraMult: mult);
+        HeroStrike(h, attacker, levelBonus: 3, friendly: false, holyCharge: true);
     }
 
     /// <summary>Powerful Blow: the hero follows up the linked creature's attacks (p.139).</summary>
@@ -605,13 +604,11 @@ public sealed partial class Battle
             {
                 var h = HeroOf(u);
                 u.AbilityUses[c.Ability] = 1;
-                int n = Math.Max(1, (int)Math.Floor(u.Count * GatingPortion(u, h)));
+                int n = GatingCount(u, h);   // exe FUN_0085fe60 tail: floor + random rounding, may be 0
                 Emit(new AbilityTriggered(u.Id, c.Ability));
-                var g = SummonStackNear(u, u.CreatureId, n, c.Ability, Stats.Get("combat/HeroSkills/DemonLord/Gating/GatedStartATB", 0));
-                reset = h.HasPerk(Sk.QuickGating) ? Stats.Get("combat/HeroSkills/DemonLord/Gating/QuickGatingStartATB", 0.75)
-                                                   : Stats.Get("combat/HeroSkills/DemonLord/Gating/CallerStartATB", 0.5);
-                if (g == null) return null;
-                AddEffect(g, new Effect { Id = GatedEffect, Positive = true, Dispellable = false });
+                var g = n > 0 ? SummonStackNear(u, u.CreatureId, n, c.Ability, GatedStartAtb(h)) : null;
+                reset = GatingCallerAtb(h);
+                if (g != null) AddEffect(g, new Effect { Id = GatedEffect, Positive = true, Dispellable = false });
                 break;
             }
             default: return "ability not implemented";
