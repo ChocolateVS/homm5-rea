@@ -36,6 +36,17 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Click to build | 0065bab0 / screen messages | not traced here | select, click again to build | UNVERIFIED |
 | MMH 5.5 data | MMH55-Data / MMH55-Index (509 building files, own necropolis/stronghold TownBuildDefinition) | same screen | screen renders with 5.5 (default) and H5_TARGET=stock (shots hall_55.png, hall_stock.png) | MATCH |
 
+## Map-start buildings
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Map buildings list | AdvMapTown reader 00ad6990 (Type, InitialUpgrade, MaxUpgrade; BLD_UPG_* 00ad4650), copied to the town (+0x1a4, 16-byte entries) | per building: start level and cap | `MapLoader` → `TownBuildingInit` | MATCH |
+| Cap | town init 00cd6460: record +0x28 = min(MaxUpgrade, record data maximum) | BLD_UPG_NONE caps at 0 (code 2 limit_upgrade) | `MaxLevel` = min(Max, data max) (`TownInitialBuildingsTests`) | FIXED (MaxUpgrade NONE meant "no limit") |
+| Start level | 00cd6460: level map = min(InitialUpgrade, cap), then town vfunc 0x6c (build, 00cd4a40) that many times | built through the normal build path | level set directly; guild rolled by `RollMageGuild`, dwelling pools filled | MATCH (levels) / build side effects at start UNVERIFIED |
+| Town hall | 00cd6460: shared Type (+0xfc) ≠ 0 → hall level = max(level, 1) | every town starts with at least the Village Hall | same (also maps or RMG towns without a list) | FIXED (was 0 when the map gave none) |
+| Buildings not in the list | record cap from the data record (creation not traced) | — | cap = data maximum, level 0 | UNVERIFIED |
+| User report "everything is built from the beginning" | A1SM1 (MMH55-SPMaps.h5u) towns list only TB_TOWN_HALL BLD_UPG_1; MMH55 H55_ConstructPlayerTowns / _NeutralTowns run only with H55_BuildPlayerTowns / _BuildNeutralTowns ≠ 0 (H55-Settings.lua: 0) | hall only | hall only: engine state, 3D scene (all other ModObjects at level 0) and build screen (shots/town2.png, hall.png); `--town-build-all` is dev only | MATCH (not reproduced; maps such as the user's TrueCastles.h5m start with many buildings by design) |
+
 ## Town screen: 3D scene, hotspots, hover
 
 | Item | Evidence | Original | Ours | Status |

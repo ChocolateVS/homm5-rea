@@ -64,11 +64,16 @@ public sealed partial class Adventure
             if (!PlayableRaces.Contains(type))
                 type = owner >= 0 ? PlayerByIndex(owner)!.Race : PlayableRaces[S.Rng.Next(PlayableRaces.Length)];
             var t = new TownState { Object = o.Index, Type = type, Owner = owner, Pos = o.Pos, Specialization = o.Specialization };
+            // Town init 00cd6460 over the map's buildings list (AdvMapTown +0x1a4: Type, InitialUpgrade, MaxUpgrade):
+            // limit (record +0x28) = min(MaxUpgrade, data maximum) — BLD_UPG_NONE forbids the building — and the
+            // start level = min(InitialUpgrade, limit); the town hall is raised to level 1 when lower (any town type).
             foreach (var b in o.Buildings)
             {
-                t.Built[b.Type] = b.Initial;
-                t.MaxLevel[b.Type] = b.Max == 0 ? Db.MaxLevel(type, b.Type) : Math.Min(b.Max, Db.MaxLevel(type, b.Type));
+                int limit = Math.Min(b.Max, Db.MaxLevel(type, b.Type));
+                t.MaxLevel[b.Type] = limit;
+                t.Built[b.Type] = Math.Min(b.Initial, limit);
             }
+            if (t.Level("TB_TOWN_HALL") < 1) t.Built["TB_TOWN_HALL"] = 1;
             // Buildings the map doesn't mention are allowed up to the town type's maximum.
             if (Db.Buildings.TryGetValue(type, out var defs))
                 foreach (var d in defs)
