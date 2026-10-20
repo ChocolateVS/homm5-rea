@@ -12,11 +12,11 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 289 |
-| MATCH | 147 |
+| FIXED | 299 |
+| MATCH | 149 |
 | GAP | 20 |
-| UNVERIFIED | 133 |
-| N/A | 60 |
+| UNVERIFIED | 132 |
+| N/A | 61 |
 
 ## Core mechanics
 
@@ -243,7 +243,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `HERO_SKILL_GATING` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `HERO_SKILL_NECROMANCY` | N/A | 00c26be0 (adventure) | post-battle raising only (adventure hand-off, `NecromancyRaise`); no combat use |  |
 | `HERO_SKILL_AVENGER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
-| `HERO_SKILL_ARTIFICIER` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
+| `HERO_SKILL_ARTIFICIER` | MATCH | 004283b0, 00c0a700, 00c0a8f0, 00c0a450, 00cd2310 | no combat code: mastery (hero vf 0x174(0x11)) gates crafting (effects ≤ min(mastery, 3)), equipping (mastery > 0), the Ultimate half price (mastery ≥ 4) and the forge's upgrade to the hero's Knowledge; combat only reads the stack's artifact. Open: Melt Artifact consuming the artifact — the engine drops the effect count but keeps the hit point / attack / defence / speed / initiative part already in the stack's base values (the exe consumer was not traced) |  |
 | `HERO_SKILL_INVOCATION` | MATCH | 0097d2a0 (0097d42c..0097d47f), 004e5cb0 | Irresistible Magic: for spells listed by FUN_004e5cb0, share' = (1 − {0,20,40,50,75}[caster hero mastery of 0x12] %) × share (table 00f46f18), also when fully resisted (share 1). Engine formula identical (ApplyProtectionPercent); spell-set difference noted below |  |
 | `HERO_SKILL_FIRST_AID` | FIXED | 00977190 | tent heal 10/20/50/100, Empiric, ring ×2 | tests/H5.Combat.Tests/WarMachineAuditTests |
 | `HERO_SKILL_BALLISTA` | FIXED | 00a75bf0, 00a65260 | one action = all shots at the chosen target; +1 shot | tests/H5.Combat.Tests/WarMachineAuditTests.BallistaShotsPerAction |
@@ -565,6 +565,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_ABILITY_ENTANGLING_ROOTS` | UNVERIFIED | 008a1e50 00981650 00982010 00982a00 | implemented; not yet compared with the exe |  |
 | `SPELL_ABILITY_DASH` | UNVERIFIED | 008d30e0 | implemented; not yet compared with the exe |  |
 | `SPELL_REMOTE_CONTROL` | UNVERIFIED | 00a75020 | implemented; not yet compared with the exe |  |
+| `SPELL_EFFECT_ARMOR_CRUSHING` | FIXED | 00989790 (case 0xb3), 004e3990, 004e4a80 | defence − value unless ARMORED (0x55), like Disrupting Ray (0xd) and 0xca; cumulative (004e3990 lists 0xd, 0x10, 0xac, 0xb3, 0xd1, 0x112, 0x12b, 0x13a, 0x13b). Open: whether Cleansing / dispel removes it (engine: dispellable) | AuditMicroArtifactTests.ArmorCrushingAccumulatesPerStrikeAndSparesArmored |
 | `SPELL_ABILITY_POISONOUS_ATTACK` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_FROZEN` | UNVERIFIED |  | implemented; not yet compared with the exe |  |
 | `SPELL_EFFECT_FIRE_DAMAGE` | FIXED | 00bbe760 (0xca → 004e5b70) | the armour crush applied as an effect (Fortress moat): same rule as Master of Fire | MasterOfFireCrushIsAFixedHalfOfTheDefence |
@@ -668,6 +669,17 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `DRAGON_TALON_CROWN` | FIXED | 00a75930 → 004bae60 | war machine initiative × (0.1 · crowns + 1), + RunicMachines_InitiativeBonus (float; the rounded copy at 004bd7b0 +0x68 is not the combat value). Was missing | AuditSkillTestsH.DragonTalonCrownSpeedsUpWarMachines |
 | `DRAGON_TEETH_NECKLACE` | FIXED | 004bc190 (004bc380) | +10 % each for ABILITY_CASTER / ABILITY_RANDOM_CASTER creatures | (same helper) |
 | `DRAGON_WING_MANTLE` | FIXED | 004bc190 (004bc363) | +10 % each for flyers | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
+| `MAE_ARMOR_CRUSHING` | FIXED | 00a629b0 (00a62cbc..00a62d08, byte +8), 004e3990, 004e4a80, 00989790 | after each strike on a live target (any strike, retaliations and shots included) the attacker's value is put on the target as SPELL_EFFECT_ARMOR_CRUSHING (vf 0x260, duration 0x7ffffffe); repeated applications add up | AuditMicroArtifactTests.ArmorCrushingAccumulatesPerStrikeAndSparesArmored |
+| `MAE_DEFENCE` | FIXED | 004bb2a0 (byte +7) | defence = week-adjusted record defence + value, then the hero's defence; the Defend posture bonus (008a22f0) is computed on the sum | AuditMicroArtifactTests.PiercingDefenceHealthAndSpeedRaiseTheBaseValues |
+| `MAE_HASTE` | FIXED | 004bc190 (byte +13, 00e15a80 = 0.01f, 00e0a7e4 = 1.0f) | the stack's initiative (after the hero factors) × (min(value, 50) · 0.01 + 1); applied with or without a hero | AuditMicroArtifactTests.HasteMultipliesInitiativeCappedAtFiftyPercent |
+| `MAE_HEALTH` | FIXED | 004bc470 (local byte +4) | hit points = week-adjusted record HP + value, before Toughness, Ring of Life, the specialisations and the next-battle percentage; also without a hero. Engine had no creature artifacts | AuditMicroArtifactTests.PiercingDefenceHealthAndSpeedRaiseTheBaseValues |
+| `MAE_LUCK` | FIXED | 004ba970 (byte +10) | added to the week-adjusted army luck (kept in a Week of Balance, which drops only the combat effects 00a6abf0) | AuditMicroArtifactTests.LuckAndMoraleAreAdded |
+| `MAE_MAGIC_PROTECTION` | FIXED | 0097af50 (0097b2ec..0097b349, byte +9) | for a creature target, the protection factor × (1 − value · 0.01f); the spell then deals 1 − protection share as before | AuditMicroArtifactTests.MagicProtectionReducesSpellDamage |
+| `MAE_MORALE` | FIXED | 004ba9d0 (byte +11) | added to the week-adjusted army morale; neutral-morale creatures (00b61ba0) still get 0 | AuditMicroArtifactTests.LuckAndMoraleAreAdded |
+| `MAE_NONE` | N/A | 00ad2400 | "This effect cannot be used." |  |
+| `MAE_PIERCING` | FIXED | 004bb170 (byte +6) | attack = record attack + value, then the hero's attack and bonuses | AuditMicroArtifactTests.PiercingDefenceHealthAndSpeedRaiseTheBaseValues |
+| `MAE_SPEED` | FIXED | 004bc0b0 (byte +12) | speed = record speed + value, before the hero perks and the next-battle bonus | AuditMicroArtifactTests.PiercingDefenceHealthAndSpeedRaiseTheBaseValues |
+| `MAE_WOUNDING` | MATCH | 00c0a700, 004e9b90 | no combat reader of the wounding byte; only the AI army value copies it. The forge cannot add it (00c0a700 rejects effect 1), so no stack carries it |  |
 | `NIGHTMARISH_RING` | FIXED | 00989fd0 (tail) | −2 morale per ring to the stacks facing the hero (army vcall 0x10 = enemy army's hero). Was missing | AuditSkillTestsH.EnemyArtifactsLowerMoraleAndLuck |
 | `PEDANT_OF_MASTERY` | FIXED | 00b4d150, 00875550 | GetSkillMastery: for the hero class's racial skill (Knight Training, Ranger Avenger, Wizard Artificier, Demon Lord Gating, Necromancer Necromancy, Warlock Invocation, Runemage Runelore, Barbarian Blood Rage) +1 with the artifact (also from none), results outside 0..4 → 0. Was ignored | AuditSkillTestsH.PendantOfMasteryRaisesTheRacialSkill |
 | `RING_OF_HASTE` | FIXED | 004bc190 (004bc2c4) | army creatures' initiative +20 % (any number of rings), inside the artifact percent p: init = (p + 100)·init·0.01 with p ≥ −100. Was missing | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |

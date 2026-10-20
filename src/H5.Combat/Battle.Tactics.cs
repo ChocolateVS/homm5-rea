@@ -43,7 +43,11 @@ public sealed partial class Battle
             if (dst == null || dst.Id == src.Id) return "invalid target";
             if (dst.CreatureId != src.CreatureId) return "different creatures";
             bool whole = c.Count == src.Count;
-            if (whole && src.ArtifactEffects >= 0 && dst.ArtifactEffects < 0) { dst.ArtifactEffects = src.ArtifactEffects; src.ArtifactEffects = -1; }
+            if (whole && src.ArtifactEffects >= 0 && dst.ArtifactEffects < 0)
+            {
+                if (src.MicroArtifact != null) MicroArtifacts.Reapply(Db, S, dst, src.MicroArtifact);
+                dst.ArtifactEffects = src.ArtifactEffects; src.ArtifactEffects = -1; src.MicroArtifact = null;
+            }
             dst.Count += c.Count; dst.InitialCount = dst.Count;
             src.Count -= c.Count; src.InitialCount = src.Count;
             if (whole) { src.Reserve = false; src.Removed = true; }

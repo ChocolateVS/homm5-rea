@@ -873,6 +873,11 @@ public sealed partial class Battle
                 && e.Id is not (H5.Combat.Fx.Benediction or H5.Combat.Fx.BansheeHowl)).ToList();
             if (pos.Count > 0) { Emit(new AbilityTriggered(a.Id, Ab.Purger, t.Id)); RemoveEffect(t, pos[S.Rng.Next(pos.Count)].Id); }
         }
+        // MAE_ARMOR_CRUSHING (exe 00a62cbc..00a62d08): every strike of a stack whose creature artifact has the effect puts
+        // SPELL_EFFECT_ARMOR_CRUSHING on the target for the whole battle (vf 0x260, 0x7ffffffe); the exe adds the values of
+        // a repeated 0xb3 (004e3990 / 004e4a80).
+        if (MicroArtifacts.Bonus(a, MicroEffect.ArmorCrushing) is var crush && crush > 0)
+            AddEffect(t, new Effect { Id = MicroArtifacts.ArmorCrushingEffect, Value = Fx(t, MicroArtifacts.ArmorCrushingEffect) + crush, SourceSide = a.Side, SourceUnit = a.Id });
         if (HasAbilityNow(a, Ab.StormStrike) && melee)
             StormStrikeChain(a, t, dmg);
         // Bear Roar only fires while the struck target would still retaliate (exe FUN_00a5e800 checks *param_2).

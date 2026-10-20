@@ -89,6 +89,8 @@ public sealed class Unit
     public List<Effect> Effects = new();
     /// <summary>Crafted effects of the creature artifact the stack carries (Artificer), or -1 for none.</summary>
     public int ArtifactEffects = -1;
+    /// <summary>The creature artifact the stack carries (Arcane Forge micro-artifact), or null; see <see cref="MicroArtifacts"/>.</summary>
+    public MicroArtifact? MicroArtifact;
     /// <summary>Uses of limited abilities ("once per combat" etc.), keyed by ability id.</summary>
     public Dictionary<string, int> AbilityUses = new();
     public bool HasActed;

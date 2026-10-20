@@ -101,7 +101,8 @@ public sealed partial class Battle
             d -= Fx(u, H5.Combat.Fx.WeakeningStrike);
             if (!IsUndeadLike(u) && Adjacent(u).Any(o => o.Has(Ab.WeakeningAura)))
                 d -= Stats.Get("combat/Creatures/Necropolis/WeakeningAuraDeffenceDec", 2);
-            d -= Fx(u, H5.Combat.Fx.ArmorCrushed);   // Master of Fire: fixed half of the defence at application (exe 00989790 case 0xca)
+            d -= Fx(u, H5.Combat.Fx.ArmorCrushed);
+            d -= Fx(u, MicroArtifacts.ArmorCrushingEffect);   // MAE_ARMOR_CRUSHING (exe 00989790 case 0xb3, like 0xd / 0xca)   // Master of Fire: fixed half of the defence at application (exe 00989790 case 0xca)
             if (u.HasEffect(H5.Combat.Fx.RageOfForest)) d -= Fx(u, H5.Combat.Fx.RageOfForest);
             if (u.HasEffect(H5.Combat.Fx.BerserkerRage)) d = 0;
             // Rider Charge: -20% of target defence per cell walked (p.179).
@@ -333,6 +334,7 @@ public sealed partial class Battle
         }
         // Week of the month on the base morale (exe 004ba9d0 → 00bcdd00); Balance also drops the effects (00a6acd0).
         m = MoonWeek.MoraleLuck(m, u.Town, S.Week);
+        m += MicroArtifacts.Bonus(u, MicroEffect.Morale);   // exe 004ba9d0: MAE_MORALE after the week adjustment
         int weekBase = m;
         m -= (int)Fx(u, "SPELL_SORROW");
         if (u.GetEffect(H5.Combat.Fx.Benediction) is { } prayer) m += (int)prayer.Value;
@@ -363,6 +365,7 @@ public sealed partial class Battle
         var h = HeroOf(u);
         // Week of the month on the base luck (exe 004ba970 → 00bcdcf0); Balance also drops the effects (00a6abf0).
         int l = MoonWeek.MoraleLuck((h.Present ? h.Luck : 0) + Side(u).Luck, u.Town, S.Week);
+        l += MicroArtifacts.Bonus(u, MicroEffect.Luck);   // exe 004ba970: MAE_LUCK after the week adjustment
         if (MoonWeek.IsBalance(S.Week)) return l;
         var eh = Enemy(u.Side);
         if (eh.Present && eh.HasPerk(Sk.DeadLuck)) l -= 1;
@@ -406,6 +409,8 @@ public sealed partial class Battle
         if (th.HasPerk(Sk.SapMagic) && casterIsHero && spell.School == "MAGIC_SCHOOL_DESTRUCTIVE") m *= 0.8;   // exe 0097b009
         if (th.HasPerk(Sk.Boneward) && spell.School == "MAGIC_SCHOOL_DESTRUCTIVE") m *= 0.8;                   // exe 0097afc0
         if ((th.HasPerk(Sk.FireResistance) || th.HasPerk(Sk.BarbFireResistance)) && spell.Element == Elements.Fire) m *= 0.5;
+        // MAE_MAGIC_PROTECTION of the target stack's creature artifact: × (1 − value · 0.01f) (exe 0097b328).
+        if (MicroArtifacts.Bonus(target, MicroEffect.MagicProtection) is var mp && mp > 0) m *= 1 - mp * (double)0.01f;
         if (th.HasPerk(Sk.LuckOfBarbarian) && LuckOf(target) > 0)                                                // exe 0097b051
             m *= Math.Clamp(1 - (double)(float)Stats.Get("combat/HeroSkills/Barbarian/LuckOfTheBarbarian_MagicProofPerLuck", 0.05), 0, 1);
         if (protectionOnly) return m;

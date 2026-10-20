@@ -52,8 +52,9 @@ public static class BattleSetup
             var placed = ExeAutoPlacement.Place(db, s, side, slots);
             for (int i = 0; i < slots.Count; i++)
             {
-                var u = AddCreature(db, s, side, slots[i].Creature, slots[i].Count, placed[i] ?? new Cell(-1, -1), summoned: false);
-                u.ArtifactEffects = slots[i].ArtifactEffects;
+                var u = AddCreature(db, s, side, slots[i].Creature, slots[i].Count, placed[i] ?? new Cell(-1, -1), summoned: false,
+                    micro: slots[i].MicroArtifact);
+                u.ArtifactEffects = slots[i].MicroArtifact is { Effects.Count: > 0 } m ? m.Effects.Count : slots[i].ArtifactEffects;
                 if (placed[i] == null) u.Reserve = true;
             }
             if (h.Present && sides[side].Hero is { } hi)
@@ -197,7 +198,8 @@ public static class BattleSetup
         return h;
     }
 
-    public static Unit AddCreature(GameDatabase db, BattleState s, int side, string creatureId, int count, Cell pos, bool summoned)
+    public static Unit AddCreature(GameDatabase db, BattleState s, int side, string creatureId, int count, Cell pos, bool summoned,
+        MicroArtifact? micro = null)
     {
         var c = db.Creature(creatureId);
         var h = s.Heroes[side];
@@ -216,6 +218,7 @@ public static class BattleSetup
             Mana = c.SpellPoints, MaxMana = c.SpellPoints, Element1 = c.Element1, Element2 = c.Element2,
             Count = count, InitialCount = count, Pos = pos, StartPos = pos, Summoned = summoned,
         };
+        MicroArtifacts.ApplyToBase(u, micro);
         if (h.Present)
         {
             // Vitality: +2 HP per creature (fan manual p.112).
