@@ -173,4 +173,47 @@ public class AiAuditTests(Fixture f)
         Assert.Equal(HeroRole.Collector, roles[4]);
         Assert.Equal(HeroRole.Collector, roles[1]);
     }
+
+    [Fact]
+    public void Idle_heroes_go_into_their_town_garrison_and_come_out_last()
+    {
+        // FUN_00868640: a finished commander/freelancer in its own town is garrisoned unless BlockTownGarrisonForAI;
+        // FUN_00869770: with no hero left on the map an AI garrison hero with move points comes out.
+        var g = f.NewGame("A2M1", 5);
+        int me = g.Current.Index;
+        var t = g.S.Towns.First(x => x.Owner == me);
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == me);
+        foreach (var x in g.S.Heroes.Where(x => x != h && x.InTown == t.Object)) x.InTown = -1;
+        h.InTown = t.Object;
+        h.Garrisoned = false;
+        if (h.Army.StackCount() == 0) h.Army[0] = new Stack("CREATURE_PEASANT", 5);
+        System.Array.Fill(t.Garrison, null);
+        OriginalAdventureAI.FinishHero(g, h, HeroRole.Collector);   // collectors / suppliers stay out (0086b5e0)
+        Assert.False(h.Garrisoned);
+        t.AiGarrisonBlocked = true;
+        OriginalAdventureAI.FinishHero(g, h, HeroRole.Commander);
+        Assert.False(h.Garrisoned);
+        t.AiGarrisonBlocked = false;
+        OriginalAdventureAI.FinishHero(g, h, HeroRole.Commander);
+        Assert.True(h.Garrisoned);
+        Assert.Null(OriginalAdventureAI.NextHero(g, me, new HashSet<int>(g.S.Heroes.Where(x => x != h).Select(x => x.Id))));
+        h.MovePoints = 0;
+        Assert.Null(OriginalAdventureAI.HeroOutOfGarrison(g, me, new HashSet<int>()));
+        h.MovePoints = 1000;
+        Assert.Same(h, OriginalAdventureAI.HeroOutOfGarrison(g, me, new HashSet<int>()));
+        Assert.False(h.Garrisoned);
+    }
+
+    [Fact]
+    public void Search_limits_follow_the_wave_spread_attempts()
+    {
+        // FUN_0086c010: 1500 doubling over 6 attempts; roles 1..3 Near then Far (2 attempts); a remembered target
+        // raises the first limit to cost + 200 + move points; a player in danger searches Far once.
+        var diff = AdventureAiStats.Load(f.Core).Difficulty[1] with { RolesSearchNearMaxCost = 700, RolesSearchFarMaxCost = 32000 };
+        Assert.Equal(new[] { 1500, 3000, 6000, 12000, 24000, 48000 }, OriginalAdventureAI.SearchLimits(HeroRole.Freelancer, diff, null, 2000, false));
+        Assert.Equal(new[] { 700, 32000 }, OriginalAdventureAI.SearchLimits(HeroRole.Commander, diff, null, 2000, false));
+        Assert.Equal(new[] { 2700, 32000 }, OriginalAdventureAI.SearchLimits(HeroRole.Collector, diff, 500, 2000, false));
+        Assert.Equal(new[] { 1500, 3000, 6000, 12000, 24000, 48000 }, OriginalAdventureAI.SearchLimits(HeroRole.Freelancer, diff, 100, 1000, false));
+        Assert.Equal(new[] { 32000 }, OriginalAdventureAI.SearchLimits(HeroRole.Freelancer, diff, null, 2000, true));
+    }
 }

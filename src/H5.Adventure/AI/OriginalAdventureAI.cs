@@ -28,7 +28,7 @@ public sealed partial class OriginalAdventureAI
 
     public int MaxActionsPerTurn { get; init; } = 80;
     /// <summary>Combat AI used to quick-combat the AI's battles.</summary>
-    public IBattleAI BattleAI { get; init; } = new OriginalBattleAI { MaxCandidates = 24 };
+    public IBattleAI BattleAI { get; init; } = new OriginalBattleAI();
 
     AdventureAiStats? _stats;
     readonly Dictionary<int, Tile> _lastTarget = new();
@@ -77,7 +77,7 @@ public sealed partial class OriginalAdventureAI
     {
         while (actions < MaxActionsPerTurn && !g.S.Finished)
         {
-            var h = NextHero(g, me, done);
+            var h = NextHero(g, me, done) ?? HeroOutOfGarrison(g, me, done);
             if (h == null) break;
             done.Add(h.Id);
             if (!roles.ContainsKey(h.Id)) roles[h.Id] = _role.GetValueOrDefault(h.Id, HeroRole.Freelancer);
@@ -92,13 +92,49 @@ public sealed partial class OriginalAdventureAI
                 if (!r.Ok) break;
                 claimed.Add(target.Value.Object);
                 _lastTarget[h.Id] = target.Value.Tile;
+                _lastCost[h.Id] = target.Value.Cost;
                 ResolvePending(g, battleSeedBase + (ulong)actions);
                 LevelUps(g, h, st);
                 // BlockTownGarrisonForAI: no creature exchange with that garrison (exe reader 0x008687a0).
                 if (h.InTown >= 0 && g.S.Town(h.InTown) is { } home && home.Owner == me && !home.AiGarrisonBlocked) TakeGarrison(g, h, home);
                 if (h.MovePoints < 100) break;
             }
+            if (h.Alive && !g.S.Finished) FinishHero(g, h, roles[h.Id]);
         }
+    }
+
+    /// <summary>
+    /// With no hero left on the map (exe FUN_00869770 tail): the first of the player's towns, in town order, whose
+    /// garrison hero (town vf 0x18(1)) is AI-enabled (vf 0x2ac), not finished, has move points (vf 0xf4 &gt; 0) and at
+    /// least one stack (FUN_0045a320) sends it out of the garrison (FUN_00435cc0 with "into garrison" false; executed
+    /// by 004f58e0 as the town's hero swap) and makes it the current hero.
+    /// GAP-detail: our town order is the map's town list.
+    /// </summary>
+    public static HeroState? HeroOutOfGarrison(Engine.Adventure g, int me, HashSet<int> done)
+    {
+        foreach (var t in g.S.Towns.Where(t => t.Owner == me))
+        {
+            var h = g.S.Heroes.FirstOrDefault(x => x.Alive && x.Owner == me && x.Garrisoned && x.InTown == t.Object);
+            if (h == null || !h.AiEnabled || done.Contains(h.Id) || h.MovePoints <= 0 || h.Army.StackCount() == 0) continue;
+            if (Send(g, new GarrisonHeroCmd(t.Object, h.Id, false) { Player = me }).Ok) return h;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// A hero ends its turn (exe FUN_00868640 after the search gave up, 0086c010): a collector / supplier hands its
+    /// partner logic a command instead (FUN_0086b5e0 returns true, no garrison move); otherwise an AI-enabled hero
+    /// standing in its own town whose garrison the scripts did not block (town vf 0x114, BlockTownGarrisonForAI) is
+    /// put into the garrison (FUN_00435cc0 with "into garrison" true).
+    /// GAP-details: the exe command swaps the visitor with a garrisoned hero; our GarrisonHeroCmd refuses when the
+    /// garrison already holds a hero. Our turn ends a hero on our own conditions (no destination, a failed move, under
+    /// 100 move points, 8 steps), not only when the search is exhausted; the role-2/3 command 0086fc40 is not ported.
+    /// </summary>
+    public static void FinishHero(Engine.Adventure g, HeroState h, HeroRole role)
+    {
+        if (role is HeroRole.Collector or HeroRole.Supplier) return;
+        if (!h.AiEnabled || h.Garrisoned || h.InTown < 0 || g.S.Town(h.InTown) is not { } t || t.Owner != h.Owner || t.AiGarrisonBlocked) return;
+        Send(g, new GarrisonHeroCmd(t.Object, h.Id, true) { Player = h.Owner });
     }
 
     // ---------------------------------------------------------------- roles
@@ -184,7 +220,8 @@ public sealed partial class OriginalAdventureAI
         int bestSum = 0;
         foreach (var x in g.S.Heroes)
         {
-            if (!x.Alive || x.Owner != me || done.Contains(x.Id)) continue;
+            // Heroes in a garrison have no map object (world vf 0x100 → null at 0x008698c2) and are not candidates.
+            if (!x.Alive || x.Owner != me || done.Contains(x.Id) || x.Garrisoned) continue;
             // EnableHeroAI(hero, false): the AI leaves the hero to the map scripts. GAP-detail: the exe's gate here
             // is world vf 0x100(hero) → vf 0x44 (0x008698ba); a hero failing it is finished at once
             // (FUN_00868640(hero, 0, 1)). That this gate is the AI-enabled flag is not traced; the flag itself
@@ -209,7 +246,7 @@ public sealed partial class OriginalAdventureAI
 
     // ---------------------------------------------------------------- destinations
 
-    readonly record struct Destination(int Object, Tile Tile, double Score);
+    readonly record struct Destination(int Object, Tile Tile, double Score, int Cost = 0);
 
     /// <summary>
     /// Old-target bonus (exe FUN_00a78940, 0x00a78a67): when the destination is the hero's remembered target the
@@ -249,13 +286,57 @@ public sealed partial class OriginalAdventureAI
     public static bool Better(int state, long value, int bestState, long bestValue) =>
         state > bestState || (state == bestState && value > bestValue);
 
+    /// <summary>
+    /// Search limits of the hero's search attempts (exe FUN_0086c010, "Wave spread: search limit = %d"): the first
+    /// attempt searches up to 1500 with 6 attempts allowed, a commander / collector / supplier (roles 1..3) up to
+    /// RolesSearchNearMaxCost (row +0x14) with 2 attempts; a remembered target raises it to at least its stored cost
+    /// + 200 + the hero's move points; when the player is in danger (FUN_00866c30) it is RolesSearchFarMaxCost
+    /// (row +0x18) with 1 attempt. Every further attempt doubles the limit, roles 1..3 jump to RolesSearchFarMaxCost.
+    /// When all attempts find nothing the hero is finished.
+    /// </summary>
+    public static List<int> SearchLimits(HeroRole role, AdventureDifficulty diff, int? rememberedCost, int movePoints, bool playerInDanger)
+    {
+        bool roled = role is HeroRole.Commander or HeroRole.Collector or HeroRole.Supplier;
+        int limit = roled ? diff.RolesSearchNearMaxCost : 1500, attempts = roled ? 2 : 6;
+        if (rememberedCost is int c) limit = Math.Max(limit, c + 200 + movePoints);
+        if (playerInDanger) { limit = diff.RolesSearchFarMaxCost; attempts = 1; }
+        var list = new List<int> { limit };
+        for (int a = 1; a < attempts; a++)
+        {
+            limit = roled ? diff.RolesSearchFarMaxCost : limit * 2;
+            list.Add(limit);
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// "Player in danger" (exe FUN_00866c30): with n towns of which k have a threat (FUN_00c283d0) above
+    /// ThreatsTownInDangerThreshold (row +0x70), true when n &lt; 1, k &gt; n − 1, or the player's heroes ≤ k + 1.
+    /// GAP-detail: town threats are not ported (k = 0), so this is "no towns or at most one hero".
+    /// </summary>
+    public static bool PlayerInDanger(Engine.Adventure g, int me)
+    {
+        int towns = g.S.Towns.Count(t => t.Owner == me), endangered = 0;
+        if (towns < 1 || endangered > towns - 1) return true;
+        return g.S.Heroes.Count(x => x.Alive && x.Owner == me) <= endangered + 1;
+    }
+
+    readonly Dictionary<int, int> _lastCost = new();
+
     Destination? ChooseDestination(Engine.Adventure g, HeroState h, HeroRole role, AdventureDifficulty diff, AdventureAiStats st, HashSet<int> claimed)
     {
         double myPower = g.ArmyPower(h.Army.Live(), h);
-        // GAP: the exe's search limit is the wave spread of FUN_0086c010 ("Wave spread: search limit = %d"),
-        // starting at 1500 and widening through RolesSearchNearMaxCost / RolesSearchFarMaxCost; the role split
-        // below is reconstructed.
-        int maxCost = role == HeroRole.Commander ? diff.RolesSearchFarMaxCost : Math.Max(diff.RolesSearchNearMaxCost, h.MaxMovePoints * 3);
+        int? remembered = _lastTarget.ContainsKey(h.Id) && _lastCost.TryGetValue(h.Id, out int lc) ? lc : null;
+        foreach (int limit in SearchLimits(role, diff, remembered, h.MovePoints, PlayerInDanger(g, h.Owner)))
+        {
+            var best = ChooseWithin(g, h, diff, st, claimed, myPower, limit);
+            if (best != null && g.FindPath(h, best.Value.Tile) != null) return best;
+        }
+        return SeaTravel(g, h, myPower, diff, st, claimed);
+    }
+
+    Destination? ChooseWithin(Engine.Adventure g, HeroState h, AdventureDifficulty diff, AdventureAiStats st, HashSet<int> claimed, double myPower, int maxCost)
+    {
         var dangers = diff.CheckHeroesDanger ? EnemyDangers(g, h, st) : new List<(Tile Pos, int Reach, double Power)>();
         var rng = new Rng(Mix(g.S.Rng.S0, (ulong)g.S.Day, (ulong)h.Owner, (ulong)h.Id));
         Destination? best = null;
@@ -284,7 +365,7 @@ public sealed partial class OriginalAdventureAI
             if (d == 0) continue;
             // GAP: the exe's cost is the pathfinder's move cost to the destination; approximated here.
             int cost = d * st.SearchAverageTerrainCost;
-            if (cost > maxCost && state == 0) continue;
+            if (cost > maxCost) continue;
             if (state == 0)
             {
                 // Guards on the way: never walk into a stack we would lose to (reconstructed).
@@ -301,12 +382,11 @@ public sealed partial class OriginalAdventureAI
             v = DiscountedValue(state, v, cost, st.SearchAverageTerrainCost);
             if (best == null || Better(state, v, bestState, bestValue))
             {
-                best = new Destination(o.Index, tile, v);
+                best = new Destination(o.Index, tile, v, cost);
                 bestState = state;
                 bestValue = v;
             }
         }
-        if (best == null || g.FindPath(h, best.Value.Tile) == null) return SeaTravel(g, h, myPower, diff, st, claimed);
         return best;
     }
 
