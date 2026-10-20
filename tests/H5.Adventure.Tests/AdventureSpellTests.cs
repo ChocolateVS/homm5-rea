@@ -1,6 +1,7 @@
 using H5.Adventure.Engine;
 using H5.Adventure.Map;
 using H5.Adventure.State;
+using H5.Core.Data;
 
 namespace H5.Adventure.Tests;
 
@@ -75,7 +76,7 @@ public class AdventureSpellTests(Fixture f)
     public void TownPortalGoesToTheNearestOwnTownAndSpendsAllMovement()
     {
         var (g, h) = Setup(f, Engine.Adventure.SpellTownPortal);
-        var town = g.NearestOwnTown(h)!;
+        var town = g.PortalTown(h)!;
         // Step away from the entrance so the portal has somewhere to go.
         var entrance = g.EntranceOf(town);
         if (h.Pos == entrance)
@@ -91,6 +92,21 @@ public class AdventureSpellTests(Fixture f)
         Assert.Equal(entrance, h.Pos);
         Assert.Equal(0, h.MovePoints);
         Assert.Equal(80, h.Mana);
+    }
+
+    [Fact]
+    public void TownPortalPicksTheSmallestSquaredDistanceWithFloorDepth()
+    {
+        var (g, h) = Setup(f, Engine.Adventure.SpellTownPortal);
+        foreach (var t in g.S.Towns) t.Owner = h.Owner;
+        int depth = g.Db.Stats.Root.Element("adventure")!.Int("DepthBetweenFloors", 10);
+        long D(TownState t)
+        {
+            long dx = t.Pos.X - h.Pos.X, dy = t.Pos.Y - h.Pos.Y, dz = (long)depth * (t.Pos.Floor - h.Pos.Floor);
+            return dx * dx + dy * dy + dz * dz;
+        }
+        long min = g.S.Towns.Min(D);
+        Assert.Same(g.S.Towns.First(t => D(t) == min), g.PortalTown(h));
     }
 
     [Fact]

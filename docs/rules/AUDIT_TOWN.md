@@ -41,7 +41,7 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Item | Evidence | Original | Ours | Status |
 |---|---|---|---|---|
 | Building pick | 0061a5d0: picked object must be a CArenaTownModObject whose ModObjectName matches a built building record (screen +0x3ec lookup) | hovering a built building's scene object | ray pick on the building's collision, `ViewFor` (highest built level with that ModObjectName) | MATCH |
-| Hover highlight colour | 0061a5d0 with param_3 = 0: highlighter (screen +0x174, vcall +4) colour (0.3961, 0.2196, 0, 0) | brownish-orange highlight | ours still (1, 0.9, 0.6) × 0.18; fix in A2_portal_highlight.patch, NOT committed | GAP |
+| Hover highlight colour | 0061a5d0 with param_3 = 0: highlighter (screen +0x174, vcall +4) colour (0.3961, 0.2196, 0, 0) | brownish-orange highlight | additive overlay of the same colour | FIXED (was (1, 0.9, 0.6) × 0.18) |
 | Hover name line | TownScreen BuildingDesc | building name, town name when nothing is hovered | same | MATCH (earlier work) |
 | Open on double click | AUDIT_INPUT (click_pointer 00613130 no-op, dblclick_pointer 00619a30) | double click opens | same | MATCH |
 | Building tooltip extras | 0061a5d0 switch on the town ability: 0xc / 0xd mystic_pond_bonus, 0x1c ritual_pit_info_witches / _minotaurs, 0x1d trade_guild_income_bonus / trade_guild_this_week_bonus; shipyard_deserted; default name + description (006b9c10) | per-building extra lines | name + description only (right-click tooltip, AUDIT_INPUT) | GAP |
@@ -82,7 +82,7 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 
 | Item | Evidence | Original | Ours | Status |
 |---|---|---|---|---|
-| Target town | 00427280 (cast cmd) → 008656e0 case 0x33 → 00865170 → FUN_00ccf6e0 | the owner's town (player +0xc4 list) with the smallest dx² + dy² + (DepthBetweenFloors (RPGStats +0x6c) × Δfloor)²; strict <, so the earlier town wins ties; no choice | `PortalTown` (patch A2_portal_highlight.patch, NOT committed) | GAP — fix written and tested, uncommitted (was: movement-cost distance, 10⁶ floor penalty, any town when given) |
+| Target town | 00427280 (cast cmd) → 008656e0 case 0x33 → 00865170 → FUN_00ccf6e0 | the owner's town (player +0xc4 list) with the smallest dx² + dy² + (DepthBetweenFloors (RPGStats +0x6c) × Δfloor)²; strict <, so the earlier town wins ties; no choice | `PortalTown` same (`AdventureSpellTests`) | FIXED (was: movement-cost distance, 10⁶ floor penalty, any town when given) |
 | Arrival | 008648b0: town hero slot +0x18(0) empty, else nothing happens | cast only when that slot is free | refused when the entrance is occupied | MATCH (slot ↔ entrance identity UNVERIFIED) |
 | Movement | hero +0x100(0) after the jump | movement points to 0 | same | MATCH |
 

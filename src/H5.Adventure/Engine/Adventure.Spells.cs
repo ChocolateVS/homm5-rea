@@ -1,5 +1,6 @@
 using H5.Adventure.Map;
 using H5.Adventure.State;
+using H5.Core.Data;
 
 namespace H5.Adventure.Engine;
 
@@ -9,7 +10,7 @@ namespace H5.Adventure.Engine;
 //   Instant Travel (SPELL_DIMENSION_DOOR, 15 mana): teleport within 800 movement points "whatever the
 //     terrain type" (100 per side step, 141 per diagonal); costs half the hero's daily movement; land to
 //     land or sea to sea only.
-//   Town Portal (SPELL_TOWN_PORTAL, 20 mana): to the nearest friendly town; all movement points are lost.
+//   Town Portal (SPELL_TOWN_PORTAL, 20 mana): to the nearest own town (see PortalTown); all movement points are lost.
 //   Summon Creatures (SPELL_SUMMON_CREATURES, 0 + 1 mana per creature): chosen stacks from the nearest own
 //     town's garrison; takes 75% of the hero's starting movement points.
 //   Vessel of Shalassa (SPELL_SUMMON_BOAT, 4 mana): brings the nearest empty ship next to the hero
@@ -60,6 +61,25 @@ public sealed partial class Adventure
             .ThenBy(t => t.Object)
             .FirstOrDefault();
 
+    /// <summary>
+    /// Town Portal's town (cast 00427280 → 008656e0 case 0x33 → 00865170 → FUN_00ccf6e0): the owner's town with the
+    /// smallest dx² + dy² + (DepthBetweenFloors (RPGStats +0x6c) × floor difference)² (FUN_00a33600), compared with a
+    /// strict &lt; (FUN_00a33560) so the earlier town wins a tie. The caster does not choose.
+    /// </summary>
+    public TownState? PortalTown(HeroState h)
+    {
+        long depth = Math.Max(0, Db.Stats.Root.Element("adventure").Int("DepthBetweenFloors", 10));
+        TownState? best = null;
+        long bestD = 0;
+        foreach (var t in S.Towns.Where(t => t.Owner == h.Owner))
+        {
+            long dx = t.Pos.X - h.Pos.X, dy = t.Pos.Y - h.Pos.Y, dz = depth * (t.Pos.Floor - h.Pos.Floor);
+            long d = dx * dx + dy * dy + dz * dz;
+            if (best == null || d < bestD) { best = t; bestD = d; }
+        }
+        return best;
+    }
+
     string? DoCastAdventureSpell(CastAdventureSpellCmd c)
     {
         if (S.Hero(c.HeroId) is not { Alive: true } h || h.Owner != Current.Index) return "not your hero";
@@ -89,8 +109,8 @@ public sealed partial class Adventure
             {
                 if (h.Mana < mana) return "not enough mana";
                 if (h.InBoat) return "cannot cast at sea";
-                var town = c.TownObject >= 0 ? S.Town(c.TownObject) : NearestOwnTown(h);
-                if (town == null || town.Owner != h.Owner) return "no friendly town";
+                var town = PortalTown(h);
+                if (town == null) return "no friendly town";
                 var to = EntranceOf(town);
                 if (HeroAt(to, h.Id) != null) return "the town entrance is occupied";
                 var from = h.Pos;

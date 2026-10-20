@@ -401,10 +401,12 @@ public partial class TownScreen : Control
         return best;
     }
 
+    // Hover highlight: 0061a5d0 (hover, param_3 = 0) hands the scene highlighter (screen +0x174, vcall +4) the colour
+    // (0.3961, 0.2196, 0, 0) for the building's CArenaTownModObject; drawn here as an additive overlay of that colour.
     static readonly StandardMaterial3D Highlight = new()
     {
         ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-        AlbedoColor = new Color(1, 0.9f, 0.6f, 0.18f),
+        AlbedoColor = new Color(0.3961f, 0.2196f, 0f, 1f),
         Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
         BlendMode = BaseMaterial3D.BlendModeEnum.Add,
     };
