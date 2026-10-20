@@ -78,8 +78,8 @@ public sealed partial class Adventure
         var inc = new Purse();
         foreach (var t in S.Towns.Where(t => t.Owner == p.Index))
         {
-            inc[Purse.Gold] += TownGoldIncome(t);
-            if (t.Level("TB_MARKETPLACE") >= 2) inc.Add(SiloIncome(t.Type));
+            var ti = TownIncome(t);
+            for (int i = 0; i < 7; i++) inc[i] += ti[i];
         }
         foreach (var (idx, os) in S.Objects)
         {
@@ -132,15 +132,16 @@ public sealed partial class Adventure
 
     void WeeklyGrowthAll()
     {
-        // Town pools: the week's pool reduction, then the growth record's total (00cd27b0, see GrowthOf).
-        int week = Db.MoonWeekIndex(S.MoonWeek);
+        double plague = S.MoonWeek switch
+        {
+            "WEEK_OF_PLAGUE" => 0, "WEEK_OF_DISEASE" => 1.0 / 3, "WEEK_OF_FEVER" => 0.5, _ => 1,
+        };
         foreach (var t in S.Towns)
             for (int tier = 1; tier <= 7; tier++)
             {
                 if (t.Level($"TB_DWELLING_{tier}") <= 0) continue;
-                t.Available[tier - 1] = MoonWeekPool(week, t.Available[tier - 1]);
-                int n = OwnerAdjustedGrowth(t, WeeklyGrowth(t, tier));
-                if (n > 0) t.Available[tier - 1] += n;
+                if (plague < 1) t.Available[tier - 1] = plague == 0 ? 0 : Math.Max(1, (int)(t.Available[tier - 1] * plague));
+                t.Available[tier - 1] += OwnerAdjustedGrowth(t, WeeklyGrowth(t, tier));
             }
         foreach (var (idx, os) in S.Objects)
         {
@@ -185,8 +186,33 @@ public sealed partial class Adventure
         return (int)Math.Round((float)n * c + carry, MidpointRounding.ToEven);
     }
 
-    /// <summary>Weekly growth of a town dwelling tier: the total of its growth record (<see cref="GrowthOf"/>).</summary>
-    int WeeklyGrowth(TownState t, int tier) => GrowthOf(t, tier).Total;
+    /// <summary>
+    /// Weekly growth of a town dwelling tier: the creature's base growth, +50% with a Citadel,
+    /// +100% with a Castle (fan manual p.224), plus moon-week multipliers (p.272).
+    /// TODO(exe): owned external dwellings' growth bonus and town specialisations.
+    /// </summary>
+    int WeeklyGrowth(TownState t, int tier)
+    {
+        var def = Db.Building(t.Type, $"TB_DWELLING_{tier}", 1);
+        if (def?.Creature == null || !Core.Creatures.TryGetValue(def.Creature, out var cr)) return 0;
+        double g = cr.WeeklyGrowth;
+        int fort = t.Level("TB_FORT");
+        if (fort >= 3) g *= 2; else if (fort >= 2) g *= 1.5;
+        // Ritual Pit growth (growth list field +0x24 "T_GROWTH_SACRIFICE", after castle, before the moon week).
+        // TODO(exe): the filler of that field is not traced; the bonuses go to the Blood Maiden (tier 2) and
+        // Minotaur (tier 3) dwellings as the building tooltip names them (ritual_pit_info_witches / _minotaurs).
+        if (t.Type == "TOWN_DUNGEON" && t.Level(RitualPit) >= 1 && tier is 2 or 3)
+        {
+            var (witches, minotaurs) = RitualPitBonus(t.SacrificedHitPoints);
+            g += tier == 2 ? witches : minotaurs;
+        }
+        g *= S.MoonWeek switch
+        {
+            "WEEK_OF_LIFE" => 2, "WEEK_OF_CONJUNCTION" => 3, "WEEK_OF_DISEASE" => 1.0 / 3, "WEEK_OF_FEVER" => 0.5, "WEEK_OF_PLAGUE" => 0,
+            _ => 1,
+        };
+        return (int)g;
+    }
 
     /// <summary>
     /// A player's turn starts. A human player (player vfunc 0x44 == 0) then gets the start-of-week notice when the

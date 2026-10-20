@@ -40,7 +40,7 @@ public sealed partial class TownInfoScreen : TownSubScreen
         stats?.SetValue("level", t.DevLevel.ToString());
         stats?.SetValue("race", Ref("textType"));
         stats?.SetValue("fort", fort);
-        Ui.Find("town_income")?.SetValue("income", H5.Adventure.Engine.Adventure.TownGoldIncome(t).ToString());
+        Ui.Find("town_income")?.SetValue("income", Owner.Session.Game.TownIncome(t)[H5.Adventure.State.Purse.Gold].ToString());
         string biography = "", special = "";
         if (!string.IsNullOrEmpty(t.Specialization) && Game.Instance.Fs.Exists(t.Specialization))
         {

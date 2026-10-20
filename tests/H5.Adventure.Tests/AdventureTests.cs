@@ -215,7 +215,7 @@ public class RulesTests(Fixture f)
         Assert.NotNull(built);
         var def = f.Db.Building(t.Type, built!, t.Level(built!))!;
         Assert.Equal(999999 - def.Cost.Gold, p.Purse[Purse.Gold]);
-        Assert.Contains("already built today", t.MaxLevel.Keys.Select(b => g.Apply(new BuildCmd(t.Object, b) { Player = p.Index }).Error ?? ""));
+        Assert.Contains("build_thisturn", t.MaxLevel.Keys.Select(b => g.Apply(new BuildCmd(t.Object, b) { Player = p.Index }).Error ?? ""));
     }
 
     [Fact]
@@ -226,7 +226,8 @@ public class RulesTests(Fixture f)
         var p = g.Current;
         p.Purse = new Purse(new Resources(0, 0, 0, 0, 0, 0, 0));
         // An empty purse still allows any free building that is otherwise available.
-        bool freeAvailable = t.MaxLevel.Any(kv => t.Level(kv.Key) < kv.Value
+        // The grail needs a Tear of Asha in the town (exe 00cd0e20), however cheap.
+        bool freeAvailable = t.MaxLevel.Any(kv => kv.Key != "TB_GRAIL" && t.Level(kv.Key) < kv.Value
             && f.Db.Building(t.Type, kv.Key, t.Level(kv.Key) + 1) is { } d
             && t.DevLevel >= d.DevLevelNeeded && d.Dependencies.All(x => t.Level(x.Type) >= x.Level)
             && p.Purse.CanAfford(d.Cost));

@@ -1,4 +1,5 @@
 using H5.Adventure.Data;
+using H5.Adventure.Engine;
 using H5.Adventure.State;
 using H5.Core.Xdb;
 using H5Reborn.Adventure;
@@ -75,20 +76,16 @@ public static class TownData
         return db.Building(t.Type, type, next);
     }
 
-    public enum BuildState { Built, CanBuild, NoResources, Requirements, BuiltToday, Forbidden }
-
-    /// <summary>Why a building level can or cannot be built today (mirrors Adventure.DoBuild's checks, in its order).</summary>
-    public static BuildState Check(AdventureSession s, TownState t, BuildingDef def)
+    /// <summary>
+    /// The exe's build-check code for a cell level (town build screen 0065bab0): levels already built are
+    /// <see cref="BuildDenial.AlreadyBuilt"/>, levels past the next one <see cref="BuildDenial.Prereq"/>, the next
+    /// level asks the town (00cd6a90 via <see cref="H5.Adventure.Engine.Adventure.BuildCheck"/>).
+    /// </summary>
+    public static BuildDenial Check(AdventureSession s, TownState t, BuildingDef def)
     {
-        if (t.Level(def.Type) >= def.Level) return BuildState.Built;
-        if (def.Level > t.MaxLevel.GetValueOrDefault(def.Type)) return BuildState.Forbidden;
-        if (def.Level != t.Level(def.Type) + 1) return BuildState.Requirements;
-        if (t.DevLevel < def.DevLevelNeeded) return BuildState.Requirements;
-        foreach (var (type, level) in def.Dependencies)
-            if (t.Level(type) < level) return BuildState.Requirements;
-        if (t.BuiltToday) return BuildState.BuiltToday;
-        var p = s.S.Players.First(p => p.Index == t.Owner);
-        return p.Purse.CanAfford(def.Cost) ? BuildState.CanBuild : BuildState.NoResources;
+        if (t.Level(def.Type) >= def.Level) return BuildDenial.AlreadyBuilt;
+        if (def.Level != t.Level(def.Type) + 1) return BuildDenial.Prereq;
+        return s.Game.BuildCheck(t, def.Type, s.S.Players.First(p => p.Index == t.Owner).Purse);
     }
 
     /// <summary>Dev only (`--town-build-all`): builds every level the map allows.</summary>

@@ -58,26 +58,20 @@ public sealed partial class Adventure
     {
         var t = S.Town(c.TownObject);
         if (t == null || t.Owner != Current.Index) return "not your town";
-        if (t.BuiltToday) return "already built today";
-        int next = t.Level(c.Building) + 1;
-        if (next > t.MaxLevel.GetValueOrDefault(c.Building)) return "cannot build further";
-        var def = Db.Building(t.Type, c.Building, next);
-        if (def == null) return "unknown building";
-        if (t.DevLevel < def.DevLevelNeeded) return $"requires town level {def.DevLevelNeeded}";
-        foreach (var (type, level) in def.Dependencies)
-            if (t.Level(type) < level) return $"requires {type} {level}";
         var p = Current;
-        if (!p.Purse.CanAfford(def.Cost)) return "not enough resources";
+        var why = BuildCheck(t, c.Building, p.Purse);
+        if (why != BuildDenial.CanBuild) return BuildDenialText(why);
+        int next = t.Level(c.Building) + 1;
+        var def = Db.Building(t.Type, c.Building, next)!;
+        if (c.Building == "TB_GRAIL") ConsumeTearOfAsha(t);
         Give(p, Purse.Scale(def.Cost, -1));
         int trainingBefore = TrainingPointsMax(t);
         t.Built[c.Building] = next;
         TrainingPointsAfterBuild(t, trainingBefore);
         t.BuiltToday = true;
-        // A new dwelling's pool starts with its base creature's WeeklyGrowth (00cd4a40 at 00cd4e2c: when
-        // FUN_00cd0710 creates the pool, creature +0xa8); no fort, horde or week bonuses.
-        if (c.Building.StartsWith("TB_DWELLING_") && next == 1 && int.TryParse(c.Building[^1..], out var tier)
-            && Db.Building(t.Type, c.Building, 1)?.Creature is { } dc && Core.Creatures.TryGetValue(dc, out var dcd))
-            t.Available[tier - 1] += dcd.WeeklyGrowth;
+        // A new dwelling starts with one week of creatures (TODO(exe): confirm for H5).
+        if (c.Building.StartsWith("TB_DWELLING_") && next == 1 && int.TryParse(c.Building[^1..], out var tier))
+            t.Available[tier - 1] += WeeklyGrowth(t, tier);
         Emit(new BuildingBuilt(t.Object, c.Building, next));
         if (c.Building == ArtifactMerchantBuilding) StockArtifactMerchants();
         foreach (var h in S.Heroes.Where(h => h.Alive && h.InTown == t.Object && c.Building == "TB_MAGIC_GUILD")) LearnFromGuild(h, t);
@@ -98,16 +92,11 @@ public sealed partial class Adventure
         if (t.BuiltToday) return TownBuildState.BuiltToday;
         var purse = PlayerByIndex(t.Owner)?.Purse;
         bool anyLeft = false;
-        foreach (var (building, max) in t.MaxLevel)
+        foreach (var building in t.MaxLevel.Keys)
         {
-            int next = t.Level(building) + 1;
-            if (next > max) continue;
-            var def = Db.Building(t.Type, building, next);
-            if (def == null) continue;
-            anyLeft = true;
-            if (t.DevLevel < def.DevLevelNeeded) continue;
-            if (def.Dependencies.Any(d => t.Level(d.Type) < d.Level)) continue;
-            if (purse != null && purse.CanAfford(def.Cost)) return TownBuildState.CanBuild;
+            var why = BuildCheck(t, building, purse);
+            if (why == BuildDenial.CanBuild) return TownBuildState.CanBuild;
+            if (why is not (BuildDenial.AlreadyBuilt or BuildDenial.LimitUpgrade or BuildDenial.CantBuild or BuildDenial.NoWater)) anyLeft = true;
         }
         return anyLeft ? TownBuildState.NoResources : TownBuildState.AllComplete;
     }
