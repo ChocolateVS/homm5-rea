@@ -66,7 +66,7 @@ public static class CombatLauncher
     /// <summary>
     /// `--tactics-demo=STEPS`: tactics army bar steps run after 1 s, comma separated: reserve:N (send the side's Nth stack
     /// to the bar), split:N:C (C creatures of stack N into a new stack), dialog:N:SLOT (open the split window for stack N
-    /// dropped on bar slot SLOT), start (press Start combat).
+    /// dropped on bar slot SLOT), pick:N (carry stack N: drag ghost under the mouse), start (press Start combat).
     /// </summary>
     public static string? TacticsDemo;
     /// <summary>`--retreat-dialog=COST[:GOLD]` opens the Flee/Surrender box (screenshots; -1 = no ransom possible).</summary>

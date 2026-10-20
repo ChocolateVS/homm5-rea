@@ -149,6 +149,11 @@ public partial class CombatScreen : Control
                     TacticsSplitDialog.Open(this, Hud, Stack(p[1]), tu, side, slot);
                     break;
                 case "start": CmdEndTactics(); break;
+                case "pick":   // pick stack N up (as a click on it) to show the drag ghost under the (fake) mouse
+                    _deploySelected = Stack(p[1]).Id;
+                    _dragFrom = Stack(p[1]).Pos;
+                    _lastHover = null;
+                    break;
                 case "remove":   // dev only: drop a stack from the army to free a bar slot
                     var gone = Stack(p[1]);
                     gone.Removed = true;
@@ -313,6 +318,7 @@ public partial class CombatScreen : Control
         _cine.Process(delta);
         foreach (var v in _units.Values) v.PositionPlaque(Arena.Camera);
         if (!_playing) UpdateStirs();
+        if (_ghost != null || _deploySelected != null) UpdateDeployGhost();
 
         if (!_playing)
         {
@@ -1037,6 +1043,8 @@ public partial class CombatScreen : Control
         var mouse = MousePos;
         if (Hud.IsOverHud(mouse))
         {
+            _ghostDest = null;
+            UpdateDeployGhost();
             CombatCursors.Set(CombatCursor.Default);
             ShowStaticHighlights(null);
             return;
@@ -1046,7 +1054,9 @@ public partial class CombatScreen : Control
         _lastHover = cell;
         _lastMouse = mouse;
         _refusal = null;
+        _ghostDest = null;
         var action = Resolve(cell, mouse, out var cursor, out var hl);
+        UpdateDeployGhost();
         CombatCursors.Set(cursor);
         DrawFakeCursor(cursor);
         ShowStaticHighlights(hl);
@@ -1092,6 +1102,79 @@ public partial class CombatScreen : Control
         if (hover != null) foreach (var (c, m) in hover) Arena.Overlay.SetMark(new Vector2I(c.X, c.Y), m);
     }
 
+    /// <summary>Deployment cell test (FUN_005762f0): inside the side's deployment rectangle and off obstacles.</summary>
+    bool DeployCellValid(int side, Cell c)
+    {
+        var b = Session.Battle;
+        var (minX, maxX) = b.DeployZone(side);
+        return b.State.InBounds(c) && c.X >= minX && c.X <= maxX && !b.State.Obstacles.Contains(c);
+    }
+
+    /// <summary>
+    /// FUN_00576740 → FUN_00576630: for a stack of size n the exe tries anchors cursor + (dx, dy), dx, dy in 0..n−1, the
+    /// anchor being the footprint's far corner, and keeps the first whose cells are all valid. In top-left terms the
+    /// candidate is cursor + (dx, dy) − (n − 1).
+    /// </summary>
+    Cell? SnapDeploy(int side, Unit u, Cell cursor)
+    {
+        int n = u.Size;
+        for (int dx = 0; dx < n; dx++)
+        for (int dy = 0; dy < n; dy++)
+        {
+            var tl = new Cell(cursor.X + dx - (n - 1), cursor.Y + dy - (n - 1));
+            if (u.CellsAt(tl).All(c => DeployCellValid(side, c))) return tl;
+        }
+        return null;
+    }
+
+    // ---- tactics drag ghost (FUN_005779d0 / FUN_005767a0) ----------------------------------------
+
+    UnitView? _ghost;
+    Cell? _ghostDest;
+
+    /// <summary>
+    /// While a stack is carried: a translucent copy (alpha 0.5, set instantly) stands on the valid hovered footprint
+    /// and is hidden over invalid cells; the carried stack's own model stays at alpha 0.7 (0x3f333333); placed stacks
+    /// the drop would send back to the bar are hidden (alpha 0); every other stack is opaque.
+    /// </summary>
+    void UpdateDeployGhost()
+    {
+        var s = Session.Battle.State;
+        Unit? carried = s.Phase == BattlePhase.Tactics && _deploySelected is int sel ? s.Unit(sel) : null;
+        if (carried == null || (_ghost != null && _ghost.UnitId != carried.Id))
+        {
+            _ghost?.QueueFree();
+            _ghost = null;
+        }
+        if (carried != null && _ghost == null)
+        {
+            _ghost = new UnitView(carried);
+            _ghost.BuildGhost(Arena);
+            Arena.AddChild(_ghost);
+        }
+        var footprint = carried != null && _ghostDest is { } gd ? carried.CellsAt(gd).ToHashSet() : null;
+        if (_ghost != null)
+        {
+            if (footprint != null)
+            {
+                _ghost.Position = Arena.Grid.StackCenter(new Vector2I(_ghostDest!.Value.X, _ghostDest.Value.Y), carried!.Size);
+                _ghost.SetAlpha(0.5f);
+            }
+            else _ghost.SetAlpha(0f);
+        }
+        foreach (var v in _units.Values)
+        {
+            if (v.Dead) continue;
+            float a = 1f;
+            if (carried != null && s.Unit(v.UnitId) is { } vu && vu.Side == carried.Side && (vu.Alive || vu.Id == carried.Id))
+            {
+                if (vu.Id == carried.Id) a = 0.7f;
+                if (footprint != null && vu.Alive && vu.Cells().Any(footprint.Contains)) a = 0f;
+            }
+            v.SetAlpha(a);
+        }
+    }
+
     IEnumerable<Cell> Footprint(int actor, Cell topLeft)
     {
         int size = Session.Battle.State.Unit(actor)?.Size ?? 1;
@@ -1113,16 +1196,21 @@ public partial class CombatScreen : Control
 
         if (s.Phase == BattlePhase.Tactics)
         {
-            var (minX, maxX) = b.DeployZone(side);
-            if (_deploySelected == null && occupant != null && occupant.Side == side && !occupant.IsWarMachine) { cursor = CombatCursor.Interact; return null; }
-            // Carrying a stack: dropping it covers whatever stands there (those stacks go back to the bar, FUN_00576cd0).
-            if (_deploySelected is int sel && s.Unit(sel) is { } su && cell.X >= minX && cell.X <= maxX)
+            // The cursor stays CURSOR_DEFAULT over the field in tactics (FUN_00540ef0 returns early while tactics is active).
+            cursor = CombatCursor.Default;
+            // Carrying a stack (FUN_005767a0): the snapped footprint under the cursor, only when valid; the ghost goes
+            // there, and stacks under it would go back to the bar on the drop (FUN_00576cd0).
+            if (_deploySelected is int sel && s.Unit(sel) is { } su)
             {
-                var dest = new Cell(Math.Min(cell.X, maxX - su.Size + 1), Math.Min(cell.Y, s.Height - su.Size));
+                if (SnapDeploy(side, su, cell) is not { } dest) return null;
+                _ghostDest = dest;
                 foreach (var c in su.CellsAt(dest)) hl.Add((c, CellMark.Select));
-                cursor = CombatCursor.Move;
                 return new PlannedAction(new DeployCmd(sel, dest) { Side = side }, "Deploy", null);
             }
+            // Not carrying: the footprint of an own placed stack under the cursor, else the cell itself when valid.
+            if (occupant != null && occupant.Side == side && !occupant.IsWarMachine && !occupant.IsObject)
+                foreach (var c in occupant.Cells()) hl.Add((c, CellMark.Select));
+            else if (DeployCellValid(side, cell)) hl.Add((cell, CellMark.Select));
             return null;
         }
 

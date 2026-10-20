@@ -64,6 +64,33 @@ public partial class UnitView : Node3D
         }
     }
 
+    /// <summary>
+    /// Tactics drag ghost (exe FUN_005779d0 → FUN_00577010): a second copy of the creature model, no plaque,
+    /// looping its idle clip, facing the side's direction; its alpha is driven by the caller.
+    /// </summary>
+    public void BuildGhost(ArenaScene arena)
+    {
+        Model = BuildModel(arena);
+        AddChild(Model);
+        Name = $"Ghost{UnitId}_{CreatureId}";
+        Rotation = new Vector3(0, ArenaGrid.FacingYaw(Side), 0);
+        if (Character is { } c && c.Has("idle00")) c.Play("idle00", loop: true);
+    }
+
+    float _alpha = 1f;
+
+    /// <summary>Whole-model alpha (the exe's per-object alpha controller, 0055b430): 1 opaque, 0 hidden.</summary>
+    public void SetAlpha(float alpha)
+    {
+        if (Mathf.IsEqualApprox(alpha, _alpha)) return;
+        _alpha = alpha;
+        if (Model == null) return;
+        Model.Visible = alpha > 0.001f;
+        foreach (var mi in Model.FindChildren("*", nameof(MeshInstance3D), true, false))
+            ((MeshInstance3D)mi).Transparency = 1f - alpha;
+        if (Model is MeshInstance3D self) self.Transparency = 1f - alpha;
+    }
+
     Node3D BuildModel(ArenaScene arena)
     {
         string? characterPath = IsWarMachine ? WarMachineCharacter(CreatureId) : CreatureModels.CharacterPathFor(CreatureId);
