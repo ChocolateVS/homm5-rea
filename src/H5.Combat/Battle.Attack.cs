@@ -815,7 +815,8 @@ public sealed partial class Battle
             AddEffect(t, new Effect { Id = H5.Combat.Fx.Wound, Remaining = Stats.Get("combat/Creatures/Fortress/Wound_EffectDurationInRounds", 2), SourceSide = a.Side });
         }
         // Mark of Fire (exe FUN_00a629b0): ranged strikes only.
-        if (ranged && HasAbilityNow(a, Ab.MarkOfFire) && ProcRoll(a, t, Stats.Get("combat/Creatures/Fortress/MarkOfFire_ProcFactor", 1)))
+        if (ranged && HasAbilityNow(a, Ab.MarkOfFire) && ProcRoll(a, t, Stats.Get("combat/Creatures/Fortress/MarkOfFire_ProcFactor", 1))
+            && !MarkOfFireRefused(t))
         {
             Emit(new AbilityTriggered(a.Id, Ab.MarkOfFire, t.Id));
             AddEffect(t, new Effect { Id = H5.Combat.Fx.MarkOfFire, Remaining = Stats.Get("combat/Creatures/Fortress/MarkOfFire_EffectDurationInRounds", 2), SourceSide = a.Side });

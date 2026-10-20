@@ -13,7 +13,8 @@ public sealed partial class Battle
     bool IsLiving(Unit u) => !u.Has(Ab.Undead) && !u.Has(Ab.Elemental) && !u.Has(Ab.Mechanical) && !u.IsWarMachine && !u.IsObject
                              && !u.HasEffect("SPELL_VAMPIRISM");
     public bool IsUndeadLike(Unit u) => u.Has(Ab.Undead) || u.HasEffect("SPELL_VAMPIRISM");
-    bool NeutralMorale(Unit u) => u.Has(Ab.Undead) || u.Has(Ab.Elemental) || u.Has(Ab.Mechanical) || u.IsWarMachine || u.IsObject
+    // exe 004ba9d0 / 00a6acd0 / 00a6ba00 test only Undead (dynamic: Vampirism too) and Mechanical — Elementals have morale.
+    bool NeutralMorale(Unit u) => u.Has(Ab.Undead) || u.Has(Ab.Mechanical) || u.IsWarMachine || u.IsObject
                                   || u.HasEffect("SPELL_VAMPIRISM");
     /// <summary>Mind immunity: the exe HasAbility(IMMUNITY_TO_MIND_CONTROL) — explicit or derived from Undead / Mechanical /
     /// Elemental / Immunity to Magic, all cancelled by Shawl of the Great Lich (FUN_008a34c0, see HasAbilityExe).</summary>
@@ -181,7 +182,8 @@ public sealed partial class Battle
         double init = u.BaseInitiative * Math.Max(0.1, mult);
         init += Fx(u, H5.Combat.Fx.BattleRage) > 0 ? Stats.Get("combat/Creatures/Fortress/BattleRage_InitiativeBonus", 2) : 0;
         if (u.HasEffect(H5.Combat.Fx.RageOfForest)) init += Stats.Get("combat/Creatures/Sylvan/RageOfTheForestInitiativeInc", 5);
-        if (Adjacent(u).Any(o => o.Side == u.Side && o.Has(Ab.PresenceOfCommander))) init += 1;
+        if (Adjacent(u).Any(o => o.Side == u.Side && o.Has(Ab.PresenceOfCommander)))   // exe 008a4330: flag 0x400, RPGStats +0x4fc
+            init += (int)Stats.Get("combat/Creatures/Stronghold/PresenceOfCommanderInitiativeInc", 1);
         init += RageBonus(u, "DEMON_RAGE_BONUS_INITIATIVE");
         if (u.HasEffect(H5.Combat.Fx.Frozen) || u.HasEffect(FxSeducing)) return 0;   // a seducing stack's ATB is frozen (p.181)
         return Math.Max(0.1, init);
@@ -335,6 +337,8 @@ public sealed partial class Battle
         // Week of the month on the base morale (exe 004ba9d0 → 00bcdd00); Balance also drops the effects (00a6acd0).
         m = MoonWeek.MoraleLuck(m, u.Town, S.Week);
         m += MicroArtifacts.Bonus(u, MicroEffect.Morale);   // exe 004ba9d0: MAE_MORALE after the week adjustment
+        // Mechanical with Artificial Glory: the base is max(0, base) already (exe 004ba9d0 at 004baa6f).
+        if (NeutralMorale(u)) m = Math.Max(0, m);
         int weekBase = m;
         m -= (int)Fx(u, "SPELL_SORROW");
         if (u.GetEffect(H5.Combat.Fx.Benediction) is { } prayer) m += (int)prayer.Value;
@@ -351,6 +355,8 @@ public sealed partial class Battle
         if (!IsUndeadLike(u) && Adjacent(u).Any(o => o.Has(Ab.WeakeningAura)))
             m -= (int)Stats.Get("combat/Creatures/Necropolis/WeakeningAuraMoraleDec", 1);
         if (MoonWeek.IsBalance(S.Week)) m = weekBase;
+        // exe 00a6acd0 (00a6ae7b): a Mechanical stack returns max(0, m) before the Bravery / Aura of Bravery minimums.
+        if (NeutralMorale(u)) return Math.Max(0, m);
         // Minimum-morale effects come last.
         if (u.Has(Ab.Bravery)) m = Math.Max(m, 1);
         if (Adjacent(u).Any(o => o.Side == u.Side && o.Has(Ab.AuraBravery)) || u.Has(Ab.AuraBravery))
@@ -416,9 +422,11 @@ public sealed partial class Battle
         if (protectionOnly) return m;
         // Elemental gargoyle vulnerability auras (p.171)
         bool Near(string ab) => target.Has(ab) || Adjacent(target).Any(o => o.Has(ab));
-        if (spell.Element == Elements.Fire && Near(Ab.AuraFireVuln)) m *= 1.5;
-        if (spell.Element == Elements.Water && Near(Ab.AuraIceVuln)) m *= 1.5;
-        if (spell.Element == Elements.Air && Near(Ab.AuraLightningVuln)) m *= 1.5;
+        double vuln = Math.Clamp((float)Stats.Get("combat/Creatures/Academy/VulnerabilityDamageCoef", 1.5), 0f, 1000f);   // exe 00977c1c
+        if (spell.Element == Elements.Fire && Near(Ab.AuraFireVuln)) m *= vuln;
+        if (spell.Element == Elements.Water && Near(Ab.AuraIceVuln)) m *= vuln;
+        if (spell.Element == Elements.Air && Near(Ab.AuraLightningVuln)) m *= vuln;
+        if (spell.Element == Elements.Earth && Near("ABILITY_AURA_OF_EARTH_VULNERABILITY")) m *= vuln;
         if (spell.Element == Elements.Fire && target.HasEffect(H5.Combat.Fx.MarkOfFire))
             m *= Stats.Get("combat/Creatures/Fortress/MarkOfFire_FireDamageMultiplier", 2);
         return m;

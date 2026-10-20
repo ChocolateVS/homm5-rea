@@ -393,6 +393,8 @@ public sealed partial class Battle
                 break;
             }
             case Ab.HarmTouch:
+                // exe FUN_0097f610 case 0xaa: Crystal Scales and Mechanical targets (war machines included) are refused.
+                if (t!.Has("ABILITY_CRYSTAL_SCALES") || t.Has(Ab.Mechanical) || t.IsWarMachine) return "cannot harm this target";
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
                 // exe 0098747f: first every beneficial, non-permanent effect is removed (FUN_004e4120), then the target
                 // takes one creature's full health (FUN_00a61530 with n = 1: vf 0x1a8 × 1), not the top creature's rest.
@@ -458,6 +460,7 @@ public sealed partial class Battle
                 break;
             case Ab.Repair:
                 if (!t!.Has(Ab.Mechanical) && !t.IsWarMachine) return "only mechanical units can be repaired";
+                if (!RepairHasWork(t)) return "nothing to repair";   // exe FUN_0097f610 case 0xad
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
                 u.AbilityUses[c.Ability] = 1;
                 Heal(t, (int)(Stats.Get("combat/Creatures/Academy/GremlinRepairPowerPreCreature", 5) * u.Count), resurrect: true, c.Ability);
@@ -542,8 +545,11 @@ public sealed partial class Battle
             case Ab.Flamestrike:
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
                 u.AbilityUses[c.Ability] = 1;
-                Strike(u, t, new Hit { Kind = AttackKind.Ability, Multiplier = Stats.Get("combat/Creatures/Fortress/Flamestrike_DamageMultipiler", 1.2) }, pattern: false);
-                if (t.Alive) AddEffect(t, new Effect { Id = H5.Combat.Fx.MarkOfFire, Remaining = Stats.Get("combat/Creatures/Fortress/MarkOfFire_EffectDurationInRounds", 2), SourceSide = u.Side });
+                // exe FUN_00a60be0: base roll → FUN_00a5c790 with luck multiplier 1.0 (no luck roll) and special 0x159 (the
+                // ×Flamestrike multiplier of 00a58de0), dealt directly — no strike effects (Flamewave …), no retaliation.
+                DealDamage(t, ComputeDamage(u, t, new Hit { Kind = AttackKind.Ability, Multiplier = Stats.Get("combat/Creatures/Fortress/Flamestrike_DamageMultipiler", 1.2) }, ranged: false, luckMult: 1),
+                    u.Id, AttackKind.Ability, c.Ability);
+                if (t.Alive && !MarkOfFireRefused(t)) AddEffect(t, new Effect { Id = H5.Combat.Fx.MarkOfFire, Remaining = Stats.Get("combat/Creatures/Fortress/MarkOfFire_EffectDurationInRounds", 2), SourceSide = u.Side });
                 break;
             case Ab.StormBolt:
             {

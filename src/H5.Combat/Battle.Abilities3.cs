@@ -71,7 +71,7 @@ public sealed partial class Battle
             }
             case Ab.DefileMagic:
             {
-                if (t!.Spells.Count == 0 && t.MaxMana <= 0) return "target is not a caster";
+                if (!ExeCaster(t!)) return "target is not a caster";   // exe FUN_0097f610 case 0x146: HasAbility(CASTER)
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
                 AddEffect(t, new Effect { Id = FxDefiled, SourceUnit = u.Id, SourceSide = Controller(u), Value = u.Count, Positive = false, Dispellable = false });
                 return null;

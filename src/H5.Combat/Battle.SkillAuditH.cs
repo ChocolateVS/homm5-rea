@@ -32,7 +32,9 @@ public static class SkillAuditH
         init += h.BattleBonus[5];   // next-battle initiative bonus (hero vfunc 0x330 +0x14)
         if (init < 1f) init = 1f;
         int N(string art) => h.Artifacts.Count(a => a == art);
-        bool caster = c.Abilities.Contains("ABILITY_CASTER") || c.Abilities.Contains("ABILITY_RANDOM_CASTER");
+        // ABILITY_CASTER is derived from the known spells (exe 004bc380 → FUN_00b61ba0(0x45) → FUN_00b61950).
+        bool caster = c.Abilities.Contains("ABILITY_CASTER") || Battle.ExeCasterSpells(db, c.KnownSpells.Select(k => k.Spell))
+                      || c.Abilities.Contains("ABILITY_RANDOM_CASTER");
         int p = (N("RING_OF_HASTE") != 0 ? 20 : 0) + 10 * N("ARTIFACT_RING_OF_CELERITY")
                 + 5 * N(c.CombatSize > 1 ? "DRAGON_SCALE_ARMOR" : "DRAGON_SCALE_SHIELD");
         if (c.Shots <= 0 && !caster && !c.Flying) p += 10 * N("DRAGON_BONE_GRAVES");

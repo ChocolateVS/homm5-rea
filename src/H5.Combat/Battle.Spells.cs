@@ -904,9 +904,10 @@ public sealed partial class Battle
         if (IsElementalCaster(_castingCreature))
             dmg = ExeChop(dmg * (double)(float)Stats.Get("combat/Creatures/Neutral/SpellDamageMultiplier", 0.3));
         dmg = PreProtectionPerks(dmg, t, sp, hero);
+        dmg = ExeVulnerabilityDamage(dmg, t, sp);   // exe FUN_00977a80: Mark of Fire / vulnerability auras before protection
         if (!ignoreResist)
         {
-            double mult = SpellDamageMultiplier(t, sp, side, casterIsHero: hero != null) * ElementProtectionArtifacts(t, sp.Element);
+            double mult = SpellDamageMultiplier(t, sp, side, casterIsHero: hero != null, protectionOnly: true) * ElementProtectionArtifacts(t, sp.Element);
             bool immune = (sp.Element != Elements.None && ElementImmune(t, sp.Element)) || t.Has(Ab.ImmuneMagic);
             var inv = hero != null ? hero.SkillLevel(Sk.Invocation) : Mastery.None;
             if ((immune || fullProtection) && inv == Mastery.None) return null;
