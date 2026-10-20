@@ -400,7 +400,7 @@ public sealed partial class Battle
         int count = a.IsWarMachine ? 1 : a.Count;
         if (a.GetEffect("SPELL_FORGETFULNESS") is { } conf && (ranged || hit.Kind == AttackKind.Retaliation))
             count = (int)Math.Round((1 - conf.Value) * count);
-        if (t.HasEffect(H5.Combat.Fx.Sleep) && a.CreatureId == "CREATURE_VAMPIRE_PRINCE") min = max;    // Sleeping Strike
+        if (t.HasEffect(H5.Combat.Fx.Sleep) && VampireFamily(a)) min = max;    // Sleeping Strike (exe 00a597a0)
         if (hit.FixedRoll is double fr) return count * (fr < 0 ? (min + max) / 2 : fr);           // previews / AI
         if (min == max) return count * min;
         if (count > 3)
@@ -747,7 +747,7 @@ public sealed partial class Battle
         }
         // Fear (exe FUN_00a629b0): only on the attacker's own strike (never a retaliation) and only while the target would
         // still retaliate; the target runs instead of retaliating.
-        if (!retaliation && melee && HasAbilityNow(a, Ab.Fear) && !MindImmune(t) && CanRetaliate(t, a)
+        if (!retaliation && melee && HasAbilityNow(a, Ab.Fear) && !FearImmune(t) && CanRetaliate(t, a)
             && ProcRoll(a, t, Stats.Get("combat/Creatures/Inferno/Fear_ProcFactor", 0.8)))
         {
             Emit(new AbilityTriggered(a.Id, Ab.Fear, t.Id));
@@ -852,7 +852,8 @@ public sealed partial class Battle
             SetAtb(t.Id, 0);
             if (push != t.Pos) Teleport(t, push);
         }
-        if (HasAbilityNow(a, Ab.EntanglingRoots) && melee && !t.Flying && !a.HasEffect(H5.Combat.Fx.RageOfForest))
+        // exe FUN_00a618f0: any surviving creature stack, flyers too (no flying test)
+        if (HasAbilityNow(a, Ab.EntanglingRoots) && melee && t.Kind == UnitKind.Creature && !a.HasEffect(H5.Combat.Fx.RageOfForest))
             AddEffect(t, new Effect { Id = H5.Combat.Fx.Entangled, SourceUnit = a.Id, SourceSide = a.Side });
         // Purger (exe FUN_00a5d690 → FUN_004e6470/FUN_004e4000): one random (RNG Next(n)) dispellable beneficial effect;
         // the hero's Prayer (SPELL_PRAYER), Death Scream and the seducer's own marker are never candidates.
@@ -875,7 +876,7 @@ public sealed partial class Battle
             bool any = false;
             foreach (var victim in new[] { t }.Concat(Adjacent(t).Where(o => Controller(o) != Controller(a) && AreAdjacent(o, a))).Distinct().ToList())
             {
-                if (MindImmune(victim)) continue;
+                if (BearRoarImmune(victim)) continue;
                 // exe FUN_00a5e800: p = ProcPercent(BearRoar_ProcFactor, Soldier's Luck doubles); for a 1×1 victim the
                 // failure is divided by BearRoar_SmallCreaturesChanceMult (p = trunc(100 − (100 − p)/mult)), then the
                 // usual roll with the attacker's second roll. A frightened victim runs like Fear (FUN_0089ffc0 mode 2).

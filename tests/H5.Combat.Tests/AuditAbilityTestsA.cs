@@ -14,7 +14,7 @@ public class AuditAbilityTestsA(GameDataFixture f)
         (bool)typeof(Battle).GetMethod("BeginTurn", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(b, new object[] { id })!;
 
     [Fact]
-    public void BattleFrenzyLastsTheWholeBattle()   // FUN_00a629b0 adds SPELL_EFFECT_BATTLE_FRENZY for 0x7ffffffe
+    public void BattleFrenzyEndsAtTheCreaturesTurnStart()   // FUN_00a629b0 adds SPELL_EFFECT_BATTLE_FRENZY; FUN_00bbc8e0 removes it (vf 0x270, force)
     {
         var b = f.Duel("CREATURE_PEASANT", 20, "CREATURE_BATTLE_GRIFFIN", 30, 3, new Cell(5, 5), new Cell(6, 5));
         b.Begin();
@@ -26,8 +26,8 @@ public class AuditAbilityTestsA(GameDataFixture f)
         Assert.Contains(r.Events.OfType<AttackStarted>(), e => e.Kind == AttackKind.Retaliation && e.Attacker == griffins.Id);
         double frenzy = Stats(b);
         Assert.Equal(frenzy, griffins.FrenzyMultiplier, 6);
-        BeginTurn(b, griffins.Id);   // the griffins' own turn must not clear the frenzy
-        Assert.Equal(frenzy, griffins.FrenzyMultiplier, 6);
+        BeginTurn(b, griffins.Id);   // exe 00bbc8e0 at the griffins' own turn start: the 0x7ffffffe duration does not protect it
+        Assert.Equal(1.0, griffins.FrenzyMultiplier, 6);
     }
 
     static double Stats(Battle b) => b.Db.Stats.Get("combat/Creatures/Haven/BattleFrenzyBoostFactor", 1.5);

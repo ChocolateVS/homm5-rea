@@ -12,7 +12,7 @@ public sealed partial class Battle
 
     IEnumerable<AbilityInfo> HeroAbilities2(HeroState h)
     {
-        if (h.HasPerk("HERO_SKILL_COUNTERSPELL") && !h.Links.ContainsKey(LinkCounterspell)) yield return new(LinkCounterspell, AbilityTargeting.None);
+        if (h.HasPerk("HERO_SKILL_COUNTERSPELL") && !h.Links.ContainsKey(LinkCounterspell) && CounterspellArmable(h)) yield return new(LinkCounterspell, AbilityTargeting.None);
         if (h.HasPerk(Sk.MarkOfWizard)) yield return new("MARK_OF_WIZARD", AbilityTargeting.Enemy);
         if (h.HasPerk(Sk.Banish) && S.Living.Any(u => u.Summoned && Controller(u) != h.Side)) yield return new("BANISH", AbilityTargeting.None);
         if (h.HasPerk("HERO_SKILL_MELT_ARTIFACT") && S.Units.Any(u => u.Side == h.Side && u.Kind == UnitKind.Creature && u.ArtifactEffects >= 0 && !u.Removed))
@@ -100,11 +100,12 @@ public sealed partial class Battle
         return next;
     }
 
-    /// <summary>Counterspell: the armed enemy hero negates the next spell by paying twice its mana cost.</summary>
-    bool Counterspelled(HeroState caster, int cost)
+    /// <summary>Counterspell: the armed enemy hero negates the next spell by paying twice its mana cost (exe FUN_00978670:
+    /// any caster, hero or creature; cost = the caster's normal cost FUN_009781e0(0); not warcries / special spells).</summary>
+    internal bool Counterspelled(int casterSide, SpellDef sp, int cost)
     {
-        var e = Enemy(caster.Side);
-        if (!e.Present || !e.Links.ContainsKey(LinkCounterspell) || e.Mana < 2 * cost) return false;
+        var e = Enemy(casterSide);
+        if (!Counterable(sp) || !e.Present || !e.Links.ContainsKey(LinkCounterspell) || e.Mana < 2 * cost) return false;
         e.Links.Remove(LinkCounterspell);
         e.Mana -= 2 * cost;
         Emit(new ManaChanged(Actor.Hero(e.Side), e.Mana));

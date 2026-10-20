@@ -361,7 +361,7 @@ public sealed partial class Battle
                 conflux.Mana += cost / 2;
                 Emit(new ManaChanged(Actor.Hero(conflux.Side), conflux.Mana));
             }
-            if (Counterspelled(h, cost))
+            if (Counterspelled(h.Side, sp, HeroManaCost(h, sp)))   // exe 00978670: the undoubled cost FUN_009781e0(0)
             {
                 Emit(new SpellResisted(target?.Id ?? c.ActorId, sp.Id));
                 // exe 00978670 / FUN_00977260: a countered caster with Dark Renewal (HERO_SKILL_PAYBACK) and a
@@ -408,6 +408,8 @@ public sealed partial class Battle
         Emit(new ManaChanged(u.Id, u.Mana));
         RageEvent(u, "CastSpellRP");
         if (defile == 1) { Emit(new SpellResisted(castTarget?.Id ?? u.Id, sp.Id)); EndAction(u.Id, 0); return null; }
+        // Counterspell stops creature casts too (exe FUN_00983790 → FUN_00978670 for every caster).
+        if (Counterspelled(Controller(u), sp, CreatureManaCost(u, sp))) { Emit(new SpellResisted(castTarget?.Id ?? u.Id, sp.Id)); EndAction(u.Id, 0); return null; }
         _castingCreature = u;
         try { ResolveSpell(u.Id, Controller(u), sp, MoonWeek.SpellMastery(known.Mastery, sp.School, S.Week), cp, castTarget, castCell, fromHero: false); }
         finally { _castingCreature = null; }
@@ -495,6 +497,9 @@ public sealed partial class Battle
                 if (t.Tier > maxTier || t.IsClone || S.Units.Any(x => x.IsClone && x.Alive && x.Side == side)) return "cannot clone this stack";
             }
             if (sp.Id == "SPELL_HYPNOTIZE" && t.Tier >= 7 && m < Mastery.Expert) return "needs expert dark magic for tier 7";
+            // exe FUN_00982010: Hypnotize refuses a seduced stack (0x148), Teleport a rooted one (0xac).
+            if (sp.Id == "SPELL_HYPNOTIZE" && t.HasEffect(H5.Combat.Fx.Seduced)) return "target is seduced";
+            if (sp.Id == "SPELL_TELEPORT" && t.HasEffect(H5.Combat.Fx.Entangled)) return "target is rooted";
             if (sp.Id == "SPELL_TELEPORT")
             {
                 if (cell is not Cell to || !Fits(t, to)) return "teleport destination blocked";
@@ -991,7 +996,7 @@ public sealed partial class Battle
             AddEffect(t, new Effect { Id = H5.Combat.Fx.Frozen, Remaining = dur, SourceSide = side });
         }
         if (hero.HasPerk(Sk.MasterStorms) && first && id is "SPELL_LIGHTNING_BOLT" or "SPELL_CHAIN_LIGHTNING")
-            SetAtb(t.Id, GetAtb(t.Id) * (1 - Stats.Get("combat/HeroSkills/EmpoweredLightningATBDrop", 0.3)));
+            MasterOfLightningAtb(t);   // exe FUN_004e5c20
         // Master of Fire and Set Afire live in the fire rider (exe FUN_004e6770), which only the area / Armageddon / fire
         // field resolvers call — Magic Arrow's single-target path (0097d7b0 case 1) deals plain damage (004e6b60).
         bool fireRider = id is "SPELL_FIREBALL" or "SPELL_FIREWALL" or "SPELL_ARMAGEDDON";

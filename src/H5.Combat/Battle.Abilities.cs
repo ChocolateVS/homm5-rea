@@ -281,7 +281,7 @@ public sealed partial class Battle
         if (u.Has("ABILITY_SEDUCE") && Once("ABILITY_SEDUCE")) yield return new("ABILITY_SEDUCE", AbilityTargeting.Enemy);
         if (u.Has(Ab.ResurrectAllies) && Once(Ab.ResurrectAllies)) yield return new(Ab.ResurrectAllies, AbilityTargeting.DeadFriend);
         // No charge: the Rakshasas have SpellPoints1 = 0 and the cast (exe 00987e8a) spends none.
-        if (u.Has(Ab.Dash)) yield return new(Ab.Dash, AbilityTargeting.None);
+        if (u.Has(Ab.Dash) && !u.HasEffect(H5.Combat.Fx.Dash)) yield return new(Ab.Dash, AbilityTargeting.None);
         // One charge (SpellPoints1 = 1), spent by the cast (exe 00987602).
         if (u.Has(Ab.Explosion) && Once(Ab.Explosion)) yield return new(Ab.Explosion, AbilityTargeting.None);
         if (u.Has(Ab.HarmTouch)) yield return new(Ab.HarmTouch, AbilityTargeting.Enemy, NeedsAdjacency: true);
@@ -293,7 +293,7 @@ public sealed partial class Battle
         if (u.Has(Ab.Repair) && Once(Ab.Repair)) yield return new(Ab.Repair, AbilityTargeting.Friend);
         if (u.Has(Ab.ManaFeed) && u.Mana > 0 && h.Present) yield return new(Ab.ManaFeed, AbilityTargeting.None);
         if (u.Has(Ab.ScatterShot) && CanShoot(u)) yield return new(Ab.ScatterShot, AbilityTargeting.Cell);
-        if (u.Has(Ab.Invisibility) && Once(Ab.Invisibility)) yield return new(Ab.Invisibility, AbilityTargeting.None);
+        if (u.Has(Ab.Invisibility) && Once(Ab.Invisibility) && !u.HasEffect(H5.Combat.Fx.Invisible) && !NextToEnemy(u)) yield return new(Ab.Invisibility, AbilityTargeting.None);
         if (u.Has(Ab.Leap)) yield return new(Ab.Leap, AbilityTargeting.Enemy);
         if (u.Has(Ab.SummonOther)) yield return new(Ab.SummonOther, AbilityTargeting.Any);
         if (u.Has(Ab.BalorSummoning) && Once(Ab.BalorSummoning)) yield return new(Ab.BalorSummoning, AbilityTargeting.DeadFriend);

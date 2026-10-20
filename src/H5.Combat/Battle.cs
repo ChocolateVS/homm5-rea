@@ -318,8 +318,7 @@ public sealed partial class Battle
         u.RetaliationsLeft = HasAbilityNow(u, Ab.UnlimitedRetaliation) ? int.MaxValue : 1;
         u.Defending = false;
         RemoveEffect(u, PreparationEffect);   // exe 008a65e0: duration 1, i.e. until the stack's next turn
-        // Battle Frenzy is NOT reset here: the exe keeps SPELL_EFFECT_BATTLE_FRENZY for the whole battle (exe
-        // FUN_00a629b0 adds it with duration 0x7ffffffe; FUN_00a58de0 multiplies each retaliation by factor^stacks).
+        Sweep7TurnStart(u);   // exe FUN_00bbc8e0: Battle Frenzy removed, Defile Magic released
         u.AgilityCells = 0;   // exe FUN_008a6c40: SPELL_ABILITY_AGILITY is removed when the creature's turn begins
         RemoveEffect(u, H5.Combat.Fx.TakeRoots);
         RemoveEffect(u, NecromancersDebuff);   // exe 008a6c40: lasts until the stack's next turn start

@@ -14,15 +14,14 @@ public sealed partial class Battle
     {
         bool Once(string id) => !u.AbilityUses.ContainsKey(id);
         var h = HeroOf(u);
-        if (u.Has(Ab.PowerFeed) && h.Present && !(h.Links.TryGetValue(Ab.PowerFeed, out var linked) && linked == u.Id)
-            && (!Stats.Bool("combat/Creatures/Sylvan/PowerFeedOnlyRanger") || h.Class == "HERO_CLASS_RANGER"))
+        if (u.Has(Ab.PowerFeed) && PowerFeedAvailable(u, h))
             yield return new(Ab.PowerFeed, AbilityTargeting.None);
         if (u.Has(Ab.Howl) && Once(Ab.Howl)) yield return new(Ab.Howl, AbilityTargeting.None);
         if (u.Has(Ab.SetSnares)) yield return new(Ab.SetSnares, AbilityTargeting.Cell);
         if (u.Has(Ab.DefileMagic)) yield return new(Ab.DefileMagic, AbilityTargeting.Enemy);
         if (u.Has(Ab.TreeantUnion) && Once(Ab.TreeantUnion)) yield return new(Ab.TreeantUnion, AbilityTargeting.Friend);
-        if (u.Has(Ab.PackDive) && Once(Ab.PackDive)) yield return new(Ab.PackDive, AbilityTargeting.Cell);
-        if (u.Has(Ab.BattleDive)) yield return new(Ab.BattleDive, AbilityTargeting.Cell);
+        if (u.Has(Ab.PackDive) && Once(Ab.PackDive) && !u.HasEffect(H5.Combat.Fx.Entangled)) yield return new(Ab.PackDive, AbilityTargeting.Cell);
+        if (u.Has(Ab.BattleDive) && !u.HasEffect(H5.Combat.Fx.Entangled)) yield return new(Ab.BattleDive, AbilityTargeting.Cell);
     }
 
     /// <summary>Handles abilities from <see cref="UnitAbilities3"/>; sets handled=false for anything else.</summary>

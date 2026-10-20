@@ -200,7 +200,9 @@ public class AuditAbilityTestsC(GameDataFixture f)
         var u = b.State.Units[0];
         var r = Use(b, u, Ab.Dash);
         Assert.True(r.Ok, r.Error);
-        Assert.Contains(b.UnitAbilities(u), a => a.Id == Ab.Dash);
+        Assert.DoesNotContain(b.UnitAbilities(u), a => a.Id == Ab.Dash);   // exe 008d30e0: refused while effect 0xb0 is on
+        b.RemoveEffect(u, H5.Combat.Fx.Dash);
+        Assert.Contains(b.UnitAbilities(u), a => a.Id == Ab.Dash);         // no charge was spent
     }
 
     [Fact]

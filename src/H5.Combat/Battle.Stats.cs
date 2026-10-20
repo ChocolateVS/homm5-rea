@@ -41,7 +41,7 @@ public sealed partial class Battle
         a += Fx(u, H5.Combat.Fx.Benediction);
         a += Fx(u, H5.Combat.Fx.Battlecry);
         a -= Fx(u, H5.Combat.Fx.WeakeningStrike);
-        a += Fx(u, H5.Combat.Fx.RageOfForest);
+        if (u.HasEffect(H5.Combat.Fx.RageOfForest)) a += DefenceOf(u, rageFull: true) / 2;   // exe 008a4800: + full defence / 2
         a += Fx(u, H5.Combat.Fx.BerserkerRage);
         a += Fx(u, "FX_BLOODDRINKER");
         a += RageBonus(u, "DEMON_RAGE_BONUS_ATTACK");
@@ -73,7 +73,7 @@ public sealed partial class Battle
 
     bool HasAmmoCart(int side) => S.Units.Any(x => x.Alive && x.Side == side && x.CreatureId == "WAR_MACHINE_AMMO_CART");
 
-    public int DefenceOf(Unit u, Unit? vs = null, int attackerCellsWalked = 0)
+    public int DefenceOf(Unit u, Unit? vs = null, int attackerCellsWalked = 0, bool rageFull = false)
     {
         var h = HeroOf(u);
         double raw = u.BaseDefence;
@@ -104,7 +104,7 @@ public sealed partial class Battle
                 d -= Stats.Get("combat/Creatures/Necropolis/WeakeningAuraDeffenceDec", 2);
             d -= Fx(u, H5.Combat.Fx.ArmorCrushed);
             d -= Fx(u, MicroArtifacts.ArmorCrushingEffect);   // MAE_ARMOR_CRUSHING (exe 00989790 case 0xb3, like 0xd / 0xca)   // Master of Fire: fixed half of the defence at application (exe 00989790 case 0xca)
-            if (u.HasEffect(H5.Combat.Fx.RageOfForest)) d -= Fx(u, H5.Combat.Fx.RageOfForest);
+            if (u.HasEffect(H5.Combat.Fx.RageOfForest) && !rageFull) d = RageOfForestDefence(Math.Max(0, (int)Math.Floor(d)));   // exe 008a32b0
             if (u.HasEffect(H5.Combat.Fx.BerserkerRage)) d = 0;
             // Rider Charge: -20% of target defence per cell walked (p.179).
             if (vs != null && vs.Has(Ab.RiderCharge) && attackerCellsWalked > 0)
@@ -281,7 +281,7 @@ public sealed partial class Battle
     public int MaxHealthOf(Unit u)
     {
         double hp = u.BaseHealth + RageBonus(u, "DEMON_RAGE_BONUS_HEALTH");
-        if (u.HasEffect(H5.Combat.Fx.BearRoar)) hp *= 1 + Stats.Get("combat/Creatures/Fortress/BearRoar_HealthBonus", 0.1);
+        if (u.HasEffect(H5.Combat.Fx.BearRoar)) hp = BearRoarHealth((int)hp, Stats.Get("combat/Creatures/Fortress/BearRoar_HealthBonus", 0.1));   // exe 008a2130
         if (u.GetEffect(H5.Combat.Fx.ResurrectionPenalty) is { } rp) hp *= Math.Max(0.1, 1 - rp.Value);
         return Math.Max(1, (int)hp);
     }

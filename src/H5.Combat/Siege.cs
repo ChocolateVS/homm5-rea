@@ -440,7 +440,7 @@ public sealed partial class Battle
                 AddEffect(u, new Effect { Id = H5.Combat.Fx.Poison, Value = sp.SpellPower, Actions = 3, SourceSide = 1 });
                 break;
             case "SPELL_EFFECT_MASTER_OF_LIGHTNING":
-                SetAtb(u.Id, GetAtb(u.Id) * (1 - Stats.Get("combat/HeroSkills/EmpoweredLightningATBDrop", 0.3)));
+                MasterOfLightningAtb(u);   // exe FUN_004e5c20
                 break;
             case "SPELL_EFFECT_FROZEN":
                 AddEffect(u, new Effect { Id = H5.Combat.Fx.Frozen, Remaining = Stats.Get("combat/HeroSkills/EmpoweredIceFreezeDuration", 0.3), SourceSide = 1 });
