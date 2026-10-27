@@ -42,6 +42,7 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 | Outline | 8 copies (0,±o), (±o,0), (±o,±o), drawn before the glyph, o = outlinesize × screen ratio | same | FIXED (was 4-way) |
 | Tab character | pen = (⌊round(pen/u)/4⌋·4 + 4)·u, u = avg width·s (+2o) | same | FIXED (was half the area) |
 | Kerning | table at +0x28 (empty in stock fonts) | 0 | MATCH |
+| Single-line measure (StockTooltip) | — | uses the widest line, not the alignment-offset block width | FIXED (follow-up to the layout change) |
 | Filtering | — (D3D) | bilinear when a glyph is drawn at another size than its atlas, else nearest | EXT |
 
 ## Line layout (CMLLayout 00cc0c20, line finish 00cbea10, newline 00cc06b0)
@@ -82,6 +83,15 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 |---|---|---|---|
 | Box types | 0 N_BOX2P, 1 N_BOX1P, 2 N_BOX0P, 3 N_BOX2P2, 4..7 N_BOX0P2; type 4 OK/Cancel, 5 OK_NoBind/Cancel_EnterEsc, 6 Yes/No, 7 Yes/No_NoBind | — | MATCH (doc) |
 | Question box | generic helpers 00677d80 / 00677e40 open type 2 (message) or 4 (question): OK / Cancel at the foot of `box0p2` (650×681 in the data, the size of the original box in 1024×768 virtual px) | `AdvDialogs.YesNo` | FIXED (showed the type-6 Yes/No buttons, which sit mid-box at y 233, leaving an empty half box) |
+
+## Level-up box skill info (006a8f50)
+
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Tooltip on offered skills/perks | each Skill%d button gets NWorld::SHeroSkillTooltip (00a33960) through a NUI::CClickingTooltipCreator (006b7a90, window vfunc +0x74): shown while the right button is held | `HeroSkillTooltip.Attach` in `AdvDialogs.LevelUp` | FIXED (nothing was shown) |
+| Tooltip window | UI/Tooltips/HeroSkills (005fdd50): Name (value name), Description (value description), Allows_Provided = related text SkillText "Allows to learn abilities:" / AbilityText "Provided by:", SkillList rows (icon + name, Learned / NotLearned format) | same | FIXED |
+| List content | perk: class prerequisites (SkillPrerequisites for the hero class) or the basic skill; skill: list built by 00876150 | perk as traced; skill: its standard perks | GAP (00876150 not traced) |
+| Tooltip size | tooltip manager (UI/Tooltips/Main TooltipContext) | width from the Name row (230 + 2·13) | GAP |
 
 ## Display
 

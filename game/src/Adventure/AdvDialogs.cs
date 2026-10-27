@@ -171,6 +171,9 @@ public static partial class AdvDialogs
             (btn.FindChild("Choose", true, false) as UiNode)?.SetValue("heroskill", options[opt].Name);
             if (btn.FindChild("FaceSkill", true, false) is Control icon && options[opt].Icon != null)
                 icon.AddChild(new TextureRect { Texture = options[opt].Icon, AnchorRight = 1, AnchorBottom = 1, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = Control.MouseFilterEnum.Ignore });
+            // 006a8f50: each choice gets a hero skill tooltip (SHeroSkillTooltip) shown while right-clicked.
+            var tip = opt < offer.Skills.Count ? (offer.Skills[opt].SkillId, (int)offer.Skills[opt].Mastery) : (offer.Perks[opt - offer.Skills.Count], 1);
+            HeroSkillTooltip.Attach(btn, () => (tip.Item1, tip.Item2, hero));
             int captured = opt;
             s.Bus.On($"skill_{k + 1}", () =>
             {

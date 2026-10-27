@@ -37,10 +37,10 @@ public static class StockTooltip
         string markup = template.Replace("<value=tooltiptext>", tooltipMarkup);
         // Text up to SingleLineWidth stays on one line and the tooltip shrinks to it; longer text wraps at that width.
         var single = BitmapTextLayout.Build(markup, null, new Rect2(0, 0, 4000, 2000), UiAlign.LowEnd, wrap: false);
-        bool wraps = single.Size.X > _width;
+        bool wraps = single.MaxLineWidth > _width;
         // Single-line text is drawn unwrapped: wrapping at exactly the measured width could push
         // the last glyph (e.g. the closing quote of a <hotkey>) onto a clipped second line.
-        float w = Math.Min(_width, Math.Max(24, MathF.Ceiling(single.Size.X) + 1));
+        float w = Math.Min(_width, Math.Max(24, MathF.Ceiling(single.MaxLineWidth) + 1));
         var layout = !wraps ? single : BitmapTextLayout.Build(markup, null, new Rect2(0, 0, _width, 2000), UiAlign.LowEnd, wrap: true);
         float h = Math.Max(16, layout.Size.Y) + 8;
 

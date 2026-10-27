@@ -12,7 +12,7 @@ public static class UiWindowCopy
             Type = w.Type, Name = w.Name, SourcePath = w.SourcePath, SharedPath = w.SharedPath,
             Placement = w.Placement, Visible = w.Visible, Enabled = w.Enabled, Transparent = w.Transparent,
             Priority = w.Priority, TooltipPath = w.TooltipPath, Background = w.Background, Foreground = w.Foreground,
-            Text = w.Text, ButtonStates = w.ButtonStates, ButtonGroupId = w.ButtonGroupId, TriggerMode = w.TriggerMode,
+            Text = w.Text, ButtonStates = w.ButtonStates, ButtonGroupId = w.ButtonGroupId, AutoChangeState = w.AutoChangeState, TriggerMode = w.TriggerMode,
             RelatedTexts = w.RelatedTexts, RelatedTextures = w.RelatedTextures,
             RawInstance = w.RawInstance, RawShared = w.RawShared, Rect = w.Rect,
         };
