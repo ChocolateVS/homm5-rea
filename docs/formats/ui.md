@@ -110,8 +110,8 @@ on them rather than hard-wiring buttons.
 Built-in tags (the parser's registry, H5_Game.exe `FUN_00cc1190`): `br`, `left`, `right`, `center`,
 `nowrap`, `forcewrap`, `wrapdots`, `justify`, `wrapleft`, `wrapright`, `top`, `bottom`, `middle`,
 `tab`, `font` (`face= size= outlinecolor= outlinesize= forcefontsize=`), `color=AARRGGBB`, `image`,
-`minfontsize`, `push`, `pop`, plus `<value=x>`. **`top`/`middle`/`bottom` are vertical alignment**
-(they override the text area's own vertical alignment); `center` is horizontal.
+`minfontsize`, `push`, `pop`, plus `<value=x>`.
+`top`/`middle`/`bottom` align an element vertically inside its line (default middle); `center` is horizontal.
 
 All other tags are macros defined by files in `UI/Consts/mlTags/` and its `Fonts/`, `Colors/`,
 `Styles/`, `Special/` subfolders, expanded recursively. E.g. `menu` → `<h2><color_menu>`,
@@ -128,19 +128,17 @@ System, Button), `Height`, source `FaceName` (Monotype Corsiva, Century Gothic, 
 
 ```
 [4] version  [1]{[1] type id}  [0] ...  [2]{[1]{[0] type id, [1] fields}}  [5]
-fields: [10] cell height  [11] ?  [12] descent  [13] line spacing  [14] ?  [15] default char (31)
-        [16] ?  [17] ascent (baseline offset from the cell top)
+fields: [10] cell height  [11] ?  [12] average char width  [13] max char width  [14] ? (byte)
+        [15] default char (31)  [16] internal leading  [17] ascent      (exe serializer 005126e0)
         [1] hash_map<u16 char, Glyph>: [3] count, [4] buckets, then ALL keys (id 1, 2 bytes)
             followed by ALL values (id 2, 28 bytes) in the same order
         [2] kerning hash_map (empty in stock fonts)
 Glyph = 7 × i32: x1, y1, x2, y2 (atlas px), A, B, rectWidth
 ```
 
-Drawing (verified visually): blit the atlas rect at `pen.x + A`, top at line top; advance the pen
-by `A + B`. The rect is wider than B on italic faces (overhang into the next cell).
-
-Markup sizes without an atlas (h2 = Header 28) pick the nearest atlas (`UiFontTable.Find`);
-confirm the exact rule against the exe if text metrics differ in screenshots.
+Nominal size = cell height − internal leading (System 10/16/24, Default 18..40, Header 22/26/32/38,
+Button 16). The full layout (font choice and glyph scaling, tokenization, wrapping, line metrics,
+placement) is traced in `docs/rules/AUDIT_UI.md` and implemented in `UiTextLayout`.
 
 ## Screens of interest
 
@@ -158,12 +156,8 @@ confirm the exact rule against the exe if text metrics differ in screenshots.
 
 ## Unknowns
 
-* Exact meaning of font header fields 11, 14, 16; nearest-size font rule.
+* Font header fields 11 and 14 (unused by the markup layout).
 * `ActiveArea`/`ActiveMask` (hit masks), `WindowScrollableContainer` scrolling metrics,
   `WindowListCtrl` column specs — loaded raw (`UiWindow.RawInstance/RawShared`), not modelled.
 * `BackgroundTiledTexture` `Rect` and `Rotate` are parsed but unused (all stock `Rect` = 0).
-* Text vertical metrics: glyph atlas rects are exactly `CellHeight` (field 10) tall, so the cell is the
-  visual line box; field 13 is the line-to-line advance (Button_16: cell 19, advance 37) and field 17
-  the ascent. A block is `(lines − 1) × advance + cell`, centred inside the text area for
-  `ERA_CENTER`/`<middle>` (e.g. button labels: `UI/CommonBoxes/Button_ForegroundTextStringShared.xdb`
-  sets `VerAllign = ERA_CENTER` with an unset size, i.e. centred on the whole button).
+* Text metrics: see `docs/rules/AUDIT_UI.md` (first line advances by the cell, later lines by the nominal size).

@@ -243,7 +243,9 @@ public partial class UiNode : Control
     {
         var markup = CurrentMarkup(CurrentVisual());
         if (markup.Length == 0) return Vector2.Zero;
-        return BitmapTextLayout.Build(markup, _values, new Rect2(0, 0, width > 0 ? width : 100000, 0), wrap: width > 0).Size;
+        if (width > 0) return BitmapTextLayout.Block(markup, _values, width, scale: Screen?.UiScale).Size;
+        var line = BitmapTextLayout.Block(markup, _values, 100000, wrap: false, scale: Screen?.UiScale);
+        return new Vector2(line.MaxLineWidth, line.Size.Y);
     }
 
     void DrawText(UiVisualState? visual)
@@ -254,14 +256,12 @@ public partial class UiNode : Control
         var key = markup + "|" + Size + "|" + string.Join(";", _values.Select(kv => kv.Key + "=" + kv.Value));
         if (_textLayout == null || _textLayoutKey != key)
         {
-            // The text area placement is relative to the window, so lay out in local space. An
-            // unset (zero) extent spans the window on that axis but keeps its alignment.
-            var self = new UiRect(0, 0, (int)Size.X, (int)Size.Y);
-            var area = t?.Placement != null ? UiLayout.Place(t.Placement, self) : self;
-            if (area.W <= 0) area = area with { X = 0, W = self.W };
-            if (area.H <= 0 && (t?.Placement?.VerAlign.Value ?? UiAlign.LowEnd) == UiAlign.LowEnd) area = area with { Y = 0, H = self.H };
-            _textLayout = BitmapTextLayout.Build(markup, _values, new Rect2(area.X, area.Y, area.W, Math.Max(0, area.H)),
-                t?.Placement?.VerAlign.Value ?? UiAlign.LowEnd);
+            // The exe wraps the text at the full window width and places the block by the text placement's
+            // set alignments only (UiLayout.PlaceText, H5_Game.exe 00a4d7b0), in window-local space.
+            _textLayout = BitmapTextLayout.Block(markup, _values, Size.X, scale: Screen?.UiScale);
+            var (tx, ty) = UiLayout.PlaceText(t?.Placement, new UiRect(0, 0, (int)Size.X, (int)Size.Y),
+                (int)_textLayout.Size.X, (int)_textLayout.Size.Y);
+            _textLayout.At(new Vector2(tx, ty));
             _textLayoutKey = key;
         }
         _textLayout.Draw(this);

@@ -88,11 +88,34 @@ public static class UiLayout
         return new UiRect(x, y, width, height);
     }
 
-    static (int pos, int size) Axis(UiAlign a, int pos, int size, int lowMargin, int highMargin, int parentPos, int parentSize) => a switch
+    /// <summary>
+    /// One axis of the exe's placement (H5_Game.exe 00a4d630): low end = parent + position; centre =
+    /// round-half-even((parent size − size) / 2) + parent + position; high end = parent + parent size − size +
+    /// position; margin = parent + lower margin, size = parent size − both margins.
+    /// </summary>
+    public static (int pos, int size) Axis(UiAlign a, int pos, int size, int lowMargin, int highMargin, int parentPos, int parentSize) => a switch
     {
         UiAlign.HighEnd => (parentPos + parentSize - size + pos, size),
-        UiAlign.Center => (parentPos + (parentSize - size) / 2 + pos, size),
+        UiAlign.Center => (parentPos + HalfEven(parentSize - size) + pos, size),
         UiAlign.Margin => (parentPos + lowMargin, Math.Max(0, parentSize - lowMargin - highMargin)),
         _ => (parentPos + pos, size),
     };
+
+    /// <summary>x87 FISTP of d · 0.5 in the default round-to-nearest-even mode.</summary>
+    public static int HalfEven(int d) => (int)Math.Round(d * 0.5, MidpointRounding.ToEven);
+
+    /// <summary>
+    /// Places a laid-out text block of <paramref name="w"/> × <paramref name="h"/> inside its window rectangle
+    /// like the exe (00a4d7b0, used by ForegroundTextString 00b8fb40 and the text view 00b8f5e0): an axis is
+    /// aligned by the text placement only when its HorAllign / VerAllign is set; otherwise the block starts at the
+    /// window's left / top edge and the Position offset is ignored. The text wraps at the full window width.
+    /// </summary>
+    public static (int x, int y) PlaceText(UiPlacement? p, UiRect parent, int w, int h)
+    {
+        int x = parent.X, y = parent.Y;
+        if (p == null) return (x, y);
+        if (p.HorAlign.Set) x = Axis(p.HorAlign.Value, p.Position.Value.X, w, p.LowerMargin.Value.X, p.UpperMargin.Value.X, parent.X, parent.W).pos;
+        if (p.VerAlign.Set) y = Axis(p.VerAlign.Value, p.Position.Value.Y, h, p.LowerMargin.Value.Y, p.UpperMargin.Value.Y, parent.Y, parent.H).pos;
+        return (x, y);
+    }
 }

@@ -4,139 +4,96 @@ using H5.Core.Ui;
 namespace H5Reborn.Ui;
 
 /// <summary>
-/// Lays out and draws H5 markup with the original pre-rendered bitmap fonts
-/// (UI/Fonts atlases + bin/fonts glyph metrics), matching the stock renderer:
-/// glyph rect blitted at pen + A, pen advances A + B, greedy word wrap, per-line
-/// alignment, 1px 4-way outline. Layout is cached until text, values or width change.
+/// Lays out and draws H5 markup with the original pre-rendered bitmap fonts through the exe's text layout
+/// (<see cref="UiTextLayout"/>, H5_Game.exe CMLLayout): exe tokenization, font choice and glyph scaling, wrapping,
+/// line alignment and vertical metrics, 8-way outlines. The layout runs in screen pixels at the UI scale (pt
+/// font sizes pick their atlas for the scaled size, like the original's screen / virtual ratio) and is stored
+/// in UI units relative to the block origin.
 /// </summary>
 public sealed class BitmapTextLayout
 {
-    public readonly record struct Glyph(Texture2D Atlas, Rect2 Source, Vector2 Pos, Color Color, bool Outline, Color OutlineColor);
+    public readonly record struct Glyph(Texture2D Atlas, Rect2 Source, Rect2 Dest, Color Color)
+    {
+        public Vector2 Pos => Dest.Position;
+    }
 
     public List<Glyph> Glyphs { get; } = new();
+    /// <summary>Block size in UI units as the exe reports it (rounded, CML GetSize).</summary>
     public Vector2 Size { get; private set; }
+    /// <summary>Widest line in UI units (for windows that take their text's width).</summary>
+    public float MaxLineWidth { get; private set; }
+    /// <summary>Where the block was placed by <see cref="Build"/> (UI units); the glyphs already include it.</summary>
+    public Vector2 Origin { get; private set; }
 
-    public static BitmapTextLayout Build(string markup, IReadOnlyDictionary<string, string>? values, Rect2 area,
-        UiAlign verticalAlign = UiAlign.LowEnd, bool wrap = true)
+    /// <summary>Lays out <paramref name="markup"/> wrapped at <paramref name="width"/> UI units (no placement).</summary>
+    public static BitmapTextLayout Block(string markup, IReadOnlyDictionary<string, string>? values, float width, bool wrap = true, float? scale = null)
     {
         var res = UiResources.Instance;
-        var layout = new BitmapTextLayout();
-        var runs = res.Markup.Parse(markup, null, values);
-
-        var lines = new List<List<(string s, UiTextStyle st, UiFont f)>> { new() };
-        var widths = new List<float> { 0 };
-        float width = area.Size.X;
-        foreach (var run in runs)
+        float s = scale ?? Settings.VideoSettings.UiScale;
+        if (s <= 0) s = 1;
+        var stream = res.Markup.Tokenize(markup, null, values);
+        var block = UiTextLayout.Layout(stream, res.Fonts, width * s, s, wrap);
+        var layout = new BitmapTextLayout
         {
-            if (run.LineBreak) { lines.Add(new()); widths.Add(0); continue; }
-            var font = res.Fonts.Find(run.Style.Face, run.Style.Size);
-            if (font == null) continue;
-            foreach (var word in SplitWords(run.Text))
-            {
-                if (word == "\t")
-                {
-                    // Tab stops at half of the area, as used by two-column info texts.
-                    float stop = widths[^1] < width / 2 ? width / 2 : widths[^1] + font.MeasureWidth("    ");
-                    lines[^1].Add(("\t" + (stop - widths[^1]).ToString(System.Globalization.CultureInfo.InvariantCulture), run.Style, font));
-                    widths[^1] = stop;
-                    continue;
-                }
-                int ww = font.MeasureWidth(word);
-                if (wrap && width > 0 && widths[^1] + ww > width && widths[^1] > 0 && word.Trim().Length > 0)
-                {
-                    lines.Add(new()); widths.Add(0);
-                    if (word.Trim().Length == 0) continue;
-                }
-                lines[^1].Add((word, run.Style, font));
-                widths[^1] += ww;
-            }
-        }
-
-        // Line boxes: glyph rects are CellHeight tall; consecutive lines are LineAdvance apart,
-        // so a block is (lines - 1) advances plus the last line's cell. Mixed fonts on a line
-        // share a baseline (font ascent).
-        static int Advance(List<(string s, UiTextStyle st, UiFont f)> l) => l.Count == 0 ? 16 : l.Max(p => p.f.LineAdvance);
-        static int Cell(List<(string s, UiTextStyle st, UiFont f)> l) => l.Count == 0 ? 16 : l.Max(p => p.f.CellHeight);
-        static int Ascent(List<(string s, UiTextStyle st, UiFont f)> l) => l.Count == 0 ? 0 : l.Max(p => p.f.Ascent);
-        int total = 0;
-        for (int i = 0; i < lines.Count; i++) total += i < lines.Count - 1 ? Advance(lines[i]) : Cell(lines[i]);
-
-        // A <top>/<middle>/<bottom> tag overrides the text area's own vertical alignment.
-        var tagged = runs.Select(r => r.Style.VAlign).FirstOrDefault(v => v != UiTextVAlign.Default);
-        var v = tagged switch
-        {
-            UiTextVAlign.Top => UiAlign.LowEnd,
-            UiTextVAlign.Middle => UiAlign.Center,
-            UiTextVAlign.Bottom => UiAlign.HighEnd,
-            _ => verticalAlign,
+            // The exe converts the rounded screen-pixel size back to UI units (00b291b0).
+            Size = new Vector2(Mathf.Round(block.RoundedWidth / s), Mathf.Round(block.RoundedHeight / s)),
+            MaxLineWidth = Mathf.Ceil(block.MaxLineWidth / s),
         };
-        float y = v switch
+        foreach (var q in block.Quads)
         {
-            UiAlign.Center => area.Position.Y + Mathf.Floor((area.Size.Y - total) / 2),
-            UiAlign.HighEnd => area.End.Y - total,
+            var atlas = res.Texture(q.Font.DdsPath);
+            if (atlas == null) continue;
+            // Quads are snapped to whole screen pixels (the original's float positions go to the rasterizer).
+            var dest = new Rect2(Mathf.Round(q.X) / s, Mathf.Round(q.Y) / s, q.W / s, q.H / s);
+            // Glyphs drawn at another size than their atlas (pt sizes between atlases, UI scale) are filtered
+            // bilinearly; nearest sampling would drop whole rows of the letters.
+            bool exact = Mathf.IsEqualApprox(q.W, q.SrcW) && Mathf.IsEqualApprox(q.H, q.SrcH);
+            layout.Glyphs.Add(new Glyph(exact ? atlas : Linear(atlas), new Rect2(q.SrcX, q.SrcY, q.SrcW, q.SrcH), dest, UiResources.ToColor(q.Color)));
+        }
+        return layout;
+    }
+
+    static readonly Dictionary<Texture2D, CanvasTexture> LinearAtlases = new();
+
+    static Texture2D Linear(Texture2D atlas)
+    {
+        if (!LinearAtlases.TryGetValue(atlas, out var t))
+            LinearAtlases[atlas] = t = new CanvasTexture { DiffuseTexture = atlas, TextureFilter = CanvasItem.TextureFilterEnum.Linear };
+        return t;
+    }
+
+    /// <summary>
+    /// Lays out <paramref name="markup"/> at the width of <paramref name="area"/> and places the block at its left
+    /// edge, vertically by <paramref name="verticalAlign"/> (centre: round-half-even like the exe's placement).
+    /// </summary>
+    public static BitmapTextLayout Build(string markup, IReadOnlyDictionary<string, string>? values, Rect2 area,
+        UiAlign verticalAlign = UiAlign.LowEnd, bool wrap = true, float? scale = null)
+    {
+        var layout = Block(markup, values, area.Size.X, wrap, scale);
+        int h = (int)layout.Size.Y;
+        float y = verticalAlign switch
+        {
+            UiAlign.Center => area.Position.Y + UiLayout.HalfEven((int)area.Size.Y - h),
+            UiAlign.HighEnd => area.End.Y - h,
             _ => area.Position.Y,
         };
-        float maxW = 0;
-        for (int i = 0; i < lines.Count; i++)
-        {
-            var line = lines[i];
-            var align = line.Count > 0 ? line[0].st.Align : UiTextAlign.Left;
-            float x = align switch
-            {
-                UiTextAlign.Center => area.Position.X + (area.Size.X - widths[i]) / 2,
-                UiTextAlign.Right => area.End.X - widths[i],
-                _ => area.Position.X,
-            };
-            maxW = Math.Max(maxW, widths[i]);
-            int baseline = Ascent(line);
-            foreach (var (s, st, f) in line)
-            {
-                if (s.StartsWith('\t')) { x += float.Parse(s[1..], System.Globalization.CultureInfo.InvariantCulture); continue; }
-                var atlas = res.Texture(f.DdsPath);
-                foreach (var ch in s)
-                {
-                    if (f.Glyph(ch) is not { } g) continue;
-                    if (atlas != null && g.Width > 0)
-                        layout.Glyphs.Add(new Glyph(atlas, new Rect2(g.X1, g.Y1, g.Width, g.Height),
-                            new Vector2(Mathf.Round(x + g.A), Mathf.Round(y + baseline - f.Ascent)), UiResources.ToColor(st.Color),
-                            st.Outline, UiResources.ToColor(st.OutlineColor)));
-                    x += g.Advance;
-                }
-            }
-            y += Advance(line);
-        }
-        layout.Size = new Vector2(maxW, total);
-        return layout;
+        return layout.At(new Vector2(area.Position.X, y));
+    }
+
+    /// <summary>Moves the block so its origin is at <paramref name="origin"/>.</summary>
+    public BitmapTextLayout At(Vector2 origin)
+    {
+        var d = origin - Origin;
+        for (int i = 0; i < Glyphs.Count; i++)
+            Glyphs[i] = Glyphs[i] with { Dest = new Rect2(Glyphs[i].Dest.Position + d, Glyphs[i].Dest.Size) };
+        Origin = origin;
+        return this;
     }
 
     public void Draw(CanvasItem canvas, Vector2 offset = default)
     {
         foreach (var g in Glyphs)
-        {
-            if (!g.Outline) continue;
-            foreach (var d in Outline)
-                canvas.DrawTextureRectRegion(g.Atlas, new Rect2(g.Pos + offset + d, g.Source.Size), g.Source, g.OutlineColor);
-        }
-        foreach (var g in Glyphs)
-            canvas.DrawTextureRectRegion(g.Atlas, new Rect2(g.Pos + offset, g.Source.Size), g.Source, g.Color);
-    }
-
-    static readonly Vector2[] Outline = { new(-1, 0), new(1, 0), new(0, -1), new(0, 1) };
-
-    static IEnumerable<string> SplitWords(string s)
-    {
-        int start = 0;
-        for (int i = 0; i < s.Length; i++)
-        {
-            if (s[i] == '\t')
-            {
-                if (i > start) yield return s[start..i];
-                yield return "\t";
-                start = i + 1;
-            }
-            else if (s[i] == ' ') { yield return s[start..(i + 1)]; start = i + 1; }
-        }
-        if (start < s.Length) yield return s[start..];
+            canvas.DrawTextureRectRegion(g.Atlas, new Rect2(g.Dest.Position + offset, g.Dest.Size), g.Source, g.Color);
     }
 }
 

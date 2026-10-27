@@ -30,6 +30,14 @@ public sealed class UiFont
     public string Uid = "";
     /// <summary>Header fields from the glyph blob (ids 10..17). See docs/formats/ui.md.</summary>
     public int CellHeight, Ascent, Descent, LineHeight, DefaultChar;
+    /// <summary>
+    /// Fields of the exe's font object (serializer H5_Game.exe 005126e0, see docs/formats/ui.md): field 16 is
+    /// the internal leading (cell height minus the nominal size), field 12 the average character width (the
+    /// tab unit of the markup layout), field 13 the maximum character width.
+    /// </summary>
+    public int InternalLeading, AvgCharWidth, MaxCharWidth;
+    /// <summary>Nominal pixel size (cell height − internal leading), the key the exe's font table selects by.</summary>
+    public int Nominal => CellHeight - InternalLeading;
     /// <summary>Distance between consecutive line tops (field 13, never less than the cell).</summary>
     public int LineAdvance => Math.Max(LineHeight, CellHeight);
     public Dictionary<int, int> HeaderFields = new();
@@ -97,6 +105,9 @@ public sealed class UiFont
         f.HeaderFields.TryGetValue(12, out f.Descent);
         f.HeaderFields.TryGetValue(13, out f.LineHeight);
         f.HeaderFields.TryGetValue(15, out f.DefaultChar);
+        f.HeaderFields.TryGetValue(16, out f.InternalLeading);
+        f.HeaderFields.TryGetValue(12, out f.AvgCharWidth);
+        f.HeaderFields.TryGetValue(13, out f.MaxCharWidth);
         // Glyph rects are exactly CellHeight tall (the visual line box); field 13 is the
         // line-to-line advance (Button_16: cell 19, advance 37) and field 17 the ascent
         // (baseline offset from the cell top), used to align mixed fonts on one line.
@@ -122,15 +133,28 @@ public sealed class UiFontTable
     }
 
     /// <summary>
-    /// Picks the font for <c>&lt;font face=X size=N&gt;</c>: same logical face, nearest
-    /// height (ties go to the smaller). Markup asks for sizes with no atlas (h2 = Header 28),
-    /// so the original must also choose a neighbour — verify against the exe if text
-    /// metrics look off.
+    /// Picks the font for <c>&lt;font face=X size=N&gt;</c> like the exe's font table (H5_Game.exe 00a54310):
+    /// among the fonts whose logical name equals <paramref name="face"/> (exact match), the smallest nominal size
+    /// (cell height − internal leading) not below <paramref name="size"/>, else the largest one. An unknown face
+    /// falls back to System 16 (00a543e0). The glyphs are then scaled by size / nominal (00cbf650).
     /// </summary>
     public UiFont? Find(string face, int size)
     {
-        var cands = Fonts.Where(f => string.Equals(f.Name, face, StringComparison.OrdinalIgnoreCase)).ToList();
-        if (cands.Count == 0) cands = Fonts.Where(f => f.Name == "Default").ToList();
-        return cands.OrderBy(f => Math.Abs(f.Height - size)).ThenBy(f => f.Height).FirstOrDefault();
+        var f = Select(face, size);
+        return f ?? Select("System", 16) ?? Fonts.FirstOrDefault();
+    }
+
+    UiFont? Select(string face, int size)
+    {
+        UiFont? best = null;
+        foreach (var f in Fonts)
+        {
+            if (!string.Equals(f.Name, face, StringComparison.Ordinal)) continue;
+            if (best == null) { best = f; continue; }
+            int b = best.Nominal, n = f.Nominal;
+            bool skip = (size <= b || n <= b) && (b <= n || n < size);
+            if (!skip) best = f;
+        }
+        return best;
     }
 }
