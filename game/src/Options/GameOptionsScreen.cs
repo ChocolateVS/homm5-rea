@@ -302,10 +302,10 @@ public partial class GameOptionsScreen : UiScreen
         if (scale != null)
             scale.SelectionChanged += i => { VideoSettings.UiScaleSetting = Scales[i].Value; VideoSettings.Apply(); VideoSettings.Save(); RefreshAll(); };
         // Extended adventure zoom: a user-requested extension (not in the original) that lets the
-        // adventure camera pull back much further; stored per profile as h5r_adv_extended_zoom.
+        // adventure camera pull back much further and tilt more; stored per profile as h5r_adv_extended_zoom.
         var zoomRow = cursor.Add("CheckBoxPanelTemplate");
         Child(zoomRow, "DescView")?.SetText("<body>Extended map zoom");
-        zoomRow.TooltipText = "Lets the adventure map camera zoom out further than the original (H5Reborn extension).";
+        zoomRow.TooltipText = "Lets the adventure map camera zoom out further and tilt from nearly top-down to a low view, beyond the original limits (H5Reborn extension).";
         if (Child(zoomRow, "Button") is { } zoomBox)
         {
             int on = CheckedState(zoomBox);

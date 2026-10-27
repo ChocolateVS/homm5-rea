@@ -148,3 +148,46 @@ setvar `camera_cinematic` (stock profile 1; 2 = PA2 set); `combat_camera_random_
 * Not reproduced: animated (AnimSet) track cameras (3 in stock data), the arrow-following camera
   (CCombatEventMissileMove → 007da180), camera shakers, `combat_time_factor` / dynamic-battle speed options.
 * Signs: whether stamps combine by max or by sum (max used — keeps the red digits readable).
+
+## Adventure camera
+
+Implementation: `src/H5.Adventure/Engine/MissionCamera.cs` (pure model, tests `MissionCameraTests`),
+`game/src/Adventure/AdvCamera.cs`. Same CCameraOperator (update 007d4ee0) as combat, configured by the
+mission configurator (vtable 00e44688, ctor 007d3950(W, H, miniDialog) from the adventure screen 00593240 /
+00594da0; [7] 007d3180 limits, [8] 007d3310 default pose).
+
+Profile commands (registered in 0058b470): `mission_camera_def_pos` (0058a930 → pose 00f339f0: rod, pitch·π/180,
+yaw·π/180, FOV 00f33a00), `mission_camera_limits` / `_softlimits` (0058a8d0 / 0058aa30 → 0058a790: FOV, rod,
+pitch, yaw ranges into SCameraLimits 00f33900 / 00f3393c), speeds into 00f33918.. (attenuation, minheight,
+scroll_acceleration, scroll_speed, zoom_acceleration, zoom_speed, yaw_speed, yaw_acceleration, pitch_speed;
+defaults 1, 4, 1.2, 1, 5, 0.1, 1, 1, 1). `adv_camera_mode` (00fd7158) selects the limit set (0058a5e0 / 0058a630 /
+0058a680): 0 mission, 1..3 the vertical_fixed / classic_like / mini_dialog sets (mini-dialog flag → set 3).
+Operator fields: hard limits +0xbc (007d7240), soft limits +0x144 (007d7900), pan block +0x64 (007d7260).
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Default pose | 007d3310, autoexec | rod 25, pitch −53°, yaw 16°, roll 0, FOV 50, near 1, far 1000, anchor (W, H, 0) = map centre (2 units/tile) | same (then centred on the hero/town by the screen) | FIXED (far was 500) |
+| Hard / soft limits | 007d3180, autoexec | rod 10..70 / 11..69, pitch −55..−30° / −53..−32° | same | FIXED (no soft limits before) |
+| Yaw | 007d4ee0: all four yaw limits 0 → no clamp | free | free | MATCH |
+| Soft-limit feel | 007d4340 | beyond soft, input towards hard × (v − hard)/(soft − hard); no input → spring to soft limit, base 0.1/s, stop 0.03 | same | FIXED |
+| Zoom | 007d4ee0 | rod += (\|rod\|·zoom_accel 5 + 1)·zoom_speed 0.3·input; input clamped ±5, ignored > 100 | same (wheel 0.75 input/notch, as combat) | FIXED (was ±10.5%/notch) |
+| Pitch / yaw speed | 007d4ee0, 007d49e0 | pitch += input·5; yaw −= input·1.5·f, f = 1 + (rod − 11)/(69 − 11) from the soft rod range (current rod) | same | FIXED |
+| Pan | 007d45a0 / 007d4ae0 / 007d4a70 | anchor += ground-forward/right of the rendered yaw · input·10 · f · scroll_speed 1.4 | same | FIXED |
+| Pan rectangle | 007d3180 → +0x70..0x7c, 007d4720, 007d46b0 | anchor x 0..2W, y 0..2H (target and rendered); optional zoom-shrink flag +0xfa (007d7280) not traced as set | 0..2W × 0..2H | MATCH / UNVERIFIED (+0xfa) |
+| Glide | 007cccb0 (dt × attenuation 1) | rod base 1/300 (stop 0.02), pitch 1/9000 (0.01), yaw wrapped ±π 1/9000 (1e−5), anchor 1.111e−4 (stop 0.03) | same | FIXED (no glide before) |
+| Frame step | 007d4ee0 | capped at 100 ms | same | FIXED |
+| Keys | input_a2.cfg adventure section | arrows forward/strafe, CTRL+arrows pitch/rotate, PG_UP/PG_DOWN zoom, DELETE +rotate / INSERT −rotate; sign table 007dd490 | same, held key = level × seconds | FIXED / UNVERIFIED (key units, as combat) |
+| Mouse | input_a2.cfg | right drag (MOUSE_BUTTON1) rotate/pitch; middle or CTRL+right drag pan; wheel zoom; axis lock ×10 | same (was CTRL+left); 0.0012 axis/pixel | FIXED / UNVERIFIED (mouse scale, as combat) |
+| HOME | set_camera_default_pos 0058c280 → operator +0x50 (007d4ce0) with snap | rod/pitch/yaw/FOV from def_pos, anchor kept, applied at once | same | MATCH |
+| Follow | operator +0x188/+0x190 (007d6f40, 007d4ee0 states 0/1/2) | moving object sets the target anchor; manual input suspends | target anchor = hero, glide smooths; input suspends until StopFollow | FIXED (was invented exp. ease 6/s) |
+| Edge scroll | 0059e1f0 → 007d2c80 / 007d2d90 | speed adventure_scroll_speed 1, then elapsed·1 up to adventure_max_scroll_speed 3, ×(1 + zoom·adventure_scroll_speed_zoom_factor 0) ×10 along ground axes; anchor clamped 1..2W−1; pose applied at once (snap) | same, assumed per second (2 px edge) | FIXED / UNVERIFIED (dt and a (x − 0.9) factor in 007d2d90 not resolved) |
+| Projection | 00cf7c30 | FOV 50 horizontal when H/W ≤ 0.75, else tan(v/2) = 0.75·tan(25°) | same; ultrawide (< 9:16) keeps the 16:9 vertical extent like combat (extension) | FIXED (was vertical 50°) |
+| Anchor height | 007d5d40 (operator +0x54, provider +0x1a4) | if a height provider is set: z = max(H(anchor) + 5, H(ground under eye) + 0.01); setter of +0x1a4 not found | z = terrain height at the anchor | GAP |
+| mission_camera_minheight / scroll_acceleration / yaw_acceleration | 00f3391c / 00f33920 / 00f33934 | no reader found in the operator | unused | UNVERIFIED |
+
+Extension (user-requested, option "Extended map zoom", profile var `h5r_adv_extended_zoom`, **default on**
+since c9095fc): hard rod 10..160 / soft 11..159, pitch hard −85..−20° / soft −84..−21°, far plane
+max(1000, 8·rod). The speed factor f keeps the stock soft range. With the option off every value above is stock.
+
+Note for the combat camera (same operator): the anchor glide stop passed by 007d4ee0 is 0.03 (0x3cf5c28f),
+CombatCamera uses 1e−4.

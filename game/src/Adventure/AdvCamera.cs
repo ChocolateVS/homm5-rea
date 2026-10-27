@@ -1,31 +1,36 @@
 using Godot;
+using H5.Adventure.Engine;
 using H5.Adventure.Map;
 
 namespace H5Reborn.Adventure;
 
 /// <summary>
-/// The adventure ("mission") camera with the stock tunables from profiles/autoexec_a2.cfg:
-/// `mission_camera_def_pos 50 -53 16 25` (FOV, pitch, yaw, distance),
-/// `mission_camera_limits 50 10 70 -55 -30 0 0` (distance 10..70, pitch −55..−30, yaw free),
-/// zoom/pitch/yaw/scroll speeds 0.3 / 5 / 1.5 / 1.4. Controls follow input_a2.cfg: wheel and
-/// PgUp/PgDn zoom, right-drag rotates (x) and pitches (y), middle-drag or Ctrl+left-drag
-/// pans, arrows pan, Ctrl+arrows pitch/rotate, Insert/Delete rotate, Home resets,
-/// and the screen edge scrolls.
-/// Yaw 0 looks towards increasing map y (Godot −Z), as for the combat camera.
+/// The adventure ("mission") camera: H5_Game.exe's CCameraOperator (007d4ee0) with the mission
+/// configurator and the profiles/autoexec_a2.cfg values, modelled by <see cref="MissionCamera"/>
+/// (docs/rules/CAMERA.md, "Adventure camera"). The target pose integrates input and the soft/hard
+/// limits; the rendered pose glides to it (007cccb0). Controls follow input_a2.cfg (adventure
+/// section): wheel and PgUp/PgDn zoom, arrows pan, Ctrl+arrows pitch/rotate, Insert/Delete rotate,
+/// right-drag (MOUSE_BUTTON1) rotates and pitches, middle-drag or Ctrl+right-drag pans, Home resets,
+/// and the screen edge scrolls. The FOV is horizontal up to 4:3-tall screens (00cf7c30).
 /// </summary>
 public partial class AdvCamera : Camera3D
 {
-    public const float DefFov = 50, DefPitch = 53, DefYaw = 16, DefDistance = 25;
-    public const float MinDistance = 10, MaxDistance = 70, MinPitch = 30, MaxPitch = 55;
-    const float ZoomSpeed = 0.3f, PitchSpeed = 5f, YawSpeed = 1.5f, ScrollSpeed = 1.4f;
-    const int EdgeMargin = 4;
-    const float FollowRate = 6f;
+    public const float DefFov = MissionCamera.Fov, DefDistance = MissionCamera.DefRod;
+    /// <summary>Stock hard rod limits (mission_camera_limits).</summary>
+    public const float MinDistance = 10, MaxDistance = 70;
+
+    /// <summary>Mouse axis scaling, shared with the combat camera (calibrated, see CAMERA.md open points).</summary>
+    const float MouseAxisPerPixel = 1.2f / 1000f, WheelInputPerNotch = 120f / 160f;
+    const float EdgePixels = 2f, DragThreshold = 4f;
 
     readonly AdvWorld _world;
-    Vector2? _follow;
-    Vector2 _target;   // map coordinates (tiles)
-    float _yaw = DefYaw, _pitch = DefPitch, _distance = DefDistance;
-    bool _rotating, _panning;
+    MissionCamera? _cam;
+    Vector3? _follow;
+    bool _followSuspended;
+    Vector2 _mouseRotPitch, _mousePan;
+    float _mouseZoom;
+    bool _rightDown, _rightDragged, _middleDown;
+    Vector2 _rightDownAt;
 
     /// <summary>When false, edge scrolling and keys are ignored (e.g. while a dialog is open).</summary>
     public bool InputEnabled { get; set; } = true;
@@ -37,148 +42,176 @@ public partial class AdvCamera : Camera3D
         _world = world;
         Fov = DefFov;
         Near = 1;
-        Far = 500;
-        KeepAspect = KeepAspectEnum.Height;
+        Far = 1000;
     }
 
-    public Vector2 Target => _target;
-    public float Yaw => _yaw;
+    MissionCamera Cam => _cam ??= new MissionCamera(_world.Map.TilesX, _world.Map.TilesY);
 
-    public override void _Ready() => Apply();
+    /// <summary>Rendered look-at point in map tiles.</summary>
+    public Vector2 Target => new(Cam.Current.X / AdvWorld.Unit, Cam.Current.Y / AdvWorld.Unit);
+    /// <summary>Rendered yaw in degrees (0 looks towards increasing map y, positive turns counter-clockwise).</summary>
+    public float Yaw => Mathf.RadToDeg(Cam.Current.Yaw);
+    public float Distance => Cam.Current.Rod;
+
+    public override void _Ready() { Configure(); Apply(); }
 
     public void CenterOn(Tile t, bool instant = true)
     {
-        _target = new Vector2(t.X + 0.5f, t.Y + 0.5f);
+        Cam.Target.X = (t.X + 0.5f) * AdvWorld.Unit;
+        Cam.Target.Y = (t.Y + 0.5f) * AdvWorld.Unit;
+        if (instant) { Cam.Current.X = Cam.Target.X; Cam.Current.Y = Cam.Target.Y; }
         Apply();
     }
 
     /// <summary>
-    /// Keeps the view on a moving point (a walking hero), easing towards it every frame rather
-    /// than jumping tile by tile. <see cref="StopFollow"/> ends it.
+    /// Keeps the view on a moving point (a walking hero): the operator's followed object (007d4ee0,
+    /// +0x188 / state +0x190) sets the target anchor and the glide smooths it. Manual camera input
+    /// suspends following until <see cref="StopFollow"/>.
     /// </summary>
-    public void Follow(Vector3 world) => _follow = AdvWorld.WorldToMap(world);
+    public void Follow(Vector3 world) => _follow = world;
 
-    public void StopFollow() => _follow = null;
+    public void StopFollow() { _follow = null; _followSuspended = false; }
 
     public void SetYaw(float degrees)
     {
-        _yaw = degrees;
+        Cam.Target.Yaw = Cam.Current.Yaw = Mathf.DegToRad(degrees);
         Apply();
     }
 
-    /// <summary>Sets the zoom distance (clamped to the current limits).</summary>
+    /// <summary>Sets the zoom distance (clamped to the current hard limits) at once.</summary>
     public void SetDistance(float distance)
     {
-        _distance = distance;
+        Configure();
+        Cam.Target.Rod = Cam.Current.Rod = Math.Clamp(distance, Cam.Hard.MinRod, Cam.Hard.MaxRod);
         Apply();
     }
 
+    /// <summary>HOME (set_camera_default_pos): default rod/pitch/yaw, anchor kept.</summary>
     public void ResetView()
     {
-        _yaw = DefYaw;
-        _pitch = DefPitch;
-        _distance = DefDistance;
+        Cam.ResetToDefault();
         Apply();
     }
 
     /// <summary>
     /// Profile variable of the "Extended map zoom" option — a user-requested H5Reborn extension,
-    /// on by default. The stock limits above stay the reference when it is off.
+    /// on by default: rod up to 160 and pitch −85°…−20° (stock 10…70, −55°…−30°). With it off the
+    /// stock limits apply unchanged.
     /// </summary>
     public const string ExtendedZoomVar = "h5r_adv_extended_zoom";
 
     /// <summary>Maximum distance with extended zoom (≈2.3× the stock 70).</summary>
     public const float ExtendedMaxDistance = 160;
 
-    /// <summary>Extra pitch (degrees) reached at <see cref="ExtendedMaxDistance"/>, so a far view looks down more steeply and shows more map.</summary>
-    const float ExtendedPitchBoost = 15;
-
     public static bool ExtendedZoom => H5Reborn.Options.OptionsStore.GetBool(ExtendedZoomVar, true);
 
     /// <summary>Current maximum zoom-out distance.</summary>
     public static float MaxZoom => ExtendedZoom ? ExtendedMaxDistance : MaxDistance;
 
-    public float Distance => _distance;
+    void Configure()
+    {
+        bool ext = ExtendedZoom;
+        Cam.Hard = ext ? MissionCamera.ExtendedHard : MissionCamera.StockHard;
+        Cam.Soft = ext ? MissionCamera.ExtendedSoft : MissionCamera.StockSoft;
+    }
 
     void Apply()
     {
-        var map = _world.Map;
-        _target.X = Math.Clamp(_target.X, 0, map.TilesX);
-        _target.Y = Math.Clamp(_target.Y, 0, map.TilesY);
-        _distance = Math.Clamp(_distance, MinDistance, MaxZoom);
-        // Beyond the stock limit the pitch range shifts steeper with distance (extension only).
-        float boost = _distance > MaxDistance ? ExtendedPitchBoost * (_distance - MaxDistance) / (ExtendedMaxDistance - MaxDistance) : 0;
-        _pitch = Math.Clamp(_pitch, MinPitch, MaxPitch);
-        float shownPitch = Math.Min(_pitch + boost, 80);
-        // Keep everything inside the far plane and adapt fog/shadow range to the distance.
-        Far = Math.Max(500, _distance * 6);
-        _world.OnCameraDistance(_distance);
-        float h = _world.HeightAt(_world.Floor, _target.X, _target.Y);
-        var target = new Vector3(_target.X * AdvWorld.Unit, h, -_target.Y * AdvWorld.Unit);
-        float p = Mathf.DegToRad(shownPitch), y = Mathf.DegToRad(_yaw);
-        var back = new Vector3(Mathf.Sin(y), 0, Mathf.Cos(y)) * (_distance * Mathf.Cos(p));
-        LookAtFromPosition(target + back + new Vector3(0, _distance * Mathf.Sin(p), 0), target, Vector3.Up);
+        var p = Cam.Current;
+        _world.OnCameraDistance(p.Rod);
+        Far = Math.Max(1000, p.Rod * 8);
+        // Eye = anchor − rod·forward (007cd770); forward = qZ(yaw)·qX(pitch) applied to +Y.
+        float h = _world.HeightAt(_world.Floor, p.X / AdvWorld.Unit, p.Y / AdvWorld.Unit);
+        var anchor = new Vector3(p.X, h, -p.Y);
+        float cp = Mathf.Cos(p.Pitch), sp = Mathf.Sin(p.Pitch), sy = Mathf.Sin(p.Yaw), cy = Mathf.Cos(p.Yaw);
+        var fwd = new Vector3(-sy * cp, sp, -cy * cp);       // engine (−sin y·cos p, cos y·cos p, sin p) in Godot axes
+        var up = new Vector3(sy * sp, cp, cy * sp);
+        var eye = anchor - fwd * p.Rod;
+        LookAtFromPosition(eye, eye + fwd, up);
+        SetProjection(this, DefFov, GetViewport()?.GetVisibleRect().Size ?? new Vector2(4, 3));
     }
 
-    /// <summary>Pans by a screen-space amount (in tiles), relative to the current yaw.</summary>
-    void Pan(float right, float forward)
+    /// <summary>
+    /// The exe's projection (00cf7c30): with H/W ≤ 0.75 the FOV is horizontal; taller screens keep the
+    /// vertical extent of 4:3 (tan(v/2) = 0.75·tan(fov/2)). As for the combat camera, screens wider than
+    /// 16:9 keep the vertical extent of 16:9 (user-requested ultrawide extension), so 4:3…16:9 match the original.
+    /// </summary>
+    public static void SetProjection(Camera3D cam, float fovDeg, Vector2 size)
     {
-        float y = Mathf.DegToRad(_yaw);
-        // Forward (screen up) is towards increasing map y when yaw is 0.
-        var fwd = new Vector2(-Mathf.Sin(y), Mathf.Cos(y));
-        var rgt = new Vector2(Mathf.Cos(y), Mathf.Sin(y));
-        // Pan amounts arrive in world units; the target is kept in tiles.
-        _target += (rgt * right + fwd * forward) / AdvWorld.Unit;
-        Apply();
+        float hw = size.X > 0 ? size.Y / size.X : 0.75f;
+        float t = Mathf.Tan(Mathf.DegToRad(fovDeg) * 0.5f);
+        if (hw < 0.5625f) { cam.KeepAspect = KeepAspectEnum.Height; cam.Fov = Mathf.RadToDeg(2f * Mathf.Atan(0.5625f * t)); }
+        else if (hw <= 0.75f) { cam.KeepAspect = KeepAspectEnum.Width; cam.Fov = fovDeg; }
+        else { cam.KeepAspect = KeepAspectEnum.Height; cam.Fov = Mathf.RadToDeg(2f * Mathf.Atan(0.75f * t)); }
     }
 
     public override void _Process(double delta)
     {
         float dt = (float)delta;
+        Configure();
+        float keyFwd = 0, keyStrafe = 0, keyZoom = 0, keyPitch = 0, keyRotate = 0;
+        var edge = Vector2I.Zero;
+        if (InputEnabled)
+        {
+            if (Input.IsKeyPressed(Key.Ctrl))
+            {
+                if (Input.IsKeyPressed(Key.Up)) keyPitch -= 1;      // -camera_pitch CTRL+UP
+                if (Input.IsKeyPressed(Key.Down)) keyPitch += 1;    // +camera_pitch CTRL+DOWN
+                if (Input.IsKeyPressed(Key.Right)) keyRotate += 1;  // +camera_rotate CTRL+RIGHT
+                if (Input.IsKeyPressed(Key.Left)) keyRotate -= 1;
+            }
+            else
+            {
+                if (Input.IsKeyPressed(Key.Up)) keyFwd += 1;        // +camera_forward UP
+                if (Input.IsKeyPressed(Key.Down)) keyFwd -= 1;
+                if (Input.IsKeyPressed(Key.Right)) keyStrafe += 1;  // +camera_strafe RIGHT
+                if (Input.IsKeyPressed(Key.Left)) keyStrafe -= 1;
+            }
+            if (Input.IsKeyPressed(Key.Delete)) keyRotate += 1;     // adventure: +camera_rotate DELETE
+            if (Input.IsKeyPressed(Key.Insert)) keyRotate -= 1;     // -camera_rotate INSERT
+            if (Input.IsKeyPressed(Key.Pagedown)) keyZoom += 1;     // +camera_zoom PG_DOWN
+            if (Input.IsKeyPressed(Key.Pageup)) keyZoom -= 1;
+            if (!_rightDown && !_middleDown) edge = EdgeDirection();
+        }
+        else { _mouseRotPitch = Vector2.Zero; _mousePan = Vector2.Zero; _mouseZoom = 0; }
+        EdgeScroll = new Vector2I(edge.X, -edge.Y);
+
+        // Sign table 007dd490 (stock): rotate +1, pitch −1, forward +1, strafe +1.
+        float pitchIn = -(keyPitch * dt) - _mouseRotPitch.Y;
+        float rotateIn = keyRotate * dt + _mouseRotPitch.X;
+        float fwdIn = keyFwd * dt + _mousePan.Y;
+        float strafeIn = keyStrafe * dt + _mousePan.X;
+        float zoomIn = keyZoom * dt + _mouseZoom;
+        _mouseRotPitch = Vector2.Zero; _mousePan = Vector2.Zero; _mouseZoom = 0;
+
         if (_follow is { } f)
         {
-            // Exponential ease: no overshoot, no per-tile jumps.
-            _target = _target.Lerp(f, 1f - Mathf.Exp(-FollowRate * dt));
-            if (!InputEnabled) { Apply(); EdgeScroll = Vector2I.Zero; return; }
+            if (pitchIn != 0 || rotateIn != 0 || fwdIn != 0 || strafeIn != 0 || zoomIn != 0 || edge != Vector2I.Zero)
+                _followSuspended = true;
+            if (!_followSuspended)
+            {
+                var m = AdvWorld.WorldToMap(f);
+                Cam.Target.X = m.X * AdvWorld.Unit;
+                Cam.Target.Y = m.Y * AdvWorld.Unit;
+            }
         }
-        if (!InputEnabled) { EdgeScroll = Vector2I.Zero; return; }
-        float speed = ScrollSpeed * _distance * dt;
-        float right = 0, forward = 0;
-        bool ctrl = Input.IsKeyPressed(Key.Ctrl);
-        if (!ctrl)
-        {
-            if (Input.IsKeyPressed(Key.Left)) right -= 1;
-            if (Input.IsKeyPressed(Key.Right)) right += 1;
-            if (Input.IsKeyPressed(Key.Up)) forward += 1;
-            if (Input.IsKeyPressed(Key.Down)) forward -= 1;
-        }
-        else
-        {
-            if (Input.IsKeyPressed(Key.Up)) _pitch -= PitchSpeed * 10 * dt;
-            if (Input.IsKeyPressed(Key.Down)) _pitch += PitchSpeed * 10 * dt;
-            if (Input.IsKeyPressed(Key.Left)) _yaw -= YawSpeed * 40 * dt;
-            if (Input.IsKeyPressed(Key.Right)) _yaw += YawSpeed * 40 * dt;
-        }
-        if (Input.IsKeyPressed(Key.Delete)) _yaw += YawSpeed * 40 * dt;
-        if (Input.IsKeyPressed(Key.Insert)) _yaw -= YawSpeed * 40 * dt;
-        if (Input.IsKeyPressed(Key.Pagedown)) _distance += ZoomSpeed * _distance * 3 * dt;
-        if (Input.IsKeyPressed(Key.Pageup)) _distance -= ZoomSpeed * _distance * 3 * dt;
+        Cam.EdgeScroll(dt, edge.X, edge.Y);
+        Cam.Step(dt, rotateIn, pitchIn, fwdIn, strafeIn, zoomIn);
+        Apply();
+    }
 
-        // Screen-edge scrolling (only while the window has the mouse).
+    /// <summary>Cursor at the screen edge (window focused): x −1 left / +1 right, y +1 top (forward) / −1 bottom.</summary>
+    Vector2I EdgeDirection()
+    {
         var vp = GetViewport();
-        var m = vp.GetMousePosition();
+        if (!DisplayServer.WindowIsFocused()) return Vector2I.Zero;
         var size = vp.GetVisibleRect().Size;
-        var edge = Vector2I.Zero;
-        if (DisplayServer.WindowIsFocused() && m.X >= 0 && m.Y >= 0 && m.X < size.X && m.Y < size.Y && !_rotating && !_panning)
-        {
-            if (m.X < EdgeMargin) edge.X = -1; else if (m.X > size.X - EdgeMargin) edge.X = 1;
-            if (m.Y < EdgeMargin) edge.Y = -1; else if (m.Y > size.Y - EdgeMargin) edge.Y = 1;
-        }
-        EdgeScroll = edge;
-        right += edge.X;
-        forward -= edge.Y;
-        if (right != 0 || forward != 0) Pan(right * speed, forward * speed);
-        else Apply();
+        var m = vp.GetMousePosition();
+        if (m.X < 0 || m.Y < 0 || m.X > size.X || m.Y > size.Y) return Vector2I.Zero;
+        var dir = Vector2I.Zero;
+        if (m.X <= EdgePixels) dir.X = -1; else if (m.X >= size.X - 1 - EdgePixels) dir.X = 1;
+        if (m.Y <= EdgePixels) dir.Y = 1; else if (m.Y >= size.Y - 1 - EdgePixels) dir.Y = -1;
+        return dir;
     }
 
     public override void _UnhandledInput(InputEvent e)
@@ -186,23 +219,34 @@ public partial class AdvCamera : Camera3D
         if (!InputEnabled) return;
         switch (e)
         {
-            case InputEventMouseButton { ButtonIndex: MouseButton.WheelUp, Pressed: true }:
-                _distance -= ZoomSpeed * _distance * 0.35f; Apply(); break;
-            case InputEventMouseButton { ButtonIndex: MouseButton.WheelDown, Pressed: true }:
-                _distance += ZoomSpeed * _distance * 0.35f; Apply(); break;
-            case InputEventMouseButton { ButtonIndex: MouseButton.Right } b:
-                _rotating = b.Pressed; break;
-            case InputEventMouseButton { ButtonIndex: MouseButton.Middle } b:
-                _panning = b.Pressed; break;
-            case InputEventMouseMotion mm when _rotating:
-                _yaw += mm.Relative.X * YawSpeed * 0.2f;
-                _pitch -= mm.Relative.Y * PitchSpeed * 0.04f;
-                Apply();
+            case InputEventMouseButton { ButtonIndex: MouseButton.WheelUp or MouseButton.WheelDown, Pressed: true } wheel:
+                // -camera_zoom_mouse MOUSE_AXIS_Z: wheel away from the user zooms in.
+                _mouseZoom += wheel.ButtonIndex == MouseButton.WheelUp ? -WheelInputPerNotch : WheelInputPerNotch;
                 break;
-            case InputEventMouseMotion mm when _panning || (mm.ButtonMask.HasFlag(MouseButtonMask.Left) && Input.IsKeyPressed(Key.Ctrl)):
-                Pan(-mm.Relative.X * _distance * 0.0025f, mm.Relative.Y * _distance * 0.0025f);
+            case InputEventMouseButton { ButtonIndex: MouseButton.Right } rb:
+                _rightDown = rb.Pressed;
+                if (rb.Pressed) { _rightDragged = false; _rightDownAt = rb.Position; }
                 break;
-            case InputEventKey { Keycode: Key.Home, Pressed: true }:
+            case InputEventMouseButton { ButtonIndex: MouseButton.Middle } mb:
+                _middleDown = mb.Pressed;
+                break;
+            case InputEventMouseMotion mm:
+                var d = mm.Relative * MouseAxisPerPixel;
+                if (_middleDown || (_rightDown && Input.IsKeyPressed(Key.Ctrl)))
+                {
+                    // -camera_strafe_mouse / +camera_forward_mouse: MOUSE_BUTTON2 or CTRL+MOUSE_BUTTON1.
+                    _mousePan += new Vector2(-d.X, d.Y);
+                    if (_rightDown) _rightDragged = true;
+                }
+                else if (_rightDown)
+                {
+                    // A press only becomes a drag after a few pixels, so a plain right click still opens info.
+                    if (!_rightDragged && mm.Position.DistanceTo(_rightDownAt) < DragThreshold) break;
+                    _rightDragged = true;
+                    _mouseRotPitch += new Vector2(d.X, -d.Y);   // +camera_rotate_mouse X, -camera_pitch_mouse Y
+                }
+                break;
+            case InputEventKey { Keycode: Key.Home, Pressed: true, Echo: false }:
                 ResetView(); break;
         }
     }
