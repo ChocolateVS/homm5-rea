@@ -14,8 +14,8 @@ public sealed class PlayerSetup
     public string? Race;
     /// <summary>Custom-game starting hero (HeroDef id) for a player whose hero is created in its main town; null = random.</summary>
     public string? StartHero;
-    /// <summary>Custom-game starting bonus: 0 random, 1 artifact, 2 gold, 3 resource (application not traced, AUDIT_CAMPAIGN.md).</summary>
-    public int Bonus;
+    /// <summary>Custom-game starting bonus: 0 random, 1 artifact, 2 gold, 3 resource (applied by <c>Adventure.ApplyStartBonus</c>, 004fd860); null = none.</summary>
+    public int? Bonus;
 }
 
 public sealed class GameSetup

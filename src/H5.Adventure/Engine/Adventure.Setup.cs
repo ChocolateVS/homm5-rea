@@ -22,6 +22,7 @@ public sealed partial class Adventure
         g.SetupTowns();
         g.SetupObjects();
         g.SetupHeroes();
+        g.ApplyStartBonuses(setup);
         g.SetupBoats();
         g.SetupHeroPool();
         foreach (var p in s.Players) g.RollTavern(p);
