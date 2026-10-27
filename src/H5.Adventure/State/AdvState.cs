@@ -403,6 +403,8 @@ public sealed class AdvState
     public Dictionary<int, ObjState> Objects = new();
     /// <summary>Artifact merchant stock (6 slots, null = sold) by town or map object index.</summary>
     public Dictionary<int, string?[]> ArtifactMarkets = new();
+    /// <summary>CArtifactsGenerator per-artifact generated count (entry +4; the first pass prefers a count of 0).</summary>
+    public Dictionary<string, int> ArtifactsGenerated = new();
     /// <summary>Where the Tear of Asha is buried (null when the map places no Graal) and whether it was dug up.</summary>
     public Tile? Grail;
     public bool GrailFound;

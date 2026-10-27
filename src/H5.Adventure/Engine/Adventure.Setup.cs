@@ -322,13 +322,8 @@ public sealed partial class Adventure
         return Math.Max(1, (int)(growth * 4 * weeks * k));
     }
 
-    string? RandomArtifact(string? cls)
-    {
-        var pool = Db.ArtifactClass.Where(kv => kv.Value != "ARTF_CLASS_GRAIL" && (cls == null || kv.Value == cls))
-            .Select(kv => kv.Key).Where(a => Map.ArtifactIds.Count == 0 || !Map.ArtifactIds.Contains(a))
-            .OrderBy(a => a, StringComparer.Ordinal).ToList();
-        return pool.Count == 0 ? null : pool[S.Rng.Next(pool.Count)];
-    }
+    /// <summary>A random artifact of the class (null = any) from the map's generator (<see cref="GenerateArtifact(int, int)"/>).</summary>
+    string? RandomArtifact(string? cls) => GenerateArtifact(cls);
 
     string? RandomSpell(string? school, int level)
     {

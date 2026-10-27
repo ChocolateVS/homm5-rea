@@ -377,16 +377,15 @@ public sealed partial class Adventure
                     GiveOne(p, S.Rng.Range(0, 5), FortunateAdventurer(h, S.Rng.Range(2, 5)));
                     Emit(new ObjectVisited(h.Id, o.Index, "msg:2"));
                 }
-                // TODO(exe): the artifact's choice (00b03e09 → FUN_00afa990) is not traced; a random minor one is used.
-                else if (RandomArtifact("ARTF_CLASS_MINOR") is { } wa) GiveArtifact(h, wa);
+                // 00b03eb3: FUN_00afa990 with class 0 → the generator's minor artifacts (0, 0).
+                else if (GenerateArtifact(0, 0) is { } wa) GiveArtifact(h, wa);
                 break;
             }
             case "BUILDING_SKELETON":
                 if (Looted(h, o, os)) break;
-                // r 1..10: up to 8 → [3]; 9..10 → an artifact (FUN_00afa7a0).
-                // TODO(exe): the artifact's choice is not traced; a random one is used.
+                // r 1..10: up to 8 → [3]; 9..10 → an artifact (00b04113: FUN_00afa7a0 with classes 0..1, minor or major).
                 if (S.Rng.Range(1, 10) <= 8) Emit(new ObjectVisited(h.Id, o.Index, "msg:3"));
-                else if (RandomArtifact(null) is { } sa) GiveArtifact(h, sa);
+                else if (GenerateArtifact(0, 1) is { } sa) GiveArtifact(h, sa);
                 break;
             case "BUILDING_TOMB_OF_THE_WARRIOR":
             {
@@ -394,12 +393,12 @@ public sealed partial class Adventure
                 // already applied since the last battle. Looted (object +0xe9): [3] with the penalty, else [4]. Not
                 // looted: the penalty, then an artifact (00afa990 → 00afa7a0) shown with [2]; the tomb stays unlooted
                 // only when the hero cannot take it (00afa610 result 1).
-                // TODO(exe): which artifact 00afa7a0 draws (world vcall 0x124(2) → 008e7930) is not traced; any one is used.
+                // 00b05d3e: FUN_00afa990 with class 1 → a major artifact from the generator (1, 1).
                 bool penalty = h.VisitedSinceBattle.Add(o.Index);
                 if (penalty) h.NextBattleMorale -= 3;
                 if (os.TimesLooted > 0) { Emit(new ObjectVisited(h.Id, o.Index, penalty ? "msg:3" : "msg:4")); break; }
                 os.TimesLooted++;
-                if (RandomArtifact(null) is { } ta) { Emit(new ObjectVisited(h.Id, o.Index, "msg:2")); GiveArtifact(h, ta); }
+                if (GenerateArtifact(1, 1) is { } ta) { Emit(new ObjectVisited(h.Id, o.Index, "msg:2")); GiveArtifact(h, ta); }
                 break;
             }
             case "BUILDING_SIRENS":
