@@ -4,7 +4,7 @@ Every adventure mechanic / screen element checked against `H5_Game.exe` (Ghidra 
 the original data. Status: **MATCH** (already as the exe), **FIXED** (changed to match), **GAP** (known difference or
 not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not traced).
 
-Rows at 2026-10-28: 165 FIXED, 25 MATCH, 66 GAP, 73 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
+Rows at 2026-10-28: 166 FIXED, 25 MATCH, 66 GAP, 72 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
 
 ## Seer Huts
 
@@ -370,5 +370,5 @@ Rows in this section: 3 FIXED, 1 UNVERIFIED, 2 GAP.
 |---|---|---|---|---|
 | Instant Travel range | 008652f0 case 0x32 (cast check, shared by the AI step 008675f0) | target on the hero's floor with dx² + dy² < 0x41 (Euclidean tiles) | `CanDimensionDoorTo`: dx² + dy² ≤ `DimensionDoorRadiusSq` (64). A: `Instant_travel_range_is_euclidean` | FIXED (was: ≤ 800 movement points at 100 / 141 per step, which refused e.g. (5, 6)) |
 | Instant Travel movement | 008652f0 (vf 0xfc / 2 ≤ vf 0xf4), 008656e0 case 0x32 (vf 0x100(max(0, vf 0xf4 − vf 0xfc / 2))) | needs and takes half the day's movement | `DoCastAdventureSpell` (MaxMovePoints / 2) | MATCH |
-| Instant Travel landing | 008649f0 (also the AI flood's landing test) | cell +0x10 = 0, land cell type 1 / 4 or water 2 by the boat state, cell +0x18 object vf 0x14 false, no unit at the tile (00cea350 / 00cea010 / 00ceab70) | `DimensionDoorLandingOk`: not blocked, water = boat state, no hero / object / ship, explored by the caster | UNVERIFIED (cell fields mapped to our blocked / water / occupant tests; the explored test is ours) |
+| Instant Travel landing | 008649f0 (also the AI flood's landing test) | cell +0x10 = 0, land cell type 1 / 4 or water 2 by the boat state, cell +0x18 object vf 0x14 false, no unit at the tile (00cea350 / 00cea010 / 00ceab70) | `DimensionDoorLandingOk`: not blocked (cell +0x10), `TileKind.Land` / `ObjectPassable` (types 1 / 4) or `Water` (2) by the boat state, no hero / object / ship. A: `Instant_travel_landing_needs_no_exploration` | FIXED (was: also explored by the caster; types read as water / not water). Cell +0x18 object vf 0x14 is taken as covered by the object test |
 

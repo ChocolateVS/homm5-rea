@@ -216,4 +216,122 @@ public class AiSpellTests(Fixture f)
         Assert.False(OriginalAdventureAI.DimensionDoorSettingsFor(g, h, st).TownPortal);
         h.InBoat = false;
     }
+
+    static readonly (int dx, int dy)[] Around = { (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1) };
+
+    /// <summary>A1L10: a ship built on a shipyard's slipway and the current hero on a free shore tile next to it.</summary>
+    (Engine.Adventure G, HeroState H, BoatState B) HeroBesideShip()
+    {
+        var g = f.NewGame("A1L10");
+        var h = g.S.Heroes.FirstOrDefault(x => x.Alive && x.Owner == g.Current.Index) ?? g.S.Heroes.First(x => x.Alive);
+        g.S.CurrentPlayer = g.S.Players.FindIndex(p => p.Index == h.Owner);
+        foreach (var yard in g.Map.Objects.Where(o => o.Kind == ObjectKind.Shipyard && g.ShipyardStatus(o.Index) == "ok"))
+        {
+            var slip = g.SlipwayOf(yard.Index)!.Value;
+            var fl = g.Map.Floor(slip.Floor)!;
+            foreach (var (dx, dy) in Around)
+            {
+                var t = slip.Offset(dx, dy);
+                if (!fl.InBounds(t.X, t.Y) || fl.IsWater(t.X, t.Y) || fl.IsBlocked(t.X, t.Y) || g.GuardingMonster(t) != null) continue;
+                if (g.S.Heroes.Any(x => x.Pos == t) || g.ObjectsAtTile(t).Any()) continue;
+                g.S.Obj(yard.Index).Owner = g.Current.Index;
+                g.Current.Purse[Purse.Gold] = 5000;
+                g.Current.Purse[Purse.Wood] = 50;
+                Assert.True(g.Apply(new BuildShipCmd(yard.Index) { Player = g.Current.Index }).Ok);
+                h.Pos = t;
+                h.InTown = -1;
+                h.InBoat = false;
+                h.Perks.Remove("HERO_SKILL_SNATCH");
+                h.MovePoints = 2000;
+                return (g, h, g.BoatAt(slip)!);
+            }
+        }
+        throw new InvalidOperationException("no shipyard with a free shore");
+    }
+
+    [Fact]
+    public void A_popped_ship_node_boards_and_floods_on_at_sea()
+    {
+        // 009d22f0: a land node on a free ship: w2 + w4 (the rest of the day), w4 = sea day, w1 | 2, then it expands.
+        var (g, h, b) = HeroBesideShip();
+        var flood = g.SpellFlood(h, 0, default);
+        var ship = flood.Nodes[b.Pos];
+        Assert.True(ship.Boat);
+        int rest = 2000 - ship.Cost;
+        var fl = g.Map.Floor(b.Pos.Floor)!;
+        var sea = Around.Select(d => b.Pos.Offset(d.dx, d.dy))
+            .Where(t => fl.InBounds(t.X, t.Y) && flood.Nodes.TryGetValue(t, out var n) && n.Boat && flood.Parent[t] == b.Pos).ToList();
+        Assert.NotEmpty(sea);
+        foreach (var t in sea)
+            Assert.Equal(ship.Cost + rest + (t.X != b.Pos.X && t.Y != b.Pos.Y ? 141 : 100), flood.Nodes[t].Cost);
+        // Ours: the move goes to the ship first (the route's first node with another boat state).
+        var far = flood.Nodes.Values.Where(n => n.Boat && n.Tile != b.Pos).OrderByDescending(n => n.Cost).First();
+        var route = flood.Route(far.Tile)!;
+        Assert.Equal(b.Pos, route[OriginalAdventureAI.ShoreIndex(route)].Tile);
+    }
+
+    [Fact]
+    public void Vessel_of_shalassa_edge_needs_a_free_ship_and_is_cast_from_the_shore()
+    {
+        // 00c07f80 with pf +0x55: land node (P) → free water, provider vf 0xc (a free ship on the floor) → 0x2000002,
+        // not P, cost w4 (2000 ≥ the step), priority + 500, w4 = sea day; 008675f0 → command +0x32 when it is node 1.
+        var (g, h, b) = HeroBesideShip();
+        var slip = b.Pos;
+        var fl = g.Map.Floor(slip.Floor)!;
+        Tile? away = null;
+        for (int y = 0; y < fl.Height && away == null; y++)
+            for (int x = 0; x < fl.Width; x++)
+            {
+                var t = new Tile(x, y, slip.Floor);
+                if (fl.IsWater(x, y) && !fl.IsBlocked(x, y) && Math.Max(Math.Abs(x - slip.X), Math.Abs(y - slip.Y)) > 6 && g.BoatAt(t) == null
+                    && !g.ObjectsAtTile(t).Any()) { away = t; break; }
+            }
+        b.Pos = away!.Value;
+        var sb = new DimensionDoorSettings(false, 0, 0, 0, false, h.MaxMovePoints, SummonBoat: true);
+        Assert.False(g.SpellFlood(h, 0, sb with { SummonBoat = false }).Nodes.ContainsKey(slip));
+        var flood = g.SpellFlood(h, 0, sb);
+        var n = flood.Nodes[slip];
+        Assert.True(n.Summon && n.Boat && !n.CanStop);
+        Assert.Equal(2000, n.Cost);
+        Assert.Equal(2500, n.Priority);
+        var beyond = flood.Nodes.Values.First(x => x.Boat && flood.Parent.TryGetValue(x.Tile, out var p) && p == slip);
+        var route = flood.Route(beyond.Tile)!;
+        Assert.Equal((OriginalAdventureAI.DimDoorStepKind.SummonBoat, 0), OriginalAdventureAI.BoatStep(route));
+        // Two steps from the shore: walk to the node before the summon node.
+        var longer = new List<FloodNode> { route[0], route[0] with { Tile = route[0].Tile.Offset(0, 1) }, route[1], route[2] };
+        Assert.Equal((OriginalAdventureAI.DimDoorStepKind.Walk, 1), OriginalAdventureAI.BoatStep(longer));
+        // No free ship on the floor: no edge.
+        g.S.Boats.Clear();
+        Assert.False(g.SpellFlood(h, 0, sb).Nodes.ContainsKey(slip));
+    }
+
+    [Fact]
+    public void No_instant_travel_cast_to_a_node_beyond_today()
+    {
+        // 008675f0 LAB_00867e34: the candidate's w1 0x800000 (w2 > hero move points, 00c09d90) refuses the cast.
+        var cast = new List<FloodNode> { N(0, 0), N(5, 0, landing: true), N(6, 100), N(20, 1500) };
+        Assert.Equal((OriginalAdventureAI.DimDoorStepKind.Cast, 2), Step(cast, 750, 0));
+        cast[2] = cast[2] with { Late = true };
+        Assert.Equal((OriginalAdventureAI.DimDoorStepKind.Stop, 0), Step(cast, 750, 0));
+    }
+
+    [Fact]
+    public void Instant_travel_landing_needs_no_exploration()
+    {
+        // 008649f0 reads the cell, objects and units only (was: our extra explored-by-the-caster test).
+        var g = f.NewGame();
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == g.Current.Index);
+        foreach (var e in g.S.Players.First(x => x.Index == h.Owner).Explored) Array.Fill(e, false);
+        var fl = g.Map.Floor(h.Pos.Floor)!;
+        bool any = false;
+        for (int dy = -8; dy <= 8 && !any; dy++)
+            for (int dx = -8; dx <= 8 && !any; dx++)
+            {
+                var t = h.Pos.Offset(dx, dy);
+                if (fl.InBounds(t.X, t.Y) && !fl.IsBlocked(t.X, t.Y) && !fl.IsWater(t.X, t.Y) && g.HeroAtTile(t) == null && !g.ObjectsAtTile(t).Any()
+                    && g.BoatAt(t) == null)
+                    any = g.DimensionDoorLandingOk(h, t, false);
+            }
+        Assert.True(any);
+    }
 }

@@ -10,8 +10,9 @@ namespace H5.Adventure.Engine;
 /// <param name="StartCostLimit">settings +0x68: AI/Adventure DimDoorStartCostLimit (block +0x228); ≤ 0 means no limit.</param>
 /// <param name="TownPortal">settings +0x34 (pf +0x54): the hero knows SPELL_TOWN_PORTAL (0x33), may cast it and is not at sea.</param>
 /// <param name="LandDayMove">settings +0x28 (pf +0x48): the day's land movement (hero vf 0xf8 of the move type), the Town Portal start's w4.</param>
+/// <param name="SummonBoat">settings +0x35 (pf +0x55): the hero knows SPELL_SUMMON_BOAT (0x31), may cast it and is not at sea.</param>
 public readonly record struct DimensionDoorSettings(bool Enabled, int MoveCost, int Count, int StartCostLimit,
-                                                    bool TownPortal = false, int LandDayMove = 0);
+                                                    bool TownPortal = false, int LandDayMove = 0, bool SummonBoat = false);
 
 /// <summary>One node of a flood route (exe 0x40-byte node: w0 position, w1 flags, w2 cost, w3 priority).</summary>
 /// <param name="Cost">w2: movement cost from the start; an Instant Travel landing keeps its origin's cost.</param>
@@ -21,8 +22,10 @@ public readonly record struct DimensionDoorSettings(bool Enabled, int MoveCost, 
 /// <param name="Landing">w1 bit 0x4000000: reached by Instant Travel.</param>
 /// <param name="Casts">w1 bits 15..22: Instant Travel starts on the way (at most 10).</param>
 /// <param name="Portal">w1 bit 0x20: the route starts with Town Portal (set on the portal start node, inherited by every step from it).</param>
+/// <param name="Summon">w1 bit 0x2000000: the step onto water that needs Vessel of Shalassa.</param>
+/// <param name="Late">w1 bit 0x800000: w2 exceeds the hero's movement points (00c09d90: pf +0x50 &lt; w2).</param>
 public readonly record struct FloodNode(Tile Tile, int Cost, int Priority, bool CanStop, bool Action, bool Boat, bool Landing, int Casts,
-                                        bool Portal = false);
+                                        bool Portal = false, bool Summon = false, bool Late = false);
 
 /// <summary>Result of <see cref="Adventure.SpellFlood"/>: the best node of every reached tile and its parent tile.</summary>
 public sealed class SpellFloodResult
@@ -60,8 +63,8 @@ public sealed partial class Adventure
     sealed class FNode
     {
         public Tile T, Origin;
-        public bool Layer, CanStop, Action, Landing, Portal, Root;
-        public int W2, W3, Casts;
+        public bool Layer, CanStop, Action, Landing, Portal, Root, Boat, Summon;
+        public int W2, W3, W4, Casts;
         public Tile? Parent;
     }
 
@@ -83,10 +86,23 @@ public sealed partial class Adventure
     /// becomes a second start node: a copy of the hero's node at the town's tile with flag 0x20 (inherited by every
     /// step from it), parent the hero's tile, cost w2 = the hero's movement points (start w4), priority w3 = that +
     /// land day move (+0x48) + 200 + (entries − 1) · 500, w4 = land day move; it expands like the hero's node.
-    /// GAP-details: the blocked test is our <c>Passable</c> (not the exe's cell types 009d1410 / 009d1700 / type 5,
-    /// whose +100 penalty is not applied); single-day costs as in <see cref="ReachableCosts"/>; no boat edges
-    /// (settings +0x35); queue ties are taken in insertion order; the town's tile (town vf 0xc4) is taken as its
-    /// entrance (<see cref="EntranceOf"/>).
+    /// Days (w4, the movement left): the start has the hero's movement points; a step costing more than w4 is
+    /// taken from a node that may end a move with a fresh day's movement (land +0x48 / sea +0x4c by the node's boat
+    /// state; the step's cost is not taken from it) and is dropped otherwise; else w4 - cost. w1 0x800000 marks
+    /// w2 over the hero's movement points. A blocked step onto a map-edge cell (cell type 5, our <c>TileKind.Edge</c>)
+    /// adds 100 to the spell-layer priority.
+    /// Sea (00c07f80 / 009d22f0, boat provider 00bcc020): a land node that may end a move stepping onto free water
+    /// (no object) with Vessel of Shalassa (+0x55) and a free ship on the floor (provider vf 0xc = 00864920 over
+    /// the free ships of 00865230) gives a sea node 0x2000002 (not P) at priority + 500, cost w4 (or land day + w4
+    /// when w4 is below the step), w4 = sea day; it floods on as a ship. A popped land node on a free ship
+    /// (009d22f0: the object's vf 0x38) boards it: w2 + w4, w4 = sea day, boat state, and expands at sea (settings
+    /// +0x10 skips the cost, taken as Snatch). A sea node stepping onto land that may end a move lands: cost w4
+    /// (or sea day + w4), w4 = land day, land state.
+    /// GAP-details: the blocked test is our <c>Passable</c> (not the exe's cell types 009d1410 / 009d1700);
+    /// step costs are ours (<see cref="StepCost"/>, not ca9a70 with its diagonal rule); no shipyard edge (provider
+    /// vf 0, 0x1000002 +250); queue ties are taken in insertion order; the town's tile (town vf 0xc4) is taken as its
+    /// entrance (<see cref="EntranceOf"/>); the main-grid replacement compares w3 only (00c09d90 also weighs the
+    /// danger values of pf +0xc).
     /// </summary>
     public SpellFloodResult SpellFlood(HeroState h, int limit, DimensionDoorSettings dd)
     {
@@ -95,11 +111,14 @@ public sealed partial class Adventure
         var layer = new Dictionary<Tile, FNode>();
         var pq = new PriorityQueue<FNode, (int, int)>();
         int seq = 0;
-        var start = new FNode { T = h.Pos, Origin = h.Pos, CanStop = true, Root = true };
+        var start = new FNode { T = h.Pos, Origin = h.Pos, CanStop = true, Root = true, Boat = h.InBoat, W4 = h.MovePoints };
         main[h.Pos] = start;
         pq.Enqueue(start, (0, seq++));
         var f = Map.Floor(h.Pos.Floor);
-        if (f == null) return Collect(res, main, h.InBoat);
+        int landDay = DayMove(h, false), seaDay = DayMove(h, true);
+        bool snatch = h.HasPerk(SnatchPerk);
+        bool freeShip = dd.SummonBoat && NearestEmptyBoat(h) != null;
+        if (f == null) return Collect(res, main, h.MovePoints);
 
         void Relax(FNode n)
         {
@@ -125,7 +144,7 @@ public sealed partial class Adventure
             var portal = PortalStartTiles(h);
             foreach (var t in portal)
                 Relax(new FNode { T = t, Origin = t, W2 = h.MovePoints, W3 = dd.LandDayMove + 200 + (portal.Count - 1) * 500 + h.MovePoints,
-                                  CanStop = true, Portal = true, Root = true, Parent = h.Pos });
+                                  W4 = dd.LandDayMove, Boat = start.Boat, CanStop = true, Portal = true, Root = true, Parent = h.Pos });
         }
 
         while (pq.TryDequeue(out var cur, out _))
@@ -133,48 +152,107 @@ public sealed partial class Adventure
             if (cur.Layer)
             {
                 if (!layer.TryGetValue(cur.T, out var lc) || lc != cur) continue;
-                if (cur.T != cur.Origin && DimensionDoorLandingOk(h, cur.T, h.InBoat) && main.TryGetValue(cur.Origin, out var org))
-                    Relax(new FNode { T = cur.T, Origin = cur.T, W2 = org.W2, W3 = cur.W3 + 500, Casts = cur.Casts, CanStop = true, Landing = true,
-                                      Portal = org.Portal, Parent = cur.Origin });
+                if (cur.T != cur.Origin && DimensionDoorLandingOk(h, cur.T, cur.Boat) && main.TryGetValue(cur.Origin, out var org))
+                    Relax(new FNode { T = cur.T, Origin = cur.T, W2 = org.W2, W3 = cur.W3 + 500, W4 = cur.W4, Casts = cur.Casts, CanStop = true,
+                                      Landing = true, Portal = org.Portal, Boat = cur.Boat, Parent = cur.Origin });
                 foreach (var (dx, dy) in FloodDirs)
                 {
                     var nx = cur.T.Offset(dx, dy);
                     if (!f.InBounds(nx.X, nx.Y) || DistSq(nx, cur.Origin) > DimensionDoorRadiusSq) continue;
-                    EnterLayer(new FNode { T = nx, Origin = cur.Origin, Layer = true, W2 = cur.W2, W3 = cur.W3, Casts = cur.Casts });
+                    EnterLayer(new FNode { T = nx, Origin = cur.Origin, Layer = true, W2 = cur.W2, W3 = cur.W3, W4 = cur.W4, Casts = cur.Casts,
+                                           Boat = cur.Boat, Portal = cur.Portal });
                 }
                 continue;
             }
             if (!main.TryGetValue(cur.T, out var mc) || mc != cur) continue;
-            // As ReachableCosts: guarded tiles and tiles a path may not cross end the walk.
-            bool expand = cur.Root || (GuardingMonster(cur.T) == null && Passable(h, cur.T, new Tile(-1, -1, cur.T.Floor)));
-            if (!expand) continue;
-            bool canStart = dd.Enabled && cur.CanStop && cur.Casts < 10 && (dd.StartCostLimit <= 0 || cur.W2 <= dd.StartCostLimit);
+            bool wasBoat = h.InBoat;
+            try { Expand(cur); }
+            finally { h.InBoat = wasBoat; }
+        }
+        return Collect(res, main, h.MovePoints);
+
+        void Expand(FNode cur)
+        {
+            // Passable / StepCost read the hero's boat state: the node's (w1 bit 2) while it expands.
+            h.InBoat = cur.Boat;
+            int w2 = cur.W2, w4 = cur.W4;
+            bool boat = cur.Boat;
+            if (!cur.Root)
+            {
+                if (GuardingMonster(cur.T) != null) return;
+                // 009d22f0: a land node on a free ship boards it and floods on at sea.
+                if (!boat && BoatAt(cur.T) is { HeroId: -1 })
+                {
+                    if (!snatch) { w2 += w4; w4 = seaDay; }
+                    boat = true;
+                    cur.Boat = true;   // 0059e980: the stored node gets w1 | 2 too
+                    h.InBoat = true;
+                }
+                // As ReachableCosts: tiles a path may not cross end the walk.
+                else if (!Passable(h, cur.T, new Tile(-1, -1, cur.T.Floor))) return;
+            }
+            bool canStart = dd.Enabled && cur.CanStop && cur.Casts < 10 && (dd.StartCostLimit <= 0 || w2 <= dd.StartCostLimit);
             foreach (var (dx, dy) in FloodDirs)
             {
                 var nx = cur.T.Offset(dx, dy);
                 if (!f.InBounds(nx.X, nx.Y)) continue;
+                bool water = f.IsWater(nx.X, nx.Y);
+                bool action = ObjectsAt(nx).Any() || HeroAt(nx, h.Id) != null || BoatAt(nx) != null;
+                // 00c07f80: Vessel of Shalassa onto free water from a land node that may end a move.
+                if (!boat && water && freeShip && cur.CanStop && !action && !f.IsBlocked(nx.X, nx.Y) && GuardingMonster(nx) == null)
+                {
+                    int c = StepCost(h, cur.T, nx);
+                    c = w4 < c ? landDay + w4 : w4;
+                    Relax(new FNode { T = nx, Origin = nx, W2 = w2 + c, W3 = cur.W3 + c + 500, W4 = seaDay, Casts = cur.Casts, Portal = cur.Portal,
+                                      Boat = true, Summon = true, Parent = cur.T });
+                    continue;
+                }
                 if (!Passable(h, nx, nx))
                 {
                     if (canStart)
-                        EnterLayer(new FNode { T = nx, Origin = cur.T, Layer = true, W2 = cur.W2 + dd.MoveCost, W3 = cur.W3 + dd.MoveCost, Casts = cur.Casts + 1,
-                                               Portal = cur.Portal });
+                    {
+                        int edge = f.Kind.Length == f.Width * f.Height && f.Kind[nx.Y * f.Width + nx.X] == TileKind.Edge ? 100 : 0;
+                        EnterLayer(new FNode { T = nx, Origin = cur.T, Layer = true, W2 = w2 + dd.MoveCost, W3 = cur.W3 + edge + dd.MoveCost, W4 = w4,
+                                               Casts = cur.Casts + 1, Portal = cur.Portal, Boat = boat });
+                    }
                     continue;
                 }
                 int step = StepCost(h, cur.T, nx);
-                bool action = ObjectsAt(nx).Any() || HeroAt(nx, h.Id) != null || BoatAt(nx) != null;
-                Relax(new FNode { T = nx, Origin = nx, W2 = cur.W2 + step, W3 = cur.W3 + step, Casts = cur.Casts, Portal = cur.Portal,
-                                  CanStop = !action && GuardingMonster(nx) == null, Action = action, Parent = cur.T });
+                bool canStop = !action && GuardingMonster(nx) == null;
+                // 00c07f80: from a ship only cell type 1 is a shore; another kind is blocked.
+                if (boat && !water && f.Kind.Length == f.Width * f.Height && f.Kind[nx.Y * f.Width + nx.X] != TileKind.Land)
+                {
+                    if (canStart)
+                        EnterLayer(new FNode { T = nx, Origin = cur.T, Layer = true, W2 = w2 + dd.MoveCost, W3 = cur.W3 + dd.MoveCost, W4 = w4,
+                                               Casts = cur.Casts + 1, Portal = cur.Portal, Boat = boat });
+                    continue;
+                }
+                int n4;
+                if (w4 < step)
+                {
+                    if (!cur.CanStop) continue;
+                    n4 = boat ? seaDay : landDay;
+                }
+                else n4 = w4 - step;
+                bool nBoat = boat;
+                // A sea node landing on a tile that may end a move: the rest of the day (or a day more).
+                if (boat && !water && canStop)
+                {
+                    step = w4 < step ? seaDay + w4 : w4;
+                    n4 = landDay;
+                    nBoat = false;
+                }
+                Relax(new FNode { T = nx, Origin = nx, W2 = w2 + step, W3 = cur.W3 + step, W4 = n4, Casts = cur.Casts, Portal = cur.Portal,
+                                  CanStop = canStop, Action = action, Boat = nBoat, Parent = cur.T });
             }
         }
-        return Collect(res, main, h.InBoat);
     }
 
-    static SpellFloodResult Collect(SpellFloodResult res, Dictionary<Tile, FNode> main, bool boat)
+    static SpellFloodResult Collect(SpellFloodResult res, Dictionary<Tile, FNode> main, int movePoints)
     {
-        // No boarding edges: every node keeps the hero's boat state (w1 bit 1).
         foreach (var (t, n) in main)
         {
-            res.Nodes[t] = new FloodNode(t, n.W2, n.W3, n.CanStop, n.Action, boat, n.Landing, n.Casts, n.Portal);
+            res.Nodes[t] = new FloodNode(t, n.W2, n.W3, n.CanStop, n.Action, n.Boat, n.Landing, n.Casts, n.Portal, n.Summon, n.W2 > movePoints);
             if (n.Parent is { } p) res.Parent[t] = p;
         }
         return res;
@@ -192,19 +270,32 @@ public sealed partial class Adventure
         return l;
     }
 
+    /// <summary>The day's movement on land or at sea (settings +0x28 / +0x2c, hero vf 0xf8 by move type).</summary>
+    int DayMove(HeroState h, bool sea)
+    {
+        bool was = h.InBoat;
+        h.InBoat = sea;
+        try { return ComputeMaxMovePoints(h); }
+        finally { h.InBoat = was; }
+    }
+
     static int DistSq(Tile a, Tile b) { int dx = a.X - b.X, dy = a.Y - b.Y; return dx * dx + dy * dy; }
 
     /// <summary>
-    /// Instant Travel landing tile (exe FUN_008649f0): land for a walking hero, water for a sailing one, no object,
-    /// hero or ship on it, not blocked. Ours also wants the tile explored by the caster's player (not in the exe check).
+    /// Instant Travel landing tile (exe FUN_008649f0): cell +0x10 (object kind) 0 (our not blocked), cell type 1 / 4
+    /// (<c>TileKind.Land</c> / <c>ObjectPassable</c>) for a walking hero or 2 (<c>Water</c>) for a sailing one, no object,
+    /// hero or ship on it. No exploration test (was: the caster's player had to have explored the tile).
     /// </summary>
     public bool DimensionDoorLandingOk(HeroState h, Tile t, bool inBoat)
     {
         var f = Map.Floor(t.Floor);
         if (f == null || !f.InBounds(t.X, t.Y) || f.IsBlocked(t.X, t.Y)) return false;
-        if (f.IsWater(t.X, t.Y) != inBoat) return false;
-        if (HeroAt(t) != null || ObjectsAt(t).Any() || BoatAt(t) != null) return false;
-        var p = PlayerByIndex(h.Owner);
-        return p != null && t.Floor < p.Explored.Count && p.Explored[t.Floor][t.Y * f.Width + t.X];
+        if (f.Kind.Length == f.Width * f.Height)
+        {
+            var k = f.Kind[t.Y * f.Width + t.X];
+            if (inBoat ? k != TileKind.Water : k is not (TileKind.Land or TileKind.ObjectPassable)) return false;
+        }
+        else if (f.IsWater(t.X, t.Y) != inBoat) return false;
+        return HeroAt(t) == null && !ObjectsAt(t).Any() && BoatAt(t) == null;
     }
 }
