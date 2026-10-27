@@ -85,6 +85,14 @@ public partial class AdvCamera : Camera3D
         Apply();
     }
 
+    /// <summary>Dev: sets the pitch (degrees, clamped to the current hard limits) at once.</summary>
+    public void SetPitch(float degrees)
+    {
+        Configure();
+        Cam.Target.Pitch = Cam.Current.Pitch = Math.Clamp(Mathf.DegToRad(degrees), Cam.Hard.MinPitch, Cam.Hard.MaxPitch);
+        Apply();
+    }
+
     /// <summary>Sets the zoom distance (clamped to the current hard limits) at once.</summary>
     public void SetDistance(float distance)
     {

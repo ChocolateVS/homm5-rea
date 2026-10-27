@@ -328,7 +328,7 @@ public static class GeneratedMaps
 /// `--adventure-autoplay` (the bot plays the human side too, battles are quick combat),
 /// `--adventure-days=N` (autoplay length), `--adventure-quit-when-done`,
 /// `--adventure-floor=1` (view the underground), `--adventure-look=x,y` (camera target tile),
-/// `--adventure-yaw=deg`, `--adventure-click=x,y` (simulated click), `--adventure-fake-mouse=x,y`,
+/// `--adventure-yaw=deg`, `--adventure-pitch=deg`, `--adventure-close-boxes`, `--adventure-click=x,y` (simulated click), `--adventure-fake-mouse=x,y`,
 /// `--adventure-shots=DIR:COUNT:INTERVAL`, `--adventure-test-attack`, `--adventure-verbose`.
 /// </summary>
 public static partial class AdventureLauncher
@@ -420,11 +420,13 @@ public static partial class AdventureLauncher
             _look = new Vector2I(int.Parse(p[0]), int.Parse(p[1]));
             return true;
         }
+        if (arg.StartsWith("--adventure-pitch=")) { _pitch = float.Parse(arg["--adventure-pitch=".Length..], System.Globalization.CultureInfo.InvariantCulture); return true; }
+        if (arg == "--adventure-close-boxes") { AdventureScreen.DevAutoCloseBoxes = true; return true; }
         if (arg.StartsWith("--adventure-zoom=")) { _zoom = float.Parse(arg["--adventure-zoom=".Length..], System.Globalization.CultureInfo.InvariantCulture); return true; }
         return false;
     }
 
-    static float? _zoom;
+    static float? _zoom, _pitch;
     static int _timeLimit;
 
     static void ScheduleTests(AdventureScreen screen)
@@ -438,6 +440,7 @@ public static partial class AdventureLauncher
             if (_yaw is float y) screen.World.Camera.SetYaw(y);
         }
         if (_zoom is float z) screen.World.Camera.SetDistance(z);
+        if (_pitch is float pd) screen.World.Camera.SetPitch(pd);
         if (_testAttack) After(0.5).Timeout += screen.TestAttackNearest;
         if (_endTurn) After(0.5).Timeout += screen.EndTurn;
         if (_meetTest) After(0.5).Timeout += screen.MeetTest;
