@@ -438,10 +438,11 @@ public static partial class AdventureLauncher
         if (_endTurn) After(0.5).Timeout += screen.EndTurn;
         if (_meetTest) After(0.5).Timeout += screen.MeetTest;
         if (_visitTest is { } visit) After(0.5).Timeout += () => screen.DevVisit(visit);
-        // `--adventure-open=objectives|kingdom|heroes|puzzle`: opens that screen (screenshots).
+        // `--adventure-open=objectives|kingdom|heroes|puzzle|hero`: opens that screen (screenshots).
         if (_open is { } open) After(0.5).Timeout += () =>
         {
             if (open == "puzzle") screen.ShowPuzzleMap();
+            else if (open == "hero") { if (screen.MyHeroes().FirstOrDefault() is { } h) Hero.HeroScreen.Open(screen, h); }
             else screen.ShowMissionBox(open == "objectives" ? "TabObjectives" : "TabKingdom");
             if (open == "heroes") screen.GetNode("MissionBox").Call("ShowHeroesForDev");
         };

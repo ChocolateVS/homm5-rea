@@ -36,6 +36,27 @@ public class InstallTests(InstallFixture install) : IClassFixture<InstallFixture
     }
 
     [Fact]
+    public void HeroMeetingBackdropHasOneLayerPerPage()
+    {
+        // H5_Game.exe 006c8330 shows Back_Meet (meeting) or Back_Single and collects its Layer1..Layer5;
+        // 006c2710 shows layer i for page i (Army, Inventory, Skills, Abilities, Biography).
+        if (install.Xdb == null) return;
+        var root = new UiLoader(install.Xdb).Load("UI/HeroScreen3.(WindowScreen).xdb");
+        UiLayout.Apply(root);
+        string[] pages = { "Army", "Inventory", "Skills", "Abilities", "Biography" };
+        foreach (var back in new[] { "Back_Meet", "Back_Single" })
+            for (int i = 0; i < pages.Length; i++)
+            {
+                var layer = root.Find(back)!.Find($"Layer{i + 1}")!;
+                Assert.EndsWith($"/{pages[i]}.(WindowSimple).xdb", layer.SourcePath);
+            }
+        // The two meeting pages and the meeting bookmarks sit side by side inside the 1024-wide backdrop.
+        Assert.Equal(1024, root.Find("Back_Meet")!.Rect.W);
+        Assert.True(root.Find("HeroPage_Self2")!.Rect.X < root.Find("HeroPage_Meet")!.Rect.X);
+        Assert.True(root.Find("HeroPage_Meet")!.Rect.X < root.Find("Bookmarks_HeroMeet")!.Rect.X);
+    }
+
+    [Fact]
     public void FontsDecode()
     {
         if (install.Xdb == null) return;

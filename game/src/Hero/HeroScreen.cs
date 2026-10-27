@@ -12,10 +12,12 @@ namespace H5Reborn.Hero;
 
 /// <summary>
 /// The hero screen (UI/HeroScreen3) over the 3D stand Arenas/Interface/Hero_screen (the hero's adventure
-/// character at ph_hero). Single mode shows HeroPage_Self with Bookmarks_HeroSingle. Meeting mode (two own
-/// heroes meet on the map) shows the stock side-by-side layout: HeroPage_Self2 + Bookmarks_HeroSingle for the
-/// visiting hero on the left and HeroPage_Meet + Bookmarks_HeroMeet for the met hero on the right; creature
-/// stacks drag between the two armies and clicking an artifact passes it to the other hero's backpack.
+/// character at ph_hero). Per H5_Game.exe 006ca4e0 / 006c8330 / 006c2710: single mode shows HeroPage_Self,
+/// Bookmarks_HeroSingle and the Back_Single backdrop; meeting mode (two own heroes meet on the map) shows
+/// HeroPage_Self2 (visiting hero, left), HeroPage_Meet (met hero, right), Bookmarks_HeroMeet only and the
+/// Back_Meet backdrop. The backdrop's Layer1..Layer5 and both heroes' pages follow one page index (Army,
+/// Inventory, Skills, Abilities, Biography). Creature stacks drag between the two armies and clicking an
+/// artifact passes it to the other hero's backpack.
 /// Bookmarks switch the Army (attributes, stacks with drag-and-drop/split, war machines), Inventory (paper
 /// doll and a paged 10-slot backpack; click to wear/take off), Skills, Abilities and Biography pages of their
 /// panel. Esc or right click closes it.
@@ -44,6 +46,7 @@ public partial class HeroScreen : Control
     readonly HeroState _hero;
     readonly HeroState? _meet;
     UiScreen _ui = null!;
+    UiNode? _backdrop;
     ArmySlots _army = null!;
     readonly List<Panel> _panels = new();
 
@@ -80,8 +83,14 @@ public partial class HeroScreen : Control
         Add3DStand();
         _ui = new UiScreen("UI/HeroScreen3.(WindowScreen).xdb");
         AddChild(_ui);
-        _ui.SetVisible("Bookmarks_HeroSingle", true);
+        // 006ca4e0: the meeting keeps only Bookmarks_HeroMeet, the single screen only Bookmarks_HeroSingle.
+        _ui.SetVisible("Bookmarks_HeroSingle", _meet == null);
         _ui.SetVisible("Bookmarks_HeroMeet", _meet != null);
+        // 006c8330: the backdrop is Back_Meet in a meeting, else Back_Single (Back_Single2 belongs to the
+        // screen's +0x720 mode, not traced); its Layer1..Layer5 are the five pages' backgrounds.
+        _backdrop = _ui.Find(_meet != null ? "Back_Meet" : "Back_Single");
+        foreach (var bg in new[] { "Back_Meet", "Back_Single", "Back_Single2" }) _ui.SetVisible(bg, false);
+        if (_backdrop != null) _backdrop.Visible = true;
         _ui.SetVisible("HeroPage_Self", _meet == null);
         _ui.SetVisible("HeroPage_Self2", _meet != null);
         _ui.SetVisible("HeroPage_Meet", _meet != null);
@@ -89,7 +98,7 @@ public partial class HeroScreen : Control
             _panels.Add(new Panel(_hero, _ui.Find("HeroPage_Self")!, "Bookmarks_HeroSingle"));
         else
         {
-            var left = new Panel(_hero, _ui.Find("HeroPage_Self2")!, "Bookmarks_HeroSingle");
+            var left = new Panel(_hero, _ui.Find("HeroPage_Self2")!, "Bookmarks_HeroMeet");
             var right = new Panel(_meet, _ui.Find("HeroPage_Meet")!, "Bookmarks_HeroMeet");
             (left.Other, right.Other) = (right, left);
             _panels.Add(left);
@@ -100,7 +109,7 @@ public partial class HeroScreen : Control
         {
             var name = src?.Name.ToString() ?? "Army";
             var group = src?.GetParent()?.Name.ToString() ?? "Bookmarks_HeroSingle";
-            if (_panels.Find(p => p.Bookmarks == group) is { } panel) ShowPage(panel, name == "Invertory" ? "Inventory" : name);
+            if (_panels.Any(p => p.Bookmarks == group)) ShowPageByName(name == "Invertory" ? "Inventory" : name);
         });
         _ui.Bus.On("cast_spell", OpenSpellbook);
         _ui.Bus.On("slot_click", (_, src) => { if (src != null) ClickArtifactSlot(src); });
@@ -130,9 +139,9 @@ public partial class HeroScreen : Control
                                 Apply(new SwapWarMachinesCmd(panel.Hero.Id, other.Hero.Id, machine));
                         };
                     }
-        foreach (var p in _panels) ShowPage(p, "Army");
+        ShowPageByName("Army");
         // Dev (screenshots): `--hero-page=Inventory|Skills|Abilities|Biography` opens that bookmark.
-        if (OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--hero-page=")) is { } pg) ShowPage(_panels[0], pg["--hero-page=".Length..]);
+        if (OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--hero-page=")) is { } pg) ShowPageByName(pg["--hero-page=".Length..]);
         if (_mentor) SetUpMentor();
     }
 
@@ -187,6 +196,10 @@ public partial class HeroScreen : Control
 
     void ShowPage(Panel panel, string page)
     {
+        // 006c2710: backdrop layer i shows while the page index is i (Layer1 Army … Layer5 Biography).
+        if (_backdrop != null)
+            for (int i = 0; i < Pages.Length; i++)
+                if (_backdrop.FindChild($"Layer{i + 1}", true, false) is UiNode layer) layer.Visible = Pages[i] == page;
         foreach (var p in Pages) if (panel.Page.FindChild(p, false, false) is UiNode n) n.Visible = p == page;
         // The page-level attribute panel replaces the face/name block on the Inventory page (the Army
         // page shows attributes inside its own panel).
