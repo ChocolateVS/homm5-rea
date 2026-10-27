@@ -180,6 +180,11 @@ public sealed class UiWindow
     public UiText? Text;
     public List<UiButtonState> ButtonStates = new();
     public int ButtonGroupId;
+    /// <summary>
+    /// WindowMSButton <c>AutoChangeState</c> (instance field +0xfc, reader 00be4a60): a click first advances the
+    /// button to its next state (00b92e00), then runs the commands of the state it is in.
+    /// </summary>
+    public bool AutoChangeState;
     public string? TriggerMode;
     public Dictionary<string, string> RelatedTexts = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> RelatedTextures = new(StringComparer.OrdinalIgnoreCase);

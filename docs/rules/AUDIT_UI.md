@@ -69,6 +69,20 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 | Centre rounding (all windows) | round-half-even((parent − ⌊size⌋)/2) (00a4d630) | `UiLayout.Axis` | FIXED (integer division: 1 px off for odd differences ≡ 3 mod 4) |
 | Draw position | glyph quads at block origin + element pos, float coordinates | snapped to whole screen pixels | EXT (rasterizer detail) |
 
+## Buttons (CWindowMSButton, button code 00b91700..00b96800)
+
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| AutoChangeState | instance field +0xfc (reader 00be4a60); on the trigger (push 00b924d0 / release 00b929f0 by TriggerMode) a left click first advances the state when set (IButton slot 2 = 00b92e00: (state + 1) mod count), then runs CommandsOnEnterState of the state the button is in; right click runs CommandsOnRightClick | `UiWindow.AutoChangeState`, `UiNode.Activate` | FIXED (every multi-state button advanced, so AutoChangeState=false buttons such as the marketplace rows ran the wrong state's commands) |
+| Radio groups | in a ButtonGroupID group a selected button (state 1) does not advance; otherwise the group's previous button is reset silently (slot 3, no commands) (00b910d0); the commands still run | same (siblings form the group) | FIXED (a selected group button ran nothing) |
+
+## Common boxes (NUI::CCommonBox, 00676290 / 00676de0)
+
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Box types | 0 N_BOX2P, 1 N_BOX1P, 2 N_BOX0P, 3 N_BOX2P2, 4..7 N_BOX0P2; type 4 OK/Cancel, 5 OK_NoBind/Cancel_EnterEsc, 6 Yes/No, 7 Yes/No_NoBind | — | MATCH (doc) |
+| Question box | generic helpers 00677d80 / 00677e40 open type 2 (message) or 4 (question): OK / Cancel at the foot of `box0p2` (650×681 in the data, the size of the original box in 1024×768 virtual px) | `AdvDialogs.YesNo` | FIXED (showed the type-6 Yes/No buttons, which sit mid-box at y 233, leaving an empty half box) |
+
 ## Display
 
 | Item | Original (evidence) | Ours | Status |

@@ -70,14 +70,15 @@ public static partial class AdvDialogs
         Bind(s, Close, Close);
     }
 
-    /// <summary>A Yes/No question.</summary>
+    /// <summary>
+    /// A question box. The exe's question helpers (00677d80 / 00677e40) open N_BOX0P2 as box type 4 (00676290):
+    /// the data's OK / Cancel at the foot of the 650x681 box; Yes / No (types 6 and 7) sit mid-box and are not used here.
+    /// </summary>
     public static void YesNo(Control parent, string title, string text, Texture2D? face, Action<bool> answer)
     {
         Control? blocker = null;
         var s = Open(parent, Box0p2, b => blocker = b);
-        foreach (var n in new[] { "ButtonOk", "ButtonCancel" }) s.SetVisible(n, false);
-        foreach (var n in new[] { "ButtonYes", "ButtonNo" }) s.SetVisible(n, true);
-        EnableButtons(s, "ButtonYes", "ButtonNo");
+        EnableButtons(s, "ButtonOk", "ButtonCancel");
         s.Find("Title")?.SetText($"<h3_header><center>{title}");
         s.Find("MsgText")?.SetValue("text", text);
         SetFace(s, "Face", face);

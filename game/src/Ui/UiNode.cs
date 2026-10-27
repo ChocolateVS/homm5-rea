@@ -333,26 +333,28 @@ public partial class UiNode : Control
         if (State < Window.ButtonStates.Count && Window.ButtonStates[State].Visuals.TryGetValue("Pushed", out var v)) Fire(v.OnLeave);
     }
 
-    /// <summary>Simulates a click: advances multi-state buttons and runs the entered state's commands.</summary>
+    /// <summary>
+    /// A click (H5_Game.exe 00b924d0 / 00b929f0, by trigger mode): with AutoChangeState the button first advances
+    /// to its next state (00b92e00: (state + 1) mod count; in a radio group a selected button (state 1) stays
+    /// put and the group's previous selection is reset silently, 00b910d0); then the commands of the state the
+    /// button is in run (CommandsOnEnterState). Without AutoChangeState the state is left to code.
+    /// </summary>
     public void Activate()
     {
         UiAudio.Click?.Invoke(this);
-        if (Window.ButtonStates.Count > 1)
+        if (Window.ButtonStates.Count > 0)
         {
-            int next = (State + 1) % Window.ButtonStates.Count;
-            if (Window.ButtonGroupId != 0)
+            if (Window.AutoChangeState && Window.ButtonStates.Count > 1)
             {
-                // Radio group: the clicked button becomes active, siblings reset silently.
-                if (State != 0) return;
-                foreach (var sib in GetParent().GetChildren().OfType<UiNode>())
-                    if (sib != this && sib.Window.ButtonGroupId == Window.ButtonGroupId) sib.SetState(0);
-                next = 1;
+                if (Window.ButtonGroupId == 0) SetState((State + 1) % Window.ButtonStates.Count);
+                else if (State != 1)
+                {
+                    foreach (var sib in GetParent().GetChildren().OfType<UiNode>())
+                        if (sib != this && sib.Window.ButtonGroupId == Window.ButtonGroupId) sib.SetState(0);
+                    SetState((State + 1) % Window.ButtonStates.Count);
+                }
             }
-            SetState(next, fireCommands: true);
-        }
-        else if (Window.ButtonStates.Count == 1)
-        {
-            Fire(Window.ButtonStates[0].OnEnter);
+            Fire(Window.ButtonStates[State].OnEnter);
         }
         Clicked?.Invoke(this);
     }

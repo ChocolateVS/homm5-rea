@@ -35,6 +35,7 @@ public sealed class UiLoader
             Priority = (int?)inst.Element("Priority") ?? 0,
             TooltipPath = Path(inst.Element("TooltipFileRef"), file),
             ButtonGroupId = (int?)inst.Element("ButtonGroupID") ?? 0,
+            AutoChangeState = H5.Core.Data.XmlHelpers.BoolValue(inst.Element("AutoChangeState")),
         };
 
         var sharedRef = inst.Element("Shared");

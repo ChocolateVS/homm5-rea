@@ -112,3 +112,19 @@ public class TextLayoutTests(InstallFixture install) : IClassFixture<InstallFixt
         Assert.Equal((0, UiLayout.HalfEven(40 - 21) + 7), UiLayout.PlaceText(p, new UiRect(0, 0, 100, 40), 30, 21));
     }
 }
+
+/// <summary>WindowMSButton AutoChangeState (instance +0xfc, reader 00be4a60; click handling 00b924d0 / 00b929f0).</summary>
+public class ButtonStateTests(InstallFixture install) : IClassFixture<InstallFixture>
+{
+    [Fact]
+    public void AutoChangeStateIsLoadedPerButton()
+    {
+        if (install.Xdb == null) return;
+        var loader = new UiLoader(install.Xdb);
+        var check = loader.Load("UI/GameOptions/Templates/CheckBox/Button.(WindowMSButton).xdb");
+        Assert.True(check.AutoChangeState);
+        var rate = loader.Load("UI/Marketplace2/Resource/Rate_0.(WindowMSButton).xdb");
+        Assert.False(rate.AutoChangeState);
+        Assert.Equal(2, rate.ButtonStates.Count);
+    }
+}

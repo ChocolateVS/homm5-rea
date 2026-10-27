@@ -64,7 +64,7 @@ public sealed class MarketController
         // Selection foreground) none. A click runs the current state's commands without advancing, so only an
         // unselected button selects. The controller (FUN_00629a90 / 0062e784) then calls the model: give
         // (0062b6c0) or get (0062b6e0) resource, each resetting the amount to 0; the other choice is kept.
-        // UiNode advances multi-state buttons on click, so the click is read here from the state it left.
+        // UiNode honours AutoChangeState (UiNode.Activate), so the state is still the one clicked.
         for (int i = 0; i < 7; i++)
         {
             int k = i;
@@ -97,7 +97,7 @@ public sealed class MarketController
     }
 
     /// <summary>The state a clicked two-state button was in before UiNode advanced it.</summary>
-    static int LeftState(UiNode n) => n.Window.ButtonStates.Count > 1 ? (n.State + n.Window.ButtonStates.Count - 1) % n.Window.ButtonStates.Count : 0;
+    static int LeftState(UiNode n) => n.State;
 
     void SelectGive(int i)
     {
