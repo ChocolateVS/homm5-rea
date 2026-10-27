@@ -102,6 +102,19 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 | School change | 00685f60: index reset to 0, the page turns forward when the new bookmark lies after the old one, else backward; same school toggles a flag only | same | FIXED (no turn / parity hack) |
 | Keyboard | input_a2.cfg spellbook_screen: A/LEFT previous, D/RIGHT next page; W/S/UP/DOWN bookmark ∓1 ((school ± 1) mod 7, 006860c0/006860e0) | pages | FIXED; bookmarks GAP |
 
+## Hero screen layout (UI/HeroScreen3, setup 006ca4e0)
+
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Pages | 006ca4e0: left page `HeroPage_Self2` when 006d0940 (screen +0x720 set) or a second hero is shown (006cbde0, +0x1b4), else `HeroPage_Self`; right page `HeroPage_Meet` (shown only with the second hero, 006c2710) | `HeroScreen._Ready` | MATCH |
+| Bookmarks | one group drives the screen: `Bookmarks_HeroMeet` with a second hero, else `Bookmarks_HeroSingle` (its buttons collected by 006c8070); the other group is hidden (vfunc 0x44(0)) | same | FIXED (both groups were shown in a meeting, each switching only its own half) |
+| Current page | 006c2ea0 → 006c1f70 stores one page index (+0x708) for the whole screen; 006c2710 shows Army/Inventory/Skills/Abilities/Biography of both halves for it | `ShowPageByName` on every bookmark click | FIXED |
+| Backdrop | 006c8330: `Back_Single2` when 006d0940, else `Back_Meet` with a second hero, else `Back_Single`, made visible; its Layer1..Layer5 pushed to +0x4bc; 006c2710 shows Layer n only while page n is current | `_back` + layers in `ShowPage` | FIXED (no backdrop was shown: black screen behind the meeting pages) |
+| `Back_Single2` / `HeroPage_Self2` single mode | chosen when screen +0x720 is set (006d0940) | never | GAP (+0x720 not traced) |
+| Screen extent at 16:9 | windows are LOW_END horizontally (HeroScreen3 data), so the meeting layout spans x 0..869 virtual px; the exe's virtual screen is 768 high (1365 wide at 16:9), ours is the real pixel size at UI scale 1 | — | GAP (the global UI-scale row under Display; this is why the pages look pushed left at 1920×1080) |
+| HeroInfo "Experience:" label | `Description` (HeroDescription.txt) merges instance Position (132,36) with the shared VerAllign HIGH_END / size 203×26: 128 − 26 + 36 = y 138 in HeroInfo, overlapping the Army page's "Attributes" header (also before the text-layout change, cd62bc7^); 006bf580 caches it (struct +8) and 006bed90 never writes it | data placement as is | GAP (the exe's placement merge of instance vs shared fields is not traced; 00a4d630 adds Position on HIGH_END) |
+| 3D stand in a meeting | stand scene Arenas/Interface/Hero_screen; the exe's 006c05e0 / 006c72e0 path not traced | stand without the hero (black where nothing is drawn) | GAP |
+
 ## Display
 
 | Item | Original (evidence) | Ours | Status |

@@ -441,8 +441,8 @@ public static partial class AdventureLauncher
         // `--adventure-open=objectives|kingdom|heroes|puzzle|hero`: opens that screen (screenshots).
         if (_open is { } open) After(0.5).Timeout += () =>
         {
-            if (open == "puzzle") screen.ShowPuzzleMap();
-            else if (open == "hero") { if (screen.MyHeroes().FirstOrDefault() is { } h) Hero.HeroScreen.Open(screen, h); }
+            if (open == "hero") { if (screen.Session.S.Hero(screen.SelectedHeroId) is { } h) Hero.HeroScreen.Open(screen, h); }
+            else if (open == "puzzle") screen.ShowPuzzleMap();
             else screen.ShowMissionBox(open == "objectives" ? "TabObjectives" : "TabKingdom");
             if (open == "heroes") screen.GetNode("MissionBox").Call("ShowHeroesForDev");
         };
