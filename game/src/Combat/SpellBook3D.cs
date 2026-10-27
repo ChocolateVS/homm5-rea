@@ -219,17 +219,17 @@ public partial class SpellBook3D : Control
 
     List<Entry> SchoolSpells() => _all.Where(e => _orcs || _adventure || SchoolOf(e) == _school).ToList();
 
+    // H5_Game.exe 00686020 / 00686080: the index of the first shown spell (+0x190[school], reset to 0 when the school is
+    // picked, 00685f60);
+    // a spread shows six spells and Next / Prev move it by six while spells remain / it is above 0.
     int PageCount => Math.Max(1, (SchoolSpells().Count + 5) / 6);
 
-    int[] SetFor(int page) => page % 2 == 0 ? _d.First : _d.Second;
-
-    void FillSet(int[] set, int page)
+    void FillSet(int[] set, IReadOnlyList<Entry?> entries)
     {
-        var spells = SchoolSpells().Skip(page * 6).Take(6).ToList();
         for (int i = 0; i < set.Length; i++)
         {
             if (!_slots.TryGetValue(set[i], out var slot)) continue;
-            Entry? e = i < spells.Count ? spells[i] : null;
+            Entry? e = i < entries.Count ? entries[i] : null;
             Texture2D? tex = null;
             if (e != null)
             {
@@ -247,9 +247,24 @@ public partial class SpellBook3D : Control
         }
     }
 
+    /// <summary>The six spells of spread <paramref name="page"/> (null where there is none).</summary>
+    Entry?[] Spread(int page)
+    {
+        var spells = SchoolSpells();
+        return Enumerable.Range(page * 6, 6).Select(i => i < spells.Count ? spells[i] : null).ToArray();
+    }
+
     void RefreshPage()
     {
-        FillSet(SetFor(_page), _page);
+        // 00685270 without a turn: the static pages (PartSpellsFirstPage) show the spread, the turning page
+        // (PartSpellsSecondPage) is empty.
+        FillSet(_d.First, Spread(_page));
+        FillSet(_d.Second, Array.Empty<Entry?>());
+        RefreshMarks();
+    }
+
+    void RefreshMarks()
+    {
         if (_slots.TryGetValue(_d.SP, out var sp))
         {
             var markup = (Text(_orcs ? "OrcSpellBookMark" : "SpellBookMark") is { Length: > 0 } t ? t : Text("SpellBookMark") ?? "")
@@ -295,15 +310,10 @@ public partial class SpellBook3D : Control
 
     // ---------------------------------------------------------------- input
 
-    /// <summary>Screen rectangle of a part's flat, resting position (bind pose, or the page's resting side).</summary>
+    /// <summary>Screen rectangle of a part in its flat, resting (bind pose) position.</summary>
     Rect2? ScreenRect(int part)
     {
-        int index = Array.IndexOf(SetFor(_page), part);
-        // Turning-page slots rest over the book's right/left page: use those parts' rectangles.
-        IEnumerable<int> geometry = index >= 0
-            ? new[] { index < 3 ? _d.First[index] : _d.Second[index] }
-            : new[] { part };
-        var (min, max) = Bounds(geometry);
+        var (min, max) = Bounds(new[] { part });
         if (min.X > max.X) return null;
         Rect2? r = null;
         foreach (var x in new[] { min.X, max.X })
@@ -318,12 +328,24 @@ public partial class SpellBook3D : Control
     int? PartAt(Vector2 pos, IEnumerable<int> parts) =>
         parts.Where(p => p >= 0).Cast<int?>().FirstOrDefault(p => ScreenRect(p!.Value) is { } r && r.HasPoint(pos));
 
+    /// <summary>input_a2.cfg spellbook_screen: input_previous_page / input_next_page run the Prev / Next handlers
+    /// (H5_Game.exe 00686080 / 00686020). GAP: input_bookmark_up/down (school ±1 over the exe's 7 bookmarks).</summary>
+    public override void _UnhandledKeyInput(InputEvent e)
+    {
+        if (_turning || e is not InputEventKey { Pressed: true, Echo: false } k) return;
+        foreach (var a in Interaction.KeyBindings.Actions("spellbook_screen", k))
+        {
+            if (a == "input_next_page" && _page + 1 < PageCount) { _ = Turn(+1); AcceptEvent(); return; }
+            if (a == "input_previous_page" && _page > 0) { _ = Turn(-1); AcceptEvent(); return; }
+        }
+    }
+
     public override void _GuiInput(InputEvent e)
     {
         if (_turning) return;
         if (e is InputEventMouseMotion mm)
         {
-            var hover = PartAt(mm.Position, SetFor(_page));
+            var hover = PartAt(mm.Position, _d.First);
             if (hover != _hoverPart)
             {
                 if (_hoverPart is int old && _slots.TryGetValue(old, out var o)) o.Mat.EmissionEnabled = false;
@@ -350,33 +372,53 @@ public partial class SpellBook3D : Control
             int i = Array.IndexOf(_d.Schools, tab);
             if (i >= 0 && i < SchoolOrder.Length && SchoolOrder[i] != _school)
             {
+                // 00685f60: the new school starts at its first spread and the page turns forward when its bookmark
+                // lies after the current one, backward otherwise.
+                int from = Array.IndexOf(SchoolOrder, _school);
+                var old = Spread(_page);
                 _school = SchoolOrder[i];
-                if (_page % 2 == 1) { _page = 0; _ = Turn(-1, toPage: 0); }
-                else { _page = 0; RefreshPage(); }
+                _ = Turn(i > from ? +1 : -1, toPage: 0, oldSpread: old);
             }
             return;
         }
-        if (PartAt(pos, SetFor(_page)) is int slotPart && _slots.TryGetValue(slotPart, out var slot) && slot.E?.Option is { } option)
+        if (PartAt(pos, _d.First) is int slotPart && _slots.TryGetValue(slotPart, out var slot) && slot.E?.Option is { } option)
         {
             Chosen?.Invoke(option);
             Close();
         }
     }
 
-    async Task Turn(int dir, int? toPage = null)
+    async Task Turn(int dir, int? toPage = null, Entry?[]? oldSpread = null)
     {
         _turning = true;
         int target = toPage ?? _page + dir;
-        // The page being revealed is filled before the turn so it shows during the animation.
-        FillSet(SetFor(target), target);
+        // 00685270 during a turn (verified against the model's page parts): PartSpellsFirstPage = static left page
+        // (3) + the turning sheet's front (3, resting on the right), PartSpellsSecondPage = the sheet's back (3, lands
+        // on the left) + the page under the sheet (3, right). Forward (page01): First = old spread, Second = new;
+        // backward (page02, the sheet comes back from the left): First = new, Second = old.
+        var (old, neu) = (oldSpread ?? Spread(_page), Spread(target));
         var kind = dir > 0 ? "page01" : "page02";
-        if (_book.Has(kind))
+        if (dir > 0)
         {
-            _book.Play(kind);
-            await ToSignal(_book.Player, AnimationMixer.SignalName.AnimationFinished);
+            if (oldSpread != null) FillSet(_d.First, old);
+            FillSet(_d.Second, neu);
         }
+        else FillSet(_d.Second, old);
+        if (_book.Has(kind)) _book.Play(kind);
+        if (dir < 0) FillSet(_d.First, neu);
+        if (_book.Has(kind)) await ToSignal(_book.Player, AnimationMixer.SignalName.AnimationFinished);
         _page = target;
-        RefreshPage();
+        // Back at rest the static pages show the new spread; reuse the rendered pages instead of rendering again.
+        if (dir > 0)
+            for (int i = 0; i < _d.First.Length && i < _d.Second.Length; i++)
+                if (_slots.TryGetValue(_d.Second[i], out var from) && _slots.TryGetValue(_d.First[i], out var to))
+                {
+                    to.Mat.AlbedoTexture = from.Mat.AlbedoTexture;
+                    to.Mat.AlbedoColor = from.Mat.AlbedoColor;
+                    _slots[_d.First[i]] = (from.E, to.Mat);
+                }
+        // The sheet keeps its faces: idle00 blends in from the turn's last pose, where they are still visible.
+        RefreshMarks();
         if (_book.Has("idle00")) _book.Play("idle00", loop: true);
         _turning = false;
     }

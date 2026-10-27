@@ -93,6 +93,15 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 | List content | perk: class prerequisites (SkillPrerequisites for the hero class) or the basic skill; skill: list built by 00876150 | perk as traced; skill: its standard perks | GAP (00876150 not traced) |
 | Tooltip size | tooltip manager (UI/Tooltips/Main TooltipContext) | width from the Name row (230 + 2·13) | GAP |
 
+## Spellbook pages (NUI::CSpellBook 00682000..0068b000, SpellBookDesc)
+
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Spread | six spells per spread from the school's first-spell index (+0x190[school]); Next (MB_Button_Next / input_next_page, 00686020) +6 while index + 6 < count, Prev (00686080) −6 while > 0 | `SpellBook3D` | MATCH |
+| Page parts during a turn | 00685270: forward First ← old spread, Second ← new; backward First ← new, Second ← old; without a turn First ← spread, Second empty. Model check: First = static left page + turning sheet front, Second = sheet back + the page under the sheet | same | FIXED (pages alternated First/Second by parity, so after a turn the book showed the old spread again: "pages don't flip") |
+| School change | 00685f60: index reset to 0, the page turns forward when the new bookmark lies after the old one, else backward; same school toggles a flag only | same | FIXED (no turn / parity hack) |
+| Keyboard | input_a2.cfg spellbook_screen: A/LEFT previous, D/RIGHT next page; W/S/UP/DOWN bookmark ∓1 ((school ± 1) mod 7, 006860c0/006860e0) | pages | FIXED; bookmarks GAP |
+
 ## Display
 
 | Item | Original (evidence) | Ours | Status |
