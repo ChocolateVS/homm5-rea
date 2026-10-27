@@ -79,7 +79,19 @@ public sealed partial class Adventure
         if (c.Garrison == h.Garrisoned) return null;
         if (c.Garrison)
         {
-            if (S.Heroes.Any(x => x.Alive && x != h && x.InTown == t.Object && x.Garrisoned)) return "another hero holds the garrison";
+            // The town hero command (constructor 00435cc0, execute 004f58e0): the visiting hero goes into the garrison
+            // (004f4200) and a hero already holding it comes out as the visitor (town vf 0x14). Only the AI
+            // (FUN_009c3f20) sends it with a garrison hero present; our town screen does not.
+            var holder = S.Heroes.FirstOrDefault(x => x.Alive && x != h && x.InTown == t.Object && x.Garrisoned);
+            if (holder != null)
+            {
+                if (t.Garrison.Live().Any()) return "another hero holds the garrison";
+                h.Garrisoned = true;
+                holder.Garrisoned = false;
+                Emit(new ArmyChanged(h.Id, t.Object));
+                Emit(new ArmyChanged(holder.Id, t.Object));
+                return null;
+            }
             var merged = h.Army.Select(s => s == null ? null : new Stack(s.Creature, s.Count)).ToArray();
             foreach (var s in t.Garrison.Live())
                 if (!merged.TryAdd(s.Creature, s.Count)) return "not enough army slots to merge the garrison";

@@ -51,15 +51,15 @@ public sealed partial class OriginalAdventureAI
     }
 
     /// <summary>
-    /// FUN_00cde140 (hero to hero): repeat — V0 = the taker's estimate (FUN_004eb050); every giver stack is tried
-    /// (FUN_00cdd180: into the taker's slot of that creature, else its first free slot; the giver hero's last stack
-    /// leaves one creature behind) and undone; the stack with the largest gain V1 − V0 &gt; 0 (strict, the first on ties)
-    /// is moved for good; stop when none gains. <paramref name="move"/> performs one move (real or on a copy).
-    /// GAP-details: the stack offload FUN_00cdcfd0, the final arrangement FUN_00cddfd0 and the seventh-slot placement
-    /// FUN_00cdab70 are not ported.
+    /// FUN_00cde140 (hero to hero): first the offload FUN_00cdcfd0; then repeat — V0 = the taker's estimate
+    /// (FUN_004eb050); every giver stack is tried (FUN_00cdd180, slot by FUN_00cdacd0 — see <see cref="PlanMove"/>) and
+    /// undone; the stack with the largest gain V1 − V0 &gt; 0 (strict, the first on ties) is moved for good; stop when
+    /// none gains; last the taker's arrangement FUN_00cddfd0. <paramref name="real"/>: through commands (else directly,
+    /// on a simulation).
     /// </summary>
-    void GreedyMerge(Engine.Adventure g, AdventureAiStats st, HeroState taker, HeroState giver, Func<int, int, int, bool> move)
+    void GreedyMerge(Engine.Adventure g, AdventureAiStats st, HeroState taker, HeroState giver, bool real)
     {
+        Offload(g, st, taker, giver, real);
         for (int round = 0; round < 64; round++)
         {
             double v0 = HeroEstimate(g, st, taker);
@@ -67,37 +67,157 @@ public sealed partial class OriginalAdventureAI
             double bestD = 0.0;
             for (int i = 0; i < Army.Slots; i++)
             {
-                if (PlanMove(taker, giver, i) is not { } m) continue;
+                if (PlanMove(g, st, taker, giver, i) is not { } m) continue;
                 var saveT = Snapshot(taker.Army);
                 var saveG = Snapshot(giver.Army);
-                ApplyMove(taker, giver, i, m.To, m.Count);
+                ApplyMove(taker, giver, i, m);
                 double d = (double)HeroEstimate(g, st, taker) - v0;
                 Restore(taker.Army, saveT);
                 Restore(giver.Army, saveG);
                 if (bestD < d) { bestD = d; best = i; }
             }
-            if (best < 0 || PlanMove(taker, giver, best) is not { } bm || !move(best, bm.To, bm.Count)) break;
+            if (best < 0 || PlanMove(g, st, taker, giver, best) is not { } bm) break;
+            if (!real) ApplyMove(taker, giver, best, bm);
+            else if (!(bm.Swap
+                ? Send(g, new SwapStacksCmd(giver.Id, -1, best, taker.Id, -1, bm.To) { Player = taker.Owner })
+                : Send(g, new TransferStackCmd(giver.Id, -1, best, taker.Id, -1, bm.To, bm.Count) { Player = taker.Owner })).Ok) break;
         }
+        Arrange(g, taker, real);
     }
 
-    /// <summary>FUN_00cdd180 / 00cdacd0 for one giver slot: the target slot and the count, or null.</summary>
-    static (int To, int Count)? PlanMove(HeroState taker, HeroState giver, int from)
+    /// <summary>A planned move of one giver stack: the taker slot, the count, and whether it displaces another creature.</summary>
+    public readonly record struct MovePlan(int To, int Count, bool Swap);
+
+    /// <summary>
+    /// FUN_00cdd180 with the slot of FUN_00cdacd0 for one giver slot: the taker's slot of that creature (FUN_0045b0e0);
+    /// else, while the taker has fewer than 6 stacks, its first free slot (FUN_0045a290); else FUN_00cdab70 (so the
+    /// seventh slot is never filled this way). An empty or same-creature slot takes the whole stack, or all but one
+    /// creature when the giver hero has at most one stack (0 → no move); a slot of another creature (FUN_00cdab70) takes
+    /// the whole stack and the displaced stack goes into the giver's slot (giver army vf 0x10).
+    /// </summary>
+    public static MovePlan? PlanMove(Engine.Adventure g, AdventureAiStats st, HeroState taker, HeroState giver, int from)
     {
         if (giver.Army[from] is not { Count: > 0 } s) return null;
         int to = Array.FindIndex(taker.Army, x => x is { Count: > 0 } && x.Creature == s.Creature);
-        if (to < 0) to = Array.FindIndex(taker.Army, x => x is not { Count: > 0 });
+        if (to < 0 && taker.Army.StackCount() < 6) to = Array.FindIndex(taker.Army, x => x is not { Count: > 0 });
+        if (to < 0) to = WeakestSlot(g, st, taker, IsShooter(g, s));
         if (to < 0) return null;
+        if (taker.Army[to] is { Count: > 0 } t && t.Creature != s.Creature) return new MovePlan(to, s.Count, true);
         int n = giver.Army.StackCount() <= 1 ? s.Count - 1 : s.Count;
-        return n > 0 ? (to, n) : null;
+        return n > 0 ? new MovePlan(to, n, false) : null;
     }
 
-    static void ApplyMove(HeroState taker, HeroState giver, int from, int to, int n)
+    /// <summary>Creature record +0x4c &gt; 0 (FUN_004bb150): a shooter.</summary>
+    static bool IsShooter(Engine.Adventure g, Stack s) => g.Core.Creatures.TryGetValue(s.Creature, out var c) && c.Shots > 0;
+
+    /// <summary>
+    /// FUN_00cdab70(army, incoming is a shooter): the occupied slot with the lowest stack value FUN_004e9b90 (with the
+    /// taker hero; strict &lt;, the first on ties); an incoming shooter replaces only shooters when the army has 4 or
+    /// more, an incoming non-shooter only non-shooters when the army has exactly one shooter. −1 when none.
+    /// </summary>
+    public static int WeakestSlot(Engine.Adventure g, AdventureAiStats st, HeroState taker, bool shooter)
+    {
+        int shooters = taker.Army.Count(x => x is { Count: > 0 } && IsShooter(g, x));
+        bool onlyShooters = shooter && shooters >= 4, keepShooter = !shooter && shooters == 1;
+        int best = -1;
+        double bestV = 0.0;
+        for (int i = 0; i < taker.Army.Length; i++)
+        {
+            if (taker.Army[i] is not { Count: > 0 } x) continue;
+            if (onlyShooters && !IsShooter(g, x)) continue;
+            if (keepShooter && IsShooter(g, x)) continue;
+            double v = StackValue(g, st, x, taker);
+            if (best == -1 || v < bestV) { best = i; bestV = v; }
+        }
+        return best;
+    }
+
+    static void ApplyMove(HeroState taker, HeroState giver, int from, MovePlan m)
     {
         var s = giver.Army[from]!;
-        if (taker.Army[to] is { Count: > 0 } t) t.Count += n;
-        else taker.Army[to] = new Stack(s.Creature, n) { Artifact = n == s.Count ? s.Artifact : null };
+        if (m.Swap) { (giver.Army[from], taker.Army[m.To]) = (taker.Army[m.To], s); return; }
+        int n = m.Count;
+        if (taker.Army[m.To] is { Count: > 0 } t) t.Count += n;
+        else taker.Army[m.To] = new Stack(s.Creature, n) { Artifact = n == s.Count ? s.Artifact : null };
         s.Count -= n;
         if (s.Count <= 0) giver.Army[from] = null;
+    }
+
+    /// <summary>
+    /// FUN_00cdcfd0 (before the merge): only while the giver has fewer than 7 stacks and the taker more than one; V =
+    /// the taker's estimate, once; each taker stack in slot order is taken out and the estimate recomputed (only its
+    /// low 32 bits are loaded, FILD dword at 0x00cdd102): when V' − V &gt; 0 the stack goes to the giver (army add
+    /// vf 0xc(stack, −1), 004ef7e4..004ef881: the giver's slot of that creature, else its first free one) and the scan
+    /// goes on while the two counts still allow it (FUN_00cd9c90); else it goes back into its slot.
+    /// </summary>
+    void Offload(Engine.Adventure g, AdventureAiStats st, HeroState taker, HeroState giver, bool real)
+    {
+        static bool Allowed(HeroState t, HeroState gv) => gv.Army.StackCount() < 7 && t.Army.StackCount() > 1;
+        if (!Allowed(taker, giver)) return;
+        long v = HeroEstimate(g, st, taker);
+        for (int i = 0; i < Army.Slots; i++)
+        {
+            if (taker.Army[i] is not { Count: > 0 } s) continue;
+            if (!Allowed(taker, giver)) return;
+            taker.Army[i] = null;
+            double d = (double)unchecked((int)HeroEstimate(g, st, taker)) - (double)v;
+            taker.Army[i] = s;
+            if (!(d > 0.0)) continue;
+            int to = Array.FindIndex(giver.Army, x => x is { Count: > 0 } && x.Creature == s.Creature);
+            if (to < 0) to = Array.FindIndex(giver.Army, x => x is not { Count: > 0 });
+            if (to < 0) return;
+            if (!real)
+            {
+                if (giver.Army[to] is { Count: > 0 } x) x.Count += s.Count; else giver.Army[to] = s;
+                taker.Army[i] = null;
+            }
+            else if (!Send(g, new TransferStackCmd(taker.Id, -1, i, giver.Id, -1, to, s.Count) { Player = taker.Owner }).Ok) return;
+            if (!Allowed(taker, giver)) return;
+        }
+    }
+
+    /// <summary>
+    /// FUN_00cddfd0 (the taker's army at the end): every slot is emptied; the shooters (FUN_004bb150), in slot order,
+    /// go to slots 0, 2, 4, 6, 1, 3, 5; the other stacks, in slot order, into the first free slots. Returns, per slot,
+    /// the old slot index that ends there (−1 empty).
+    /// </summary>
+    public static int[] Arrangement(Engine.Adventure g, Stack?[] army)
+    {
+        var target = Enumerable.Repeat(-1, army.Length).ToArray();
+        var left = new bool[army.Length];
+        int k = 0;
+        for (int i = 0; i < army.Length; i++)
+        {
+            if (army[i] is not { Count: > 0 } s) continue;
+            if (!IsShooter(g, s)) { left[i] = true; continue; }
+            target[k] = i;
+            k += 2;
+            if (k > 6) k = 1;
+        }
+        int j = 0;
+        for (int i = 0; i < army.Length; i++)
+        {
+            if (!left[i]) continue;
+            while (target[j] != -1) j++;
+            target[j] = i;
+        }
+        return target;
+    }
+
+    /// <summary>Applies <see cref="Arrangement"/> by swaps inside the army (SwapStacksCmd when real).</summary>
+    void Arrange(Engine.Adventure g, HeroState h, bool real)
+    {
+        var target = Arrangement(g, h.Army);
+        var cur = Enumerable.Range(0, h.Army.Length).ToArray();
+        for (int p = 0; p < target.Length; p++)
+        {
+            if (target[p] < 0) continue;
+            int q = Array.IndexOf(cur, target[p]);
+            if (q == p) continue;
+            (cur[p], cur[q]) = (cur[q], cur[p]);
+            if (!real) (h.Army[p], h.Army[q]) = (h.Army[q], h.Army[p]);
+            else if (!Send(g, new SwapStacksCmd(h.Id, -1, p, h.Id, -1, q) { Player = h.Owner }).Ok) return;
+        }
     }
 
     static Stack?[] Snapshot(Stack?[] a) =>
@@ -136,7 +256,7 @@ public sealed partial class OriginalAdventureAI
             double before = HeroEstimate(sim, st, c);
             if (TransferSides(sim, st, c, s) is { } ts)
             {
-                GreedyMerge(sim, st, ts.Taker, ts.Giver, (from, to, n) => { ApplyMove(ts.Taker, ts.Giver, from, to, n); return true; });
+                GreedyMerge(sim, st, ts.Taker, ts.Giver, real: false);
                 HandOverMachines(ts.Taker, ts.Giver);
             }
             double after = HeroEstimate(sim, st, c);
@@ -157,8 +277,7 @@ public sealed partial class OriginalAdventureAI
     public void HeroesMeet(Engine.Adventure g, AdventureAiStats st, HeroState a, HeroState b)
     {
         if (TransferSides(g, st, a, b) is not { } ts) return;
-        GreedyMerge(g, st, ts.Taker, ts.Giver, (from, to, n) =>
-            Send(g, new TransferStackCmd(ts.Giver.Id, -1, from, ts.Taker.Id, -1, to, n) { Player = ts.Taker.Owner }).Ok);
+        GreedyMerge(g, st, ts.Taker, ts.Giver, real: true);
         HandOverMachines(ts.Taker, ts.Giver);
         UpdateSupplierRole(g, st, ts.Giver, ts.Taker);
         UpdateSupplierRole(g, st, ts.Taker, ts.Giver);

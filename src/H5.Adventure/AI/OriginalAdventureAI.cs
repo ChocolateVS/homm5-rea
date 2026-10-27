@@ -147,8 +147,8 @@ public sealed partial class OriginalAdventureAI
     /// partner logic a command instead (FUN_0086b5e0 returns true, no garrison move); otherwise an AI-enabled hero
     /// standing in its own town whose garrison the scripts did not block (town vf 0x114, BlockTownGarrisonForAI) is
     /// put into the garrison (FUN_00435cc0 with "into garrison" true).
-    /// GAP-details: the exe command swaps the visitor with a garrisoned hero; our GarrisonHeroCmd refuses when the
-    /// garrison already holds a hero. Our turn ends a hero on our own conditions (no destination, a failed move, under
+    /// A hero already in the garrison comes out as the visitor (the command swaps, 004f58e0).
+    /// GAP-details: our turn ends a hero on our own conditions (no destination, a failed move, under
     /// 100 move points, 8 steps), not only when the search is exhausted; the role-2/3 command 0086fc40 is not ported.
     /// </summary>
     public static void FinishHero(Engine.Adventure g, HeroState h, HeroRole role)
@@ -164,8 +164,9 @@ public sealed partial class OriginalAdventureAI
     /// least two heroes that are not a town's garrison hero (player vf 0xc8 = 004fc700), no enemy threatens the town
     /// with a path whose last value / 2666 &lt; 1 (CPlayerAIInformation vf 0x64(town, 1) = 00c28470) and the hero's
     /// estimate is not below the garrison hero's: the hero goes into the garrison (FUN_00435cc0 mode 3).
-    /// GAP-details: the exe swaps with a garrison hero, ours refuses (GarrisonHeroCmd); the permission test FUN_00c21580
-    /// is left to the command; the threat path value is taken as our path cost.
+    /// A garrison hero already there comes out as the visitor (the command 00435cc0 / 004f58e0 swaps; GarrisonHeroCmd).
+    /// GAP-details: the permission test FUN_00c21580 is left to the command; the threat path value is taken as our path
+    /// cost.
     /// </summary>
     public void GarrisonHeroInTown(Engine.Adventure g, AdventureAiStats st, AdventureDifficulty diff, HeroState h, TownState t)
     {
