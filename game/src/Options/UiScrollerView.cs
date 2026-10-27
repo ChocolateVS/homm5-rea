@@ -4,10 +4,10 @@ using H5Reborn.Ui;
 namespace H5Reborn.Options;
 
 /// <summary>
-/// The stock horizontal scroll bar (UI/Common/HorisontalScrollBar: lower/greater arrow
-/// buttons and a lever on a slider) used by OPTION_SCROLLER entries, stepping through a
-/// fixed number of positions. Drawn over the template's ScrollBar window; markers are
-/// drawn by <see cref="MarkersView"/> in the template's MarkersBlock.
+/// Code-driven discrete bar (a fixed number of positions). Added under a WindowScrollBar node it binds to that
+/// node (<see cref="UiScrollBar"/>, the generic port of the exe's scroll bar with its data-defined parts) and
+/// only forwards: Setup → special positions, Position, Enabled, PositionChanged. Elsewhere it draws the stock
+/// horizontal bar itself (UI/Common/HorisontalScrollBar). Markers are drawn by <see cref="MarkersView"/>.
 /// </summary>
 public partial class UiScrollerView : Control
 {
@@ -18,7 +18,19 @@ public partial class UiScrollerView : Control
     int _pressed; // -1 lower, 1 greater, 0 none
 
     public event Action<int>? PositionChanged;
-    public int Position => _pos;
+    public int Position => _bar?.Position ?? _pos;
+    UiScrollBar? _bar;
+
+    public override void _EnterTree()
+    {
+        if (_bar != null || GetParent() is not UiScrollBar bar) return;
+        _bar = bar;
+        MouseFilter = MouseFilterEnum.Ignore;
+        bar.Setup(_count, _pos);
+        bar.Enabled = _enabled;
+        bar.PositionChanged += p => { _pos = p; PositionChanged?.Invoke(p); };
+        QueueRedraw();
+    }
 
     public UiScrollerView()
     {
@@ -42,13 +54,14 @@ public partial class UiScrollerView : Control
     {
         _count = Math.Max(1, count);
         _pos = Math.Clamp(position, 0, _count - 1);
+        _bar?.Setup(_count, _pos);
         QueueRedraw();
     }
 
     public bool Enabled
     {
         get => _enabled;
-        set { _enabled = value; QueueRedraw(); }
+        set { _enabled = value; if (_bar != null) _bar.Enabled = value; QueueRedraw(); }
     }
 
     float ArrowW => Size.Y; // square arrow buttons at both ends (16x16 in the stock bar)
@@ -59,6 +72,7 @@ public partial class UiScrollerView : Control
 
     public override void _Draw()
     {
+        if (_bar != null) return;
         float h = Size.Y;
         Draw(_enabled ? (_pressed < 0 ? _lowerPushed : _lower) : _lowerDisabled, new Rect2(0, 0, ArrowW, h));
         Draw(_enabled ? (_pressed > 0 ? _greaterPushed : _greater) : _greaterDisabled, new Rect2(Size.X - ArrowW, 0, ArrowW, h));
@@ -69,7 +83,7 @@ public partial class UiScrollerView : Control
 
     public override void _GuiInput(InputEvent e)
     {
-        if (!_enabled) return;
+        if (!_enabled || _bar != null) return;
         switch (e)
         {
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } mb:

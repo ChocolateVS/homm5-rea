@@ -189,6 +189,11 @@ public sealed class UiWindow
     public Dictionary<string, string> RelatedTexts = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> RelatedTextures = new(StringComparer.OrdinalIgnoreCase);
     public List<UiWindow> Children = new();
+    /// <summary>
+    /// Set on sub-windows a control builds from its Shared references (UiLoader.LoadParts): "ButtonLower",
+    /// "ButtonGreater", "Slider", "Lever", "Border", "ScrollBar"; null for ordinary children.
+    /// </summary>
+    public string? Part;
     /// <summary>Instance and Shared elements for type-specific fields not modelled here.</summary>
     public XElement? RawInstance, RawShared;
 
@@ -204,8 +209,21 @@ public sealed class UiWindow
         }
     }
 
+    /// <summary>First descendant with this name; control parts (<see cref="Part"/>) only when no ordinary window matches.</summary>
     public UiWindow? Find(string name) =>
-        Descendants().FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.OrdinalIgnoreCase));
+        Descendants().Where(w => !w.IsPartOrInside).FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.OrdinalIgnoreCase))
+        ?? Descendants().FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Scrollable-container item list (008888e0): when set, the visible children are stacked along the axis in
+    /// list order, each at its own height, with this gap between them; <see cref="StackedSize"/> is the total.
+    /// </summary>
+    public int? StackInterval;
+    public bool StackHorizontal;
+    public int StackedSize;
+
+    /// <summary>Set by the loader on parts and everything under them.</summary>
+    public bool IsPartOrInside;
 
     public override string ToString() => $"{Type} '{Name}' {Rect}";
 }

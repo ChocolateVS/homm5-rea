@@ -47,6 +47,7 @@ public static class UiLayout
     /// </summary>
     static void LayoutChildren(UiWindow w)
     {
+        if (w.StackInterval is int gap) { Stack(w, gap); return; }
         if (w.Type != "WindowGathering")
         {
             foreach (var c in w.Children) Layout(c, w.Rect);
@@ -65,6 +66,31 @@ public static class UiLayout
             else y += Math.Max(c.Rect.H, c.Placement.Size.Value.Y);
         }
         w.Rect = new UiRect(w.Rect.X, w.Rect.Y, w.Rect.W, y - w.Rect.Y);
+    }
+
+    /// <summary>
+    /// Scrollable-container items (008888e0): each item is placed at the running offset (its own Position on
+    /// the stacking axis is replaced), the offset advances by the item's size plus the container's Interval
+    /// between items (shared +0xcc), and the total is the content size (+0x150).
+    /// </summary>
+    static void Stack(UiWindow w, int gap)
+    {
+        int at = 0, n = 0;
+        foreach (var c in w.Children)
+        {
+            if (!c.Visible || c.Part != null) { Layout(c, w.Rect); continue; }
+            if (n++ > 0) at += gap;
+            var slot = w.StackHorizontal
+                ? new UiRect(w.Rect.X + at, w.Rect.Y, c.Placement.Size.Value.X, w.Rect.H)
+                : new UiRect(w.Rect.X, w.Rect.Y + at, w.Rect.W, c.Placement.Size.Value.Y);
+            var p = c.Placement;
+            c.Rect = Place(w.StackHorizontal
+                ? p.MergedWith(new UiPlacement { Position = (new Int2(0, p.Position.Value.Y), true), HorAlign = (UiAlign.LowEnd, true) })
+                : p.MergedWith(new UiPlacement { Position = (new Int2(p.Position.Value.X, 0), true), VerAlign = (UiAlign.LowEnd, true) }), slot);
+            LayoutChildren(c);
+            at += w.StackHorizontal ? c.Rect.W : c.Rect.H;
+        }
+        w.StackedSize = at;
     }
 
     static void Shift(UiWindow w, int dy)

@@ -15,6 +15,7 @@ public static class UiWindowCopy
             Text = w.Text, ButtonStates = w.ButtonStates, ButtonGroupId = w.ButtonGroupId, AutoChangeState = w.AutoChangeState, TriggerMode = w.TriggerMode,
             RelatedTexts = w.RelatedTexts, RelatedTextures = w.RelatedTextures,
             RawInstance = w.RawInstance, RawShared = w.RawShared, Rect = w.Rect,
+            Part = w.Part, IsPartOrInside = w.IsPartOrInside,
         };
         foreach (var child in w.Children) c.Children.Add(Deep(child));
         return c;

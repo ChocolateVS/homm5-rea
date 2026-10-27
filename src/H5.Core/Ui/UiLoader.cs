@@ -70,7 +70,35 @@ public sealed class UiLoader
             var child = ResolveChild(item, sharedFile, out var childFile);
             if (child != null) w.Children.Add(LoadWindow(childFile, child, depth + 1));
         }
+        if (shared != null) LoadParts(w, shared, sharedFile, depth);
         return w;
+    }
+
+    /// <summary>
+    /// Sub-windows a control creates from its Shared references and appends to its children: a scroll bar's
+    /// ButtonLower / ButtonGreater / Slider (WindowScrollBarShared, created and added by 00c40ee0), a slider's
+    /// Lever (WindowSliderShared, 0048f870) and a scrollable container's Border and ScrollBar
+    /// (WindowScrollableContainerShared, reader 00bde470) with its Selection / PreSelection markers.
+    /// </summary>
+    void LoadParts(UiWindow w, XElement shared, string sharedFile, int depth)
+    {
+        string[] parts = w.Type switch
+        {
+            "WindowScrollBar" => new[] { "ButtonLower", "ButtonGreater", "Slider" },
+            "WindowSlider" => new[] { "Lever" },
+            "WindowScrollableContainer" => new[] { "Border", "ScrollBar", "Selection", "PreSelection" },
+            _ => Array.Empty<string>(),
+        };
+        foreach (var part in parts)
+        {
+            var (e, f) = Deref(shared.Element(part), sharedFile);
+            if (e == null) continue;
+            var child = LoadWindow(f, e, depth + 1);
+            child.Part = part;
+            child.IsPartOrInside = true;
+            foreach (var d in child.Descendants()) d.IsPartOrInside = true;
+            w.Children.Add(child);
+        }
     }
 
     XElement? ResolveChild(XElement item, string currentFile, out string childFile)

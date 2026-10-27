@@ -120,3 +120,40 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 | Item | Original (evidence) | Ours | Status |
 |---|---|---|---|
 | Virtual screen | 1024×768, wider aspects 768·aspect × 768 (00b295d0, logs "virtual screen resolution"); the UI is laid out in virtual px and drawn × screen/virtual (00b29360) — at 1920×1080 the original UI is 1.406× | auto UI scale = largest step ≤ height/1080 (docs/DISPLAY.md) | GAP (decision for the coordinator: the exe's equivalent auto scale is height/768) |
+
+## Scroll bars and sliders (CWindowScrollBar vt 00e8c764, CWindowSlider vt 00e13f2c; `game/src/Ui/UiScrollBar.cs`, `src/H5.Core/Ui/UiSliderModel.cs`)
+
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Parts | the bar builds ButtonLower / ButtonGreater / Slider from WindowScrollBarShared and appends them as children (00c40ee0, found by name in 00c40c20); the slider builds its Lever (WindowSliderShared, 0048f870) | `UiLoader.LoadParts` appends them with `UiWindow.Part`; drawn by their own button visuals | FIXED (screens drew a hand-made bar over the window, or nothing) |
+| Range model | slider interface +0xf8 (vt 00e13ef8): SetRange(a,b,page) 0048f730: lo/hi ordered, page ≤ 0 = whole range, lo = hi → 0..100 page 100; scrollable only while range > page (else page = range); max = hi − page; position clamped to [min,max] (0048f440) | `UiSliderModel.SetRange/SetPos` | FIXED |
+| Lever | length = len·page/(max−min+page) clamped to MinLeverSize/MaxLeverSize (0 = slider length); offset = round((pos−min)(len−lever)/(max−min)), 0 when the range < 1; placed by flags 10 (vertical) / 5 (horizontal) (0048f440); shown only while scrollable (0048f730 → lever vfunc 0x44) | same | FIXED |
+| Arrows | press: special positions → index ±1, else ±ClickScrollDist (instance value when its flag is set, else shared 15; at least 1: 00c40ee0 / 00c40e80); Greater forward, Lower back (00c40780, 00c411e0); held: after 500 ms, every > 10 ms move elapsed ms × Speed (100) × 0.001 (00c40e20) | same | FIXED |
+| Track click | 00490310 / 00490460: one page (one special position) towards the mouse; held, repeats after 500 ms then every 10 ms until the lever reaches the mouse; paused while the mouse is over the lever | same (mouse value = lever centred on the mouse) | FIXED / mouse offset UNVERIFIED |
+| Lever drag | 004905e0 → 0048f9b0: value from the lever's offset on the free track (grab offset kept); special positions snap | same | FIXED |
+| Mouse wheel | mouse_wheel_scroll (MOUSE_AXIS_Z) read in 00490460: pos += Z × page; special positions ±1 | 0.75 × page per notch (the camera's untraced axis scale), down = forward; routed to the bar under the mouse or its container | FIXED / scale UNVERIFIED |
+| Enabling | 00c40ab0: arrows and slider enabled = scrollable && bar enabled; HideDisabled also hides them | same | FIXED |
+| Special positions | slots 8–11: Set (n < 2 → 0), SetIndex pos = (max−min)·i/(N−1), GetIndex ceil((N−1)·pos/(max−min)) | same; code-driven discrete bars (`UiScrollBar.Setup(count, pos)` = range 0..count page 1, N = count) | FIXED / which range the exe's market and option screens pass is untraced (GAP) |
+| Code-driven bars | — | `UiScrollerView` added under a WindowScrollBar binds to it and only forwards (market amount, custom game / MP options, game options scrollers) | EXT (adapter) |
+| Slider sound | 0048fd60: at most every 400 ms the slider sends a message with UIGameConsts +0xa4 | — | GAP |
+
+## Scrollable containers (CWindowScrollableContainer vt 00e94034, code 00886000..0088b000; `game/src/Ui/UiScrollableContainer.cs`)
+
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Parts | Shared Interval / ScrollBar / Border / Selection / PreSelection / NegativeSelection (reader 00bde470); Border is the visible area (+0x158), the content window (+0x15c) moves inside it | Border clips; content control inside it; Selection / PreSelection markers live in the content | FIXED |
+| Items | 008888e0: items in order, each placed at the running offset along the bar's axis, offset += size + Interval between items; total = content size (+0x150) | `UiLayout.Stack` (`UiWindow.StackInterval`) | FIXED |
+| Range | 00887ba0: content window takes the content size; bar SetRange(0, content size, Border height) (width when horizontal) | same | FIXED |
+| Scrolling | 00887c80: content at (0, −pos) / (−pos, 0) | same | FIXED |
+| Selection markers | 00887850: the marker takes the item's rect (content coordinates, flags 0xffff) and is shown; 008888e0 re-places them | `Select` / `Preselect` (rects from code) | FIXED |
+| Ensure visible | 00887ab0 / 00887b10 / 00887910 scroll a given item into view | — | GAP |
+| Initial offset | 008888e0 starts the offset at the first item's +0x1c | 0 | GAP |
+
+## Custom game screen text (CCustomGameCreateScreen 00774f80, map info 007074b0 / 00707920)
+
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Map info items | 007074b0 takes mapname, mapinfo, mapdescheader, mapdesc out of the 'mapinfo' panel; 00707920 clears the panel's container and adds them in that order (all ResizeOnTextSet), then relayouts | same (`UiScrollableContainer.AddItem`) | FIXED (the templates stayed at the panel origin overlapping the header; name + description were a hand-made text block that overflowed the box) |
+| Values | mapname "value" = map name; the mapinfo item's 'values' child: players, size, goal, underground (related text underground_yes / underground_no of the panel); mapdesc "value" = description | same | FIXED |
+| Map rows | rows of UI/MPCreate/Maps/SingleMap (563 × 21) in the list container, Interval 0, scrolled by its bar; Selection / PreSelection markers on the selected / hovered row | same (rows drawn by code in the content) | FIXED (rows were redrawn a page at a time from a row index, highlight was a plain colour rectangle) |
+| Template copies with EPA_MARGIN | — (code-instantiated templates are our mechanism) | a copied template stretched by margins keeps its laid-out size (`UiScreen.Instantiate`) | FIXED (game options check box rows were 0 wide: "Quick / Combat" wrapped per word) |

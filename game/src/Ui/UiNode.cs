@@ -57,8 +57,16 @@ public partial class UiNode : Control
     public bool Enabled
     {
         get => Window.Enabled;
-        set { Window.Enabled = value; QueueRedraw(); }
+        set { Window.Enabled = value; QueueRedraw(); OnEnabledChanged(); }
     }
+
+    protected virtual void OnEnabledChanged() { }
+
+    /// <summary>Called by the screen after this node and its children were placed (layout done).</summary>
+    public virtual void OnPlaced() { }
+
+    /// <summary>Called by the screen once this node's children are built (before it enters the tree).</summary>
+    public virtual void OnBuilt() { }
 
     /// <summary>Replaces the window's text markup (format prefix from the visual state is still applied).</summary>
     string? _tooltipMarkup;

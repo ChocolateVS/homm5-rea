@@ -40,12 +40,15 @@ public partial class UiScreen : Control
         {
             "WindowEditLine" => new UiEditLine(w),
             "WindowComboBox" => new UiComboBox(w),
+            "WindowScrollBar" => new UiScrollBar(w),
+            "WindowScrollableContainer" => new UiScrollableContainer(w),
             _ => new UiNode(w),
         };
         node.Screen = this;
         _nodes[w] = node;
         foreach (var child in UiLayout.PaintOrder(w))
             node.AddChild(Build(child));
+        node.OnBuilt();
         return node;
     }
 
@@ -121,6 +124,7 @@ public partial class UiScreen : Control
         node.Position = new Vector2(w.Rect.X - parent.X, w.Rect.Y - parent.Y);
         node.Size = new Vector2(Math.Max(0, w.Rect.W), Math.Max(0, w.Rect.H));
         foreach (var c in w.Children) Place(c, w.Rect);
+        node.OnPlaced();
     }
 
     public UiNode Node(UiWindow w) => _nodes[w];
@@ -136,8 +140,15 @@ public partial class UiScreen : Control
         var copy = UiWindowCopy.Deep(template);
         copy.Visible = true;
         if (name != null) copy.Name = name;
+        // A template stretched by EPA_MARGIN keeps the size it was laid out with (its margins refer to the
+        // template's own parent); re-anchoring it at the low end with its authored size 0 made it zero wide, so
+        // e.g. the game options' check box labels wrapped after every word.
+        var ps = copy.Placement.Size.Value;
+        var size = new Int2(copy.Placement.HorAlign.Value == UiAlign.Margin ? template.Rect.W : ps.X,
+            copy.Placement.VerAlign.Value == UiAlign.Margin ? template.Rect.H : ps.Y);
         copy.Placement = copy.Placement.MergedWith(new UiPlacement
         {
+            Size = (size, true),
             Position = (position, true),
             HorAlign = (UiAlign.LowEnd, true),
             VerAlign = (UiAlign.LowEnd, true),

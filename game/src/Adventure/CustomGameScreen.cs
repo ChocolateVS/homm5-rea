@@ -27,11 +27,11 @@ public partial class CustomGameScreen : UiScreen
     readonly Control _list;
     readonly CustomMapList.SortState _sort = new();
     readonly UiScrollerView _timeBar = new(), _diffBar = new();
-    readonly BitmapText _desc = new() { AnchorRight = 1, AnchorBottom = 1, Wrap = true };
+    readonly UiScrollableContainer? _maps, _info;
     List<MapEntry> _visible = new();
     readonly ThumbnailSlideshow _slides;
     MapEntry? _shownMap;
-    int _selected, _scroll, _top;
+    int _selected;
     const int RowHeight = 21;
 
     // Dev/test hook for screenshots: H5_CUSTOM_FILTERS=mp,rmg shows those maps without touching the profile vars.
@@ -46,12 +46,16 @@ public partial class CustomGameScreen : UiScreen
         // The map preview: the stock slideshow over screenshoot1 / screenshoot2 (00707920).
         _slides = new ThumbnailSlideshow(Find("mapinfo/screenshoot1"), Find("mapinfo/screenshoot2"));
         AddChild(_slides);
-        // The selected map's name and description go in the description panel's scroll area (as on UI/MPCreate).
-        foreach (var n in new[] { "mapname", "mapdescheader", "mapdesc" }) SetVisible(n, false);
-        if (Find("mapinfo/container") is { } descBox) descBox.AddChild(_desc);
-        var container = Find("maps/container")!;
-        _list = new Control { Name = "Rows", AnchorRight = 1, AnchorBottom = 1, ClipContents = true, MouseFilter = MouseFilterEnum.Stop };
-        container.AddChild(_list);
+        // The map info panel (007074b0 / 00707920): mapname, mapinfo (with its 'values'), mapdescheader and mapdesc
+        // are taken out of the panel and added, in that order, as the items of the panel's scrollable container.
+        _info = Find("mapinfo/container") as UiScrollableContainer;
+        if (_info != null)
+            foreach (var n in new[] { "mapinfo/mapname", "mapinfo/mapinfo", "mapinfo/mapdescheader", "mapinfo/mapdesc" })
+                if (Find(n) is { } item) _info.AddItem(item);
+        // The map rows scroll in the list container's content (its Border is the visible area below the headers).
+        _maps = Find("maps/container") as UiScrollableContainer;
+        _list = new Control { Name = "Rows", MouseFilter = MouseFilterEnum.Pass };
+        if (_maps != null) _maps.Content.AddChild(_list); else Find("maps/container")?.AddChild(_list);
         _list.GuiInput += OnListInput;
         // TimeLimitBar 1..46 starting at 46 (unlimited); DifficultyBar 4 positions at 1 (00774f80).
         Find("TimeLimitBar")?.AddChild(_timeBar);
@@ -202,25 +206,27 @@ public partial class CustomGameScreen : UiScreen
     {
         foreach (var c in _list.GetChildren()) c.QueueFree();
         _selected = Math.Clamp(_selected, 0, Math.Max(0, _visible.Count - 1));
-        // Rows start below the column header buttons where the list container reaches under them (MMH55 layout).
-        _top = Find("buttname") is { } head && Find("maps/container") is { } cont ? Math.Max(0, head.Window.Rect.Y + head.Window.Rect.H - cont.Window.Rect.Y) : 0;
-        int rows = Math.Max(1, (int)((_list.Size.Y > 0 ? _list.Size.Y : 264) - _top) / RowHeight);
-        _scroll = Math.Clamp(_scroll, 0, Math.Max(0, _visible.Count - rows));
-        for (int i = 0; i < rows && _scroll + i < _visible.Count; i++)
+        // Every map is a row of the stock SingleMap template (563 x 21, columns name 0, goal 182, players 337,
+        // size 461) in the container's content; the container scrolls them (008888e0 / 00887ba0).
+        _list.Size = new Vector2(RowWidth, _visible.Count * RowHeight);
+        for (int i = 0; i < _visible.Count; i++)
         {
-            var m = _visible[_scroll + i];
-            float y = _top + i * RowHeight;
-            if (_scroll + i == _selected)
-                _list.AddChild(new ColorRect { Color = new Color(1, 0.85f, 0.4f, 0.18f), Position = new Vector2(0, y), Size = new Vector2(580, RowHeight), MouseFilter = MouseFilterEnum.Ignore });
-            // Column offsets from the stock row template UI/MPCreate/Maps/SingleMap: name 0, goal 182, players 337, size 461.
+            var m = _visible[i];
+            float y = i * RowHeight;
             AddCell(m.Name, 0, y, 156);
             AddCell(GoalText(m), 182, y, 142);
             AddCell(PlayersText(m), 337, y, 112);
             AddCell(SizeName(m.Size), 461, y, 102);
         }
+        _maps?.SetContentSize(_visible.Count * RowHeight);
+        _maps?.Select(_visible.Count > 0 ? RowRect(_selected) : null);
         var sel = _visible.ElementAtOrDefault(_selected);
-        _desc.Markup = sel == null ? "" : $"<h3_block>{Ui.Screens.ChatLogView.Escape(sel.Name)}<br><body><left>{Ui.Screens.ChatLogView.Escape(sel.Description)}";
-        foreach (var n in FindAll("values"))
+        // 00707920: mapname "value" = map name, the mapinfo 'values' players / size / goal, mapdesc "value" = description.
+        Find("mapinfo/mapname")?.SetValue("value", sel != null ? Ui.Screens.ChatLogView.Escape(sel.Name) : "");
+        Find("mapinfo/mapdesc")?.SetValue("value", sel != null ? Ui.Screens.ChatLogView.Escape(sel.Description) : "");
+        // Only the mapinfo item's 'values' child gets the values (00707920 looks it up under mapinfo); the other
+        // items share its Shared child and keep it empty.
+        if (Find("mapinfo/mapinfo/values") is { } n)
         {
             n.SetValue("players", sel != null ? PlayersText(sel) : "");
             n.SetValue("size", sel != null ? SizeName(sel.Size) : "");
@@ -236,6 +242,7 @@ public partial class CustomGameScreen : UiScreen
             if (sel != null && !_thumbs.ContainsKey(sel)) _thumbs[sel] = Thumbnails(sel);
             _slides.SetImages(sel != null ? _thumbs[sel] : new List<Texture2D>());
         }
+        if (_info != null) _info.ScrollPosition = 0;
         // 007747a0: Create is enabled only with a map selected.
         if (Find("CreateBtn") is { } create) create.Enabled = sel != null;
     }
@@ -243,6 +250,9 @@ public partial class CustomGameScreen : UiScreen
     string UndergroundText(bool yes) =>
         Find("mapinfo") is { } panel && panel.Window.RelatedTexts.TryGetValue(yes ? "underground_yes" : "underground_no", out var path)
             ? UiResources.Instance.Text(path)?.Trim() ?? "" : "";
+
+    const int RowWidth = 563;
+    static Rect2 RowRect(int i) => new(0, i * RowHeight, RowWidth, RowHeight);
 
     int TimeLimit => CustomGameOptions.Minutes(_timeBar.Position + CustomGameOptions.TimeLimitMin);
 
@@ -274,15 +284,21 @@ public partial class CustomGameScreen : UiScreen
         switch (e)
         {
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } mb:
-                if (mb.Position.Y < _top) break;
-                _selected = _scroll + (int)((mb.Position.Y - _top) / RowHeight);
+            {
+                int row = (int)(mb.Position.Y / RowHeight);
+                if (row < 0 || row >= _visible.Count) break;
+                _selected = row;
                 Redraw();
                 if (mb.DoubleClick) Create();
+                _list.AcceptEvent();
                 break;
-            case InputEventMouseButton { ButtonIndex: MouseButton.WheelUp, Pressed: true }:
-                _scroll--; Redraw(); break;
-            case InputEventMouseButton { ButtonIndex: MouseButton.WheelDown, Pressed: true }:
-                _scroll++; Redraw(); break;
+            }
+            case InputEventMouseMotion mm:
+            {
+                int row = (int)(mm.Position.Y / RowHeight);
+                _maps?.Preselect(row >= 0 && row < _visible.Count && row != _selected ? RowRect(row) : null);
+                break;
+            }
         }
     }
 
