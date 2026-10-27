@@ -26,7 +26,7 @@ public partial class SaveLoadScreen : UiScreen
     List<SaveEntry> _entries = new();
     readonly SavesListView _list;
     readonly TextureRect _shot = new() { AnchorRight = 1, AnchorBottom = 1, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale };
-    readonly DefinitionView _definition = new();
+    UiNode? _definitionItem;
     UiEditLine? _edit;
 
     /// <summary>Which saves the list shows: network saves only on the network load list, the others elsewhere.</summary>
@@ -47,9 +47,6 @@ public partial class SaveLoadScreen : UiScreen
         _list = new SavesListView(Find("saveslist") as UiScrollableContainer);
         if (_list.Container is { } box) box.Content.AddChild(_list); else Find("saveslist")?.AddChild(_list);
         Find("screenshoot")?.AddChild(_shot);
-        // The definition texts scroll in the definition container (its own bar); drawn by code in its content.
-        if (Find("definition") is UiScrollableContainer def) { _definition.Container = def; def.Content.AddChild(_definition); }
-        else Find("definition")?.AddChild(_definition);
         _edit = Find("edit") as UiEditLine;
         if (_edit != null) { _edit.MaxLength = 64; _edit.Submitted += _ => DoSave(); }
 
@@ -113,10 +110,55 @@ public partial class SaveLoadScreen : UiScreen
             catch (Exception ex) when (ex is SaveCorruptException or IOException) { }
         }
         else if (e == null && _thumbnail != null) _shot.Texture = Png(_thumbnail);
-        _definition.Show(h);
+        ShowDefinition(h);
         if (Find("delete") is { } del) del.Enabled = e != null;
         if (Find("load") is { } load) load.Enabled = e != null;
     }
+
+    /// <summary>
+    /// The save info definition (007fdb40 map saves / 007f7bb0 campaign saves): the definition container is cleared
+    /// (slot 0x2c) and gets one UIGameRoot item (slot 8), shown only with a header. Map saves:
+    /// ID_SAVELOAD_DEFINITION_ITEM — count (players, hidden when unknown), gametype (UIGameRoot game_type
+    /// "game_type_%d", or "campain_game_type", 007f8200), mapsize (map_sizes "size%d", 007f6410), difficulty (hidden
+    /// when unknown, 00a33740) and mapdescr. Campaign saves: ID_SAVELOAD_CAMPAIGN_DEFINITION_ITEM — count (missions)
+    /// and campaigndescr.
+    /// </summary>
+    void ShowDefinition(SaveHeader? h)
+    {
+        if (Find("definition") is not UiScrollableContainer box) return;
+        box.ClearItems();
+        if (_definitionItem != null) { RemoveInstance(_definitionItem); _definitionItem = null; }
+        if (h == null) return;
+        bool campaign = h.Kind == SaveKind.Campaign && h.MissionsCount > 0;
+        var item = CreateRootWindow(campaign ? "ID_SAVELOAD_CAMPAIGN_DEFINITION_ITEM" : "ID_SAVELOAD_DEFINITION_ITEM", box.Window);
+        if (item == null) return;
+        _definitionItem = item;
+        UiNode? Part(string row, string child) =>
+            item.Window.Children.FirstOrDefault(c => c.Name == row) is { } r
+            && r.Children.FirstOrDefault(c => c.Name == child) is { } w ? NodeOf(w) : null;
+        void Row(string row, string key, string value, bool shown = true)
+        {
+            if (item.Window.Children.FirstOrDefault(c => c.Name == row) is { } r && NodeOf(r) is { } n) n.Visible = r.Visible = shown;
+            if (shown) Part(row, "value")?.SetValue(key, value);
+        }
+        if (campaign)
+        {
+            Row("count", "missionscount", h.MissionsCount.ToString());
+            Row("campaigndescr", "campaigndescription", h.CampaignDescription ?? "");
+        }
+        else
+        {
+            Row("count", "playerscount", h.Players.ToString(), h.Players >= 0);
+            Row("gametype", "gametype", (UiGameRoot.RelatedText("game_type", h.Kind == SaveKind.Campaign ? "campain_game_type" : $"game_type_{GameType(h.Kind)}") ?? "").Trim());
+            Row("mapsize", "mapsize", (UiGameRoot.RelatedText("map_sizes", $"size{Math.Max(0, h.MapSize)}") ?? "").Trim());
+            Row("difficulty", "difficulty", CustomGameScreen.DifficultyName(h.Difficulty), h.Difficulty >= 0);
+            Row("mapdescr", "mapdescription", h.MapDescription);
+        }
+        box.AddItem(item);
+    }
+
+    /// <summary>game_type_%d: 0 single mission, 2 LAN, 4 hot-seat (our network games are taken as LAN: UNVERIFIED).</summary>
+    static int GameType(SaveKind k) => k switch { SaveKind.Multiplayer => 2, SaveKind.HotSeat => 4, _ => 0 };
 
     static Texture2D? Png(byte[] png)
     {
@@ -261,90 +303,6 @@ public partial class SavesListView : Control
     public override void _Notification(int what)
     {
         if (what == NotificationMouseExit) Hover(-1);
-    }
-}
-
-/// <summary>SaveInfo's definition rows (UI/SaveLoad/SaveInfo/Definition texts).</summary>
-public partial class DefinitionView : Control
-{
-    const string Dir = "UI/SaveLoad/SaveInfo/Definition/";
-    readonly List<(string Name, string Value)> _rows = new();
-    string _descHeader = "", _desc = "";
-
-    public UiScrollableContainer? Container;
-
-    public DefinitionView()
-    {
-        MouseFilter = MouseFilterEnum.Ignore;
-        TextureFilter = TextureFilterEnum.ParentNode;
-    }
-
-    static string T(string file) => UiResources.Instance.Text(Dir + file) ?? "";
-
-    static string V(string format, string key, string value) => format.Replace($"<value={key}>", value, StringComparison.OrdinalIgnoreCase);
-
-    public void Show(SaveHeader? h)
-    {
-        _rows.Clear();
-        _descHeader = _desc = "";
-        if (h != null)
-        {
-            if (h.MapSize >= 0) _rows.Add((T("mapsizename.txt"), V(T("mapsizevalue.txt"), "mapsize", T($"mapsize{h.MapSize}.txt"))));
-            _rows.Add((T("playerscountname.txt"), V(T("playerscountvalue.txt"), "playerscount", h.Players.ToString())));
-            _rows.Add((T("difficultyname.txt"), V(T("difficultyvalue.txt"), "difficulty", Difficulty(h.Difficulty))));
-            if (h.Kind == SaveKind.Campaign && h.MissionsCount > 0)
-            {
-                _rows.Add((T("missionscountname.txt"), V(T("missionscountvalue.txt"), "missionscount", h.MissionsCount.ToString())));
-                _descHeader = T("campaigndescriptionname.txt");
-                _desc = V(T("campaigndescriptionvalue.txt"), "campaigndescription", h.CampaignDescription ?? "");
-            }
-            else
-            {
-                _descHeader = T("mapdescriptionname.txt");
-                _desc = V(T("mapdescriptionvalue.txt"), "mapdescription", h.MapDescription);
-            }
-        }
-        if (Container?.Border is { } border)
-        {
-            // Content height of what _Draw lays out, at the Border's width.
-            Size = new Vector2(border.Window.Rect.W, 0);
-            Size = new Vector2(border.Window.Rect.W, Draw(measureOnly: true));
-            Container.ScrollPosition = 0;
-            Container.SetContentSize(Size.Y);
-        }
-        else { AnchorRight = 1; AnchorBottom = 1; ClipContents = true; }
-        QueueRedraw();
-    }
-
-    static string Difficulty(int d)
-    {
-        var names = new[] { "Easy", "Normal", "Hard", "Heroic" };
-        int i = Math.Clamp(d, 0, 3);
-        return UiResources.Instance.Text($"GameMechanics/RefTables/UIDifficultyInfo/Difficulty{names[i]}Name.txt")?.Trim() ?? names[i];
-    }
-
-    public override void _Draw() => Draw(measureOnly: false);
-
-    float Draw(bool measureOnly)
-    {
-        // Leave room for the container's scroll bar on the right (definition ScrollBar).
-        float y = 0, w = Size.X - 20;
-        foreach (var (name, value) in _rows)
-        {
-            if (!measureOnly)
-            {
-                BitmapTextLayout.Build(name, null, new Rect2(0, y, w, 20), UiAlign.LowEnd, wrap: false).Draw(this);
-                BitmapTextLayout.Build(value, null, new Rect2(0, y, w, 20), UiAlign.LowEnd, wrap: false).Draw(this);
-            }
-            y += 20;
-        }
-        if (_descHeader.Length == 0) return y;
-        y += 6;
-        if (!measureOnly) BitmapTextLayout.Build(_descHeader, null, new Rect2(0, y, w, 22), UiAlign.LowEnd, wrap: false).Draw(this);
-        y += 22;
-        var desc = BitmapTextLayout.Build(_desc, null, new Rect2(0, y, w, 4000), UiAlign.LowEnd, wrap: true);
-        if (!measureOnly) desc.Draw(this);
-        return y + Mathf.Ceil(desc.Size.Y);
     }
 }
 
