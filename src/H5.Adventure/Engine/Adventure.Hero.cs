@@ -37,12 +37,34 @@ public sealed partial class Adventure
             AddStat(h, offer.Attribute, 1);
         }
         ApplyLearningBonus(h);
+        ResearcherRune(h);
         BuildOffer(h, offer);
         if (offer.Skills.Count + offer.Perks.Count > 0)
         {
             h.PendingLevelUps.Add(offer);
             Emit(new LevelUpOffered(h.Id, h.Level, offer.Attribute, offer.Skills, offer.Perks));
         }
+    }
+
+    /// <summary>
+    /// HERO_SPEC_RESEARCHER in 00b575d0 (00b578d8..00b579eb): hero vf 0x190(0x40) = FUN_00b4b5a0 (the specialization,
+    /// hero +0xa8, equals 0x40); a roll of hero RNG +0x1a0 vf 8(0, 1) below RPGStats +0x930 =
+    /// combat/HeroSpecializations/Runemage/Researcher_ChanceToGetExtraRune (0.25); then circles 1..4 in turn, the runes
+    /// of the map pool (manager slot 0x10(circle, 5)) in order: the first one the hero does not know (vf 0xdc) is
+    /// learned (vf 0xec, no source) and the search ends.
+    /// </summary>
+    void ResearcherRune(HeroState h)
+    {
+        if (h.Specialization != "HERO_SPEC_RESEARCHER") return;
+        if (!(S.Rng.NextDouble() < (float)Core.Stats.Get("combat/HeroSpecializations/Runemage/Researcher_ChanceToGetExtraRune", 0.25))) return;
+        for (int lvl = 1; lvl < 5; lvl++)
+            foreach (var sp in SpellsOf(lvl, SchoolRunic))
+                if (!KnowsSpell(h, sp))
+                {
+                    // vf 0xec = 00b545a0 refuses it without Runelore (00b4b810); the search ends either way.
+                    if (SpellFitsRage(h, sp)) LearnSpell(h, sp, force: true);
+                    return;
+                }
     }
 
     /// <summary>

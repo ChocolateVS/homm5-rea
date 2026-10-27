@@ -265,4 +265,32 @@ public class SpellAvailabilityTests(Fixture f)
         Assert.Equal(new[] { "SPELL_ABILITY_UNSUMMON" }, g.ArtifactSpells(h));
     }
 
+    [Fact]
+    public void ResearchersLearnTheFirstUnknownRuneOfTheLowestCircle()
+    {
+        // 00b575d0: vf 0x190(0x40) = 00b4b5a0 (specialization), roll < RPGStats +0x930 (Researcher_ChanceToGetExtraRune),
+        // circles 1..4 of slot 0x10(circle, 5): the first rune not known (vf 0xdc) is learned.
+        var g = Game();
+        var pool = f.Db.Core.Spells.Values
+            .Where(s => s.Stock && s.School == "MAGIC_SCHOOL_RUNIC" && s.Level is >= 1 and <= 4 && g.SpellAvailableOnMap(s.Id)).ToList();
+        var h = Hero(g);
+        h.Specialization = "HERO_SPEC_RESEARCHER";
+        h.Skills.RemoveAll(s => s.SkillId == "HERO_SKILL_DEMONIC_RAGE");
+        h.Skills.Add(new SkillEntry("HERO_SKILL_RUNELORE", Mastery.Expert));
+        g.ScriptGainExperience(h, f.Db.Core.Experience.For(40));
+        var runes = h.Spells.Where(s => f.Db.Core.Spell(s)!.School == "MAGIC_SCHOOL_RUNIC").ToList();
+        Assert.NotEmpty(runes);
+        // Circle by circle: runes come in non-decreasing circles, and a lower circle is complete before the next starts.
+        var circles = runes.Select(s => f.Db.Core.Spell(s)!.Level).ToList();
+        Assert.Equal(circles.OrderBy(c => c), circles);
+        Assert.All(pool.Where(s => s.Level < circles.Max()), s => Assert.Contains(s.Id, runes));
+        // Anyone else: no rune.
+        var g2 = Game();
+        var h2 = Hero(g2);
+        h2.Specialization = "HERO_SPEC_NONE";
+        h2.Skills.Add(new SkillEntry("HERO_SKILL_RUNELORE", Mastery.Expert));
+        g2.ScriptGainExperience(h2, f.Db.Core.Experience.For(40));
+        Assert.DoesNotContain(h2.Spells, s => f.Db.Core.Spell(s)!.School == "MAGIC_SCHOOL_RUNIC");
+    }
+
 }
