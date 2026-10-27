@@ -147,7 +147,7 @@ public sealed class ArmySlots
                 _dragFrom = null;
                 _dragIcon?.QueueFree();
                 _dragIcon = null;
-                var target = SlotAt(_overlay.GetGlobalMousePosition());
+                var target = SlotAt(mb.GlobalPosition);
                 bool dragged = (mb.GlobalPosition - _pressPos).Length() > 6;
                 if (dragged && target != null && target != from) Drop(from, target, Input.IsKeyPressed(Key.Shift));
                 else if (!dragged) ClickSlot(v);

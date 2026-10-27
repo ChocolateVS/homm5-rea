@@ -24,6 +24,9 @@ public sealed class SphinxRiddle
 }
 
 /// <summary>A town building level as defined by TownBuildingSharedStats.</summary>
+/// <summary>One SGameRumoursSet entry: the rumour's text file, its weight and the town type it is told in (TOWN_NO_TYPE = any).</summary>
+public sealed record RumourDef(string Text, int Weight, string TownType);
+
 public sealed class BuildingDef
 {
     public string Path = "";
@@ -241,7 +244,22 @@ public sealed partial class AdventureDb
         db.LoadPerks(x);
         db.LoadTownTypes(x);
         db.LoadRiddles(x);
+        db.LoadRumours(x);
         return db;
+    }
+
+    /// <summary>The common rumours (exe path string 00e0d0f0: GameMechanics/Rumours/CommonGameRumours, SGameRumoursSet).</summary>
+    public List<RumourDef> CommonRumours { get; } = new();
+
+    void LoadRumours(XdbLoader x)
+    {
+        const string set = "GameMechanics/Rumours/CommonGameRumours.(GameRumoursSet).xdb";
+        if (!x.FileSystem.Exists(set)) return;
+        foreach (var item in x.Load(set).Root!.Items("rumours"))
+        {
+            var text = H5.Core.Xdb.XdbRef.Parse((string?)item.Element("Text")?.Attribute("href"), set).Path;
+            if (text.Length > 0) CommonRumours.Add(new RumourDef(text, item.Int("Weight"), item.Str("TownType")));
+        }
     }
 
     void LoadTownTypes(XdbLoader x)

@@ -87,7 +87,12 @@ public partial class TownScreen : Control
             _scene = new TownScene3D(desc);
             _vp.AddChild(_scene);
             Callable.From(SyncBuildings).CallDeferred();
-            if (TownLauncher.OrbitBy is { } o) Callable.From(() => _scene.Orbit(o.X, o.Y, 1)).CallDeferred();
+            var scene = _scene;
+            Callable.From(() =>
+            {
+                scene.StartTownCamera(Options.OptionsStore.GetBool("town_enable_flyby", true) && !OS.GetCmdlineUserArgs().Contains("--town-no-flyby"));
+                if (TownLauncher.OrbitBy is { } o) scene.Orbit(o.X, o.Y, 1);
+            }).CallDeferred();
             PlayMusic(desc);
         }
         Refresh();
@@ -138,7 +143,14 @@ public partial class TownScreen : Control
         bus.On("enter_special", () => OpenSub("special"));
         bus.On("buy_artifacts", () => OpenSub("artifacts"));
         bus.On("show_town_info", () => OpenSub("info"));
-        bus.On("click_pointer", (_, src) => { if (src?.Name == "Hero" && VisitingHero() is { } h) OpenHero(h); });
+        // click_pointer (00613130) does nothing; dblclick_pointer (00619a30) over either portrait (+0x2a0 / +0x2a4)
+        // opens the hero screen (00619320).
+        foreach (var path in new[] { "ListBase/List_0/HeroContainer/Hero", "ListBase/List_0/TownContainer/Town" })
+            if (_hud.Find(path) is { } portrait)
+            {
+                portrait.MouseFilter = MouseFilterEnum.Stop;
+                portrait.GuiInput += e => { if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true, DoubleClick: true }) OpenTownHeroes(); };
+            }
         // The dndicon template is only used by the original drag code.
         _hud.SetVisible("dndicon", false);
 
@@ -170,20 +182,23 @@ public partial class TownScreen : Control
         TownUi.SetResourceBar(_hud, me);
         var visiting = VisitingHero();
         var garrison = GarrisonHero();
-        // Rebind the army rows: top = visiting hero, bottom = garrison hero's army or the town garrison.
+        // Army rows (FUN_0061c5b0 / 00615d10): the upper row (HeroContainer, portrait +0x2a4, "GARRISON_SLOT") is the
+        // garrison — the garrison hero's army or the town's own; the lower row (TownContainer, portrait +0x2a0,
+        // "VISITING_SLOT") is the visiting hero.
         foreach (var node in Enumerable.Range(1, 7))
         {
-            if (_hud.Find($"ListBase/List_{node}/HeroContainer/Hero") is { } top) Bind(top, visiting?.Id ?? -1, -1, node - 1, visiting != null);
-            if (_hud.Find($"ListBase/List_{node}/TownContainer/Town") is { } bottom)
-                Bind(bottom, garrison?.Id ?? -1, garrison == null ? Town.Object : -1, node - 1, true);
+            if (_hud.Find($"ListBase/List_{node}/HeroContainer/Hero") is { } top)
+                Bind(top, garrison?.Id ?? -1, garrison == null ? Town.Object : -1, node - 1, true);
+            if (_hud.Find($"ListBase/List_{node}/TownContainer/Town") is { } bottom) Bind(bottom, visiting?.Id ?? -1, -1, node - 1, visiting != null);
         }
-        TownUi.SetPicture(_hud.Find("ListBase/List_0/HeroContainer/Hero/PicBox/Pic") is { } hp ? hp : null, visiting != null ? TownUi.HeroFace(visiting, false) : null);
-        if (_hud.Find("ListBase/List_0/HeroContainer/Hero/PicBox/Pic") is { } hpic) hpic.Visible = visiting != null;
-        var townPic = _hud.Find("ListBase/List_0/TownContainer/Town/PicBox/Pic");
-        if (townPic != null)
+        var visitPic = _hud.Find("ListBase/List_0/TownContainer/Town/PicBox/Pic");
+        TownUi.SetPicture(visitPic, visiting != null ? TownUi.HeroFace(visiting, false) : null);
+        if (visitPic != null) visitPic.Visible = visiting != null;
+        var garrisonPic = _hud.Find("ListBase/List_0/HeroContainer/Hero/PicBox/Pic");
+        if (garrisonPic != null)
         {
-            townPic.Visible = true;
-            TownUi.SetPicture(townPic, garrison != null ? TownUi.HeroFace(garrison, false) : TownIcon());
+            garrisonPic.Visible = true;
+            TownUi.SetPicture(garrisonPic, garrison != null ? TownUi.HeroFace(garrison, false) : TownIcon());
         }
         _army.Refresh(Session.S);
         _hud.Find("BuildingDesc")?.SetValue("value", _hoverBuilding ?? Town.Name);
@@ -245,12 +260,15 @@ public partial class TownScreen : Control
     /// <summary>Opens a town sub-screen by key (also used by `--town-goto=`).</summary>
     public void OpenSub(string key)
     {
+        // Every building / HUD action ends the fly-up first (00618170 … set screen +0x294, 00616bf0).
+        _scene?.EndFlyby();
         if (key == "shipyard") { OpenShipyard(); return; }
         foreach (var c in _subLayer.GetChildren()) c.QueueFree();
         Control? sub = key switch
         {
             "hall" => new TownBuildScreen(this),
-            "fort" or "recruit" => new FortScreen(this),
+            "fort" or "recruit" => new TownHireScreen(this),
+            var d when d.StartsWith("dwelling_") && int.TryParse(d[9..], out var tier) => new TownHireScreen(this, tier),
             "tavern" => Town.Level("TB_TAVERN") > 0 ? new TavernScreen(this) : null,
             "guild" => Town.Level("TB_MAGIC_GUILD") > 0 ? new MageGuildScreen(this) : null,
             "blacksmith" => Town.Level("TB_BLACKSMITH") > 0 ? new BlacksmithScreen(this) : null,
@@ -275,8 +293,8 @@ public partial class TownScreen : Control
             Notice(Town.Name, reason);
             return;
         }
-        // The hero screen and the marketplace (own resource bar and jog dial) replace the town HUD.
-        _hud.Visible = sub is not HeroScreen and not MarketScreen;
+        // The hero screen, the marketplace, the hire screen and the tavern (own resource bar and jog dial) replace the town HUD.
+        _hud.Visible = sub is not HeroScreen and not MarketScreen and not TownHireScreen and not TavernScreen;
         _subLayer.AddChild(sub);
     }
 
@@ -322,8 +340,25 @@ public partial class TownScreen : Control
         _ => null,
     };
 
+    /// <summary>
+    /// 00619320: the hero screen for the town's heroes — both (the two-hero page) when the visiting and the garrison
+    /// hero are present, else the one there is.
+    /// </summary>
+    void OpenTownHeroes()
+    {
+        var visiting = VisitingHero();
+        var garrison = GarrisonHero();
+        if (visiting == null && garrison == null) return;
+        foreach (var c in _subLayer.GetChildren()) c.QueueFree();
+        _hud.Visible = false;
+        _subLayer.AddChild(visiting != null && garrison != null
+            ? new HeroScreen(Adv, visiting, this, meet: garrison)
+            : new HeroScreen(Adv, visiting ?? garrison!, this));
+    }
+
     public void OpenHero(HeroState h)
     {
+        _scene?.EndFlyby();
         foreach (var c in _subLayer.GetChildren()) c.QueueFree();
         _hud.Visible = false;
         _subLayer.AddChild(new HeroScreen(Adv, h, this));
@@ -349,21 +384,38 @@ public partial class TownScreen : Control
 
     // ------------------------------------------------------------------ 3D picking & camera
 
+    // Mouse axes in the exe's input units (bindconfigure MOUSE_AXIS_X/Y 1.2, MOUSE_AXIS_Z 160; the final scale
+    // is the combat camera's, docs/rules/CAMERA.md open point).
+    const float MouseAxisPerPixel = 1.2f / 1000f, WheelInputPerNotch = 120f / 160f;
+
     void On3DInput(InputEvent e)
     {
         switch (e)
         {
             case InputEventMouseMotion mm:
-                if (_rotating) _scene?.Orbit(mm.Relative.X * 0.3f, -mm.Relative.Y * 0.2f, 1);
+                // input_a2.cfg common camera section, consumed by CTownOperator (007d5550):
+                // +camera_rotate_mouse / −camera_pitch_mouse = right button + X / Y;
+                // −camera_strafe_mouse / +camera_forward_mouse = middle button (or CTRL + right) + X / Y.
+                var d = mm.Relative * MouseAxisPerPixel;
+                if (_middleDown || (_rotating && Input.IsKeyPressed(Key.Ctrl))) _scene?.AddInput(-d.X, 0, d.Y, 0);
+                else if (_rotating) _scene?.AddInput(d.X, -d.Y, 0, 0);
                 else _pickAt = mm.Position;
                 break;
             case InputEventMouseButton { ButtonIndex: MouseButton.Right } rb:
                 _rotating = rb.Pressed;
                 break;
+            case InputEventMouseButton { ButtonIndex: MouseButton.Middle } mb:
+                _middleDown = mb.Pressed;
+                break;
+            // −camera_zoom_mouse MOUSE_AXIS_Z: wheel up zooms in.
             case InputEventMouseButton { ButtonIndex: MouseButton.WheelUp, Pressed: true }:
-                _scene?.Orbit(0, 0, 0.9f); break;
+                _scene?.AddInput(0, 0, 0, -WheelInputPerNotch); break;
             case InputEventMouseButton { ButtonIndex: MouseButton.WheelDown, Pressed: true }:
-                _scene?.Orbit(0, 0, 1.1f); break;
+                _scene?.AddInput(0, 0, 0, WheelInputPerNotch); break;
+            // The first left button press during the fly-up only ends it (win_left_button_down 0061bc00).
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } when _scene?.FlybyActive == true:
+                _scene.EndFlyby();
+                break;
             // Buildings open on double click (exe click_pointer @00613130 is a no-op, dblclick_pointer @00619a30 opens).
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true, DoubleClick: true }:
                 if (_hoverBuilding != null) ClickBuilding(_hoverBuilding);
@@ -371,8 +423,39 @@ public partial class TownScreen : Control
         }
     }
 
+    bool _middleDown;
+
+    /// <summary>
+    /// Ends the fly-up on any left button press or release over the town screen (win_left_button_down 0061bc00 /
+    /// win_left_button_up 006199f0 set screen +0x294 and switch to the hand camera).
+    /// </summary>
+    public override void _Input(InputEvent e)
+    {
+        if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left } && _scene?.FlybyActive == true && _subLayer.GetChildCount() == 0)
+            _scene.EndFlyby();
+    }
+
+    /// <summary>
+    /// Held camera keys (input_a2.cfg common section): UP/DOWN ±camera_forward, RIGHT/LEFT ±camera_strafe,
+    /// CTRL+DOWN/UP ±camera_pitch, CTRL+RIGHT/LEFT ±camera_rotate, PG_DOWN/PG_UP ±camera_zoom; level × frame time.
+    /// </summary>
+    public override void _Process(double delta)
+    {
+        if (_scene == null || _scene.FlybyActive || _subLayer.GetChildCount() > 0 || _dialogLayer.GetChildCount() > 0) return;
+        if (GetViewport().GuiGetFocusOwner() is LineEdit) return;
+        float dt = (float)delta, rot = 0, pitch = 0, fwd = 0, zoom = 0;
+        bool ctrl = Input.IsKeyPressed(Key.Ctrl);
+        float Axis(Key plus, Key minus) => (Input.IsKeyPressed(plus) ? 1 : 0) - (Input.IsKeyPressed(minus) ? 1 : 0);
+        if (ctrl) { pitch = Axis(Key.Down, Key.Up); rot = Axis(Key.Right, Key.Left); }
+        else { fwd = Axis(Key.Up, Key.Down); rot = Axis(Key.Right, Key.Left); }
+        zoom = Axis(Key.Pagedown, Key.Pageup);
+        if (rot != 0 || pitch != 0 || fwd != 0 || zoom != 0) _scene.AddInput(rot * dt, pitch * dt, fwd * dt, zoom * dt);
+    }
+
     public override void _PhysicsProcess(double delta)
     {
+        // No building hover while the fly-up runs (0061b140: screen +0x294 = 0 → plain cursor, no pick).
+        if (_scene?.FlybyActive == true) { _pickAt = null; return; }
         if (_pickAt is not { } pos || _scene?.Camera == null || !_scene.IsInsideTree()) return;
         _pickAt = null;
         var cam = _scene.Camera;
@@ -430,7 +513,7 @@ public partial class TownScreen : Control
             "TB_MAGIC_GUILD" => "guild",
             "TB_MARKETPLACE" => "market",
             "TB_BLACKSMITH" => "blacksmith",
-            var t when t.StartsWith("TB_DWELLING_") => "fort",
+            var t when t.StartsWith("TB_DWELLING_") => "dwelling_" + t["TB_DWELLING_".Length..],
             _ => null,
         };
         key ??= SpecialBuildingKey(Town.Type, view.Def.Type);

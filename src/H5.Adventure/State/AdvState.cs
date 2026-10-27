@@ -294,6 +294,8 @@ public sealed class TownState
     public bool AiGarrisonBlocked;
     /// <summary>AllowHeroHiringByRaceInTown / AllowHiringOfHeroInTown (town +0x224), for every player.</summary>
     public HeroFilter HireFilter = new();
+    /// <summary>Rumours heard in this town's tavern, oldest first (text file paths; the town's rumour list, see Adventure.Rumours).</summary>
+    public List<string> Rumours = new();
 
     public int Level(string type) => Built.TryGetValue(type, out var l) ? l : 0;
     /// <summary>Town level = number of buildings built, counting each upgrade (fan manual p.224 "Town Level").</summary>

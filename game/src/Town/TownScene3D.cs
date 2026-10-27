@@ -36,12 +36,6 @@ public partial class TownScene3D : Node3D
     /// <summary>Named placement points (ArenaLocObject), e.g. the fort screen's creature spots ph1_1…</summary>
     public Dictionary<string, Transform3D> Locators { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Orbit state (Maya-style camera: Pos is the eye, Rod the distance to the centre of interest).</summary>
-    Vector3 _pivot;
-    float _pitch, _yaw, _rod;
-    CamLimits _limits;
-
-    record struct CamLimits(float MinRod, float MaxRod, float MinZ, float MaxZ, float MinPitch, float MaxPitch, bool UsePitch);
 
     readonly ModelLoader _loader = new(Game.Instance.Xdb);
     MeshInstance3D? _sky;
@@ -90,7 +84,9 @@ public partial class TownScene3D : Node3D
         foreach (var fx in desc.Element("effects")?.Elements("Item") ?? Enumerable.Empty<XElement>())
             PlayEffect(fx, this);
 
-        _limits = ReadLimits(desc);
+        var (main, set) = ReadLimits(desc, DescPath);
+        _limits = main ?? NoLimits;
+        _limitSet = set;
         Camera = new Camera3D { Name = "Camera", KeepAspect = Camera3D.KeepAspectEnum.Height };
         AddChild(Camera);
         SetCamera(desc.Element("initialCamPos"));
@@ -299,84 +295,265 @@ public partial class TownScene3D : Node3D
 
     // ------------------------------------------------------------------ camera
 
-    static CamLimits ReadLimits(XElement desc)
-    {
-        var l = desc.Element("CameraLimits")?.Descendants("limits").FirstOrDefault();
-        float F(string n, float d) => l?.Element(n) is { } e ? float.Parse(e.Value, CultureInfo.InvariantCulture) : d;
-        return new CamLimits(F("MinRod", 1), F("MaxRod", 1e6f), F("MinZ", -1e6f), F("MaxZ", 1e6f),
-            F("MinPitch", -89), F("MaxPitch", 89), (string?)l?.Element("UsePitchLimits") == "true");
-    }
+    /// <summary>One CameraLimits record (fields in the exe's order, 0093c030); pitch in degrees.</summary>
+    public record struct CamLimits(float MinRod, float MaxRod, float MinZ, float MaxZ, float MinPitch, float MaxPitch);
 
     /// <summary>
-    /// Places the camera from a (Camera)/initialCamPos record: Pos is the eye and Rot =
-    /// (pitch, yaw) in degrees in the ArenaDesc frame (mesh space with Y negated; horizontal
-    /// view direction see Dir).
-    /// Rod (Maya centre of interest) gives the orbit pivot in front of the eye.
+    /// CTownOperator's limits before any are set (base hand-operator ctor 007d5990 → +0x64): rod and height
+    /// ±10⁶, pitch 0..0. Used by town scenes without a CameraLimits record.
+    /// </summary>
+    static readonly CamLimits NoLimits = new(-1e6f, 1e6f, -1e6f, 1e6f, 0, 0);
+
+    /// <summary>The ArenaDesc CameraLimits (inline or a separate .xdb) and its CameraLimitsSet entries.</summary>
+    static (CamLimits? Main, List<CamLimits> Set) ReadLimits(XElement desc, string descPath)
+    {
+        CamLimits? Read(XElement? item)
+        {
+            if (item == null) return null;
+            var l = item.Descendants("limits").FirstOrDefault();
+            if (l == null)
+            {
+                var href = (string?)item.Attribute("href");
+                if (string.IsNullOrEmpty(href) || href.StartsWith("#n:inline")) return null;
+                var path = XdbRef.Parse(href, descPath).Path;
+                if (path.Length == 0 || !Game.Instance.Fs.Exists(path)) return null;
+                l = Game.Instance.Xdb.Load(path).Root?.Descendants("limits").FirstOrDefault();
+                if (l == null) return null;
+            }
+            float F(string n) => l.Element(n) is { } e && float.TryParse(e.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0;
+            return new CamLimits(F("MinRod"), F("MaxRod"), F("MinZ"), F("MaxZ"), F("MinPitch"), F("MaxPitch"));
+        }
+        var set = new List<CamLimits>();
+        foreach (var it in desc.Element("CameraLimitsSet")?.Elements("Item") ?? Enumerable.Empty<XElement>())
+            if (Read(it) is { } c) set.Add(c);
+        return (Read(desc.Element("CameraLimits")), set);
+    }
+
+    /// <summary>SCameraPos as CTownOperator keeps it: rod, pitch / yaw (radians), anchor in mesh space (Z up).</summary>
+    struct Pose { public float Rod, Pitch, Yaw; public System.Numerics.Vector3 Anchor; }
+
+    Pose _initial, _cur, _tgt;
+    float _fovDeg = 54.4322f;
+    CamLimits _limits = NoLimits;
+    List<CamLimits> _limitSet = new();
+    bool _hand;
+    Character? _flyRig;
+    int _flyBone = -1;
+    /// <summary>Camera input accumulated since the last frame (the exe's input values, read and cleared each update).</summary>
+    float _inYaw, _inPitch, _inLift, _inZoom;
+
+    /// <summary>True while the town's fly-up camera (cameraFlyupRole) drives the view.</summary>
+    public bool FlybyActive => _flyRig != null && !_hand;
+
+    /// <summary>
+    /// Initial pose from a (Camera) record, as the town configurator's default pose (007d3ad0 → 007ce1a0):
+    /// Pos is the eye; pitch / yaw = Rot.x / Rot.y (degrees → radians); anchor = eye + Rod · forward; FOV and
+    /// the clip distances come with it (applied when ClipDistanceMin &lt; ClipDistanceMax).
     /// </summary>
     public void SetCamera(XElement? cam)
     {
         float F(string a, string b, float d = 0) =>
             cam?.Element(a)?.Element(b) is { } e ? float.Parse(e.Value, CultureInfo.InvariantCulture) : d;
         float G(string a, float d) => cam?.Element(a) is { } e ? float.Parse(e.Value, CultureInfo.InvariantCulture) : d;
-        var eye = FramePoint(F("Pos", "x"), F("Pos", "y"), F("Pos", "z"));
-        _pitch = F("Rot", "x");
-        _yaw = F("Rot", "y");
-        _rod = G("Rod", 50);
-        Camera.Fov = G("FOV", 54.4f);
-        Camera.Near = Math.Max(0.05f, G("ClipDistanceMin", 1));
-        Camera.Far = Math.Max(G("ClipDistanceMax", 1500), 3000);
-        _pivot = eye + Dir(_pitch, _yaw) * _rod;
-        ApplyCamera();
+        var eye = new System.Numerics.Vector3(F("Pos", "x"), F("Pos", "y"), F("Pos", "z"));
+        var p = new Pose { Rod = G("Rod", 50), Pitch = Mathf.DegToRad(F("Rot", "x")), Yaw = Mathf.DegToRad(F("Rot", "y")) };
+        p.Anchor = eye + MeshDir(p.Pitch, p.Yaw) * p.Rod;
+        _initial = _cur = _tgt = p;
+        _fovDeg = G("FOV", 54.4322f);
+        float near = G("ClipDistanceMin", 1), far = G("ClipDistanceMax", 1500);
+        // The far plane stays at least 3000 so the sky dome (drawn as scene geometry here) is not clipped.
+        if (near < far) { Camera.Near = Math.Max(0.05f, near); Camera.Far = Math.Max(far, 3000); }
+        ApplyPose(_cur);
         if (OS.GetCmdlineUserArgs().Contains("--town-debug-cam"))
-        {
-            var box = new Aabb();
-            bool first = true;
-            foreach (var mi in FindChildren("*", "MeshInstance3D", true, false).OfType<MeshInstance3D>())
-            {
-                if (mi.Mesh == null) continue;
-                var b = mi.GlobalTransformOrSelf() * mi.GetAabb();
-                box = first ? b : box.Merge(b);
-                first = false;
-            }
-            GD.Print($"[H5] town cam eye={eye} pivot={_pivot} pitch={_pitch} yaw={_yaw} rod={_rod} scene={box.Position}..{box.End}");
-        }
+            GD.Print($"[H5] town cam eye={eye} anchor={p.Anchor} pitch={F("Rot", "x")} yaw={F("Rot", "y")} rod={p.Rod} limits={_limits} set={_limitSet.Count}");
+    }
+
+    /// <summary>Forward of qZ(yaw)·qX(pitch) applied to +Y, in mesh space (docs/rules/CAMERA.md).</summary>
+    static System.Numerics.Vector3 MeshDir(float pitch, float yaw) =>
+        new(-MathF.Sin(yaw) * MathF.Cos(pitch), MathF.Cos(yaw) * MathF.Cos(pitch), MathF.Sin(pitch));
+
+    static Vector3 Dir(float pitch, float yaw) => ModelBuilder.ToGodot(MeshDir(pitch, yaw));
+
+    void ApplyPose(in Pose p)
+    {
+        var eye = ModelBuilder.ToGodot(p.Anchor - MeshDir(p.Pitch, p.Yaw) * p.Rod);
+        var fwd = Dir(p.Pitch, p.Yaw);
+        Camera.GlobalTransform = new Transform3D(Basis.LookingAt(fwd, Mathf.Abs(fwd.Y) > 0.999f ? Vector3.Forward : Vector3.Up), eye);
+        ApplyProjection();
+    }
+
+    /// <summary>The exe's projection (00cf7c30): FOV horizontal up to 4:3 (see FrontEnd.ExeProjection).</summary>
+    void ApplyProjection()
+    {
+        if (IsInsideTree()) FrontEnd.ExeProjection.Apply(Camera, _fovDeg, GetViewport().GetVisibleRect().Size);
     }
 
     /// <summary>
-    /// View direction in mesh space (−sin yaw·cos pitch, cos yaw·cos pitch, sin pitch) → Godot. Town interiors
-    /// are authored in plain mesh space: with this reading the eye lies inside the scene bounds and looks
-    /// into it for all eight towns, while the Y-negated main-menu reading puts every town camera outside.
+    /// The town screen's camera (CTownScreen 0061c5b0): with `town_enable_flyby` (DAT_00f36490, default 1) and a
+    /// cameraFlyupRole model the fly-up plays first (00616d20: an animated camera from the role's model and
+    /// AnimSet, FOV / clip from initialCamPos); otherwise the hand camera at once (<see cref="EndFlyby"/>).
     /// </summary>
-    static Vector3 Dir(float pitchDeg, float yawDeg)
+    public void StartTownCamera(bool flyby)
     {
-        float p = Mathf.DegToRad(pitchDeg), y = Mathf.DegToRad(yawDeg);
-        // Yaw sign checked on the hero screen stand (camera at (−2,−4), yaw −30°, must face the hero at
-        // the origin) and the fort hall (yaw −90° must face the creature spots at larger x).
-        var m = new System.Numerics.Vector3(-Mathf.Sin(y) * Mathf.Cos(p), Mathf.Cos(y) * Mathf.Cos(p), Mathf.Sin(p));
-        return ModelBuilder.ToGodot(m);
-    }
-
-    void ApplyCamera()
-    {
-        var eye = _pivot - Dir(_pitch, _yaw) * _rod;
-        Camera.LookAtFromPosition(eye, _pivot, Vector3.Up);
-    }
-
-    /// <summary>User orbit (right-drag rotates/pitches, wheel zooms) within the scene's CameraLimits.</summary>
-    public void Orbit(float dYaw, float dPitch, float zoom)
-    {
-        _yaw += dYaw;
-        _pitch += dPitch;
-        if (_limits.UsePitch) _pitch = Math.Clamp(_pitch, _limits.MinPitch, _limits.MaxPitch);
-        _rod = Math.Clamp(_rod * zoom, _limits.MinRod, _limits.MaxRod);
-        var eye = _pivot - Dir(_pitch, _yaw) * _rod;
-        // MinZ/MaxZ bound the eye height (frame z = Godot y).
-        if (eye.Y < _limits.MinZ || eye.Y > _limits.MaxZ)
+        var desc = Game.Instance.Xdb.Load(DescPath).Root!;
+        var role = desc.Element("cameraFlyupRole");
+        var modelPath = Href(role?.Element("Model"), DescPath);
+        var setPath = Href(role?.Element("AnimSet"), DescPath);
+        if (flyby && modelPath != null && Game.Instance.Fs.Exists(modelPath) && setPath != null && Game.Instance.Fs.Exists(setPath))
         {
-            var target = Math.Clamp(eye.Y, _limits.MinZ, _limits.MaxZ);
-            _pivot.Y += target - eye.Y;
+            try
+            {
+                var rig = CharacterBuilder.BuildFromModel(modelPath, setPath, "CameraRole");
+                foreach (var mi in rig.FindChildren("*", nameof(MeshInstance3D), true, false).OfType<MeshInstance3D>()) mi.Visible = false;
+                AddChild(rig);
+                int bone = rig.Skeleton.FindBone("camera");
+                var first = rig.Player.GetAnimationList().FirstOrDefault()?.Replace(Character.Lib, "");
+                if (bone >= 0 && first != null)
+                {
+                    // The role's idle00 is a long tour around the town (Necropolis 53.9 s) that the screen never ends
+                    // by itself (00616d20 keeps no end time; only input sets +0x294). It loops like the main menu's
+                    // role clip (007d1b80). TODO(exe): looping not traced inside the animated model player (007d1920).
+                    rig.Play(rig.Has("idle00") ? "idle00" : first, loop: true);
+                    _flyRig = rig;
+                    _flyBone = bone;
+                    _hand = false;
+                    UpdateFlyby();
+                    return;
+                }
+                rig.QueueFree();
+            }
+            catch (Exception e) { GD.PushWarning($"[H5] town fly-up {setPath}: {e.Message}"); }
         }
-        ApplyCamera();
+        EndFlyby();
+    }
+
+    /// <summary>
+    /// Switches to the hand camera (00616bf0 + 00617690; called on the first left button down / up and by the
+    /// building and HUD actions, all of which set screen +0x294): a new camera at initialCamPos and a
+    /// CTownOperator with the scene's CameraLimits (007d3bd0) and CameraLimitsSet (0061f7a0), its pose set at once.
+    /// </summary>
+    public void EndFlyby()
+    {
+        if (_hand) return;
+        _hand = true;
+        _flyRig?.QueueFree();
+        _flyRig = null;
+        _cur = _tgt = _initial;
+        _inYaw = _inPitch = _inLift = _inZoom = 0;
+        ApplyPose(_cur);
+    }
+
+    /// <summary>
+    /// set_camera_default_pos (HOME, 00616300 → 006153e0): the configurator's default pose is put on the
+    /// camera only; the operator keeps its target, so the view glides back from initialCamPos to it.
+    /// </summary>
+    public void DefaultPos()
+    {
+        if (!_hand) return;
+        _cur = _initial;
+        ApplyPose(_cur);
+    }
+
+    /// <summary>Camera input in the exe's units (input_a2.cfg common camera bindings), consumed by the next update.</summary>
+    public void AddInput(float rotate, float pitch, float forward, float zoom)
+    {
+        _inYaw += rotate;
+        _inPitch += pitch;
+        _inLift += forward;
+        _inZoom += zoom;
+    }
+
+    public override void _Process(double delta)
+    {
+        if (Camera == null) return;
+        if (_flyRig != null && !_hand) { UpdateFlyby(); return; }
+        if (_hand) UpdateHand(Math.Min((float)delta, 0.1f));
+        else ApplyProjection();
+    }
+
+    void UpdateFlyby()
+    {
+        if (_flyRig == null || _flyBone < 0) return;
+        var t = _flyRig.Skeleton.GlobalTransform * _flyRig.Skeleton.GetBoneGlobalPose(_flyBone);
+        Camera.GlobalTransform = t.Orthonormalized();
+        ApplyProjection();
+        if (_debugCam && Engine.GetProcessFrames() % 30 == 0)
+            GD.Print($"[H5] town fly-up t={_flyRig.Player.CurrentAnimationPosition:0.00}/{_flyRig.Player.CurrentAnimationLength:0.00} eye(mesh)={Mesh(Camera.GlobalPosition)} fwd={Mesh(-Camera.GlobalBasis.Z)}");
+    }
+
+    readonly bool _debugCam = OS.GetCmdlineUserArgs().Contains("--town-debug-cam");
+    static Vector3 Mesh(Vector3 g) => new(g.X, -g.Z, g.Y);
+
+    // CTownOperator::Update (007d5550) constants.
+    const float YawPerInput = 0.7f;      // DAT_00f3fe4c × (strafe + rotate + rotate_mouse)
+    const float PitchPerInput = 0.5f;    // DAT_00f3fe48 × (pitch_mouse + pitch)
+    const float LiftPerInput = 15f;      // DAT_00f3fe40 × (forward_mouse + forward) → anchor height
+    const float ZoomPerInput = 15f;      // DAT_00f3fe44 × (zoom + zoom_mouse) → rod
+    const float YawLimit = 90f;          // ±90 (radians): yaw is effectively free
+    // Glide of the shown pose to the target (007cccb0 / 007ccc10, docs/rules/CAMERA.md); eps 0.03 for the anchor.
+    const double RodBase = 1.0 / 300.0, AngleBase = 1.0 / 9000.0, AnchorBase = 1.1111111e-4;
+    const float RodEps = 0.02f, PitchEps = 0.01f, AngleEps = 1e-5f, AnchorEps = 0.03f;
+
+    void UpdateHand(float dt)
+    {
+        if (dt <= 0) return;
+        // Limits blended by the shown anchor height over the CameraLimitsSet records containing it (weight =
+        // distance to the nearer edge / range, normalised); the main record when none does. Only rod and pitch
+        // come from the set; the height range always from the main record.
+        var lim = _limits;
+        if (_limitSet.Count > 0)
+        {
+            float z = _cur.Anchor.Z, w = 0, r0 = 0, r1 = 0, p0 = 0, p1 = 0;
+            foreach (var e in _limitSet)
+            {
+                if (!(e.MinZ < z && z < e.MaxZ)) continue;
+                float d = Math.Min(e.MaxZ - z, z - e.MinZ) * (1f / (e.MaxZ - e.MinZ));
+                r0 += d * e.MinRod; r1 += d * e.MaxRod; p0 += d * e.MinPitch; p1 += d * e.MaxPitch; w += d;
+            }
+            if (w > 0) lim = lim with { MinRod = r0 / w, MaxRod = r1 / w, MinPitch = p0 / w, MaxPitch = p1 / w };
+        }
+        _tgt.Yaw = Step(_tgt.Yaw, _inYaw * YawPerInput, -YawLimit, YawLimit);
+        _tgt.Pitch = Step(_tgt.Pitch, _inPitch * PitchPerInput, Mathf.DegToRad(lim.MinPitch), Mathf.DegToRad(lim.MaxPitch));
+        _tgt.Anchor.Z = Step(_tgt.Anchor.Z, _inLift * LiftPerInput, lim.MinZ, lim.MaxZ);
+        _tgt.Rod = Step(_tgt.Rod, _inZoom * ZoomPerInput, lim.MinRod, lim.MaxRod);
+        _inYaw = _inPitch = _inLift = _inZoom = 0;
+
+        _cur.Rod = Approach(_tgt.Rod, _cur.Rod, RodBase, dt, RodEps);
+        _cur.Pitch = Approach(_tgt.Pitch, _cur.Pitch, AngleBase, dt, PitchEps);
+        float dYaw = _cur.Yaw - _tgt.Yaw;
+        _cur.Yaw = _tgt.Yaw + (Mathf.PosMod(dYaw + Mathf.Pi, Mathf.Tau) - Mathf.Pi);
+        _cur.Yaw = Approach(_tgt.Yaw, _cur.Yaw, AngleBase, dt, AngleEps);
+        _cur.Anchor.X = Approach(_tgt.Anchor.X, _cur.Anchor.X, AnchorBase, dt, AnchorEps);
+        _cur.Anchor.Y = Approach(_tgt.Anchor.Y, _cur.Anchor.Y, AnchorBase, dt, AnchorEps);
+        _cur.Anchor.Z = Approach(_tgt.Anchor.Z, _cur.Anchor.Z, AnchorBase, dt, AnchorEps);
+        ApplyPose(_cur);
+    }
+
+    /// <summary>007d4340 with equal soft and hard limits: add the input, then clamp (min first, max last).</summary>
+    static float Step(float v, float input, float min, float max)
+    {
+        v += input;
+        if (v < min) v = min;
+        if (max < v) v = max;
+        return v;
+    }
+
+    /// <summary>FUN_007ccc10: target + (current − target)·base^dt, snapping inside eps.</summary>
+    static float Approach(float target, float current, double basePerSecond, float dt, float eps)
+    {
+        if (Mathf.Abs(target - current) < eps) return target;
+        return (float)(target + (current - target) * Math.Pow(basePerSecond, dt));
+    }
+
+    /// <summary>Dev (`--town-orbit=yaw,pitch`): turns the hand camera's target by degrees, unclamped, at once.</summary>
+    public void Orbit(float dYawDeg, float dPitchDeg, float zoom)
+    {
+        EndFlyby();
+        _tgt.Yaw += Mathf.DegToRad(dYawDeg);
+        _tgt.Pitch += Mathf.DegToRad(dPitchDeg);
+        _tgt.Rod *= zoom;
+        _cur = _tgt;
+        ApplyPose(_cur);
     }
 
     // ------------------------------------------------------------------ helpers

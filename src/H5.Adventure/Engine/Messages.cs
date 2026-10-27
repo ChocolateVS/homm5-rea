@@ -13,6 +13,7 @@ namespace H5.Adventure.Engine;
 [JsonDerivedType(typeof(EndTurnCmd), "end_turn")]
 [JsonDerivedType(typeof(BuildCmd), "build")]
 [JsonDerivedType(typeof(RecruitCmd), "recruit")]
+[JsonDerivedType(typeof(HireAllCmd), "hire_all")]
 [JsonDerivedType(typeof(HireHeroCmd), "hire")]
 [JsonDerivedType(typeof(ChooseLevelUpCmd), "level_up")]
 [JsonDerivedType(typeof(AnswerChoiceCmd), "answer")]
@@ -46,6 +47,7 @@ namespace H5.Adventure.Engine;
 [JsonDerivedType(typeof(ChangeMoonWeekCmd), "change_moon_week")]
 [JsonDerivedType(typeof(HireHeroInTavernCmd), "hire_hero_in_tavern")]
 [JsonDerivedType(typeof(PayThievesGuildCmd), "pay_thieves_guild")]
+[JsonDerivedType(typeof(BuyRumourCmd), "buy_rumour")]
 [JsonDerivedType(typeof(UnlearnHeroSkillCmd), "unlearn_hero_skill")]
 [JsonDerivedType(typeof(UnlearnHeroSkillsCmd), "unlearn_hero_skills")]
 [JsonDerivedType(typeof(RelearnHeroSkillCmd), "relearn_hero_skill")]
@@ -69,6 +71,11 @@ public sealed record EndTurnCmd : AdvCommand;
 public sealed record BuildCmd(int TownObject, string Building) : AdvCommand;
 /// <summary>Recruit from a town dwelling tier (1..7); Upgraded picks the upgraded creature.</summary>
 public sealed record RecruitCmd(int TownObject, int Tier, int Count, int Variant = 0) : AdvCommand;
+/// <summary>
+/// CHireAllCreaturesCmd: hire every town dwelling's creatures (<see cref="Adventure.HireAllPlan"/>); Variants = the hire
+/// screen's selected column per tier (index tier − 1, −1 = every variant), or null.
+/// </summary>
+public sealed record HireAllCmd(int TownObject, int[]? Variants = null) : AdvCommand;
 public sealed record HireHeroCmd(int TownObject, int TavernSlot) : AdvCommand;
 /// <summary>Pick one option of the pending level-up: index into Skills then Perks.</summary>
 public sealed record ChooseLevelUpCmd(int HeroId, int Option) : AdvCommand;

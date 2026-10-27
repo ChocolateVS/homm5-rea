@@ -69,8 +69,10 @@ public partial class TownScreen
         {
             switch (a)
             {
-                case "save" or "load" or "quicksave" or "quickload" or "close_flyby" or "set_camera_default_pos" or "shift":
+                case "save" or "load" or "quicksave" or "quickload" or "close_flyby" or "shift":
                     continue;
+                // HOME: the default camera pose (00616300 → 006153e0).
+                case "set_camera_default_pos": _scene?.DefaultPos(); break;
                 case "hero_attributes": OpenHeroPage("Army"); break;
                 case "hero_equipment": OpenHeroPage("Inventory"); break;
                 case "hero_skills": OpenHeroPage("Skills"); break;
@@ -109,13 +111,13 @@ public partial class TownScreen
 /// <summary>
 /// Town sub-screens close with their own input_a2.cfg section keys (fort_screen R/Esc,
 /// mage_guild_screen G/Esc, tavern_screen Esc/T/E, market_screen M, buy_war_machine_screen
-/// Esc/Enter/E, town_build) — never with a right click (that shows descriptions in the original).
+/// Esc/Enter/E, town_build, hire_screen) — never with a right click (that shows descriptions in the original).
 /// </summary>
 public abstract partial class TownSubScreen
 {
     string Section => this switch
     {
-        FortScreen => "fort_screen",
+        TownHireScreen => "hire_screen",
         MageGuildScreen => "mage_guild_screen",
         TavernScreen => "tavern_screen",
         MarketScreen => "market_screen",

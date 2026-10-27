@@ -112,6 +112,84 @@ public sealed partial class Adventure
         return variant switch { 0 => def?.Creature, 1 => def?.Creature, 2 => def?.Creature2, _ => null };
     }
 
+    /// <summary>The garrison hero of a town (town hero slot 1), if any.</summary>
+    public HeroState? GarrisonHeroOf(TownState t) => S.Heroes.Find(h => h.Alive && h.InTown == t.Object && h.Garrisoned);
+
+    /// <summary>
+    /// The army a town's hire screen recruits into (0061af30: town hero slot 1's army when there is one, else the town
+    /// army): the garrison hero's army, else the town garrison.
+    /// </summary>
+    public Stack?[] TownRecruitArmy(TownState t) => GarrisonHeroOf(t)?.Army ?? t.Garrison;
+
+    /// <summary>
+    /// "Hire all" (FUN_009a52a0, used by the hire screen's cost preview 006dcfe0 and by CHireAllCreaturesCmd 0042b870):
+    /// dwellings from the highest tier down; per dwelling its creature variants (base, upgrade, alternative) or, when
+    /// <paramref name="variants"/> gives a column (≥ 0) for the tier, only that variant; variants are tried from the last
+    /// down while the dwelling's pool lasts. A creature the army does not hold yet takes one of the army's free slots
+    /// (none left → skipped). With <paramref name="limitByMoney"/> each count is min(pool, floor(purse / cost)) (the
+    /// exe truncates the float ratio of 009d0500) and the cost comes off a copy of the purse.
+    /// </summary>
+    public List<(int Tier, int Variant, string Creature, int Count)> HireAllPlan(TownState t, Purse purse, Stack?[] army, int[]? variants, bool limitByMoney = true)
+    {
+        var plan = new List<(int, int, string, int)>();
+        var money = new Purse { R = (int[])purse.R.Clone() };
+        int free = army.Count(s => s is not { Count: > 0 });
+        for (int tier = 7; tier >= 1; tier--)
+        {
+            var cands = new List<int>();
+            for (int v = 0; v < 3; v++) if (DwellingCreature(t, tier, v) != null) cands.Add(v);
+            if (cands.Count == 0) continue;
+            if (variants != null && variants.Length == 7 && variants[tier - 1] >= 0) cands.RemoveAll(v => v != variants[tier - 1]);
+            int pool = t.Available[tier - 1];
+            for (int i = cands.Count - 1; i >= 0 && pool > 0; i--)
+            {
+                var creature = DwellingCreature(t, tier, cands[i])!;
+                if (!Core.Creatures.TryGetValue(creature, out var cd)) continue;
+                bool newStack = !army.Any(s => s is { Count: > 0 } && s.Creature == creature) && !plan.Any(x => x.Item3 == creature);
+                if (newStack && free <= 0) continue;
+                int n = pool;
+                if (limitByMoney) n = Math.Min(n, Affordable(money, cd.Cost));
+                if (n <= 0) continue;
+                plan.Add((tier, cands[i], creature, n));
+                pool -= n;
+                if (limitByMoney) money.Add(cd.Cost, -n);
+                if (newStack) free--;
+            }
+        }
+        return plan;
+    }
+
+    /// <summary>How many of a cost the purse pays for (FUN_009d0500: the smallest resource ratio, truncated).</summary>
+    public static int Affordable(Purse purse, Resources cost)
+    {
+        int[] c = { cost.Wood, cost.Ore, cost.Mercury, cost.Crystal, cost.Sulfur, cost.Gem, cost.Gold };
+        int n = int.MaxValue;
+        for (int i = 0; i < 7; i++) if (c[i] != 0) n = Math.Min(n, Math.Max(0, purse[i]) / c[i]);
+        return n == int.MaxValue ? int.MaxValue : n;
+    }
+
+    /// <summary>CHireAllCreaturesCmd (execute 0042b870): hires the <see cref="HireAllPlan"/> into the town's recruit army; fails when it is empty.</summary>
+    string? DoHireAll(HireAllCmd c)
+    {
+        var p = Current;
+        if (S.Town(c.TownObject) is not { } t) return "no such town";
+        if (t.Owner != p.Index) return "not your town";
+        var army = TownRecruitArmy(t);
+        var plan = HireAllPlan(t, p.Purse, army, c.Variants);
+        if (plan.Count == 0) return "nothing to hire";
+        foreach (var (tier, _, creature, n) in plan)
+        {
+            var cost = Purse.Scale(Core.Creatures[creature].Cost, n);
+            if (!p.Purse.CanAfford(cost) || t.Available[tier - 1] < n || !army.TryAdd(creature, n)) continue;
+            t.Available[tier - 1] -= n;
+            Give(p, Purse.Scale(cost, -1));
+            Emit(new CreaturesRecruited(c.TownObject, creature, n));
+        }
+        var gh = GarrisonHeroOf(t);
+        Emit(new ArmyChanged(gh?.Id ?? -1, gh == null ? c.TownObject : -1));
+        return null;
+    }
+
     string? DoRecruit(RecruitCmd c)
     {
         if (c.Count <= 0) return "invalid count";
@@ -127,8 +205,10 @@ public sealed partial class Adventure
             creature = DwellingCreature(t, c.Tier, c.Variant);
             pool = t.Available;
             slot = c.Tier - 1;
-            visitor = S.Heroes.Find(h => h.Alive && h.InTown == t.Object && !h.Garrisoned && h.Owner == p.Index);
-            target = visitor?.Army ?? t.Garrison;
+            // The town hire screen (0061af30 → 006db170) hires into the town hero slot 1 (the garrison hero, town
+            // vf 0x18(1) → hero vf 0x48) when there is one, else into the town's own army (town vf 0x2c, the garrison).
+            visitor = GarrisonHeroOf(t);
+            target = TownRecruitArmy(t);
         }
         else if (S.Objects.TryGetValue(c.TownObject, out var os) && O(c.TownObject).Kind == ObjectKind.Dwelling)
         {
@@ -156,6 +236,22 @@ public sealed partial class Adventure
         Emit(new CreaturesRecruited(c.TownObject, creature, c.Count));
         Emit(new ArmyChanged(visitor?.Id ?? -1, visitor == null ? c.TownObject : -1));
         return null;
+    }
+
+    /// <summary>
+    /// Town hiring status, exe 004f4570 (the town tavern's action button is enabled only at 0, 00636d20): 2 = no
+    /// tavern (town vfunc 0x34(4) &lt; 1), 3 = gold below <see cref="HireCost"/> with the town, 4 = no free town hero
+    /// slot (004f41b0), 5 = too many heroes. Status 1 (player vfunc 0x150 on the hero) is not modelled.
+    /// GAP: 004f41b0 also accepts a free second slot when the first is taken; the hire command (00639060, vtable
+    /// 00e1976c) is not traced, so the engine keeps needing a free entrance (<see cref="DoHire"/>).
+    /// </summary>
+    public int TownHireStatus(PlayerState p, TownState t)
+    {
+        if (t.Level("TB_TAVERN") < 1) return 2;
+        if (p.Purse[Purse.Gold] < HireCost(p, t)) return 3;
+        if (HeroAt(EntranceOf(t)) != null) return 4;
+        if (S.Heroes.Count(h => h.Alive && h.Owner == p.Index) >= HiringHeroLimit(p)) return 5;
+        return 0;
     }
 
     string? DoHire(HireHeroCmd c)

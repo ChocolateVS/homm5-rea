@@ -59,8 +59,18 @@ public sealed class MarketController
         ui.Find("LeftBigIconHeader")?.SetText(TownUi.Text("UI/Marketplace2/Main/YouGiveHeader.txt", "You Give"));
         ui.Find("RightBigIconHeader")?.SetText(TownUi.Text("UI/Marketplace2/Main/YouGetHeader.txt", "You Get"));
 
-        ui.Bus.On("select_treasure", (_, src) => { if (Index(src, "TreasureButton_") is int i) { _give = i; if (_get == i) _get = -1; _received = 0; Refresh(); } });
-        ui.Bus.On("select_rate", (_, src) => { if (Index(src, "RateButton_") is int i && i != _give) { _get = i; _received = 0; Refresh(); } });
+        // TreasureButton_N / RateButton_N (UI/Marketplace2/Resource/Treasure_N, Rate_N) are two-state buttons with
+        // AutoChangeState false: state 0 (plain) carries the select_treasure / select_rate reaction, state 1 (the
+        // Selection foreground) none. A click runs the current state's commands without advancing, so only an
+        // unselected button selects. The controller (FUN_00629a90 / 0062e784) then calls the model: give
+        // (0062b6c0) or get (0062b6e0) resource, each resetting the amount to 0; the other choice is kept.
+        // UiNode advances multi-state buttons on click, so the click is read here from the state it left.
+        for (int i = 0; i < 7; i++)
+        {
+            int k = i;
+            if (ui.Find($"TreasureButton_{i}") is { } t) t.Clicked += n => { if (LeftState(n) == 0) SelectGive(k); else Refresh(); };
+            if (ui.Find($"RateButton_{i}") is { } r) r.Clicked += n => { if (LeftState(n) == 0) SelectGet(k); else Refresh(); };
+        }
         if (ui.Find("YouGetEdit") is UiEditLine edit)
             edit.Changed += v => { if (int.TryParse(v, out var n)) SetReceived(n, updateEdit: false); };
 
@@ -86,12 +96,36 @@ public sealed class MarketController
         Refresh();
     }
 
-    static int? Index(UiNode? src, string prefix)
+    /// <summary>The state a clicked two-state button was in before UiNode advanced it.</summary>
+    static int LeftState(UiNode n) => n.Window.ButtonStates.Count > 1 ? (n.State + n.Window.ButtonStates.Count - 1) % n.Window.ButtonStates.Count : 0;
+
+    void SelectGive(int i)
     {
-        for (Node? n = src; n != null; n = n.GetParent())
-            if (n is UiNode u && u.Window.Name.StartsWith(prefix, StringComparison.Ordinal) && int.TryParse(u.Window.Name[prefix.Length..], out var i))
-                return i;
-        return null;
+        _give = i;
+        // A resource can't be exchanged for itself (its rate shows "-------"); the exe's setter keeps the other choice.
+        if (_get == i) _get = -1;
+        _received = 0;
+        Refresh();
+    }
+
+    void SelectGet(int i)
+    {
+        if (i != _give) { _get = i; _received = 0; }
+        Refresh();
+    }
+
+    /// <summary>Dev (screenshot checks): H5_MARKET_CLICK=TreasureButton_6,RateButton_0,set:5,jog:button_2 clicks (set:N = amount to get) in order.</summary>
+    public void DevClicks()
+    {
+        if (OS.GetEnvironment("H5_MARKET_CLICK") is not { Length: > 0 } list) return;
+        foreach (var name in list.Split(','))
+        {
+            if (name.StartsWith("set:") && int.TryParse(name[4..], out var n)) { SetReceived(n, updateEdit: true); continue; }
+            var node = name.StartsWith("jog:") ? _jog?.Find(name[4..]) : _ui.Find(name);
+            GD.Print($"[H5] market dev click {name}: {(node == null ? "not found" : "ok")}");
+            node?.Activate();
+            GD.Print($"[H5] market give={_give} get={_get} received={_received} cost={CostOf(_received)} max={MaxReceivable()} purse={string.Join(",", Enumerable.Range(0, 7).Select(i => _me().Purse[i]))}");
+        }
     }
 
     /// <summary>Puts a JogDialButton preset's Active/Pushed/Disabled/Hover textures on a dial button.</summary>

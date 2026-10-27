@@ -245,78 +245,6 @@ public sealed partial class TownBuildScreen : TownSubScreen
     }
 }
 
-/// <summary>
-/// The tavern (NUI tavern screen, UI/TavernScreen; messages click_hero1/2, rumors, thiefs, close, exe 00634de0):
-/// the two heroes on offer with face, name, attributes, starting army and price. The stock screen has no hire
-/// button (hiring is done from the town strip); here double-clicking the face hires the shown hero.
-/// </summary>
-public sealed partial class TavernScreen : TownSubScreen
-{
-    int _slot;
-
-    public TavernScreen(TownScreen owner) : base(owner, "UI/TavernScreen.(WindowScreen).xdb")
-    {
-        Ui.Bus.On("click_hero1", () => { _slot = 0; Refresh(); });
-        Ui.Bus.On("click_hero2", () => { _slot = 1; Refresh(); });
-        Ui.Bus.On("rumors", () => Owner.Notice("Tavern", "There are no rumours this week."));
-        // 00637b50: ThiefsBookmark needs a thieves' guild level > 0, which only the den of thieves passes.
-        if (Ui.Find("ThiefsBookmark") is { } thieves) thieves.Enabled = false;
-        Ui.SetVisible("tavern-thieves-window", false);
-        if (Ui.Find("HeroInfo/Face") is { } face)
-        {
-            face.MouseFilter = MouseFilterEnum.Stop;
-            face.TooltipText = "Double-click to hire this hero";
-            face.GuiInput += e => { if (e is InputEventMouseButton { DoubleClick: true, ButtonIndex: MouseButton.Left }) Hire(); };
-        }
-    }
-
-    void Hire()
-    {
-        if (Apply(new HireHeroCmd(Owner.Town.Object, _slot))) Close();
-    }
-
-    public override void Refresh()
-    {
-        base.Refresh();
-        // The town's hiring filter hides heroes; the remaining one moves to the first bookmark (exe FUN_00636a10).
-        var offers = H5.Adventure.Engine.Adventure.TownTavernOffers(Game.Instance.Db, Me, Owner.Town);
-        for (int i = 0; i < 2; i++)
-        {
-            var id = i < offers.Length ? offers[i] : null;
-            var bm = Ui.Find($"Hero{i + 1}Bookmark");
-            TownUi.SetPicture(bm, id != null && Combat.CombatIcons.Hero(id, false) is { } face ? Game.Instance.LoadTexture(face) : null);
-            if (bm != null && bm.Window.ButtonStates.Count > 1) bm.SetState(i == _slot ? 1 : 0);
-        }
-        var defId = _slot < offers.Length ? offers[_slot] : null;
-        var db = Game.Instance.Db;
-        Ui.Find("price")?.SetValue("price", Owner.Session.Game.HireCost(Me, Owner.Town).ToString());
-        if (defId == null || !db.Heroes.TryGetValue(defId, out var def))
-        {
-            Ui.SetVisible("HeroInfo", false);
-            return;
-        }
-        Ui.SetVisible("HeroInfo", true);
-        TownUi.SetPicture(Ui.Find("HeroInfo/Face"),
-            Combat.CombatIcons.Hero(defId, true) is { } fp ? Game.Instance.LoadTexture(fp) : null);
-        var cls = Owner.Session.Db.SkillProbs.ContainsKey(def.Class) ? def.Class.Replace("HERO_CLASS_", "").Replace('_', ' ') : def.Class;
-        Ui.Find("HeroInfo/Name")?.SetValue("HeroName", def.Name);
-        Ui.Find("HeroInfo/Name")?.SetValue("HeroClass", System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(cls.ToLowerInvariant()));
-        Ui.Find("HeroInfo/Name")?.SetValue("HeroLevel", "1");
-        foreach (var (key, value) in new[] { ("Attack", def.Attack), ("Defence", def.Defence), ("SpellPower", def.SpellPower), ("Knowledge", def.Knowledge) })
-            Ui.Find($"HeroAttributes/{key}")?.SetValue("Attribute", value.ToString());
-        Ui.Find("HeroAttributes/Morale")?.SetValue("Attribute", "0");
-        Ui.Find("HeroAttributes/Luck")?.SetValue("Attribute", "0");
-        Ui.Find("HeroAttributes/Mana")?.SetValue("Attribute", (def.Knowledge * 10).ToString());
-        // The starting army is rolled when the hero is hired (Adventure.GiveStartingArmy), so the slots stay empty.
-        for (int i = 0; i < 7; i++)
-        {
-            var slot = Ui.Find($"Slot_{i + 1}");
-            TownUi.SetPicture(slot?.FindChild("Pic", true, false) as Control, null);
-            if (slot?.FindChild("Text", true, false) is UiNode txt) txt.Visible = false;
-        }
-    }
-}
-
 /// <summary>The magic guild (UI/MageGuild): the spells of each built circle (SpellsPanel_0N holds N spells).</summary>
 public sealed partial class MageGuildScreen : TownSubScreen
 {
@@ -423,7 +351,14 @@ public sealed partial class MarketScreen : TownSubScreen
 
     public MarketScreen(TownScreen owner) : base(owner, "UI/MarketplaceAndMail.(WindowScreen).xdb")
     {
-        _market = new MarketController(this, Ui, owner.Session, () => Me, -1, () => Owner.Refresh(), Close);
+        // The exchange refreshes this screen's own resource bar as well as the (hidden) town HUD.
+        _market = new MarketController(this, Ui, owner.Session, () => Me, -1, () => { TownUi.SetResourceBar(Ui, Me); Owner.Refresh(); }, Close);
+    }
+
+    public override void _Ready()
+    {
+        base._Ready();
+        Callable.From(_market.DevClicks).CallDeferred();
     }
 
     public override void Refresh()

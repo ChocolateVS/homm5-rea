@@ -250,7 +250,7 @@ public partial class TownAudio : Node
         foreach (var n in _screen.FindChildren("*", "", recursive: true, owned: false))
         {
             if (n is Town.TavernScreen) { kind = "tavern"; break; }
-            if (n is Town.FortScreen) { kind = "dwelling"; break; }
+            if (n is Town.TownHireScreen) { kind = "dwelling"; break; }
             building ??= n switch
             {
                 Town.MageGuildScreen => _race?.MagicGuildSound,

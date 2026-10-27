@@ -5,12 +5,13 @@ original UI layouts / data. Status: **MATCH** (already as the exe), **FIXED** (c
 difference or not built), **UNVERIFIED** (implemented from data, exe path not traced). Rows carrying two statuses
 count once for each.
 
-Rows at 2026-10-20: 49 FIXED, 34 MATCH, 25 GAP, 21 UNVERIFIED.
+Rows at 2026-10-27: 81 FIXED, 43 MATCH, 28 GAP, 35 UNVERIFIED.
 
 Commits: 9153b62 (dwelling growth incl. moon weeks), afe1e7b + 844ce53 (build check codes, town income),
 6690c81 (level-up offers, experience table, Enlightenment, perk effects, hero screen fixes),
-f65f434 + c6f0b5b (spell learning, blacksmith prices, zero-count transfers).
-Tests: `tests/H5.Adventure.Tests/TownGrowthTests.cs`, `SpellLearnTests.cs`, `LevelUpRulesTests.cs`, `TownBuildRulesTests.cs`;
+f65f434 + c6f0b5b (spell learning, blacksmith prices, zero-count transfers), 5d81148 (Town Portal, hover colour),
+51d3aa3 (map-start buildings), the user-report commit (hire screen, tavern + rumours, marketplace, town camera, army rows).
+Tests: `tests/H5.Adventure.Tests/TownGrowthTests.cs`, `SpellLearnTests.cs`, `LevelUpRulesTests.cs`, `TownBuildRulesTests.cs`, `TownInitialBuildingsTests.cs`, `TownHireTests.cs`, `TavernRumourTests.cs`;
 screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stock.
 
 # Town
@@ -57,6 +58,23 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Open on double click | AUDIT_INPUT (click_pointer 00613130 no-op, dblclick_pointer 00619a30) | double click opens | same | MATCH |
 | Building tooltip extras | 0061a5d0 switch on the town ability: 0xc / 0xd mystic_pond_bonus, 0x1c ritual_pit_info_witches / _minotaurs, 0x1d trade_guild_income_bonus / trade_guild_this_week_bonus; shipyard_deserted; default name + description (006b9c10) | per-building extra lines | name + description only (right-click tooltip, AUDIT_INPUT) | GAP |
 
+## Town camera
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Camera on opening | 0061c5b0; DAT_00f36490 `town_enable_flyby` (registered by 0061fc10, user_a2.cfg = 1); +0x294 = 0 → 00616d20, else 00616bf0 | fly-up animated camera, else hand camera | same (`StartTownCamera`; dev `--town-no-flyby`) | FIXED (was static initialCamPos) |
+| Fly-up camera | 00616d20 → 007d1920 / 007d2140; FOV and clip from initialCamPos | follows the cameraFlyupRole "camera" bone; idle00 is a long tour (Necropolis 53.9 s) | same, looped | FIXED / looping and rig placement UNVERIFIED |
+| End of fly-up | 0061bc00 / 006199f0, building/HUD handlers 00618170…00619e80, 00619a30; each sets +0x294 = 1 → 00616bf0 + 00617690 | first left press/release or any action → hand camera at initialCamPos | left press, OpenSub, OpenHero | FIXED |
+| No hover during fly-up | 0061b140 | no pick or highlight while +0x294 = 0 | pick skipped | FIXED |
+| Default pose | CTownCameraConfigurator vtable 00e446d8, +0x20 = 007d3ad0 → 007ce1a0 | Pos = eye; Rot.x/Rot.y = pitch/yaw; orbit point = Pos + Rod·forward | same | MATCH (far plane kept ≥ 3000 for the sky dome) |
+| Projection | 00cf7c30 | FOV horizontal when H/W ≤ 0.75 | `FrontEnd.ExeProjection` (also the hero stand) | FIXED (was vertical: 16:9 looked zoomed out) |
+| Operator update | CTownOperator vtable 00e449bc, ctor 007d6c20, update 007d5550 (step ≤ 100 ms) | yaw += 0.7·input, free; pitch += 0.5·input clamped to Min/MaxPitch; orbit-point height += 15·input clamped to MinZ..MaxZ; rod += 15·input clamped; X/Y fixed | same | FIXED (invented speeds, eye-height clamp, no keys) |
+| Glide | 007cccb0 / 007ccc10 | shown pose glides to the target (anchor eps 0.03) | same, combat constants | FIXED (was instant) |
+| Bindings | input_a2.cfg common camera section | right-drag rotate/pitch; middle or Ctrl+right drag rotate/raise; wheel, PgUp/PgDn zoom; arrows; Ctrl+arrows | same | FIXED / input scale UNVERIFIED |
+| Limits records | 007d3bd0; ArenaDesc reader 00932530 (+0x114, +0x11c); 00617690 → 0061f7a0 | CameraLimits inline or in its own file; none → defaults 007d5990 | separate files resolved | FIXED |
+| CameraLimitsSet | 007d5550 blend loop | height-dependent rod / pitch limits blended | same (Fortress) | FIXED (was ignored) |
+| HOME | 0061bcf0 → 00616300 → 006153e0 | snap to initialCamPos, glide back to the unchanged target | same | FIXED / not observed in the original |
+
 ## Town income
 
 | Item | Evidence | Original | Ours | Status |
@@ -88,6 +106,12 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 |---|---|---|---|---|
 | Rates | FUN_008e7b80 tables (Adventure.Market.cs) | three 9-row tables | same | MATCH (earlier audit) |
 | Marketplace count | CPlayer +0xf8 = FUN_004fbd80 (slave market row: per town 1 with a marketplace, +1 with TOWN_BONUS_MARKETPLACE); CPlayer +0xb0 = 00500cf0 field +0x610 set only through vtable slot +0xac (00500cd0, no direct caller) | count used by the exchange | one per marketplace town, two with TOWN_BONUS_MARKETPLACE | UNVERIFIED (exchange getter's filler not traced) |
+| Resource selection | UI/Marketplace2/Resource/Treasure_N / Rate_N (2 states, AutoChangeState false, select_treasure / select_rate on state 0); controller FUN_00629a90 ("TreasureButton_%d"), 0062e784 ("RateButton_%d") | clicking an unselected treasury / rate row selects it; the selected row does nothing | `Clicked` hook reads the state the click left; only state 0 selects | FIXED (was: no click selected anything, so the market was unusable) |
+| Give / get setters | model 0062b6c0 (give = n, amount = 0), 0062b6e0 (get = n, amount = 0), n in 0..6 | each choice resets the amount; the other choice is kept | same; ours also clears get when it equals the new give, and refuses get = give | MATCH / get = give case UNVERIFIED |
+| Amount arithmetic | 0062b5f0 (step = rate, 1 for gold), 0062b630 (max given = purse/step·step), 0062b5b0 / 0062b670, 0062b7f0 (set received: clamp, given = received/rate or rate·received) | amount stored as units given | stored as received, cost = received·rate, gold rounded to whole rate steps | MATCH (equivalent) |
+| Max button | 0062b9a0 ExchangeMaximumMessage (AmountToGive, AmountToGet, ResourceToGive / ResourceToGet) | confirmation, then exchange of the maximum | same texts and values | MATCH |
+| Exchange | 0062bb40: command (give, get, amount, market count via +0xb0), amount = 0, MARKET_EXCHANGE_SOUND | trade, amount reset, sound | `ExchangeResourcesCmd`, amount reset; resource bar refreshed | FIXED (resource bar stayed stale) / sound UNVERIFIED |
+| Other bookmarks (Mail / hero artifacts pages) | UI/MarketplaceAndMail ActivateMail / ActivateHero1Artifacts / ActivateHero2Artifacts | send resources / artifact trade pages | hidden; bookmarks not wired | GAP |
 
 ## Town portal
 
@@ -97,11 +121,23 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Arrival | 008648b0: town hero slot +0x18(0) empty, else nothing happens | cast only when that slot is free | refused when the entrance is occupied | MATCH (slot ↔ entrance identity UNVERIFIED) |
 | Movement | hero +0x100(0) after the jump | movement points to 0 | same | MATCH |
 
-## Tavern (verify)
+## Tavern
 
 | Item | Evidence | Original | Ours | Status |
 |---|---|---|---|---|
 | Hire price, offers, filter | AUDIT_ADVENTURE tavern rows (00b4ced0, 00636a10, 00634de0) | — | unchanged | MATCH (verified, see AUDIT_ADVENTURE) |
+| Town tavern screen mode | 006186b0 → 006371b0 → CCreateTavernScreen 006393e0 (+0x24 = 1) → 0063a8c0 → 00638670 (param_5 = 1: +0x1b0, +0x260) | town flag on: heroes, rumours | `TavernScreen` (own file) in town mode; town HUD hidden | FIXED (was: hire by double-clicking the face, no jog dial) |
+| Pages / bookmarks | 00634220..00634260 (+0x184 = 0..3), page keys 00634270 / 006342a0, initial page 00637b50, empty-page rule 006372f3 | Hero1/Hero2 (with an offer), Rumors (tavern flag), Thiefs (thieves level > 0); opens on hero 1, else rumours | same | FIXED (Rumors could not be selected) |
+| Hire button | jog dial 00783f10, button 2 message hire_hero / pay (00637b50), enable 00636d20, action 006350b0 | Buy on the jog dial, enabled when 004f4570 = 0; tooltips hire_result_* | same | FIXED (there was no hire button) |
+| Town hire status | 004f4570 / 004f41b0 | 1 player vfunc 0x150; 2 no tavern; 3 gold; 4 no free town hero slot; 5 hero limit | `TownHireStatus` 2/3/4/5; 4 = entrance occupied | FIXED / GAP (status 1 not modelled; the town hire command 00639060 / vtable 00e1976c not traced) |
+| After hiring | 006350b0: refresh flag +0x18c, HIRE_HERO_SOUND, callback +0x268 | screen refreshes | screen stays open and refreshes | UNVERIFIED (+0x268 callback) |
+| Rumour price | 00b4c260 = RPGStats +0x54 = DefaultStats RumorCost | 100 gold (3.1 and MMH 5.5) | `RumourCost` | FIXED (was "There are no rumours this week") |
+| Buy rumour | CRerollRumourCmd (RTTI; vtable 00e197b4, ctor 00639170), sent by 00635320; execute 004f4750: player vfunc 0xe0 pays, then the list's vfunc 0 rerolls; BUY_RUMORS_SOUND | pay, get a new rumour | `BuyRumourCmd` pays and appends one rumour to `TownState.Rumours` (`TavernRumourTests`) | FIXED |
+| Rumour text | 006372f3 case 2: FIRST_RUMOR / RUMORS_FORMAT (UI/Tavern/RumorsFormats), RumorsText in a ScrollContainer, pay enabled when price ≤ gold | every entry with a separator | same | FIXED / order UNVERIFIED (oldest first) |
+| Rumour list owner | 00635320: player vfunc 0x90 → town → vfunc 0x60 | per town | `TownState.Rumours` | UNVERIFIED (reset not traced) |
+| Rumour generation | CRumours (vtables 00e549ac/cc/f0), generator 008e85b0 (RUMOUR_FORMAT_PLAYER_* / _OBJECT_*, weight 100, duplicate test 008ea5d0); CommonGameRumours; MapRumours (00a0b4b0) | player / object rumours plus common and map rumours | weighted draw from CommonGameRumours only | GAP |
+| Thieves page in town | 006393e0 +0x2c = vcall 0x138; 00637b50 enables Thiefs when level > 0 | level from that call | bookmark disabled | GAP |
+| Hero info button | 006c44f0 | the offered hero's screen | disabled | GAP |
 
 ## Computer build period (found, not built)
 
@@ -130,7 +166,13 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Map-start pools | Setup | — | full weekly growth | UNVERIFIED |
 | Accumulation / cap | 00cd0710 adds to pool | no cap seen | no cap | MATCH |
 | Hire command | CHireCreaturesCmd execute 004f4dd0 | pool ≥ count, army fit (FUN_0045b240), cost × count paid (player vfunc 0xe0), pool − count | `DoRecruit` same checks | MATCH |
-| Hire all | CHireAllCreaturesCmd 0042b870 → FUN_009a52a0 | all dwellings from the highest down, each variant, limited by resources and free slots | FortScreen BuyAll hires the selected tier only | GAP |
+| Town hire screen | enter_fort 0061b470 → 0061af30 → 006db170 → 006dd290 / 006e23a0 (HIRE_CREATURES, UI/HireCreatures); dwelling double-click goes the same way | the map-dwelling hire screen: one row per built dwelling with base / upgraded / alternative columns; the 1.0 UI/FortScreen is not used | `TownHireScreen` (enter_fort, `--town-goto=recruit`, dwelling double-click at that row); town HUD hidden | FIXED (was UI/FortScreen 3D hall with ray-picked creatures) / default selected column UNVERIFIED |
+| Select / count | CHireItem 006def90 → 006de370 → 006dd9d0 | clicking a column selects it; dial range 0..min(pool, purse/cost), count set to that maximum | same | FIXED (was count 0) |
+| Double click | CHireItem IClickNotify slot 1 006d8a40 (row flag +0x3c, 1 for the town) → dial button 2 | double-click buys the dial count | same | FIXED (did nothing) / slot meaning inferred from behaviour |
+| Dial | EditJogDial 00782b70 / 007826c0; handler 006e3050; input_a2.cfg hire_screen | 0 Exit, 1 Minus, 2 Buy (CHireCreaturesCmd 006da060), 3 Plus, 4 HireAll; R / Space / A; num +/- | same | FIXED |
+| Recruit army | 0061af30 (town vf 0x2c; town hero slot 1 present → hero vf 0x48); CHireCreaturesCmd 004f4dd0 | garrison hero's army, else the town garrison; refused when it does not fit (FUN_0045b240) | `TownRecruitArmy` in `DoRecruit` (`TownHireTests`) | FIXED (was the visiting hero first) |
+| Hire all | 006e3050 case 4 → 006da5c0 → 006dcfe0 → buy_all_header / buy_all_text_format → 006da3d0 → CHireAllCreaturesCmd 0042b870 → FUN_009a52a0; columns from 006d9770 | dwellings highest tier first; each row's selected column (else every variant, sharing the pool); a new creature needs a free slot; count = min(pool, floor(purse/cost)) (FLDCW chop 009a5561); fails when nothing can be hired | `HireAllPlan` / `HireAllCmd` (`TownHireTests`); confirmation with the total cost | FIXED (was the selected tier only) / variant order UNVERIFIED |
+| Caravans | 006e23a0 hire_to_caravan_window, T_CARAVANS_* | caravan tabs | hidden | GAP |
 | Upgrade / alternative variants | 00cd46c0 builds the dwelling creature list (FUN_00ccf130) | base, upgrade, TotE alternative per built level | `DwellingCreature` variants 0/1/2 | UNVERIFIED |
 | Upgrade creature command | CUpgradeCreatureCmd execute 004f47e0 | callback / FUN_004bb420 check, "can't upgrade creature %s" | `UpgradeCreaturesScreen` + engine | UNVERIFIED |
 | Growth tooltip on plates | 006dc57d T_GROWTH_* lines | hover tooltip with the parts | plate shows the total only | GAP |
@@ -165,6 +207,11 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Swap | CSwapCreaturesCmd 00431d10 | swap slots, revert if an army becomes invalid | `DoSwap` (merges same creature across armies) | MATCH / UNVERIFIED (merge is UI behaviour) |
 | Dismiss stack | CDismissCreatureCmd 00427c40 | a hero's last stack can't be dismissed | — | UNVERIFIED |
 | Garrison ↔ visiting | "garrison visited / creatures swapped" (004e6d30) | not traced | `DoGarrison` merges the garrison into the hero | UNVERIFIED |
+| Row layout | 0061c5b0 (List_0 TownContainer PicBox ↔ portrait +0x2a0, HeroContainer PicBox ↔ +0x2a4), tooltips 00615d10 (+0x2a0 "VISITING_SLOT", +0x2a4 "GARRISON_SLOT" with CDBID_TEXTURE_GARRISON when empty) | upper row (HeroContainer) = garrison (garrison hero or the town's army), lower row (TownContainer) = visiting hero | same | FIXED (rows were swapped: the garrison was the lower row and the upper row was hidden without a visiting hero — the reported "only one slot in the top row accepts troops") |
+| Empty garrison portrait | 00615d10 CDBID_TEXTURE_GARRISON | garrison texture | town kingdom icon by hall level | UNVERIFIED |
+| Empty visiting row | — | not traced | hidden without a visiting hero | UNVERIFIED |
+| Drop target | — | — | slot under the release event (was the global mouse position) | MATCH (hero ↔ garrison and hero ↔ hero drags checked off-screen with synthetic input) |
+| Hero portraits | click_pointer 00613130 no-op; dblclick_pointer 00619a30 hit-tests +0x2a0 / +0x2a4 → 00619320 | double click opens the hero screen; both heroes present → the two-hero page | same (`OpenTownHeroes`) | FIXED (a single click on the visiting portrait opened it; the garrison portrait did nothing) |
 
 # Hero screen
 
@@ -212,6 +259,7 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Biography | 006c1890 biography / spec_name / spec_desc | values of the biography text view | same | MATCH |
 | MMH 5.5 layout | MMH55-Skillwheel.pak HeroScreen3 (adds Biography, FaceCover, Specialization, Pocket, Placeholder; Skills page = class skill & perks / specialisation / biography) | MMH55 screen | opens and shows Army / Inventory; the MMH Skills page leaves Specialization and Biography empty; Backpack header missing | GAP |
 | Spellbook from the hero screen | Inventory Cast → cast_spell (006c4b40) | adventure spellbook | `SpellBook3D` (combat book) with the hero's spells | UNVERIFIED |
+| 3D backdrop | Arenas/Interface/Hero_screen ArenaDesc: one ArenaEnvObject plane_back, texture Back.tga (DXT1, AverageColor 0xFF000000, every block endpoint 0), ambient light Fort_screen | black backdrop behind the hero | same | MATCH (user report "hero screen has no background": the data's backdrop is solid black) / UI page panels UNVERIFIED |
 
 ## Level-up box (UI/LevelUPBox)
 
