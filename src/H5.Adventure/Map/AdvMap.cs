@@ -31,6 +31,8 @@ public sealed class AdvMap
     public int Version;
     public int TilesX, TilesY;
     public bool HasSurface = true, HasUnderground;
+    /// <summary>map.xdb BorderSize (exe 00a0ed80, clamped to 1..20): the impassable frame of every floor.</summary>
+    public int BorderSize = 1;
     public int InitialFloor;
     public bool CustomGameMap;
     public int HeroMaxLevel;
@@ -240,7 +242,23 @@ public sealed class MapFloor
     public string[] TileType = Array.Empty<string>();
     /// <summary>Tiles blocked by objects or terrain (static: ignores heroes, monsters and pickups).</summary>
     public bool[] Blocked = Array.Empty<bool>();
+    /// <summary>The exe's tile kind from the terrain (<see cref="TerrainPassability"/>; empty until built).</summary>
+    public TileKind[] Kind = Array.Empty<TileKind>();
+    /// <summary>The exe's ground type id of each tile (passability map tile +0; 9 = TT_NONE refuses entry).</summary>
+    public byte[] Ground = Array.Empty<byte>();
+    /// <summary>The AdvMapTile type id of each terrain layer (<see cref="TerrainPassability.TypeId"/>).</summary>
+    public int[] LayerTypes = Array.Empty<int>();
     public H5.Assets.Terrain.TerrainData? Data;
+
+    /// <summary>
+    /// The terrain refuses the tile (exe 009d1410: kind 3 or 5, or ground type TT_NONE), whatever stands on it.
+    /// </summary>
+    public bool TerrainBlocked(int x, int y)
+    {
+        int i = y * Width + x;
+        if (i >= Kind.Length) return false;
+        return Kind[i] is TileKind.Impassable or TileKind.Edge || Ground[i] == TerrainPassability.TypeNone;
+    }
 
     public bool InBounds(int x, int y) => x >= 0 && y >= 0 && x < Width && y < Height;
     public TerrainClass At(int x, int y) => Terrain[y * Width + x];

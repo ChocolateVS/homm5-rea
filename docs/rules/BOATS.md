@@ -1,20 +1,17 @@
 # Ships, sea travel and water
 
-Implemented in `src/H5.Adventure/Engine/Adventure.Boats.cs`, `Map/WaterMask.cs`, `State/BoatState.cs`,
+Implemented in `src/H5.Adventure/Engine/Adventure.Boats.cs`, `Map/TerrainPassability.cs`, `State/BoatState.cs`,
 `AI/OriginalAdventureAI.Sea.cs` (engine) and `game/src/Adventure/Water/` (client). Tests:
 `tests/H5.Adventure.Tests/BoatTests.cs`. Tools: `h5tool adv-water`, `adv-water-rule`, `adv-water-probe`,
 `adv-water-heights`, `adv-boats`.
 
 ## Which tiles are sea
 
-Texture layers under the sea are ordinary ground textures, so water comes from terrain data:
-
-* chunk 7 of `GroundTerrain.bin` is a quantised height ("plateau level", ≈ height × 8): 0 = sea bed
-  (height 0.00), 8 = shore band (height exactly 1.00), 16/32/48… = land levels (≥ 1.6);
-* a tile is **sea** when its four vertices are at level 0, **or** when the half-tile water mask
-  (chunk 10, graded 0–255) is ≥ 200 at its centre (maps whose sea sits on a raised level, e.g. A2C2M5);
-* scored over every object entrance on all 75 maps: 686/689 water-based objects on sea, 33524/33546
-  land objects on land (13 misses are objects parked at (0,0)). The exe's passability builder was not traced.
+The exe's passability map decides (00990800 → 00c0f400; `Map/TerrainPassability.cs`, AUDIT_ADVENTURE "Terrain
+passability"): a tile is **sea** (kind 2) when its four level vertices (chunk 7) are 0, or — unless a TT_BIG_WATER
+texture layer touches one of its corners (such tiles are impassable "texture lakes") — when the half-tile water mask
+(chunk 10) at its centre is above 0x8c. Chunk 15 holes, the map frame, cliffs and the underground rock come first and
+make a tile impassable whatever lies under it. (Before: levels 0 or the mask ≥ 200, scored against object entrances.)
 
 ## Ships
 

@@ -41,6 +41,7 @@ public sealed class MapLoader
             Id = files.MapDir, Source = files.Source,
             Version = root.Int("Version"), TilesX = root.Int("TileX"), TilesY = root.Int("TileY"),
             HasSurface = root.Bool("HasSurface", true), HasUnderground = root.Bool("HasUnderground"),
+            BorderSize = Math.Clamp(root.Int("BorderSize", 1), 1, 20),
             InitialFloor = root.Int("InitialFloor"), CustomGameMap = root.Bool("CustomGameMap"),
             HeroMaxLevel = root.Int("HeroMaxLevel"), CustomTeams = root.Bool("CustomTeams"),
             RandomMoons = root.Bool("RandomMoons"),
@@ -169,6 +170,7 @@ public sealed class MapLoader
             Terrain = new TerrainClass[w * h], TileType = new string[w * h], Blocked = new bool[w * h],
         };
         var layerTypes = t.Layers.Select(l => _catalog.TileType(l.TilePath)).ToArray();
+        f.LayerTypes = layerTypes.Select(TerrainPassability.TypeId).ToArray();
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {
@@ -185,18 +187,36 @@ public sealed class MapLoader
                 f.TileType[y * w + x] = type;
                 f.Terrain[y * w + x] = SharedCatalog.Classify(type);
             }
-        WaterMask.Apply(f);
         return f;
     }
 
-    /// <summary>Marks tiles that no hero can enter: object blocked tiles, rivers and out-of-land water.</summary>
-    static void ApplyStaticBlocking(AdvMap m)
+    /// <summary>
+    /// Static passability, as the exe sets up the world: the terrain kinds of every floor (<see cref="TerrainPassability"/>,
+    /// 00990800, with the objects' passable tiles), sea from the terrain kind, then the objects' blocked tiles that are
+    /// not entrances (TODO(exe): the object pass 009952d0 → 00991650 / 00990bc0 / 00990d40 is not compared).
+    /// </summary>
+    public static void ApplyStaticBlocking(AdvMap m)
     {
-        foreach (var f in m.Floors)
+        for (int fi = 0; fi < m.Floors.Length; fi++)
         {
-            if (f == null) continue;
-            for (int i = 0; i < f.Terrain.Length; i++)
-                if (f.Terrain[i] == TerrainClass.River) f.Blocked[i] = true;
+            var f = m.Floors[fi];
+            if (f?.Data == null) continue;
+            var open = new HashSet<(int, int)>();
+            foreach (var o in m.Objects)
+                if (o.Pos.Floor == fi)
+                    foreach (var p in o.Shared.Passable)
+                    {
+                        var t = Footprint.Place(o.Pos, p, o.Rot);
+                        open.Add((t.X, t.Y));
+                    }
+            TerrainPassability.Build(f, m.BorderSize, f.LayerTypes, open);
+            for (int i = 0; i < f.Terrain.Length && i < f.Kind.Length; i++)
+            {
+                if (f.Kind[i] == TileKind.Water) f.Terrain[i] = TerrainClass.Water;
+                else if (f.Terrain[i] is TerrainClass.Water or TerrainClass.River)
+                    f.Terrain[i] = SharedCatalog.Classify(TerrainPassability.TypeNames.ElementAtOrDefault(f.Ground[i]) ?? "");
+                f.Blocked[i] = f.TerrainBlocked(i % f.Width, i / f.Width);
+            }
         }
         foreach (var o in m.Objects)
         {
@@ -244,6 +264,14 @@ public sealed class MapLoader
         e.Items(name).Where(s => s.Str("Creature") is { Length: > 0 } c && c != "CREATURE_UNKNOWN" && s.Int("Count") > 0)
             .Select(s => new ArmySlot(s.Str("Creature"), s.Int("Count"))).ToList();
 
+    /// <summary>
+    /// A Pos component as the exe turns it into a tile: the float (SAdvMapObject +0x44 / +0x48, reader 00a082d0)
+    /// rounded to the nearest, ties to even (FISTP in the object set-up 0041d360 / 0041cfe0). Editor maps store
+    /// many statics at fractional positions ("9.00006", "33.5"); an integer parse put them at 0.
+    /// </summary>
+    static int TileCoord(XElement? pos, string name) =>
+        (int)MathF.Round((float)pos.Dbl(name), MidpointRounding.ToEven);
+
     MapObject ReadObject(XElement e, MapFiles files)
     {
         var tag = e.Name.LocalName;
@@ -251,7 +279,7 @@ public sealed class MapLoader
         var o = new MapObject
         {
             Tag = tag, Kind = KindOf(tag), Name = e.Str("Name"),
-            Pos = new Tile(pos.Int("x"), pos.Int("y"), e.Int("Floor")),
+            Pos = new Tile(TileCoord(pos, "x"), TileCoord(pos, "y"), Math.Clamp(e.Int("Floor"), 0, 1)),
             Rot = (float)e.Dbl("Rot"),
             Owner = PlayerIndex(e.Str("PlayerID")),
         };

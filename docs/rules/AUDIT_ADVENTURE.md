@@ -4,7 +4,7 @@ Every adventure mechanic / screen element checked against `H5_Game.exe` (Ghidra 
 the original data. Status: **MATCH** (already as the exe), **FIXED** (changed to match), **GAP** (known difference or
 not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not traced).
 
-Rows at 2026-10-27: 146 FIXED, 22 MATCH, 57 GAP, 68 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
+Rows at 2026-10-28: 154 FIXED, 22 MATCH, 59 GAP, 69 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
 
 ## Seer Huts
 
@@ -307,3 +307,31 @@ CFinishCombat 004e0520 → 00af64b0, CPlayer 004fe770 (flee) / 004fe890 (surrend
 | Esc menu confirmations (adventure) | CEscMenuScreen: UI/EscMenu/RelatedTexts T_RESTART_MISSION_TITLE / _QUESTION, T_EXIT_TO_MAIN_MENU_TITLE / _QUESTION (00758460); quit: UI/ExitGameQuestion T_HEADER / T_QUESTION (00758280 → 00689790) | `Save/InGameMenu` asks with those stock texts (was: invented English strings) | FIXED (restart's handler is not traced; the texts are the stock pair) |
 
 Rows in this section: 9 FIXED, 2 GAP.
+
+## Terrain passability and object positions
+
+The world's passability map (CWorld +0xd0, built by CWorld vf 00997530: 00bcc6e0, then per floor 00990800, the objects
+009952d0 and 00991410) holds one 0x24-byte tile per (x, y, floor); the pathfinder (00c07f80, 009d1410) refuses tiles of
+kind (+8) 3 or 5, ground type (+0) 9 = TT_NONE, or an object kind (+0x10) 1. Ported in `Map/TerrainPassability.cs`
+(`MapFloor.Kind` / `Ground` / `TerrainBlocked`), used by `MapLoader.ApplyStaticBlocking` for authored and RMG maps
+(`RmgResult.ToAdvMap`). Survey tool: `h5tool adv-pass [filter] [-v]` (kinds per floor, refused entrances, unreachable
+objects), `h5tool adv-pass-probe <map> x y [floor]`. Tests `TerrainPassabilityTests`, `RmgPassabilityTests`.
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Terrain grids the rule reads | STerrainInfo serializer 004faaf0 (chunk 2/3 size, 4 layers +8, 5 heights +0x14, 7 levels +0x24, 8 +0x34, 10 half-tile mask +0x44, 13 +0x54, 14 byte +0x64, 15 +0x68, 16 +0x78); load 00a57d90 → 00c0faa0 | the load overwrites +0x64 with "floor ≠ 0" (the chunk 14 byte — 9, 0xf5, 0x89 … on stock maps — is ignored); missing grids get levels 0x10 (underground 0x20), chunk 15 all 1; 00c0ea30 clears a half-tile mask not (2W+1)×(2H+1); 00c0e5b0 sets the base layer to 0xff | same (`TerrainPassability`, flag = floor index) | FIXED (was: none of it read) |
+| Map frame | 00990800 with floor vf 0x68 = +0x38 (CWorld vf 9 00999a60: min(BorderSize, TilesX, TilesY), ≥ 1); BorderSize read by 00a0ed80, clamped 1..20 | x or y < b or ≥ size − b → kind 5 | `AdvMap.BorderSize`, `Kind = Edge` | FIXED (was: the frame walkable) |
+| Cliffs and ramps | 00c0e440 (levels = chunk 7, tile clamped to the last one) | surface: open when the top pair and the bottom pair are equal with both columns differing by < 0x10, or the left and right pairs likewise; underground: open only when all four levels are equal; else kind 3 | `TerrainPassability.Cliff` | FIXED (was: cliffs walkable) |
+| Underground rock | 00c0e3f0 | underground: vertex (x, y) level > 0x1f → kind 5 | `RaisedFlagged` | FIXED (was: rock walkable) |
+| Chunk 15 | 00c0e420 | vertex (x, y) == 0 → kind 3 (the RMG clears it on zone borders and far from roads / objects, 0x009198f0) | `Closed` | FIXED |
+| Texture lakes | 00c0f340 (layer tile Type +0x60 = TT_BIG_WATER, enum 00aab350) | a TT_BIG_WATER layer with a non-zero weight at a corner → kind 3, never sea | `BigWaterLayer` | FIXED (was: dominant TT_BIG_WATER tiles were sea) |
+| Sea | 00c0f400 | four levels 0, or (no TT_BIG_WATER layer) the half-tile mask at the centre > 0x8c → kind 2, ground type 0xb | `IsWater`; `TerrainClass.Water` from the kind | FIXED (was: levels 0 or mask ≥ 200, scored against object entrances) |
+| Rivers | 00990800 tests no TT_SMALL_WATER layer; 00c10900 skips it for the ground type | a river tile is land (or sea through the mask) | river tiles take their ground type's class | FIXED (was: every TT_SMALL_WATER-dominant tile blocked) |
+| Ground type | 00c0f070 → 00c10900 (layers from the top, centre weight 00c0ff70: corners 2v / 255, truncated means; visible = w·r, r ·= 1 − w/255; roads and TT_SMALL_WATER skipped); none → 9 | TT_NONE refuses the tile (009d1410) | `DominantType`, `CentreWeight` | FIXED |
+| Object passable tiles | 00990800: floor list +0x6c objects, vf 0xbc offsets from the vf 0xa4 tile | listed tile → kind 4 (ground 00c0f040, road 7), before the terrain tests | the shared `passableTiles` placed like the blocked tiles | UNVERIFIED (vf 0xbc is taken as the rotated passableTiles; the list's members — 009990d0 adds objects whose vf 0xbc list is not empty — not enumerated) |
+| Object positions | SAdvMapObject Pos (+0x44 / +0x48, reader 00a082d0) → FISTP in 0041d360 / 0041cfe0 | nearest tile (ties to even) | `MapLoader.TileCoord` | FIXED (was: an integer parse put 100 000+ statics and ~500 other objects with fractional positions at x or y = 0 — their footprints blocked the wrong tiles) |
+| Not compared | 00c0f4a0 / 00c10a30 (load-time layer merge by category and priority); road type +4 (00c0f0a0) and the movement cost; the object pass 009952d0; 009d1410's +0x10 / +0x14 tests | | layers as stored; costs from `TerrainClass`; object footprints as before | GAP |
+| Survey (stock + user maps, 117) | `h5tool adv-pass` | | objects whose every entrance is refused: 113, most on chunk 15 holes (campaign set pieces such as A2C2M1's caged monsters, A2C3M2's underground group), about a dozen on cliffs / texture lakes, 8 in the frame or the rock (A2C3M2 / A2C3M3 / A2S3 underground towns in the rock, A1C2M5 obelisks in the frame); heroes on refused tiles: 3; the user's exe-generated RMG maps: 1 | GAP (no exe run to confirm these objects are unreachable in the original) |
+
+Rows in this section: 8 FIXED, 1 UNVERIFIED, 2 GAP.
+

@@ -310,7 +310,7 @@ public sealed partial class Adventure
         {
             var f = Map.Floor(t.Floor);
             if (f == null || !f.InBounds(t.X, t.Y)) continue;
-            bool blocked = f.Terrain[t.Y * f.Width + t.X] == TerrainClass.River;
+            bool blocked = f.TerrainBlocked(t.X, t.Y);
             if (!blocked)
                 foreach (var o in Map.Objects)
                 {

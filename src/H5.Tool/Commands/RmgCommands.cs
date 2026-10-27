@@ -160,7 +160,7 @@ sealed class RmgStatsCommand : ICommand
         }
         Console.WriteLine($"{db0.Templates.Count} templates, {jobs.Count} runs on {threads} threads");
         var lines = new string[jobs.Count];
-        int ok = 0, fail = 0, unreachable = 0, next = -1;
+        int ok = 0, fail = 0, unreachable = 0, unreachablePass = 0, unreachablePassUg = 0, next = -1;
         var sw = Stopwatch.StartNew();
         var workers = Enumerable.Range(0, Math.Max(1, threads)).Select(_ => new Thread(() =>
         {
@@ -183,10 +183,13 @@ sealed class RmgStatsCommand : ICommand
                     int expected = Math.Min(gen.Players, startZones);
                     int towns = r.StartTowns.Count;
                     Interlocked.Add(ref unreachable, r.Unreachable);
+                    int up = PassUnreachable(gen, r, map);
+                    Interlocked.Add(ref unreachablePass, up);
+                    if (gen.HasUnderground) Interlocked.Add(ref unreachablePassUg, up);
                     if (towns < expected) throw new Exception($"only {towns} start towns for {expected} (players {gen.Players}, start zones {startZones})");
                     if (gen.Players != j.Players) throw new Exception($"players resolved to {gen.Players}");
                     Interlocked.Increment(ref ok);
-                    lines[i] = $"ok   {head}: {RmgSizes.Names[gen.SizeIndex]}{(gen.HasUnderground ? "+ug" : "")} {map.Objects.Count,5} objects, start towns {towns}, monsters {r.OfKind("AdvMapMonsterShared").Count()}, mines {r.OfKind("AdvMapMineShared").Count()}, unreachable {r.Unreachable}, warnings {r.Warnings.Count}";
+                    lines[i] = $"ok   {head}: {RmgSizes.Names[gen.SizeIndex]}{(gen.HasUnderground ? "+ug" : "")} {map.Objects.Count,5} objects, start towns {towns}, monsters {r.OfKind("AdvMapMonsterShared").Count()}, mines {r.OfKind("AdvMapMineShared").Count()}, unreachable {r.Unreachable} (passability {up}), warnings {r.Warnings.Count}";
                 }
                 catch (Exception e)
                 {
@@ -198,8 +201,53 @@ sealed class RmgStatsCommand : ICommand
         workers.ForEach(w => w.Start());
         workers.ForEach(w => w.Join());
         foreach (var l in lines) Console.WriteLine(l);
-        Console.WriteLine($"{ok} ok, {fail} failed, {unreachable} unreachable objects total, {sw.Elapsed.TotalSeconds:0.0}s");
+        Console.WriteLine($"{ok} ok, {fail} failed, {unreachable} unreachable objects total, {unreachablePass} with the adventure passability ({unreachablePassUg} in underground runs), {sw.Elapsed.TotalSeconds:0.0}s");
         return fail == 0 ? 0 : 2;
+    }
+
+    /// <summary>
+    /// The generator's own reachability check (RmgGenerator.Finish: per zone, from the town visit tile, else the road
+    /// network's start, else the free tile nearest the zone centre) over the adventure map's static passability instead
+    /// of the object footprints: terrain kinds (exe 00990800 — chunk 15 holes, cliffs, the underground rock, texture
+    /// lakes, the border) plus the blocked object tiles, sea excluded.
+    /// </summary>
+    static int PassUnreachable(RmgGenerator gen, RmgResult r, AdvMap map)
+    {
+        int n = 0;
+        foreach (var f in gen.Floors)
+        {
+            var mf = map.Floor(f.Index);
+            if (mf == null) continue;
+            bool Open(int x, int y) => mf.InBounds(x, y) && !mf.Blocked[y * mf.Width + x] && !mf.IsWater(x, y);
+            foreach (var z in f.Zones.Values)
+            {
+                (int X, int Y)? hub = null;
+                var town = r.Objects.FirstOrDefault(o => o.Note == "town" && o.Zone == z.Id && o.Floor == f.Index);
+                if (town != null && r.Access.TryGetValue(town, out var ta)) hub = ta;
+                else if (z.Network.Count > 0) hub = ((int)z.Network[0].X, (int)z.Network[0].Y);
+                hub ??= z.Tiles.Where(t => Open(t.X, t.Y))
+                    .OrderBy(t => (t.X - z.CenterX) * (t.X - z.CenterX) + (t.Y - z.CenterY) * (t.Y - z.CenterY))
+                    .Select(t => ((int, int)?)t).FirstOrDefault();
+                if (hub == null) continue;
+                var seen = new HashSet<(int, int)> { hub.Value };
+                var queue = new Queue<(int X, int Y)>();
+                queue.Enqueue(hub.Value);
+                while (queue.Count > 0)
+                {
+                    var (x, y) = queue.Dequeue();
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int nx = x + dx, ny = y + dy;
+                            if ((dx == 0 && dy == 0) || !Open(nx, ny) || f.Zone[f.At(nx, ny)] != z.Id || !seen.Add((nx, ny))) continue;
+                            queue.Enqueue((nx, ny));
+                        }
+                }
+                foreach (var kv in r.Access.Where(kv => kv.Key.Zone == z.Id && kv.Key.Floor == f.Index && kv.Key.Def.Tag != "AdvMapStaticShared"))
+                    if (!seen.Contains(kv.Value)) n++;
+            }
+        }
+        return n;
     }
 }
 

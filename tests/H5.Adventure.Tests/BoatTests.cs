@@ -21,10 +21,13 @@ public class BoatTests(Fixture f)
 
     static AdvResult Do(Engine.Adventure g, AdvCommand c) => g.Apply(c with { Player = g.Current.Index });
 
-    /// <summary>A shipyard whose slipway is free water, owned by the current player who can afford a ship.</summary>
+    /// <summary>
+    /// A shipyard whose slipway is free water with an unguarded shore tile beside it, owned by the current player who
+    /// can afford a ship. (A1L10's first yard has a monster on its shore since positions round as the exe does.)
+    /// </summary>
     static MapObject ReadyShipyard(Engine.Adventure g)
     {
-        var yard = g.Map.Objects.First(o => o.Kind == ObjectKind.Shipyard && g.ShipyardStatus(o.Index) == "ok");
+        var yard = g.Map.Objects.First(o => o.Kind == ObjectKind.Shipyard && g.ShipyardStatus(o.Index) == "ok" && HasShore(g, g.SlipwayOf(o.Index)!.Value));
         g.S.Obj(yard.Index).Owner = g.Current.Index;
         g.Current.Purse[Purse.Gold] = 5000;
         g.Current.Purse[Purse.Wood] = 50;
@@ -42,6 +45,12 @@ public class BoatTests(Fixture f)
                 g.S.Heroes.All(h => h.Pos != t) && g.GuardingMonster(t) == null) return t;
         }
         throw new InvalidOperationException($"no shore next to {water}");
+    }
+
+    static bool HasShore(Engine.Adventure g, Tile water)
+    {
+        try { ShoreNextTo(g, water); return true; }
+        catch (InvalidOperationException) { return false; }
     }
 
     static Tile FreeWaterNextTo(Engine.Adventure g, Tile t, Tile except)

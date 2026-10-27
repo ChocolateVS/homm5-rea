@@ -99,15 +99,8 @@ public sealed class RmgResult
 
         for (int f = 0; f < TileLayers.Count; f++)
             m.Floors[f] = BuildFloor(f, TileLayers[f], catalog, m);
-        // Static blocking, as the loader computes it for authored maps.
-        foreach (var o in m.Objects)
-        {
-            var fl = m.Floor(o.Pos.Floor);
-            if (fl == null) continue;
-            var active = new HashSet<Tile>(o.ActiveTiles);
-            foreach (var b in o.BlockedTiles)
-                if (fl.InBounds(b.X, b.Y) && !active.Contains(b)) fl.Blocked[b.Y * fl.Width + b.X] = true;
-        }
+        // Static passability, as the loader computes it for authored maps (terrain kinds, then object blocking).
+        MapLoader.ApplyStaticBlocking(m);
         return m;
     }
 
@@ -144,6 +137,7 @@ public sealed class RmgResult
             f.Terrain[i] = SharedCatalog.Classify(f.TileType[i]);
         }
         f.Data = BuildTerrain(tiles, w, h, Generator.Floors[index]);
+        f.LayerTypes = f.Data.Layers.Select(l => TerrainPassability.TypeId(catalog.TileType(l.TilePath))).ToArray();
         return f;
     }
 

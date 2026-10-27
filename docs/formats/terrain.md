@@ -57,6 +57,11 @@ The tile xdb (`AdvMapTile`) gives `Texture`, optional `SecondTexture`/`Material`
 
 ## Interpretation notes / unknowns
 
+* **Exe layout** (STerrainInfo, serializer `004faaf0`): chunk 7 = per-vertex level (0 sea bed, 8 shore band, 0x10 per
+  plateau step; underground 0x20 = rock), chunk 10 = half-tile water mask, chunk 14 = a bool the map load overwrites
+  with "underground floor" (`00c0faa0`), chunk 15 = per-vertex "open" flag (0 closes the tile whose top-left vertex it
+  is). How the adventure engine turns them into passability: `docs/rules/AUDIT_ADVENTURE.md` "Terrain passability".
+
 * **Chunk 7**: arenas show 16 on land and 0 on the sand/beach side; A1L1 shows 16 (most), 0 along
   rivers, 32/48 on some patches. Probably a per-vertex ground category bitfield (water/shore/plateau).
   Needs confirmation from the exe or the map editor.
