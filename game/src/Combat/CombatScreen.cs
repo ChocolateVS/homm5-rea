@@ -1831,6 +1831,17 @@ public partial class CombatScreen : Control
     /// </summary>
     public static Action<CombatSession>? ReturnHandler;
 
+    /// <summary>
+    /// Esc menu → Main menu → Yes (exe 0075aed0): the main menu opens and the whole game is dropped; the battle is
+    /// not resolved and no adventure return handler runs. A networked duel goes back to its lobby room as before
+    /// (the exe relabels the button "Back to Lobby" and defeats the leaving player, CDefeatPlayerCmd: GAP).
+    /// </summary>
+    internal void LeaveToMainMenu()
+    {
+        ReturnHandler = null;
+        ReturnToMenu();
+    }
+
     internal void ReturnToMenu()
     {
         if (ReturnHandler is { } handler)

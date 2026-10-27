@@ -155,20 +155,33 @@ public partial class CombatHud : Control
     UiScreen? _escMenu;
 
     /// <summary>
-    /// The stock in-game menu (UI/EscMenu, opened by the jog dial's menu button and
-    /// ESC/F4/F10): Return to game, Surrender, Main menu, Quit to Windows, Options.
-    /// Save/Load/Restart mission have no meaning in a duel and are disabled.
+    /// The stock in-game menu (UI/EscMenu, CEscMenuScreen built by 0075a9c0 in mode 1 from the combat Esc handler
+    /// 005451d0; layout 00759d90): Save disabled, Restart mission hidden, Surrender (the concede-the-game button,
+    /// not the combat ransom) shown but disabled, Return to game / Main menu / Quit to Windows / Options enabled.
+    /// Main menu (00758460) asks T_EXIT_TO_MAIN_MENU_QUESTION / _TITLE; Yes (0075aed0) opens the main menu and drops
+    /// the whole game without resolving the battle. Quit (00758280 → 00689790) goes through the ExitGameQuestion
+    /// screen (UI/ExitGameQuestion T_HEADER / T_QUESTION) while a game runs.
     /// </summary>
     public void ShowOptions()
     {
         if (_escMenu != null) { CloseOptions(); return; }
         var menu = new UiScreen("UI/EscMenu.(WindowScreen).xdb") { MouseFilter = MouseFilterEnum.Stop };
-        foreach (var name in new[] { "SaveBtn", "LoadBtn", "RestartMissionBtn" })
-            if (menu.Find(name) is { } b) b.Enabled = false;
+        if (menu.Find("SaveBtn") is { } save) save.Enabled = false;
+        // Load: the exe keeps the adventure-map rule (0058bb20); loading from a battle is not supported here (GAP).
+        if (menu.Find("LoadBtn") is { } load) load.Enabled = false;
+        if (menu.Find("RestartMissionBtn") is { } restart) restart.Visible = false;
+        if (menu.Find("Surrender") is { } surrender) { surrender.Visible = true; surrender.Enabled = false; }
+        const string escTexts = "UI/EscMenu/RelatedTexts.(WindowRelatedTexts).xdb";
+        const string exitTexts = "UI/ExitGameQuestion/Texts.(WindowRelatedTexts).xdb";
         menu.Bus.On("return_to_game", CloseOptions);
-        menu.Bus.On("surrender", () => { CloseOptions(); _screen.CmdSurrender(); });
-        menu.Bus.On("main_menu", () => { CloseOptions(); _screen.ReturnToMenu(); });
-        menu.Bus.On("exit_to_windows", () => GetTree().Quit());
+        menu.Bus.On("main_menu", () =>
+            Options.MessageBoxes.YesNo(menu, UiGameRoot.RelatedTextAt(escTexts, "T_EXIT_TO_MAIN_MENU_TITLE") ?? "",
+                UiGameRoot.RelatedTextAt(escTexts, "T_EXIT_TO_MAIN_MENU_QUESTION") ?? "",
+                yes => { if (yes) { CloseOptions(); _screen.LeaveToMainMenu(); } }));
+        menu.Bus.On("exit_to_windows", () =>
+            Options.MessageBoxes.YesNo(menu, UiGameRoot.RelatedTextAt(exitTexts, "T_HEADER") ?? "",
+                UiGameRoot.RelatedTextAt(exitTexts, "T_QUESTION") ?? "",
+                yes => { if (yes) Cinematics.AfterGameSplash.ShowAndQuit(GetTree()); }));
         menu.Bus.On("options", () =>
         {
             // The stock data-driven Options screen (UI/uiconsts GameOptions), as on the adventure map.
