@@ -8,7 +8,7 @@ public sealed class RmgObject
     public required string Shared;
     public required SharedDef Def;
     public int X, Y, Floor;
-    public int Quarter;              // rotation in quarter turns (exe draws rand(4) · π/2)
+    public int Quarter;              // quarter turn of the angle (exe 0x00b0bbd0)
     public int Owner = -1;
     public int Zone;
     public string? Creature;
@@ -16,7 +16,11 @@ public sealed class RmgObject
     public string? Note;             // what placed it (mine, guard, shop...)
     /// <summary>Further guard stacks of a two-stack army template (written as AdditionalStacks, exe 0x00914cc0).</summary>
     public List<(string Creature, int Count)> AdditionalStacks = new();
-    public float? Angle;             // rotation passed in radians (guards turned by their caller, treasure-block items)
+    /// <summary>The guard came from a two-stack army template: 0x00914cc0 writes Mood = 2 (HOSTILE); 0x00914b40 writes none.</summary>
+    public bool TwoStack;
+    /// <summary>A neutral town's garrison (armySlots), 0x00ba6b10.</summary>
+    public List<(string Creature, int Count)> Garrison = new();
+    public float? Angle;             // the angle the exe passed in radians
     public float Rot => Angle ?? Quarter * MathF.PI / 2;
 }
 
@@ -37,91 +41,20 @@ public sealed partial class RmgGenerator
     /// <summary>Monster strength coefficients by monster level (exe 0x00ba7690: 0.4, 0.9, 1.7, 4, 12).</summary>
     static readonly float[] MonsterCoef = { 0.4f, 0.9f, 1.7f, 4f, 12f };
 
-    static readonly (int Dx, int Dy)[] Neighbours4 = { (0, 1), (1, 0), (0, -1), (-1, 0) };
+    // Neighbour tables of the map builder (pairs: first index, second index).
+    static readonly (int Dx, int Dy)[] Ortho4 = { (0, -1), (1, 0), (0, 1), (-1, 0) };                                   // 0x00f467d8
+    static readonly (int Dx, int Dy)[] Diag4 = { (1, -1), (1, 1), (-1, 1), (-1, -1) };                                  // 0x00f467f8
+    static readonly (int Dx, int Dy)[] Around8 = { (0, -1), (1, 0), (0, 1), (-1, 0), (-1, -1), (1, -1), (1, 1), (-1, 1) }; // 0x00f46798, 0x00f76b68
 
     // ------------------------------------------------------------------ placement primitives
 
-    IEnumerable<(int X, int Y)> Footprint(SharedDef d, int x, int y, int quarter, bool includeActive)
-    {
-        float rot = quarter * MathF.PI / 2;
-        foreach (var b in d.Blocked)
-        {
-            var t = H5.Adventure.Map.Footprint.Place(new Tile(x, y), b, rot);
-            yield return (t.X, t.Y);
-        }
-        if (includeActive)
-            foreach (var a in d.Active)
-            {
-                var t = H5.Adventure.Map.Footprint.Place(new Tile(x, y), a, rot);
-                yield return (t.X, t.Y);
-            }
-    }
-
-    (int X, int Y) ActiveTile(SharedDef d, int x, int y, int quarter)
-    {
-        if (d.Active.Count == 0) return (x, y);
-        var t = H5.Adventure.Map.Footprint.Place(new Tile(x, y), d.Active[0], quarter * MathF.PI / 2);
-        return (t.X, t.Y);
-    }
-
     /// <summary>
-    /// Footprint test (exe 0x00919be0 + 0x009145b0): every blocked/active tile inside the zone,
-    /// off the zone border and free, and the visit tile reachable from a free neighbour.
+    /// The placers' loop (0x0091c4a0, 0x00920630, 0x0091e910, 0x0091f140, 0x00920370 ... 0x009221d0, 0x0091f8a0):
+    /// while candidates remain, rand(n) picks one and rand(4) a quarter turn; 0x00919be0 tests the footprint (a failure
+    /// erases the candidate); then 0x009145b0 creates the object and 0x0091a420 stamps it.
     /// </summary>
-    bool CanPlace(RmgZone z, SharedDef d, int x, int y, int quarter, out (int X, int Y) access, HashSet<(int, int)>? reachable = null)
-    {
-        access = (-1, -1);
-        var f = Floors[z.Floor];
-        var tiles = Footprint(d, x, y, quarter, includeActive: true).ToList();
-        if (tiles.Count == 0) tiles.Add((x, y));
-        foreach (var (tx, ty) in tiles)
-        {
-            if (!f.In(tx, ty)) return false;
-            int i = f.At(tx, ty);
-            if (f.Zone[i] != z.Id || f.BorderDist[i] < 1 || f.Occ[i] != Occ.Free) return false;
-        }
-        if (d.Active.Count == 0) { access = (x, y); return true; }
-        var set = new HashSet<(int, int)>(tiles);
-        var (ax, ay) = ActiveTile(d, x, y, quarter);
-        foreach (var (dx, dy) in Neighbours8)
-        {
-            int nx = ax + dx, ny = ay + dy;
-            if (!f.In(nx, ny) || set.Contains((nx, ny))) continue;
-            int i = f.At(nx, ny);
-            if (f.Zone[i] == z.Id && f.Occ[i] is Occ.Free or Occ.Road && f.BorderDist[i] >= 1 && (reachable == null || reachable.Contains((nx, ny))))
-            { access = (nx, ny); return true; }
-        }
-        return false;
-    }
-
-    RmgObject Commit(RmgResult r, RmgZone z, string shared, SharedDef d, int x, int y, int quarter, (int X, int Y) access, string note)
-    {
-        CreateObjectDraws();   // 0x009145b0 between the footprint test and 0x0091a420
-        var f = Floors[z.Floor];
-        var active = new HashSet<(int, int)>(d.Active.Count > 0 ? new[] { ActiveTile(d, x, y, quarter) } : Array.Empty<(int, int)>());
-        foreach (var (tx, ty) in Footprint(d, x, y, quarter, includeActive: false))
-            if (f.In(tx, ty)) { f.Occ[f.At(tx, ty)] = Occ.Object; f.Flags[f.At(tx, ty)] = TileFlags.Blocked; }
-        // 0x0091a420: blockedTiles get flag 2, then every activeTiles entry flag 4 and a node on the zone list +0x68.
-        foreach (var a in d.Active)
-        {
-            var t = H5.Adventure.Map.Footprint.Place(new Tile(x, y), a, quarter * MathF.PI / 2);
-            if (!f.In(t.X, t.Y)) continue;
-            f.Flags[f.At(t.X, t.Y)] = TileFlags.Active;
-            z.RoadNodes.Add((t.X, t.Y));
-        }
-        foreach (var (tx, ty) in active)
-            if (f.In(tx, ty)) f.Occ[f.At(tx, ty)] = Occ.Entrance;
-        if (access.X >= 0 && f.In(access.X, access.Y) && f.Occ[f.At(access.X, access.Y)] == Occ.Free)
-            f.Occ[f.At(access.X, access.Y)] = Occ.Road;
-        var o = new RmgObject { Shared = shared, Def = d, X = x, Y = y, Floor = z.Floor, Quarter = quarter, Zone = z.Id, Note = note };
-        r.Objects.Add(o);
-        r.Access[o] = access;
-        NoteObject(o);
-        return o;
-    }
-
-    /// <summary>Picks a random candidate tile and rotation until one fits (pattern shared by all placers).</summary>
-    RmgObject? PlaceRandom(RmgResult r, RmgZone z, string shared, List<(int X, int Y)> candidates, string note, HashSet<(int, int)>? reachable = null)
+    RmgObject? PlaceRandom(RmgResult r, RmgZone z, string shared, List<(int X, int Y)> candidates, string note,
+        List<(float X, float Y)>? list = null)
     {
         var d = Catalog.Get(shared);
         var pool = candidates.ToList();
@@ -129,8 +62,13 @@ public sealed partial class RmgGenerator
         {
             int i = Rng.Next(pool.Count);
             var (x, y) = pool[i];
-            int q = Rng.Next(4);
-            if (CanPlace(z, d, x, y, q, out var access, reachable)) return Commit(r, z, shared, d, x, y, q, access, note);
+            float a = QuarterAngle(Rng.Next(4));
+            if (FootprintFits(z, x, y, a, d))
+            {
+                var o = CreateObject(r, z, shared, x, y, a, note);
+                Stamp(z, x, y, a, d, list);
+                return o;
+            }
             pool.RemoveAt(i);
         }
         r.Warnings.Add($"Can't place {note} {shared} at zone #{z.Id}, floor {z.Floor}");
@@ -138,71 +76,25 @@ public sealed partial class RmgGenerator
     }
 
     /// <summary>
-    /// exe 0x009191a0 with flag 4: distance from each zone tile to the nearest object already
-    /// placed in the zone (towns included); used to spread objects out. Kept incrementally:
-    /// initialised once per zone, then lowered as objects are committed.
-    /// </summary>
-    readonly HashSet<(int Floor, int Zone)> _distReady = new();
-
-    void ComputeObjectDistances(RmgResult r, RmgZone z)
-    {
-        if (!_distReady.Add((z.Floor, z.Id))) return;
-        var f = Floors[z.Floor];
-        foreach (var (x, y) in z.Tiles) f.Dist[f.At(x, y)] = 10000;
-        foreach (var o in r.Objects.Where(o => o.Zone == z.Id && o.Floor == z.Floor && o.Def.Tag != "AdvMapStaticShared"))
-            LowerDistances(z, o.X, o.Y);
-        if (z.TownPos is { } tp) LowerDistances(z, tp.X, tp.Y);
-    }
-
-    void LowerDistances(RmgZone z, int px, int py)
-    {
-        var f = Floors[z.Floor];
-        foreach (var (x, y) in z.Tiles)
-        {
-            float dx = x - px, dy = y - py;
-            int d = (int)MathF.Round(MathF.Sqrt(dx * dx + dy * dy));
-            int i = f.At(x, y);
-            if (d < f.Dist[i]) f.Dist[i] = d;
-        }
-    }
-
-    void NoteObject(RmgObject o)
-    {
-        if (o.Def.Tag == "AdvMapStaticShared" || !_distReady.Contains((o.Floor, o.Zone))) return;
-        var z = Zones.FirstOrDefault(zz => zz.Id == o.Zone && zz.Floor == o.Floor);
-        if (z != null) LowerDistances(z, o.X, o.Y);
-    }
-
-    /// <summary>
     /// exe 0x0091bb10 (prisons, cartographers, shrines, resource/treasury/luck-morale buildings, shops, obelisks,
-    /// Redwood Observatory, Den of Thieves): the object distance field (0x009191a0 flag 4), its maximum M over
-    /// the zone's tiles with border distance &gt; 2 and occupancy != 2 (0x00919710), then every zone tile with
-    /// distance &gt; 2M/3 and border distance &gt; 0. No fallback: an empty list places nothing.
+    /// Redwood Observatory, Den of Thieves, Graal): 0x009191a0(4), its maximum M over the zone's tiles (0x00919710),
+    /// then every zone tile with distance &gt; 2M/3 and border distance &gt; 0. No fallback.
     /// </summary>
-    List<(int X, int Y)> FarCandidates(RmgResult r, RmgZone z)
+    List<(int X, int Y)> FarCandidates(RmgZone z)
     {
-        ComputeObjectDistances(r, z);
+        DistanceField(z, 4);
         var f = Floors[z.Floor];
-        int max = 0;
-        foreach (var (x, y) in z.Tiles)
-        {
-            int i = f.At(x, y);
-            if (f.Zone[i] == z.Id && f.BorderDist[i] > 2 && f.Occ[i] != Occ.Near && f.Dist[i] > max) max = f.Dist[i];
-        }
+        int max = MaxDist(z, z.Tiles);
         return z.Tiles.Where(t => f.Dist[f.At(t.X, t.Y)] > max * 2 / 3 && f.BorderDist[f.At(t.X, t.Y)] > 0).ToList();
     }
 
-    /// <summary>Candidates far from other objects: distance above <paramref name="fraction"/> of the zone's maximum (exe 0x00919710).</summary>
-    List<(int X, int Y)> SpreadCandidates(RmgResult r, RmgZone z, IEnumerable<(int X, int Y)> tiles, int num, int den)
+    /// <summary>0x009191a0(4) and 0x00919710 over <paramref name="list"/>, then the list's tiles whose distance exceeds num/den of the maximum.</summary>
+    List<(int X, int Y)> SpreadCandidates(RmgZone z, List<(int X, int Y)> list, int num, int den)
     {
-        ComputeObjectDistances(r, z);
+        DistanceField(z, 4);
         var f = Floors[z.Floor];
-        var list = tiles.Where(t => f.BorderDist[f.At(t.X, t.Y)] > 2 && f.Occ[f.At(t.X, t.Y)] != Occ.Near).ToList();
-        int max = 0;
-        foreach (var (x, y) in list) max = Math.Max(max, f.Dist[f.At(x, y)]);
-        int threshold = max * num / den;
-        var far = list.Where(t => f.Dist[f.At(t.X, t.Y)] > threshold && f.BorderDist[f.At(t.X, t.Y)] > 0).ToList();
-        return far.Count > 0 ? far : list;
+        int threshold = MaxDist(z, list) * num / den;
+        return list.Where(t => f.Dist[f.At(t.X, t.Y)] > threshold).ToList();
     }
 
     // ------------------------------------------------------------------ guards (exe 0x00ba7690)
@@ -211,19 +103,19 @@ public sealed partial class RmgGenerator
     /// Guard army for a guard power (exe 0x00ba7690). Power below 100 places nothing (no draws). The value is
     /// round(power x MonsterCoef[level]); then Float(0,1) &lt; 0.6 tries a two-stack army template with
     /// round(value x 0.9) (0x00ba71b0), and otherwise, or when no template fits, one stack (0x00ba6910).
-    /// Returns the stacks (main stack first) or null.
+    /// Returns the stacks (main stack first) and whether they came from a template, or null.
     /// </summary>
-    List<(RmgCreature Creature, int Count)>? PickGuard(int power)
+    (List<(RmgCreature Creature, int Count)> Stacks, bool Template)? PickGuard(int power)
     {
         if (power < 100) return null;
         int value = (int)Math.Round((double)power * MonsterCoef[Math.Clamp(MonsterLevel, 0, 4)], MidpointRounding.ToEven);
         if (Rng.Float(0, 1) < 0.6f)
         {
             var two = PickArmyTemplate((int)Math.Round((double)value * 0.9f, MidpointRounding.ToEven));
-            if (two != null) return two;
+            if (two != null) return (two, true);
         }
         var one = PickSingleStack(value);
-        return one == null ? null : new List<(RmgCreature, int)> { one.Value };
+        return one == null ? null : (new List<(RmgCreature, int)> { one.Value }, false);
     }
 
     RmgCreature? CreatureAt(int index) => index >= 0 && index < _db.Creatures.Count && _db.Creatures[index].Index == index
@@ -303,27 +195,25 @@ public sealed partial class RmgGenerator
     }
 
     /// <summary>
-    /// A guard (0x00ba7690 → 0x00ba6f00 → 0x00914b40 / 0x00914cc0). The caller passes the facing in the exe; ours
-    /// is <paramref name="angle"/> when given, else none (TODO(exe): the mine, town and connection callers' angles).
+    /// A guard (0x00ba7690 → 0x00ba6f00 → 0x00914b40 / 0x00914cc0) at (x, y) turned by <paramref name="angle"/>. The
+    /// guard creators write no tile flags; the callers do (mines, upgrade buildings) or do not (connections).
     /// </summary>
-    RmgObject? PlaceGuard(RmgResult r, RmgZone z, int x, int y, int power, string note, float? angle = null)
+    RmgObject? PlaceGuard(RmgResult r, RmgZone z, int x, int y, int power, string note, float angle)
     {
         var f = Floors[z.Floor];
         if (!f.In(x, y)) return null;
         var g = PickGuard(power);
-        if (g == null || g[0].Creature.MonsterShared == null) return null;
-        var (c, count) = g[0];
+        if (g == null || g.Value.Stacks[0].Creature.MonsterShared == null) return null;
+        var (c, count) = g.Value.Stacks[0];
         var d = Catalog.Get(c.MonsterShared!);
         CreateObjectDraws();
-        f.Occ[f.At(x, y)] = Occ.Guard;
         var o = new RmgObject
         {
-            Shared = c.MonsterShared!, Def = d, X = x, Y = y, Floor = z.Floor, Zone = z.Id, Angle = angle,
-            Creature = c.Id, Amount = count, Note = note,
+            Shared = c.MonsterShared!, Def = d, X = x, Y = y, Floor = z.Floor, Zone = z.Id, Angle = angle, Quarter = ExeQuarter(angle),
+            Creature = c.Id, Amount = count, Note = note, TwoStack = g.Value.Template,
         };
-        o.AdditionalStacks.AddRange(g.Skip(1).Select(st => (st.Creature.Id, st.Count)));
+        o.AdditionalStacks.AddRange(g.Value.Stacks.Skip(1).Select(st => (st.Creature.Id, st.Count)));
         r.Objects.Add(o);
-        NoteObject(o);
         return o;
     }
 
@@ -368,22 +258,25 @@ public sealed partial class RmgGenerator
             var d = Catalog.Get(race.TownProto);
             // exe 0x00923e50: candidates are zone tiles deeper than R/2; each try draws a tile and a
             // quarter turn; the town's anchor (its first active tile) must be at least 2R/3 from the
-            // border (relaxed after 100 tries); footprint failures drop the candidate.
+            // border (relaxed after 100 tries); footprint failures (0x00919be0) drop the candidate.
             var cands = z.Tiles.Where(t => f.BorderDist[f.At(t.X, t.Y)] > z.Radius / 2).ToList();
             RmgObject? town = null;
+            int px = 0, py = 0;
             for (int tries = 0; cands.Count > 0 && town == null; tries++)
             {
                 int i = Rng.Next(cands.Count);
                 var (cx, cy) = cands[i];
-                int q = Rng.Next(4);
-                var (ax, ay) = ActiveTile(d, cx, cy, q);
+                float a = QuarterAngle(Rng.Next(4));
+                var (ax, ay) = VisitTile(d, cx, cy, a);
                 if (ay < 1 || ay >= H - 1 || ax < 1 || ax >= W - 1) continue;
                 if (f.BorderDist[f.At(ax, ay)] < z.Radius * 2 / 3 && tries < 100) continue;
-                if (!CanPlace(z, d, cx, cy, q, out var access)) { cands.RemoveAt(i); continue; }
-                town = Commit(r, z, race.TownProto, d, cx, cy, q, access, "town");
+                if (!FootprintFits(z, cx, cy, a, d)) { cands.RemoveAt(i); continue; }
+                town = CreateObject(r, z, race.TownProto, cx, cy, a, "town");
+                Stamp(z, cx, cy, a, d, null);
+                (px, py) = (cx, cy);
                 z.TownPos = (ax, ay);
                 z.TownPlaced = true;
-                // After 0x009145b0's two draws (in Commit), the town's point light draws twice (0x0092a400 / 0x00babbf0).
+                // After 0x009145b0's two draws, the town's point light draws twice (0x0092a400 / 0x00babbf0).
                 Rng.Next(2);
                 Rng.Next(2);
             }
@@ -393,89 +286,51 @@ public sealed partial class RmgGenerator
                 town.Owner = z.Player - 1;
                 r.StartTowns[z.Player - 1] = town;
             }
-            else if (z.Def.TownGuardStrength > 0 && r.Access.TryGetValue(town, out var acc))
-                PlaceGuard(r, z, acc.X, acc.Y, GuardPower(z.Def.TownGuardStrength), "town guard");
-            // Decorative objects over the town centre (OverTownCenterObjects) are effects only.
-        }
-    }
-
-    // ------------------------------------------------------------------ connections (exe 0x00904920)
-
-    void CreateConnections(RmgResult r)
-    {
-        foreach (var c in _t.Connections)
-        {
-            var a = Zones.FirstOrDefault(z => z.Id == c.Source);
-            var b = Zones.FirstOrDefault(z => z.Id == c.Dest);
-            if (a == null || b == null) continue;
-            int guard = c.Guarded ? GuardPower(c.GuardStrength) : 0;
-            if (a.Floor == b.Floor && TryBorderPassage(r, a, b, c.Wide, guard)) continue;
-            // Zones that do not touch (or lie on different floors) are linked by a teleport pair.
-            PlaceTeleportPair(r, a, b, guard);
-        }
-    }
-
-    bool TryBorderPassage(RmgResult r, RmgZone a, RmgZone b, bool wide, int guard)
-    {
-        var f = Floors[a.Floor];
-        var pairs = new List<(int X, int Y, int Bx, int By)>();
-        foreach (var (x, y) in a.Tiles)
-        {
-            if (f.BorderDist[f.At(x, y)] != 0) continue;
-            if (x < _db.Params.JunctionMinBorderDistance || y < _db.Params.JunctionMinBorderDistance ||
-                x >= W - _db.Params.JunctionMinBorderDistance || y >= H - _db.Params.JunctionMinBorderDistance) continue;
-            foreach (var (dx, dy) in Neighbours4)
+            else
+                // 0x00918b60 → 0x00ba6b10: a neutral town's guard is its garrison (TownGuardStrenght x BasicLevelGuardPower).
+                TownGarrison(town, GuardPower(z.Def.TownGuardStrength), z.Race is >= 3 and <= 10 ? z.Race : 1);
+            // 0x009228e0 (no random towns): one of the preset's OverTownCenterObjects at the town's position.
+            if (race.OverTownCenterObjects.Count > 0)
             {
-                int nx = x + dx, ny = y + dy;
-                if (f.In(nx, ny) && f.Zone[f.At(nx, ny)] == b.Id) { pairs.Add((x, y, nx, ny)); break; }
+                float a = QuarterAngle(Rng.Next(4));
+                var shared = race.OverTownCenterObjects[Rng.Next(race.OverTownCenterObjects.Count)];
+                CreateObject(r, z, shared, px, py, a, "over town centre");
             }
+            // TODO(exe): the specialization pick after 0x009228e0 (Next over the town type's specializations, FUN_00926510 +0x44) is not ported.
         }
-        if (pairs.Count == 0) return false;
-        // Prefer border points near the line between the two zone centres.
-        float mx = (a.CenterX + b.CenterX) / 2, my = (a.CenterY + b.CenterY) / 2;
-        var near = pairs.OrderBy(p => (p.X - mx) * (p.X - mx) + (p.Y - my) * (p.Y - my)).Take(Math.Max(1, pairs.Count / 3)).ToList();
-        var pick = near[Rng.Next(near.Count)];
-        int width = wide ? 3 : 1;
-        // Carve the passage: the border tiles on both sides plus a step inward, `width` wide.
-        int pdx = pick.Bx - pick.X, pdy = pick.By - pick.Y;
-        for (int w = -(width / 2); w <= width / 2; w++)
-            for (int s = -2; s <= 3; s++)
-            {
-                int tx = pick.X + pdx * s + pdy * w, ty = pick.Y + pdy * s + pdx * w;
-                if (!f.In(tx, ty)) continue;
-                int i = f.At(tx, ty);
-                if (f.Occ[i] == Occ.Free) f.Occ[i] = Occ.Passage;
-            }
-        r.Passages.Add((a.Floor, a.Id, b.Id, pick.X, pick.Y));
-        r.Passages.Add((a.Floor, b.Id, a.Id, pick.Bx, pick.By));
-        // 0x00925a00: each side's connection point goes to the zone's connection list +0xc0 and its node list +0x68.
-        a.ConnectionPoints.Add((pick.X, pick.Y)); a.RoadNodes.Add((pick.X, pick.Y)); a.GuardPoints.Add((pick.X, pick.Y));
-        b.ConnectionPoints.Add((pick.Bx, pick.By)); b.RoadNodes.Add((pick.Bx, pick.By)); b.GuardPoints.Add((pick.Bx, pick.By));
-        if (guard > 0) PlaceGuard(r, a, pick.X, pick.Y, guard, "connection guard");
-        return true;
     }
 
-    void PlaceTeleportPair(RmgResult r, RmgZone a, RmgZone b, int guard)
+    /// <summary>
+    /// exe 0x00ba6b10 (power, town, race): below 100 nothing; monster level 0 scales the power by 0.7, level 2 by 1.5
+    /// (0x00e15698, 0x00e3a3ac, chopped). Tier 1..7: count = (Next(20) + 20) x (9 − tier) / 2 (shift); the creatures of
+    /// the tier and the town's race (ids 0, 0x59, 0x72 excluded), none → stop; one by Next(n); a count worth more than
+    /// what is left is cut to left / Power and ends the garrison; armySlots[tier − 1] = (creature, count).
+    /// </summary>
+    void TownGarrison(RmgObject town, int power, int race)
     {
-        const string monolith = "MapObjects/Monolith_Two_Way.(AdvMapBuildingShared).xdb";
-        if (!_db.Xdb.FileSystem.Exists(monolith)) return;
-        foreach (var z in new[] { a, b })
+        if (power < 100) return;
+        int left = power;
+        if (MonsterLevel == 0) left = (int)(power * 0.7f);
+        else if (MonsterLevel == 2) left = (int)(power * 1.5f);
+        bool stop = false;
+        for (int tier = 1; tier < 8 && !stop; tier++)
         {
-            var f = Floors[z.Floor];
-            var cands = z.Tiles.Where(t =>
-            {
-                int d = f.BorderDist[f.At(t.X, t.Y)];
-                return d >= _db.Params.TeleportMinBorderDistance && d <= _db.Params.TeleportMaxBorderDistance;
-            }).ToList();
-            var o = PlaceRandom(r, z, monolith, cands, "teleport");
-            if (o == null) continue;
-            r.Passages.Add((z.Floor, z.Id, z == a ? b.Id : a.Id, o.X, o.Y));
-            // TODO(exe): which point a teleport adds to +0xc0 is not traced (0x0091a950 writes the list); ours: its visit tile.
-            var (vx, vy) = ActiveTile(o.Def, o.X, o.Y, o.Quarter);
-            z.ConnectionPoints.Add((vx, vy));
-            if (guard > 0 && r.Access.TryGetValue(o, out var acc)) PlaceGuard(r, z, acc.X, acc.Y, guard, "teleport guard");
+            int count = (Rng.Next(20) + 20) * (9 - tier) >> 1;
+            var cands = _db.Creatures.Where(c => c.Index != 0 && c.Index != 0x59 && c.Index != 0x72 && c.Tier == tier && TownIndex(c.Town) == race).ToList();
+            if (cands.Count == 0) return;
+            var pick = cands[Rng.Next(cands.Count)];
+            if (left < pick.Power * count) { count = pick.Power > 0 ? left / pick.Power : 0; stop = true; }
+            town.Garrison.Add((pick.Id, count));
+            left -= pick.Power * count;
         }
     }
+
+    /// <summary>The town enum (TOWN_HEAVEN = 3 … TOWN_STRONGHOLD = 10), the same numbers as the race presets.</summary>
+    static int TownIndex(string town) => town switch
+    {
+        "TOWN_HEAVEN" => 3, "TOWN_PRESERVE" => 4, "TOWN_ACADEMY" => 5, "TOWN_DUNGEON" => 6, "TOWN_NECROMANCY" => 7,
+        "TOWN_INFERNO" => 8, "TOWN_FORTRESS" => 9, "TOWN_STRONGHOLD" => 10, _ => 0,
+    };
 
     // ------------------------------------------------------------------ main objects (exe 0x00907150)
 
@@ -491,23 +346,20 @@ public sealed partial class RmgGenerator
             if (z == null) continue;
             var race = _db.Race(z.Race);
             PlaceMines(r, z, race);
-            for (int i = 0; i < z.Def.AbandonedMines && race.AbandonedMine != null; i++)
-            {
-                var o = PlaceRandom(r, z, race.AbandonedMine, SpreadCandidates(r, z, z.Tiles, 4, 5), "abandoned mine");
-                if (o != null && r.Access.TryGetValue(o, out var acc)) PlaceGuard(r, z, acc.X, acc.Y, GuardPower(_db.Params.Mine2LevelGuardLevel), "mine guard");
-            }
+            PlaceAbandonedMines(r, z, race, z.Def.AbandonedMines);
+            // 0x0091c3a0 (hero): the player record's StartHero (PlayersInfo +8) is never set by our screen, so no hero is created.
             PlaceDwellings(r, z, race);
             if (_o.Grail) PlaceGrailAndObelisks(r, z, zi == grailZone);
             // Upgrade buildings: density x the +0xb0 factor, rounded to nearest (0x00907150 -> 0x0091f140).
-            SpendBudget(r, z, race.Upgrades,
-                z.Tiles.Count * (int)MathF.Round(z.Def.UpgBuildingsDensity * Multiplier(_o.ExpLevel), MidpointRounding.ToEven) / 10000,
-                "upgrade building", upgrades: true);
+            PlaceUpgrades(r, z, race.Upgrades,
+                z.Tiles.Count * (int)MathF.Round(z.Def.UpgBuildingsDensity * Multiplier(_o.ExpLevel), MidpointRounding.ToEven) / 10000);
+            // 0x00920370: Prisons; each with the far candidates (0x0091bb10).
             for (int i = 0; i < z.Def.Prisons; i++)
-                PlaceRandom(r, z, "MapObjects/Prison.(AdvMapPrisonShared).xdb", FarCandidates(r, z), "prison");
+                PlaceRandom(r, z, "MapObjects/Prison.(AdvMapPrisonShared).xdb", FarCandidates(z), "prison");
             // 0x00920c50: LandCartographer cartographers; stops at the first empty candidate list.
             for (int i = 0; i < z.Def.LandCartographer; i++)
             {
-                var c = FarCandidates(r, z);
+                var c = FarCandidates(z);
                 if (c.Count == 0) break;
                 PlaceRandom(r, z, "MapObjects/Cartographer.(AdvMapCartographerShared).xdb", c, "cartographer");
             }
@@ -529,7 +381,6 @@ public sealed partial class RmgGenerator
             // the statics (0x00906380, PlaceUndergroundTreasures).
             if (z.Floor == 0) PlaceZoneTreasures(r, z);
             ConnectObjectNodes(z);
-            ReserveRoadTiles();
         }
     }
 
@@ -555,25 +406,30 @@ public sealed partial class RmgGenerator
 
     /// <summary>
     /// Graal option, per zone after the dwellings (exe 0x00907150): the drawn zone gets the Graal artifact
-    /// (RMG/Params Grail) by 0x00921a50 — at most 100 attempts of a random candidate tile and a random quarter turn;
-    /// then every zone gets (zone tiles · k) / (W · H) + 2 "obelisks" (RMG/Params Obelisk, which the stock data
-    /// points at the Learning Stone) through 0x00921a10 → 0x009216f0, k = 10 / 18 / 26 for size index 0 / 1 / larger.
-    /// TODO(exe): the candidate filters of 0x0091bb10 and 0x009216f0, and the second test 0x00914a60 (radius 5),
-    /// are not ported; candidates are the zone's tiles.
+    /// (RMG/Params Grail) by 0x00921a50 — the far candidates (0x0091bb10), at most 100 attempts of a random candidate
+    /// and quarter turn tested by 0x00919be0, created by 0x00914a60 and flagged 4; then every zone gets
+    /// (zone tiles · k) / (W · H) + 2 "obelisks" (RMG/Params Obelisk, the stock data's Learning Stone) through
+    /// 0x00921a10 → 0x009216f0, k = 10 / 18 / 26 for size index 0 / 1 / larger.
+    /// TODO(exe): which list 0x00921a50 appends the Graal tile to (0x00a68e00 on a hidden list) is not traced.
     /// </summary>
     void PlaceGrailAndObelisks(RmgResult r, RmgZone z, bool grail)
     {
         if (grail && _db.Params.Grail is { } g)
         {
             var d = Catalog.Get(g);
-            var pool = z.Tiles.ToList();
+            var pool = FarCandidates(z);
             bool placed = false;
             for (int tries = 0; tries < 100 && pool.Count > 0 && !placed; tries++)
             {
                 int i = Rng.Next(pool.Count);
                 var (x, y) = pool[i];
-                int q = Rng.Next(4);
-                if (CanPlace(z, d, x, y, q, out var access, null)) { Commit(r, z, g, d, x, y, q, access, "graal"); placed = true; }
+                float a = QuarterAngle(Rng.Next(4));
+                if (FootprintFits(z, x, y, a, d))
+                {
+                    CreateObject(r, z, g, x, y, a, "graal");
+                    Floors[z.Floor].Flags[Floors[z.Floor].At(x, y)] = TileFlags.Active;
+                    placed = true;
+                }
                 else pool.RemoveAt(i);
             }
             if (!placed) r.Warnings.Add($"Can't place building {g} at zone #{z.Id}, floor {z.Floor}");
@@ -591,7 +447,7 @@ public sealed partial class RmgGenerator
     RmgObject? PlaceBuilding(RmgResult r, RmgZone z, string shared, string note)
     {
         if (!_db.Xdb.FileSystem.Exists(shared)) return null;
-        var pool = FarCandidates(r, z);
+        var pool = FarCandidates(z);
         if (pool.Count == 0) return null;
         var d = Catalog.Get(shared);
         for (int tries = 0; tries < 100; tries++)
@@ -599,15 +455,41 @@ public sealed partial class RmgGenerator
             if (pool.Count == 0) break;
             int i = Rng.Next(pool.Count);
             var (x, y) = pool[i];
-            int q = Rng.Next(4);
-            if (CanPlace(z, d, x, y, q, out var access)) return Commit(r, z, shared, d, x, y, q, access, note);
+            float a = QuarterAngle(Rng.Next(4));
+            if (FootprintFits(z, x, y, a, d))
+            {
+                var o = CreateObject(r, z, shared, x, y, a, note);
+                Stamp(z, x, y, a, d, null);
+                return o;
+            }
             pool.RemoveAt(i);
         }
         r.Warnings.Add($"Can't place building {shared} at zone #{z.Id}, floor {z.Floor}");
         return null;
     }
 
-    /// <summary>exe 0x0091c4a0: wood/ore near the town (Mine1 radii), the rest further out (Mine2 radii), each guarded.</summary>
+    /// <summary>Resource piles (exe 0x00ff9e08, filled at 0x00dc8a50: Wood, Ore, Mercury, Crystal, Sulfur, Gems, Gold): the mine decorations by mine type.</summary>
+    static readonly string[] ResourcePiles =
+    {
+        "MapObjects/Wood.(AdvMapTreasureShared).xdb", "MapObjects/Ore.(AdvMapTreasureShared).xdb",
+        "MapObjects/Mercury.(AdvMapTreasureShared).xdb", "MapObjects/Crystal.(AdvMapTreasureShared).xdb",
+        "MapObjects/Sulfur.(AdvMapTreasureShared).xdb", "MapObjects/Gems.(AdvMapTreasureShared).xdb",
+        "MapObjects/Gold.(AdvMapTreasureShared).xdb",
+    };
+
+    (int X, int Y) _lastMineGuard;   // 0x0091c4a0's guard tile, kept across mines like the exe's stack slot
+
+    /// <summary>
+    /// exe 0x0091c4a0. Candidate lists over the floor (x major) with the zone's tiles of border distance &gt; 1: with a
+    /// placed town, wood/ore (types 0, 1) within (Mine1LevelMinRadius, Mine1LevelMaxRadius) of it and the others within
+    /// the Mine2 radii; without, every such tile. Per mine: 0x009191a0(4), candidates with distance &gt; 2M/5 (M of
+    /// 0x00919710 over the list), the placer loop; a placed mine is stamped with the mine list +0x11c. Its guard: from
+    /// k = chop(angle x 4/π + 0.5) (type 2: angle + π), the first of the 4 orthogonal neighbours (k &amp; 3 …) of the
+    /// mine's last visit tile whose flags carry a road bit or are 0 gets the guard (BasicLevelGuardPower x Mine1 /
+    /// Mine2 / gold level, turned by the angle), flag 4, and joins the guard points +0x98. Then up to two decorations:
+    /// neighbours k+2 … k+9 (&amp; 7) of the 8-table with such flags, closer than 2 to the guard tile, Float(0,1) &lt; 0.8,
+    /// get the type's resource pile (no footprint test) and flag 2.
+    /// </summary>
     void PlaceMines(RmgResult r, RmgZone z, RmgRacePreset race)
     {
         var f = Floors[z.Floor];
@@ -617,8 +499,9 @@ public sealed partial class RmgGenerator
         foreach (var (x, y) in z.Tiles)
         {
             if (f.BorderDist[f.At(x, y)] <= 1) continue;
-            if (z.TownPos is not { } tp || z.AnchorOnly) { near.Add((x, y)); far.Add((x, y)); continue; }
-            float d = MathF.Sqrt((tp.X - x) * (tp.X - x) + (tp.Y - y) * (tp.Y - y));
+            if (!z.TownPlaced || z.TownPos is not { } tp) { near.Add((x, y)); far.Add((x, y)); continue; }
+            float dx = tp.X - x, dy = tp.Y - y;
+            float d = MathF.Sqrt(dy * dy + dx * dx);
             if (d < p.Mine2LevelMaxRadius && d > p.Mine2LevelMinRadius) far.Add((x, y));
             if (d < p.Mine1LevelMaxRadius && d > p.Mine1LevelMinRadius) near.Add((x, y));
         }
@@ -626,63 +509,151 @@ public sealed partial class RmgGenerator
         {
             for (int n = 0; n < z.Def.Mines[type]; n++)
             {
-                var cands = SpreadCandidates(r, z, type < 2 ? near : far, 2, 5);
-                var o = PlaceRandom(r, z, race.Mines[type], cands, "mine");
-                if (o == null || !r.Access.TryGetValue(o, out var acc)) continue;
-                // 0x0091c4a0 → 0x0091a420 with the mine list +0x11c: the mine's visit tiles.
-                foreach (var a in o.Def.Active)
+                var cands = SpreadCandidates(z, type < 2 ? near : far, 2, 5);
+                var d = Catalog.Get(race.Mines[type]);
+                RmgObject? mine = null;
+                float angle = 0;
+                int mx = 0, my = 0;
+                while (cands.Count > 0)
                 {
-                    var t = H5.Adventure.Map.Footprint.Place(new Tile(o.X, o.Y), a, o.Rot);
-                    if (f.In(t.X, t.Y)) z.MinePoints.Add((t.X, t.Y));
+                    int i = Rng.Next(cands.Count);
+                    (mx, my) = cands[i];
+                    angle = QuarterAngle(Rng.Next(4));
+                    if (FootprintFits(z, mx, my, angle, d)) { mine = CreateObject(r, z, race.Mines[type], mx, my, angle, "mine"); break; }
+                    cands.RemoveAt(i);
                 }
+                if (mine == null)
+                {
+                    if (type >= 2) r.Warnings.Add($"cant place mine {race.Mines[type]} at zone {z.Id}");
+                    continue;
+                }
+                Stamp(z, mx, my, angle, d, z.MinePoints);
+                var last = z.MinePoints[^1];
+                int px = (int)last.X, py = (int)last.Y;
+                if (type == 2) angle += 3.1415927f;                                       // 0x00e0d614
+                int k = (int)(angle * 1.2732395f + 0.5f);                                  // 0x00e57dd0, 0x00e0ab70
                 int level = type < 2 ? p.Mine1LevelGuardLevel : type == 6 ? p.MineGoldGuardLevel : p.Mine2LevelGuardLevel;
-                PlaceGuard(r, z, acc.X, acc.Y, GuardPower(level), "mine guard");
-                MarkNear(f, o, 2);
+                for (int u = k; u < k + 4; u++)
+                {
+                    var (dx, dy) = Ortho4[u & 3];
+                    int gx = px + dx, gy = py + dy;
+                    if (!f.In(gx, gy) || !GuardTileFree(f.Flags[f.At(gx, gy)])) continue;
+                    PlaceGuard(r, z, gx, gy, GuardPower(level), "mine guard", angle);
+                    f.Flags[f.At(gx, gy)] = TileFlags.Active;
+                    z.GuardPoints.Add((gx, gy));
+                    _lastMineGuard = (gx, gy);
+                    break;
+                }
+                int placed = 0;
+                for (int u = k + 2; u < k + 10 && placed <= 1; u++)
+                {
+                    var (dx, dy) = Around8[u & 7];
+                    int ex = px + dx, ey = py + dy;
+                    if (!f.In(ex, ey) || !GuardTileFree(f.Flags[f.At(ex, ey)])) continue;
+                    float gdx = ex - _lastMineGuard.X, gdy = ey - _lastMineGuard.Y;
+                    if (!(MathF.Sqrt(gdy * gdy + gdx * gdx) < 2f)) continue;                 // 0x00e15a94
+                    if (!(Rng.Float(0, 1) < 0.8f)) continue;                                    // 0x00e1857c
+                    CreateObject(r, z, ResourcePiles[type], ex, ey, angle, "mine decoration");
+                    f.Flags[f.At(ex, ey)] = TileFlags.Blocked;
+                    placed++;
+                }
             }
         }
     }
 
-    /// <summary>Keeps a ring around an object clear of other objects (the exe marks such tiles 2).</summary>
-    void MarkNear(RmgFloor f, RmgObject o, int radius)
+    /// <summary>
+    /// exe 0x00920630: candidates are the zone's tiles inside 0x009157b0 (1 ≤ x, y &lt; size − 1) with border distance
+    /// &gt; 1 and, with a placed town, within (Mine3LevelMinRadius, Mine3LevelMaxRadius) of it; per mine 0x009191a0(4)
+    /// and distance &gt; 4M/5, the placer loop, 0x009151c0 creates it and 0x0091a420 stamps it with the mine list +0x11c.
+    /// No guard (the abandoned mine carries its own GuardsVariants).
+    /// </summary>
+    void PlaceAbandonedMines(RmgResult r, RmgZone z, RmgRacePreset race, int count)
     {
-        foreach (var (tx, ty) in Footprint(o.Def, o.X, o.Y, o.Quarter, includeActive: true))
-            for (int dx = -radius; dx <= radius; dx++)
-                for (int dy = -radius; dy <= radius; dy++)
-                {
-                    int nx = tx + dx, ny = ty + dy;
-                    if (f.In(nx, ny) && f.Occ[f.At(nx, ny)] == Occ.Free && Rng.Float(0, 1) < 0.8f)
-                    {
-                        f.Occ[f.At(nx, ny)] = Occ.Near;
-                        // TODO(exe): 0x0091c4a0 writes flag 2 around the mine under its own rule; this ring is not that rule.
-                    }
-                }
+        if (race.AbandonedMine == null) return;
+        var f = Floors[z.Floor];
+        var p = _db.Params;
+        var list = new List<(int, int)>();
+        foreach (var (x, y) in z.Tiles)
+        {
+            if (!(y >= 1 && y < H - 1 && x >= 1 && x < W - 1) || f.BorderDist[f.At(x, y)] <= 1) continue;
+            if (z.TownPlaced && z.TownPos is { } tp)
+            {
+                float dx = tp.X - x, dy = tp.Y - y;
+                float d = MathF.Sqrt(dy * dy + dx * dx);
+                if (p.Mine3LevelMaxRadius <= d || d <= p.Mine3LevelMinRadius) continue;
+            }
+            list.Add((x, y));
+        }
+        for (int i = 0; i < count; i++)
+            PlaceRandom(r, z, race.AbandonedMine, SpreadCandidates(z, list, 4, 5), "abandoned mine", z.MinePoints);
     }
 
+    /// <summary>
+    /// exe 0x0091e910: per tier and count, 0x009191a0(4) and the zone tiles with distance &gt; 2M/3; the placer loop;
+    /// an exhausted list logs "Can't place dwelling" and ends all dwellings of the zone. No guard.
+    /// TODO(exe): the shared comes from the preset's list at +0x28 (4a6430); ours: NewDwellings[tier] (same objects in the stock presets).
+    /// </summary>
     void PlaceDwellings(RmgResult r, RmgZone z, RmgRacePreset race)
     {
         for (int tier = 0; tier < z.Def.Dwellings.Length; tier++)
             for (int n = 0; n < z.Def.Dwellings[tier]; n++)
             {
-                if (tier >= race.NewDwellings.Count) break;
-                var dw = race.NewDwellings[tier];
-                var o = PlaceRandom(r, z, dw.Shared, SpreadCandidates(r, z, z.Tiles, 2, 3), "dwelling");
-                if (o != null && dw.GuardStrength > 0 && r.Access.TryGetValue(o, out var acc))
-                    PlaceGuard(r, z, acc.X, acc.Y, GuardPower(dw.GuardStrength), "dwelling guard");
+                if (tier >= race.NewDwellings.Count) return;
+                if (PlaceRandom(r, z, race.NewDwellings[tier].Shared, SpreadCandidates(z, z.Tiles, 2, 3), "dwelling") == null) return;
             }
     }
 
     /// <summary>
-    /// exe 0x009221d0 (shops, shrines, treasuries, buffs): spend a point budget, each pick drawn
-    /// among the leading pool entries still affordable.
+    /// exe 0x0091f140: points = tiles x density / 10000; while the first entry fits, n = leading entries that fit,
+    /// rand(n); 0x009191a0(4) and the zone tiles with distance &gt; 2M/3; the placer loop (an exhausted list ends the
+    /// zone's upgrades); 0x0091a420, then 0x00ba79f0 with the entry's GuardStrenght.
     /// </summary>
+    void PlaceUpgrades(RmgResult r, RmgZone z, List<RmgValuedObject> pool, int budget)
+    {
+        if (pool.Count == 0) return;
+        int spent = 0;
+        while (pool[0].Value + spent <= budget)
+        {
+            int n = 0;
+            while (n < pool.Count && pool[n].Value + spent <= budget) n++;
+            var pick = pool[Rng.Next(n)];
+            var o = PlaceRandom(r, z, pick.Shared, SpreadCandidates(z, z.Tiles, 2, 3), "upgrade building");
+            if (o == null) return;
+            UpgradeGuard(r, z, o, GuardPower(pick.GuardStrength));
+            spent += pick.Value;
+        }
+    }
+
     /// <summary>
-    /// The budget loop shared by 0x00920ec0 (resource buildings), 0x00921d70 (luck/morale), 0x00921360 (treasuries),
-    /// 0x009221d0 (shops) and 0x0091f140 (upgrades): while the pool's first entry still fits, n = the number of
-    /// leading entries (preset order) that fit, pick rand(n), stop if it does not fit or there are no candidates,
-    /// place it (random candidate + quarter turn; an exhausted list ends the loop) and add its value.
-    /// Only upgrade buildings get a guard (0x00ba79f0 with the entry's GuardStrenght).
+    /// exe 0x00ba79f0 (pos, angle, activeTiles, level, guard points): from the first rotated active tile, k = chop(angle
+    /// x 4/π + 0.5); the first of the 8 neighbours (0x00f76b68, k … k+7 &amp; 7) whose flags carry a road bit or are 0 gets
+    /// the guard (BasicLevelGuardPower x level, turned by the angle), flag 4, and joins the guard points +0x98.
     /// </summary>
-    void SpendBudget(RmgResult r, RmgZone z, List<RmgValuedObject> pool, int budget, string note, bool upgrades = false)
+    void UpgradeGuard(RmgResult r, RmgZone z, RmgObject o, int power)
+    {
+        var f = Floors[z.Floor];
+        float angle = o.Angle ?? 0;
+        var (ax, ay) = VisitTile(o.Def, o.X, o.Y, angle);
+        int k = (int)(angle * 1.2732395f + 0.5f);
+        for (int u = k; u < k + 8; u++)
+        {
+            var (dx, dy) = Around8[u & 7];
+            int gx = ax + dx, gy = ay + dy;
+            if (!f.In(gx, gy) || !GuardTileFree(f.Flags[f.At(gx, gy)])) continue;
+            PlaceGuard(r, z, gx, gy, power, "upgrade building guard", angle);
+            f.Flags[f.At(gx, gy)] = TileFlags.Active;
+            z.GuardPoints.Add((gx, gy));
+            break;
+        }
+    }
+
+    /// <summary>
+    /// The budget loop shared by 0x00920ec0 (resource buildings), 0x00921d70 (luck/morale), 0x00921360 (treasuries)
+    /// and 0x009221d0 (shops): while the pool's first entry still fits, n = the number of leading entries (preset order)
+    /// that fit, pick rand(n), stop if it does not fit or 0x0091bb10 finds no candidates, place it (an exhausted list
+    /// ends the loop) and add its value.
+    /// </summary>
+    void SpendBudget(RmgResult r, RmgZone z, List<RmgValuedObject> pool, int budget, string note)
     {
         if (pool.Count == 0) return;
         int spent = 0;
@@ -692,28 +663,11 @@ public sealed partial class RmgGenerator
             while (n < pool.Count && pool[n].Value + spent <= budget) n++;
             var pick = pool[Rng.Next(n)];
             if (pick.Value + spent > budget) break;
-            var cands = upgrades ? UpgradeCandidates(r, z) : FarCandidates(r, z);
-            if (!upgrades && cands.Count == 0) break;
-            var o = PlaceRandom(r, z, pick.Shared, cands, note);
-            if (o == null) break;
+            var cands = FarCandidates(z);
+            if (cands.Count == 0) break;
+            if (PlaceRandom(r, z, pick.Shared, cands, note) == null) break;
             spent += pick.Value;
-            if (upgrades && pick.GuardStrength > 0 && r.Access.TryGetValue(o, out var acc))
-                PlaceGuard(r, z, acc.X, acc.Y, GuardPower(pick.GuardStrength), note + " guard");
         }
-    }
-
-    /// <summary>0x0091f140: zone tiles whose object distance exceeds 2/3 of the maximum (0x00919710), no border test.</summary>
-    List<(int X, int Y)> UpgradeCandidates(RmgResult r, RmgZone z)
-    {
-        ComputeObjectDistances(r, z);
-        var f = Floors[z.Floor];
-        int max = 0;
-        foreach (var (x, y) in z.Tiles)
-        {
-            int i = f.At(x, y);
-            if (f.Zone[i] == z.Id && f.BorderDist[i] > 2 && f.Occ[i] != Occ.Near && f.Dist[i] > max) max = f.Dist[i];
-        }
-        return z.Tiles.Where(t => f.Dist[f.At(t.X, t.Y)] > max * 2 / 3).ToList();
     }
 
     /// <summary>The shrine table (exe 0x00ffa068, filled at 0x00dc8bd0) and its point costs (0x00e57d74).</summary>
@@ -738,22 +692,12 @@ public sealed partial class RmgGenerator
             int n = 0;
             while (n < ShrineTable.Length && ShrineTable[n].Cost + spent <= points) n++;
             var pick = ShrineTable[Rng.Next(n)];
-            var cands = FarCandidates(r, z);
+            var cands = FarCandidates(z);
             if (cands.Count == 0) break;
             if (PlaceRandom(r, z, pick.Shared, cands, "shrine") == null) break;
             spent += pick.Cost;
         } while (spent + 6 <= points);
     }
-
-    /// <summary>Resource piles (exe 0x00ff9e08, filled at 0x00dc8a50: Wood, Ore, Mercury, Crystal, Sulfur, Gems, Gold), used
-    /// by the mine decoration; Campfire appended for the (not yet ported) treasure blocks.</summary>
-    static readonly string[] ResourcePiles =
-    {
-        "MapObjects/Wood.(AdvMapTreasureShared).xdb", "MapObjects/Ore.(AdvMapTreasureShared).xdb",
-        "MapObjects/Mercury.(AdvMapTreasureShared).xdb", "MapObjects/Crystal.(AdvMapTreasureShared).xdb",
-        "MapObjects/Sulfur.(AdvMapTreasureShared).xdb", "MapObjects/Gems.(AdvMapTreasureShared).xdb",
-        "MapObjects/Gold.(AdvMapTreasureShared).xdb", "MapObjects/Campfire.(AdvMapTreasureShared).xdb",
-    };
 
     /// <summary>The loose treasure table (exe 0x00ff9ee8, 32-byte records filled at 0x00dc8ad0): rand(9) picks one
     /// for a treasure, index 1 (Chest) is used for chests.</summary>
@@ -767,10 +711,9 @@ public sealed partial class RmgGenerator
     };
 
     /// <summary>
-    /// exe 0x0091f8a0: count = tiles x density / 10000; per treasure the type is drawn first (rand(9), chests fixed),
-    /// candidates are the zone's tiles with border distance &gt; 0 whose object distance exceeds 2/3 of the maximum
-    /// (0x009191a0 flag 4 / 0x00919710) and occupancy != 2; random candidate + quarter turn until the footprint
-    /// fits (failures drop the candidate). An exhausted list logs "Can't place treasure" and ends the zone's treasures.
+    /// exe 0x0091f8a0: count = tiles x density / 10000; per treasure 0x009191a0(4), M of 0x00919710 over the zone's
+    /// tiles with border distance &gt; 0, candidates among them with distance &gt; 2M/3 and flags != 2; the type is drawn
+    /// next (rand(9), chests fixed); the placer loop. An exhausted list logs "Can't place treasure" and ends the zone's treasures.
     /// </summary>
     void PlaceTreasures(RmgResult r, RmgZone z, int density, bool chests)
     {
@@ -779,187 +722,70 @@ public sealed partial class RmgGenerator
         var inner = z.Tiles.Where(t => f.BorderDist[f.At(t.X, t.Y)] > 0).ToList();
         for (int i = 0; i < count; i++)
         {
-            ComputeObjectDistances(r, z);
-            int max = 0;
-            foreach (var (x, y) in inner)
-            {
-                int k = f.At(x, y);
-                if (f.Zone[k] == z.Id && f.BorderDist[k] > 2 && f.Occ[k] != Occ.Near && f.Dist[k] > max) max = f.Dist[k];
-            }
-            var cands = inner.Where(t => { int k = f.At(t.X, t.Y); return f.Dist[k] > max * 2 / 3 && f.BorderDist[k] > 0 && f.Occ[k] != Occ.Near; }).ToList();
+            DistanceField(z, 4);
+            int max = MaxDist(z, inner);
+            var cands = inner.Where(t => { int k = f.At(t.X, t.Y); return f.Dist[k] > max * 2 / 3 && f.BorderDist[k] > 0 && f.Flags[k] != TileFlags.Blocked; }).ToList();
             string shared = TreasureTable[chests ? 1 : Rng.Next(TreasureTable.Length)];
             if (PlaceRandom(r, z, shared, cands, chests ? "chest" : "treasure") == null) break;
         }
     }
 
+    // ------------------------------------------------------------------ finish (exe 0x00904ad0)
 
-    (int X, int Y)? HubOf(RmgZone z)
-    {
-        var f = Floors[z.Floor];
-        var best = z.Tiles.Where(t => f.Occ[f.At(t.X, t.Y)] is Occ.Free or Occ.Road)
-            .OrderBy(t => (t.X - z.CenterX) * (t.X - z.CenterX) + (t.Y - z.CenterY) * (t.Y - z.CenterY)).FirstOrDefault((-1, -1));
-        return best.Item1 < 0 ? null : best;
-    }
-
-    // ------------------------------------------------------------------ statics (exe 0x00906130)
-
-    void PlaceStatics(RmgResult r)
+    /// <summary>
+    /// Our check, not the exe's: every object with a visit tile should be reachable from its zone's town visit tile
+    /// (or, without a town, the start of its road network, else its free tile nearest the zone centre) over tiles that no object's footprint blocks
+    /// (monsters are fought through, so they block nothing). Counts the ones that are not.
+    /// </summary>
+    void Finish(RmgResult r)
     {
         foreach (var f in Floors)
         {
-            // Keep a walkable route from each zone hub to every object entrance and passage.
+            var blocked = new bool[W * H];
+            foreach (var o in r.Objects.Where(o => o.Floor == f.Index && o.Def.Tag != "AdvMapMonsterShared"))
+            {
+                int q = ExeQuarter(o.Rot);
+                var act = new HashSet<(int, int)>(o.Def.Active.Select(a => { var t = Rotate(a, q); return (o.X + t.X, o.Y + t.Y); }));
+                foreach (var b in o.Def.Blocked)
+                {
+                    var t = Rotate(b, q);
+                    int x = o.X + t.X, y = o.Y + t.Y;
+                    if (f.In(x, y) && !act.Contains((x, y))) blocked[f.At(x, y)] = true;
+                }
+            }
             foreach (var z in f.Zones.Values)
             {
-                var hub = z.TownPos is { } && r.StartTownAccess(z, out var acc) ? acc : HubOf(z);
+                (int X, int Y)? hub = null;
+                var town = r.Objects.FirstOrDefault(o => o.Note == "town" && o.Zone == z.Id && o.Floor == f.Index);
+                if (town != null && r.Access.TryGetValue(town, out var ta)) hub = ta;
+                else if (z.Network.Count > 0) hub = ((int)z.Network[0].X, (int)z.Network[0].Y);   // the road network's start (first connection point)
+                hub ??= z.Tiles.Where(t => !blocked[f.At(t.X, t.Y)])
+                    .OrderBy(t => (t.X - z.CenterX) * (t.X - z.CenterX) + (t.Y - z.CenterY) * (t.Y - z.CenterY))
+                    .Select(t => ((int, int)?)t).FirstOrDefault();
                 if (hub == null) continue;
-                var targets = r.Access.Where(kv => kv.Key.Zone == z.Id && kv.Key.Floor == f.Index && kv.Value.X >= 0).Select(kv => kv.Value)
-                    .Concat(r.Passages.Where(p => p.Floor == f.Index && p.Zone == z.Id).Select(p => (p.X, p.Y))).ToList();
-                // One BFS tree from the hub; each target's route is traced back along it.
-                var parent = new Dictionary<(int, int), (int, int)> { [hub.Value] = hub.Value };
+                var seen = new HashSet<(int, int)> { hub.Value };
                 var queue = new Queue<(int X, int Y)>();
                 queue.Enqueue(hub.Value);
                 while (queue.Count > 0)
                 {
-                    var cur = queue.Dequeue();
-                    foreach (var (dx, dy) in Neighbours8)
-                    {
-                        var n = (X: cur.X + dx, Y: cur.Y + dy);
-                        if (!f.In(n.X, n.Y) || parent.ContainsKey(n)) continue;
-                        int i = f.At(n.X, n.Y);
-                        if (f.Zone[i] != z.Id || f.Occ[i] is Occ.Object or Occ.Obstacle or Occ.Entrance) continue;
-                        parent[n] = cur;
-                        if (f.Occ[i] != Occ.Guard) queue.Enqueue(n);
-                    }
-                }
-                foreach (var t in targets)
-                {
-                    if (!parent.ContainsKey(t)) continue;
-                    for (var p = t; ; p = parent[p])
-                    {
-                        int i = f.At(p.Item1, p.Item2);
-                        if (f.Occ[i] is Occ.Free or Occ.Near) f.Occ[i] = Occ.Road;
-                        if (p == hub.Value) break;
-                    }
-                }
-            }
-
-            // Obstacle tiles: zone borders (except passages), unassigned tiles and the map edge,
-            // plus clusters inside zones grown from random seeds.
-            var obstacle = new bool[W * H];
-            for (int x = 0; x < W; x++)
-                for (int y = 0; y < H; y++)
-                {
-                    int i = f.At(x, y);
-                    if (f.Occ[i] != Occ.Free && f.Occ[i] != Occ.Near) continue;
-                    bool edge = x < 2 || y < 2 || x >= W - 2 || y >= H - 2;
-                    if (edge || f.Zone[i] == -1 || f.BorderDist[i] <= 1) obstacle[i] = true;
-                }
-            var free = new List<(int X, int Y)>();
-            for (int x = 0; x < W; x++)
-                for (int y = 0; y < H; y++)
-                    if (f.Occ[f.At(x, y)] is Occ.Free or Occ.Near && !obstacle[f.At(x, y)]) free.Add((x, y));
-            int seeds = free.Count / 45;
-            for (int s = 0; s < seeds && free.Count > 0; s++)
-            {
-                var (sx, sy) = free[Rng.Next(free.Count)];
-                int size = 3 + Rng.Next(10);
-                var frontier = new List<(int X, int Y)> { (sx, sy) };
-                for (int k = 0; k < size && frontier.Count > 0; k++)
-                {
-                    var (cx, cy) = frontier[Rng.Next(frontier.Count)];
-                    int ci = f.At(cx, cy);
-                    if (f.Occ[ci] is not (Occ.Free or Occ.Near)) continue;
-                    obstacle[ci] = true;
-                    foreach (var (dx, dy) in Neighbours4)
-                        if (f.In(cx + dx, cy + dy)) frontier.Add((cx + dx, cy + dy));
-                }
-            }
-
-            // Fill obstacle tiles with the zone race's statics: big ones first, then one-tile blockers.
-            var order = new List<(int X, int Y)>();
-            for (int x = 0; x < W; x++)
-                for (int y = 0; y < H; y++)
-                    if (obstacle[f.At(x, y)]) order.Add((x, y));
-            Rng.Shuffle(order);
-            foreach (var pass in new[] { 0, 1, 2 })
-                foreach (var (x, y) in order)
-                {
-                    int i = f.At(x, y);
-                    if (!obstacle[i] || f.Occ[i] == Occ.Obstacle) continue;
-                    var race = RaceAt(f, x, y);
-                    var pool = pass switch { 0 => race.BigStatics.Concat(race.Mountains).ToList(), 1 => race.OneTileBigObjects, _ => race.OneTileSmallBlockers };
-                    if (pool.Count == 0) continue;
-                    var shared = pool[Rng.Next(pool.Count)];
-                    var d = Catalog.Get(shared);
-                    int q = Rng.Next(4);
-                    var tiles = Footprint(d, x, y, q, includeActive: false).ToList();
-                    if (tiles.Count == 0) tiles.Add((x, y));
-                    if (!tiles.All(t => f.In(t.X, t.Y) && obstacle[f.At(t.X, t.Y)] && f.Occ[f.At(t.X, t.Y)] != Occ.Obstacle)) continue;
-                    // The exe's statics write flag 2 too (0x00924940); our statics are not the exe's (GAP).
-                    foreach (var (tx, ty) in tiles) { f.Occ[f.At(tx, ty)] = Occ.Obstacle; f.Flags[f.At(tx, ty)] = TileFlags.Blocked; }
-                    r.Objects.Add(new RmgObject { Shared = shared, Def = d, X = x, Y = y, Floor = f.Index, Quarter = q, Zone = f.Zone[i], Note = "static" });
-                }
-
-            // Non-blocking decoration on a few free tiles.
-            foreach (var (x, y) in free)
-            {
-                int i = f.At(x, y);
-                if (f.Occ[i] != Occ.Free || Rng.Next(100) >= 3) continue;
-                var race = RaceAt(f, x, y);
-                if (race.OneTileSmallNonblockers.Count == 0) continue;
-                var shared = race.OneTileSmallNonblockers[Rng.Next(race.OneTileSmallNonblockers.Count)];
-                r.Objects.Add(new RmgObject { Shared = shared, Def = Catalog.Get(shared), X = x, Y = y, Floor = f.Index, Quarter = Rng.Next(4), Zone = f.Zone[i], Note = "decoration" });
-            }
-        }
-    }
-
-    RmgRacePreset RaceAt(RmgFloor f, int x, int y)
-    {
-        int id = f.Zone[f.At(x, y)];
-        if (id != -1 && f.Zones.TryGetValue(id, out var z)) return _db.Race(z.Race);
-        // Unassigned tiles: take the nearest zone's race.
-        foreach (var (dx, dy) in Neighbours8)
-        {
-            int nx = x + dx, ny = y + dy;
-            if (f.In(nx, ny) && f.Zone[f.At(nx, ny)] is var n and not -1 && f.Zones.TryGetValue(n, out var zz)) return _db.Race(zz.Race);
-        }
-        return _db.Race(f.Index == 0 ? 3 : 6);
-    }
-
-    // ------------------------------------------------------------------ finish (exe 0x00904ad0)
-
-    void Finish(RmgResult r)
-    {
-        // Every object should be reachable from its zone hub (fighting through guards); report the ones that are not.
-        foreach (var f in Floors)
-            foreach (var z in f.Zones.Values)
-            {
-                var hub = z.TownPos is { } && r.StartTownAccess(z, out var acc) ? acc : HubOf(z);
-                if (hub == null) continue;
-                var seen = new HashSet<(int, int)> { hub.Value };
-                var q = new Queue<(int X, int Y)>();
-                q.Enqueue(hub.Value);
-                while (q.Count > 0)
-                {
-                    var (x, y) = q.Dequeue();
-                    foreach (var (dx, dy) in Neighbours8)
+                    var (x, y) = queue.Dequeue();
+                    foreach (var (dx, dy) in Around8)
                     {
                         int nx = x + dx, ny = y + dy;
                         if (!f.In(nx, ny) || seen.Contains((nx, ny))) continue;
                         int i = f.At(nx, ny);
-                        if (f.Zone[i] != z.Id) continue;
-                        if (f.Occ[i] is Occ.Object or Occ.Obstacle) continue;
-                        // Guards are fought through, so they do not cut anything off.
+                        if (f.Zone[i] != z.Id || blocked[i]) continue;
                         seen.Add((nx, ny));
-                        q.Enqueue((nx, ny));
+                        queue.Enqueue((nx, ny));
                     }
                 }
-                foreach (var kv in r.Access.Where(kv => kv.Key.Zone == z.Id && kv.Key.Floor == f.Index))
-                    if (kv.Value.X >= 0 && !seen.Contains(kv.Value))
+                foreach (var kv in r.Access.Where(kv => kv.Key.Zone == z.Id && kv.Key.Floor == f.Index && kv.Key.Def.Tag != "AdvMapStaticShared"))
+                    if (!seen.Contains(kv.Value))
                     {
                         r.Unreachable++;
                         r.Warnings.Add($"unreachable {kv.Key.Note} {kv.Key.Shared} at ({kv.Key.X},{kv.Key.Y}) floor {f.Index}, visit tile {kv.Value}, zone {z.Id}");
                     }
             }
+        }
     }
 }

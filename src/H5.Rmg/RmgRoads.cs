@@ -1,26 +1,5 @@
 namespace H5.Rmg;
 
-/// <summary>
-/// Values of the exe's per-tile flag grid (floor record +0xd4) that the road and treasure-block stages read.
-/// The other placers keep using <see cref="Occ"/>; <see cref="RmgFloor.Flags"/> carries the exe's encoding for the
-/// writers ported so far.
-/// </summary>
-public static class TileFlags
-{
-    /// <summary>Object footprint (blockedTiles, 0x0091a420) or a mine's decoration ring (0x0091c4a0). The road builder treats exactly 2 as a wall.</summary>
-    public const int Blocked = 2;
-    /// <summary>Object visit tile (activeTiles, 0x0091a420); each one is pushed onto the zone's road-node list +0x68.</summary>
-    public const int Active = 4;
-    /// <summary>Road from the town (or the first connection) to each connection, 0x0091bf90; painted with the preset's RoadTile.</summary>
-    public const int MainRoad = 8;
-    /// <summary>Road from each mine to the road network, 0x0091bf90; painted with SecondaryRoadTile.</summary>
-    public const int MineRoad = 0x10;
-    /// <summary>Path between the zone's object nodes, 0x0091bdb0; reserved, not painted.</summary>
-    public const int ObjectPath = 0x20;
-    /// <summary>Any road (0x009191a0 is called with this mask before the treasure blocks).</summary>
-    public const int AnyRoad = MainRoad | MineRoad | ObjectPath;
-}
-
 public sealed partial class RmgGenerator
 {
     // Neighbour tables of the road builder 0x0091aee0 (pairs of floats: first index, second index).
@@ -316,11 +295,4 @@ public sealed partial class RmgGenerator
                 }
     }
 
-    /// <summary>Keeps the other placers (which read <see cref="Occ"/>) off road tiles, as the exe's footprint test 0x00919be0 requires flags == 0.</summary>
-    void ReserveRoadTiles()
-    {
-        foreach (var f in Floors)
-            for (int i = 0; i < f.Flags.Length; i++)
-                if ((f.Flags[i] & TileFlags.AnyRoad) != 0 && f.Occ[i] is Occ.Free or Occ.Near) f.Occ[i] = Occ.Road;
-    }
 }

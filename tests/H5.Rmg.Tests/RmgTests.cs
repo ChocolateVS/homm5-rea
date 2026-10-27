@@ -316,12 +316,16 @@ public class GeneratorTests(RmgFixture f)
         // 7 mines per zone and one prison per zone, as on the stock S_S4 maps (28 and 4).
         Assert.Equal(28, r.OfKind("AdvMapMineShared").Count());
         Assert.Equal(4, r.OfKind("AdvMapPrisonShared").Count());
-        // Every mine is guarded: a monster stands on its visit tile.
+        // 0x0091c4a0: each mine's guard stands on an orthogonal neighbour of its last visit tile.
+        int guarded = 0;
         foreach (var mine in r.OfKind("AdvMapMineShared"))
         {
-            var acc = r.Access[mine];
-            Assert.Contains(r.OfKind("AdvMapMonsterShared"), m => m.X == acc.X && m.Y == acc.Y);
+            var d = mine.Def;
+            var (lx, ly) = RmgGenerator.Rotate(d.Active[^1], RmgGenerator.ExeQuarter(mine.Rot));
+            int vx = mine.X + lx, vy = mine.Y + ly;
+            if (r.Objects.Any(m => m.Note == "mine guard" && Math.Abs(m.X - vx) + Math.Abs(m.Y - vy) == 1)) guarded++;
         }
+        Assert.True(guarded >= 26, $"{guarded} of 28 mines guarded");
     }
 
     [StockFact]

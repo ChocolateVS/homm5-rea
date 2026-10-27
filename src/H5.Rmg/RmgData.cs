@@ -119,6 +119,8 @@ public sealed class RmgRacePreset
     public string DefaultTile = "", RoadTile = "", SecondaryRoadTile = "", WaterTile = "", WaterBottomTile = "", WaterCoastTile = "";
     public List<string> OneTileSmallBlockers = new(), OneTileSmallNonblockers = new(), OneTileBigObjects = new(),
         BigStatics = new(), Mountains = new(), OverTownCenterObjects = new();
+    /// <summary>Preset +0xcc / +0xd8 (0x009225b0, 0x00922760); empty items kept ("" = a null reference, its draws still taken).</summary>
+    public List<string> OverLakeCenterObjects = new(), OverLakeOneTileRandomObjects = new();
     public List<RmgValuedObject> LuckMorale = new(), Shops = new(), ResourceGivers = new(), Upgrades = new(),
         Shrines = new(), Treasuries = new(), Buffs = new();
     public List<string> Mines = new();
@@ -182,6 +184,8 @@ public sealed class RmgDatabase
         XdbRef.Parse((string?)e?.Attribute("href"), current).Path ?? "";
     static List<string> Refs(XElement? list, string current) =>
         list?.Elements("Item").Select(i => Ref(i, current)).Where(p => p.Length > 0).ToList() ?? new();
+    static List<string> RefsAll(XElement? list, string current) =>
+        list?.Elements("Item").Select(i => Ref(i, current)).ToList() ?? new();
     static int[] Ints(XElement? list, int n)
     {
         var v = new int[n];
@@ -279,6 +283,8 @@ public sealed class RmgDatabase
                 OneTileBigObjects = Refs(o?.Element("OneTileBigObjects"), PresetPath),
                 BigStatics = Refs(o?.Element("BigStatics"), PresetPath), Mountains = Refs(o?.Element("Mountains"), PresetPath),
                 OverTownCenterObjects = Refs(o?.Element("OverTownCenterObjects"), PresetPath),
+                OverLakeCenterObjects = RefsAll(o?.Element("OverLakeCenterObjects"), PresetPath),
+                OverLakeOneTileRandomObjects = RefsAll(o?.Element("OverLakeOneTileRandomObjects"), PresetPath),
                 LuckMorale = Valued(o?.Element("NewLuckMoraleBuildings"), PresetPath),
                 Shops = Valued(o?.Element("NewShopBuildings"), PresetPath),
                 ResourceGivers = Valued(o?.Element("NewResourceGivers"), PresetPath),

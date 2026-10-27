@@ -13,20 +13,13 @@ public sealed class RmgResult
     /// <summary>Connection end points: (floor, zone, other zone, x, y).</summary>
     public List<(int Floor, int Zone, int Other, int X, int Y)> Passages { get; } = new();
     public Dictionary<int, RmgObject> StartTowns { get; } = new();
-    /// <summary>The free tile a hero uses to visit each placed object.</summary>
+    /// <summary>The visit tile (first rotated active tile) of each placed object that has one.</summary>
     public Dictionary<RmgObject, (int X, int Y)> Access { get; } = new(ReferenceEqualityComparer.Instance);
     public List<string> Warnings { get; } = new();
     /// <summary>Objects whose visit tile cannot be reached from the zone hub (should be 0).</summary>
     public int Unreachable;
 
     public RmgResult(RmgGenerator g) => Generator = g;
-
-    internal bool StartTownAccess(RmgZone z, out (int X, int Y) access)
-    {
-        access = (-1, -1);
-        var town = Objects.FirstOrDefault(o => o.Note == "town" && o.Zone == z.Id && o.Floor == z.Floor);
-        return town != null && Access.TryGetValue(town, out access) && access.X >= 0;
-    }
 
     public IEnumerable<RmgObject> OfKind(string sharedTag) => Objects.Where(o => o.Def.Tag == sharedTag);
 
@@ -88,11 +81,16 @@ public sealed class RmgResult
                     mo.Amount = o.Amount;
                     mo.CustomAmount = true;
                     mo.AdditionalStacks.AddRange(o.AdditionalStacks.Select(a => new H5.Core.Data.ArmySlot(a.Creature, a.Count)));
-                    mo.Mood = "MONSTER_MOOD_AGGRESSIVE";
+                    // 0x00914cc0 (two-stack template guards) writes Mood 2; 0x00914b40 none: the stock RMG maps carry
+                    // MONSTER_MOOD_HOSTILE and MONSTER_MOOD_WILD for them, and MONSTER_COURAGE_CAN_FLEE_JOIN for all.
+                    mo.Mood = o.TwoStack ? "MONSTER_MOOD_HOSTILE" : "MONSTER_MOOD_WILD";
                     mo.Courage = "MONSTER_COURAGE_CAN_FLEE_JOIN";
                     break;
                 case ObjectKind.Artifact: mo.ArtifactId = o.Def.ArtifactId; break;
-                case ObjectKind.Town: mo.TownType = o.Def.TownType; break;
+                case ObjectKind.Town:
+                    mo.TownType = o.Def.TownType;
+                    mo.Guards.AddRange(o.Garrison.Select(a => new H5.Core.Data.ArmySlot(a.Creature, a.Count)));
+                    break;
             }
             m.Objects.Add(mo);
         }

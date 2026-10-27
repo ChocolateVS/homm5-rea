@@ -40,40 +40,14 @@ public sealed partial class RmgGenerator
         }
     }
 
-    /// <summary>
-    /// exe 0x009191a0(0x38, 0): every tile of the zone's floor gets the distance to the nearest point of the zone's
-    /// road lists +0x74, +0x80 and +0x8c (10000 when they are empty), tiles outside every zone 1000; tiles of other
-    /// zones keep their value.
-    /// </summary>
-    void RoadDistanceField(RmgZone z)
-    {
-        var f = Floors[z.Floor];
-        for (int x = 0; x < W; x++)
-            for (int y = 0; y < H; y++)
-            {
-                int i = f.At(x, y);
-                if (f.Zone[i] < 0) { f.Dist[i] = 1000; continue; }
-                if (f.Zone[i] != z.Id) continue;
-                float best = 10000f;                                                    // 0x00e57d84
-                foreach (var list in new[] { z.Network, z.MineNetwork, z.ObjectPaths })
-                    foreach (var p in list)
-                    {
-                        float d = MathF.Sqrt((y - p.Y) * (y - p.Y) + (x - p.X) * (x - p.X));
-                        if (d < best) best = d;
-                    }
-                f.Dist[i] = (int)MathF.Round(best);
-            }
-        _distReady.Remove((z.Floor, z.Id));
-    }
-
-    /// <summary>"Free" for the distributor: flags 0 or bit 1 set. Tiles our other grid already uses are kept out too (our guards and statics do not write the exe flags).</summary>
-    bool BlockFree(RmgFloor f, int i) => (f.Flags[i] == 0 || (f.Flags[i] & 1) != 0) && f.Occ[i] is Occ.Free or Occ.Near or Occ.Road;
+    /// <summary>"Free" for the distributor: flags 0 or bit 1 set.</summary>
+    static bool BlockFree(RmgFloor f, int i) => f.Flags[i] == 0 || (f.Flags[i] & 1) != 0;
 
     static bool Inner(RmgFloor f, float x, float y) => y >= 1 && y < f.H - 1 && x >= 1 && x < f.W - 1;   // 0x009157b0
 
     void DistributeTreasureBlocks(RmgResult r, RmgZone z, int total)
     {
-        RoadDistanceField(z);
+        DistanceField(z, TileFlags.AnyRoad);   // 0x009191a0(0x38, 0)
         var f = Floors[z.Floor];
         // 0x00ba8050: the town point is the zone's +0x0c when its town was placed, else the zero vector 0x010408cc.
         bool town = z.TownPlaced && z.TownPos != null;
@@ -169,7 +143,7 @@ public sealed partial class RmgGenerator
         }
         float angle = -(float)Math.Atan2(sx + (double)0.01f, sy + (double)0.01f);
         int power = (int)((float)b.Value * 2.5f + 0.5f);                               // 0x00e57d48, 0x00e0ab70
-        PlaceGuard(r, z, (int)b.X, (int)b.Y, power, "treasure block guard", angle);
+        PlaceGuard(r, z, (int)b.X, (int)b.Y, power, "treasure block guard", angle);   // no flag written (0x00ba94c0)
 
         var kept = new List<RmgArtifact>();
         foreach (var a in BlockArtifacts())
@@ -211,9 +185,13 @@ public sealed partial class RmgGenerator
 
     List<RmgArtifact>? _blockArtifacts;
 
-    /// <summary>exe 0x00ba8100: artifact ids 1..0x60 in order with CanBeGeneratedToSell (+0x3c) and an ArtifactShared (+0x5c); id 10 needs generator +0x8d.</summary>
+    /// <summary>
+    /// exe 0x00ba8100: artifact ids 1..0x60 in order with CanBeGeneratedToSell (+0x3c) and an ArtifactShared (+0x5c); id 10
+    /// only with builder +0x8d, which 0x0090e7e0 copies from generator +0xa6, the water option (WaterAmount 2, or the
+    /// random water draw of 0x0090cb00).
+    /// </summary>
     List<RmgArtifact> BlockArtifacts() => _blockArtifacts ??= _db.Artifacts
-        .Where(a => a.Index >= 1 && a.Index < 0x61 && a.Index != 10 && a.Shared.Length > 0)   // the list holds CanBeGeneratedToSell artifacts with a shared only
+        .Where(a => a.Index >= 1 && a.Index < 0x61 && (a.Index != 10 || HasWater) && a.Shared.Length > 0)   // the list holds CanBeGeneratedToSell artifacts with a shared only
         .OrderBy(a => a.Index).ToList();
 
     void BlockItem(RmgResult r, RmgZone z, TreasureBlock b, string shared, float x, float y, float rot, int amount, string note)
@@ -223,9 +201,7 @@ public sealed partial class RmgGenerator
         if (!f.In(ix, iy)) return;
         CreateObjectDraws();
         var d = Catalog.Get(shared);
-        var o = new RmgObject { Shared = shared, Def = d, X = ix, Y = iy, Floor = z.Floor, Zone = z.Id, Amount = amount, Note = note, Angle = rot };
-        // Like the loose treasures (visit tile only), an item is collected, not walked around.
-        if (f.Occ[f.At(ix, iy)] is Occ.Free or Occ.Near or Occ.Road) f.Occ[f.At(ix, iy)] = Occ.Entrance;
+        var o = new RmgObject { Shared = shared, Def = d, X = ix, Y = iy, Floor = z.Floor, Zone = z.Id, Amount = amount, Note = note, Angle = rot, Quarter = ExeQuarter(rot) };
         r.Objects.Add(o);
         r.Access[o] = ((int)b.X, (int)b.Y);   // every item tile neighbours the site; the hero reaches it past the guard
     }

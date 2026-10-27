@@ -28,9 +28,11 @@ Analysis: private Ghidra project `tools/ghidra-projects/rmg`, scripts in `tools/
 | Treasures / chests | `0x0091f8a0`, `0x00905e60` | ported (table, count, candidates, surface zones only) |
 | Buildings, shrines, observatories | `0x0091bb10`, `0x00920000`, `0x009219a0`, `0x00920c50` | ported (AUDIT_RMG.md) |
 | Guards | `0x00ba7690`, `0x00ba6910`, `0x00ba71b0` | ported: two-stack army templates (p = 0.6) and the single-stack band search |
-| Roads | `0x0091aee0`, `0x0091bdb0`, `0x00904cf0` → `0x0091bf90`, paint `0x00916570` | ported (AUDIT_RMG.md); the node lists come from our own placers |
-| Treasure blocks | `0x00905d00`, `0x009198a0`, `0x00ba82c0`, `0x00ba94c0` | ported; inputs partly ours |
-| Connections, statics | `0x00904920`, `0x00906130` | reimplemented from the observed structure, not line by line |
+| Roads | `0x0091aee0`, `0x0091bdb0`, `0x00904cf0` → `0x0091bf90`, paint `0x00916570` | ported (AUDIT_RMG.md) |
+| Treasure blocks | `0x00905d00`, `0x009198a0`, `0x00ba82c0`, `0x00ba94c0` | ported |
+| Tile flags, footprint, distance field | `0x0091a420`, `0x00919be0`, `0x00919a50`, `0x009191a0`, `0x00919710` | ported (AUDIT_RMG.md) |
+| Connections | `0x00904920` → `0x00925a00` / `0x0091a950`, teleports `0x0091dbf0` | ported |
+| Statics | `0x00906130` → CGameZone `0x009253b0` (lakes `0x00924940`, mountains `0x00922a10`) / `0x00922f70` | ported for surface zones; underground zone classes not ported (no statics) |
 
 ## RNG (0x00ba6650 …)
 
@@ -129,18 +131,13 @@ first pass nothing can be stolen (division by an empty list).
 
 ## Not yet line by line (see AUDIT_RMG.md)
 
-* Treasure blocks: `0x00ba82c0` / `0x00ba94c0` (CTreasureBlockDistributor) are ported (AUDIT_RMG.md), but the
-  flags they read come partly from our own guards and statics.
-* Statics: zone borders, unassigned tiles and the map edge are filled with the zone race's BigStatics /
-  Mountains / OneTileBigObjects / OneTileSmallBlockers, plus interior clusters (one seed per 45 free
-  tiles); walkable routes from the zone hub to every object and passage are reserved first.
-* Connections: adjacent zones get a passage near the line between their centres (3 wide when
-  `Wide`), guarded with `GuardStrenght × BasicLeverGuardPower`; non-adjacent or cross-floor
-  connections get a pair of two-way monoliths.
+* Underground zones use other classes (CGameSubInfernoZone / CGameSubterraZone / CGameDwarvenZone, chosen in
+  `0x0090bd80`) whose statics and town placement (vf 0x30 / 0x34 / 0x20) are not ported; they get no statics.
+* Terrain: lakes, mountains and big statics repaint terrain (`0x00916f80`, `0x00915e00`); not done.
+* The town specialization draw after `0x009228e0` is not ported.
 
 Reference comparison (`h5tool rmg-ref`, same template/size/seed/players/races/levels): mines, prisons and towns
-match exactly on every map; buildings, dwellings and shrines are within a few objects; monsters, artifacts and
-treasures depend on the treasure blocks, whose inputs (statics, flags) are still ours.
+match exactly on every map; the other object counts are within a few percent (AUDIT_RMG.md).
 
 ## Gaps
 

@@ -58,6 +58,9 @@ public sealed class RmgZone
     public List<(float X, float Y)> ConnectionPoints = new(); // +0xc0
     public List<(float X, float Y)> GuardPoints = new();      // +0x98: connection guard points (0x00925a00)
     public List<(float X, float Y)> MinePoints = new();       // +0x11c: visit tiles of the zone's mines
+    public List<(float X, float Y)> BlockedList = new();      // +0x5c: blocked tiles of stamped objects (0x0091a420)
+    public List<(float X, float Y)> BigStaticPoints = new();  // +0xb4: lake centres and big statics (0x00924940, 0x009253b0)
+    public List<int> ConnectedZones = new();                  // +0xd8: neighbours already joined (0x00925a00, 0x0091a950)
     public override string ToString() => $"zone {Id} floor {Floor} race {Race} player {Player} R={Radius} c=({CenterX},{CenterY})";
 }
 
@@ -69,11 +72,9 @@ public sealed class RmgFloor
     public readonly int[] Zone;
     /// <summary>+0xe4: distance to the zone border (0 on border tiles, -1 outside zones).</summary>
     public readonly int[] BorderDist;
-    /// <summary>+0xd4: occupancy flags (see <see cref="Occ"/>).</summary>
-    public readonly int[] Occ;
-    /// <summary>+0xf4: scratch distance used by object placement (distance to towns/objects).</summary>
+    /// <summary>+0xf4: the distance field of 0x009191a0 (last written by any zone of the floor).</summary>
     public readonly int[] Dist;
-    /// <summary>+0xd4 in the exe's own encoding (<see cref="TileFlags"/>), for the writers ported so far.</summary>
+    /// <summary>+0xd4: the tile flags (<see cref="TileFlags"/>).</summary>
     public readonly int[] Flags;
     public readonly NivalHashMap<RmgZone> Zones = new();
 
@@ -82,26 +83,12 @@ public sealed class RmgFloor
         Index = index; W = w; H = h;
         Zone = Enumerable.Repeat(-1, w * h).ToArray();
         BorderDist = Enumerable.Repeat(-1, w * h).ToArray();
-        Occ = new int[w * h];
         Flags = new int[w * h];
         Dist = Enumerable.Repeat(-1, w * h).ToArray();
     }
 
     public bool In(int x, int y) => x >= 0 && y >= 0 && x < W && y < H;
     public int At(int x, int y) => x * H + y;  // the exe stores [x][y]
-}
-
-/// <summary>Tile occupancy values written by the generator (exe +0xd4 grid).</summary>
-public static class Occ
-{
-    public const int Free = 0;
-    public const int Road = 1;       // reserved path
-    public const int Near = 2;       // decoration next to an object (kept free of other objects)
-    public const int Guard = 4;      // monster guard
-    public const int Object = 8;     // blocked by an object footprint
-    public const int Entrance = 16;  // object visit tile
-    public const int Obstacle = 32;  // static obstacle
-    public const int Passage = 64;   // connection passage between zones
 }
 
 public sealed partial class RmgGenerator
@@ -118,6 +105,9 @@ public sealed partial class RmgGenerator
     public bool HasWater { get; private set; }
     public int MonsterLevel { get; private set; }
     public int Seed { get; private set; }
+    /// <summary>The map builder's random angle (+0x5c, 0x00911500); FireDot statics take it (0x009140f0).</summary>
+    public float BuilderAngle { get; private set; }
+    public uint BuilderDraw { get; private set; }
     public List<RmgFloor> Floors { get; } = new();
     public List<RmgZone> Zones { get; } = new();
     /// <summary>Player race per player (race preset index, 1 = random until a start zone picks it).</summary>
@@ -168,7 +158,6 @@ public sealed partial class RmgGenerator
         PlaceMainObjects(result);
         Mark("Roads");
         CreateRoads(result);
-        ReserveRoadTiles();
         PlaceStatics(result);
         Mark("AdditionalObjects");
         PlaceUndergroundTreasures(result);
@@ -234,8 +223,8 @@ public sealed partial class RmgGenerator
         HasWater = _o.WaterAmount != 0;
         if (_o.RandomWater) HasWater = Rng.Next(2) != 0; else Rng.Advance();
         // Map builder construction (0x00911500): a random angle and one discarded draw.
-        Rng.Float(0, 6.2831855f);
-        Rng.Advance();
+        BuilderAngle = Rng.Float(0, 6.2831855f);   // builder +0x5c
+        BuilderDraw = Rng.Advance();               // builder +0x88; +0x8c = odd (dwarven underground zones, 0x0090bd80)
         // Ambient light choice and the random-moons roll.
         if (_db.Params.GroundTerrainLights.Count == 0) Rng.Advance();
         else Rng.Next(_db.Params.GroundTerrainLights.Count);
