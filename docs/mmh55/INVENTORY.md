@@ -245,7 +245,14 @@ PEST makes them permanent. `data\RMGTemp\CurrentMap` is a runtime leftover.
 ## 8. H5Reborn on the 5.5 install (2026-10-19)
 
 - Default install order is now `G:\HoMM 5 - Tribes of the East (5.5)` then stock; `H5_GAME_DIR` still overrides;
-  `H5_TARGET=stock` skips MMH55 installs among the defaults. **Tests pin stock** (`tests/stock.runsettings` via
+  `H5_TARGET=stock` picks the stock install. **Startup choice (2026-10-28, user request):** when both a stock 3.1 and an
+  MMH55 install are found (defaults, or `stock=` / `mmh55=` lines in game_dir.txt; an old single-path file still works
+  and names one of the two), the game asks "Heroes V: Tribes of the East 3.1" or "MMH 5.5" in the stock two-choice box
+  before anything else loads, the last answer preselected (user://launcher.cfg). Skipped by `H5_GAME_DIR`,
+  `--target=stock|mmh55`, `H5_TARGET`, a single install, headless runs and dev/test switches (those keep the 5.5-first
+  order). Logic: `H5.Core.IO.GameTargets` (tests `GameTargetTests`), UI `game/src/FrontEnd/TargetPrompt.cs`.
+  Simultaneous turns: PEST applies on both targets (stock 3.1 through a default-on H5Reborn option, a user-requested
+  deviation, SIMULTANEOUS.md §7.4). **Tests pin stock** (`tests/stock.runsettings` via
   `tests/Directory.Build.props`) because their assertions are stock 3.1 values.
 - `h5tool db-check` on 5.5: creatures 999 (180 + 820 placeholders), abilities 175, spells 378, skills 221, artifacts 196,
   classes 25, heroes 202, duel presets 24, 0 warnings (stock: 179/175/352/221/97/9/116/24).

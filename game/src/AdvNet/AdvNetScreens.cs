@@ -145,8 +145,9 @@ public partial class AdvSetupScreen : UiScreen
         _set.QuickCombat = Find("quick_combat")?.State == 0;
         _set.Autosave = Find("realtime")?.State == 0;
         _set.SimultaneousTurns = _network && Find("simultaneus")?.State == 0;
-        // The host's exe: H5_Game_PEST.exe on the 5.5 target keeps simultaneous turns on for good (SIMULTANEOUS.md §7).
-        _set.Pest = H5.Core.IO.TargetExe.Pest(Game.Instance.Install.Root);
+        // The host's exe: H5_Game_PEST.exe on the 5.5 target keeps simultaneous turns on for good (SIMULTANEOUS.md §7);
+        // on the stock 3.1 target H5Reborn does the same unless the player turned it off (user-requested, §7.4).
+        _set.Pest = H5.Core.IO.TargetExe.Pest(Game.Instance.Install.Root, Options.GameOptionsScreen.StockUninterruptedSimultaneous);
     }
 
     void ShowValues()

@@ -108,7 +108,8 @@ standard turn based mode now." (`UI/AdventureScreen/EnemyTurnBox/Texts.(WindowRe
 * Break policy seam: `ISimultaneousPolicy.BreakOnIntersection`. `OriginalSimultaneousPolicy` (stock
   `H5_Game.exe`) breaks as above. `PestSimultaneousPolicy` = `H5_Game_PEST.exe` (§7): never breaks and never
   computes areas. Chosen by the host's target exe (`AdvNetSettings.Pest` from `H5.Core.IO.TargetExe.Pest`: PEST with
-  an MMH55 install, since the user's 5.5 setup launches `bin/H5_Game_PEST.exe`; stock otherwise; `H5_EXE=pest|stock`
+  an MMH55 install, since the user's 5.5 setup launches `bin/H5_Game_PEST.exe`; on the stock 3.1 target too unless the
+  host turned off the H5Reborn option "Uninterrupted simultaneous turns" (§7.4, user-requested deviation); `H5_EXE=pest|stock`
   overrides). It is not a lobby control: the stock two-state checkbox is unchanged. `H5_ADVNET_SIMUL=1` ticks the
   checkbox for screenshots.
 * Concurrent battles (§8): the session keeps a list of running battles. A battle's engine `PendingBattle` is parked
@@ -174,7 +175,9 @@ standard turn based mode now." (`UI/AdventureScreen/EnemyTurnBox/Texts.(WindowRe
 | 51 | What other clients show of a hero in a combat (marker, animation) | GAP | not traced; the view shows it unchanged (#43) |
 | 52 | Combat credit details: where the credit is reset, `CWorld+0x12c` identity, tactics phase, `CCloseCombat` timing | GAP | reset at each turn start; "this turn" = the current turn/phase; tactics time counts for nobody (no active army); credited at the battle end, the exe credits when each human closes its result screen (`CCloseCombat+0x10` player) |
 
-Counts: MATCH 8, FIXED 28, GAP 16 (52 items).
+| 53 | PEST behaviour on the stock 3.1 target (H5Reborn option "Uninterrupted simultaneous turns", default on) | EXT | user-requested deviation, not exe behaviour: the unpatched 3.1 exe breaks (#32 is the 5.5 target), §7.4 |
+
+Counts: MATCH 8, FIXED 28, GAP 16, EXT 1 (53 items; EXT = user-requested extension, not original behaviour).
 
 ## 7. H5_Game_PEST.exe, "permanent endless simultaneous turns" (the 5.5 target)
 
@@ -224,6 +227,16 @@ inside it. Traced in the stock exe:
 * Timers: unchanged (§2): one turn start, per-player time with combat credit; the phase waits for running combats (#40).
 * AI: unchanged, computer players move after every human ended (§2).
 * Ghost mode: unchanged (#27).
+
+### 7.4 PEST on the stock 3.1 target (user-requested deviation, not exe behaviour)
+The user asked for full simultaneous turns in both games H5Reborn can run (startup choice "Heroes V: Tribes of the
+East 3.1" / "MMH 5.5", `game/src/FrontEnd/TargetPrompt.cs`). The stock 3.1 exe breaks simultaneous turns on contact
+(§3); H5Reborn instead applies the PEST policy there as well, through the option **"Uninterrupted simultaneous turns"**
+(Options → Game, section "H5Reborn"; profile variable `h5r_simultaneous_uninterrupted`, **default on**). Off gives the
+original 3.1 behaviour (`OriginalSimultaneousPolicy`). On the MMH 5.5 target the row is shown ticked and disabled: the
+5.5 setup always runs `H5_Game_PEST.exe`. Scope is exactly PEST's (§7.2): network games created with the lobby's
+"Simultaneous Turns" ticked; the lobby control itself is unchanged. The host's setting decides (`AdvNetSettings.Pest`,
+`TargetExe.Pest(root, option)`); `H5_EXE=pest|stock` still overrides for tests.
 
 ## 8. Concurrent battles (the stock engine's, kept by PEST)
 

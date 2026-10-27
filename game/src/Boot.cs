@@ -25,6 +25,13 @@ public partial class Boot : Control
             });
             return;
         }
+        // Both installs found: ask which game to run before anything else uses the data.
+        if (Game.Instance.PendingTargetPrompt is { } targets) { FrontEnd.TargetPrompt.Show(this, targets, Start); return; }
+        Start();
+    }
+
+    void Start()
+    {
         if (Cinematics.CinematicsDevArgs.TryStart(this)) return;
         var movies = Cinematics.MoviePlayer.LoadList("../video/intro_a1.xml");
         if (movies.Count == 0 || Cinematics.StartupOptions.SkipIntro) { Finish(); return; }

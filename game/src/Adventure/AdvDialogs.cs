@@ -92,7 +92,8 @@ public static partial class AdvDialogs
     /// <summary>Pick one of two options (left/right buttons with icon and caption), then OK.</summary>
     public static void Choose2(Control parent, string title, string text, Texture2D? face,
         (Texture2D? Icon, string Text) left, (Texture2D? Icon, string Text) right, Action<int> picked, string? header = null,
-        bool choicesEnabled = true, bool okEnabled = false, (string? Title, string? Left, string? Right) tooltips = default)
+        bool choicesEnabled = true, bool okEnabled = false, (string? Title, string? Left, string? Right) tooltips = default,
+        int initial = -1)
     {
         Control? blocker = null;
         var s = Open(parent, Box2p, b => blocker = b);
@@ -135,6 +136,8 @@ public static partial class AdvDialogs
         s.Bus.On("right_force", () => { choice = 1; Done(); });
         s.Bus.On("confirm", Done);
         Bind(s, Done, Done);
+        // H5Reborn callers may preselect a side (the startup target prompt); the exe's boxes always start unpicked.
+        if (initial is 0 or 1 && choicesEnabled) Pick(initial);
     }
 
     /// <summary>The level-up box: the gained attribute, up to two skills and two perks to choose from.</summary>

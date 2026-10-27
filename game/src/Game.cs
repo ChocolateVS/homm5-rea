@@ -24,22 +24,52 @@ public partial class Game : Node
 
     readonly Dictionary<string, Texture2D> _textures = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>The game being run: stock 3.1 or MMH 5.5 (chosen at startup, see <see cref="FrontEnd.TargetPrompt"/>).</summary>
+    public GameTarget Target { get; private set; }
+    /// <summary>Both installs were found and nothing decided which to run: Boot asks before anything else loads.</summary>
+    public GameTargets.Selection? PendingTargetPrompt { get; private set; }
+    GameTargets.Selection? _selection;
+
     public override void _EnterTree()
     {
         Instance = this;
         try
         {
-            var explicitRoot = OS.GetEnvironment("H5_GAME_DIR");
-            Install = GameInstall.Locate(string.IsNullOrEmpty(explicitRoot) ? null : explicitRoot);
-            Fs = PakFileSystem.OpenInstall(Install);
-            Xdb = new XdbLoader(Fs);
-            GD.Print($"[H5] Mounted {Fs.Paths.Count} entries from {Install.Root}");
+            _selection = FrontEnd.TargetPrompt.Compute();
+            if (_selection.InitialRoot is not { } root) throw GameInstall.NotFound();
+            Mount(_selection.Initial, root);
+            if (_selection.NeedsPrompt) PendingTargetPrompt = _selection;
         }
         catch (Exception e)
         {
             StartupError = e.Message;
             GD.PushError($"[H5] {e.Message}");
         }
+    }
+
+    void Mount(GameTarget target, string root)
+    {
+        Install = GameInstall.At(root);
+        Fs = PakFileSystem.OpenInstall(Install);
+        Xdb = new XdbLoader(Fs);
+        Target = target;
+        GD.Print($"[H5] Mounted {Fs.Paths.Count} entries from {Install.Root} (target {GameTargets.Name(target)})");
+    }
+
+    /// <summary>
+    /// The startup prompt's answer: when it differs from the install mounted for the prompt, drop everything loaded
+    /// from that data and mount the chosen install. Only the prompt has used the data at this point.
+    /// </summary>
+    public void ChooseTarget(GameTarget target)
+    {
+        PendingTargetPrompt = null;
+        if (_selection?.RootFor(target) is not { } root || target == Target) return;
+        Fs?.Dispose();
+        _textures.Clear();
+        _db = null;
+        Ui.UiResources.Reset();
+        Options.OptionsData.Reset();
+        Mount(target, root);
     }
 
     public override void _ExitTree() => Fs?.Dispose();

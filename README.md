@@ -9,6 +9,11 @@ the game folder with the `H5_GAME_DIR` environment variable or a `game_dir.txt` 
 executable; common GOG/Ubisoft/Steam (and Wine/Proton/Heroic/Lutris on Linux) locations are found
 automatically.
 
+With both a stock 3.1 install and a *Might & Magic: Heroes 5.5* install, H5Reborn asks at startup which one to
+play (the last choice is preselected). Name the folders with `stock=<path>` and `mmh55=<path>` lines in
+`game_dir.txt` if they are not found automatically; `--target=stock` / `--target=mmh55` (or `H5_TARGET`) skips the
+question.
+
 **Beta builds:** Windows x64 and Linux x64 archives are in [`beta/`](beta/). See
 [`beta/README-BETA.md`](beta/README-BETA.md) for requirements and launch options.
 

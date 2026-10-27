@@ -12,6 +12,9 @@ public sealed class UiResources
     static UiResources? _instance;
     public static UiResources Instance => _instance ??= new UiResources();
 
+    /// <summary>Forgets everything loaded from the mounted data (the startup target switch remounts another install).</summary>
+    public static void Reset() => _instance = null;
+
     public UiLoader Loader { get; }
     public UiMarkup Markup { get; }
     public UiFontTable Fonts { get; }

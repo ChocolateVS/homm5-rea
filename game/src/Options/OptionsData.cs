@@ -61,6 +61,9 @@ public sealed class OptionsData
     static OptionsData? _instance;
     public static OptionsData Instance => _instance ??= Load(Game.Instance.Xdb);
 
+    /// <summary>Forgets the definitions (the startup target switch remounts another install).</summary>
+    public static void Reset() => _instance = null;
+
     public static OptionsData Load(XdbLoader xdb)
     {
         var data = new OptionsData();

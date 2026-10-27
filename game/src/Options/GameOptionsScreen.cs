@@ -154,6 +154,7 @@ public partial class GameOptionsScreen : UiScreen
             }
         }
         if (withDisplayExtensions) AddDisplayExtensions(cursor);
+        if (_category?.Id == "game" && page.Id == "combat") AddGameExtensions(cursor);
     }
 
     string Value(OptionsData.Option o) =>
@@ -279,6 +280,42 @@ public partial class GameOptionsScreen : UiScreen
         for (int i = states.Count - 1; i >= 0; i--)
             if (states[i].Visuals.TryGetValue("Normal", out var v) && v.Background != null) return i;
         return 0;
+    }
+
+    // ---------------------------------------------------------------- game extensions
+
+    /// <summary>
+    /// Profile variable of the "uninterrupted simultaneous turns" option for the stock 3.1 target (H5Reborn extension,
+    /// user-requested, default on): network games with Simultaneous Turns keep them on for good, as H5_Game_PEST.exe does
+    /// on the MMH 5.5 target (docs/rules/SIMULTANEOUS.md §7.4). Not stock 3.1 behaviour, which breaks them on contact.
+    /// </summary>
+    public const string StockUninterruptedVar = "h5r_simultaneous_uninterrupted";
+
+    public static bool StockUninterruptedSimultaneous => OptionsStore.GetBool(StockUninterruptedVar, true);
+
+    void AddGameExtensions(PageCursor cursor)
+    {
+        Child(cursor.Add("SectionPanelTemplate"), "HeaderView")?.SetText("<h3><color_default>H5Reborn");
+        var row = cursor.Add("CheckBoxPanelTemplate");
+        Child(row, "DescView")?.SetText("<body>Uninterrupted simultaneous turns");
+        bool mmh = Game.Instance.Target == H5.Core.IO.GameTarget.Mmh55;
+        row.TooltipText = mmh
+            ? "MMH 5.5: simultaneous turns in network games never switch back to normal turns (H5_Game_PEST.exe). Always on for this version."
+            : "Network games with Simultaneous Turns keep them on for the whole game, as in MMH 5.5, instead of switching to normal turns when players meet (H5Reborn extension, not part of the original 3.1).";
+        if (Child(row, "Button") is not { } box) return;
+        int on = CheckedState(box);
+        box.Clicked += _ =>
+        {
+            if (mmh) return;
+            OptionsStore.Set(StockUninterruptedVar, StockUninterruptedSimultaneous ? "0" : "1");
+            OptionsStore.Save();
+            RefreshAll();
+        };
+        _refreshers.Add(() =>
+        {
+            box.SetState(mmh || StockUninterruptedSimultaneous ? on : 1 - on);
+            box.Enabled = !mmh;
+        });
     }
 
     // ---------------------------------------------------------------- display extensions

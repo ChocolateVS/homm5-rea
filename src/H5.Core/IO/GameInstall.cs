@@ -15,61 +15,57 @@ public sealed class GameInstall
     GameInstall(string root) => Root = root;
 
     /// <summary>
-    /// Finds the install: explicit root, then H5_GAME_DIR, then game_dir.txt next to the
-    /// executable (or in the working directory), then well-known install locations.
+    /// Finds the install without asking (tools, server, tests): explicit root, then H5_GAME_DIR, then game_dir.txt next
+    /// to the executable (or in the working directory), then well-known install locations. With both a stock 3.1 and an
+    /// MMH55 install available, H5_TARGET (stock / mmh55) decides, else an old single-path game_dir.txt, else MMH55
+    /// (see <see cref="GameTargets.Resolve"/>; the game asks the player instead).
     /// </summary>
     public static GameInstall Locate(string? explicitRoot = null)
     {
-        var candidates = new List<string?> { explicitRoot, Environment.GetEnvironmentVariable("H5_GAME_DIR") };
-        candidates.AddRange(GameDirFileCandidates());
-        // H5_TARGET=stock: skip MMH55 installs among the well-known locations (tests pin stock 3.1 this way).
-        var defaults = DefaultLocations().Where(c => !PakLoadOrder.StockOnlyRequested || !PakLoadOrder.IsMmh55Install(c));
-        foreach (var c in candidates.Concat(defaults))
-            if (!string.IsNullOrWhiteSpace(c) && IsInstall(c.Trim()))
-                return new GameInstall(Path.GetFullPath(c.Trim()));
-        throw new DirectoryNotFoundException(
-            "Could not find a Heroes V: Tribes of the East install. Set H5_GAME_DIR to the game folder, " +
-            $"or put its path in {GameDirFile} next to the H5Reborn executable.");
+        var sel = GameTargets.Resolve(new GameTargets.Inputs
+        {
+            ExplicitRoot = !string.IsNullOrWhiteSpace(explicitRoot) ? explicitRoot : Environment.GetEnvironmentVariable("H5_GAME_DIR"),
+            Forced = GameTargets.Parse(Environment.GetEnvironmentVariable("H5_TARGET")),
+            Configs = ReadGameDirFiles(),
+            Defaults = DefaultLocations(),
+            NonInteractive = true,
+        });
+        return At(sel.InitialRoot ?? throw NotFound());
     }
+
+    /// <summary>An install at a folder already checked with <see cref="IsInstall"/>.</summary>
+    public static GameInstall At(string root) => new(Path.GetFullPath(root));
+
+    public static DirectoryNotFoundException NotFound() => new(
+        "Could not find a Heroes V: Tribes of the East install. Set H5_GAME_DIR to the game folder, " +
+        $"or put its path in {GameDirFile} next to the H5Reborn executable (or stock=<path> and mmh55=<path> lines).");
 
     /// <summary>True when <paramref name="dir"/> holds data/data.pak (matched ignoring case).</summary>
     public static bool IsInstall(string dir) =>
         Directory.Exists(dir) && InstallPath.ResolveFile(dir, "data", "data.pak") != null;
 
-    /// <summary>The first non-empty, non-comment line of each game_dir.txt found.</summary>
-    static List<string> GameDirFileCandidates()
+    /// <summary>Each game_dir.txt found next to the executable, in the app folder and in the working directory.</summary>
+    public static List<GameDirConfig> ReadGameDirFiles()
     {
         var dirs = new List<string>();
         try { if (Environment.ProcessPath is { } exe && Path.GetDirectoryName(exe) is { } d) dirs.Add(d); } catch { }
         dirs.Add(AppContext.BaseDirectory);
         try { dirs.Add(Environment.CurrentDirectory); } catch { }
-        var result = new List<string>();
+        var result = new List<GameDirConfig>();
         foreach (var dir in dirs.Distinct())
         {
             try
             {
                 var f = Path.Combine(dir, GameDirFile);
-                if (!File.Exists(f)) continue;
-                var line = ParseGameDirFile(File.ReadAllLines(f));
-                if (line != null) result.Add(line);
+                if (File.Exists(f)) result.Add(GameTargets.ParseConfig(File.ReadAllLines(f)));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         }
         return result;
     }
 
-    /// <summary>game_dir.txt format: first line that is neither blank nor a '#' comment; quotes and a leading ~/ are handled.</summary>
-    public static string? ParseGameDirFile(IEnumerable<string> lines)
-    {
-        var line = lines.Select(l => l.Trim().TrimStart('\uFEFF').Trim().Trim('"')).FirstOrDefault(l => l.Length > 0 && !l.StartsWith('#'));
-        if (line == null) return null;
-        if (line == "~" || line.StartsWith("~/"))
-        {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            line = line.Length > 2 ? Path.Combine(home, line[2..]) : home;
-        }
-        return line;
-    }
+    /// <summary>The old single-path game_dir.txt form: first line that is neither blank, a '#' comment nor a <c>stock=</c> / <c>mmh55=</c> key.</summary>
+    public static string? ParseGameDirFile(IEnumerable<string> lines) => GameTargets.ParseConfig(lines).Single;
 
     const string GameFolderHint = "tribes of the east";
 
