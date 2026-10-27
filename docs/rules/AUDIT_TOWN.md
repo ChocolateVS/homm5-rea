@@ -5,7 +5,7 @@ original UI layouts / data. Status: **MATCH** (already as the exe), **FIXED** (c
 difference or not built), **UNVERIFIED** (implemented from data, exe path not traced). Rows carrying two statuses
 count once for each.
 
-Rows at 2026-10-27: 88 FIXED, 44 MATCH, 25 GAP, 36 UNVERIFIED.
+Rows at 2026-10-27: 91 FIXED, 44 MATCH, 24 GAP, 36 UNVERIFIED.
 
 Commits: 9153b62 (dwelling growth incl. moon weeks), afe1e7b + 844ce53 (build check codes, town income),
 6690c81 (level-up offers, experience table, Enlightenment, perk effects, hero screen fixes),
@@ -192,7 +192,9 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Map per-town spellIDs | AdvMapTown +0xf4 (00a0a5d1), copied by FUN_00cd1650 into the init record (+0x68) | FUN_00cd5be0 does not read it; FUN_00cd1b40 does not either | not used | FIXED (were placed first in the guild) / another reader not searched for exhaustively — UNVERIFIED |
 | Runes | FUN_00ccfd30(from, to), town +0x2c4; (1, 5) at placement | one random rune per circle (manager school 5) | `RollRunes` | FIXED (was not built) |
 | Warcries | FUN_00ccfe90(from, to), town +0x2d8; (1, 3) at placement | circle 1: every warcry of circle 1; circles 2, 3: one random each | `RollWarcries` | FIXED (was: Stronghold guild of warcries) |
-| Guild screen pages | FUN_006309d0 (vf 0x24 list split by school FUN_00a34350: 4 → Button06 page, 5 → Button07 runes, 6 → OrcsButton warcries) | circle pages without adventure / rune / warcry spells; those on their own pages | circle pages filtered the same way; the adventure, rune and warcry pages not built | GAP |
+| Guild screen pages | FUN_006309d0 (from setup 00631110; vf 0x24 list split by school FUN_00a34350) | G = level of building FUN_006145a0 (0x11 TB_SPECIAL_1 in a Stronghold, else 6); per existing bookmark i (OrcsButton%02d in a Stronghold, else Button%02d): adventure spells (4) → adventure list when i ≤ G, runes (5) → rune list, warcries (6) → warcry list when i ≤ G; page = warcries (Stronghold) or the rest, only when i ≤ G, caption T_ORCS_CIRCLE_i / T_CIRCLE_i, bookmark shown iff i ≤ G; then Button06 = adventure list, Button07 = runes (shown when non-empty) | `GuildScreenPages` (`MageGuildTests`) + `MageGuildScreen` | FIXED (adventure, rune and warcry pages were missing; captions were literal) |
+| Guild screen panels and selection | 00631110 (SpellsPanel_%02d / RunesPanel_%02d via 006308b0; rune panel = the one whose Rune slot count equals the rune count, FUN_00632340), 0062fe60 (select: caption → circle_name, panel min(count, panels) − 1), 00630320 ("button" → page by name), 00630270 / 006303c0 / 00630450 (first page "Button01" from the guild, "Button07" from the Fortress special, else page 0), 0062fbe0 (T_ORCS_HEADER in a Stronghold) | as listed | same | FIXED |
+| Stronghold guild entrance | 0061b760 abilities 0x27..0x29 → 00619d70 (town vfunc 0x34(006145a0) ≠ 0) | the Hall of Trial (TB_SPECIAL_1) opens the guild screen with warcry pages | `OpenSub("guild")` uses `GuildScreenBuilding`; TB_SPECIAL_1 click → guild | FIXED (opened nothing: TB_MAGIC_GUILD was required) |
 
 ## Blacksmith / war machines
 

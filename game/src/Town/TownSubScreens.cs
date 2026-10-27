@@ -245,41 +245,78 @@ public sealed partial class TownBuildScreen : TownSubScreen
     }
 }
 
-/// <summary>The magic guild (UI/MageGuild): the spells of each built circle (SpellsPanel_0N holds N spells).</summary>
+/// <summary>
+/// The magic guild (UI/MageGuild, N_MAGIC_GUILD_SCREEN_ID; setup 00631110): the pages of FUN_006309d0
+/// (<see cref="H5.Adventure.Engine.Adventure.GuildScreenPages"/>), one per bookmark; a page's spells fill
+/// SpellsPanel_0N with N = min(count, panels), a rune page fills the RunesPanel_0N whose Rune slot count equals the rune
+/// count (00631110 / FUN_00632340); page selection FUN_0062fe60 (caption → CircleView circle_name); "button" message
+/// → page by bookmark name (00630320); the first page shown is the one named by the opener ("Button01" from the guild,
+/// FUN_006303c0; "Button07" from the Fortress special, FUN_00630450), else page 0 (00630270).
+/// </summary>
 public sealed partial class MageGuildScreen : TownSubScreen
 {
-    int _circle;
+    const string Texts = "UI/MageGuild2/Main.(WindowRelatedTexts).xdb";
+    readonly List<H5.Adventure.Engine.GuildPage> _pages;
+    int _page;
 
-    public MageGuildScreen(TownScreen owner) : base(owner, "UI/MageGuild.(WindowScreen).xdb")
+    public MageGuildScreen(TownScreen owner, string initial = "Button01") : base(owner, "UI/MageGuild.(WindowScreen).xdb")
     {
-        int built = Math.Min(owner.Town.Level("TB_MAGIC_GUILD"), 5);
-        // The bookmark buttons select a circle; only built circles are shown.
-        for (int i = 1; i <= 5; i++)
-            if (Ui.Find($"Button0{i}") is { } b)
-            {
-                int circle = i - 1;
-                b.Visible = i <= built;
-                b.Clicked += _ => { _circle = circle; Refresh(); };
-            }
-        Ui.Bus.On("button", (_, src) => { if (src?.Name.ToString() is { } n && n.StartsWith("Button0")) { _circle = n[^1] - '1'; Refresh(); } });
-        Ui.SetVisible("RunesPanel", false);
+        _pages = owner.Session.Game.GuildScreenPages(owner.Town, n => Ui.Find(n) != null);
+        foreach (var n in new[] { "Button", "OrcsButton" })
+            for (int i = 1; Ui.Find($"{n}{i:00}") is { } b; i++) b.Visible = false;
+        foreach (var pg in _pages)
+            if (Ui.Find(pg.Bookmark) is { } b) b.Visible = pg.Shown;
+        Ui.Bus.On("button", (_, src) =>
+        {
+            int i = _pages.FindIndex(pg => string.Equals(pg.Bookmark, src?.Window.Name, StringComparison.OrdinalIgnoreCase));
+            if (i >= 0) { _page = i; Refresh(); }
+        });
+        _page = Math.Max(0, _pages.FindIndex(pg => pg.Bookmark == initial));
+        // FUN_0062fbe0: T_ORCS_HEADER / T_ORCS_HEADER_TOOLTIP in a Stronghold (town type 10), else T_HEADER / T_HEADER_TOOLTIP.
+        bool orcs = owner.Town.Type == "TOWN_STRONGHOLD";
+        if (Ui.Find("Header") is { } header)
+        {
+            if (UiGameRoot.RelatedTextAt(Texts, orcs ? "T_ORCS_HEADER" : "T_HEADER") is { } h) header.SetText(h);
+            if (UiGameRoot.RelatedTextAt(Texts, orcs ? "T_ORCS_HEADER_TOOLTIP" : "T_HEADER_TOOLTIP") is { } tt) header.SetTooltip(tt);
+        }
+    }
+
+    static int Slots(UiNode panel, string item)
+    {
+        int n = 0;
+        while (panel.Screen?.Find($"{panel.Window.Name}/{item}_{n + 1:00}") != null) n++;
+        return n;
     }
 
     public override void Refresh()
     {
         base.Refresh();
-        // FUN_006309d0: the circle page shows the town's offer at that circle (vf 0x24) without the adventure (school 4),
-        // rune (5) and warcry (6) spells, which go to their own pages (Button06 / Button07 / OrcsButton — not built here).
-        var spells = Owner.Session.Game.TownSpellsAt(Owner.Town, _circle + 1)
-            .Where(id => Game.Instance.Db.Spell(id)?.School is not ("MAGIC_SCHOOL_ADVENTURE" or "MAGIC_SCHOOL_RUNIC" or "MAGIC_SCHOOL_WARCRIES"))
-            .ToList();
-        Ui.Find("CircleView")?.SetValue("circle_name", $"Circle {_circle + 1}");
-        for (int n = 1; n <= 4; n++) Ui.SetVisible($"SpellsPanel/SpellsPanel_0{n}", n == Math.Clamp(spells.Count, 1, 4));
-        for (int i = 0; i < spells.Count && i < 4; i++)
+        var db = Game.Instance.Db;
+        var spellPanels = new List<UiNode>();
+        for (int n = 1; Ui.Find($"SpellsPanel/SpellsPanel_{n:00}") is { } sp; n++) spellPanels.Add(sp);
+        var runePanels = new List<UiNode>();
+        for (int n = 1; Ui.Find($"RunesPanel/RunesPanel_{n:00}") is { } rp; n++) runePanels.Add(rp);
+        foreach (var x in spellPanels.Concat(runePanels)) x.Visible = false;
+        Ui.SetVisible("SpellsPanel", false);
+        Ui.SetVisible("RunesPanel", false);
+        if (_page >= _pages.Count) return;
+        var page = _pages[_page];
+        for (int i = 0; i < _pages.Count; i++)
+            if (Ui.Find(_pages[i].Bookmark) is { } b) b.SetState(i == _page ? 1 : 0);
+        Ui.Find("CircleView")?.SetValue("circle_name", (UiGameRoot.RelatedTextAt(Texts, page.Caption) ?? "").Trim());
+        UiNode? panel = page.Runes
+            ? runePanels.FirstOrDefault(rp => Slots(rp, "Rune") == page.Spells.Count)
+            : page.Spells.Count > 0 && spellPanels.Count > 0 ? spellPanels[Math.Min(page.Spells.Count, spellPanels.Count) - 1] : null;
+        if (panel == null) return;
+        panel.Visible = true;
+        Ui.SetVisible(page.Runes ? "RunesPanel" : "SpellsPanel", true);
+        string item = page.Runes ? "Rune" : "Spell";
+        for (int i = 0; i < page.Spells.Count; i++)
         {
-            var spell = Game.Instance.Db.Spell(spells[i]);
-            var node = Ui.Find($"SpellsPanel/SpellsPanel_0{Math.Clamp(spells.Count, 1, 4)}/Spell_0{i + 1}");
-            if (node == null || spell == null) continue;
+            var spell = db.Spell(page.Spells[i]);
+            var node = Ui.Find($"{panel.Window.Name}/{item}_{i + 1:00}");
+            if (node == null) break;
+            if (spell == null) continue;
             var icon = (string?)Game.Instance.Xdb.Load(spell.SourcePath).Root?.Element("Texture")?.Attribute("href");
             TownUi.SetPicture(node.FindChild("SpellIcon", true, false) as Control,
                 string.IsNullOrEmpty(icon) ? null : Game.Instance.LoadTexture(XdbRef.Parse(icon, spell.SourcePath).Path));

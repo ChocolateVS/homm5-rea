@@ -239,4 +239,51 @@ public sealed partial class Adventure
             res.AddRange(t.RuneSpells.Where(Lvl));
         return res;
     }
+    /// <summary>The guild screen's building (FUN_006145a0): TB_SPECIAL_1 (0x11) in a Stronghold (town type 10), else TB_MAGIC_GUILD (6).</summary>
+    public static string GuildScreenBuilding(TownState t) => t.Type == "TOWN_STRONGHOLD" ? "TB_SPECIAL_1" : "TB_MAGIC_GUILD";
+
+    /// <summary>
+    /// The magic guild screen's pages (FUN_006309d0, called from the screen setup 00631110). G = the level of
+    /// <see cref="GuildScreenBuilding"/> (town vfunc 0x34). For i = 1, 2, … while the bookmark ("OrcsButton%02d" in a
+    /// Stronghold, else "Button%02d") exists: the circle's offer (vf 0x24, <see cref="TownSpellsAt"/>) loses its
+    /// adventure spells (school 4: to the adventure list when i ≤ G), runes (5: to the rune list, any i) and warcries
+    /// (6: to the warcry list when i ≤ G); the page (caption T_ORCS_CIRCLE_i / T_CIRCLE_i) holds the warcries in a
+    /// Stronghold, else what is left, and only when i ≤ G (its bookmark shown iff i ≤ G). Then, with a non-empty
+    /// adventure list the "Button06" page takes it, and with a non-empty rune list the "Button07" page takes the runes
+    /// (both bookmarks shown; nothing when no such page exists).
+    /// </summary>
+    public List<GuildPage> GuildScreenPages(TownState t, Func<string, bool> bookmarkExists)
+    {
+        bool orcs = t.Type == "TOWN_STRONGHOLD";
+        int g = t.Level(GuildScreenBuilding(t));
+        var pages = new List<GuildPage>();
+        var adventure = new List<string>();
+        var runes = new List<string>();
+        for (int i = 1; ; i++)
+        {
+            string name = (orcs ? "OrcsButton" : "Button") + i.ToString("00");
+            if (!bookmarkExists(name)) break;
+            var rest = new List<string>();
+            var cries = new List<string>();
+            foreach (var id in TownSpellsAt(t, i))
+                switch (Core.Spell(id)?.School)
+                {
+                    case "MAGIC_SCHOOL_ADVENTURE": if (i <= g) adventure.Add(id); break;
+                    case "MAGIC_SCHOOL_RUNIC": runes.Add(id); break;
+                    case "MAGIC_SCHOOL_WARCRIES": if (i <= g) cries.Add(id); break;
+                    default: rest.Add(id); break;
+                }
+            pages.Add(new GuildPage(name, (orcs ? "T_ORCS_CIRCLE_" : "T_CIRCLE_") + i, i <= g ? (orcs ? cries : rest) : new(), i <= g, false));
+        }
+        int Find(string n) => pages.FindIndex(p => p.Bookmark == n);
+        if (pages.Count > 0 && adventure.Count > 0 && Find("Button06") is var a and >= 0)
+            pages[a] = pages[a] with { Spells = adventure, Shown = true };
+        if (pages.Count > 0 && runes.Count > 0 && Find("Button07") is var r and >= 0)
+            pages[r] = pages[r] with { Spells = runes, Shown = true, Runes = true };
+        return pages;
+    }
 }
+
+/// <summary>One magic guild screen page (FUN_006309d0): bookmark name, caption text key, spells, bookmark shown, rune panel.</summary>
+public sealed record GuildPage(string Bookmark, string Caption, List<string> Spells, bool Shown, bool Runes);
+

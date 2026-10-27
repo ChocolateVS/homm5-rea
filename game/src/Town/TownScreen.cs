@@ -270,7 +270,8 @@ public partial class TownScreen : Control
             "fort" or "recruit" => new TownHireScreen(this),
             var d when d.StartsWith("dwelling_") && int.TryParse(d[9..], out var tier) => new TownHireScreen(this, tier),
             "tavern" => Town.Level("TB_TAVERN") > 0 ? new TavernScreen(this) : null,
-            "guild" => Town.Level("TB_MAGIC_GUILD") > 0 ? new MageGuildScreen(this) : null,
+            // FUN_00619d70: town vfunc 0x34(FUN_006145a0 = TB_SPECIAL_1 in a Stronghold, else TB_MAGIC_GUILD) ≠ 0 → "Button01".
+            "guild" => Town.Level(H5.Adventure.Engine.Adventure.GuildScreenBuilding(Town)) > 0 ? new MageGuildScreen(this) : null,
             "blacksmith" => Town.Level("TB_BLACKSMITH") > 0 ? new BlacksmithScreen(this) : null,
             "market" => Town.Level("TB_MARKETPLACE") > 0 ? new MarketScreen(this) : null,
             "hero" => VisitingHero() is { } h ? new HeroScreen(Adv, h, this) : GarrisonHero() is { } g ? new HeroScreen(Adv, g, this) : null,
@@ -315,8 +316,8 @@ public partial class TownScreen : Control
         // FUN_00618c10 → FUN_00640850 (UI/AcademyCreatureArtifacts) with the town's hero; nothing without one.
         "TOWN_ACADEMY" => ArcaneForgeScreen.HeroFor(this) is { } forgeHero ? new ArcaneForgeScreen(this, forgeHero) : null,
         // FUN_00618d10: ability 0x20 (Runic Shrine) → FUN_00630450 = the magic guild screen (N_MAGIC_GUILD_SCREEN_ID)
-        // with "Button07" (a rune bookmark). TODO(exe): the rune panel (town rune list, FUN_006309d0) is not built.
-        "TOWN_FORTRESS" => Town.Level("TB_SPECIAL_1") > 0 ? new MageGuildScreen(this) : null,
+        // with "Button07" (the rune page of FUN_006309d0).
+        "TOWN_FORTRESS" => Town.Level("TB_SPECIAL_1") > 0 ? new MageGuildScreen(this, "Button07") : null,
         _ => null,
     };
 
@@ -335,6 +336,7 @@ public partial class TownScreen : Control
         ("TOWN_INFERNO", "TB_SPECIAL_5") => "special",
         ("TOWN_DUNGEON", "TB_SPECIAL_3") => "special",
         ("TOWN_STRONGHOLD", "TB_SPECIAL_5") => "special",
+        ("TOWN_STRONGHOLD", "TB_SPECIAL_1") => "guild",   // abilities 0x27..0x29 → FUN_00619d70 (the guild screen)
         ("TOWN_FORTRESS", "TB_SPECIAL_1") => "special",
         ("TOWN_ACADEMY", "TB_SPECIAL_2") => "special",   // town ability 0x16, the Arcane Forge
         _ => null,

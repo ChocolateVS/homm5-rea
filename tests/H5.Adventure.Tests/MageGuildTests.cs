@@ -147,4 +147,47 @@ public class MageGuildTests(Fixture f)
         Assert.Equal(t.MageGuild[0].Append(t.LibrarySpells.Single(id => Level(id) == 1)), g.TownSpellsAt(t, 1));
         Assert.Empty(g.TownSpellsAt(t, 3));                       // guild level 2: circle 3 not offered, Library neither
     }
+    static bool Guild7(string n) => n is "Button01" or "Button02" or "Button03" or "Button04" or "Button05" or "Button06" or "Button07";
+    static bool Orcs3(string n) => n is "OrcsButton01" or "OrcsButton02" or "OrcsButton03";
+
+    [Fact]
+    public void GuildScreenSplitsAdventureAndRunesOntoTheirOwnPages()
+    {
+        // FUN_006309d0: per Button%02d page the vf 0x24 offer minus schools 4 / 5 / 6; Button06 = adventure spells of
+        // circles ≤ guild level, Button07 = the runes (any circle); bookmarks shown for circles ≤ guild level.
+        var (g, t) = Town("TOWN_FORTRESS");
+        g.RollMageGuild(t);
+        g.RollRunes(t);
+        t.Built["TB_MAGIC_GUILD"] = 2;
+        t.Built["TB_SPECIAL_1"] = 1;                              // runes of circles 1–2
+        var p = g.GuildScreenPages(t, Guild7);
+        Assert.Equal(new[] { "Button01", "Button02", "Button03", "Button04", "Button05", "Button06", "Button07" }, p.Select(x => x.Bookmark));
+        Assert.Equal(new[] { true, true, false, false, false }, p.Take(5).Select(x => x.Shown));
+        Assert.Equal("T_CIRCLE_1", p[0].Caption);
+        Assert.Equal(t.MageGuild[0].Where(id => School(id) != "MAGIC_SCHOOL_ADVENTURE"), p[0].Spells);
+        Assert.Empty(p[2].Spells);
+        var adv = t.MageGuild[0].Concat(t.MageGuild[1]).Where(id => School(id) == "MAGIC_SCHOOL_ADVENTURE").ToList();
+        Assert.Equal(adv.Count > 0, p[5].Shown);
+        Assert.Equal(adv, p[5].Spells);
+        Assert.True(p[6].Shown && p[6].Runes);
+        Assert.Equal(t.RuneSpells.Where(id => Level(id) <= 2).OrderBy(Level), p[6].Spells);
+        Assert.Equal("T_CIRCLE_7", p[6].Caption);
+    }
+
+    [Fact]
+    public void StrongholdGuildScreenShowsWarcriesByHallOfTrialLevel()
+    {
+        // FUN_006145a0: building 0x11 (TB_SPECIAL_1) in a Stronghold; OrcsButton%02d pages hold the circle's warcries.
+        var (g, t) = Town("TOWN_STRONGHOLD");
+        g.RollWarcries(t);
+        t.Built["TB_SPECIAL_1"] = 2;
+        Assert.Equal("TB_SPECIAL_1", Engine.Adventure.GuildScreenBuilding(t));
+        var p = g.GuildScreenPages(t, n => Orcs3(n) || Guild7(n));
+        Assert.Equal(new[] { "OrcsButton01", "OrcsButton02", "OrcsButton03" }, p.Select(x => x.Bookmark));
+        Assert.Equal(new[] { true, true, false }, p.Select(x => x.Shown));
+        Assert.Equal("T_ORCS_CIRCLE_2", p[1].Caption);
+        Assert.Equal(t.WarcrySpells.Where(id => Level(id) == 2), p[1].Spells);
+        Assert.Empty(p[2].Spells);
+    }
 }
+
