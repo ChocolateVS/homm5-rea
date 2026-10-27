@@ -65,6 +65,8 @@ public sealed class AdventureAiStats
     /// <summary>Search{Positive,Negative}AttractorValue (+0x218/+0x21c, int), read by FUN_00bc5740 for script attractors.</summary>
     public int SearchPositiveAttractorValue { get; init; }
     public int SearchNegativeAttractorValue { get; init; }
+    /// <summary>Block +0x228, read by FUN_00ceb190 into pathfinder settings +0x68 (Instant Travel start cost limit).</summary>
+    public int DimDoorStartCostLimit { get; init; }
     /// <summary>RolesSpread{Commander,Collector,Supplier,Freelancer}Multiplier (+0x22c..+0x238), read by FUN_00866670.</summary>
     public double[] RoleSpread { get; init; } = new double[4];
     public int CollectPathBonusesMaxCost { get; init; }
@@ -149,6 +151,7 @@ public sealed class AdventureAiStats
             SearchDangerEnemyMobilityBonus = D("SearchDangerEnemyMobilityBonus", 300),
             SearchPositiveAttractorValue = I("SearchPositiveAttractorValue", 1000000),
             SearchNegativeAttractorValue = I("SearchNegativeAttractorValue", 1000000),
+            DimDoorStartCostLimit = I("DimDoorStartCostLimit", 0),
             RoleSpread = new[]
             {
                 D("RolesSpreadCommanderMultiplier", 2.7), D("RolesSpreadCollectorMultiplier", 0.5),

@@ -93,10 +93,10 @@ public sealed partial class OriginalAdventureAI
                 var target = ChooseDestination(g, h, roles, diff, st, claimed);
                 if (target == null) break;
                 var mate = g.S.Heroes.FirstOrDefault(x => x.Alive && x.Owner == me && x.Id != h.Id && !x.Garrisoned && x.Pos == target.Value.Tile);
-                var r = Send(g, new MoveHeroCmd(h.Id, target.Value.Tile) { Player = me });
+                var (r, whole) = StepTowards(g, h, target.Value, me);
                 actions++;
-                if (!r.Ok) break;
-                claimed.Add(target.Value.Object);
+                if (r is not { Ok: true }) break;
+                if (whole) claimed.Add(target.Value.Object);
                 _lastTarget[h.Id] = target.Value.Tile;
                 _lastCost[h.Id] = target.Value.Cost;
                 ResolvePending(g, battleSeedBase + (ulong)actions);

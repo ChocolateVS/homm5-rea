@@ -47,14 +47,17 @@ public sealed partial class OriginalAdventureAI
         var limits = SearchLimits(role, diff, remembered, h.MovePoints, PlayerInDanger(g, h.Owner, EndangeredTowns(g, diff, h.Owner)));
         // The wave spread (exe FUN_00c08be0 from 0086c010): one flood of the hero's path costs up to the widest limit;
         // each attempt keeps the destinations within its own limit.
-        var costs = g.ReachableCosts(h, limits.Max());
+        // With Instant Travel available the flood has the spell edges (exe 00ceb670 → 00ceb190 flag 1, see SpellFlood).
+        _dd = DimensionDoorSettingsFor(g, h, st);
+        _spellFlood = _dd.Enabled ? g.SpellFlood(h, limits.Max(), _dd) : null;
+        var costs = _spellFlood?.Costs() ?? g.ReachableCosts(h, limits.Max());
         var danger = diff.CheckHeroesDanger ? DangerTiles(g, h, st, myPower) : new HashSet<Tile>();
         var cache = new Dictionary<int, (int, long)>();
         _before = null;
         foreach (int limit in limits)
         {
             var best = ChooseWithin(g, h, role, roles, diff, st, claimed, myPower, limit, costs, danger, cache);
-            if (best != null && g.FindPath(h, best.Value.Tile) != null) return best;
+            if (best != null && (_spellFlood != null ? _spellFlood.Route(best.Value.Tile) != null : g.FindPath(h, best.Value.Tile) != null)) return best;
         }
         return SeaTravel(g, h, myPower, diff, st, claimed);
     }
