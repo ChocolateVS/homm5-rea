@@ -158,4 +158,24 @@ public class AiSimulationTests(Fixture f)
         double expected = OriginalAdventureAI.TownValue(g, st, diff, town, me) * (double)diff.ThreatsMultiplierOurs / Math.Max(1e-4, (double)cost / mp);
         Assert.Equal(expected, table.H[eh.Id].Find(town.Object)!.Threat, 6);
     }
+
+    [Fact]
+    public void Treasure_and_building_providers_give_their_values_directly()
+    {
+        // 00a832b0: a gold pile is worth 100 · max(1, (Min + 2 · Max) / 3) from the shared descriptor.
+        // 00b01af0: Star Axis is worth ValueOfAttributeSpellPower until the hero has visited it.
+        var g = f.NewGame("A2M1", 5);
+        var ai = new OriginalAdventureAI();
+        var st = AdventureAiStats.Load(f.Core);
+        int me = g.Current.Index;
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == me && !x.Garrisoned);
+        var gold = g.Map.Objects.FirstOrDefault(x => x.Kind == H5.Adventure.Map.ObjectKind.Treasure && x.Shared.Type == "TREASURE_GOLD");
+        if (gold != null)
+            Assert.Equal((0, 100L * Math.Max(1, (gold.Shared.MinResource + 2 * gold.Shared.MaxResource) / 3)), ai.ValueForTest(g, h, gold));
+        var axis = new H5.Adventure.Map.MapObject { Index = 999999, Kind = H5.Adventure.Map.ObjectKind.Building,
+            Shared = new H5.Adventure.Map.SharedDef { Type = "BUILDING_STAR_AXIS" } };
+        Assert.Equal((0, (long)st.ValueOfAttributeSpellPower), ai.ValueForTest(g, h, axis));
+        h.VisitedOnce.Add(axis.Index);
+        Assert.Equal((0, 0L), ai.ValueForTest(g, h, axis));
+    }
 }

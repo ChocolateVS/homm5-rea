@@ -74,7 +74,7 @@ public sealed partial class OriginalAdventureAI
             var tile = o.Kind is ObjectKind.Monster or ObjectKind.Hero ? o.Pos : o.ActiveTiles.FirstOrDefault(o.Pos);
             // Move cost = the flood's path cost to the destination tile (record +0x18); unreached tiles are not found.
             if (tile == h.Pos || !costs.TryGetValue(tile, out int cost) || cost > maxCost) continue;
-            if (!FreeScan(g, h, role, o, tile, cost, targetOk)) continue;
+            if (IsTeleport(o) || !FreeScan(g, h, role, o, tile, cost, targetOk)) continue;
             if (!cache.TryGetValue(o.Index, out var sv)) cache[o.Index] = sv = ValueOf(g, h, o, os, tile, cost, diff, st);
             var d = new Candidate { O = o, Tile = tile, Cost = cost, State = sv.Item1, Value = sv.Item2 };
             // "But the AI will not risk its heroes" (script reference, not traced in the exe): a hostile target
@@ -261,16 +261,11 @@ public sealed partial class OriginalAdventureAI
             case ObjectKind.Sign:
                 return (0, 0);
             case ObjectKind.Hero:
-            {
-                var other = g.S.Heroes.FirstOrDefault(x => x.Alive && x.Pos == o.Pos && x.Owner != h.Owner);
-                if (other == null || SameTeam(g, other.Owner, h.Owner)) return (0, 0);
-                double enemy = g.ArmyPower(other.Army.Live(), other), mine = g.ArmyPower(h.Army.Live(), h);
-                bool human = g.Player(other.Owner)?.Human == true;
-                double aggr = human ? diff.AttackHumanAggressivityCoef : diff.AttackComputerAggressivityCoef;
-                double coward = human ? diff.CowardiceVersusHuman : diff.CowardiceVersusComputer;
-                if (enemy * (1 + coward) >= mine * aggr) return (-1, 0);
-                return (0, st.ValueOfHero + (long)st.ValueOfHeroLevelPow2 * other.Level * other.Level);
-            }
+                return g.S.Heroes.FirstOrDefault(x => x.Alive && x.Pos == o.Pos && x.Id != h.Id) is { } other ? HeroTargetValue(g, st, diff, h, other) : (0, 0);
+            case ObjectKind.Treasure:
+                return (0, TreasureValue(g, st, h, o));
+            case ObjectKind.Building:
+                return BuildingValue(g, st, h, o, os) is long bv ? (0, bv) : null;
             default:
                 return null;
         }
@@ -462,5 +457,17 @@ public sealed partial class OriginalAdventureAI
         _stats ??= AdventureAiStats.Load(g.Core);
         _before = null;
         return SimulatedVisit(g, h, o, o.ActiveTiles.FirstOrDefault(o.Pos), 0, _stats.Difficulty[Math.Clamp(g.S.Difficulty, 0, 3)], _stats);
+    }
+}
+
+public sealed partial class OriginalAdventureAI
+{
+    /// <summary>Test hook: the value pool's (state, value) of visiting an object at no move cost.</summary>
+    public (int State, long Value) ValueForTest(Engine.Adventure g, HeroState h, MapObject o)
+    {
+        _stats ??= AdventureAiStats.Load(g.Core);
+        _before = null;
+        g.S.Objects.TryGetValue(o.Index, out var os);
+        return ValueOf(g, h, o, os, o.ActiveTiles.FirstOrDefault(o.Pos), 0, _stats.Difficulty[Math.Clamp(g.S.Difficulty, 0, 3)], _stats);
     }
 }

@@ -73,24 +73,34 @@ public sealed partial class OriginalAdventureAI
     /// T &gt; m → ftol(G) when f·T ≥ m, else 0; m ≤ 0 → ftol(G). The aggressivity coefficient is 1.0 here (it needs a
     /// defender object).
     /// </summary>
-    public static long? MonsterFightValue(Engine.Adventure g, AdventureAiStats st, AdventureDifficulty diff, HeroState h, IReadOnlyList<Stack> monster, bool unseen)
+    public static long? MonsterFightValue(Engine.Adventure g, AdventureAiStats st, AdventureDifficulty diff, HeroState h, IReadOnlyList<Stack> monster, bool unseen) =>
+        FightValue(g, st, diff, h, monster, null, 1.0, unseen);
+
+    /// <summary>
+    /// The battle estimate FUN_00bc3af0 (see <see cref="MonsterFightValue"/>) against an army with an optional hero and
+    /// the fight value coefficient c (1.0 without a defender object; FUN_00c02ae0 aggressivity vs a human / computer
+    /// owner otherwise). UNVERIFIED-detail: with a defender hero only its army and level factor enter; the hero's own
+    /// worth is not added.
+    /// </summary>
+    public static long? FightValue(Engine.Adventure g, AdventureAiStats st, AdventureDifficulty diff, HeroState h, IReadOnlyList<Stack> monster,
+                                   HeroState? defHero, double c, bool unseen)
     {
         double a = AiArmyPower(g, st, diff, h.Army.Live(), h);
-        double e = AiArmyPower(g, st, diff, monster, null);
+        double e = AiArmyPower(g, st, diff, monster, defHero);
         if (a < 1.0 || a <= e) return null;
         double f = Survival(a, e, unseen);
         if (f < 0.75) return null;
         int gained = 0;
         foreach (var s in monster)
-            if (s.Count > 0 && g.Core.Creatures.TryGetValue(s.Creature, out var c))
-                gained = unchecked(gained + s.Count * (c.Exp != 0 ? c.Exp : c.Health));
+            if (s.Count > 0 && g.Core.Creatures.TryGetValue(s.Creature, out var cr))
+                gained = unchecked(gained + s.Count * (cr.Exp != 0 ? cr.Exp : cr.Health));
         int exp = (int)Math.Min(int.MaxValue, h.Experience);
         double gain = LevelValue(g, st, unchecked(exp + gained)) - LevelValue(g, st, exp);
         double m = StrongestEnemyArmies(g, st, diff, h.Owner);
-        if (m <= 0) return (long)(gain * 1.0);
+        if (m <= 0) return (long)(gain * c);
         double total = PlayerHeroArmies(g, st, diff, h.Owner);
-        if (total <= m) return (long)(((f * total - m) * 0.1 + gain) * 1.0);
-        return f * total >= m ? (long)(gain * 1.0) : 0;
+        if (total <= m) return (long)(((f * total - m) * 0.1 + gain) * c);
+        return f * total >= m ? (long)(gain * c) : 0;
     }
 
     /// <summary>Σ over the player's heroes of <see cref="AiArmyPower"/> (exe FUN_004ea9d0, no war machines).</summary>

@@ -89,7 +89,7 @@ Per-decision ledger with addresses and status: `docs/rules/AUDIT_AI.md`, section
   higher state first (FUN_00a78940 / FUN_00a7b630); script attractor priority 2 = state 3. **exact** (ported).
   Computer towns grow by TownCreatureGrowthCoef (FUN_00cd27b0), neutral towns at half. **exact**
 * Values (ported, AUDIT_AI.md "Other object values"): stack value FUN_004e9b90, hero value FUN_004eae60 (hire
-  score), hero estimate FUN_004eb050, town value FUN_004eb480, player value FUN_004eb790 (resource weights all 1.0),
+  score), hero estimate FUN_004eb050, town value FUN_004eb480, player value FUN_004eb790 (resource weights taken as 1.0: the per-turn AI money values FUN_00a325b0 are not decoded),
   position value FUN_00872220; a destination is valued by its provider directly or by simulating the visit
   (FUN_00bc5480) on a `StateCopy` of the game. Threats FUN_0086cd10, town protection FUN_00a78b60, free scan
   FUN_00a78400, strategic propagation FUN_00a79700, the town build list FUN_009c33d0 (the simulated builder
