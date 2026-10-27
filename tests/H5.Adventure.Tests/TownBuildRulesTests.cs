@@ -156,8 +156,9 @@ public class TownBuildRulesTests(Fixture f)
     public void TradeGuildDrawsAWeeklyResourceAndRareSpecialisationsAddTwo()
     {
         // FUN_00cce410: ability 0x1d (Dungeon TB_SPECIAL_4) → resource = 008e7840(H(world seed, town id, week), 0, 5),
-        // amount 2 for wood / ore else 1; without it −1 / 0. FUN_00cd2b90 pays it (00cce3c0) and +2 for
-        // TOWN_BONUS_MERCURY / _SULFUR / _GEMS / _CRYSTALS, then draws again.
+        // amount 2 for wood / ore else 1; without it −1 / 0. FUN_00cd2b90 (IAdvMapWeeklyUpdate vf 0, run by the new
+        // week 00993cd0) pays it (00cce3c0) and +2 for TOWN_BONUS_MERCURY / _SULFUR / _GEMS / _CRYSTALS, then draws
+        // again; nothing of it on other days.
         var (g, t) = Town();
         t.Type = "TOWN_DUNGEON";
         t.Built["TB_SPECIAL_4"] = 0;
@@ -178,10 +179,35 @@ public class TownBuildRulesTests(Fixture f)
         int res = t.TradeGuildResource, amt = t.TradeGuildAmount;
         int day = g.S.Day;
         while (g.S.Day == day) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
+        for (int i = 0; i < 6; i++) Assert.Equal(before[i] + expected[i], p.Purse[i]);   // day 2: income only
+        g.S.Moon = null;          // keep the week (and the income factors) fixed across the new week
+        g.S.Day = 7;
+        before = (int[])p.Purse.R.Clone();
+        expected = g.ExpectedIncome(p);
+        res = t.TradeGuildResource; amt = t.TradeGuildAmount;
+        while (g.S.Day == 7) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
         var extra = new int[7];
         extra[rare] += 2;
         extra[res] += amt;
         for (int i = 0; i < 6; i++) Assert.Equal(before[i] + expected[i] + extra[i], p.Purse[i]);
+    }
+
+    [Fact]
+    public void MysticPondGivesAWeeklyRandomResource()
+    {
+        // FUN_00cce350 (town vf 0x84, from the weekly 00cd2b90): ability 0xc (Preserve TB_SPECIAL_2 level 1):
+        // r = 008e7840(H(world seed, town +8, week), 0, 5), +10 for wood / ore, else +5.
+        var (g, t) = Town();
+        t.Type = "TOWN_PRESERVE";
+        t.Specialization = null;
+        var inc = new Purse();
+        g.MysticPond(t, inc);
+        Assert.All(inc.R, v => Assert.Equal(0, v));
+        t.Built["TB_SPECIAL_2"] = 1;
+        g.MysticPond(t, inc);
+        int r = ExeHashRandom.Range(ExeHashRandom.Hash(g.S.WorldSeed, t.Object, g.Db.MoonWeekIndex(g.S.MoonWeek)), 0, 5);
+        Assert.Equal(r <= Purse.Ore ? 10 : 5, inc[r]);
+        Assert.Equal(inc[r], inc.R.Sum());
     }
 
     [Fact]

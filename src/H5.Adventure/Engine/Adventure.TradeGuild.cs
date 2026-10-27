@@ -40,19 +40,45 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// FUN_00cd2b90 (the town's daily handler), owner part: TOWN_BONUS_MERCURY / _SULFUR / _GEMS / _CRYSTALS
-    /// (0x1e..0x21, jump table 00cd2cc4) add 2 of that resource, and the extra income (building interface vcall 0x88 =
-    /// 00cce3c0 with gold excluded) adds +0x1e0 of resource +0x1dc; both straight to the purse, beside the town income.
+    /// FUN_00cd2b90 = IAdvMapWeeklyUpdate vf 0 (CAdvMapTown +0x108, vtable 00e95824), run for every town by the world's
+    /// new week (009949d0 → 00993cd0, after the growth). With an owner (world vf 0x68): a copy of the owner's purse gets
+    /// TOWN_BONUS_MERCURY / _SULFUR / _GEMS / _CRYSTALS (0x1e..0x21, jump table 00cd2cc4) +2, the Mystic Pond (vf 0x84 =
+    /// 00cce350) and the Trade Guild resource (vf 0x88 = 00cce3c0, gold excluded), and becomes the purse (player vf
+    /// 0xdc). Then, owned or not, the Trade Guild draws the coming week's resource (00cce410) and the training points
+    /// are reset to their limit (+0x2d0 = FUN_00cd1850).
     /// </summary>
-    void TownDailyExtras(TownState t, Purse inc)
+    void TownWeeklyUpdate(TownState t)
     {
-        switch (SpecializationBonus(t))
+        if (Player(t.Owner) is { } p)
         {
-            case "TOWN_BONUS_MERCURY": inc[Purse.Mercury] += 2; break;
-            case "TOWN_BONUS_SULFUR": inc[Purse.Sulfur] += 2; break;
-            case "TOWN_BONUS_GEMS": inc[Purse.Gem] += 2; break;
-            case "TOWN_BONUS_CRYSTALS": inc[Purse.Crystal] += 2; break;
+            var inc = new Purse();
+            switch (SpecializationBonus(t))
+            {
+                case "TOWN_BONUS_MERCURY": inc[Purse.Mercury] += 2; break;
+                case "TOWN_BONUS_SULFUR": inc[Purse.Sulfur] += 2; break;
+                case "TOWN_BONUS_GEMS": inc[Purse.Gem] += 2; break;
+                case "TOWN_BONUS_CRYSTALS": inc[Purse.Crystal] += 2; break;
+            }
+            MysticPond(t, inc);
+            if (t.TradeGuildResource is >= 0 and < 7) inc[t.TradeGuildResource] += t.TradeGuildAmount;
+            if (inc.R.Any(v => v != 0))
+            {
+                for (int i = 0; i < 7; i++) p.Purse[i] += inc[i];
+                Emit(new ResourcesChanged(p.Index, inc.R, (int[])p.Purse.R.Clone()));
+            }
         }
-        if (t.TradeGuildResource is >= 0 and < 7) inc[t.TradeGuildResource] += t.TradeGuildAmount;
+        RollTradeGuild(t);
+        t.TrainingPoints = TrainingPointsMax(t);
+    }
+
+    /// <summary>
+    /// FUN_00cce350 (town vf 0x84): with ability 0xc (table 00f7c998: Preserve TB_SPECIAL_2 level 1, the Mystic Pond)
+    /// resource r = 008e7840(H(world seed, town +8, week) via 008e7930, 0, 5), +10 of it for wood / ore, else +5.
+    /// </summary>
+    public void MysticPond(TownState t, Purse inc)
+    {
+        if (t.Type != H5.Combat.Towns.Sylvan || t.Level("TB_SPECIAL_2") < 1) return;
+        int r = ExeHashRandom.Range(ExeHashRandom.Hash(S.WorldSeed, t.Object, Db.MoonWeekIndex(S.MoonWeek)), 0, 5);
+        inc[r] += r is Purse.Wood or Purse.Ore ? 10 : 5;
     }
 }

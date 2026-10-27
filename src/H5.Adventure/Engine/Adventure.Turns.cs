@@ -35,19 +35,23 @@ public sealed partial class Adventure
         S.Day++;
         bool newWeek = S.DayOfWeek == 1;
         Emit(new DayStarted(S.Day));
-        MoonNewDay(newWeek);
+        MoonNewDay(newWeek, out bool boughtMidWeek);
+        // 009949d0: a week bought at a Tower of Astrologer that takes effect on days 2..7 runs the towns' weekly
+        // update with full = false (00994a5c → 00993bf0(0) → IAdvMapWeeklyUpdate vf 4 = 00cd27b0): pool reduction and
+        // the moon part only.
+        if (boughtMidWeek) TownWeeklyGrowth(full: false);
         if (newWeek)
         {
             WeeklyGrowthAll();
             foreach (var p in S.Players) RollTavern(p);
             RestockTownArtifactMerchants();
             if (S.WeekOfMonth == 1) StockSpellShops();
-            ResetTrainingPoints();
+            // 00993cd0 after the growth: IAdvMapWeeklyUpdate vf 0 = FUN_00cd2b90 per town (extras, the Trade Guild's
+            // next resource, training points).
+            foreach (var t in S.Towns) TownWeeklyUpdate(t);
         }
         foreach (var t in S.Towns) t.BuiltToday = false;
         foreach (var p in S.Players.Where(p => p.Alive)) DailyIncome(p);
-        // FUN_00cd2b90 ends with FUN_00cce410 for every town: next day's Trade Guild resource.
-        foreach (var t in S.Towns) RollTradeGuild(t);
         foreach (var h in S.Heroes.Where(h => h.Alive)) ResetHeroDay(h, newWeek);
         CheckEliminations();
     }
@@ -68,7 +72,6 @@ public sealed partial class Adventure
     void DailyIncome(PlayerState p)
     {
         var inc = Income(p, display: false);
-        foreach (var t in S.Towns.Where(t => t.Owner == p.Index)) TownDailyExtras(t, inc);
         if (inc.R.Any(v => v != 0))
         {
             for (int i = 0; i < 7; i++) p.Purse[i] += inc[i];
@@ -135,16 +138,7 @@ public sealed partial class Adventure
 
     void WeeklyGrowthAll()
     {
-        // Town pools: the week's pool reduction, then the growth record's total (00cd27b0, see GrowthOf).
-        int week = Db.MoonWeekIndex(S.MoonWeek);
-        foreach (var t in S.Towns)
-            for (int tier = 1; tier <= 7; tier++)
-            {
-                if (t.Level($"TB_DWELLING_{tier}") <= 0) continue;
-                t.Available[tier - 1] = MoonWeekPool(week, t.Available[tier - 1]);
-                int n = OwnerAdjustedGrowth(t, WeeklyGrowth(t, tier));
-                if (n > 0) t.Available[tier - 1] += n;
-            }
+        TownWeeklyGrowth(full: true);
         foreach (var (idx, os) in S.Objects)
         {
             var o = O(idx);
@@ -159,6 +153,25 @@ public sealed partial class Adventure
                 foreach (var g in os.Guards) g.Count = Math.Max(g.Count + 1, (int)(g.Count * k));
             }
         }
+    }
+
+    /// <summary>
+    /// Town pools (00cd27b0, called by 00993bf0): the week's pool reduction (00bce0d0), then the growth record's total
+    /// when <paramref name="full"/> (the regular new week, 00993cd0 → 00993bf0(1)), else only its moon part (record
+    /// +0x1c; a bought week taking effect mid-week, 00994a5c → 00993bf0(0)); owner adjustment; positive amounts added.
+    /// </summary>
+    void TownWeeklyGrowth(bool full)
+    {
+        int week = Db.MoonWeekIndex(S.MoonWeek);
+        foreach (var t in S.Towns)
+            for (int tier = 1; tier <= 7; tier++)
+            {
+                if (t.Level($"TB_DWELLING_{tier}") <= 0) continue;
+                t.Available[tier - 1] = MoonWeekPool(week, t.Available[tier - 1]);
+                var g = GrowthOf(t, tier);
+                int n = OwnerAdjustedGrowth(t, full ? g.Total : g.MoonWeek);
+                if (n > 0) t.Available[tier - 1] += n;
+            }
     }
 
     AI.AdventureAiStats? _aiStats;

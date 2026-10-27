@@ -52,17 +52,18 @@ public sealed partial class Adventure
     /// candidates), the buyers' list is cleared and world +0x58 follows (00993cd0 → 00993bf0).
     /// Returns true when the week in effect is announced today.
     /// </summary>
-    bool MoonNewDay(bool newWeek)
+    bool MoonNewDay(bool newWeek, out bool boughtMidWeek)
     {
         S.WeekNoticeDay = 1;
         bool announce = false;
+        boughtMidWeek = false;
         if (S.AstrologerChanged && S.Moon != null)
         {
             S.AstrologerChanged = false;
             MoonCalendar.Advance(S.Moon, MoonData, MoonSeed, newCandidates: false);
             S.MoonWeek = Db.MoonWeekId(S.Moon.Week);
             S.WeekNoticeDay = S.DayOfWeek;
-            announce = S.DayOfWeek != 1;
+            announce = boughtMidWeek = S.DayOfWeek != 1;
         }
         if (newWeek)
         {

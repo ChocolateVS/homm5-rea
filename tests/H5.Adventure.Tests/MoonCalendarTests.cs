@@ -100,6 +100,39 @@ public class MoonCalendarTests(Fixture f)
         Assert.Equal(new[] { 0, 1, 4 }, s.Phase);
     }
 
+    /// <summary>
+    /// 009949d0: a bought week taking effect on days 2..7 runs 00993bf0(0) → 00cd27b0(full = false) for every town:
+    /// the week's pool reduction, then only the growth record's moon part (+0x1c), owner-adjusted, when positive.
+    /// </summary>
+    [Fact]
+    public void BoughtWeekMidWeekAddsOnlyTheMoonPartToTownPools()
+    {
+        var g = f.NewGame("A2M1", seed: 3);
+        var p = g.Current;
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
+        p.Purse = new Purse(new H5.Core.Data.Resources(0, 0, 0, 0, 0, 0, g.AstrologerCost.Gold));
+        Assert.True(g.Apply(new ChangeMoonWeekCmd(h.Id, g.AstrologerCandidates[0]) { Player = p.Index }).Ok);
+        var pools = g.S.Towns.Select(t => (int[])t.Available.Clone()).ToList();
+        EndDay(g);
+        Assert.Equal(2, g.S.DayOfWeek);
+        int week = g.CurrentMoonWeekIndex;
+        for (int k = 0; k < g.S.Towns.Count; k++)
+        {
+            var t = g.S.Towns[k];
+            for (int tier = 1; tier <= 7; tier++)
+            {
+                int want = pools[k][tier - 1];
+                if (t.Level($"TB_DWELLING_{tier}") > 0)
+                {
+                    want = Engine.Adventure.MoonWeekPool(week, want);
+                    int n = g.OwnerAdjustedGrowth(t, g.GrowthOf(t, tier).MoonWeek);
+                    if (n > 0) want += n;
+                }
+                Assert.Equal(want, t.Available[tier - 1]);
+            }
+        }
+    }
+
     [Fact]
     public void AstrologerBuysACandidateThatTakesEffectNextDay()
     {
