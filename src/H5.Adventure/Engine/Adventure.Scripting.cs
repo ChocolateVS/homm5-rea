@@ -263,8 +263,7 @@ public sealed partial class Adventure
         if (t.MaxLevel.GetValueOrDefault(building) < next) t.MaxLevel[building] = next;
         Emit(new BuildingBuilt(t.Object, building, next));
         StockArtifactMerchants();   // 00cd4a40 at 00cd4db7, as in DoBuild
-        if (building == "TB_MAGIC_GUILD")
-            foreach (var h in S.Heroes.Where(h => h.Alive && h.InTown == t.Object)) LearnFromGuild(h, t);
+        BuildingEffectsOnHeroes(t, building);
     }
 
     public void ScriptSetBuildingLevel(TownState t, string building, int level)

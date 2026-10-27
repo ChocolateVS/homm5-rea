@@ -244,4 +244,38 @@ public class TownBuildRulesTests(Fixture f)
         Assert.Equal((gold, amount), (t.TradeGuildGold, t.TradeGuildAmount));
         Assert.Equal(incomeBefore + gold, g.TownIncome(t)[Purse.Gold]);
     }
+
+    [Fact]
+    public void TownStablesAndTheDailyManaRefillFollowTheExe()
+    {
+        // 00cd2390 → 00cd2230 on building the Haven Stables (ability 3): stables flag + VisitStablesMovementBonus once;
+        // 00b50880 keeps the flag at a new week for a hero in such a town; 00b50470 refills mana in a town with a
+        // guild or ability 0x27 (Stronghold TB_SPECIAL_1) at the hero's new day.
+        var (g, t) = Town();
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == g.Current.Index);
+        h.InTown = t.Object;
+        h.StablesThisWeek = false;
+        t.Type = "TOWN_HEAVEN";
+        int mp = h.MovePoints;
+        g.ScriptUpgradeBuilding(t, "TB_SPECIAL_4");
+        Assert.True(h.StablesThisWeek);
+        Assert.Equal(mp + 600, h.MovePoints);
+        g.ScriptUpgradeBuilding(t, "TB_SPECIAL_4");
+        Assert.Equal(mp + 600, h.MovePoints);                // once per week
+        g.S.Day = 7;
+        while (g.S.Day == 7) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
+        Assert.True(h.StablesThisWeek);                       // still in the Stables town at the new week
+
+        t.Type = "TOWN_STRONGHOLD";
+        t.Built["TB_MAGIC_GUILD"] = 0;
+        t.Built["TB_SPECIAL_1"] = 0;
+        h.Mana = 0;
+        int day = g.S.Day;
+        while (g.S.Day == day) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
+        Assert.True(h.Mana < g.MaxMana(h) || g.MaxMana(h) == 0);
+        t.Built["TB_SPECIAL_1"] = 1;
+        day = g.S.Day;
+        while (g.S.Day == day) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
+        Assert.Equal(g.MaxMana(h), h.Mana);
+    }
 }

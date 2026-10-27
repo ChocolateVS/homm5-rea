@@ -220,8 +220,12 @@ public sealed partial class Adventure
     {
         // The hero's new-week handler 00b50880 clears the stables flag (+0x18c), the new-day handler 00b50470 the well's
         // (+0x174). The stables flag adds ForWeekStablesMaxLandMovementBonus (RPGStats +0x80) to the maximum land
-        // movement (00b4dd40). TODO(exe): 00b50880 sets it again when the hero's town has building 3 (town vcall 0x44(3)).
-        if (newWeek) { h.VisitedWeek.Clear(); h.StablesThisWeek = false; }
+        // movement (00b4dd40); 00b50880 sets it again when the hero's town (+0x17c) has ability 3 (the Stables).
+        if (newWeek)
+        {
+            h.VisitedWeek.Clear();
+            h.StablesThisWeek = h.InTown >= 0 && S.Town(h.InTown) is { } st && HasTownStables(st);
+        }
         h.VisitedDay.Clear();
         h.DrankFromWellToday = false;
         h.MaxMovePoints = ComputeMaxMovePoints(h);
@@ -231,7 +235,11 @@ public sealed partial class Adventure
         int regen = Math.Max(1, h.Knowledge) * (S.MoonWeek == "WEEK_OF_MEDITATION" ? 2 : 1);
         // 00b50470 regenerates only below the maximum: mana above it (an Eldritch Spring's) stays.
         if (h.Mana < max) h.Mana = Math.Min(max, h.Mana + regen);
-        if (h.InTown >= 0 && S.Town(h.InTown) is { } t && t.Level("TB_MAGIC_GUILD") > 0) h.Mana = Math.Max(h.Mana, max);
+        // 00b50470: in a town (+0x17c) with a mage guild (building 6) or ability 0x27 (Stronghold TB_SPECIAL_1) the
+        // mana is raised to the maximum.
+        if (h.InTown >= 0 && S.Town(h.InTown) is { } t
+            && (t.Level("TB_MAGIC_GUILD") > 0 || (t.Type == H5.Combat.Towns.Stronghold && t.Level("TB_SPECIAL_1") > 0)))
+            h.Mana = Math.Max(h.Mana, max);
     }
 
     /// <summary>Maximum mana: 10 per Knowledge (DefaultStats HeroManaPerKnowledge), ×1.5 with Intelligence.</summary>

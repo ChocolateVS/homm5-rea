@@ -16,9 +16,11 @@ public sealed partial class Adventure
         if (t.Owner == h.Owner || Allied(t.Owner, h.Owner))
         {
             h.InTown = t.Object;
+            // IAdvMapTown vf 0x14 = 00cd2680 (the hero put into the town): Stables 00cd2230, the guild 00cced80, the
+            // Arcane Forge 00cd2310. No mana here: the refill is the hero's new day (00b50470, ResetHeroDay).
+            TownStables(h, t);
             LearnFromGuild(h, t);
-            if (t.Level("TB_MAGIC_GUILD") > 0) h.Mana = Math.Max(h.Mana, MaxMana(h));
-            UpgradeMicroArtifacts(h, t);   // FUN_00cd2390 → FUN_00cd2310 (Arcane Forge)
+            UpgradeMicroArtifacts(h, t);
             Emit(new ObjectVisited(h.Id, t.Object, "town"));
             return;
         }
@@ -48,8 +50,15 @@ public sealed partial class Adventure
         CheckEliminations();
     }
 
+    /// <summary>
+    /// FUN_00cced80: only with town ability 0x15 (Academy TB_SPECIAL_1, the Library), 0x20 (Fortress TB_SPECIAL_1),
+    /// 0x27 (Stronghold TB_SPECIAL_1) or a mage guild (building 6) — hero vf 0xf0 = 00b4e640: circles 1..5 of the town's
+    /// offer (town vf 0x24), each spell the hero can learn (vf 0xe4) is learned (vf 0xe8(spell, 0)); then hero vf 0x9c.
+    /// </summary>
     void LearnFromGuild(HeroState h, TownState t)
     {
+        bool special = t.Level("TB_SPECIAL_1") > 0 && t.Type is H5.Combat.Towns.Academy or H5.Combat.Towns.Fortress or H5.Combat.Towns.Stronghold;
+        if (!special && t.Level("TB_MAGIC_GUILD") <= 0) return;
         // Every circle's offer (CTown vf 0x24 = FUN_00ccfab0: guild + Library, runes, warcries).
         for (int lvl = 1; lvl <= 5; lvl++)
             foreach (var sp in TownSpellsAt(t, lvl)) LearnSpell(h, sp, force: false);
@@ -79,9 +88,43 @@ public sealed partial class Adventure
             t.Available[tier - 1] += dcd.WeeklyGrowth;
         Emit(new BuildingBuilt(t.Object, c.Building, next));
         StockArtifactMerchants();   // 00cd4a40 at 00cd4db7: a merchant town without a CBlackMarket gets one stocked
-        foreach (var h in S.Heroes.Where(h => h.Alive && h.InTown == t.Object && c.Building == "TB_MAGIC_GUILD")) LearnFromGuild(h, t);
-        if (c.Building == ArcaneForgeBuilding) foreach (var h in S.Heroes.Where(h => h.Alive && h.InTown == t.Object).ToList()) UpgradeMicroArtifacts(h, t);
+        BuildingEffectsOnHeroes(t, c.Building);
         return null;
+    }
+
+    /// <summary>
+    /// FUN_00cd2390 (from 00cd4a40) for the town's heroes, by the building just built: the guild, ability 0x15 / 0x20
+    /// / 0x27 (TB_SPECIAL_1 of an Academy / Fortress / Stronghold) → 00cced80 (learning); ability 3 (Haven TB_SPECIAL_4,
+    /// the Stables) → 00cd2230; ability 0x16 (the Arcane Forge) → 00cd2310.
+    /// </summary>
+    void BuildingEffectsOnHeroes(TownState t, string building)
+    {
+        var heroes = S.Heroes.Where(h => h.Alive && h.InTown == t.Object).ToList();
+        bool learn = building == "TB_MAGIC_GUILD"
+            || (building == "TB_SPECIAL_1" && t.Type is H5.Combat.Towns.Academy or H5.Combat.Towns.Fortress or H5.Combat.Towns.Stronghold);
+        foreach (var h in heroes)
+        {
+            if (learn) LearnFromGuild(h, t);
+            if (building == StablesBuilding && t.Type == H5.Combat.Towns.Haven) TownStables(h, t);
+            if (building == ArcaneForgeBuilding) UpgradeMicroArtifacts(h, t);
+        }
+    }
+
+    public const string StablesBuilding = "TB_SPECIAL_4";
+
+    /// <summary>Town ability 3 (table 00f7c998: Haven TB_SPECIAL_4, the Stables).</summary>
+    public static bool HasTownStables(TownState t) => t.Type == H5.Combat.Towns.Haven && t.Level(StablesBuilding) >= 1;
+
+    /// <summary>
+    /// FUN_00cd2230: with ability 3 and the hero's stables flag (vf 0x210, +0x18c) clear: the flag is set (vf 0x214)
+    /// and the movement points get VisitStablesMovementBonus (RPGStats +0x7c, vf 0x100(vf 0xf4 + bonus)), as the map's
+    /// Stables (00b02740 case 0xf).
+    /// </summary>
+    void TownStables(HeroState h, TownState t)
+    {
+        if (!HasTownStables(t) || h.StablesThisWeek) return;
+        h.StablesThisWeek = true;
+        h.MovePoints += Db.Stats.Root.Element("adventure").Int("VisitStablesMovementBonus", 600);
     }
 
     /// <summary>Town state shown by the hero/town list marker (UI TownHeroPanel: BuildDone, BuildAllComplete, NothingBuild, BuildNoResources).</summary>
