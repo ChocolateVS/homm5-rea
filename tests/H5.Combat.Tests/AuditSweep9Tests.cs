@@ -136,4 +136,25 @@ public class AuditSweep9Tests(GameDataFixture f)
         Assert.Equal((int)Math.Round(sp!.DamageAt(Mastery.None).Eval(12)), b.GuardianAngelAmount(h));
         Assert.Equal(13, b.GuardianAngelAmount(h));
     }
+
+    // exe 00984a00 case 0x3e: choosing the imbued spell sets the hero's ATB to 1 − ImbueArrow_ATBDropOnCast (vf 0x18c) —
+    // stock 0, so the hero acts again at once; +0x6ac has no other combat reader (the engine dropped the struck
+    // target's ATB by it instead).
+    [Fact]
+    public void ImbueArrowSelectionSetsTheHerosAtb()
+    {
+        var (b, u, t) = Make("CREATURE_PEASANT", 10, "CREATURE_PEASANT", 10, new Cell(1, 1), new Cell(14, 10));
+        var h = b.State.Heroes[0];
+        h.Perks.Add(Sk.ImbueArrow);
+        h.Spells.Add("SPELL_MAGIC_ARROW");
+        h.Mana = h.MaxMana = 100;
+        b.Begin();
+        b.State.Active = Actor.Hero(0);
+        h.Atb = 1.2;
+        var r = b.Apply(new UseAbilityCmd(Actor.Hero(0), "IMBUE_ARROW:SPELL_MAGIC_ARROW") { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal("SPELL_MAGIC_ARROW", h.ImbuedSpell);
+        double drop = f.Db.Stats.Get("combat/HeroSkills/Ranger/ImbueArrow_ATBDropOnCast", 0);
+        Assert.Equal(1 - drop, h.Atb, 6);
+    }
 }

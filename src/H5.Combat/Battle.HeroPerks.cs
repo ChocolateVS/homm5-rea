@@ -56,7 +56,9 @@ public sealed partial class Battle
         {
             h.ImbuedSpell = c.Ability["IMBUE_ARROW:".Length..];
             h.AbilityUses["IMBUE_TURN"] = S.TurnCounter;
-            reset = -1;                                               // Imbue Arrow takes no ATB (p.312)
+            // exe 00984a00 case 0x3e (00984e72..00984ebb): the selection sets the hero's ATB to 1 − ImbueArrow_ATBDropOnCast
+            // (vf 0x18c; RPGStats +0x6ac, read nowhere else in combat) — the hero acts again at once (stock drop 0).
+            reset = 1 - Stats.Get("combat/HeroSkills/Ranger/ImbueArrow_ATBDropOnCast", 0);
             return true;
         }
         return false;
@@ -71,7 +73,6 @@ public sealed partial class Battle
         h.Mana -= cost;
         Emit(new ManaChanged(Actor.Hero(h.Side), h.Mana));
         ResolveSpell(Actor.Hero(h.Side), h.Side, sp, HeroMastery(h, sp), HeroSpellPower(h, sp), target, null, fromHero: true);
-        if (target.Alive) SetAtb(target.Id, GetAtb(target.Id) - Stats.Get("combat/HeroSkills/Ranger/ImbueArrow_ATBDropOnCast", 0));
     }
 
     /// <summary>
