@@ -426,7 +426,7 @@ public sealed partial class Adventure
             DisplayName = h.Name, Shared = def, Experience = (int)Math.Min(int.MaxValue, h.Experience), Level = h.Level,
             Army = h.Army.ToSlots(), Artifacts = h.Artifacts.ToList(),
             Attack = h.Attack, Defence = h.Defence, SpellPower = h.SpellPower, Knowledge = h.Knowledge,
-            Skills = h.Skills.ToList(), Perks = h.Perks.ToList(), Spells = h.Spells.ToList(),
+            Skills = h.Skills.ToList(), Perks = h.Perks.ToList(), Spells = BookSpells(h),
             Ballista = h.Ballista, FirstAidTent = h.FirstAidTent, AmmoCart = h.AmmoCart, Mana = h.Mana,
             FavoriteEnemies = h.FavoriteEnemies.Where(e => e.Length > 0).ToList(),
             // Morale and luck ([0], [1]) are added to the combat heroes by CreatePendingBattle.

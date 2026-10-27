@@ -84,7 +84,7 @@ public sealed partial class Adventure
     {
         if (S.Hero(c.HeroId) is not { Alive: true } h || h.Owner != Current.Index) return "not your hero";
         if (h.Garrisoned) return "the hero is in a garrison";
-        if (!h.Spells.Contains(c.Spell)) return "the hero does not know this spell";
+        if (!BookSpells(h).Contains(c.Spell)) return "the hero does not know this spell";
         int mana = AdventureSpellCost(c.Spell);
         switch (c.Spell)
         {

@@ -404,7 +404,7 @@ public partial class HeroScreen : Control
 
     void OpenSpellbook()
     {
-        var book = new Combat.SpellBook3D(_hero.Spells, Array.Empty<H5.Combat.SpellOption>(), _hero.Mana, _adv.Session.Game.MaxMana(_hero),
+        var book = new Combat.SpellBook3D(_adv.Session.Game.BookSpells(_hero), Array.Empty<H5.Combat.SpellOption>(), _hero.Mana, _adv.Session.Game.MaxMana(_hero),
             warcries: _hero.Class == "HERO_CLASS_BARBARIAN");
         book.Closed += () => book.QueueFree();
         AddChild(book);

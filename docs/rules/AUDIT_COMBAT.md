@@ -14,7 +14,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 |---|---|
 | FIXED | 378 |
 | MATCH | 216 |
-| GAP | 20 |
+| GAP | 21 |
 | UNVERIFIED | 0 |
 | N/A | 64 |
 
@@ -702,6 +702,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `SPELL_EFFECT_GUARDIAN_ANGEL` | FIXED | 009789b0 case 0xf1, 00a34ca0 | the resurrection reads SPELL_RESURRECT's damage table at Expert (see HERO_SKILL_GUARDIAN_ANGEL); this record's own damage / duration tables are not used by the amount | AuditSweep10Tests.GuardianAngelUsesResurrectsExpertTable |
 | `STAFF_OF_VEXINGS` | FIXED | 008a4330 (008a4619..008a4647) | the enemy hero's Staff of Vexings: stack initiative factor × (1 − 0.2 (float 00e12ff8) · staffs), after Storm Wind / Fog Veil. Was missing | AuditSkillTestsH.EnemyStaffOfVexingsSlowsTheArmy |
 | `WEREWOLF_CLAW_NECKLACE` | FIXED | 004bbfb0 (004bc000), 004bc020 | + CountArtifact(17) to every creature's min and max damage (after Frenzy). Was missing | AuditSkillTestsH.WerewolfClawNecklaceAddsDamage |
+| Artifact book spells (tomes, Band of Conjurer, Ring of Unsummoning) | GAP | 00b541f0, 00ca6930, 00b4bb40 | the adventure side now hands the worn artifacts' book entries to the combat hero (`HeroInstance.Spells` = `BookSpells`, AUDIT_TOWN "Tomes and artifact spells"). Not checked in combat: `Battle.HeroSpells` adds mass / empowered versions of every book spell when the perk is held, while the exe adds them only for known spells (00b4bb40 runs on plain learns, never for artifact entries) — how the exe's combat book reads +0x1e0 is not traced; SPELL_ABILITY_UNSUMMON (Ring of Unsummoning, MAGIC_SCHOOL_SPECIAL) is dropped by the IsCombatSchool filter, the engine casts Unsummon only through HERO_SKILL_UNSUMMON |  |
 
 ## Week of the month (combat effects)
 

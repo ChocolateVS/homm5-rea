@@ -314,10 +314,11 @@ public partial class AdventureScreen : Control
     {
         if (InputLocked || Selected is not { } h) return;
         var g = Session.Game;
-        var options = h.Spells
+        var spells = g.BookSpells(h);
+        var options = spells
             .Where(sp => Game.Instance.Db.Spell(sp)?.School == "MAGIC_SCHOOL_ADVENTURE" && h.Mana >= g.AdventureSpellCost(sp))
             .Select(sp => new H5.Combat.SpellOption { Spell = sp, ManaCost = g.AdventureSpellCost(sp) }).ToList();
-        var book = new Combat.SpellBook3D(h.Spells, options, h.Mana, g.MaxMana(h), warcries: false, adventure: true);
+        var book = new Combat.SpellBook3D(spells, options, h.Mana, g.MaxMana(h), warcries: false, adventure: true);
         book.Chosen += opt =>
         {
             if (opt.Spell == H5.Adventure.Engine.Adventure.SpellDimensionDoor) { _pendingSpell = opt.Spell; return; }

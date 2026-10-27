@@ -231,4 +231,38 @@ public class SpellAvailabilityTests(Fixture f)
         Assert.True(Engine.Adventure.KnowsSpell(h, "SPELL_CURSE"));
         Assert.Equal(new[] { "SPELL_CURSE", "SPELL_MASS_CURSE" }, h.Spells);
     }
+    [Fact]
+    public void TomesPutTheirSchoolOfTheMapPoolInTheBook()
+    {
+        // 00ca6930: tome 0x4c..0x4f → slot 0x10(circle 1..5, school 0 / 2 / 1 / 3); 00b541f0 book entries, not known.
+        var g = Game("SPELL_MAGIC_ARROW", "SPELL_FIREBALL", "SPELL_BLESS", "SPELL_SUMMON_BOAT");
+        var h = Hero(g);
+        h.Class = "HERO_CLASS_WIZARD";
+        h.Artifacts.Clear();
+        h.Artifacts.Add("ARTIFACT_TOME_OF_DESTRUCTION");
+        Assert.Equal(new[] { "SPELL_MAGIC_ARROW", "SPELL_FIREBALL" }, g.ArtifactSpells(h));
+        Assert.Empty(h.Spells);
+        Assert.Equal(new[] { "SPELL_BLESS" }, g.SpellsOfArtifact("ARTIFACT_TOME_OF_LIGHT_MAGIC"));
+        Assert.Empty(g.SpellsOfArtifact("ARTIFACT_TOME_OF_DARK_MAGIC"));
+        // 00b541f0: no artifact spells for class 8 (vf 0x258).
+        h.Class = "HERO_CLASS_BARBARIAN";
+        Assert.Empty(g.ArtifactSpells(h));
+    }
+
+    [Fact]
+    public void FixedArtifactSpellsAndTheBloodRageFilter()
+    {
+        // 00ca7e40: Band of Conjurer 0x2b, Ring of Unsummoning 0x42; 00b4b810: a Blood Rage hero gets no non-warcry spell.
+        var g = Game();
+        var h = Hero(g);
+        h.Class = "HERO_CLASS_WIZARD";
+        h.Artifacts.Clear();
+        h.Artifacts.AddRange(new[] { "ARTIFACT_BAND_OF_CONJURER", "ARTIFACT_RING_OF_UNSUMMONING" });
+        Assert.Equal(new[] { "SPELL_SUMMON_ELEMENTALS", "SPELL_ABILITY_UNSUMMON" }, g.ArtifactSpells(h));
+        Assert.Contains("SPELL_SUMMON_ELEMENTALS", g.BookSpells(h));
+        h.Perks.Add("HERO_SKILL_DEMONIC_RAGE");
+        // Unsummon is not valid for 00a349f0 (SPECIAL school), so 00b4b810 lets it through.
+        Assert.Equal(new[] { "SPELL_ABILITY_UNSUMMON" }, g.ArtifactSpells(h));
+    }
+
 }
