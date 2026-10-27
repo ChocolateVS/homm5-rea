@@ -258,7 +258,12 @@ public sealed class UiLoader
                     Foreground = LoadDrawable(sub.Element("Foreground"), file),
                 };
                 var (tf, tfFile) = Deref(sub.Element("TextFormat"), file);
-                if (tf != null) v.TextFormatPath = Path(tf.Element("FormatStringFileRef"), tfFile);
+                if (tf != null)
+                {
+                    v.HasTextFormat = true;
+                    v.TextFormatPath = Path(tf.Element("FormatStringFileRef"), tfFile);
+                    v.TextPlacement = UiPlacement.Parse(tf.Element("Placement"));
+                }
                 var enterBlock = sub.Element("OnEnterSubState");
                 v.OnEnter.AddRange(Commands(enterBlock, file));
                 if ((string?)enterBlock?.Element("Reversable") == "true")

@@ -76,6 +76,8 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 |---|---|---|---|
 | AutoChangeState | instance field +0xfc (reader 00be4a60); on the trigger (push 00b924d0 / release 00b929f0 by TriggerMode) a left click first advances the state when set (IButton slot 2 = 00b92e00: (state + 1) mod count), then runs CommandsOnEnterState of the state the button is in; right click runs CommandsOnRightClick | `UiWindow.AutoChangeState`, `UiNode.Activate` | FIXED (every multi-state button advanced, so AutoChangeState=false buttons such as the marketplace rows ran the wrong state's commands) |
 | Radio groups | in a ButtonGroupID group a selected button (state 1) does not advance; otherwise the group's previous button is reset silently (slot 3, no commands) (00b910d0); the commands still run | same (siblings form the group) | FIXED (a selected group button ran nothing) |
+| Caption placement and format | 00b91fb0 (button text update): when the visual sub-state has a TextFormat (accessor 00b93ba0), its Placement (+0x48) places the caption (FUN_00a4dc00) and its format string replaces the text string's format when not empty (+0x8c ≠ +0x90); otherwise the text string's own placement / format | same (`UiVisualState.HasTextFormat / TextPlacement`, `UiNode.TextPlacementOf`) | FIXED (sub-state TextFormat placement was ignored and the text string's format won: MenuButton / Common Button / Tavern button captions, whose TextFormats set VerAllign ERA_CENTER, sat low in the button) |
+| Pressed caption offset | — (no offset found in 00b91fb0; sub-state TextFormats in the data carry no Position) | none | MATCH (as far as traced) |
 
 ## Common boxes (NUI::CCommonBox, 00676290 / 00676de0)
 

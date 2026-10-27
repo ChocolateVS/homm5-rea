@@ -117,7 +117,9 @@ public partial class UiNode : Control
         {
             Background = v.Background ?? normal?.Background,
             Foreground = v.Foreground ?? normal?.Foreground,
-            TextFormatPath = v.TextFormatPath ?? normal?.TextFormatPath,
+            TextFormatPath = v.HasTextFormat ? v.TextFormatPath : normal?.TextFormatPath,
+            HasTextFormat = v.HasTextFormat || normal?.HasTextFormat == true,
+            TextPlacement = v.HasTextFormat ? v.TextPlacement : normal?.TextPlacement,
         };
     }
 
@@ -238,9 +240,15 @@ public partial class UiNode : Control
         var t = Window.Text;
         if (t == null && _textOverride == null) return "";
         string body = _textOverride ?? t?.Raw ?? "";
-        string format = t?.Format ?? UiResources.Instance.Text(visual?.TextFormatPath) ?? "";
+        // 00b91fb0: a button sub-state's TextFormat format string, when not empty, replaces the text string's format.
+        string? stateFormat = visual?.HasTextFormat == true ? UiResources.Instance.Text(visual.TextFormatPath) : null;
+        string format = !string.IsNullOrEmpty(stateFormat) ? stateFormat : t?.Format ?? "";
         return format + body;
     }
+
+    /// <summary>00b91fb0: with a sub-state TextFormat its placement places the caption, else the text string's.</summary>
+    static UiPlacement? TextPlacementOf(UiText? t, UiVisualState? visual) =>
+        visual?.HasTextFormat == true ? visual.TextPlacement : t?.Placement;
 
     /// <summary>WindowTextView ResizeOnTextSet: the window takes its text's height (and width if ResizeWidthOnTextSet).</summary>
     public bool ResizesOnText => (bool?)Window.RawInstance?.Element("ResizeOnTextSet") == true;
@@ -261,13 +269,14 @@ public partial class UiNode : Control
         var t = Window.Text;
         string markup = CurrentMarkup(visual);
         if (markup.Length == 0) return;
-        var key = markup + "|" + Size + "|" + string.Join(";", _values.Select(kv => kv.Key + "=" + kv.Value));
+        var placement = TextPlacementOf(t, visual);
+        var key = markup + "|" + Size + "|" + placement + "|" + string.Join(";", _values.Select(kv => kv.Key + "=" + kv.Value));
         if (_textLayout == null || _textLayoutKey != key)
         {
             // The exe wraps the text at the full window width and places the block by the text placement's
             // set alignments only (UiLayout.PlaceText, H5_Game.exe 00a4d7b0), in window-local space.
             _textLayout = BitmapTextLayout.Block(markup, _values, Size.X, scale: Screen?.UiScale);
-            var (tx, ty) = UiLayout.PlaceText(t?.Placement, new UiRect(0, 0, (int)Size.X, (int)Size.Y),
+            var (tx, ty) = UiLayout.PlaceText(placement, new UiRect(0, 0, (int)Size.X, (int)Size.Y),
                 (int)_textLayout.Size.X, (int)_textLayout.Size.Y);
             _textLayout.At(new Vector2(tx, ty));
             _textLayoutKey = key;

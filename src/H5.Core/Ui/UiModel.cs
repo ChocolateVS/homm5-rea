@@ -128,6 +128,12 @@ public sealed class UiVisualState
     public UiDrawable? Background, Foreground;
     public UiText? Text;
     public string? TextFormatPath;
+    /// <summary>
+    /// The sub-state has a TextFormat (00b91fb0): its placement replaces the text string's for the caption, and its
+    /// format string replaces the text string's format when it is not empty.
+    /// </summary>
+    public bool HasTextFormat;
+    public UiPlacement? TextPlacement;
     /// <summary>OnEnterSubState commands, run when the button enters this visual sub-state.</summary>
     public List<UiCommand> OnEnter = new();
     /// <summary>Reverse commands (Reversable sub-states, e.g. UISRunReaction szReactionBack), run on leaving it.</summary>
