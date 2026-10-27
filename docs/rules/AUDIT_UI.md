@@ -114,8 +114,20 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 | Backdrop | 006c8330: `Back_Single2` when 006d0940, else `Back_Meet` with a second hero, else `Back_Single`, made visible; its Layer1..Layer5 pushed to +0x4bc; 006c2710 shows Layer n only while page n is current | `_backdrop` + layers in `ShowPage` (test `InstallTests.HeroMeetingBackdropHasOneLayerPerPage`) | FIXED (no backdrop was shown: black screen behind the meeting pages) |
 | `Back_Single2` / `HeroPage_Self2` single mode | chosen when screen +0x720 is set (006d0940) | never | GAP (+0x720 not traced) |
 | Screen extent at 16:9 | windows are LOW_END horizontally (HeroScreen3 data), so the meeting layout spans x 0..869 virtual px; the exe's virtual screen is 768 high (1365 wide at 16:9), ours is the real pixel size at UI scale 1 | — | GAP (the global UI-scale row under Display; this is why the pages look pushed left at 1920×1080) |
-| HeroInfo "Experience:" label | `Description` (HeroDescription.txt) merges instance Position (132,36) with the shared VerAllign HIGH_END / size 203×26: 128 − 26 + 36 = y 138 in HeroInfo, overlapping the Army page's "Attributes" header (also before the text-layout change, cd62bc7^); 006bf580 caches it (struct +8) and 006bed90 never writes it | data placement as is | GAP (the exe's placement merge of instance vs shared fields is not traced; 00a4d630 adds Position on HIGH_END) |
+| HeroInfo "Experience:" label | `Description` (UI/HeroScreen3/HeroDescription.txt "<key_value_name>Experience:") merges instance Position (132,36, flag set) with the shared VerAllign EPA_HIGH_END (enum 2, 00bda200) / size 203×26, and 00a4d630 case 2 adds the position on the high end: 128 − 26 + 36 = y 138 in HeroInfo, over the Army page's / tavern's "Attributes" header. 006bf580 (hero screen 006ca280, tavern 00637b50, 00624490) caches Name (+4), Description (+8), Face (+0xc), Experience bar (+0x10); 006bed90 writes HeroName / HeroClass / HeroLevel into Name only (ECX = [this+4] at 006bedc8 / 006bee1b / 006bee69) and the bar; nothing in either hides or moves Description | data placement as is | GAP (traced: the exe neither writes, hides nor moves it; the per-field Second-flag merge of instance vs shared placement itself is still untraced — if it is as ours, the overlap is the original's) |
 | 3D stand in a meeting | stand scene Arenas/Interface/Hero_screen; the exe's 006c05e0 / 006c72e0 path not traced | stand without the hero (black where nothing is drawn) | GAP |
+
+## Tavern hero panel
+
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Mana | HeroAttributes/Mana = UI/HeroScreen3/HeroArmy/ManaValue, text minmaxvalue.txt "<value=Attribute>/<value=AttributeMax>" (current / maximum, as on the hero screen) | Attribute = AttributeMax = knowledge × HeroManaPerKnowledge (× Intelligence_ManaPointsBonus with the perk; Adventure.MaxMana) for the offered hero | FIXED (only Attribute was set: "10/") / the exe reads the offered hero object's mana (no object before hiring in ours) |
+
+## Dev input for UI tests
+
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Synthetic clicks | — | `--click=x,y@s` from the main menu, or relative to the map being up with `--adventure=`; `--wheel=x,y,n@s`, `--press=` / `--release=` / `--move=` (`DevArgs.ScheduleInput`) | EXT (verified: market amount slider arrows / track, tavern rumours tab + pay, thieves list wheel, load list selection + definition wheel, presets grid arrow) |
 
 ## Display
 

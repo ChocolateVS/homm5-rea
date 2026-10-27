@@ -243,7 +243,15 @@ public static class TavernHeroView
             ui.Find($"HeroAttributes/{key}")?.SetValue("Attribute", value.ToString());
         ui.Find("HeroAttributes/Morale")?.SetValue("Attribute", "0");
         ui.Find("HeroAttributes/Luck")?.SetValue("Attribute", "0");
-        ui.Find("HeroAttributes/Mana")?.SetValue("Attribute", (def.Knowledge * 10).ToString());
+        // ManaValue's text is minmaxvalue.txt "<value=Attribute>/<value=AttributeMax>" (current / maximum); an offered hero
+        // has full mana: knowledge × HeroManaPerKnowledge, × Intelligence_ManaPointsBonus with the Intelligence perk
+        // (the formula of Adventure.MaxMana).
+        var adv = db.Stats.Root.Element("adventure");
+        double mana = def.Knowledge * (H5.Core.Data.XmlHelpers.Int(adv, "HeroManaPerKnowledge", 10));
+        if (def.Perks.Contains("HERO_SKILL_INTELLIGENCE")) mana *= H5.Core.Data.XmlHelpers.Dbl(adv?.Element("HeroSkills"), "Intelligence_ManaPointsBonus", 1.5);
+        var manaNode = ui.Find("HeroAttributes/Mana");
+        manaNode?.SetValue("Attribute", ((int)mana).ToString());
+        manaNode?.SetValue("AttributeMax", ((int)mana).ToString());
         // GAP: the exe shows the offered hero's army (00638d90); the engine rolls it at hire (GiveStartingArmy).
         for (int i = 0; i < 7; i++)
         {
