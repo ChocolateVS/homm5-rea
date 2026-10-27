@@ -42,10 +42,14 @@ public partial class SaveLoadScreen : UiScreen
         _game = game;
         _thumbnail = thumbnail;
         _close = close;
-        _list = new SavesListView();
-        Find("saveslist")?.AddChild(_list);
+        // 007fecd0: the saves are items of the saveslist container (cleared, one row each, scrolled by its bar);
+        // our rows are drawn by code in its content with the data's Selection / PreSelection markers.
+        _list = new SavesListView(Find("saveslist") as UiScrollableContainer);
+        if (_list.Container is { } box) box.Content.AddChild(_list); else Find("saveslist")?.AddChild(_list);
         Find("screenshoot")?.AddChild(_shot);
-        Find("definition")?.AddChild(_definition);
+        // The definition texts scroll in the definition container (its own bar); drawn by code in its content.
+        if (Find("definition") is UiScrollableContainer def) { _definition.Container = def; def.Content.AddChild(_definition); }
+        else Find("definition")?.AddChild(_definition);
         _edit = Find("edit") as UiEditLine;
         if (_edit != null) { _edit.MaxLength = 64; _edit.Submitted += _ => DoSave(); }
 
@@ -162,55 +166,57 @@ public partial class SaveLoadScreen : UiScreen
     }
 }
 
-/// <summary>The saves list rows (UI/SaveLoad/SavesList/Item: 235x40, name over time/date).</summary>
+/// <summary>
+/// The saves list rows (UI/SaveLoad/SavesList/Item: 235x40, name over time/date) in the content of the saveslist
+/// container: content size = rows × 40, scrolled by the container's bar; the selected / hovered row carries the
+/// container's Selection / PreSelection marker (00888da0 → 00887850; selecting does not scroll).
+/// </summary>
 public partial class SavesListView : Control
 {
     const float RowH = 40, RowW = 235;
     readonly string _nameFormat = UiResources.Instance.Text("UI/SaveLoad/SavesList/Item/name.txt") ?? "<body><value=savename>";
     readonly string _dateFormat = UiResources.Instance.Text("UI/SaveLoad/SavesList/Item/description.txt") ?? "<body_bright><value=thour>:<value=tminute> <value=tday>/<value=tmonth>/<value=tyear>";
-    readonly Texture2D? _hover = UiResources.Instance.Texture("UI/SaveLoad/Preselection.(Texture).dds");
-    readonly Texture2D? _selected = UiResources.Instance.Texture("UI/SaveLoad/Selection.(Texture).dds");
     List<SaveEntry> _entries = new();
-    int _hoverRow = -1, _scroll;
+    int _hoverRow = -1;
 
+    public UiScrollableContainer? Container { get; }
     public int? SelectedIndex { get; private set; }
     public event Action<int>? Selected;
     public event Action<int>? Activated;
 
-    public SavesListView()
+    public SavesListView(UiScrollableContainer? container)
     {
-        AnchorRight = 1;
-        AnchorBottom = 1;
-        ClipContents = true;
-        MouseFilter = MouseFilterEnum.Stop;
+        Container = container;
+        MouseFilter = MouseFilterEnum.Pass;
         TextureFilter = TextureFilterEnum.ParentNode;
+        if (container == null) { AnchorRight = 1; AnchorBottom = 1; ClipContents = true; }
     }
 
-    public void SetEntries(List<SaveEntry> entries) { _entries = entries; _scroll = 0; QueueRedraw(); }
+    public void SetEntries(List<SaveEntry> entries)
+    {
+        _entries = entries;
+        _hoverRow = -1;
+        Size = new Vector2(RowW, entries.Count * RowH);
+        if (Container != null) { Container.ScrollPosition = 0; Container.SetContentSize(entries.Count * RowH); Container.Preselect(null); }
+        QueueRedraw();
+    }
+
+    static Rect2 RowRect(int r) => new(0, r * RowH, RowW, RowH);
 
     public void Select(int index)
     {
         SelectedIndex = index >= 0 && index < _entries.Count ? index : null;
-        if (SelectedIndex is int i)
-        {
-            int visible = Math.Max(1, (int)(Size.Y / RowH));
-            if (i < _scroll) _scroll = i;
-            else if (i >= _scroll + visible) _scroll = i - visible + 1;
-        }
+        Container?.Select(SelectedIndex is int i ? RowRect(i) : null);
         QueueRedraw();
     }
 
-    int RowAt(Vector2 p) => p.X < 0 || p.X > RowW || p.Y < 0 ? -1 : _scroll + (int)(p.Y / RowH) is var r && r < _entries.Count ? r : -1;
+    int RowAt(Vector2 p) => p.X < 0 || p.X > RowW || p.Y < 0 ? -1 : (int)(p.Y / RowH) is var r && r < _entries.Count ? r : -1;
 
     public override void _Draw()
     {
-        for (int r = _scroll; r < _entries.Count; r++)
+        for (int r = 0; r < _entries.Count; r++)
         {
-            float y = (r - _scroll) * RowH;
-            if (y >= Size.Y) break;
-            var rect = new Rect2(0, y, RowW, RowH);
-            if (r == SelectedIndex && _selected != null) DrawTextureRect(_selected, rect, false);
-            else if (r == _hoverRow && _hover != null) DrawTextureRect(_hover, rect, false);
+            float y = r * RowH;
             var h = _entries[r].Header;
             var t = h.SavedUtc.ToLocalTime();
             var values = new Dictionary<string, string>
@@ -226,32 +232,35 @@ public partial class SavesListView : Control
 
     static string Escape(string s) => s.Replace('<', '‹').Replace('>', '›');
 
+    void Hover(int row)
+    {
+        if (row == _hoverRow) return;
+        _hoverRow = row;
+        Container?.Preselect(row >= 0 && row != SelectedIndex ? RowRect(row) : null);
+    }
+
     public override void _GuiInput(InputEvent e)
     {
         switch (e)
         {
             case InputEventMouseMotion mm:
-                int row = RowAt(mm.Position);
-                if (row != _hoverRow) { _hoverRow = row; QueueRedraw(); }
+                Hover(RowAt(mm.Position));
                 break;
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } mb:
                 int hit = RowAt(mb.Position);
                 if (hit < 0) break;
                 Select(hit);
+                Container?.Preselect(null);
                 Selected?.Invoke(hit);
                 if (mb.DoubleClick) Activated?.Invoke(hit);
                 AcceptEvent();
                 break;
-            case InputEventMouseButton { ButtonIndex: MouseButton.WheelUp, Pressed: true }:
-                _scroll = Math.Max(0, _scroll - 1); QueueRedraw(); AcceptEvent(); break;
-            case InputEventMouseButton { ButtonIndex: MouseButton.WheelDown, Pressed: true }:
-                _scroll = Math.Clamp(_scroll + 1, 0, Math.Max(0, _entries.Count - (int)(Size.Y / RowH))); QueueRedraw(); AcceptEvent(); break;
         }
     }
 
     public override void _Notification(int what)
     {
-        if (what == NotificationMouseExit && _hoverRow != -1) { _hoverRow = -1; QueueRedraw(); }
+        if (what == NotificationMouseExit) Hover(-1);
     }
 }
 
@@ -262,11 +271,10 @@ public partial class DefinitionView : Control
     readonly List<(string Name, string Value)> _rows = new();
     string _descHeader = "", _desc = "";
 
+    public UiScrollableContainer? Container;
+
     public DefinitionView()
     {
-        AnchorRight = 1;
-        AnchorBottom = 1;
-        ClipContents = true;
         MouseFilter = MouseFilterEnum.Ignore;
         TextureFilter = TextureFilterEnum.ParentNode;
     }
@@ -296,6 +304,15 @@ public partial class DefinitionView : Control
                 _desc = V(T("mapdescriptionvalue.txt"), "mapdescription", h.MapDescription);
             }
         }
+        if (Container?.Border is { } border)
+        {
+            // Content height of what _Draw lays out, at the Border's width.
+            Size = new Vector2(border.Window.Rect.W, 0);
+            Size = new Vector2(border.Window.Rect.W, Draw(measureOnly: true));
+            Container.ScrollPosition = 0;
+            Container.SetContentSize(Size.Y);
+        }
+        else { AnchorRight = 1; AnchorBottom = 1; ClipContents = true; }
         QueueRedraw();
     }
 
@@ -306,21 +323,28 @@ public partial class DefinitionView : Control
         return UiResources.Instance.Text($"GameMechanics/RefTables/UIDifficultyInfo/Difficulty{names[i]}Name.txt")?.Trim() ?? names[i];
     }
 
-    public override void _Draw()
+    public override void _Draw() => Draw(measureOnly: false);
+
+    float Draw(bool measureOnly)
     {
         // Leave room for the container's scroll bar on the right (definition ScrollBar).
         float y = 0, w = Size.X - 20;
         foreach (var (name, value) in _rows)
         {
-            BitmapTextLayout.Build(name, null, new Rect2(0, y, w, 20), UiAlign.LowEnd, wrap: false).Draw(this);
-            BitmapTextLayout.Build(value, null, new Rect2(0, y, w, 20), UiAlign.LowEnd, wrap: false).Draw(this);
+            if (!measureOnly)
+            {
+                BitmapTextLayout.Build(name, null, new Rect2(0, y, w, 20), UiAlign.LowEnd, wrap: false).Draw(this);
+                BitmapTextLayout.Build(value, null, new Rect2(0, y, w, 20), UiAlign.LowEnd, wrap: false).Draw(this);
+            }
             y += 20;
         }
-        if (_descHeader.Length == 0) return;
+        if (_descHeader.Length == 0) return y;
         y += 6;
-        BitmapTextLayout.Build(_descHeader, null, new Rect2(0, y, w, 22), UiAlign.LowEnd, wrap: false).Draw(this);
+        if (!measureOnly) BitmapTextLayout.Build(_descHeader, null, new Rect2(0, y, w, 22), UiAlign.LowEnd, wrap: false).Draw(this);
         y += 22;
-        BitmapTextLayout.Build(_desc, null, new Rect2(0, y, w, Math.Max(20, Size.Y - y)), UiAlign.LowEnd, wrap: true).Draw(this);
+        var desc = BitmapTextLayout.Build(_desc, null, new Rect2(0, y, w, 4000), UiAlign.LowEnd, wrap: true);
+        if (!measureOnly) desc.Draw(this);
+        return y + Mathf.Ceil(desc.Size.Y);
     }
 }
 

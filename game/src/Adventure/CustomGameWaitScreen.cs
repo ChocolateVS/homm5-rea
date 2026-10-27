@@ -39,8 +39,6 @@ public partial class CustomGameWaitScreen : UiScreen
     readonly List<UiNode> _rows = new();
     readonly BitmapText _desc = new() { AnchorRight = 1, AnchorBottom = 1, Wrap = true };
     readonly BitmapText _prefs = new() { AnchorRight = 1, AnchorBottom = 1, Wrap = true };
-    int _scroll;
-    const int RowHeight = 107; // UI/CustomGameWait/Item (ListItem) height
 
     static string Profile => ProfileManager.CurrentName;
 
@@ -83,16 +81,6 @@ public partial class CustomGameWaitScreen : UiScreen
             .Replace("<value=size>", $"{_map.TilesX}x{_map.TilesY}")
             .Replace("<value=goal>", _choice.Map.CustomGoal ?? UiResources.Instance.Text($"UI/MPCreate/Maps/Goals/{_choice.Map.GoalKey}.txt")?.Trim() ?? "")
             .Replace("<value=difficulty>", CustomGameScreen.DifficultyName(_choice.Difficulty));
-        if (Find("playerscontainer") is { } box)
-        {
-            box.ClipContents = true;
-            box.MouseFilter = MouseFilterEnum.Pass;
-            box.GuiInput += e =>
-            {
-                if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp }) { _scroll--; BuildRows(); }
-                if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelDown }) { _scroll++; BuildRows(); }
-            };
-        }
         BuildRows();
     }
 
@@ -133,18 +121,21 @@ public partial class CustomGameWaitScreen : UiScreen
 
     void BuildRows()
     {
-        if (_setup == null || Find("ListItem") is not { } template || Find("playerscontainer") is not { } box) return;
+        // 007769d0: one ListItem clone per player row, shown and added to playerscontainer (slot 8), scrolled by
+        // its bar. Our rows are rebuilt after each change; the scroll position is kept.
+        if (_setup == null || Find("ListItem") is not { } template || Find("playerscontainer") is not UiScrollableContainer box) return;
+        float pos = box.ScrollPosition;
         foreach (var r in _rows) RemoveInstance(r);
         _rows.Clear();
-        int visible = Math.Max(1, (int)(box.Window.Rect.H / RowHeight));
-        _scroll = Math.Clamp(_scroll, 0, Math.Max(0, _setup.Slots.Count - visible));
-        for (int i = _scroll; i < _setup.Slots.Count && i < _scroll + visible + 1; i++)
+        box.ClearItems();
+        for (int i = 0; i < _setup.Slots.Count; i++)
         {
-            int row = i;
-            var node = Instantiate(template.Window, box.Window, new Int2(0, (i - _scroll) * RowHeight), $"row{i}");
+            var node = Instantiate(template.Window, box.Window, new Int2(0, 0), $"row{i}");
             _rows.Add(node);
-            FillRow(node, row);
+            FillRow(node, i);
+            box.AddItem(node);
         }
+        box.RestorePosition(pos);
         // 00776360 starts only with two teams; the Start button follows that check.
         foreach (var n in new[] { "start", "StartBtn" }) if (Find(n) is { } start) start.Enabled = _setup.CanStart();
     }

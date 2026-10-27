@@ -29,7 +29,7 @@ public partial class HotseatDuelScreen : UiScreen
 
         if (Find("presets_grid") is { } gridNode && Root.Find("line_template") is { } template && Root.Find("presets_table_back") is { } back)
         {
-            _grid = new PresetGridView(template, back.Rect.H);
+            _grid = new PresetGridView(template, back.Rect.H, Find("table_slider") as UiScrollBar);
             _grid.Position = new Vector2(template.Rect.X - gridNode.Window.Rect.X, template.Rect.Y - gridNode.Window.Rect.Y);
             gridNode.AddChild(_grid);
             _grid.Picked += Pick;
