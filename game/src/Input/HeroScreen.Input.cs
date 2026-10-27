@@ -15,6 +15,7 @@ public partial class HeroScreen
     /// <summary>Shows the given page (Army, Inventory, Skills, Abilities, Biography) on every panel.</summary>
     public void ShowPageByName(string page)
     {
+        _page = page;
         foreach (var p in _panels) ShowPage(p, page);
     }
 

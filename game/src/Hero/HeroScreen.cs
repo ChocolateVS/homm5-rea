@@ -142,7 +142,9 @@ public partial class HeroScreen : Control
         ShowPageByName("Army");
         // Dev (screenshots): `--hero-page=Inventory|Skills|Abilities|Biography` opens that bookmark.
         if (OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--hero-page=")) is { } pg) ShowPageByName(pg["--hero-page=".Length..]);
+        if (_startPage != null) ShowPageByName(_startPage);
         if (_mentor) SetUpMentor();
+        else SetUpJogDial();
     }
 
     void Add3DStand()

@@ -398,11 +398,14 @@ public sealed partial class Adventure
     {
         var h = S.Hero(c.HeroId);
         if (h == null || h.Owner != Current.Index) return "not your hero";
-        if (S.Heroes.Count(x => x.Alive && x.Owner == h.Owner) == 1 && !S.Towns.Any(t => t.Owner == h.Owner))
-            return "cannot dismiss your last hero";
+        if (!CanDismiss(h)) return "cannot dismiss your last hero";
         RemoveHero(h, "dismissed");
         return null;
     }
+
+    /// <summary>The dismiss rule of <see cref="DoDismiss"/>: not the owner's last hero while the owner has no town.</summary>
+    public bool CanDismiss(HeroState h) =>
+        h.Alive && !(S.Heroes.Count(x => x.Alive && x.Owner == h.Owner) == 1 && !S.Towns.Any(t => t.Owner == h.Owner));
 
     void RemoveHero(HeroState h, string reason)
     {
