@@ -8,7 +8,10 @@ namespace H5.Adventure.Engine;
 /// <param name="MoveCost">settings +0x38: hero vf 0xfc / 2 (half the day's movement).</param>
 /// <param name="Count">settings +0x3c: (mana − 20) / spell cost (FUN_00a34740), at least 0.</param>
 /// <param name="StartCostLimit">settings +0x68: AI/Adventure DimDoorStartCostLimit (block +0x228); ≤ 0 means no limit.</param>
-public readonly record struct DimensionDoorSettings(bool Enabled, int MoveCost, int Count, int StartCostLimit);
+/// <param name="TownPortal">settings +0x34 (pf +0x54): the hero knows SPELL_TOWN_PORTAL (0x33), may cast it and is not at sea.</param>
+/// <param name="LandDayMove">settings +0x28 (pf +0x48): the day's land movement (hero vf 0xf8 of the move type), the Town Portal start's w4.</param>
+public readonly record struct DimensionDoorSettings(bool Enabled, int MoveCost, int Count, int StartCostLimit,
+                                                    bool TownPortal = false, int LandDayMove = 0);
 
 /// <summary>One node of a flood route (exe 0x40-byte node: w0 position, w1 flags, w2 cost, w3 priority).</summary>
 /// <param name="Cost">w2: movement cost from the start; an Instant Travel landing keeps its origin's cost.</param>
@@ -17,7 +20,9 @@ public readonly record struct DimensionDoorSettings(bool Enabled, int MoveCost, 
 /// <param name="Action">w1 bit 0: the node's tile holds an object (FUN_00c072d0).</param>
 /// <param name="Landing">w1 bit 0x4000000: reached by Instant Travel.</param>
 /// <param name="Casts">w1 bits 15..22: Instant Travel starts on the way (at most 10).</param>
-public readonly record struct FloodNode(Tile Tile, int Cost, int Priority, bool CanStop, bool Action, bool Boat, bool Landing, int Casts);
+/// <param name="Portal">w1 bit 0x20: the route starts with Town Portal (set on the portal start node, inherited by every step from it).</param>
+public readonly record struct FloodNode(Tile Tile, int Cost, int Priority, bool CanStop, bool Action, bool Boat, bool Landing, int Casts,
+                                        bool Portal = false);
 
 /// <summary>Result of <see cref="Adventure.SpellFlood"/>: the best node of every reached tile and its parent tile.</summary>
 public sealed class SpellFloodResult
@@ -55,7 +60,7 @@ public sealed partial class Adventure
     sealed class FNode
     {
         public Tile T, Origin;
-        public bool Layer, CanStop, Action, Landing;
+        public bool Layer, CanStop, Action, Landing, Portal, Root;
         public int W2, W3, Casts;
         public Tile? Parent;
     }
@@ -73,9 +78,15 @@ public sealed partial class Adventure
     /// landing check (FUN_008649f0) yields a normal node: the origin's cost, its own priority + 500, flags
     /// 0x4000200 (P, landing) and the origin as parent. A main-grid tile keeps the node with the lower priority and
     /// nodes whose cost exceeds the limit are dropped (00c09d90: +0x40 &lt; cost, when &gt; 0).
+    /// Town Portal (00c08be0, pf +0x54): each entry of the start list pf +0x98 (filled by 0086c010 from AI +0xcc via
+    /// 00868560: the town 00865170 → 00ccf6e0 picks, i.e. <see cref="PortalTown"/>, when its hero slot is free, 008648b0)
+    /// becomes a second start node: a copy of the hero's node at the town's tile with flag 0x20 (inherited by every
+    /// step from it), parent the hero's tile, cost w2 = the hero's movement points (start w4), priority w3 = that +
+    /// land day move (+0x48) + 200 + (entries − 1) · 500, w4 = land day move; it expands like the hero's node.
     /// GAP-details: the blocked test is our <c>Passable</c> (not the exe's cell types 009d1410 / 009d1700 / type 5,
-    /// whose +100 penalty is not applied); single-day costs as in <see cref="ReachableCosts"/>; no boat or Town
-    /// Portal edges (settings +0x34 / +0x35); queue ties are taken in insertion order.
+    /// whose +100 penalty is not applied); single-day costs as in <see cref="ReachableCosts"/>; no boat edges
+    /// (settings +0x35); queue ties are taken in insertion order; the town's tile (town vf 0xc4) is taken as its
+    /// entrance (<see cref="EntranceOf"/>).
     /// </summary>
     public SpellFloodResult SpellFlood(HeroState h, int limit, DimensionDoorSettings dd)
     {
@@ -84,7 +95,7 @@ public sealed partial class Adventure
         var layer = new Dictionary<Tile, FNode>();
         var pq = new PriorityQueue<FNode, (int, int)>();
         int seq = 0;
-        var start = new FNode { T = h.Pos, Origin = h.Pos, CanStop = true };
+        var start = new FNode { T = h.Pos, Origin = h.Pos, CanStop = true, Root = true };
         main[h.Pos] = start;
         pq.Enqueue(start, (0, seq++));
         var f = Map.Floor(h.Pos.Floor);
@@ -109,13 +120,22 @@ public sealed partial class Adventure
             pq.Enqueue(n, (n.W3, seq++));
         }
 
+        if (dd.TownPortal)
+        {
+            var portal = PortalStartTiles(h);
+            foreach (var t in portal)
+                Relax(new FNode { T = t, Origin = t, W2 = h.MovePoints, W3 = dd.LandDayMove + 200 + (portal.Count - 1) * 500 + h.MovePoints,
+                                  CanStop = true, Portal = true, Root = true, Parent = h.Pos });
+        }
+
         while (pq.TryDequeue(out var cur, out _))
         {
             if (cur.Layer)
             {
                 if (!layer.TryGetValue(cur.T, out var lc) || lc != cur) continue;
                 if (cur.T != cur.Origin && DimensionDoorLandingOk(h, cur.T, h.InBoat) && main.TryGetValue(cur.Origin, out var org))
-                    Relax(new FNode { T = cur.T, Origin = cur.T, W2 = org.W2, W3 = cur.W3 + 500, Casts = cur.Casts, CanStop = true, Landing = true, Parent = cur.Origin });
+                    Relax(new FNode { T = cur.T, Origin = cur.T, W2 = org.W2, W3 = cur.W3 + 500, Casts = cur.Casts, CanStop = true, Landing = true,
+                                      Portal = org.Portal, Parent = cur.Origin });
                 foreach (var (dx, dy) in FloodDirs)
                 {
                     var nx = cur.T.Offset(dx, dy);
@@ -126,7 +146,7 @@ public sealed partial class Adventure
             }
             if (!main.TryGetValue(cur.T, out var mc) || mc != cur) continue;
             // As ReachableCosts: guarded tiles and tiles a path may not cross end the walk.
-            bool expand = cur.T == h.Pos || (GuardingMonster(cur.T) == null && Passable(h, cur.T, new Tile(-1, -1, cur.T.Floor)));
+            bool expand = cur.Root || (GuardingMonster(cur.T) == null && Passable(h, cur.T, new Tile(-1, -1, cur.T.Floor)));
             if (!expand) continue;
             bool canStart = dd.Enabled && cur.CanStop && cur.Casts < 10 && (dd.StartCostLimit <= 0 || cur.W2 <= dd.StartCostLimit);
             foreach (var (dx, dy) in FloodDirs)
@@ -136,12 +156,13 @@ public sealed partial class Adventure
                 if (!Passable(h, nx, nx))
                 {
                     if (canStart)
-                        EnterLayer(new FNode { T = nx, Origin = cur.T, Layer = true, W2 = cur.W2 + dd.MoveCost, W3 = cur.W3 + dd.MoveCost, Casts = cur.Casts + 1 });
+                        EnterLayer(new FNode { T = nx, Origin = cur.T, Layer = true, W2 = cur.W2 + dd.MoveCost, W3 = cur.W3 + dd.MoveCost, Casts = cur.Casts + 1,
+                                               Portal = cur.Portal });
                     continue;
                 }
                 int step = StepCost(h, cur.T, nx);
                 bool action = ObjectsAt(nx).Any() || HeroAt(nx, h.Id) != null || BoatAt(nx) != null;
-                Relax(new FNode { T = nx, Origin = nx, W2 = cur.W2 + step, W3 = cur.W3 + step, Casts = cur.Casts,
+                Relax(new FNode { T = nx, Origin = nx, W2 = cur.W2 + step, W3 = cur.W3 + step, Casts = cur.Casts, Portal = cur.Portal,
                                   CanStop = !action && GuardingMonster(nx) == null, Action = action, Parent = cur.T });
             }
         }
@@ -153,10 +174,22 @@ public sealed partial class Adventure
         // No boarding edges: every node keeps the hero's boat state (w1 bit 1).
         foreach (var (t, n) in main)
         {
-            res.Nodes[t] = new FloodNode(t, n.W2, n.W3, n.CanStop, n.Action, boat, n.Landing, n.Casts);
+            res.Nodes[t] = new FloodNode(t, n.W2, n.W3, n.CanStop, n.Action, boat, n.Landing, n.Casts, n.Portal);
             if (n.Parent is { } p) res.Parent[t] = p;
         }
         return res;
+    }
+
+    /// <summary>
+    /// The Town Portal start list (exe 00868560 into AI +0xcc, copied to pf +0x98 by 00c076c0): the portal town
+    /// (00865170 → 00ccf6e0, <see cref="PortalTown"/>) when its hero slot is free (008648b0: town vf 0x18(0) = 0,
+    /// taken as no other hero on its entrance, as the cast). At most one entry.
+    /// </summary>
+    public List<Tile> PortalStartTiles(HeroState h)
+    {
+        var l = new List<Tile>();
+        if (PortalTown(h) is { } town && EntranceOf(town) is var t && HeroAt(t, h.Id) == null) l.Add(t);
+        return l;
     }
 
     static int DistSq(Tile a, Tile b) { int dx = a.X - b.X, dy = a.Y - b.Y; return dx * dx + dy * dy; }

@@ -6,9 +6,11 @@ namespace H5.Adventure.AI;
 // Adventure-map spells of the computer players: Instant Travel (SPELL_DIMENSION_DOOR) in the path search and in
 // the step decision. Exe: settings FUN_00ceb190 (called with the spell flag 1 by 00ceb670 for the AI), flood
 // FUN_00c08890 / 00c07f80 / 00c09d90 (see Adventure.SpellFlood), step decision FUN_008675f0 (from 0086b6d0).
-// GAP: Town Portal (+0x34: extra start nodes from pathfinder +0x98 at priority land move + 200 + (n − 1)·500,
-// flag 0x20, in 00c08be0) and Vessel of Shalassa (+0x35: boarding edge 0x2000002 +500 through the boat provider
-// pathfinder +0xa4 vf 0xc, executed by 008675f0 with command +0x32) are decoded but not ported.
+// Town Portal: the flood's second start node (settings +0x34, 00c08be0) marks its routes with 0x20; a destination
+// reached that way sets command +0x31 (00a7af80: node w1 >> 5 & 1, AI +0xa9) and 0086b6d0 casts spell 0x33 before
+// the step decision. GAP: Vessel of Shalassa (+0x35: boarding edge 0x2000002 +500 through the boat provider
+// pathfinder +0xa4 = 00bcc020, vf 0xc = a free ship on the floor, executed by 008675f0 with command +0x32) is
+// decoded but not ported.
 public sealed partial class OriginalAdventureAI
 {
     /// <summary>
@@ -17,13 +19,17 @@ public sealed partial class OriginalAdventureAI
     /// DimDoorStartCostLimit from the AI block (+0x228).
     /// GAP-details: vf 0x154 is taken as "mana ≥ cost"; the cost is the spell data's (FUN_00a34740 modifiers not
     /// applied); vf 0xfc is taken as MaxMovePoints.
+    /// Town Portal (+0x34): the hero knows spell 0x33, can cast it (vf 0x154, taken as mana ≥ cost) and is not at sea
+    /// (vf 0x24 of the hero's map object, taken as <c>InBoat</c>, as in the cast check 008652f0 case 0x33); land day
+    /// move +0x28 = vf 0xf8(vf 0x108()) taken as MaxMovePoints.
     /// </summary>
     public static DimensionDoorSettings DimensionDoorSettingsFor(Engine.Adventure g, HeroState h, AdventureAiStats st)
     {
         int cost = g.AdventureSpellCost(Engine.Adventure.SpellDimensionDoor);
         bool can = h.Spells.Contains(Engine.Adventure.SpellDimensionDoor) && h.Mana >= cost;
         int count = cost > 0 ? Math.Max(0, (h.Mana - 20) / cost) : 0;
-        return new DimensionDoorSettings(can, h.MaxMovePoints / 2, count, st.DimDoorStartCostLimit);
+        bool tp = !h.InBoat && h.Spells.Contains(Engine.Adventure.SpellTownPortal) && h.Mana >= g.AdventureSpellCost(Engine.Adventure.SpellTownPortal);
+        return new DimensionDoorSettings(can, h.MaxMovePoints / 2, count, st.DimDoorStartCostLimit, tp, h.MaxMovePoints);
     }
 
     /// <summary>Saving thresholds of 008675f0 (table 00f44124 indexed by min(count, 3)), in percent of the day's movement.</summary>
@@ -101,6 +107,10 @@ public sealed partial class OriginalAdventureAI
         }
     }
 
+    /// <summary>Command +0x31 of 00a7af80: the destination's flood node carries the Town Portal flag 0x20.</summary>
+    public static bool CastsTownPortal(SpellFloodResult? flood, Map.Tile target) =>
+        flood != null && flood.Nodes.TryGetValue(target, out var n) && n.Portal;
+
     /// <summary>The flood and settings of the last <see cref="ChooseDestination"/> call (for the step decision).</summary>
     SpellFloodResult? _spellFlood;
     DimensionDoorSettings _dd;
@@ -112,6 +122,10 @@ public sealed partial class OriginalAdventureAI
     /// </summary>
     (AdvResult? Result, bool Whole) StepTowards(Engine.Adventure g, HeroState h, Destination target, int me)
     {
+        // 0086b6d0: command +0x31 (AI +0xa9, the destination node's 0x20 flag from 00a7af80) → cast Town Portal
+        // (spell 0x33 through 00601790) instead of moving; the walk from the town follows on the next pass.
+        if (CastsTownPortal(_spellFlood, target.Tile))
+            return (Send(g, new CastAdventureSpellCmd(h.Id, Engine.Adventure.SpellTownPortal) { Player = me }), false);
         if (_dd.Enabled && _spellFlood?.Route(target.Tile) is { } route)
         {
             var (kind, i) = DimensionDoorStep(route, _dd.MoveCost, _dd.Count, h.MaxMovePoints, 0,

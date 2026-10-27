@@ -146,4 +146,74 @@ public class AiSpellTests(Fixture f)
         }
         Assert.Fail("no hero next to a blocked tile");
     }
+
+    [Fact]
+    public void Town_portal_starts_a_second_flood_root_at_the_portal_town()
+    {
+        // 00c08be0 (pf +0x54): the pf +0x98 entry (00868560: 00865170 → 00ccf6e0) is a start node with flag 0x20,
+        // w2 = the hero's movement points, w3 = land day move + 200 + (1 − 1) · 500 + w2; its steps inherit 0x20 and
+        // a destination reached that way casts the spell (00a7af80 command +0x31 → 0086b6d0 spell 0x33).
+        var g = f.NewGame();
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == g.Current.Index && !x.Garrisoned);
+        var town = g.PortalTown(h);
+        Assert.NotNull(town);
+        var entrance = g.EntranceOf(town!);
+        var fl = g.Map.Floor(entrance.Floor)!;
+        Tile? far = null;
+        for (int y = 0; y < fl.Height && far == null; y++)
+            for (int x = 0; x < fl.Width; x++)
+            {
+                var t = new Tile(x, y, entrance.Floor);
+                if (Math.Max(Math.Abs(x - entrance.X), Math.Abs(y - entrance.Y)) < 31 || fl.IsBlocked(x, y) || fl.IsWater(x, y)) continue;
+                if (g.ObjectsAtTile(t).Any() || g.HeroAtTile(t) != null || g.BoatAt(t) != null) continue;
+                far = t;
+                break;
+            }
+        Assert.NotNull(far);
+        h.Pos = far!.Value;
+        h.MovePoints = 600;
+        var off = g.SpellFlood(h, 3000, new DimensionDoorSettings(false, 0, 0, 0, false, 1500));
+        Assert.False(off.Nodes.ContainsKey(entrance));
+        Assert.Equal(new[] { entrance }, g.PortalStartTiles(h));
+        var flood = g.SpellFlood(h, 3000, new DimensionDoorSettings(false, 0, 0, 0, true, 1500));
+        var root = flood.Nodes[entrance];
+        Assert.True(root.Portal);
+        Assert.Equal(600, root.Cost);
+        Assert.Equal(1500 + 200 + 600, root.Priority);
+        Assert.Equal(h.Pos, flood.Parent[entrance]);
+        var step = flood.Nodes.Values.Where(n => n.Portal && n.Tile != entrance).OrderBy(n => n.Cost).First();
+        var route = flood.Route(step.Tile)!;
+        Assert.Equal(h.Pos, route[0].Tile);
+        Assert.Equal(entrance, route[1].Tile);
+        Assert.True(OriginalAdventureAI.CastsTownPortal(flood, step.Tile));
+        Assert.False(OriginalAdventureAI.CastsTownPortal(flood, h.Pos));
+        // 008648b0: another hero in the town's slot empties the list.
+        var other = g.S.Heroes.First(x => x.Id != h.Id && x.Alive);
+        var keep = other.Pos;
+        other.Pos = entrance;
+        Assert.Empty(g.PortalStartTiles(h));
+        other.Pos = keep;
+    }
+
+    [Fact]
+    public void Town_portal_setting_needs_the_spell_mana_and_land()
+    {
+        var g = f.NewGame();
+        var st = AdventureAiStats.Load(g.Core);
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == g.Current.Index);
+        int cost = g.AdventureSpellCost(Engine.Adventure.SpellTownPortal);
+        h.Spells.Remove(Engine.Adventure.SpellTownPortal);
+        h.Mana = cost;
+        Assert.False(OriginalAdventureAI.DimensionDoorSettingsFor(g, h, st).TownPortal);
+        h.Spells.Add(Engine.Adventure.SpellTownPortal);
+        var s = OriginalAdventureAI.DimensionDoorSettingsFor(g, h, st);
+        Assert.True(s.TownPortal);
+        Assert.Equal(h.MaxMovePoints, s.LandDayMove);
+        h.Mana = cost - 1;
+        Assert.False(OriginalAdventureAI.DimensionDoorSettingsFor(g, h, st).TownPortal);
+        h.Mana = cost;
+        h.InBoat = true;
+        Assert.False(OriginalAdventureAI.DimensionDoorSettingsFor(g, h, st).TownPortal);
+        h.InBoat = false;
+    }
 }
