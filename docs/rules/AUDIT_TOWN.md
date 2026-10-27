@@ -5,13 +5,13 @@ original UI layouts / data. Status: **MATCH** (already as the exe), **FIXED** (c
 difference or not built), **UNVERIFIED** (implemented from data, exe path not traced). Rows carrying two statuses
 count once for each.
 
-Rows at 2026-10-27: 81 FIXED, 43 MATCH, 28 GAP, 35 UNVERIFIED.
+Rows at 2026-10-27: 88 FIXED, 43 MATCH, 27 GAP, 36 UNVERIFIED.
 
 Commits: 9153b62 (dwelling growth incl. moon weeks), afe1e7b + 844ce53 (build check codes, town income),
 6690c81 (level-up offers, experience table, Enlightenment, perk effects, hero screen fixes),
 f65f434 + c6f0b5b (spell learning, blacksmith prices, zero-count transfers), 5d81148 (Town Portal, hover colour),
 51d3aa3 (map-start buildings), the user-report commit (hire screen, tavern + rumours, marketplace, town camera, army rows).
-Tests: `tests/H5.Adventure.Tests/TownGrowthTests.cs`, `SpellLearnTests.cs`, `LevelUpRulesTests.cs`, `TownBuildRulesTests.cs`, `TownInitialBuildingsTests.cs`, `TownHireTests.cs`, `TavernRumourTests.cs`;
+Tests: `tests/H5.Adventure.Tests/TownGrowthTests.cs`, `SpellLearnTests.cs`, `LevelUpRulesTests.cs`, `TownBuildRulesTests.cs`, `TownInitialBuildingsTests.cs`, `TownHireTests.cs`, `TavernRumourTests.cs`, `MageGuildTests.cs`;
 screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stock.
 
 # Town
@@ -30,7 +30,7 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Grail uses the Tear | 00cd4a40 type 0xe: slot 1 hero +0xa4 → +0xa8, else slot 0 | the Tear is taken from the hero | `ConsumeTearOfAsha` | FIXED / which slot is visiting vs garrison not identified (only matters when both carry one) |
 | Money test | 00cd4880: FUN_009d0500(purse, cost) < 1.0 (00e0a7e4) | not affordable | `Purse.CanAfford` | MATCH |
 | One build per day | 00cce4e0: town counter +0x80 (reset to 0 on build, 00cd4a40) < vcall +0x80 = 00ccedf0 (1 for a human, the difficulty row's TownBuildPeriodInDays for a computer player) | build_thisturn | `BuiltToday` (one per day) | MATCH (human) / computer period: the consumer is this check (see AUDIT_AI "Build period"); the counter increment not traced — GAP |
-| Building effects on build | 00cd4a40 | magic guild (type 6) rolls its new level (FUN_00cd1b40(level+1, 5)); Fortress abilities 0x20 / Stronghold 0x27 levels give runes (FUN_00ccfd30 / 00ccfe90); ability 0x1d (Academy trade guild?) FUN_00cce410 | guild learning, artifact merchant stock, Haven training points | UNVERIFIED (fork B: guild; rune grants GAP) |
+| Building effects on build | 00cd4a40 | magic guild (type 6) rolls its new level (FUN_00cd1b40(level+1, 5)); Fortress abilities 0x20 / Stronghold 0x27 levels give runes (FUN_00ccfd30 / 00ccfe90); ability 0x1d (Academy trade guild?) FUN_00cce410 | guild learning, artifact merchant stock, Haven training points; guild reroll FUN_00cd1b40(old + 1, 5), runes 1–2 / 3–4 / 5 and warcry circle 1 / 2 / 3 at shrine / hall levels 0 / 1 / 2 (`TownSpellsOnBuild`, also on the script's free build) | FIXED (guild reroll, runes, warcries; `MageGuildTests`) / ability 0x1d FUN_00cce410 UNVERIFIED |
 | Cell tint | 0065bab0 → 0065b190, colour table 00f37cd8 (12 bytes/state) and factors 00f37ccc / 00f37cd0 (0.5) | built 0 (255,255,255 ×1); next level: code 0 → state 2 (128,255,128) or 4 (0,128,255, condition not traced); 1, 9, 5, 6 → state 1 (255,90,90); 2 → state 3; 3 → 0; 4, 7, 8, 10 and later levels → (255,255,255) × 0.5 | `CellTint` with those colours; the 0.5 factor read as brightness of the white tints | FIXED / factor semantics (+0xfc) and the blue state UNVERIFIED |
 | Tooltip | 006596a0, UI/TownBuildNew/ToolTips/ToBuild + Common/*.txt | name, description, prereq_header + every prerequisite (prereq_%d, red_val when unmet), price, "Required town level" (red when short), deny_code line (red except codes 0 and 3) | plain Godot tooltip with the same lines (unmet prerequisites marked "!") | FIXED (content) / styled window and colours GAP |
 | Cell layout, arrows, hover, selection, town level caption | 0065a830 / 0065aae0, TownBuildDefinition per faction | 5×6 grid, arrows Arrow_1..3, Hilight / Selection frames, TownLevel | as before | MATCH (earlier work; not re-traced) |
@@ -184,9 +184,15 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Can-learn rule | hero spell vfunc 0xe0 = FUN_00b4b8c0 (0xe4 wrapper 00b4b890; vtable 00e7e484) | not DARK_RITUAL / SPECIAL / NONE; runic needs Runelore, warcry Blood Rage, other spells no Blood Rage (00b4b810); hero level ≥ RequiredHeroLevel; runes Runelore ≥1/2/3 by circle (00419960); mass spells need their Master perk (00a33e20/00a33cf0); empowered spells need Empowered Spells (00a33f70); circles 1–2 free; Wisdom: circle 3; school mastery + 2 ≥ circle; adventure free | `CanLearnSpell` same (mastery = EffectiveMastery, hero vfunc 0x174) | FIXED (was: barbarian class check, no Wisdom, no hero level) |
 | Wisdom circle 4 | 00b4ba2e: circle 4 with Wisdom when hero vfunc 0x31c > 0 | unknown condition | not applied | GAP |
 | MMH 5.5 Wisdom extras | 5.5 Wisdom description (random circle 4/5 at levels 15/25) | script behaviour | not built | GAP |
-| Learning on visit | LearnFromGuild | — | every built circle, spells passing CanLearnSpell | UNVERIFIED (visit handler not traced) |
+| Offer per circle | CTown vf 0x24 = FUN_00ccfab0 (vtable 00e95844 +0x24) | warcries with ability 0x27 (circle 1; 0x28 up to 2; 0x29 all); unless Stronghold (type 10): the guild's spells of the circle when guild level ≥ circle, then the Library's (ability 0x15 = Academy TB_SPECIAL_1); runes with ability 0x20 (circles 1–2; 0x21 up to 4; 0x22 up to 5) | `TownSpellsAt`, used by `LearnFromGuild` and the guild screen | FIXED (was: guild lists only; no runes, warcries or Library) |
+| Learning on visit | LearnFromGuild over `TownSpellsAt` 1..5 | — | spells passing CanLearnSpell | UNVERIFIED (visit handler not traced) |
 | Mana refill on visit | — | — | refill to max with a guild | UNVERIFIED |
-| Spell generation | shared MagicSchool_0/_1 at +0x124/+0x128 (reader 00a0d7ba); map spellIDs AdvMapTown +0xf4 (00a0a5d1, copied by 00cd1650) | generator not located | 3,3,3,2,2 per circle, map spells first, any combat school + adventure (Stronghold warcries) | GAP |
+| Spell generation | FUN_00cd1b40(from, to) (town +0x190 guild list, +0x1f4 Library list); schools FUN_00cd1990 (shared MagicSchool_0/_1 +0x124/+0x128, reader 00a0d7ba; others from {LIGHT, DARK, DESTRUCTIVE, SUMMONING} minus those two); counts table 00e95544 {0,3,3,3,2,2} | per circle: one random spell of MagicSchool_0, one of MagicSchool_1, then random picks from the other two schools up to the count; if any are left, one more for the Library; then every adventure spell of the circle; rolled (1, 5) at town placement (FUN_00cd79d0) | `RollMageGuild` same | FIXED (was: any school, map spells first) |
+| Spell pool (map spell manager) | vtable 00e6eb00: slot 0 FUN_00a35080, register FUN_00a34e20, slot 0x10 FUN_00a34f80, slot 8/4 FUN_00a34d60, buckets +0x24 all / +0x30 non-adventure / +0x3c runes / +0x60 warcries | map spellIDs (map +0x1e0) only, in their order, else the whole table; skips Dark Ritual (0x43), SPECIAL / NONE schools, CUSTOM1..4 (0x15c..0x15f), mass (0xd2..0xdd) and empowered (0xdf..0xe9, 0x12a) spells, circles outside 1..5 (warcries 1..3); with a list, Maps/Multiplayer maps (FUN_00c9d9e0) of Version < 2 / < 3 also get every rune / warcry | same (`SpellDef.Index` = SpellID value) | FIXED (map spell list was ignored) |
+| Map per-town spellIDs | AdvMapTown +0xf4 (00a0a5d1), copied by FUN_00cd1650 into the init record (+0x68) | FUN_00cd5be0 does not read it; FUN_00cd1b40 does not either | not used | FIXED (were placed first in the guild) / another reader not searched for exhaustively — UNVERIFIED |
+| Runes | FUN_00ccfd30(from, to), town +0x2c4; (1, 5) at placement | one random rune per circle (manager school 5) | `RollRunes` | FIXED (was not built) |
+| Warcries | FUN_00ccfe90(from, to), town +0x2d8; (1, 3) at placement | circle 1: every warcry of circle 1; circles 2, 3: one random each | `RollWarcries` | FIXED (was: Stronghold guild of warcries) |
+| Guild screen pages | FUN_006309d0 (vf 0x24 list split by school FUN_00a34350: 4 → Button06 page, 5 → Button07 runes, 6 → OrcsButton warcries) | circle pages without adventure / rune / warcry spells; those on their own pages | circle pages filtered the same way; the adventure, rune and warcry pages not built | GAP |
 
 ## Blacksmith / war machines
 

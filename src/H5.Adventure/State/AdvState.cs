@@ -307,6 +307,12 @@ public sealed class TownState
     public Stack?[] Garrison = Army.Empty();
     /// <summary>Mage guild spells per circle (index 0 = level 1).</summary>
     public List<List<string>> MageGuild = new() { new(), new(), new(), new(), new() };
+    /// <summary>One more spell per circle offered with the Academy Library (town ability 0x15; exe town +0x1f4 list, filled by FUN_00cd1b40).</summary>
+    public List<string> LibrarySpells = new();
+    /// <summary>The rune of each circle (Fortress Runic Shrine, abilities 0x20..0x22; town +0x2c4 list, FUN_00ccfd30).</summary>
+    public List<string> RuneSpells = new();
+    /// <summary>Warcries (Stronghold TB_SPECIAL_1, abilities 0x27..0x29; town +0x2d8 list, FUN_00ccfe90).</summary>
+    public List<string> WarcrySpells = new();
     public string? Specialization;
     /// <summary>Haven training points left this week (exe CAdvMapTown +0x2d0, see Adventure.TownSpecials).</summary>
     public int TrainingPoints;

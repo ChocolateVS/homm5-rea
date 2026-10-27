@@ -195,6 +195,7 @@ public sealed class GameDatabase
             Spells[id] = new SpellDef
             {
                 Id = id, SourcePath = f, Stock = StockTables.Kept(_x.FileSystem, SpellTable, id),
+                Index = StockTables.EnumValue(_x.FileSystem, "SpellID", id) ?? -1,
                 Name = Text(o, "NameFileRef", f),
                 Description = Text(o, "LongDescriptionFileRef", f),
                 Level = o.Int("Level"), School = o.Str("MagicSchool"), RequiredHeroLevel = o.Int("RequiredHeroLevel"),

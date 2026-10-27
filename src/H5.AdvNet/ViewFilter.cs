@@ -97,6 +97,7 @@ public static class ViewFilter
                 t.Garrison = BandArmy(t.Garrison);
                 t.Available = new int[t.Available.Length];
                 t.MageGuild = t.MageGuild.Select(_ => new List<string>()).ToList();
+                t.LibrarySpells = new(); t.RuneSpells = new(); t.WarcrySpells = new();
                 t.BuiltToday = false;
             }
             else
@@ -106,6 +107,7 @@ public static class ViewFilter
                 t.Garrison = Army.Empty();
                 t.Available = new int[t.Available.Length];
                 t.MageGuild = t.MageGuild.Select(_ => new List<string>()).ToList();
+                t.LibrarySpells = new(); t.RuneSpells = new(); t.WarcrySpells = new();
                 t.BuiltToday = false;
                 t.Specialization = null;
             }

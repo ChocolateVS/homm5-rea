@@ -268,7 +268,11 @@ public sealed partial class MageGuildScreen : TownSubScreen
     public override void Refresh()
     {
         base.Refresh();
-        var spells = _circle < Owner.Town.MageGuild.Count ? Owner.Town.MageGuild[_circle] : new List<string>();
+        // FUN_006309d0: the circle page shows the town's offer at that circle (vf 0x24) without the adventure (school 4),
+        // rune (5) and warcry (6) spells, which go to their own pages (Button06 / Button07 / OrcsButton — not built here).
+        var spells = Owner.Session.Game.TownSpellsAt(Owner.Town, _circle + 1)
+            .Where(id => Game.Instance.Db.Spell(id)?.School is not ("MAGIC_SCHOOL_ADVENTURE" or "MAGIC_SCHOOL_RUNIC" or "MAGIC_SCHOOL_WARCRIES"))
+            .ToList();
         Ui.Find("CircleView")?.SetValue("circle_name", $"Circle {_circle + 1}");
         for (int n = 1; n <= 4; n++) Ui.SetVisible($"SpellsPanel/SpellsPanel_0{n}", n == Math.Clamp(spells.Count, 1, 4));
         for (int i = 0; i < spells.Count && i < 4; i++)

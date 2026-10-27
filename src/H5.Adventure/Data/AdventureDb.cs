@@ -104,6 +104,8 @@ public sealed partial class AdventureDb
     public GameDatabase Core { get; }
     /// <summary>Town type (TOWN_HEAVEN…) → every building level defined for it.</summary>
     public Dictionary<string, List<BuildingDef>> Buildings { get; } = new();
+    /// <summary>Town type → AdvMapTownShared MagicSchool_0 / MagicSchool_1 (shared record +0x124 / +0x128, reader 00a0d7ba).</summary>
+    public Dictionary<string, (string School0, string School1)> TownMagicSchools { get; } = new();
     /// <summary>Hero class → probability (percent) of being offered each new skill (HeroClass.xdb SkillsProbs).</summary>
     public Dictionary<string, List<(string Skill, int Prob)>> SkillProbs { get; } = new();
     public List<MoonWeekDef> MoonWeeks { get; } = new();
@@ -306,6 +308,7 @@ public sealed partial class AdventureDb
             var root = x.Load(path).Root!;
             var town = root.Str("Type");
             if (town.Length == 0 || Buildings.ContainsKey(town)) continue;
+            TownMagicSchools[town] = (root.Str("MagicSchool_0"), root.Str("MagicSchool_1"));
             var list = new List<BuildingDef>();
             foreach (var item in root.Element("buildings")?.Elements("Item") ?? Enumerable.Empty<XElement>())
             {

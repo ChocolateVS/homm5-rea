@@ -50,9 +50,9 @@ public sealed partial class Adventure
 
     void LearnFromGuild(HeroState h, TownState t)
     {
-        int lvl = t.Level("TB_MAGIC_GUILD");
-        for (int i = 0; i < lvl && i < t.MageGuild.Count; i++)
-            foreach (var sp in t.MageGuild[i]) LearnSpell(h, sp, force: false);
+        // Every circle's offer (CTown vf 0x24 = FUN_00ccfab0: guild + Library, runes, warcries).
+        for (int lvl = 1; lvl <= 5; lvl++)
+            foreach (var sp in TownSpellsAt(t, lvl)) LearnSpell(h, sp, force: false);
     }
 
     string? DoBuild(BuildCmd c)
@@ -67,6 +67,7 @@ public sealed partial class Adventure
         if (c.Building == "TB_GRAIL") ConsumeTearOfAsha(t);
         Give(p, Purse.Scale(def.Cost, -1));
         int trainingBefore = TrainingPointsMax(t);
+        TownSpellsOnBuild(t, c.Building, next - 1);
         t.Built[c.Building] = next;
         TrainingPointsAfterBuild(t, trainingBefore);
         t.BuiltToday = true;

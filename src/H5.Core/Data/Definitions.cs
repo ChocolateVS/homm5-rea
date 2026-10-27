@@ -68,6 +68,8 @@ public sealed class SpellDef
     public string Id = "";
     /// <summary>In the stock engine's fixed-size table (StockTables): only these take part in random pools.</summary>
     public bool Stock = true;
+    /// <summary>The SpellID enum value (types.xml) = the engine's spell table slot; -1 when not in the enum.</summary>
+    public int Index = -1;
     public string SourcePath = "";
     public string Name = "";
     public string Description = "";

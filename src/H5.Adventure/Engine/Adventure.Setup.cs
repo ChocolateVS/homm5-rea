@@ -85,7 +85,9 @@ public sealed partial class Adventure
             // Initial creature pools: one week of growth for built dwellings.
             for (int tier = 1; tier <= 7; tier++)
                 t.Available[tier - 1] = t.Level($"TB_DWELLING_{tier}") > 0 ? WeeklyGrowth(t, tier) : 0;
-            RollMageGuild(t, o);
+            // FUN_00cd79d0: the guild, runes and warcries are rolled after the initial buildings. The map's per-town
+            // spellIDs (AdvMapTown +0xf4) are copied by FUN_00cd1650 into the init record but FUN_00cd5be0 never reads them.
+            RollTownSpells(t);
             S.Towns.Add(t);
         }
     }
@@ -434,33 +436,4 @@ public sealed partial class Adventure
             if (cr.Length > 0 && cr != "CREATURE_UNKNOWN" && n > 0) os.Guards.Add(new Stack(cr, n));
         }
     }
-
-    void RollMageGuild(TownState t, MapObject o)
-    {
-        // Spells per circle (fan manual p.225): 3,3,3,2,2. Map-provided spells take precedence.
-        int[] perLevel = { 3, 3, 3, 2, 2 };
-        var schools = TownSchools(t.Type);
-        for (int lvl = 1; lvl <= 5; lvl++)
-        {
-            var fromMap = o.TownSpells.Where(id => Core.Spell(id)?.Level == lvl).ToList();
-            var pool = Core.Spells.Values.Where(s => s.Stock && s.Level == lvl && s.ManaCost > 0 && schools.Contains(s.School))
-                .Select(s => s.Id).Where(id => !fromMap.Contains(id)).OrderBy(id => id, StringComparer.Ordinal).ToList();
-            var list = fromMap.Take(perLevel[lvl - 1]).ToList();
-            while (list.Count < perLevel[lvl - 1] && pool.Count > 0)
-            {
-                var i = S.Rng.Next(pool.Count);
-                list.Add(pool[i]);
-                pool.RemoveAt(i);
-            }
-            t.MageGuild[lvl - 1] = list;
-        }
-    }
-
-    /// <summary>
-    /// Magic schools offered by a town's guild. TODO(exe/data): the town shared descriptor's
-    /// MagicSchool_0/1 fields bias the selection; here every combat school is allowed.
-    /// </summary>
-    static string[] TownSchools(string town) => town == "TOWN_STRONGHOLD"
-        ? new[] { "MAGIC_SCHOOL_WARCRIES" }
-        : new[] { "MAGIC_SCHOOL_DESTRUCTIVE", "MAGIC_SCHOOL_DARK", "MAGIC_SCHOOL_LIGHT", "MAGIC_SCHOOL_SUMMONING", "MAGIC_SCHOOL_ADVENTURE" };
 }
