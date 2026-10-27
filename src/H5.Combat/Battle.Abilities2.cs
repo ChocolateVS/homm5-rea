@@ -13,9 +13,9 @@ public sealed partial class Battle
         bool cowardice = HasAbilityNow(t, Ab.Cowardice), maneuver = HasAbilityNow(t, Ab.Maneure);
         if (!cowardice && !maneuver) return false;
         if (!CanMove(t)) return false;
-        var options = Reachable(t).Keys.Where(c => Distance(t, c, attacker, attacker.Pos) > 1).ToList();
-        if (options.Count == 0) return false;
-        var dest = options.OrderBy(c => Octile(c, t.Pos)).ThenBy(c => c.X).ThenBy(c => c.Y).First();
+        // exe FUN_00a5d790(mode 0 Cowardice / 1 Manoeuvre) → FUN_008a0250 / FUN_0089fd90 (sweep 10, ExeFleeDestination).
+        if (ExeFleeDestination(t, attacker, cowardice ? 0 : 1) is not { } dest) return false;
+        if (!Reachable(t).ContainsKey(dest)) return false;
         Emit(new AbilityTriggered(t.Id, cowardice ? Ab.Cowardice : Ab.Maneure, attacker.Id));
         MoveUnit(t, dest);
         // Running costs Cowardice stacks UseCowardiceRP blood rage (exe FUN_00a629b0: only when the run succeeded).
@@ -183,7 +183,9 @@ public sealed partial class Battle
             }
             case Ab.Scavenger:
             {
-                if (t == null || t.Alive || Distance(u, t) > SpeedOf(u)) return "corpse out of reach";
+                // exe FUN_00978490: the walk to the corpse's ring first (sweep 10, ExeWalkGoal); unreachable → refused.
+                if (t == null || t.Alive || ExeWalkGoal(u, t) == null) return "corpse out of reach";
+                if (!ExeWalkToTarget(u, t)) return null;
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
                 Heal(u, ScavengerHeal(t), resurrect: true, c.Ability);
                 t.Removed = true;

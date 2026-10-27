@@ -287,7 +287,8 @@ public sealed partial class Battle
         if (u.Has(Ab.Dash) && !u.HasEffect(H5.Combat.Fx.Dash)) yield return new(Ab.Dash, AbilityTargeting.None);
         // One charge (SpellPoints1 = 1), spent by the cast (exe 00987602).
         if (u.Has(Ab.Explosion) && Once(Ab.Explosion)) yield return new(Ab.Explosion, AbilityTargeting.None);
-        if (u.Has(Ab.HarmTouch)) yield return new(Ab.HarmTouch, AbilityTargeting.Enemy, NeedsAdjacency: true);
+        // exe FUN_00978490: the knight walks to its target first (sweep 10), so no adjacency is required.
+        if (u.Has(Ab.HarmTouch)) yield return new(Ab.HarmTouch, AbilityTargeting.Enemy);
         if (u.Has(Ab.DeathWail)) yield return new(Ab.DeathWail, AbilityTargeting.None);
         if (u.Has(Ab.CallLightning)) yield return new(Ab.CallLightning, AbilityTargeting.Enemy);
         if (u.Has(Ab.RageOfForest) && Once(Ab.RageOfForest)) yield return new(Ab.RageOfForest, AbilityTargeting.None);
@@ -400,6 +401,8 @@ public sealed partial class Battle
             case Ab.HarmTouch:
                 // exe FUN_0097f610 case 0xaa: Crystal Scales and Mechanical targets (war machines included) are refused.
                 if (t!.Has("ABILITY_CRYSTAL_SCALES") || t.Has(Ab.Mechanical) || t.IsWarMachine) return "cannot harm this target";
+                if (ExeWalkGoal(u, t) == null) return "target out of reach";
+                if (!ExeWalkToTarget(u, t)) break;   // exe FUN_00978490: an interrupted walk cancels the touch
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
                 // exe 0098747f: first every beneficial, non-permanent effect is removed (FUN_004e4120), then the target
                 // takes one creature's full health (FUN_00a61530 with n = 1: vf 0x1a8 × 1), not the top creature's rest.
@@ -505,11 +508,8 @@ public sealed partial class Battle
                 break;
             case Ab.Leap:
             {
-                int dist = Distance(u, t!);
-                int maxLeap = SpeedOf(u) * 2;
-                if (dist < 2 || dist > maxLeap) return "target out of leap range";
-                var land = AttackPositionsAnywhere(u, t!).OrderBy(p => Octile(p, u.Pos)).FirstOrDefault();
-                if (land == default && !AdjacentAt(u, land, t!)) return "no landing spot";
+                // exe FUN_00979930 (sweep 10, ExeLeapLanding): range and landing cell.
+                if (ExeLeapLanding(u, t!) is not { } land) return "target out of leap range";
                 int cells = Math.Max(Math.Abs(land.X - u.Pos.X), Math.Abs(land.Y - u.Pos.Y));
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
                 Teleport(u, land);

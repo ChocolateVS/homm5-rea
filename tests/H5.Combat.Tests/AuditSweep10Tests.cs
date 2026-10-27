@@ -101,4 +101,112 @@ public class AuditSweep10Tests(GameDataFixture f)
         Assert.True(r.Ok, r.Error);
         Assert.Equal(0, h.Atb, 6);
     }
+
+    // exe FUN_0089fd90 mode 1 (Manoeuvre, FUN_00a5d790(1) @ 00a62e1b): the nearest cell (walker cost) that touches no
+    // enemy, with 2R added for the right army's cells at x ≤ its own — so a centaur struck from behind steps forward,
+    // away from the attacker, instead of to the nearest free cell behind it (the engine's old choice).
+    [Fact]
+    public void ManoeuvrePicksTheNearestCellAwayFromEnemiesOnItsSide()
+    {
+        var b = f.Duel("CREATURE_PEASANT", 10, "CREATURE_CENTAUR", 10, 1, new Cell(11, 5), new Cell(8, 5));
+        b.State.Obstacles.Clear();
+        b.Begin();
+        var (a, t) = (b.State.Units[0], b.State.Units[1]);
+        var dest = b.ExeFleeDestination(t, a, 1);
+        Assert.NotNull(dest);
+        Assert.True(Battle.Distance(t, dest!.Value, a, a.Pos) > 1);
+        var (dist, _) = b.MoveSearch(t, -1);
+        int r2 = 2 * b.SpeedOf(t);
+        int Score(Cell c) => dist[c] + (c.X <= t.Pos.X ? r2 : 0);
+        var cands = dist.Keys.Where(c => c != t.Pos && dist[c] <= r2 && Battle.Distance(t, c, a, a.Pos) > 1).ToList();
+        Assert.Equal(cands.Min(Score), Score(dest.Value));
+        Assert.True(dest.Value.X > t.Pos.X);
+    }
+
+    // exe FUN_0089fd90 mode 0 (Cowardice, FUN_00a5d790(0) @ 00a62da2): score 2R − cost + 1 — the FARTHEST reachable cell
+    // within 2R, cells next to the attacker rejected, next to other enemies +4R, the left army's cells at x ≥ its own +2R.
+    [Fact]
+    public void CowardiceRunsToTheFarthestCellBehindIt()
+    {
+        var b = f.Duel("CREATURE_GOBLIN", 30, "CREATURE_PEASANT", 10, 1, new Cell(6, 5), new Cell(7, 5));
+        b.State.Obstacles.Clear();
+        b.Begin();
+        var (t, a) = (b.State.Units[0], b.State.Units[1]);
+        var dest = b.ExeFleeDestination(t, a, 0);
+        Assert.NotNull(dest);
+        var (dist, _) = b.MoveSearch(t, -1);
+        int r2 = 2 * b.SpeedOf(t);
+        int Score(Cell c) => r2 - dist[c] + 1 + (c.X >= t.Pos.X ? r2 : 0);
+        var cands = dist.Keys.Where(c => c != t.Pos && dist[c] <= r2 && Battle.Distance(t, c, a, a.Pos) > 1).ToList();
+        Assert.Equal(cands.Min(Score), Score(dest!.Value));
+        Assert.True(dest.Value.X < t.Pos.X);
+        Assert.True(dist[dest.Value] >= r2 - 1);
+    }
+
+    // exe FUN_00978490 → FUN_00c536f0 (goals FUN_00b3d010 ring, FUN_00b5ee10 first smallest cost) → FUN_00a66050: Harm
+    // Touch walks next to its target first. Ring of 1×1 anchors around (6,5): (7,5), (7,6), (6,6), (5,6), (5,5), (5,4),
+    // (6,4), (7,4). The wraith is 2×2: its ring starts (7,4), (7,5), (7,6), (6,6), (5,6), (4,6), (4,5) …; from (2,5) the
+    // cheapest is (4,5) (2 orthogonal steps). The engine required adjacency.
+    [Fact]
+    public void HarmTouchWalksToTheCheapestRingCellFirst()
+    {
+        Assert.Equal(new[] { new Cell(7, 5), new Cell(7, 6), new Cell(6, 6), new Cell(5, 6), new Cell(5, 5), new Cell(5, 4), new Cell(6, 4), new Cell(7, 4) },
+            Battle.ExeRing(new Cell(6, 5), 1, 1));
+        var b = f.Duel("CREATURE_WRAITH", 5, "CREATURE_FOOTMAN", 20, 1, new Cell(2, 5), new Cell(6, 5));
+        b.State.Obstacles.Clear();
+        b.Begin();
+        var u = b.State.Units[0]; var t = b.State.Units[1];
+        int before = t.TotalHealth;
+        var r = Use(b, u, Ab.HarmTouch, t);
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(new[] { new Cell(7, 4), new Cell(7, 5), new Cell(7, 6), new Cell(6, 6), new Cell(5, 6), new Cell(4, 6), new Cell(4, 5) },
+            Battle.ExeRing(new Cell(6, 5), 2, 1).Take(7));
+        Assert.Equal(new Cell(4, 5), u.Pos);
+        Assert.Equal(before - t.MaxHealthCache, t.TotalHealth);
+    }
+
+    // exe FUN_00978490 for Scavenger: the wyvern walks to the corpse's ring before eating it (the engine ate any corpse
+    // within its speed in place).
+    [Fact]
+    public void ScavengerWalksToTheCorpse()
+    {
+        var b = f.Duel("CREATURE_WYVERN_PAOKAI", 3, "CREATURE_PEASANT", 50, 1, new Cell(2, 2), new Cell(14, 9));
+        b.State.Obstacles.Clear();
+        var corpse = Add(b, 0, "CREATURE_PEASANT", 30, new Cell(7, 3));
+        b.Begin();
+        var u = b.State.Units[0];
+        corpse.Count = 0;
+        var goal = b.ExeWalkGoal(u, corpse);
+        Assert.NotNull(goal);
+        var r = Use(b, u, Ab.Scavenger, corpse);
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(goal, u.Pos);
+        Assert.True(Battle.AreAdjacent(u, corpse));
+    }
+
+    // exe FUN_00979930: Leap lands on the ring anchor around the target most in line with the jump — the smallest
+    // angle between (cell − leaper) and (target − cell) — within move distance 2·Leap_JumpDistanceMax, and refuses a
+    // target whose footprint gap is within 2·Leap_JumpDistanceMin (the engine took the nearest attack cell within speed).
+    [Fact]
+    public void LeapLandsInLineWithTheJump()
+    {
+        var b = f.Duel("CREATURE_HORNED_LEAPER", 1, "CREATURE_PEASANT", 30, 1, new Cell(1, 1), new Cell(8, 5));
+        b.State.Obstacles.Clear();
+        b.Begin();
+        var u = b.State.Units[0]; var t = b.State.Units[1];
+        var land = b.ExeLeapLanding(u, t);
+        Assert.NotNull(land);
+        double Ang(Cell c)
+        {
+            double a1 = Math.Atan2(c.Y - u.Pos.Y, c.X - u.Pos.X), a2 = Math.Atan2(t.Pos.Y - c.Y, t.Pos.X - c.X);
+            double d = Math.Abs(a2 - a1);
+            return Math.Min(d, 2 * Math.PI - d);
+        }
+        var cands = Battle.ExeRing(t.Pos, u.Size, t.Size).Where(c => b.State.InBounds(c) && b.Fits(u, c) && Battle.MoveDistance(u.Pos, c) <= 16).ToList();
+        double bestA = cands.Min(Ang);
+        Assert.True(Ang(land!.Value) <= bestA + 1e-3);
+        Assert.Equal(new Cell(7, 4), land.Value);
+        u.Pos = new Cell(5, 5);
+        Assert.Null(b.ExeLeapLanding(u, t));   // gap 2 → move distance 4 ≤ 2·3
+    }
 }
