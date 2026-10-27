@@ -104,10 +104,9 @@ public sealed partial class Adventure
                 case ObjectKind.Monster:
                 {
                     var os = S.Obj(o.Index);
-                    int mult = 1;
-                    var creature = o.Creature ?? RandomMonster(o.MonsterRandomLevel, out mult);
+                    var creature = o.Creature ?? RandomMonster(o.MonsterRandomLevel);
                     os.Creature = creature;
-                    int count = o.CustomAmount && o.Amount > 0 ? o.Amount : RandomMonsterCount(creature, o) * mult;
+                    int count = o.CustomAmount && o.Amount > 0 ? o.Amount : RandomMonsterCount(creature, o);
                     os.Guards.Add(new Stack(creature, Math.Max(1, count)));
                     foreach (var a in o.AdditionalStacks) os.Guards.Add(new Stack(a.Creature, Math.Max(1, a.Count)));
                     break;
@@ -303,33 +302,12 @@ public sealed partial class Adventure
         return weights.Count - 1;
     }
 
-    /// <summary>
-    /// Random monster (map loader 0041d360 → 0041ca20): MONSTER_RANDOM_Ln takes the RPGRoot group MONSTER_n, and with
-    /// the chance Respawn/MonsterDowngradeProb (the float at RPGStats +0x9c, compared with rng / 2^32) the group
-    /// MONSTER_(n−1) instead, passing 2 (Respawn/MonsterDowngradeMult) instead of 1 to the monster (004effd0 param 5,
-    /// used here as the count factor); L1 and MONSTER_RANDOM_ANY (group MONSTER_ANY) have no lower group. The
-    /// creature is drawn uniformly among the group's creatures with SubjectOfRandomGeneration (<see cref="AdventureDb.MonsterGroups"/>).
-    /// TODO(exe): the map's RacesRandomGroups filter (object RacesRandomGroupID → map +0x2d0) is not modelled.
-    /// </summary>
-    string RandomMonster(int level, out int mult)
+    string RandomMonster(int level)
     {
-        mult = 1;
-        string primary = level is >= 1 and <= 7 ? $"MONSTER_{level}" : "MONSTER_ANY";
-        string? lower = level is >= 2 and <= 7 ? $"MONSTER_{level - 1}" : null;
-        var pool = Db.MonsterGroups.GetValueOrDefault(primary);
-        if (lower != null && Db.MonsterGroups.TryGetValue(lower, out var low) &&
-            S.Rng.NextDouble() < Db.Stats.Get("adventure/Respawn/MonsterDowngradeProb", 0.05))
-        {
-            pool = low;
-            mult = (int)Db.Stats.Get("adventure/Respawn/MonsterDowngradeMult", 2);
-        }
-        if (pool is { Count: > 0 }) return pool[S.Rng.Next(pool.Count)];
-        // No group data: any stock creature of the tier with a map model.
-        var any = Core.Creatures.Values
+        var pool = Core.Creatures.Values
             .Where(c => c.Stock && c.WeeklyGrowth > 0 && c.Id != "CREATURE_UNKNOWN" && c.MonsterSharedPath != null && (level is 0 or 8 || c.Tier == level))
             .OrderBy(c => c.Id, StringComparer.Ordinal).ToList();
-        mult = 1;
-        return any.Count == 0 ? "CREATURE_PEASANT" : any[S.Rng.Next(any.Count)].Id;
+        return pool.Count == 0 ? "CREATURE_PEASANT" : pool[S.Rng.Next(pool.Count)].Id;
     }
 
     /// <summary>

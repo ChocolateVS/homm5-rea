@@ -27,6 +27,19 @@ public static class CustomMapList
 
     public static bool Shown(int mask, int folder) => (mask & folder) != 0;
 
+    /// <summary>
+    /// The folder bit of a map by the path of its map.xdb (00705de0 lists "Maps/Multiplayer", "Maps/SingleMissions" and
+    /// FUN_007c2cc0's "Maps/RMG"); 0 = not listed (e.g. campaign maps under Maps/Scenario).
+    /// </summary>
+    public static int FolderOfPath(string mapXdbPath)
+    {
+        var p = mapXdbPath.Replace((char)92, '/').TrimStart('/');
+        if (p.StartsWith("Maps/Multiplayer/", StringComparison.OrdinalIgnoreCase)) return Multiplayer;
+        if (p.StartsWith("Maps/SingleMissions/", StringComparison.OrdinalIgnoreCase)) return SingleMissions;
+        if (p.StartsWith("Maps/RMG/", StringComparison.OrdinalIgnoreCase)) return Generated;
+        return 0;
+    }
+
     /// <summary>OBJECTIVE_KIND_* in enum order (the exe's string table); index N is UI/MPCreate/Maps/Goals "goalN".</summary>
     public static readonly string[] ObjectiveKinds =
     {

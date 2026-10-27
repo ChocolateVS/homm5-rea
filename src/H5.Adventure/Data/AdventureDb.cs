@@ -245,7 +245,6 @@ public sealed partial class AdventureDb
         db.LoadTownTypes(x);
         db.LoadRiddles(x);
         db.LoadRumours(x);
-        db.LoadMonsterGroups(x);
         return db;
     }
 

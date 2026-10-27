@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Godot;
 using H5.AdvNet;
 using H5.Adventure.Map;
@@ -33,8 +32,10 @@ public partial class CustomGameScreen : UiScreen
     int _selected, _scroll, _top;
     const int RowHeight = 21;
 
-    static bool ShowMp => OptionsStore.GetBool("custom_game_show_mp_maps");
-    static bool ShowRmg => OptionsStore.GetBool("custom_game_show_rmg_maps");
+    // Dev/test hook for screenshots: H5_CUSTOM_FILTERS=mp,rmg shows those maps without touching the profile vars.
+    static readonly string? DevFilters = System.Environment.GetEnvironmentVariable("H5_CUSTOM_FILTERS");
+    static bool ShowMp => DevFilters?.Contains("mp") ?? OptionsStore.GetBool("custom_game_show_mp_maps");
+    static bool ShowRmg => DevFilters?.Contains("rmg") ?? OptionsStore.GetBool("custom_game_show_rmg_maps");
 
     public CustomGameScreen() : base("UI/CustomGameCreate.(WindowScreen).xdb")
     {
@@ -73,7 +74,7 @@ public partial class CustomGameScreen : UiScreen
     public override void _Ready()
     {
         base._Ready();
-        // Dev/test hooks for screenshots: H5_CUSTOM_FILTERS=mp,rmg ticks the filters; H5_CUSTOM_SORT=N clicks sort column N.
+        // Dev/test hooks for screenshots: H5_CUSTOM_SORT=N clicks sort column N; H5_CUSTOM_CREATE=1 presses Create.
         if (System.Environment.GetEnvironmentVariable("H5_CUSTOM_SORT") is { } sort && int.TryParse(sort, out var col))
             Callable.From(() => SortBy(col)).CallDeferred();
         if (System.Environment.GetEnvironmentVariable("H5_CUSTOM_CREATE") == "1")
@@ -86,13 +87,13 @@ public partial class CustomGameScreen : UiScreen
 
     static int RmgSizeTiles(int s) => new[] { 72, 96, 136, 176, 216, 256, 320 }[Math.Clamp(s, 0, 6)];
 
-    static readonly Regex NameRef = new(@"<NameFileRef href=""([^""]*)""", RegexOptions.Compiled);
-    static readonly Regex DescRef = new(@"<DescriptionFileRef href=""([^""]*)""", RegexOptions.Compiled);
-    static readonly Regex GoalRef = new(@"<CustomGoal href=""([^""]+)""", RegexOptions.Compiled);
-    static readonly Regex TileX = new(@"<TileX>(\d+)</TileX>", RegexOptions.Compiled);
-    static readonly Regex Primary = new(@"<Primary>.*?<Kind>(OBJECTIVE_KIND_[A-Z0-9_]+)</Kind>", RegexOptions.Compiled | RegexOptions.Singleline);
-
-    /// <summary>Descriptor scan of every map (name, description, size, teams, goal); full loading takes ~0.3 s per map.</summary>
+    /// <summary>
+    /// The map descriptors of the list (00705800 over 00705de0's folders): only maps whose map.xdb lies under
+    /// Maps/Multiplayer, Maps/SingleMissions or Maps/RMG — in the archives, the UserMODs and the user .h5m files —
+    /// are listed; campaign maps (Maps/Scenario) are not. The name, description and custom goal are the map
+    /// descriptor's own NameFileRef / DescriptionFileRef / CustomGoal texts (UTF-16LE with BOM), read from the
+    /// root element only: object-level NameFileRefs (heroes, towns) earlier in the file are not the map's name.
+    /// </summary>
     static List<MapEntry> LoadEntries()
     {
         var fs = Game.Instance.Fs;
@@ -102,17 +103,22 @@ public partial class CustomGameScreen : UiScreen
             try
             {
                 using var files = r.Open(fs);
-                var xml = System.Text.Encoding.UTF8.GetString(files.ReadAllBytes(files.MapXdbPath));
-                string? Text(Regex re) => re.Match(xml) is { Success: true } m && m.Groups[1].Value.Length > 0 ? files.ReadText(m.Groups[1].Value, files.MapXdbPath)?.Trim() : null;
-                int size = TileX.Match(xml) is { Success: true } tx ? int.Parse(tx.Groups[1].Value) : 0;
+                int folder = CustomMapList.FolderOfPath(files.MapXdbPath);
+                if (folder == 0) continue;
+                var root = files.LoadXml(files.MapXdbPath).Root!;
+                string? Text(string element) =>
+                    (string?)root.Element(element)?.Attribute("href") is { Length: > 0 } href ? files.ReadText(href, files.MapXdbPath)?.Trim() : null;
+                int size = (int?)root.Element("TileX") ?? 0;
                 var teams = new List<int>();
-                var players = System.Xml.Linq.XDocument.Parse(xml).Root?.Element("players")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>();
-                foreach (var p in players)
+                foreach (var p in root.Element("players")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
                     if ((string?)p.Element("ActivePlayer") == "true") teams.Add((int?)p.Element("Team") ?? teams.Count);
-                var custom = Text(GoalRef);
-                var kind = Primary.Match(xml) is { Success: true } pk ? pk.Groups[1].Value : null;
-                list.Add(new MapEntry(r, null, Text(NameRef) ?? Path.GetFileName(r.Id), Text(DescRef) ?? "", size, teams,
-                    CustomMapList.GoalKey(!string.IsNullOrEmpty(custom), kind), custom, CustomMapList.FolderOf(r.Id, false)));
+                var custom = Text("CustomGoal");
+                var kind = root.Element("Objectives")?.Element("Primary")?.Descendants("Kind").Select(k => k.Value.Trim()).FirstOrDefault();
+                var name = Text("NameFileRef");
+                // No name text: the map's folder name (the exe's fallback is not traced).
+                if (string.IsNullOrEmpty(name)) name = Path.GetFileName(Path.GetDirectoryName(files.MapXdbPath) ?? r.Id);
+                list.Add(new MapEntry(r, null, name, Text("DescriptionFileRef") ?? "", size, teams,
+                    CustomMapList.GoalKey(!string.IsNullOrEmpty(custom), kind), custom, folder));
             }
             catch (Exception e) { GD.PushWarning($"[H5] map list {r.Id}: {e.Message}"); }
         }

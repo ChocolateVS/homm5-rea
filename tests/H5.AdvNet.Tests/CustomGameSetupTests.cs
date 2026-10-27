@@ -19,6 +19,15 @@ public class CustomGameSetupTests
     }
 
     [Fact]
+    public void ListedFoldersExcludeCampaignMaps()
+    {
+        Assert.Equal(CustomMapList.Multiplayer, CustomMapList.FolderOfPath("Maps/Multiplayer/A2M1/map.xdb"));
+        Assert.Equal(CustomMapList.SingleMissions, CustomMapList.FolderOfPath("Maps/SingleMissions/A2S1/map.xdb"));
+        Assert.Equal(CustomMapList.Generated, CustomMapList.FolderOfPath("Maps/RMG/B47AC068/map.xdb"));
+        Assert.Equal(0, CustomMapList.FolderOfPath("Maps/Scenario/A2C1M1/map.xdb"));
+    }
+
+    [Fact]
     public void SortClickOnTheSameColumnFlipsItsDirection()
     {
         var s = new CustomMapList.SortState();
