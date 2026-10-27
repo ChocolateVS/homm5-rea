@@ -95,8 +95,16 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
     string? LoadScript(string path)
     {
         var b = _readFile(path);
-        return b == null ? null : ScriptText.FromBytes(b);
+        if (b == null) return null;
+        var text = ScriptText.FromBytes(b);
+        return SettingOverrides is { Count: > 0 } o && Mmh55Settings.IsScript(path) ? Mmh55Settings.Apply(text, o) : text;
     }
+
+    /// <summary>
+    /// The player's MMH55 options (H5Reborn options screen): appended to scripts/H55-Settings.lua when a script loads it,
+    /// as if the file had been edited the way MMH55 does (<see cref="Mmh55Settings"/>). Null or empty: the file as mounted.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? SettingOverrides { get; set; }
 
     /// <summary>
     /// MMH55's DLL group RemoveMapScriptCheck (nop at 0x00992d2a) makes the engine run the startup

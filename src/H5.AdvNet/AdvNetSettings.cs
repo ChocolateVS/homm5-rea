@@ -56,6 +56,11 @@ public sealed class AdvNetSettings
     /// turns, once on, never switch to standard turns (docs/rules/SIMULTANEOUS.md §7). Not a lobby control.
     /// </summary>
     public bool Pest { get; set; }
+    /// <summary>
+    /// The host's MMH55 player options that differ from the install's scripts/H55-Settings.lua (H5Reborn options screen,
+    /// MMH 5.5 target only): global name → number, appended to that file for the game's scripts. Null: the file as is.
+    /// </summary>
+    public Dictionary<string, string>? ScriptSettings { get; set; }
     /// <summary>Dynamic battles: 0 off, 1 slow, 2 normal, 3 fast (DefaultStats DynamicBattle_SpeedCoeffs 2/1.5/1).</summary>
     public int DynamicBattles { get; set; }
     public int AnimationSpeed { get; set; } = 1;

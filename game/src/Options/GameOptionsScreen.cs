@@ -27,6 +27,8 @@ public partial class GameOptionsScreen : UiScreen
 
     readonly Action _close;
     readonly OptionsData _data = OptionsData.Instance;
+    /// <summary>The data's categories, then the MMH 5.5 settings on that target (<see cref="Mmh55Options"/>).</summary>
+    readonly List<OptionsData.Category> _categories = OptionsData.Instance.Categories.Concat(Mmh55Options.Categories()).ToList();
     readonly Dictionary<string, string> _pending = new(StringComparer.OrdinalIgnoreCase);
     readonly List<UiNode> _rows = new();
     readonly List<Action> _refreshers = new();
@@ -52,12 +54,12 @@ public partial class GameOptionsScreen : UiScreen
         Bus.On("template", (_, node) =>
         {
             var id = node?.Name.ToString() is { } n && n.StartsWith("Category_") ? n["Category_".Length..] : null;
-            if (_data.Categories.FirstOrDefault(c => c.Id == id) is { } cat) ShowCategory(cat);
+            if (_categories.FirstOrDefault(c => c.Id == id) is { } cat) ShowCategory(cat);
         });
         ShowMenu();
         // Dev/test: `--options-category=game|video_audio` opens a category directly.
         if (OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--options-category=")) is { } arg
-            && _data.Categories.FirstOrDefault(c => c.Id == arg["--options-category=".Length..]) is { } devCat)
+            && _categories.FirstOrDefault(c => c.Id == arg["--options-category=".Length..]) is { } devCat)
             ShowCategory(devCat);
     }
 
@@ -68,11 +70,13 @@ public partial class GameOptionsScreen : UiScreen
         if (Root.Find("TemplateBtn") is not { } template) return;
         var panel = Root.Find("MenuPanel")!;
         int step = 31; // stock button pitch in the menu panel (TemplateBtn 575 → Replay 606)
-        for (int i = 0; i < _data.Categories.Count; i++)
+        // The scroll holds five rows: with the MMH 5.5 settings (four categories) the disabled Replay row makes room.
+        int shift = _categories.Count > 3 ? 1 : 0;
+        for (int i = 0; i < _categories.Count; i++)
         {
-            var c = _data.Categories[i];
+            var c = _categories[i];
             // Categories stack upwards from the template's slot, above Replay/Back.
-            var at = new Int2(template.Rect.X - panel.Rect.X, template.Rect.Y - panel.Rect.Y - (_data.Categories.Count - 1 - i) * step);
+            var at = new Int2(template.Rect.X - panel.Rect.X, template.Rect.Y - panel.Rect.Y - (_categories.Count - 1 - i - shift) * step);
             var btn = Instantiate(template, panel, at, "Category_" + c.Id);
             btn.SetText(c.MenuButtonName);
             btn.Visible = true;
@@ -81,7 +85,7 @@ public partial class GameOptionsScreen : UiScreen
         }
         if (Find("TemplateBtn") is { } t) t.Visible = false;
         // Combat replays are not part of this port: the button stays in place, disabled.
-        if (Find("CombatReplayBtn") is { } replay) replay.Enabled = false;
+        if (Find("CombatReplayBtn") is { } replay) { replay.Enabled = false; replay.Visible = shift == 0; }
     }
 
     void ShowMenu()
@@ -158,7 +162,7 @@ public partial class GameOptionsScreen : UiScreen
     }
 
     string Value(OptionsData.Option o) =>
-        o.Var == null ? "0" : _pending.TryGetValue(o.Var, out var v) ? v : OptionsStore.Get(o.Var);
+        o.Var == null ? "0" : _pending.TryGetValue(o.Var, out var v) ? v : OptionsStore.Get(o.Var, o.FallbackValue ?? "0");
 
     static float ParseF(string s) => float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var f) ? f : 0;
 

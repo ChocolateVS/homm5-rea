@@ -238,6 +238,8 @@ GenerateMixedStacks=1, MixStacksThreshold=200, AskForMixedStacks=0, ForceMixedSt
 NeutralStackSize=1, PrisonersAdjustToHeroRace=0, ManaObservatories=1, NoArtifactMerchantsInTowns=0, ForcedObelisk=0,
 ForcedShantiri=0, NegativeArtifacts=1, MoonDiscQuest=0, MoonDiscOnARMGMaps=1, RPGPotions=0, Duel_WeeksGrowth=8,
 Duel_HeroLevel=25, Duel_Relics=4, Duel_Majors=8, Duel_Minors=4, Duel_BankDifficulty=6.
+Player options in H5Reborn (every H55-Settings.lua global in the options screen; EE_* lobby options and MMH55Stats.xml
+DLL-only): OPTIONS.md.
 `MMH55Stats.xml` (~60 feature blocks with values, e.g. BattlefieldSize 14×12, TowerDamage 200/140, Movement factors,
 MassSpells cost factors, Weeks modifiers, Networking 0.02) is the DLL side. Simultaneous turns are not a setting:
 PEST makes them permanent. `data\RMGTemp\CurrentMap` is a runtime leftover.

@@ -299,6 +299,7 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
             // their texts are passed on as messages.
             _scripts.AutoAnswerUi = true;
             _scripts.PlayerInGhostMode = InGhostMode;
+            _scripts.SettingOverrides = _set.ScriptSettings;
             _scripts.Start(_lm.Map.ScriptPath, _lm.Map.ScriptSource);
         }
         catch (Exception) { _scripts = null; }

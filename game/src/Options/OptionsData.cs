@@ -29,6 +29,8 @@ public sealed class OptionsData
         public string? ItemsGlobalVar;
         public bool UseItemNameAsValue;
         public string? Var;
+        /// <summary>Value when the profile has none (options not in the stock defaults, e.g. the MMH 5.5 settings).</summary>
+        public string? FallbackValue;
         public float Default;
         /// <summary>This option controls another one (OptionToDisableID/…ByValue1/…Value1).</summary>
         public string? DisablesId;

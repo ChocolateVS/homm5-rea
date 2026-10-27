@@ -62,6 +62,8 @@ public partial class ScriptUiBridge : Node
         {
             var fs = Game.Instance.Fs;
             var host = AdventureScripting.Create(session.Game, session.Files, new EnumTables(fs), new SharedCatalog(new XdbLoader(fs)));
+            // MMH 5.5 player settings changed in the options screen (appended to scripts/H55-Settings.lua).
+            host.SettingOverrides = Options.Mmh55Options.Overrides();
             if (CampaignFlow.Active is { } a && a.Session == session)
                 host.World.GameVars["__campaign_bonus"] = Math.Max(0, a.BonusIndex).ToString();
             // Loading a save restores the Lua heap and threads instead of starting the script (game/src/Save).

@@ -148,6 +148,8 @@ public partial class AdvSetupScreen : UiScreen
         // The host's exe: H5_Game_PEST.exe on the 5.5 target keeps simultaneous turns on for good (SIMULTANEOUS.md §7);
         // on the stock 3.1 target H5Reborn does the same unless the player turned it off (user-requested, §7.4).
         _set.Pest = H5.Core.IO.TargetExe.Pest(Game.Instance.Install.Root, Options.GameOptionsScreen.StockUninterruptedSimultaneous);
+        // The host's MMH 5.5 player settings (options screen) for the game's scripts.
+        _set.ScriptSettings = Options.Mmh55Options.Overrides();
     }
 
     void ShowValues()
