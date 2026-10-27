@@ -14,12 +14,12 @@ public class AuditSweep10Tests(GameDataFixture f)
         return b.Apply(new UseAbilityCmd(u.Id, ability) { Side = u.Side, TargetId = t?.Id, Cell = cell });
     }
 
-    (Battle b, Unit a, Unit t) Make(string mine, int countA, string theirs, int countB, Cell posA, Cell posB)
+    (Battle b, Unit a, Unit t) Make(string mine, int countA, string theirs, int countB, Cell posA, Cell posB, ulong seed = 7)
     {
         var s = BattleSetup.Create(f.Db,
             new ArmySetup { Hero = f.Db.DuelPresets[0].Hero, Army = new() { new ArmySlot(mine, countA) } },
             new ArmySetup { Hero = f.Db.DuelPresets[3].Hero, Army = new() { new ArmySlot(theirs, countB) } },
-            7, skipTactics: true, arena: "Grass_Big_01");
+            seed, skipTactics: true, arena: "Grass_Big_01");
         foreach (var h in s.Heroes) { h.Specialization = ""; h.Artifacts.Clear(); h.Perks.Clear(); }
         foreach (var u in s.Units.Where(u => u.IsWarMachine).ToList()) s.Units.Remove(u);
         var a = s.Units.First(u => u.Side == 0 && u.CreatureId == mine);
@@ -208,5 +208,85 @@ public class AuditSweep10Tests(GameDataFixture f)
         Assert.Equal(new Cell(7, 4), land.Value);
         u.Pos = new Cell(5, 5);
         Assert.Null(b.ExeLeapLanding(u, t));   // gap 2 → move distance 4 ≤ 2·3
+    }
+
+    // exe FUN_0097ec10 (Rain of Arrows, dispatcher case 0x3d): the strikes, then the imbued spell per victim through
+    // FUN_0097ea20 — for SPELL_HYPNOTIZE (0x14) on one victim drawn with the army RNG only. FUN_0097ea20 → hero vf 0x224
+    // (FUN_00bbf610) casts nothing when the hero cannot pay and keeps the selection (the engine forgot the spell).
+    [Fact]
+    public void RainOfArrowsImbuesEveryVictimButHypnotizeOnlyOne()
+    {
+        int Casts(string spell, int mana)
+        {
+            var (b, a, t) = Make("CREATURE_PEASANT", 10, "CREATURE_IMP", 10, new Cell(1, 1), new Cell(14, 1));
+            var t2 = Add(b, 1, "CREATURE_IMP", 10, new Cell(14, 5));
+            var t3 = Add(b, 1, "CREATURE_IMP", 10, new Cell(14, 9));
+            var h = b.State.Heroes[0];
+            h.Perks.Add(Sk.RainOfArrows);
+            h.FavoriteEnemies.Add("CREATURE_IMP");
+            h.Spells.Add(spell);
+            h.ImbuedSpell = spell;
+            h.Mana = h.MaxMana = mana;
+            b.Begin();
+            b.State.Active = Actor.Hero(0);
+            var r = b.Apply(new UseAbilityCmd(Actor.Hero(0), "RAIN_OF_ARROWS") { Side = 0 });
+            Assert.True(r.Ok, r.Error);
+            Assert.Equal(spell, h.ImbuedSpell);
+            return r.Events.OfType<SpellCast>().Count(e => e.Spell == spell);
+        }
+        Assert.Equal(3, Casts("SPELL_CURSE", 200));
+        Assert.Equal(1, Casts("SPELL_HYPNOTIZE", 200));
+        Assert.Equal(0, Casts("SPELL_CURSE", 0));   // cannot pay: nothing cast, the selection kept
+    }
+
+    // exe FUN_00419f00 / FUN_00419ad0: a rune costs its sSpellCost from the owner's resources (Rune of Charge: 1 Wood),
+    // refused with COMBAT_NO_ENOUGH_MONEY when it cannot be paid; a Strong Rune re-activation on the same stack costs
+    // round(cost · StrongRuneCostConstant) (FUN_009d0d10, ×3 in the stock data). The engine had no resources in combat.
+    [Fact]
+    public void RunesArePaidFromTheAdventureResources()
+    {
+        var (b, u, _) = Make("CREATURE_PEASANT", 10, "CREATURE_PEASANT", 10, new Cell(1, 1), new Cell(14, 10));
+        var h = b.State.Heroes[0];
+        h.Skills.Add(new SkillEntry(Sk.Runelore, Mastery.Expert));
+        h.Perks.Add(Sk.StrongRune);
+        h.Spells.Add("SPELL_RUNE_OF_CHARGE");
+        h.Mana = h.MaxMana = 100;
+        h.Resources = new[] { 0, 0, 0, 0, 0, 0, 1000 };
+        b.Begin();
+        b.State.Active = Actor.Hero(0);
+        var r = b.Apply(new CastSpellCmd(Actor.Hero(0), "SPELL_RUNE_OF_CHARGE", u.Id) { Side = 0 });
+        Assert.False(r.Ok);
+        Assert.Equal("COMBAT_NO_ENOUGH_MONEY", r.Error);
+        h.Resources[0] = 4;
+        r = b.Apply(new CastSpellCmd(Actor.Hero(0), "SPELL_RUNE_OF_CHARGE", u.Id) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(3, h.Resources[0]);
+        Assert.Equal(1, h.ResourcesSpent[0]);
+        Assert.Equal(new[] { 3, 0, 0, 0, 0, 0, 0 }, b.RuneCost(h, f.Db.Spell("SPELL_RUNE_OF_CHARGE")!, u.Id, fineRune: false));
+        Assert.Equal(new[] { 2, 0, 0, 0, 0, 0, 0 }, b.RuneCost(h, f.Db.Spell("SPELL_RUNE_OF_CHARGE")!, u.Id, fineRune: true));
+    }
+
+    // exe FUN_004199d0: with Fine Rune a first activation is free when the battle RNG float [0, 1) is below
+    // FineRuneProbability (0.5 stock) — over several battles both outcomes occur and nothing else is ever charged.
+    [Fact]
+    public void FineRuneMakesSomeActivationsFree()
+    {
+        var seen = new HashSet<int>();
+        for (ulong seed = 1; seed <= 12; seed++)
+        {
+            var (b, u, _) = Make("CREATURE_PEASANT", 10, "CREATURE_PEASANT", 10, new Cell(1, 1), new Cell(14, 10), seed);
+            var h = b.State.Heroes[0];
+            h.Skills.Add(new SkillEntry(Sk.Runelore, Mastery.Expert));
+            h.Perks.Add(Sk.FineRune);
+            h.Spells.Add("SPELL_RUNE_OF_CHARGE");
+            h.Mana = h.MaxMana = 100;
+            h.Resources = new[] { 5, 0, 0, 0, 0, 0, 0 };
+            b.Begin();
+            b.State.Active = Actor.Hero(0);
+            var r = b.Apply(new CastSpellCmd(Actor.Hero(0), "SPELL_RUNE_OF_CHARGE", u.Id) { Side = 0 });
+            Assert.True(r.Ok, r.Error);
+            seen.Add(h.ResourcesSpent[0]);
+        }
+        Assert.Equal(new HashSet<int> { 0, 1 }, seen);
     }
 }

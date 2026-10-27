@@ -61,4 +61,31 @@ public class AuditBattleExpTests(Fixture f)
         var r = g.Apply(new Engine.ResolveBattleCmd(0, attacker.Army.Live().Select(st => new ArmySlot(st.Creature, st.Count)).ToList(), new()) { Player = g.Current.Index, HeroMana = new[] { 1, 0 } });
         Assert.Equal(1, attacker.Mana);
     }
+
+    // exe FUN_00419f00 / FUN_00419ad0: runes are paid from the owner's adventure resources — the battle starts with the
+    // player's purse and the resources spent on runes (H5.Combat HeroState.ResourcesSpent) are taken off afterwards.
+    [Fact]
+    public void RuneResourcesCarryIntoAndOutOfBattle()
+    {
+        var g = f.NewGame();
+        var town = g.S.Towns.First(t => t.Owner >= 0);
+        var attacker = g.S.Heroes.First(h => h.Alive && h.Owner != town.Owner);
+        Array.Fill(town.Garrison, null);
+        town.Garrison[0] = new State.Stack("CREATURE_PEASANT", 1);
+        g.S.Battle = new State.PendingBattle
+        {
+            AttackerHero = attacker.Id, DefenderObject = town.Object, Where = town.Pos,
+            DefenderArmy = new() { new State.Stack("CREATURE_PEASANT", 1) }, Siege = true,
+        };
+        var purse = g.S.Players[attacker.Owner].Purse;
+        purse[Purse.Wood] = 7; purse[Purse.Gem] = 2;
+        var state = g.CreatePendingBattle(5);
+        Assert.Equal(7, state.Heroes[0].Resources![Purse.Wood]);
+        var spent = new int[14];
+        spent[Purse.Wood] = 3; spent[Purse.Gem] = 1;
+        g.Apply(new Engine.ResolveBattleCmd(0, attacker.Army.Live().Select(st => new ArmySlot(st.Creature, st.Count)).ToList(), new())
+            { Player = g.Current.Index, ResourcesSpent = spent });
+        Assert.Equal(4, purse[Purse.Wood]);
+        Assert.Equal(1, purse[Purse.Gem]);
+    }
 }

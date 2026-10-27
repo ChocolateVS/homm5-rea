@@ -203,6 +203,7 @@ public sealed class GameDatabase
                 Duration = o.Items("duration").Select(PowerFormula.Parse).ToArray(),
                 IsAreaAttack = o.Bool("IsAreaAttack"), CanSelectDead = o.Bool("CanSelectDead"),
                 Target = o.Str("Target"), Element = o.Str("Element", "ELEMENT_NONE"),
+                ResourceCost = o.Element("sSpellCost") is { } sc && Resources.Parse(sc) is var rc && rc != new Resources(0, 0, 0, 0, 0, 0, 0) ? rc : null,
             };
         }
     }

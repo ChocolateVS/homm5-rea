@@ -161,6 +161,13 @@ public sealed class HeroState
     public int Level = 1;
     public int Attack, Defence, SpellPower, Knowledge;
     public int Mana, MaxMana;
+    /// <summary>
+    /// The owner's adventure resources (Wood, Ore, Mercury, Crystal, Sulfur, Gem, Gold) when the battle comes from the
+    /// adventure map — runes are paid from them (exe FUN_00419f00 / FUN_00419ad0); null = not modelled (duels, tests).
+    /// </summary>
+    public int[]? Resources;
+    /// <summary>Resources spent in this battle (debited from the owner afterwards by the adventure bridge).</summary>
+    public int[] ResourcesSpent = new int[7];
     /// <summary>Mana fraction in thousandths (exe FUN_00bbfae0, the hero's vf 0x230 mana accumulator).</summary>
     public int ManaMilli;
     public int Morale, Luck;

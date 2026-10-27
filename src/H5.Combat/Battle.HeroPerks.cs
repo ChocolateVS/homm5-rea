@@ -69,7 +69,9 @@ public sealed partial class Battle
     {
         if (h.ImbuedSpell == null || !target.Alive || Db.Spell(h.ImbuedSpell) is not { } sp) return;
         int cost = HeroManaCost(h, sp);
-        if (h.Mana < cost) { h.ImbuedSpell = null; return; }
+        // exe FUN_0097ea20 → hero vf 0x224 = FUN_00bbf610: when the hero cannot pay (vf 0x220) nothing is cast and
+        // the imbued spell stays selected (hero vf 0x74 is not cleared) — the engine used to forget it (sweep 10).
+        if (h.Mana < cost) return;
         h.Mana -= cost;
         Emit(new ManaChanged(Actor.Hero(h.Side), h.Mana));
         ResolveSpell(Actor.Hero(h.Side), h.Side, sp, HeroMastery(h, sp), HeroSpellPower(h, sp), target, null, fromHero: true);

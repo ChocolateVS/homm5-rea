@@ -370,6 +370,7 @@ public sealed partial class Battle
                 EndAction(c.ActorId, counteredReset, false);
                 return null;
             }
+            if (sp.School == "MAGIC_SCHOOL_RUNIC") PayRune(h, sp, c.TargetId);   // exe FUN_00419ad0 (sweep 10)
             ResolveSpell(c.ActorId, h.Side, sp, mastery, power, target, c.Cell, fromHero: true);
             MindCleanerCheck(h, sp);
             if (sp.School == "MAGIC_SCHOOL_RUNIC") { h.AbilityUses[$"{sp.Id}:{c.TargetId}"] = 1; TapRunes(h); }
@@ -421,6 +422,9 @@ public sealed partial class Battle
         int need = sp.Level <= 2 ? 1 : sp.Level <= 4 ? 2 : 3;   // Runelore circles (p.143)
         if ((int)h.SkillLevel(Sk.Runelore) < need) return "runelore mastery too low";
         if (h.AbilityUses.ContainsKey($"{sp.Id}:{target}") && !h.HasPerk(Sk.StrongRune)) return "rune already used on this stack";
+        // exe FUN_00419f00: hero vf 0x220 — the cast is refused (COMBAT_NO_ENOUGH_MONEY) when the cost without the Fine
+        // Rune roll cannot be paid.
+        if (h.Resources != null && !CanPay(h.Resources, RuneCost(h, sp, target, fineRune: false))) return "COMBAT_NO_ENOUGH_MONEY";
         if (sp.Id == "SPELL_RUNE_OF_BERSERKING" && target is int t && S.Unit(t) is { } tu && tu.Count >= tu.InitialCount)
             return "rune of berserking requires casualties in the stack";
         return null;

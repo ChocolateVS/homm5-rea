@@ -83,7 +83,7 @@ public sealed partial class Battle
             AddEffect(t, new Effect { Id = LionsDemoralized, SourceSide = h.Side, Dispellable = false });
     }
 
-    void HeroStrike(HeroState h, Unit t, int levelBonus, bool friendly, double extraMult = 1, bool plain = false, bool powerfulBlow = false, bool holyCharge = false)
+    void HeroStrike(HeroState h, Unit t, int levelBonus, bool friendly, double extraMult = 1, bool plain = false, bool powerfulBlow = false, bool holyCharge = false, bool imbue = true)
     {
         int actor = Actor.Hero(h.Side);
         Emit(new AttackStarted(actor, t.Id, AttackKind.Hero));
@@ -107,7 +107,7 @@ public sealed partial class Battle
             }
         }
         DealDamage(t, (int)dmg, actor, AttackKind.Hero, null);
-        if (!friendly) ImbuedCast(h, t);
+        if (!friendly && imbue) ImbuedCast(h, t);
         RageEvent(t, "ReceiveHeroAttackRP");
         if (!t.Alive || friendly) return;
         // exe 008cf673..008cf8a1: Suffering Strike (HasSkill 0x5f → SPELL_WEAKNESS, 008cf692), then the Lions mark, then
@@ -214,9 +214,16 @@ public sealed partial class Battle
             }
                 break;
             case "RAIN_OF_ARROWS":
-                foreach (var u in S.LivingOf(1 - c.Side).Where(u => IsFavoredEnemy(h, u)).ToList())
-                    HeroStrike(h, u, levelBonus: 3, friendly: false);
+            {
+                // exe FUN_0097ec10: the strikes first (vf 0x12c, spell 0x3d), then per victim the imbued spell
+                // (FUN_0097ea20) — Hypnotize only on one victim drawn with the army RNG (vf 0x10(n)) (sweep 10).
+                var victims = S.LivingOf(1 - c.Side).Where(u => IsFavoredEnemy(h, u)).ToList();
+                foreach (var u in victims) HeroStrike(h, u, levelBonus: 3, friendly: false, imbue: false);
+                int pick = h.ImbuedSpell == "SPELL_HYPNOTIZE" && victims.Count > 0 ? S.Rng.Next(victims.Count) : -1;
+                for (int i = 0; i < victims.Count; i++)
+                    if (pick < 0 || pick == i) ImbuedCast(h, victims[i]);
                 break;
+            }
             case "CONSUME_CORPSE":
             {
                 var corpse = t!;

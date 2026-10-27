@@ -83,6 +83,8 @@ public sealed class SpellDef
     public bool CanSelectDead;
     public string Target = "";
     public string Element = "ELEMENT_NONE";
+    /// <summary>The adventure resources a cast costs (sSpellCost; runes — exe FUN_00419ad0), null when the spell has none.</summary>
+    public Resources? ResourceCost;
 
     public PowerFormula DamageAt(Mastery m) => Damage.Length == 0 ? default : Damage[Math.Clamp((int)m, 0, Damage.Length - 1)];
     public PowerFormula DurationAt(Mastery m) => Duration.Length == 0 ? default : Duration[Math.Clamp((int)m, 0, Duration.Length - 1)];

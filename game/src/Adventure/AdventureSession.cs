@@ -206,7 +206,7 @@ public sealed class AdventureSession
             .GroupBy(u => u.CreatureId).Select(g => new ArmySlot(g.Key, g.Sum(u => u.Count))).ToList();
         int winner = finished.Winner ?? 1;
         return Apply(new ResolveBattleCmd(winner, Survivors(0), Survivors(1), AttackerFled: winner == 1 && Retreated(finished))
-        { HeroMana = finished.Heroes.Select(h => h.Mana).ToArray(), EndReason = finished.EndReason ?? "" });
+        { HeroMana = finished.Heroes.Select(h => h.Mana).ToArray(), ResourcesSpent = finished.Heroes.SelectMany(h => h.ResourcesSpent).ToArray(), EndReason = finished.EndReason ?? "" });
     }
 
     /// <summary>The battle ended with the loser fleeing or surrendering (engine EndReason "fled" / "surrender").</summary>

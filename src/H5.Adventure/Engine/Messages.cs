@@ -88,6 +88,8 @@ public sealed record ResolveBattleCmd(int WinnerSide, List<ArmySlot> AttackerSur
     public string EndReason { get; init; } = "";
     /// <summary>Spell points the two heroes have left at the end of the battle (attacker, defender); null = unchanged.</summary>
     public int[]? HeroMana { get; init; }
+    /// <summary>Resources the two heroes spent on runes (attacker's 7, then the defender's 7); null = none.</summary>
+    public int[]? ResourcesSpent { get; init; }
 }
 public sealed record DismissHeroCmd(int HeroId) : AdvCommand;
 public sealed record BuyWarMachineCmd(int TownObject, int HeroId, string Machine) : AdvCommand;

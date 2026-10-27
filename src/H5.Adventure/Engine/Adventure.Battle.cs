@@ -280,6 +280,9 @@ public sealed partial class Adventure
         var state = BattleSetup.Create(Core, attackerSetup, defenderSetup, seed, siege: town != null ? SiegeFor(town) : null,
             arena: town == null ? SeaBattleArena(att, pb, seed) : null, week: S.MoonWeek);
         state.Heroes[0].Morale += att.NextBattleMorale; state.Heroes[0].Luck += att.NextBattleLuck;
+        // Runes are paid from the owner's resources (exe FUN_00419f00 / FUN_00419ad0: the combat hero is the adventure hero).
+        foreach (var (side, h) in new[] { (0, (HeroState?)att), (1, defHero) })
+            if (h != null && h.Owner >= 0 && h.Owner < S.Players.Count) state.Heroes[side].Resources = (int[])S.Players[h.Owner].Purse.R.Clone();
         if (defHero != null) { state.Heroes[1].Morale += defHero.NextBattleMorale; state.Heroes[1].Luck += defHero.NextBattleLuck; }
         if (defBonus != null) AddSide(state.SideBonuses[1], defBonus);
         if (attBonus != null) AddSide(state.SideBonuses[0], attBonus);
@@ -414,6 +417,11 @@ public sealed partial class Adventure
         bool attRetreated = retreat && !attackerWon, defRetreated = retreat && attackerWon && defHero != null;
         // Spell points spent in the battle stay spent (exe: the combat hero is the adventure hero).
         if (c.HeroMana is { Length: 2 } mana) { att.Mana = Math.Max(0, mana[0]); if (defHero != null) defHero.Mana = Math.Max(0, mana[1]); }
+        // Rune costs paid in the battle (H5.Combat HeroState.ResourcesSpent) leave the owners' purses.
+        if (c.ResourcesSpent is { Length: 14 } spent)
+            foreach (var (side, h) in new[] { (0, (HeroState?)att), (1, defHero) })
+                if (h != null && h.Owner >= 0 && h.Owner < S.Players.Count)
+                    for (int i = 0; i < 7; i++) S.Players[h.Owner].Purse[i] = Math.Max(0, S.Players[h.Owner].Purse[i] - spent[side * 7 + i]);
 
         // Experience: killed creatures' Exp (p.298), neutral difficulty coefficient, +500 for a defeated hero.
         long ExpFor(List<Stack> before, List<ArmySlot> after)

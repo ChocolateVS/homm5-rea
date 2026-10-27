@@ -193,4 +193,41 @@ public sealed partial class Battle
         }
         return best;
     }
+
+    /// <summary>
+    /// A rune's resource cost (exe FUN_00419ad0 → the cast record +0xac): the spell's sSpellCost for a first activation
+    /// on the stack (FUN_009d0a10), nothing when the Fine Rune roll succeeded (FUN_009d09c0); a Strong Rune
+    /// re-activation costs round(resource · StrongRuneCostConstant) each (FUN_009d0d10, RPGStats +0x94c), or
+    /// · StrongAndFineRuneCostConstant (+0x950) after a successful Fine Rune roll.
+    /// </summary>
+    internal int[] RuneCost(HeroState h, SpellDef sp, int? target, bool fineRune)
+    {
+        var r = sp.ResourceCost;
+        if (r == null) return new int[7];
+        var v = new[] { r.Wood, r.Ore, r.Mercury, r.Crystal, r.Sulfur, r.Gem, r.Gold };
+        bool again = h.AbilityUses.ContainsKey($"{sp.Id}:{target}");
+        if (!again) return fineRune ? new int[7] : v;
+        float k = (float)Stats.Get(fineRune ? "combat/HeroSpecializations/Runemage/StrongAndFineRuneCostConstant" : "combat/HeroSpecializations/Runemage/StrongRuneCostConstant", fineRune ? 2 : 3);
+        return v.Select(x => (int)Math.Round((float)x * k, MidpointRounding.ToEven)).ToArray();
+    }
+
+    static bool CanPay(int[] have, int[] cost)
+    {
+        for (int i = 0; i < 7; i++) if (have[i] < cost[i]) return false;
+        return true;
+    }
+
+    /// <summary>
+    /// Pays a rune at the cast: the Fine Rune roll (FUN_004199d0: hero HasSkill 0x9a, battle RNG float [0, 1) below
+    /// FineRuneProbability, RPGStats +0x948), then the cost of <see cref="RuneCost"/> is debited from the owner's
+    /// resources (kept in <see cref="HeroState.ResourcesSpent"/> for the adventure map).
+    /// </summary>
+    internal void PayRune(HeroState h, SpellDef sp, int? target)
+    {
+        if (h.Resources == null || sp.ResourceCost == null) return;
+        bool fine = h.HasPerk(Sk.FineRune)
+                    && (float)S.Rng.RangeD(0, 1) < (float)Stats.Get("combat/HeroSpecializations/Runemage/FineRuneProbability", 0.5);
+        var cost = RuneCost(h, sp, target, fine);
+        for (int i = 0; i < 7; i++) { h.Resources[i] -= cost[i]; h.ResourcesSpent[i] += cost[i]; }
+    }
 }
