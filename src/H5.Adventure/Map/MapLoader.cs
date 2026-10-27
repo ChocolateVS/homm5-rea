@@ -319,6 +319,14 @@ public sealed class MapLoader
                 };
                 break;
             }
+            case ObjectKind.HillFort when e.Element("CreaturesUpgradesFilter") is { } f:
+            {
+                HashSet<int> Tiers(string n) => f.Items(n).Select(i => int.TryParse(i.Value.Trim(), out var t) ? t : 0).Where(t => t > 0).ToHashSet();
+                HashSet<string> Ids(string n) => f.Items(n).Select(i => i.Value.Trim()).Where(v => v.Length > 0).ToHashSet(StringComparer.Ordinal);
+                o.HillFortFilter = new UpgradesFilter(Tiers("ForbiddenBasicUpgradeTiers"), Tiers("ForbiddenAlterUpgradeTiers"),
+                    Ids("NotUpgradeable"), Ids("ForbiddenUpgrades"));
+                break;
+            }
             case ObjectKind.Sphinx:
             {
                 // AdvMapSphinx reader 00a02330: Shared, Riddle (href), RandomRiddle.

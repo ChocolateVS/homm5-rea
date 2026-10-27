@@ -161,6 +161,9 @@ public sealed class MapObject
     public bool SphinxRandomRiddle = true;
     public Data.SphinxRiddle? SphinxRiddle;
 
+    /// <summary>Hill Fort &lt;CreaturesUpgradesFilter&gt; (null when the instance has none, i.e. nothing forbidden).</summary>
+    public UpgradesFilter? HillFortFilter;
+
     /// <summary>Scalar fields not modelled above (kept for scripts and later rules).</summary>
     public Dictionary<string, string> Props = new(StringComparer.Ordinal);
 
@@ -173,6 +176,14 @@ public sealed class MapObject
 }
 
 public sealed record TownBuildingInit(string Type, int Initial, int Max);
+
+/// <summary>
+/// A Hill Fort's CreaturesUpgradesFilter (the CAdvMapHillFort data at +8 read by H5_Game.exe 004bb440 / 004bbb10):
+/// tiers whose normal (1st) or alternative (2nd) upgrade is forbidden, creatures that may not be upgraded and
+/// upgraded creatures that may not be produced.
+/// </summary>
+public sealed record UpgradesFilter(IReadOnlySet<int> ForbiddenBasicUpgradeTiers, IReadOnlySet<int> ForbiddenAlterUpgradeTiers,
+    IReadOnlySet<string> NotUpgradeable, IReadOnlySet<string> ForbiddenUpgrades);
 
 /// <summary>A Seer Hut's quest: an objective (OBJECTIVE_KIND_*) with enum-index parameters and its award.</summary>
 public sealed class SeerQuest

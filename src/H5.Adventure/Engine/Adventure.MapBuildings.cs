@@ -79,6 +79,82 @@ public sealed partial class Adventure
         return (target, cost);
     }
 
+    /// <summary>
+    /// Hill Fort "can upgrade" (vfunc 0 = 008b4320 → 004bb440): the creature has an <paramref name="upgrade"/>-th
+    /// upgrade, is not NotUpgradeable, its tier is not forbidden for that upgrade (1 basic, 2 alternative) and the
+    /// target is not a ForbiddenUpgrade.
+    /// </summary>
+    public bool HillFortCanUpgrade(MapObject fort, string creature, int upgrade)
+    {
+        if (!Core.Creatures.TryGetValue(creature, out var cd) || cd.Upgrades.Count == 0) return false;
+        if (upgrade < 1 || upgrade > cd.Upgrades.Count) return false;
+        var f = fort.HillFortFilter;
+        if (f == null) return true;
+        if (f.NotUpgradeable.Contains(creature)) return false;
+        if (upgrade == 1 && f.ForbiddenBasicUpgradeTiers.Contains(cd.Tier)) return false;
+        if (upgrade == 2 && f.ForbiddenAlterUpgradeTiers.Contains(cd.Tier)) return false;
+        return !f.ForbiddenUpgrades.Contains(cd.Upgrades[upgrade - 1]);
+    }
+
+    /// <summary>
+    /// Hill Fort "can regrade" (vfunc 8 = 008b43f0 → 004bbb10): the base creature has at least two upgrades, the
+    /// <paramref name="upgrade"/>-th is not the creature itself, the base is not NotUpgradeable, the upgrade the
+    /// creature leaves (the other index) is not forbidden for its tier, the creature is not a ForbiddenUpgrade, and the
+    /// target upgrade is allowed for the tier and not a ForbiddenUpgrade.
+    /// </summary>
+    public bool HillFortCanRegrade(MapObject fort, string creature, int upgrade)
+    {
+        if (!Core.Creatures.TryGetValue(creature, out var cd)) return false;
+        var baseDef = cd.Upgrade ? Core.Creatures.GetValueOrDefault(cd.BaseCreature) ?? Core.Creatures.Values.FirstOrDefault(b => b.Upgrades.Contains(creature)) : cd;
+        if (baseDef == null || baseDef.Upgrades.Count < 2 || upgrade < 1 || upgrade > baseDef.Upgrades.Count) return false;
+        if (baseDef.Upgrades[upgrade - 1] == creature) return false;
+        var f = fort.HillFortFilter;
+        if (f == null) return true;
+        if (f.NotUpgradeable.Contains(baseDef.Id)) return false;
+        if (upgrade == 1 && f.ForbiddenAlterUpgradeTiers.Contains(cd.Tier)) return false;
+        if (upgrade == 2 && f.ForbiddenBasicUpgradeTiers.Contains(cd.Tier)) return false;
+        if (f.ForbiddenUpgrades.Contains(creature)) return false;
+        if (upgrade == 1 && f.ForbiddenBasicUpgradeTiers.Contains(cd.Tier)) return false;
+        if (upgrade == 2 && f.ForbiddenAlterUpgradeTiers.Contains(cd.Tier)) return false;
+        return !f.ForbiddenUpgrades.Contains(baseDef.Upgrades[upgrade - 1]);
+    }
+
+    /// <summary>
+    /// One Hill Fort option's status (0045ba60, the CHillFortDialogLogEntry list): 0 upgrade affordable, 1 regrade
+    /// affordable, 2 possible but not affordable (purse / cost below 1 on some resource, 009d0500), 3 impossible.
+    /// The upgrade test comes first; the regrade test only when the upgrade is impossible.
+    /// </summary>
+    public int HillFortOptionStatus(MapObject fort, PlayerState p, Stack s, int upgrade, out Resources cost)
+    {
+        bool up = HillFortCanUpgrade(fort, s.Creature, upgrade);
+        if (!up && !HillFortCanRegrade(fort, s.Creature, upgrade)) { cost = new Resources(0, 0, 0, 0, 0, 0, 0); return 3; }
+        cost = UpgradeQuote(s.Creature, upgrade, s.Count, true).Cost;
+        if (!p.Purse.CanAfford(cost)) return 2;
+        return up ? 0 : 1;
+    }
+
+    /// <summary>
+    /// The Hill Fort screen's state of one stack (006d4950): over the options 1..n of the creature's upgrade list (the
+    /// base's list for an upgraded creature) the best-ranked status wins (0/1 rank 2, 2 rank 1, 3 rank 0; a later option
+    /// replaces an equal rank); 4 when the slot is empty. Returns the status, the option and its cost.
+    /// </summary>
+    public (int Status, int Upgrade, Resources Cost) HillFortSlotState(MapObject fort, PlayerState p, Stack? s)
+    {
+        var none = new Resources(0, 0, 0, 0, 0, 0, 0);
+        if (s is not { Count: > 0 } || !Core.Creatures.TryGetValue(s.Creature, out var cd)) return (4, 0, none);
+        var list = cd.Upgrades.Count > 0 ? cd.Upgrades
+            : (Core.Creatures.GetValueOrDefault(cd.BaseCreature) ?? Core.Creatures.Values.FirstOrDefault(b => b.Upgrades.Contains(s.Creature)))?.Upgrades ?? new List<string>();
+        (int Status, int Upgrade, Resources Cost) best = (4, 0, none);
+        int bestRank = 0;
+        for (int i = 1; i <= list.Count; i++)
+        {
+            int st = HillFortOptionStatus(fort, p, s, i, out var cost);
+            int rank = st is 0 or 1 ? 2 : st == 2 ? 1 : 0;
+            if (bestRank <= rank) { best = (st, i, cost); bestRank = rank; }
+        }
+        return best;
+    }
+
     string? DoUpgradeCreature(UpgradeCreatureCmd c)
     {
         var p = Current;
@@ -104,6 +180,14 @@ public sealed partial class Adventure
             else army = t.Garrison;
         }
         if (c.Slot is < 0 or >= State.Army.Slots || army[c.Slot] is not { Count: > 0 } s) return "empty slot";
+        // Hill Fort (CUpgradeCreatureCmd execute 004f47e0 with the fort as provider): the fort's filter decides.
+        if (c.HillFort >= 0)
+        {
+            var fort = Map.Objects[c.HillFort];
+            bool upgraded = Core.Creatures.TryGetValue(s.Creature, out var scd) && scd.Upgrade;
+            if (upgraded ? !HillFortCanRegrade(fort, s.Creature, c.Upgrade) : !HillFortCanUpgrade(fort, s.Creature, c.Upgrade))
+                return "upgrade forbidden here";
+        }
         var (target, cost) = UpgradeQuote(s.Creature, c.Upgrade, s.Count, c.HillFort >= 0);
         if (target == null) return "cannot upgrade";
         if (t != null)

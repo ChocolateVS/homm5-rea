@@ -39,6 +39,46 @@ public class MapBuildingTests(Fixture f)
     }
 
     [Fact]
+    public void HillFortFilterAndSlotStatesFollowTheExe()
+    {
+        var g = f.NewGame();
+        var p = g.Current;
+        var c = f.Db.Core.Creatures;
+        static HashSet<int> T(params int[] t) => t.ToHashSet();
+        static HashSet<string> I(params string[] s) => s.ToHashSet();
+        var open = new H5.Adventure.Map.MapObject { Kind = H5.Adventure.Map.ObjectKind.HillFort };
+        // Footman (tier 3) → Swordsman (1) / Vindicator (2); no filter: both upgrades, no regrade of a basic creature.
+        Assert.True(g.HillFortCanUpgrade(open, "CREATURE_FOOTMAN", 1));
+        Assert.True(g.HillFortCanUpgrade(open, "CREATURE_FOOTMAN", 2));
+        Assert.False(g.HillFortCanUpgrade(open, "CREATURE_SWORDSMAN", 2));
+        Assert.True(g.HillFortCanRegrade(open, "CREATURE_SWORDSMAN", 2));
+        Assert.False(g.HillFortCanRegrade(open, "CREATURE_SWORDSMAN", 1));
+        // 004bb440 / 004bbb10 with A2C1M1's filter (alternative upgrades forbidden on all tiers).
+        var noAlt = new H5.Adventure.Map.MapObject { Kind = H5.Adventure.Map.ObjectKind.HillFort,
+            HillFortFilter = new(T(), T(1, 2, 3, 4, 5, 6, 7), I(), I()) };
+        Assert.True(g.HillFortCanUpgrade(noAlt, "CREATURE_FOOTMAN", 1));
+        Assert.False(g.HillFortCanUpgrade(noAlt, "CREATURE_FOOTMAN", 2));
+        Assert.False(g.HillFortCanRegrade(noAlt, "CREATURE_SWORDSMAN", 2));
+        Assert.False(g.HillFortCanRegrade(noAlt, "CREATURE_VINDICATOR", 1));
+        var banned = new H5.Adventure.Map.MapObject { Kind = H5.Adventure.Map.ObjectKind.HillFort,
+            HillFortFilter = new(T(), T(), I("CREATURE_FOOTMAN"), I("CREATURE_VINDICATOR")) };
+        Assert.False(g.HillFortCanUpgrade(banned, "CREATURE_FOOTMAN", 1));
+        Assert.False(g.HillFortCanRegrade(banned, "CREATURE_SWORDSMAN", 2));
+        // 0045ba60 / 006d4950: affordable upgrade 0, regrade 1, short of resources 2, impossible 3, empty 4.
+        p.Purse = new Purse(new Resources(99, 99, 99, 99, 99, 99, 99999));
+        Assert.Equal(0, g.HillFortSlotState(open, p, new Stack("CREATURE_FOOTMAN", 5)).Status);
+        var regrade = g.HillFortSlotState(open, p, new Stack("CREATURE_SWORDSMAN", 5));
+        Assert.Equal((1, 2), (regrade.Status, regrade.Upgrade));
+        Assert.Equal(3, g.HillFortSlotState(noAlt, p, new Stack("CREATURE_SWORDSMAN", 5)).Status);
+        Assert.Equal(4, g.HillFortSlotState(open, p, null).Status);
+        p.Purse = new Purse(new Resources(0, 0, 0, 0, 0, 0, 0));
+        Assert.Equal(2, g.HillFortSlotState(open, p, new Stack("CREATURE_FOOTMAN", 5)).Status);
+        // Tier 1 is free at a Hill Fort, so it stays affordable with an empty purse.
+        var peasant = c.Values.First(x => x.Tier == 1 && !x.Upgrade && x.Upgrades.Count > 0);
+        Assert.Equal(0, g.HillFortSlotState(open, p, new Stack(peasant.Id, 9)).Status);
+    }
+
+    [Fact]
     public void TownUpgradeNeedsTheUpgradedDwelling()
     {
         var g = f.NewGame();
