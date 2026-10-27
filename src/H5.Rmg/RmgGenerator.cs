@@ -26,6 +26,12 @@ public sealed class RmgOptions
     /// "sRMGProps.InitialParams.Grail"): a Tear of Asha in one random zone and "obelisks" in every zone.
     /// </summary>
     public bool Grail;
+    /// <summary>The screen's Resources combo (InitialParams.ResourceMultiplier, RESOURCE_MISERABLE..MUCH = 0..4):
+    /// treasure density x 0.2/0.5/1/2/4. 2 is what the screen sends for an unset combo (0x00799230).</summary>
+    public int ResourceLevel = 2;
+    /// <summary>The screen's Experience combo (InitialParams.ExpMultiplier, EXP_MISERABLE..MUCH = 0..4): chest and
+    /// upgrade-building densities x 0.2/0.5/1/2/4.</summary>
+    public int ExpLevel = 2;
 }
 
 /// <summary>A zone during generation (NRMG::CGameZone; offsets are the exe's).</summary>

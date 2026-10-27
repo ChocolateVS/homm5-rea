@@ -28,7 +28,7 @@ Consequences for this plan:
 ### W1 Data-driven — should "just work" once loaded, needs verification + test ports (M, 1 helper)
 **Status (2026-10-19): done for the stock-engine target — see `W1_DATA.md`.** Stock table sizes found in the exe and
 applied to pools (placeholders excluded), BOM/bool crashes fixed, tests run on both fixtures (83 stock-only, more ports
-open per area), smoke tests pass. Open: Lua runtime errors on MMH55 maps (W2), RMG `4P-Diamond-XL-#` (W5).
+open per area), smoke tests pass. Open: Lua runtime errors on MMH55 maps (W2).
 Creature/spell/skill/artifact/hero/class stats, DefaultStats constants, town buildings/specialisations, banks, RMG templates,
 texts, UI layouts/textures, HD textures, arenas/obstacles, campaign/SP maps.
 - Port the 91 stock-value tests to a parallel MMH55 fixture (`H5_GAME_DIR` → 5.5) with MMH55 expected values; keep the stock set.
@@ -74,7 +74,12 @@ SAVE.md (hero level/skill-slot sizes), MULTIPLAYER.md.
 
 ### W5 RMG (M) — exe byte patches (upgrade multiplier, guard coefficients, Dimension Door for Cartographer) + 55u groups
 IRandomMap, RMG/DeployMines, RMG/DisableSingleStacks + 94 templates, CustomArmyTemplates, new `RMGTemplate/Editor` element.
-Ledger: RMG.md; Rmg tests (8 fail on 5.5).
+Ledger: RMG.md, AUDIT_RMG.md; Rmg tests (8 fail on 5.5).
+**Status (2026-10-27):** the stock engine part is done for MMH55's templates: `rmg-stats` generates all 94 files at
+every listed size/underground/player count (465 runs, 0 failures); `4P-Diamond-XL-#` with more players than its 4
+start zones behaves as the exe (extra players active without a start town). Stock RMG audited (AUDIT_RMG.md): guards
+incl. two-stack templates, budgets, shrines, treasures, observatories/Den of Thieves, cartographers, screen
+multipliers fixed; treasure blocks, roads, statics, terrain, water remain GAP. The MMH55_Utility/55u patches stay optional.
 
 ### W6 UI (L, 1–2 helpers) — mostly data (805 UI files in Data, Skillwheel, Creaturepedia) + DLL
 HeroUI byte patches (0x6c1c24–0x6ca46f, 0x623a9a…), GUI hooks, tooltip creature effect array, ShowPlayerTurnTimerInCombat,

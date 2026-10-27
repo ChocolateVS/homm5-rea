@@ -6,8 +6,9 @@ stock archives (`RMG/Templates/*.xdb`, `RMG/Params/Default.xdb`, `GameMechanics/
 (`RmgResult.ToAdvMap`), with flat terrain layers the client can render.
 
 Tools: `h5tool rmg <template> <size> <seed> [--players=N] [--underground] [--monsters=0..4] [--png=out.png]`,
-`h5tool rmg-stats [seeds]` (every template × size × seed), `h5tool rmg-ref` (the user's RMG maps in
-`Maps/*RMG*.h5m` regenerated from the template/seed recorded in their description, counts side by side).
+`h5tool rmg-stats [seeds] [--threads=N] [--filter=s]` (every template at every size / underground / player count the
+screen lists it for, exe 0x0090c880), `h5tool rmg-ref [--detail]` (the user's RMG maps in `Maps/*RMG*.h5m` regenerated
+from the template/seed/levels recorded in them, counts side by side). Audit ledger: `docs/rules/AUDIT_RMG.md`.
 Analysis: private Ghidra project `tools/ghidra-projects/rmg`, scripts in `tools/rmgre/` (`ghidra.sh`).
 
 ## Status at a glance
@@ -24,8 +25,9 @@ Analysis: private Ghidra project `tools/ghidra-projects/rmg`, scripts in `tools/
 | Town placement | `0x00923e50`, `0x00919810` | algorithm ported; positions approximate (within a few tiles of the reference on some maps, elsewhere different) |
 | Mines | `0x0091c4a0` | ported (radius bands, 2/5 spread filter, guard levels, decoration ring) |
 | Buildings by points / density | `0x009221d0`, `0x00921d70` | ported budget algorithm |
-| Treasures / chests | `0x0091f8a0`, `0x00905e60` | count formula ported (tiles·density/10000 × multiplier) |
-| Guards | `0x00ba7690`, `0x00ba6910` | single-stack picker ported (rand(30)+10 band search) |
+| Treasures / chests | `0x0091f8a0`, `0x00905e60` | ported (table, count, candidates, surface zones only) |
+| Buildings, shrines, observatories | `0x0091bb10`, `0x00920000`, `0x009219a0`, `0x00920c50` | ported (AUDIT_RMG.md) |
+| Guards | `0x00ba7690`, `0x00ba6910`, `0x00ba71b0` | ported: two-stack army templates (p = 0.6) and the single-stack band search |
 | Connections, roads, statics, treasure blocks | `0x00904920`, `0x00904cf0`, `0x00906130`, `0x009198a0` | reimplemented from the observed structure, not line by line |
 
 ## RNG (0x00ba6650 …)
@@ -107,23 +109,27 @@ first pass nothing can be stolen (division by an empty list).
 * Mines (`0x0091c4a0`): wood/ore between Mine1 radii of the town, others between Mine2 radii; tiles in
   the outer 2/5 of the zone's distance range are skipped; guard = `BasicLeverGuardPower × level`
   (Mine1 / Mine2 / Gold levels); up to two decoration tiles nearby (p = 0.8).
-* Point budgets (`0x009221d0`): while the cheapest entry fits, pick `rand(#affordable)` and place it.
-  Density budgets (`0x00921d70`): `tiles · (density + 40) / 10000`.
-* Treasures (`0x0091f8a0`): `tiles · density / 10000`; the density is scaled by a switch on the
-  generator's +0xa8 / +0xb0 settings (0.2, 0.5, 1, 2, 4; `0x00905eac`).
-* Guards (`0x00ba7690`): value = power × monster coefficient (0.4, 0.9, 1.7, 4, 12 for weak …
-  impossible); with p = 0.6 the original uses a two-stack army template (`RMG/CustomArmyTemplates`),
-  otherwise `0x00ba6910`: `r = rand(30)`, creatures (except ids 0, 0x59, 0x72) whose Power·(r+10)
-  lies within ×k of the value, k = 1.1 growing ×1.2 until ≥ 10 candidates; count = value / Power.
+* Budgets (`0x00920ec0`, `0x00921d70`, `0x00921360`, `0x009221d0`, `0x0091f140`): while the preset's first entry
+  fits, n = leading entries that fit, pick `rand(n)`, place it on a far candidate (`0x0091bb10`: object distance
+  > 2/3 of the zone maximum, border distance > 0). Resource buildings `tiles · density / 10000`, luck/morale
+  `tiles · (density + 40) / 10000`, treasuries/shops the template's points, upgrades
+  `tiles · round(density × Experience factor) / 10000` (the only guarded budget objects). Shrines (`0x00920000`):
+  Shrines of Magic 1/2/3 for 6/10/12 points. Buff points: nothing (`0x00918b30` is empty). `0x009219a0`:
+  tiles/4000 + 1 Redwood Observatories, a Den of Thieves in 20 % of the zones without a player.
+* Treasures (`0x0091f8a0`, surface zones only): `tiles · trunc(density × factor) / 10000` of rand(9) over
+  Campfire, Chest, Crystal, Gems, Gold, Mercury, Ore, Sulfur, Wood (chests: Chest). The factors come from the
+  screen's Resources (treasures) and Experience (chests, upgrades) combos: 0.2, 0.5, 1, 2, 4.
+* Guards (`0x00ba7690`): power < 100 → none; value = round(power × monster coefficient) (0.4, 0.9, 1.7, 4, 12 for
+  weak … impossible); with `Float(0,1) < 0.6` a two-stack army template of round(value × 0.9) (`0x00ba71b0`,
+  `RMG/CustomArmyTemplates/SimpleTemplates/AutoTemplates/TestTemplateGroup`), otherwise or on failure `0x00ba6910`:
+  `r = rand(30)`, creatures (except ids 0, 0x59, 0x72) whose Power·(r+10) lies within ×k of the value appended per
+  pass (k = 1.1 growing ×1.2, list kept) until ≥ 10 entries; count = trunc(value / Power).
 
-## Calibrations (not decoded, tuned against the user's RMG maps)
+## Not yet line by line (see AUDIT_RMG.md)
 
-* Treasure and chest multipliers default to the ×2 entry (index 3): it reproduces the reference
-  treasure/chest counts; the UI setting that selects it was not traced.
-* Upgrade buildings use ×1.
-* A quarter of loose treasures are minor artifacts (the exe's treasure table at `0x00ff9efc` was not decoded).
-* Treasure blocks: blocks of 5 000–15 000 value (an artifact, two piles, a guard of the block value)
-  until the zone's `TreasureBlocksTotalValue` is spent; the original `0x00ba8050` was not ported.
+* Treasure blocks: the original `0x00ba8050` / `0x00ba82c0` / `0x00ba94c0` (CTreasureBlockDistributor) is traced
+  (AUDIT_RMG.md) but not ported; ours places blocks of 5 000–15 000 value (an artifact, two piles, a guard of the
+  block value) until the zone's `TreasureBlocksTotalValue` is spent.
 * Statics: zone borders, unassigned tiles and the map edge are filled with the zone race's BigStatics /
   Mountains / OneTileBigObjects / OneTileSmallBlockers, plus interior clusters (one seed per 45 free
   tiles); walkable routes from the zone hub to every object and passage are reserved first.
@@ -131,8 +137,9 @@ first pass nothing can be stolen (division by an empty list).
   `Wide`), guarded with `GuardStrenght × BasicLeverGuardPower`; non-adjacent or cross-floor
   connections get a pair of two-way monoliths.
 
-Reference comparison (`h5tool rmg-ref`, same template/size/seed/players/races): mines, prisons and towns
-match exactly on every map; dwellings, shrines, monsters, statics and treasures are within about ±40%.
+Reference comparison (`h5tool rmg-ref`, same template/size/seed/players/races/levels): mines, prisons and towns
+match exactly on every map; buildings, dwellings and shrines are within a few objects; monsters are at ~65 % and
+treasures/artifacts at ~30 % of the reference (the missing share comes from the treasure blocks).
 
 ## Gaps
 
@@ -143,6 +150,8 @@ match exactly on every map; dwellings, shrines, monsters, statics and treasures 
   minimap); maps exist in memory as `AdvMap`.
 * Grail/obelisks follow the screen's EP_GRAAL_ON_MAP option (0x00907150 / 0x00921a50 / 0x00921a10, see
   AUDIT_ADVENTURE.md "Random maps"); their candidate filters are not ported.
-* Water zones, shipyards, lakes, Den of Thieves / Redwood Observatory densities,
-  cartographers, the two-stack guard templates and per-zone point lights are not generated.
+* Water zones, shipyards, lakes, water cartographers and per-zone point lights are not generated.
+* MMH 5.5: all 94 template files generate at every listed size / underground / player count (rmg-stats, 465 runs);
+  `4P-Diamond-XL-#` has 4 start zones for up to 8 players — as in the exe the extra players stay active without
+  a start town (0x0090bd80 / 0x009058e0).
 * Terrain is flat and uses only each race's default and road tiles (no transitive/secondary tiles).

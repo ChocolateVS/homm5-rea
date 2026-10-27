@@ -61,6 +61,30 @@ public sealed class RmgTemplate
     public int MinMapSize, MaxMapSize; // +0x80, +0x84 (size units, see RmgSizes)
     public bool Underground;           // +0x88
     public bool TestTemplate;          // +0x89
+
+    /// <summary>
+    /// Whether the RMG screen lists this template for the given settings (exe 0x0090c880, the template
+    /// list of IRandomMapGenerator vf3, which fills the template combo and picks the random template).
+    /// Test templates never; a fixed size compares its units (x0.7 rounded with water, x2 with a fixed
+    /// underground) with [MinMapSize, MaxMapSize]; a fixed underground also needs MaxMapSize > 9 (also
+    /// with a random size); a fixed player count must lie in [MinPlayers, MaxPlayers].
+    /// </summary>
+    public bool ListedFor(int? sizeIndex, bool? underground, bool water, int? players)
+    {
+        if (TestTemplate) return false;
+        bool fixedUg = underground == true;
+        if (sizeIndex is int s)
+        {
+            int units = RmgSizes.Units(s);
+            if (water) units = (int)MathF.Round(units * 0.7f);
+            int u = fixedUg ? units * 2 : units;
+            if (u < MinMapSize || u > MaxMapSize) return false;
+        }
+        if (fixedUg && MaxMapSize <= 9) return false;
+        if (players is int p && (p < MinPlayers || p > MaxPlayers)) return false;
+        return true;
+    }
+
     public override string ToString() => Name;
 }
 
@@ -106,6 +130,13 @@ public sealed record RmgCreature(int Index, string Id, string Town, int Tier, in
 
 public sealed record RmgArtifact(string Id, string Shared, string Class, int Cost);
 
+/// <summary>
+/// One SRMGSimpleCustomArmyTemplate of the guard template group (exe 0x00ba71b0): used when its
+/// [MinPower, MaxPower] (+0x50/+0x54) contains the guard value; Stacks (+0x44, 12-byte records:
+/// creature +4, coefficient +8) give the creatures and their relative counts.
+/// </summary>
+public sealed record RmgArmyTemplate(string Path, int MinPower, int MaxPower, List<(int Creature, int Coef)> Stacks);
+
 public sealed class RmgDatabase
 {
     public Dictionary<string, RmgTemplate> Templates { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -113,6 +144,8 @@ public sealed class RmgDatabase
     public List<RmgRacePreset> Races { get; } = new();
     public List<RmgCreature> Creatures { get; } = new();
     public List<RmgArtifact> Artifacts { get; } = new();
+    /// <summary>The two-stack guard templates (exe 0x00ba7e30: the group named at 0x00e568c0), in group order.</summary>
+    public List<RmgArmyTemplate> ArmyTemplates { get; } = new();
     public XdbLoader Xdb { get; }
 
     public const string ParamsPath = "RMG/Params/Default.xdb";
@@ -132,6 +165,7 @@ public sealed class RmgDatabase
         db.LoadRaces();
         db.LoadCreatures();
         db.LoadArtifacts();
+        db.LoadArmyTemplates();
         return db;
     }
 
@@ -273,6 +307,25 @@ public sealed class RmgDatabase
             var monster = Ref(c.Element("MonsterShared"), path);
             Creatures.Add(new RmgCreature(i, id, S(c, "CreatureTown"), I(c, "CreatureTier"), I(c, "Power"),
                 monster.Length > 0 && Xdb.FileSystem.Exists(monster) ? monster : null));
+        }
+    }
+
+    public const string ArmyTemplateGroupPath =
+        "RMG/CustomArmyTemplates/SimpleTemplates/AutoTemplates/TestTemplateGroup.(RMGSimpleCustomArmyTemplateGroup).xdb";
+
+    void LoadArmyTemplates()
+    {
+        if (!Xdb.FileSystem.Exists(ArmyTemplateGroupPath)) return;
+        var ids = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var c in Creatures) ids.TryAdd(c.Id, c.Index);
+        foreach (var path in Refs(Xdb.Load(ArmyTemplateGroupPath).Root!.Element("Templates"), ArmyTemplateGroupPath))
+        {
+            if (!Xdb.FileSystem.Exists(path)) continue;
+            var t = Xdb.Load(path).Root!;
+            var stacks = new List<(int, int)>();
+            foreach (var it in t.Element("Stacks")?.Elements("Item") ?? Enumerable.Empty<XElement>())
+                stacks.Add((ids.TryGetValue(S(it, "Creature"), out var ci) ? ci : 0, I(it, "Coef")));
+            ArmyTemplates.Add(new RmgArmyTemplate(path, I(t, "MinPower"), I(t, "MaxPower"), stacks));
         }
     }
 

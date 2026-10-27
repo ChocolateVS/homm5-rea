@@ -14,6 +14,8 @@ public sealed class RmgObject
     public string? Creature;
     public int Amount;
     public string? Note;             // what placed it (mine, guard, shop...)
+    /// <summary>Further guard stacks of a two-stack army template (written as AdditionalStacks, exe 0x00914cc0).</summary>
+    public List<(string Creature, int Count)> AdditionalStacks = new();
     public float Rot => Quarter * MathF.PI / 2;
 }
 
@@ -22,11 +24,14 @@ public sealed partial class RmgGenerator
     SharedCatalog? _catalog;
     SharedCatalog Catalog => _catalog ??= new SharedCatalog(_db.Xdb);
 
-    /// <summary>Treasure and chest multipliers (exe switch at 0x00905eac: 0.2, 0.5, 1, 2, 4). The stock
-    /// generator's defaults match index 3 on the reference maps (see docs/rules/RMG.md).</summary>
-    public int ResourceMultiplier { get; set; } = 3;
-    public int ChestMultiplier { get; set; } = 3;
+    /// <summary>
+    /// The screen's Resources / Experience combos (InitialParams.ResourceMultiplier = generator +0xa8,
+    /// ExpMultiplier = +0xb0; RESOURCE_/EXP_MISERABLE, LITTLE, NORMAL, LOTS, MUCH = 0..4) select these factors
+    /// (switches at 0x00905eac / 0x00905fc6 and 0x00907150): +0xa8 scales TreasureDensity, +0xb0
+    /// TreasureChestDensity and UpgBuildingsDensity.
+    /// </summary>
     static readonly float[] Multipliers = { 0.2f, 0.5f, 1f, 2f, 4f };
+    static float Multiplier(int level) => level is >= 0 and <= 4 ? Multipliers[level] : 1f;
 
     /// <summary>Monster strength coefficients by monster level (exe 0x00ba7690: 0.4, 0.9, 1.7, 4, 12).</summary>
     static readonly float[] MonsterCoef = { 0.4f, 0.9f, 1.7f, 4f, 12f };
@@ -158,6 +163,25 @@ public sealed partial class RmgGenerator
         if (z != null) LowerDistances(z, o.X, o.Y);
     }
 
+    /// <summary>
+    /// exe 0x0091bb10 (prisons, cartographers, shrines, resource/treasury/luck-morale buildings, shops, obelisks,
+    /// Redwood Observatory, Den of Thieves): the object distance field (0x009191a0 flag 4), its maximum M over
+    /// the zone's tiles with border distance &gt; 2 and occupancy != 2 (0x00919710), then every zone tile with
+    /// distance &gt; 2M/3 and border distance &gt; 0. No fallback: an empty list places nothing.
+    /// </summary>
+    List<(int X, int Y)> FarCandidates(RmgResult r, RmgZone z)
+    {
+        ComputeObjectDistances(r, z);
+        var f = Floors[z.Floor];
+        int max = 0;
+        foreach (var (x, y) in z.Tiles)
+        {
+            int i = f.At(x, y);
+            if (f.Zone[i] == z.Id && f.BorderDist[i] > 2 && f.Occ[i] != Occ.Near && f.Dist[i] > max) max = f.Dist[i];
+        }
+        return z.Tiles.Where(t => f.Dist[f.At(t.X, t.Y)] > max * 2 / 3 && f.BorderDist[f.At(t.X, t.Y)] > 0).ToList();
+    }
+
     /// <summary>Candidates far from other objects: distance above <paramref name="fraction"/> of the zone's maximum (exe 0x00919710).</summary>
     List<(int X, int Y)> SpreadCandidates(RmgResult r, RmgZone z, IEnumerable<(int X, int Y)> tiles, int num, int den)
     {
@@ -173,31 +197,88 @@ public sealed partial class RmgGenerator
 
     // ------------------------------------------------------------------ guards (exe 0x00ba7690)
 
-    /// <summary>Guard stack for a value: rand(30)+10 creatures whose Power fits a widening band (×1.1, ×1.2 …).</summary>
-    (RmgCreature Creature, int Count)? PickGuard(int power)
+    /// <summary>
+    /// Guard army for a guard power (exe 0x00ba7690). Power below 100 places nothing (no draws). The value is
+    /// round(power x MonsterCoef[level]); then Float(0,1) &lt; 0.6 tries a two-stack army template with
+    /// round(value x 0.9) (0x00ba71b0), and otherwise, or when no template fits, one stack (0x00ba6910).
+    /// Returns the stacks (main stack first) or null.
+    /// </summary>
+    List<(RmgCreature Creature, int Count)>? PickGuard(int power)
     {
-        int value = (int)MathF.Round(power * MonsterCoef[Math.Clamp(MonsterLevel, 0, 4)]);
+        if (power < 100) return null;
+        int value = (int)Math.Round((double)power * MonsterCoef[Math.Clamp(MonsterLevel, 0, 4)], MidpointRounding.ToEven);
+        if (Rng.Float(0, 1) < 0.6f)
+        {
+            var two = PickArmyTemplate((int)Math.Round((double)value * 0.9f, MidpointRounding.ToEven));
+            if (two != null) return two;
+        }
+        var one = PickSingleStack(value);
+        return one == null ? null : new List<(RmgCreature, int)> { one.Value };
+    }
+
+    RmgCreature? CreatureAt(int index) => index >= 0 && index < _db.Creatures.Count && _db.Creatures[index].Index == index
+        ? _db.Creatures[index] : _db.Creatures.FirstOrDefault(c => c.Index == index);
+
+    /// <summary>
+    /// exe 0x00ba71b0: templates of the group whose [MinPower, MaxPower] contains the value, one picked with
+    /// rand(n); each stack gets coef x (value / sum(coef x power)), the last one also the remainder / its power.
+    /// Accepted (0x00ba7690) when the first stack has a creature and a count.
+    /// </summary>
+    List<(RmgCreature Creature, int Count)>? PickArmyTemplate(int value)
+    {
         if (value < 100) return null;
-        // 60% of guards use a two-stack army template in the original; we keep the single-stack
-        // draw sequence for both (the template branch is documented as a gap).
-        Rng.Float(0, 1);
+        var fits = new List<int>();
+        for (int i = 0; i < _db.ArmyTemplates.Count; i++)
+            if (value >= _db.ArmyTemplates[i].MinPower && value <= _db.ArmyTemplates[i].MaxPower) fits.Add(i);
+        if (fits.Count == 0) return null;
+        var t = _db.ArmyTemplates[fits[Rng.Next(fits.Count)]];
+        var stacks = new List<(RmgCreature? C, int Count)>();
+        int sum = 0;
+        foreach (var (cr, coef) in t.Stacks)
+        {
+            var c = CreatureAt(cr);
+            stacks.Add((c, coef));
+            sum += coef * (c?.Power ?? 0);
+        }
+        if (stacks.Count == 0 || sum <= 0) return null;
+        int mult = value / sum, left = value;
+        for (int i = 0; i < stacks.Count; i++)
+        {
+            int pw = stacks[i].C?.Power ?? 0;
+            int count = stacks[i].Count * mult;
+            left -= count * pw;
+            if (i == stacks.Count - 1 && left > 0 && pw > 0) { count += left / pw; left -= left / pw * pw; }
+            stacks[i] = (stacks[i].C, count);
+        }
+        if (stacks[0].C is not { Index: not 0 } || stacks[0].Count == 0) return null;
+        return stacks.Where(st => st.C != null).Select(st => (st.C!, st.Count)).ToList();
+    }
+
+    /// <summary>
+    /// exe 0x00ba6910: r = rand(30); every creature except ids 0, 0x59, 0x72 whose Power x (r+10) lies within
+    /// a factor k of the value is appended (k = 1.1, x1.2 per pass; the list is not cleared between passes)
+    /// until it holds at least 10 entries; one is picked with rand(n); count = trunc(value / Power).
+    /// </summary>
+    (RmgCreature Creature, int Count)? PickSingleStack(int value)
+    {
+        if (value < 100) return null;
         int r = Rng.Next(30);
         var cands = new List<RmgCreature>();
         float k = 1.1f;
-        for (int iter = 0; iter < 60 && cands.Count < 10; iter++)
+        for (int pass = 0; cands.Count < 10 && pass < 200; pass++)
         {
-            cands.Clear();
             foreach (var c in _db.Creatures)
             {
-                if (c.Index == 0 || c.Index == 0x59 || c.Index == 0x72 || c.Power <= 0 || c.MonsterShared == null) continue;
-                float lo = (r + 10) / k * c.Power, hi = (r + 10) * k * c.Power;
+                if (c.Index == 0 || c.Index == 0x59 || c.Index == 0x72) continue;
+                // x87 at double precision; k is stored as a float after each pass (FSTP at 0x00ba6a7d).
+                double lo = (double)(r + 10) / k * c.Power, hi = (double)(r + 10) * k * c.Power;
                 if (lo <= value && value <= hi) cands.Add(c);
             }
             k *= 1.2f;
         }
         if (cands.Count == 0) return null;
         var pick = cands[Rng.Next(cands.Count)];
-        return (pick, Math.Max(1, value / pick.Power));
+        return (pick, (int)((float)value / pick.Power));
     }
 
     RmgObject? PlaceGuard(RmgResult r, RmgZone z, int x, int y, int power, string note)
@@ -205,8 +286,8 @@ public sealed partial class RmgGenerator
         var f = Floors[z.Floor];
         if (!f.In(x, y)) return null;
         var g = PickGuard(power);
-        if (g == null) return null;
-        var (c, count) = g.Value;
+        if (g == null || g[0].Creature.MonsterShared == null) return null;
+        var (c, count) = g[0];
         var d = Catalog.Get(c.MonsterShared!);
         f.Occ[f.At(x, y)] = Occ.Guard;
         var o = new RmgObject
@@ -214,6 +295,7 @@ public sealed partial class RmgGenerator
             Shared = c.MonsterShared!, Def = d, X = x, Y = y, Floor = z.Floor, Quarter = Rng.Next(4), Zone = z.Id,
             Creature = c.Id, Amount = count, Note = note,
         };
+        o.AdditionalStacks.AddRange(g.Skip(1).Select(st => (st.Creature.Id, st.Count)));
         r.Objects.Add(o);
         NoteObject(o);
         return o;
@@ -366,34 +448,56 @@ public sealed partial class RmgGenerator
 
     void PlaceMainObjects(RmgResult r)
     {
-        // exe 0x00907150: with the Graal option one zone index is drawn up front (Next(template zones)),
-        // otherwise one draw is spent.
+        // exe 0x00907150: with the Graal option one position in the template's zone list is drawn up front
+        // (Next(template zones)), otherwise one draw is spent. Zones are then visited in template list order.
         int grailZone = -1;
         if (_o.Grail) grailZone = Rng.Next(_t.Zones.Count); else Rng.Advance();
-        foreach (var z in Zones.OrderBy(z => z.Def.Index))
+        for (int zi = 0; zi < _t.Zones.Count; zi++)
         {
+            var z = Zones.FirstOrDefault(zz => zz.Def == _t.Zones[zi]);
+            if (z == null) continue;
             var race = _db.Race(z.Race);
             PlaceMines(r, z, race);
             for (int i = 0; i < z.Def.AbandonedMines && race.AbandonedMine != null; i++)
             {
-                var o = PlaceRandom(r, z, race.AbandonedMine, SpreadCandidates(r, z, z.Tiles, 2, 5), "abandoned mine");
+                var o = PlaceRandom(r, z, race.AbandonedMine, SpreadCandidates(r, z, z.Tiles, 4, 5), "abandoned mine");
                 if (o != null && r.Access.TryGetValue(o, out var acc)) PlaceGuard(r, z, acc.X, acc.Y, GuardPower(_db.Params.Mine2LevelGuardLevel), "mine guard");
             }
             PlaceDwellings(r, z, race);
-            if (_o.Grail) PlaceGrailAndObelisks(r, z, z.Def.Index == grailZone);
-            // Upgrade buildings scale with the 0x00907150 switch on +0xb0 (0.2 .. 4); calibrated to x1
-            // against the stock RMG maps in the user's Maps folder (see docs/rules/RMG.md).
-            PlaceByDensity(r, z, race.Upgrades, z.Def.UpgBuildingsDensity, "upgrade building");
+            if (_o.Grail) PlaceGrailAndObelisks(r, z, zi == grailZone);
+            // Upgrade buildings: density x the +0xb0 factor, rounded to nearest (0x00907150 -> 0x0091f140).
+            SpendBudget(r, z, race.Upgrades,
+                z.Tiles.Count * (int)MathF.Round(z.Def.UpgBuildingsDensity * Multiplier(_o.ExpLevel), MidpointRounding.ToEven) / 10000,
+                "upgrade building", upgrades: true);
             for (int i = 0; i < z.Def.Prisons; i++)
-                PlaceRandom(r, z, "MapObjects/Prison.(AdvMapPrisonShared).xdb", SpreadCandidates(r, z, z.Tiles, 1, 2), "prison");
-            PlaceByPoints(r, z, race.Shrines, z.Def.ShrinePoints, "shrine");
-            PlaceByDensity(r, z, race.ResourceGivers, z.Def.ResourceBuildingsDensity, "resource building");
-            PlaceByPoints(r, z, race.Treasuries, z.Def.TreasureBuildingPoints, "treasury building");
-            PlaceByDensity(r, z, race.LuckMorale, z.Def.LuckMoralBuildingsDensity, "luck/morale building");
-            PlaceByPoints(r, z, race.Shops, z.Def.ShopPoints, "shop");
-            PlaceByPoints(r, z, race.Buffs, z.Def.BuffPoints, "buff building");
-            PlaceTreasures(r, z, (int)MathF.Round(z.Def.TreasureDensity * Multipliers[ResourceMultiplier]), chests: false);
-            PlaceTreasures(r, z, (int)MathF.Round(z.Def.TreasureChestDensity * Multipliers[ChestMultiplier]), chests: true);
+                PlaceRandom(r, z, "MapObjects/Prison.(AdvMapPrisonShared).xdb", FarCandidates(r, z), "prison");
+            // 0x00920c50: LandCartographer cartographers; stops at the first empty candidate list.
+            for (int i = 0; i < z.Def.LandCartographer; i++)
+            {
+                var c = FarCandidates(r, z);
+                if (c.Count == 0) break;
+                PlaceRandom(r, z, "MapObjects/Cartographer.(AdvMapCartographerShared).xdb", c, "cartographer");
+            }
+            PlaceShrines(r, z, z.Def.ShrinePoints);
+            // Resource buildings: tiles x density / 10000; luck/morale: tiles x (density + 40) / 10000; treasuries
+            // and shops: the template's points.
+            SpendBudget(r, z, race.ResourceGivers, z.Tiles.Count * z.Def.ResourceBuildingsDensity / 10000, "resource building");
+            SpendBudget(r, z, race.Treasuries, z.Def.TreasureBuildingPoints, "treasury building");
+            SpendBudget(r, z, race.LuckMorale, z.Tiles.Count * (z.Def.LuckMoralBuildingsDensity + 40) / 10000, "luck/morale building");
+            SpendBudget(r, z, race.Shops, z.Def.ShopPoints, "shop");
+            // BuffPoints (+0x70) go to 0x00918b30, an empty function: the stock engine places no buff buildings.
+            // 0x009219a0: tiles / 4000 + 1 Redwood Observatories, and in zones without a player one Den of
+            // Thieves when rand(10) < 2 (the template's DenOfThieves / RedwoodObservatoryDensity are not read).
+            for (int i = z.Tiles.Count / 4000; i >= 0; i--)
+                PlaceBuilding(r, z, "MapObjects/Redwood_Observatory.(AdvMapBuildingShared).xdb", "redwood observatory");
+            if (z.Player == 0 && Rng.Next(10) < 2)
+                PlaceBuilding(r, z, "MapObjects/Den_Of_Thieves.(AdvMapBuildingShared).xdb", "den of thieves");
+            // 0x00905e60, surface zones only (zone floor +0xf4 == 0): density x factor, truncated.
+            if (z.Floor == 0)
+            {
+                PlaceTreasures(r, z, (int)(z.Def.TreasureDensity * Multiplier(_o.ResourceLevel)), chests: false);
+                PlaceTreasures(r, z, (int)(z.Def.TreasureChestDensity * Multiplier(_o.ExpLevel)), chests: true);
+            }
         }
     }
 
@@ -425,7 +529,30 @@ public sealed partial class RmgGenerator
         if (_db.Params.Obelisk is not { } ob) return;
         int k = SizeIndex == 0 ? 10 : SizeIndex == 1 ? 18 : 26;
         int n = z.Tiles.Count * k / (W * H) + 1;
-        for (int i = 0; i <= n; i++) PlaceRandom(r, z, ob, z.Tiles.ToList(), "obelisk");
+        for (int i = 0; i <= n; i++) PlaceBuilding(r, z, ob, "obelisk");
+    }
+
+    /// <summary>
+    /// exe 0x009216f0: candidates of 0x0091bb10, then at most 100 attempts of a random candidate (rand(n)) and a
+    /// quarter turn (rand(4)); a footprint failure drops the candidate.
+    /// </summary>
+    RmgObject? PlaceBuilding(RmgResult r, RmgZone z, string shared, string note)
+    {
+        if (!_db.Xdb.FileSystem.Exists(shared)) return null;
+        var pool = FarCandidates(r, z);
+        if (pool.Count == 0) return null;
+        var d = Catalog.Get(shared);
+        for (int tries = 0; tries < 100; tries++)
+        {
+            if (pool.Count == 0) break;
+            int i = Rng.Next(pool.Count);
+            var (x, y) = pool[i];
+            int q = Rng.Next(4);
+            if (CanPlace(z, d, x, y, q, out var access)) return Commit(r, z, shared, d, x, y, q, access, note);
+            pool.RemoveAt(i);
+        }
+        r.Warnings.Add($"Can't place building {shared} at zone #{z.Id}, floor {z.Floor}");
+        return null;
     }
 
     /// <summary>exe 0x0091c4a0: wood/ore near the town (Mine1 radii), the rest further out (Mine2 radii), each guarded.</summary>
@@ -476,7 +603,7 @@ public sealed partial class RmgGenerator
             {
                 if (tier >= race.NewDwellings.Count) break;
                 var dw = race.NewDwellings[tier];
-                var o = PlaceRandom(r, z, dw.Shared, SpreadCandidates(r, z, z.Tiles, 1, 3), "dwelling");
+                var o = PlaceRandom(r, z, dw.Shared, SpreadCandidates(r, z, z.Tiles, 2, 3), "dwelling");
                 if (o != null && dw.GuardStrength > 0 && r.Access.TryGetValue(o, out var acc))
                     PlaceGuard(r, z, acc.X, acc.Y, GuardPower(dw.GuardStrength), "dwelling guard");
             }
@@ -486,34 +613,78 @@ public sealed partial class RmgGenerator
     /// exe 0x009221d0 (shops, shrines, treasuries, buffs): spend a point budget, each pick drawn
     /// among the leading pool entries still affordable.
     /// </summary>
-    void PlaceByPoints(RmgResult r, RmgZone z, List<RmgValuedObject> pool, int budget, string note) =>
-        SpendBudget(r, z, pool, budget, note);
-
-    /// <summary>exe 0x00921d70 (luck/morale, resource givers, upgrades): budget = zone tiles · (density + 40) / 10000.</summary>
-    void PlaceByDensity(RmgResult r, RmgZone z, List<RmgValuedObject> pool, int density, string note)
+    /// <summary>
+    /// The budget loop shared by 0x00920ec0 (resource buildings), 0x00921d70 (luck/morale), 0x00921360 (treasuries),
+    /// 0x009221d0 (shops) and 0x0091f140 (upgrades): while the pool's first entry still fits, n = the number of
+    /// leading entries (preset order) that fit, pick rand(n), stop if it does not fit or there are no candidates,
+    /// place it (random candidate + quarter turn; an exhausted list ends the loop) and add its value.
+    /// Only upgrade buildings get a guard (0x00ba79f0 with the entry's GuardStrenght).
+    /// </summary>
+    void SpendBudget(RmgResult r, RmgZone z, List<RmgValuedObject> pool, int budget, string note, bool upgrades = false)
     {
-        if (density <= 0) return;
-        SpendBudget(r, z, pool, z.Tiles.Count * (density + 40) / 10000, note);
-    }
-
-    void SpendBudget(RmgResult r, RmgZone z, List<RmgValuedObject> pool, int budget, string note)
-    {
-        if (pool.Count == 0 || budget <= 0) return;
-        var sorted = pool.OrderBy(p => p.Value).ToList();
+        if (pool.Count == 0) return;
         int spent = 0;
-        for (int guardRail = 0; guardRail < 200 && sorted[0].Value + spent <= budget; guardRail++)
+        while (pool[0].Value + spent <= budget)
         {
-            int affordable = sorted.TakeWhile(p => p.Value + spent <= budget).Count();
-            var pick = sorted[Rng.Next(Math.Max(1, affordable))];
+            int n = 0;
+            while (n < pool.Count && pool[n].Value + spent <= budget) n++;
+            var pick = pool[Rng.Next(n)];
             if (pick.Value + spent > budget) break;
-            var o = PlaceRandom(r, z, pick.Shared, SpreadCandidates(r, z, z.Tiles, 1, 3), note);
+            var cands = upgrades ? UpgradeCandidates(r, z) : FarCandidates(r, z);
+            if (!upgrades && cands.Count == 0) break;
+            var o = PlaceRandom(r, z, pick.Shared, cands, note);
             if (o == null) break;
-            spent += Math.Max(1, pick.Value);
-            if (pick.GuardStrength > 0 && r.Access.TryGetValue(o, out var acc))
+            spent += pick.Value;
+            if (upgrades && pick.GuardStrength > 0 && r.Access.TryGetValue(o, out var acc))
                 PlaceGuard(r, z, acc.X, acc.Y, GuardPower(pick.GuardStrength), note + " guard");
         }
     }
 
+    /// <summary>0x0091f140: zone tiles whose object distance exceeds 2/3 of the maximum (0x00919710), no border test.</summary>
+    List<(int X, int Y)> UpgradeCandidates(RmgResult r, RmgZone z)
+    {
+        ComputeObjectDistances(r, z);
+        var f = Floors[z.Floor];
+        int max = 0;
+        foreach (var (x, y) in z.Tiles)
+        {
+            int i = f.At(x, y);
+            if (f.Zone[i] == z.Id && f.BorderDist[i] > 2 && f.Occ[i] != Occ.Near && f.Dist[i] > max) max = f.Dist[i];
+        }
+        return z.Tiles.Where(t => f.Dist[f.At(t.X, t.Y)] > max * 2 / 3).ToList();
+    }
+
+    /// <summary>The shrine table (exe 0x00ffa068, filled at 0x00dc8bd0) and its point costs (0x00e57d74).</summary>
+    static readonly (string Shared, int Cost)[] ShrineTable =
+    {
+        ("MapObjects/Shrine_Of_Magic_1.(AdvMapShrineShared).xdb", 6),
+        ("MapObjects/Shrine_Of_Magic_2.(AdvMapShrineShared).xdb", 10),
+        ("MapObjects/Shrine_Of_Magic_3.(AdvMapShrineShared).xdb", 12),
+    };
+
+    /// <summary>
+    /// exe 0x00920000: ShrinePoints buy Shrines of Magic 1/2/3 (6/10/12 points) from the fixed table, not the race
+    /// preset's NewShrines. Needs more than 5 points; n = leading costs that fit, rand(n); stops without candidates;
+    /// continues while 6 more points fit.
+    /// </summary>
+    void PlaceShrines(RmgResult r, RmgZone z, int points)
+    {
+        if (points <= 5) return;
+        int spent = 0;
+        do
+        {
+            int n = 0;
+            while (n < ShrineTable.Length && ShrineTable[n].Cost + spent <= points) n++;
+            var pick = ShrineTable[Rng.Next(n)];
+            var cands = FarCandidates(r, z);
+            if (cands.Count == 0) break;
+            if (PlaceRandom(r, z, pick.Shared, cands, "shrine") == null) break;
+            spent += pick.Cost;
+        } while (spent + 6 <= points);
+    }
+
+    /// <summary>Resource piles (exe 0x00ff9e08, filled at 0x00dc8a50: Wood, Ore, Mercury, Crystal, Sulfur, Gems, Gold), used
+    /// by the mine decoration; Campfire appended for the (not yet ported) treasure blocks.</summary>
     static readonly string[] ResourcePiles =
     {
         "MapObjects/Wood.(AdvMapTreasureShared).xdb", "MapObjects/Ore.(AdvMapTreasureShared).xdb",
@@ -522,19 +693,40 @@ public sealed partial class RmgGenerator
         "MapObjects/Gold.(AdvMapTreasureShared).xdb", "MapObjects/Campfire.(AdvMapTreasureShared).xdb",
     };
 
-    /// <summary>exe 0x0091f8a0: count = zone tiles · density / 10000, placed far from other objects (2/3 of max).</summary>
+    /// <summary>The loose treasure table (exe 0x00ff9ee8, 32-byte records filled at 0x00dc8ad0): rand(9) picks one
+    /// for a treasure, index 1 (Chest) is used for chests.</summary>
+    static readonly string[] TreasureTable =
+    {
+        "MapObjects/Campfire.(AdvMapTreasureShared).xdb", "MapObjects/Chest.(AdvMapTreasureShared).xdb",
+        "MapObjects/Crystal.(AdvMapTreasureShared).xdb", "MapObjects/Gems.(AdvMapTreasureShared).xdb",
+        "MapObjects/Gold.(AdvMapTreasureShared).xdb", "MapObjects/Mercury.(AdvMapTreasureShared).xdb",
+        "MapObjects/Ore.(AdvMapTreasureShared).xdb", "MapObjects/Sulfur.(AdvMapTreasureShared).xdb",
+        "MapObjects/Wood.(AdvMapTreasureShared).xdb",
+    };
+
+    /// <summary>
+    /// exe 0x0091f8a0: count = tiles x density / 10000; per treasure the type is drawn first (rand(9), chests fixed),
+    /// candidates are the zone's tiles with border distance &gt; 0 whose object distance exceeds 2/3 of the maximum
+    /// (0x009191a0 flag 4 / 0x00919710) and occupancy != 2; random candidate + quarter turn until the footprint
+    /// fits (failures drop the candidate). An exhausted list logs "Can't place treasure" and ends the zone's treasures.
+    /// </summary>
     void PlaceTreasures(RmgResult r, RmgZone z, int density, bool chests)
     {
+        var f = Floors[z.Floor];
         int count = z.Tiles.Count * density / 10000;
-        var minors = _db.Artifacts.Where(a => a.Class == "ARTF_CLASS_MINOR" && a.Cost > 0).ToList();
+        var inner = z.Tiles.Where(t => f.BorderDist[f.At(t.X, t.Y)] > 0).ToList();
         for (int i = 0; i < count; i++)
         {
-            // The exe draws a type from its treasure table (0x00ff9efc); about a quarter of loose
-            // treasures on the stock RMG maps are minor artifacts (calibration, see docs/rules/RMG.md).
-            string shared = chests ? "MapObjects/Chest.(AdvMapTreasureShared).xdb"
-                : Rng.Next(4) == 0 && minors.Count > 0 ? minors[Rng.Next(minors.Count)].Shared
-                : ResourcePiles[Rng.Next(ResourcePiles.Length)];
-            if (PlaceRandom(r, z, shared, SpreadCandidates(r, z, z.Tiles, 2, 3), chests ? "chest" : "treasure") == null) break;
+            ComputeObjectDistances(r, z);
+            int max = 0;
+            foreach (var (x, y) in inner)
+            {
+                int k = f.At(x, y);
+                if (f.Zone[k] == z.Id && f.BorderDist[k] > 2 && f.Occ[k] != Occ.Near && f.Dist[k] > max) max = f.Dist[k];
+            }
+            var cands = inner.Where(t => { int k = f.At(t.X, t.Y); return f.Dist[k] > max * 2 / 3 && f.BorderDist[k] > 0 && f.Occ[k] != Occ.Near; }).ToList();
+            string shared = TreasureTable[chests ? 1 : Rng.Next(TreasureTable.Length)];
+            if (PlaceRandom(r, z, shared, cands, chests ? "chest" : "treasure") == null) break;
         }
     }
 

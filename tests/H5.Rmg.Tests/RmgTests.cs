@@ -153,16 +153,77 @@ public class GeneratorTests(RmgFixture f)
         Assert.Equal(4, r.StartTowns.Count);
     }
 
-    [StockFact]
-    public void EveryTemplateGeneratesAtItsSmallestSize()
+    /// <summary>
+    /// Every template at the smallest size the RMG screen lists it for (exe 0x0090c880), with its most players:
+    /// one start town per player while start zones last (exe 0x0090bd80 hands player records to start zones only).
+    /// </summary>
+    [Fact]
+    public void EveryTemplateGeneratesAtItsSmallestListedSize()
     {
         foreach (var t in f.Db.Templates.Values.Where(t => !t.TestTemplate))
         {
-            int size = Enumerable.Range(0, 7).First(s => RmgSizes.Units(s) * 2 >= t.MinMapSize);
-            var r = f.Generate(t.Name, size, 31337, t.MaxPlayers);
-            Assert.True(r.StartTowns.Count >= Math.Min(t.MaxPlayers, r.Generator.Players), $"{t.Name}: {r.StartTowns.Count} start towns");
+            var (size, ug) = Enumerable.Range(0, 7).SelectMany(s => new[] { (s, false), (s, true) })
+                .First(c => t.ListedFor(c.Item1, c.Item2, false, t.MaxPlayers));
+            var o = new RmgOptions { Template = t.Name, Size = size, Underground = ug, Seed = 31337, Players = t.MaxPlayers };
+            var r = new RmgGenerator(f.Db, o).Generate();
+            int starts = t.Zones.Count(z => z.CanBePlayerStart);
+            Assert.True(r.StartTowns.Count == Math.Min(r.Generator.Players, starts), $"{t.Name}: {r.StartTowns.Count} start towns");
             Assert.Equal(0, r.Unreachable);
         }
+    }
+
+    [Fact]
+    public void ScreenListsTemplatesLikeTheExe()
+    {
+        var t = new RmgTemplate { Name = "t", MinMapSize = 30, MaxMapSize = 35, MinPlayers = 2, MaxPlayers = 4 };
+        Assert.True(t.ListedFor(3, false, false, 4));     // 31 units
+        Assert.False(t.ListedFor(2, false, false, 4));    // 18
+        Assert.False(t.ListedFor(2, true, false, 2));     // underground doubles: 2 x 18 = 36 > 35
+        Assert.True(new RmgTemplate { MinMapSize = 30, MaxMapSize = 40 }.ListedFor(2, true, false, null));
+        Assert.False(t.ListedFor(3, false, false, 5));    // players above the maximum
+        Assert.True(t.ListedFor(null, null, false, null));
+        Assert.True(t.ListedFor(4, false, true, 2));      // water: round(47 x 0.7) = 33
+        t.TestTemplate = true;
+        Assert.False(t.ListedFor(3, false, false, 4));
+    }
+
+    /// <summary>
+    /// MMH55's 4P-Diamond-XL-# allows 8 players but has 4 start zones: the exe gives start zones to the first 4
+    /// player records (0x0090bd80) and still writes 8 active players (0x009058e0: ActivePlayer for i &lt; Players).
+    /// </summary>
+    [Fact]
+    public void MorePlayersThanStartZonesKeepsTheExtraPlayersActive()
+    {
+        var t = f.Db.Templates.Values.FirstOrDefault(t => t.Zones.Count(z => z.CanBePlayerStart) < t.MaxPlayers);
+        if (t == null) return; // stock data has no such template
+        var (size, ug) = Enumerable.Range(0, 7).SelectMany(s => new[] { (s, false), (s, true) })
+            .First(c => t.ListedFor(c.Item1, c.Item2, false, t.MaxPlayers));
+        var r = new RmgGenerator(f.Db, new RmgOptions { Template = t.Name, Size = size, Underground = ug, Seed = 7, Players = t.MaxPlayers }).Generate();
+        Assert.Equal(t.Zones.Count(z => z.CanBePlayerStart), r.StartTowns.Count);
+        var map = r.ToAdvMap(new SharedCatalog(f.Xdb));
+        Assert.Equal(t.MaxPlayers, map.Players.Count(p => p.Active));
+    }
+
+    /// <summary>
+    /// Object rules traced in H5_Game.exe (docs/rules/AUDIT_RMG.md): guards use two-stack army templates part of the
+    /// time (0x00ba7690), shrines are Shrines of Magic (0x00920000), BuffPoints place nothing (0x00918b30), loose
+    /// treasures come from the 9-entry table (0x0091f8a0), each zone gets tiles/4000 + 1 Redwood Observatories.
+    /// </summary>
+    [StockFact]
+    public void ObjectRulesFollowTheExe()
+    {
+        var o = new RmgOptions { Template = "S1-2P2-4Z4K1S", Size = 2, Seed = 1736932596, Players = 4 };
+        var g = new RmgGenerator(f.Db, o);
+        var r = g.Generate();
+        var guards = r.Objects.Where(x => x.Def.Tag == "AdvMapMonsterShared").ToList();
+        Assert.Contains(guards, x => x.AdditionalStacks.Count > 0);
+        Assert.All(guards, x => Assert.True(x.Amount >= 0));
+        Assert.All(r.Objects.Where(x => x.Def.Tag == "AdvMapShrineShared"), x => Assert.Contains("Shrine_Of_Magic_", x.Shared));
+        var buffs = g.Zones.Select(z => f.Db.Race(z.Race)).SelectMany(p => p.Buffs).Select(b => b.Shared).ToHashSet();
+        Assert.DoesNotContain(r.Objects, x => buffs.Contains(x.Shared) && x.Note == "buff building");
+        Assert.All(r.Objects.Where(x => x.Note is "treasure" or "chest"), x => Assert.Matches(@"MapObjects/(Campfire|Chest|Crystal|Gems|Gold|Mercury|Ore|Sulfur|Wood)\.", x.Shared));
+        int observatories = r.Objects.Count(x => x.Note == "redwood observatory");
+        Assert.Equal(g.Zones.Sum(z => z.Tiles.Count / 4000 + 1), observatories);
     }
 
     [StockFact]

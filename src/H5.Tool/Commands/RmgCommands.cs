@@ -133,39 +133,71 @@ sealed class RmgCommand : ICommand
 sealed class RmgStatsCommand : ICommand
 {
     public string Name => "rmg-stats";
-    public string Help => "rmg-stats [seeds=3]  - generate every template x size x seed, report failures";
+    public string Help => "rmg-stats [seeds=1] [--threads=N] [--filter=substr] [--max-players]  - generate every template at every size/underground/player count the RMG screen lists it for (exe 0x0090c880), report failures";
 
     public int Run(ToolContext ctx, string[] args)
     {
-        int seeds = args.Length > 0 && int.TryParse(args[0], out var s) ? s : 3;
-        var db = RmgDatabase.Load(new H5.Core.Xdb.XdbLoader(ctx.Fs));
-        var catalog = new SharedCatalog(new H5.Core.Xdb.XdbLoader(ctx.Fs));
-        int ok = 0, fail = 0, unreachable = 0;
-        var sw = Stopwatch.StartNew();
-        foreach (var t in db.Templates.Values.Where(t => !t.TestTemplate))
+        int seeds = args.Length > 0 && int.TryParse(args[0], out var s) ? s : 1;
+        int threads = Environment.ProcessorCount / 2;
+        string? filter = null;
+        bool maxOnly = false;
+        foreach (var a in args)
+        {
+            if (a.StartsWith("--threads=")) threads = int.Parse(a[10..]);
+            else if (a.StartsWith("--filter=")) filter = a[9..];
+            else if (a == "--max-players") maxOnly = true;
+        }
+        var db0 = RmgDatabase.Load(new H5.Core.Xdb.XdbLoader(ctx.Fs));
+        var jobs = new List<(string T, int Size, bool Ug, int Players, int Seed)>();
+        foreach (var t in db0.Templates.Values.OrderBy(t => t.Name, StringComparer.Ordinal))
+        {
+            if (filter != null && !t.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)) continue;
             for (int size = 0; size <= 6; size++)
+                foreach (bool ug in new[] { false, true })
+                    for (int p = maxOnly ? t.MaxPlayers : t.MinPlayers; p <= t.MaxPlayers; p++)
+                        if (t.ListedFor(size, ug, false, p))
+                            for (int seed = 1; seed <= seeds; seed++) jobs.Add((t.Name, size, ug, p, seed * 7919 + size * 31 + p));
+        }
+        Console.WriteLine($"{db0.Templates.Count} templates, {jobs.Count} runs on {threads} threads");
+        var lines = new string[jobs.Count];
+        int ok = 0, fail = 0, unreachable = 0, next = -1;
+        var sw = Stopwatch.StartNew();
+        var workers = Enumerable.Range(0, Math.Max(1, threads)).Select(_ => new Thread(() =>
+        {
+            using var fs = H5.Core.IO.PakFileSystem.OpenInstall(ctx.Install);
+            var xdb = new H5.Core.Xdb.XdbLoader(fs);
+            var db = RmgDatabase.Load(xdb);
+            var catalog = new SharedCatalog(xdb);
+            int i;
+            while ((i = Interlocked.Increment(ref next)) < jobs.Count)
             {
-                if (RmgSizes.Units(size) > t.MaxMapSize * 2 || RmgSizes.Units(size) * 2 < t.MinMapSize) continue;
-                for (int seed = 1; seed <= seeds; seed++)
+                var j = jobs[i];
+                string head = $"{j.T,-24} size {j.Size} ug {(j.Ug ? 1 : 0)} players {j.Players} seed {j.Seed,6}";
+                try
                 {
-                    try
-                    {
-                        var gen = new RmgGenerator(db, new RmgOptions { Template = t.Name, Size = size, Players = t.MaxPlayers, Seed = seed * 7919 + size });
-                        var r = gen.Generate();
-                        var map = r.ToAdvMap(catalog);
-                        unreachable += r.Unreachable;
-                        int towns = r.OfKind("AdvMapTownShared").Count();
-                        if (towns < gen.Players) throw new Exception($"only {towns} towns for {gen.Players} players");
-                        ok++;
-                        Console.WriteLine($"ok   {t.Name,-22} {RmgSizes.Names[gen.SizeIndex],-11} seed {gen.Seed,6}: {map.Objects.Count,5} objects, towns {towns}, monsters {r.OfKind("AdvMapMonsterShared").Count()}, mines {r.OfKind("AdvMapMineShared").Count()}, unreachable {r.Unreachable}");
-                    }
-                    catch (Exception e)
-                    {
-                        fail++;
-                        Console.WriteLine($"FAIL {t.Name,-22} size {size} seed {seed}: {e.GetType().Name}: {e.Message}");
-                    }
+                    var gen = new RmgGenerator(db, new RmgOptions { Template = j.T, Size = j.Size, Underground = j.Ug, Players = j.Players, Seed = j.Seed });
+                    var r = gen.Generate();
+                    var map = r.ToAdvMap(catalog);
+                    var t = db.Templates[j.T];
+                    int startZones = t.Zones.Count(z => z.CanBePlayerStart);
+                    int expected = Math.Min(gen.Players, startZones);
+                    int towns = r.StartTowns.Count;
+                    Interlocked.Add(ref unreachable, r.Unreachable);
+                    if (towns < expected) throw new Exception($"only {towns} start towns for {expected} (players {gen.Players}, start zones {startZones})");
+                    if (gen.Players != j.Players) throw new Exception($"players resolved to {gen.Players}");
+                    Interlocked.Increment(ref ok);
+                    lines[i] = $"ok   {head}: {RmgSizes.Names[gen.SizeIndex]}{(gen.HasUnderground ? "+ug" : "")} {map.Objects.Count,5} objects, start towns {towns}, monsters {r.OfKind("AdvMapMonsterShared").Count()}, mines {r.OfKind("AdvMapMineShared").Count()}, unreachable {r.Unreachable}, warnings {r.Warnings.Count}";
+                }
+                catch (Exception e)
+                {
+                    Interlocked.Increment(ref fail);
+                    lines[i] = $"FAIL {head}: {e.GetType().Name}: {e.Message} @ {e.StackTrace?.Split((char)10).FirstOrDefault()?.Trim()}";
                 }
             }
+        })).ToList();
+        workers.ForEach(w => w.Start());
+        workers.ForEach(w => w.Join());
+        foreach (var l in lines) Console.WriteLine(l);
         Console.WriteLine($"{ok} ok, {fail} failed, {unreachable} unreachable objects total, {sw.Elapsed.TotalSeconds:0.0}s");
         return fail == 0 ? 0 : 2;
     }
@@ -212,7 +244,13 @@ sealed class RmgRefCommand : ICommand
                               X: int.Parse(Regex.Match(m.Groups[1].Value, @"<x>(\d+)</x>").Groups[1].Value),
                               Y: int.Parse(Regex.Match(m.Groups[1].Value, @"<y>(\d+)</y>").Groups[1].Value)))
                 .OrderBy(t => t.Player).ToList();
-            var opts = new RmgOptions { Template = tmpl, Size = sizeIndex, Players = players, MonsterLevel = monsters, Seed = (int)uint.Parse(seed) };
+            int Level(string key, string prefix) => Array.IndexOf(new[] { "MISERABLE", "LITTLE", "NORMAL", "LOTS", "MUCH" },
+                Regex.Match(xml, "<" + key + ">" + prefix + "([A-Z]+)<").Groups[1].Value) is var l and >= 0 ? l : 2;
+            var opts = new RmgOptions
+            {
+                Template = tmpl, Size = sizeIndex, Players = players, MonsterLevel = monsters, Seed = (int)uint.Parse(seed),
+                ResourceLevel = Level("ResourceMultiplier", "RESOURCE_"), ExpLevel = Level("ExpMultiplier", "EXP_"),
+            };
             opts.PlayerRaces.AddRange(refTowns.Select(t => t.Race));
             var gen = new RmgGenerator(db, opts);
             var r = gen.Generate();
@@ -225,6 +263,16 @@ sealed class RmgRefCommand : ICommand
             }
             foreach (var key in refCounts.Keys.Union(ours.Keys).Order())
                 Console.WriteLine($"    {key,-16} ref {refCounts.GetValueOrDefault(key),6}   ours {ours.GetValueOrDefault(key),6}");
+            if (args.Contains("--detail"))
+            {
+                // Per shared object (buildings, treasures, artifacts, shrines): Shared href of each inline object.
+                var refShared = Regex.Matches(xml, @"<Item href=""#n:inline\((AdvMap(?:Building|Treasure|Artifact|Shrine|Dwelling))\)[^>]*>.*?<Shared href=""([^""#]+)", RegexOptions.Singleline)
+                    .GroupBy(m => m.Groups[2].Value.TrimStart('/')).ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+                var ourShared = r.Objects.Where(o => o.Def.Tag is "AdvMapBuildingShared" or "AdvMapTreasureShared" or "AdvMapArtifactShared" or "AdvMapShrineShared" or "AdvMapDwellingShared")
+                    .GroupBy(o => o.Shared.TrimStart('/')).ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+                foreach (var key in refShared.Keys.Union(ourShared.Keys, StringComparer.OrdinalIgnoreCase).Distinct(StringComparer.OrdinalIgnoreCase).Order())
+                    Console.WriteLine($"      {key,-70} ref {refShared.GetValueOrDefault(key),4}   ours {ourShared.GetValueOrDefault(key),4}");
+            }
         }
         return 0;
     }

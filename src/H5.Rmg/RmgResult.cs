@@ -87,6 +87,7 @@ public sealed class RmgResult
                     mo.Creature = o.Creature ?? o.Def.Creature;
                     mo.Amount = o.Amount;
                     mo.CustomAmount = true;
+                    mo.AdditionalStacks.AddRange(o.AdditionalStacks.Select(a => new H5.Core.Data.ArmySlot(a.Creature, a.Count)));
                     mo.Mood = "MONSTER_MOOD_AGGRESSIVE";
                     mo.Courage = "MONSTER_COURAGE_CAN_FLEE_JOIN";
                     break;

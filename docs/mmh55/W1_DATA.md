@@ -79,7 +79,8 @@ every pool above. They still load as definitions (harmless; see §1 direct refer
   `LuaSnapshot.ToJson` cannot write it (W2, Lua runtime).
 * `TownSpecialTests.DiscountsFollowTheExeFormula`, `TrainingCostsThreeTimesTheTargetAndSpendsPoints`: stock values
   (town specials helper).
-* RMG `4P-Diamond-XL-#` at its smallest size places 4 start towns wrongly (W5).
+* RMG `4P-Diamond-XL-#`: resolved (W5) — 4 start zones for up to 8 players; the exe also gives start towns to the first
+  4 players only (0x0090bd80), the old test expected one per player. AUDIT_RMG.md.
 * SP map `Maps/SingleMissions/A1SM1` (MMH55-SPMaps.h5u): MMH55 system scripts report "Player is not in game"
   (`H55-Core.lua:1758 H55_UpdateGameMode`), "Saved combat #-1 not found" (`H55-Core.lua:7687`) and
   "Incorrect player ID (-1)" (`A1SM1/MapScript.lua:39`) — native semantics for W2.
