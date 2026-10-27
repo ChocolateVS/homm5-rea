@@ -62,7 +62,16 @@ public sealed partial class Battle
 
     // ------------------------------------------------------------------ spell books
 
-    /// <summary>Spells the hero may cast now, including mass variants unlocked by perks.</summary>
+    /// <summary>
+    /// Spells the hero may cast now, including mass variants unlocked by perks. The exe's combat hero reads the adventure
+    /// hero's book itself (vf 0x248 = FUN_00bc1fa0 → CHero vf 0xcc = FUN_00b5aa20: hero +0x1e0, entries {artifact, spell,
+    /// sources}), every entry — known, perk-sourced and worn-artifact ones. The book is re-derived by FUN_00b53b10 after
+    /// each skill / perk learn (vf 0x1c8 = FUN_00b57ab0), artifact on / off (FUN_00b5a410, after FUN_00b541f0 /
+    /// FUN_00b53730) and hero set-up (FUN_00b56cd0): every entry that is not a mass / empowered spell, or that has an
+    /// artifact, and passes vf 0x158 (FUN_00b526f0: true for artifact and sourced entries) gets FUN_00b4bb40 — its
+    /// empowered version with Empowered Spells, its mass version with its Master perk. So artifact spells (tomes, Band of
+    /// Conjurer) get them too, as here. Book entries of school SPECIAL (SPELL_ABILITY_*) are hero abilities, not spells.
+    /// </summary>
     public IEnumerable<string> HeroSpells(HeroState h)
     {
         var set = new List<string>();

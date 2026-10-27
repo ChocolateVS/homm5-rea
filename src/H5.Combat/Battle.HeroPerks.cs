@@ -8,13 +8,18 @@ namespace H5.Combat;
 public sealed partial class Battle
 {
     const string LinkCounterspell = "COUNTERSPELL", LinkMarkOfWizard = Sk.MarkOfWizard, FxSeducing = "FX_SEDUCING";
+    const string UnsummonAbility = "SPELL_ABILITY_UNSUMMON";
     double _spellDamageScale = 1;
 
     IEnumerable<AbilityInfo> HeroAbilities2(HeroState h)
     {
         if (h.HasPerk("HERO_SKILL_COUNTERSPELL") && !h.Links.ContainsKey(LinkCounterspell) && CounterspellArmable(h)) yield return new(LinkCounterspell, AbilityTargeting.None);
         if (h.HasPerk(Sk.MarkOfWizard)) yield return new("MARK_OF_WIZARD", AbilityTargeting.Enemy);
-        if (h.HasPerk(Sk.Banish) && S.Living.Any(u => u.Summoned && u.Side != h.Side)) yield return new("BANISH", AbilityTargeting.None);
+        // Banish is book entry SPELL_ABILITY_UNSUMMON (0x42): Unsummon (00b54770 case 0x88) or a worn Ring of Unsummoning
+        // (00ca7e40 case 0x5d → 00b541f0). The combat hero's list is the book (vf 0x248 = 00bc1fa0 → CHero vf 0xcc = 00b5aa20,
+        // hero +0x1e0); 0097c320 case 0x42 offers it while the opposing army has a spawn or a summoned stack.
+        if ((h.HasPerk(Sk.Banish) || h.Spells.Contains(UnsummonAbility)) && S.Living.Any(u => u.Summoned && u.Side != h.Side))
+            yield return new("BANISH", AbilityTargeting.None);
         if (h.HasPerk("HERO_SKILL_MELT_ARTIFACT") && S.Units.Any(u => u.Side == h.Side && u.Kind == UnitKind.Creature && u.ArtifactEffects >= 0 && !u.Removed))
             yield return new("CONSUME_ARTIFACT", AbilityTargeting.Friend);
         // Imbuing takes no turn, so it may be changed at most once per hero turn.
