@@ -235,6 +235,11 @@ public sealed class HeroState
     public HashSet<string> PerkRewardsClaimed = new();
     public LevelUpOffer? RelearnOffer;
     public bool Alive = true;
+    /// <summary>
+    /// Left a battle alive and waits in its player's tavern (not Alive): 1 fled, 2 surrendered (hero +0x22e, set by
+    /// vf 0x1dc 00b52e50, cleared by vf 0x1d8 on flight and vf 0x1ec on hire); 0 otherwise.
+    /// </summary>
+    public int Retreat;
     /// <summary>EnableHeroAI (CHero AI settings +0): an AI player's hero the AI moves; false leaves it to scripts.</summary>
     public bool AiEnabled = true;
     /// <summary>

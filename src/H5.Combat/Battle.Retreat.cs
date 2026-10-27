@@ -12,7 +12,8 @@ public sealed partial class Battle
     /// <summary>
     /// The exe's refusal reason for retreating (FUN_004d9e20); 0 = allowed. Codes: 1 no hero, 2 the army
     /// defends a town, 4 Shackles of War on either hero, 5 surrender needs a hero on both sides, 6 surrender
-    /// needs a real (non-summoned, non-phantom) stack, 7 retreat denied for this battle, 8 no creature stack left.
+    /// needs a real (non-summoned, non-phantom) stack, 7 retreat denied for this battle, 8 the side's player owns no
+    /// town with a tavern (the loop over the player's towns, vf 0xc4, testing town vf 0x34(4) = TB_TAVERN).
     /// UI-only reasons (tactics, auto-combat, duel mode, not your turn, no tavern town) are the client's.
     /// </summary>
     public int RetreatRefusal(int side, bool surrender)
@@ -29,20 +30,21 @@ public sealed partial class Battle
         // Artifact id 7 (Artifacts.xdb order) checked on both armies' heroes via FUN_00ca6680(7).
         if (S.Heroes.Any(x => x.Present && x.Artifacts.Contains("SHACKLES_OF_WAR"))) return 4;
         if (S.RetreatDenied[side]) return 7;
-        if (!S.Units.Any(u => u.Side == side && u.Alive && u.Kind == UnitKind.Creature)) return 8;
+        if (S.NoTavernTown[side]) return 8;
         return 0;
     }
 
     /// <summary>
     /// Gold value of a side's surviving army (FUN_004da8d0): creature gold cost x count over alive,
-    /// non-summoned creature stacks (resource costs are not counted).
+    /// non-summoned creature stacks (resource costs are not counted), plus the stacks the hero holds in reserve
+    /// (FUN_004da820: the tactics reserve slots).
     /// </summary>
     public long ArmyGoldValue(int side)
     {
         long sum = 0;
         foreach (var u in S.Units)
         {
-            if (u.Side != side || !u.Alive || u.Kind != UnitKind.Creature || u.Summoned || u.IsClone || u.Count <= 0) continue;
+            if (u.Side != side || !(u.Alive || (u.Reserve && !u.Removed)) || u.Kind != UnitKind.Creature || u.Summoned || u.IsClone || u.Count <= 0) continue;
             if (Db.Creatures.TryGetValue(u.CreatureId, out var cd)) sum += (long)cd.Cost.Gold * u.Count;
         }
         return sum;

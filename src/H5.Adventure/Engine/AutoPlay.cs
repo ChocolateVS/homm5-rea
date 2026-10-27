@@ -23,8 +23,8 @@ public static class QuickCombat
             .Where(u => u.Side == side && (u.Alive || u.Reserve) && !u.Summoned && !u.IsWarMachine)
             .GroupBy(u => u.CreatureId).Select(g => new ArmySlot(g.Key, g.Sum(u => u.Count))).ToList();
         int winner = state.Winner ?? 1;
-        return new ResolveBattleCmd(winner, Survivors(0), Survivors(1))
-        { Player = game.Current.Index, HeroMana = state.Heroes.Select(h => h.Mana).ToArray() };
+        return new ResolveBattleCmd(winner, Survivors(0), Survivors(1), AttackerFled: winner == 1 && state.EndReason is "fled" or "surrender")
+        { Player = game.Current.Index, HeroMana = state.Heroes.Select(h => h.Mana).ToArray(), EndReason = state.EndReason ?? "" };
     }
 
     /// <summary>Whether each side of the pending battle belongs to a human player (side 0 attacker, side 1 defender hero or town).</summary>

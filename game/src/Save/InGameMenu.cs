@@ -30,12 +30,17 @@ public static class InGameMenu
             options = new GameOptionsScreen(() => options!.QueueFree()) { MouseFilter = Control.MouseFilterEnum.Stop };
             layer.AddChild(options);
         });
-        menu.Bus.On("restart_mission", () => Ask(menu, "Restart Mission", "Restart the current mission? Progress since the start will be lost.", () => SaveManager.Restart(screen)));
-        menu.Bus.On("main_menu", () => Ask(menu, "Main Menu", "Leave this game and return to the main menu?", () => { Close(); returnToMainMenu(); }));
-        menu.Bus.On("exit_to_windows", () => Ask(menu, "Quit To Desktop", "Quit the game?", () => Cinematics.AfterGameSplash.ShowAndQuit(screen.GetTree())));
+        // The stock confirmations: UI/EscMenu/RelatedTexts T_RESTART_MISSION_* and T_EXIT_TO_MAIN_MENU_* (00758460), and
+        // UI/ExitGameQuestion T_HEADER / T_QUESTION for quitting, as in the combat Esc menu.
+        menu.Bus.On("restart_mission", () => Ask(menu, EscTexts, "T_RESTART_MISSION_TITLE", "T_RESTART_MISSION_QUESTION", () => SaveManager.Restart(screen)));
+        menu.Bus.On("main_menu", () => Ask(menu, EscTexts, "T_EXIT_TO_MAIN_MENU_TITLE", "T_EXIT_TO_MAIN_MENU_QUESTION", () => { Close(); returnToMainMenu(); }));
+        menu.Bus.On("exit_to_windows", () => Ask(menu, ExitTexts, "T_HEADER", "T_QUESTION", () => Cinematics.AfterGameSplash.ShowAndQuit(screen.GetTree())));
         layer.AddChild(menu);
     }
 
-    static void Ask(Control menu, string title, string text, Action yes) =>
-        MessageBoxes.YesNo(menu, title, text, ok => { if (ok) yes(); });
+    const string EscTexts = "UI/EscMenu/RelatedTexts.(WindowRelatedTexts).xdb";
+    const string ExitTexts = "UI/ExitGameQuestion/Texts.(WindowRelatedTexts).xdb";
+
+    static void Ask(Control menu, string texts, string title, string question, Action yes) =>
+        MessageBoxes.YesNo(menu, UiGameRoot.RelatedTextAt(texts, title) ?? "", UiGameRoot.RelatedTextAt(texts, question) ?? "", ok => { if (ok) yes(); });
 }

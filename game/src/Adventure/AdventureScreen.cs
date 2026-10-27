@@ -1094,7 +1094,10 @@ public partial class AdventureScreen : Control
         Func<H5.Combat.Battle, H5.Scripting.Runtime.CombatScripting?>? scripts =
             scriptHost != null && H5.Scripting.Runtime.CombatScripting.ScriptsAllowed(Session.IsRemote, Session.IsHotSeat)
                 ? battle => scriptHost.CreateCombatScripts(battle) : null;
-        var combat = new AdventureCombatSession(state, seed, H5Reborn.AdvNet.HotSeatBattles.HumanSides(Session.S, pb), scripts: scripts);
+        // The retreat box reads the side's player's gold (00570cf0: resources entry 6).
+        long SideGold(int side) => Session.Game.BattleSideOwner(pb, side) is var o && o >= 0
+            ? Session.S.Players.FirstOrDefault(p => p.Index == o)?.Purse[H5.Adventure.State.Purse.Gold] ?? 0 : 0;
+        var combat = new AdventureCombatSession(state, seed, H5Reborn.AdvNet.HotSeatBattles.HumanSides(Session.S, pb), scripts: scripts, gold: SideGold);
         // Keep the adventure screen alive while the combat screen owns the scene.
         var tree = GetTree();
         var placeholder = new Node { Name = "AdventurePause" };
@@ -1119,9 +1122,8 @@ public partial class AdventureScreen : Control
         tree.CurrentScene?.QueueFree();
         tree.Root.AddChild(this);
         tree.CurrentScene = this;
-        var st = finished.Battle.State;
-        bool fled = st.Winner == 1 && (st.EndReason.Contains("flee", StringComparison.OrdinalIgnoreCase) || st.EndReason.Contains("surrender", StringComparison.OrdinalIgnoreCase) || st.EndReason.Contains("retreat", StringComparison.OrdinalIgnoreCase));
-        Session.ResolveBattle(st, fled);
+        // Either side may have fled or surrendered; the engine reads the end reason (CFinishCombat 00af64b0).
+        Session.ResolveBattle(finished.Battle.State);
         foreach (var h in Session.S.Heroes) World.SyncHero(h);
         Hud.Refresh();
     }

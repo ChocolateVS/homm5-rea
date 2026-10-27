@@ -39,16 +39,17 @@ public static class RetreatDialog
         if (session.Ended || session.Battle.SideToAct != side || session.Busy) return 7;
         if (busy) return 6;
         // Army-side reasons come from the engine (CCombatArmy::CanRetreat, FUN_004d9e20): no hero, defending
-        // a town, Shackles of War, retreat denied, no creature left; the HUD maps them to its tooltip codes.
+        // a town, Shackles of War, retreat denied, no town with a tavern (set by the adventure host); 0053feb0
+        // maps them to its tooltip codes (8 → 14 CANT_RETREAT_NO_TOWNS).
         switch (session.Battle.RetreatRefusal(side, surrender: false))
         {
             case 1: return 10;
             case 2: return 9;
             case 4: return 11;
+            case 8: return 14;
             case 0: break;
             default: return 8;   // disabled, RETREAT_NORMAL tooltip
         }
-        if (!session.HasTavernTown(side)) return 14;
         return 0;
     }
 

@@ -67,6 +67,31 @@ public class AuditRetreatTests(GameDataFixture f)
         Assert.Equal(7L * f.Db.Creatures["CREATURE_FOOTMAN"].Cost.Gold / 2, b.SurrenderCost(0));
     }
 
+    // exe FUN_004d9e20 reason 8: the army's player owns no town with a tavern (set by the adventure host); 0053feb0
+    // shows it as code 14 CANT_RETREAT_NO_TOWNS. Duels never set it.
+    [Fact]
+    public void NoTavernTownForbidsRetreat()
+    {
+        var s = Setup(true, true, ("CREATURE_FOOTMAN", 10));
+        var b = new Battle(f.Db, s);
+        Assert.Equal(0, b.RetreatRefusal(0, surrender: false));
+        s.NoTavernTown[0] = true;
+        Assert.Equal(8, b.RetreatRefusal(0, surrender: false));
+        Assert.Equal(8, b.RetreatRefusal(0, surrender: true));
+        Assert.Equal(0, b.RetreatRefusal(1, surrender: false));
+    }
+
+    // exe FUN_004da8d0 + FUN_004da820: the stacks the hero holds in reserve count toward the army value (ransom).
+    [Fact]
+    public void ReserveStacksCountTowardTheRansom()
+    {
+        var s = Setup(true, true, ("CREATURE_FOOTMAN", 7), ("CREATURE_ARCHER", 3));
+        var b = new Battle(f.Db, s);
+        long value = b.ArmyGoldValue(0);
+        s.Units.First(u => u.CreatureId == "CREATURE_ARCHER").Reserve = true;
+        Assert.Equal(value, b.ArmyGoldValue(0));
+    }
+
     // exe FUN_004d9e20 reason 6: only summoned/phantom stacks left → no surrender (fleeing still allowed).
     [Fact]
     public void SurrenderNeedsARealStack()

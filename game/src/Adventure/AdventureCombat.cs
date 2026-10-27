@@ -18,6 +18,7 @@ public sealed class AdventureCombatSession : CombatSession
     readonly Queue<IReadOnlyList<BattleEvent>> _pending = new();
     readonly IBattleAI _ai;
     readonly ulong _seed;
+    readonly Func<int, long>? _gold;
     ulong _scriptClock;
 
     /// <summary>
@@ -28,10 +29,12 @@ public sealed class AdventureCombatSession : CombatSession
 
     /// <param name="gameDifficulty">Adventure difficulty (script scale); the original combat AI picks its row from it.</param>
     /// <param name="scripts">Creates the combat script session for the battle (FUN_0054c2f0 → FUN_0053e810).</param>
+    /// <param name="gold">The gold of each side's player for the surrender box (00570cf0); null = none.</param>
     public AdventureCombatSession(BattleState state, ulong seed, IEnumerable<int> humanSides, int gameDifficulty = 1,
-        Func<Battle, CombatScripting?>? scripts = null)
+        Func<Battle, CombatScripting?>? scripts = null, Func<int, long>? gold = null)
     {
         _seed = seed;
+        _gold = gold;
         _ai = new H5.Combat.AI.OriginalBattleAI { GameDifficulty = gameDifficulty };
         _battle = new Battle(Game.Instance.Db, state);
         _humanSides = humanSides.ToArray();
@@ -87,6 +90,7 @@ public sealed class AdventureCombatSession : CombatSession
     public override IReadOnlyList<int> Presets => Array.Empty<int>();
     public override ulong Seed => _seed;
     public override bool Busy => false;
+    public override long Gold(int side) => _gold?.Invoke(side) ?? 0;
 
     public override void Submit(BattleCommand cmd)
     {

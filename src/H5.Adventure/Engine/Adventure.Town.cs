@@ -322,13 +322,11 @@ public sealed partial class Adventure
         if (HeroAt(entrance) != null) return "the town entrance is occupied";
         int cost = HireCost(p, t);
         if (p.Purse[Purse.Gold] < cost) return "not enough gold";
-        var def = Core.Heroes[defId];
-        var h = HeroFromDef(def, p.Index, entrance);
-        GiveStartingArmy(h);
+        var h = HireHero(defId, p.Index, entrance, out bool returning);
         h.InTown = t.Object;
         h.MaxMovePoints = ComputeMaxMovePoints(h);
         h.MovePoints = h.MaxMovePoints;
-        S.Heroes.Add(h);
+        if (!returning) S.Heroes.Add(h);
         S.HeroPool.Remove(defId);
         foreach (var other in S.Players) for (int i = 0; i < other.Tavern.Length; i++) if (other.Tavern[i] == defId) other.Tavern[i] = null;
         GiveOne(p, Purse.Gold, -cost);
@@ -340,12 +338,12 @@ public sealed partial class Adventure
 
     /// <summary>
     /// The hero a tavern offer would become when hired (as <see cref="DoHire"/> builds it, not added to the game). Uses the
-    /// game's random stream for the starting army: call it on a copy of the game (the AI's hire score does).
+    /// game's random stream for the starting army: call it on a copy of the game (the AI's hire score does). A hero that
+    /// fled or surrendered is that same hero (<see cref="HireHero"/>; it is revived in the copy).
     /// </summary>
     public HeroState TavernHeroPreview(string defId, int owner, Tile pos)
     {
-        var h = HeroFromDef(Core.Heroes[defId], owner, pos);
-        GiveStartingArmy(h);
+        var h = HireHero(defId, owner, pos, out _);
         h.MaxMovePoints = ComputeMaxMovePoints(h);
         h.MovePoints = h.MaxMovePoints;
         return h;

@@ -95,11 +95,10 @@ public sealed partial class Adventure
         if (tiles.Count == 0) return "no place for hero";
         var tile = tiles[^1];
         int cost = HireCost(p);
-        var h = HeroFromDef(Core.Heroes[defId], p.Index, tile);
-        GiveStartingArmy(h);
+        var h = HireHero(defId, p.Index, tile, out bool returning);
         h.MaxMovePoints = ComputeMaxMovePoints(h);
         h.MovePoints = h.MaxMovePoints;
-        S.Heroes.Add(h);
+        if (!returning) S.Heroes.Add(h);
         S.HeroPool.Remove(defId);
         foreach (var other in S.Players) for (int i = 0; i < other.Tavern.Length; i++) if (other.Tavern[i] == defId) other.Tavern[i] = null;
         GiveOne(p, Purse.Gold, -cost);

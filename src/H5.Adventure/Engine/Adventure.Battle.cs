@@ -294,7 +294,88 @@ public sealed partial class Adventure
         // no flee decision of its own; the denial is enforced through the side's retreat gate (only the AI acts there).
         if (AiFleeDenied(att, defHero)) state.RetreatDenied[0] = true;
         if (defHero != null && AiFleeDenied(defHero, att)) state.RetreatDenied[1] = true;
+        // CCombatArmy::CanRetreat (004d9e20) reason 8: the army's player owns no town with a tavern.
+        for (int side = 0; side < 2; side++)
+            if (BattleSideOwner(pb, side) is var owner && owner >= 0 && !OwnsTavernTown(owner)) state.NoTavernTown[side] = true;
         return state;
+    }
+
+    /// <summary>The player owning a side of the pending battle (0 attacking hero, 1 defending hero or town), -1 for none.</summary>
+    public int BattleSideOwner(PendingBattle pb, int side)
+    {
+        if (side == 0) return S.Hero(pb.AttackerHero)?.Owner ?? -1;
+        if (pb.DefenderHero >= 0 && S.Hero(pb.DefenderHero) is { } dh) return dh.Owner;
+        return pb.DefenderObject >= 0 && S.Town(pb.DefenderObject) is { } t ? t.Owner : -1;
+    }
+
+    /// <summary>CanRetreat's town loop (004d9e20): any town of the player (player vf 0xc4) with TB_TAVERN (town vf 0x34(4)) built.</summary>
+    public bool OwnsTavernTown(int player) => S.Towns.Any(t => t.Owner == player && t.Level("TB_TAVERN") >= 1);
+
+    /// <summary>
+    /// The ransom CFinishCombat takes for a surrender (00af64b0 case 3 → the loser army's vf 0xf4 = 004da9a0):
+    /// half the gold value of the surviving army (creature gold cost × count, reserve stacks included), truncated.
+    /// </summary>
+    public long RansomCost(IEnumerable<ArmySlot> survivors) =>
+        survivors.Sum(s => Core.Creatures.TryGetValue(s.Creature, out var cd) ? (long)cd.Cost.Gold * s.Count : 0) / 2;
+
+    /// <summary>
+    /// A hero leaves the battle alive (CFinishCombat 00af64b0, then the loser player's 004fe770 flee / 004fe890
+    /// surrender). Flight (case 2): the army is emptied (hero vf 0x48 → 0045a590) and the hero's flee handler runs
+    /// (vf 0x1d8 = 00b52e00: surrender flag +0x22e cleared). Surrender (case 3): the army is kept, the ransom is paid at
+    /// once (loser's gold − cost, not below 0; the winner's player + cost) and vf 0x1dc = 00b52e50 sets +0x22e. Both then
+    /// go through 004fe360: the hero leaves the player (004fe000) and the SAME hero object (level, skills, artifacts,
+    /// spells) is put into that player's own tavern: the first empty slot of the two, else a random slot, whose hero
+    /// returns to the pool. GAP: 004fe360 prefers replacing slots whose hero lacks flag +0x1e4 (or fails pool vf 0x4c);
+    /// neither is identified, so the random pick is over both slots (the exe's fallback).
+    /// </summary>
+    void RetreatHero(HeroState h, bool surrender, List<ArmySlot> survivors, HeroState? winner)
+    {
+        var p = PlayerByIndex(h.Owner);
+        if (surrender)
+        {
+            long cost = RansomCost(survivors);
+            if (p != null) GiveOne(p, Purse.Gold, -(int)Math.Min(cost, Math.Max(0, p.Purse[Purse.Gold])));
+            if (winner != null && PlayerByIndex(winner.Owner) is { } wp) GiveOne(wp, Purse.Gold, (int)Math.Min(int.MaxValue, cost));
+        }
+        else Array.Fill(h.Army, null);
+        h.Alive = false;
+        h.Retreat = surrender ? 2 : 1;
+        h.InTown = -1;
+        h.Garrisoned = false;
+        if (p != null)
+        {
+            if (!S.HeroPool.Contains(h.DefId)) S.HeroPool.Add(h.DefId);
+            int slot = Array.IndexOf(p.Tavern, null);
+            if (slot < 0) slot = S.Rng.Next(p.Tavern.Length);
+            p.Tavern[slot] = h.DefId;
+        }
+        Emit(new HeroRemoved(h.Id, surrender ? "surrendered" : "fled"));
+    }
+
+    /// <summary>
+    /// The hero a tavern hire brings (004fec50): a hero that fled or surrendered is the same object again (its surrender
+    /// flag cleared, vf 0x1ec), otherwise a new one from the hero's definition with a starting army.
+    /// GAP: 004fec50 gives a returning hero no army; a fled hero's army was emptied, and where the exe refills it is not
+    /// traced, so an empty army gets the starting army of a new hire.
+    /// </summary>
+    HeroState HireHero(string defId, int owner, Tile pos, out bool returning)
+    {
+        var h = S.Heroes.Find(x => !x.Alive && x.Retreat != 0 && x.DefId == defId);
+        returning = h != null;
+        if (h == null)
+        {
+            h = HeroFromDef(Core.Heroes[defId], owner, pos);
+            GiveStartingArmy(h);
+            return h;
+        }
+        h.Alive = true;
+        h.Retreat = 0;
+        h.Owner = owner;
+        h.Pos = pos;
+        h.InBoat = false;
+        h.BoatId = -1;
+        if (h.Army.StackCount() == 0) GiveStartingArmy(h);
+        return h;
     }
 
     static void ClearBattleBonuses(HeroState h)
@@ -327,6 +408,10 @@ public sealed partial class Adventure
         var att = S.Hero(pb.AttackerHero)!;
         var defHero = pb.DefenderHero >= 0 ? S.Hero(pb.DefenderHero) : null;
         bool attackerWon = c.WinnerSide == 0;
+        // The loser left alive (CFinishCombat 00af64b0 cases 2 flee / 3 surrender); either side can retreat.
+        if (c.EndReason.Length == 0 && c.AttackerFled && !attackerWon) c = c with { EndReason = "fled" };
+        bool retreat = c.EndReason is "fled" or "surrender", surrender = c.EndReason == "surrender";
+        bool attRetreated = retreat && !attackerWon, defRetreated = retreat && attackerWon && defHero != null;
         // Spell points spent in the battle stay spent (exe: the combat hero is the adventure hero).
         if (c.HeroMana is { Length: 2 } mana) { att.Mana = Math.Max(0, mana[0]); if (defHero != null) defHero.Mana = Math.Max(0, mana[1]); }
 
@@ -356,9 +441,11 @@ public sealed partial class Adventure
             if (coefs is { Count: > 0 }) neutralCoef = XmlHelpers.ParseDouble(coefs[Math.Min(S.Difficulty, coefs.Count - 1)].Value, 1);
         }
         // exe FUN_00af3430: +500 for a defeated hero, Talented Warrior, neutral coefficient, Enlightenment & co, week.
-        expAtt = BattleExperience(att, expAtt, opponentHeroLost: defHero != null, neutralCoef);
+        // +500 only when the defending hero is lost, not when he fled or surrendered (exe 004d99b0 via 00af3430).
+        expAtt = BattleExperience(att, expAtt, opponentHeroLost: defHero != null && !defRetreated, neutralCoef);
         var (combatResult, savedArmies) = SavedCombatRecord(c, pb, att, defHero, attackerBefore);
 
+        // The army of a hero that fled is emptied by RetreatHero (0045a590), a surrendered hero keeps its survivors.
         SetArmy(att.Army, c.AttackerSurvivors);
         ClearBattleBonuses(att);
         if (defHero != null)
@@ -374,7 +461,8 @@ public sealed partial class Adventure
         if (attackerWon)
         {
             Emit(new BattleResolved(0, expAtt) { Result = combatResult, Armies = savedArmies });
-            if (defHero != null) RemoveHero(defHero, "defeated");
+            if (defRetreated) RetreatHero(defHero!, surrender, c.DefenderSurvivors, att);
+            else if (defHero != null) RemoveHero(defHero, "defeated");
             if (pb.DefenderObject >= 0)
             {
                 var o = O(pb.DefenderObject);
@@ -408,7 +496,7 @@ public sealed partial class Adventure
             if (defHero != null)
             {
                 // +500 only when the attacking hero is lost, not when he fled or surrendered (exe 004d99b0 via 00af3430).
-                GainExperience(defHero, BattleExperience(defHero, ExpFor(attackerBefore, c.AttackerSurvivors), opponentHeroLost: !c.AttackerFled, 1),
+                GainExperience(defHero, BattleExperience(defHero, ExpFor(attackerBefore, c.AttackerSurvivors), opponentHeroLost: !attRetreated, 1),
                     modifiersApplied: true);
                 NecromancyRaise(defHero, Killed(attackerBefore, c.AttackerSurvivors));
             }
@@ -420,7 +508,8 @@ public sealed partial class Adventure
             }
             else if (pb.DefenderObject >= 0 && S.Town(pb.DefenderObject) is { } t && defHero == null)
                 SetArmy(t.Garrison, c.DefenderSurvivors);
-            RemoveHero(att, c.AttackerFled ? "fled" : "defeated");
+            if (attRetreated) RetreatHero(att, surrender, c.AttackerSurvivors, defHero);
+            else RemoveHero(att, "defeated");
         }
         CheckEliminations();
         return null;

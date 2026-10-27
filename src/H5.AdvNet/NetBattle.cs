@@ -158,8 +158,11 @@ public sealed class NetBattle
         .Where(u => u.Side == side && (u.Alive || u.Reserve) && !u.Summoned && !u.IsWarMachine)
         .GroupBy(u => u.CreatureId).Select(g => new ArmySlot(g.Key, g.Sum(u => u.Count))).ToList();
 
-    public bool AttackerFled => Battle.State.EndReason?.Contains("fled", StringComparison.OrdinalIgnoreCase) == true
-        || Battle.State.EndReason?.Contains("surrender", StringComparison.OrdinalIgnoreCase) == true;
+    /// <summary>
+    /// The attacker (side 0) fled or surrendered. A retreating defender ends the battle the same way with side 0 the
+    /// winner; the engine tells the two apart from the winner and the end reason (CFinishCombat 00af64b0).
+    /// </summary>
+    public bool AttackerFled => Battle.State.Winner == 1 && Battle.State.EndReason is "fled" or "surrender";
 }
 
 static class BattleStateExtensions

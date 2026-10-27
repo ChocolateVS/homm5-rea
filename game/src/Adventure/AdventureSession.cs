@@ -195,16 +195,22 @@ public sealed class AdventureSession
         return Game.CreatePendingBattle(seed);
     }
 
-    /// <summary>Feeds a finished battle back to the adventure engine.</summary>
-    public AdvResult ResolveBattle(BattleState finished, bool attackerFled)
+    /// <summary>
+    /// Feeds a finished battle back to the adventure engine with its end reason: the engine treats a "fled" /
+    /// "surrender" end as the loser leaving alive, whichever side retreated (CFinishCombat 00af64b0).
+    /// </summary>
+    public AdvResult ResolveBattle(BattleState finished)
     {
         List<ArmySlot> Survivors(int side) => finished.Units
             .Where(u => u.Side == side && (u.Alive || u.Reserve) && !u.Summoned && !u.IsWarMachine)
             .GroupBy(u => u.CreatureId).Select(g => new ArmySlot(g.Key, g.Sum(u => u.Count))).ToList();
         int winner = finished.Winner ?? 1;
-        return Apply(new ResolveBattleCmd(winner, Survivors(0), Survivors(1), attackerFled)
-        { HeroMana = finished.Heroes.Select(h => h.Mana).ToArray() });
+        return Apply(new ResolveBattleCmd(winner, Survivors(0), Survivors(1), AttackerFled: winner == 1 && Retreated(finished))
+        { HeroMana = finished.Heroes.Select(h => h.Mana).ToArray(), EndReason = finished.EndReason ?? "" });
     }
+
+    /// <summary>The battle ended with the loser fleeing or surrendering (engine EndReason "fled" / "surrender").</summary>
+    public static bool Retreated(BattleState s) => s.EndReason is "fled" or "surrender";
 
     public AdvResult QuickCombat() => Apply(H5.Adventure.Engine.QuickCombat.Resolve(Game, Seed ^ ++_battleSeq, H5.Combat.AI.BattleAiRegistry.Create("original")));
 }

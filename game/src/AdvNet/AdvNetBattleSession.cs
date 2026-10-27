@@ -36,6 +36,10 @@ public sealed class AdvNetBattleSession : CombatSession
     public override bool Busy => _net.Busy || _net.Replica.PendingBattleUpdates > 0;
     public override bool Desynced => _replica.Desynced || _net.Desynced;
 
+    /// <summary>The surrender box's gold check (00570cf0): my player's gold in the replicated adventure state.</summary>
+    public override long Gold(int side) => side == _replica.MySide
+        ? _net.Replica.View.Players.FirstOrDefault(p => p.Index == _net.Replica.MyPlayer)?.Purse[H5.Adventure.State.Purse.Gold] ?? 0 : 0;
+
     public override void Submit(BattleCommand cmd)
     {
         if (Busy || Ended) return;

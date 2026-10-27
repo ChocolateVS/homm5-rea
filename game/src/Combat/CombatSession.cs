@@ -56,11 +56,8 @@ public abstract class CombatSession
     public virtual int? SurrenderCost(int side) =>
         Battle.RetreatRefusal(side, surrender: true) == 0 ? (int)Math.Min(int.MaxValue, Battle.SurrenderCost(side)) : null;
 
-    /// <summary>The side's gold for the ransom check.</summary>
+    /// <summary>The side's gold for the ransom check (box 00570cf0: the army's player's resources, gold = entry 6); 0 without a player.</summary>
     public virtual long Gold(int side) => 0;
-
-    /// <summary>False when the side owns no town with a tavern to flee to (CANT_RETREAT_NO_TOWNS).</summary>
-    public virtual bool HasTavernTown(int side) => true;
 
     /// <summary>
     /// Experience the winning hero gains, for the results screen (-1 when the winner has no hero). Default:

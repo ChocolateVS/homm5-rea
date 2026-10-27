@@ -242,6 +242,11 @@ public sealed class BattleState
     public bool[] TacticsDone = { false, false };
     /// <summary>Retreat (flee and surrender) forbidden for a side in this battle (exe CCombatArmy reason 7), e.g. by a map script.</summary>
     public bool[] RetreatDenied = { false, false };
+    /// <summary>
+    /// The side's player owns no town with a tavern (exe CCombatArmy::CanRetreat FUN_004d9e20 reason 8: the army's
+    /// player's towns, player vf 0xc4, none with town vf 0x34(4) = TB_TAVERN); set by the adventure host, false in duels.
+    /// </summary>
+    public bool[] NoTavernTown = { false, false };
     public int DeployColumns0 = 2, DeployColumns1 = 2;
     public double Time;
     /// <summary>Current actor (unit id, or Actor.Hero(side)); null while no one is acting.</summary>
