@@ -158,7 +158,7 @@ public sealed partial class Adventure
                         "ARTF_RANDOM_RELIC" => "ARTF_CLASS_RELIC",
                         _ => null,
                     });
-                    os.SpellId = o.SpellId;
+                    os.SpellId = o.SpellId ?? (os.ArtifactId == ScrollArtifact ? RandomScrollSpell() : null);
                     foreach (var g in o.Guards) os.Guards.Add(new Stack(g.Creature, g.Count));
                     break;
                 }
@@ -198,8 +198,7 @@ public sealed partial class Adventure
                 case ObjectKind.Shrine:
                 {
                     var os = S.Obj(o.Index);
-                    os.SpellId = o.SpellId ?? RandomSpell(o.Shared.RunicMagic ? "MAGIC_SCHOOL_RUNIC" : null,
-                        o.Shared.RunicMagic ? 1 + S.Rng.Next(Math.Max(1, o.Shared.MaxRunicMagicLevel)) : Math.Max(1, o.Shared.ShrineLevel));
+                    os.SpellId = ShrineSpell(o);
                     break;
                 }
             }

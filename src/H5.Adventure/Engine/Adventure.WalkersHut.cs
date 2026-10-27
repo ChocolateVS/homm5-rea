@@ -54,12 +54,6 @@ public sealed partial class Adventure
     public void SetTalismanLevel(HeroState h, int level) => h.TalismanLevel = Math.Max(Math.Min(level, TalismanMaxLevel), 0);
 
     /// <summary>
-    /// Map availability of a spell (world vf 0x34 → CMagicSystem, vf 0x18 = FUN_00a34af0: the spell's level list,
-    /// a separate list for school 6). TODO(exe): the lists' fillers are not traced; every spell counts as available.
-    /// </summary>
-    static bool SpellAvailableOnMap(string spell) => true;
-
-    /// <summary>
     /// FUN_00ccf7b0 (town, hero, first, last). Checks in the exe's order: hero present (1), ability 0x2b (2), Barbarian
     /// (3), first ≥ 1, last ≤ the town maximum and first ≤ last (1); then over the levels first..last the costs are
     /// summed, a HeroLevel above the hero's level is noted and the spells are split by availability; last ≤ owned

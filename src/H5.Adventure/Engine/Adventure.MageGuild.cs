@@ -59,6 +59,13 @@ public sealed partial class Adventure
         return b;
     }
 
+    /// <summary>FUN_00a349f0: runes and warcries always; otherwise not Dark Ritual (0x43) and not a SPECIAL / NONE spell.</summary>
+    static bool SpellValid(SpellDef s)
+    {
+        int school = SchoolNo(s.School);
+        return school is SchoolRunic or SchoolWarcries || (s.Index != SpellDarkRitual && school is not SchoolSpecial and not SchoolNone);
+    }
+
     /// <summary>Whether FUN_00a34e20 skips a spell: mass versions (FUN_00a33e20) and empowered ones (FUN_00a33f70).</summary>
     static bool MassOrEmpowered(int index) => index is >= 0xd2 and <= 0xdd or >= 0xdf and <= 0xe9 or 0x12a;
 
@@ -72,8 +79,7 @@ public sealed partial class Adventure
     {
         int idx = s.Index, school = SchoolNo(s.School), lvl = s.Level;
         if (idx == 0) return;
-        bool valid = school is SchoolRunic or SchoolWarcries || (idx != SpellDarkRitual && school is not SchoolSpecial and not SchoolNone);
-        if (!valid || idx is >= 0x15c and <= 0x15f || MassOrEmpowered(idx)) return;
+        if (!SpellValid(s) || idx is >= 0x15c and <= 0x15f || MassOrEmpowered(idx)) return;
         if (school == SchoolWarcries ? lvl is < 1 or > 3 : lvl is < 1 or > 5) return;
         if (!b.Known.Add(s.Id)) return;
         if (school == SchoolRunic) b.Runic[lvl].Add(s.Id);
@@ -102,10 +108,86 @@ public sealed partial class Adventure
         };
     }
 
-    /// <summary>Manager slot 8 → slot 4 (FUN_00a34d60): one random spell of <see cref="SpellsOf"/>, null when there is none.</summary>
-    string? RandomSpellOf(int level, int school)
+    /// <summary>Manager slot 8 = FUN_00a34290: slot 4 with both circles <paramref name="level"/>.</summary>
+    string? RandomSpellOf(int level, int school) => RandomSpellBetween(level, level, school);
+
+    /// <summary>
+    /// Manager slot 4 = FUN_00a34d60(min, max, school, rng): null unless both circles are 1..5; the lists of
+    /// <see cref="SpellsOf"/> for min..max joined in that order, one entry at random (none when empty or min &gt; max).
+    /// </summary>
+    string? RandomSpellBetween(int min, int max, int school)
     {
-        var l = SpellsOf(level, school);
+        if (min is < 1 or > 5 || max is < 1 or > 5) return null;
+        var l = new List<string>();
+        for (int lvl = min; lvl <= max; lvl++) l.AddRange(SpellsOf(lvl, school));
+        return l.Count == 0 ? null : l[S.Rng.Next(l.Count)];
+    }
+
+    List<string>[]? _spellDeck;
+
+    /// <summary>
+    /// Manager slot 0xc = FUN_00a35c60(level, school, rng, key): circle 1..5 and key 0 only (the only key the exe passes);
+    /// one deck of six per-circle lists (map 00a36c20); an empty circle is refilled with <see cref="SpellsOf"/>
+    /// (slot 0x10), then an entry is drawn at random and erased (FUN_00631680), so draws do not repeat until the
+    /// circle runs out. The deck lives for the session (its only traced caller, the shrine set-up, runs at map start).
+    /// </summary>
+    public string? DrawSpell(int level, int school)
+    {
+        if (level is < 1 or > 5) return null;
+        _spellDeck ??= Enumerable.Range(0, 6).Select(_ => new List<string>()).ToArray();
+        var deck = _spellDeck[level];
+        if (deck.Count == 0)
+        {
+            deck.AddRange(SpellsOf(level, school));
+            if (deck.Count == 0) return null;
+        }
+        int i = S.Rng.Next(deck.Count);
+        var id = deck[i];
+        deck.RemoveAt(i);
+        return id;
+    }
+
+    /// <summary>
+    /// Map availability, manager slot 0x18 = FUN_00a34af0: a warcry when it is in the warcry list (+0x60) of its circle
+    /// (1..3); any other spell when it is in the circle's (1..5) main list (+0x24) or rune list (+0x3c). The SpellID 0, an
+    /// unknown spell or a circle outside the range is not available. The only caller outside the manager is the Walker's
+    /// Hut quote FUN_00ccf7b0.
+    /// </summary>
+    public bool SpellAvailableOnMap(string spell)
+    {
+        if (Core.Spell(spell) is not { } d || d.Index <= 0) return false;
+        int lvl = d.Level;
+        var b = Buckets;
+        if (SchoolNo(d.School) == SchoolWarcries) return lvl is >= 1 and <= 3 && b.Warcry[lvl].Contains(spell);
+        return lvl is >= 1 and <= 5 && (b.All[lvl].Contains(spell) || b.Runic[lvl].Contains(spell));
+    }
+
+    /// <summary>
+    /// Shrine of Magic set-up (CAdvMapShrine, vtable 00e71470 slot 0 = FUN_00a80990): a map spell (SAdvMapShrine +0x84)
+    /// is kept when FUN_00a349f0 accepts it, otherwise the shrine has none; with no map spell, a runic shrine
+    /// (shared RunicMagic +0xf0) takes slot 4(Level +0xec, MaxRunicMagicLevel +0xf4, RUNIC) and any other shrine draws
+    /// slot 0xc(Level, NONE, key 0) — every non-adventure school of that circle, no repeats until it runs out.
+    /// </summary>
+    public string? ShrineSpell(H5.Adventure.Map.MapObject o)
+    {
+        if (o.SpellId != null) return Core.Spell(o.SpellId) is { } d && SpellValid(d) ? o.SpellId : null;
+        return o.Shared.RunicMagic
+            ? RandomSpellBetween(o.Shared.ShrineLevel, o.Shared.MaxRunicMagicLevel, SchoolRunic)
+            : DrawSpell(o.Shared.ShrineLevel, SchoolNone);
+    }
+
+    /// <summary>The Spell Scroll artifact (ArtifactEffect 0x34).</summary>
+    public const string ScrollArtifact = "SCROLL_OF_SPELL_X";
+
+    /// <summary>
+    /// Artifact set-up FUN_00ca7e40, case 0x34 (SCROLL_OF_SPELL_X) with no spell (+0x20 = 0): slot 0x10(3, NONE) then
+    /// slot 0x10(4, NONE) — the non-adventure spells of circles 3 and 4, in that order — and one at random (world vf
+    /// 0x124); none when both are empty.
+    /// </summary>
+    public string? RandomScrollSpell()
+    {
+        var l = SpellsOf(3, SchoolNone);
+        l.AddRange(SpellsOf(4, SchoolNone));
         return l.Count == 0 ? null : l[S.Rng.Next(l.Count)];
     }
 

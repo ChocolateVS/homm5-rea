@@ -299,6 +299,7 @@ public sealed partial class Adventure
         var id = CanonicalSkill(perk);
         if (id == "HERO_SKILL_LEARNING") { ApplyLearningBonus(h); return; }
         if (PerkStat(id) is { } st) AddStat(h, st.Stat, st.Amount);
+        PerkSpellsOnLearn(h, id);
         if (id is not ("HERO_SKILL_STUDENT_AWARD" or "HERO_SKILL_ACADEMY_AWARD" or "HERO_SKILL_DARK_REVELATION")) return;
         if (!h.PerkRewardsClaimed.Add(id)) return;
         switch (id)
@@ -317,6 +318,42 @@ public sealed partial class Adventure
                 else if (l + 1 == maxLevel) GainExperience(h, Core.Experience.For(maxLevel) - h.Experience, modifiersApplied: true);
                 break;
             }
+        }
+    }
+
+    /// <summary>
+    /// The spells 00b54770 gives from the map's spell manager (world vf 0x34, slot 0x14 = the main list +0x24 of a circle):
+    /// Insights (case 0x77): circles 1, 2, 3 in turn, the first holding spells the hero can learn (vf 0xe4) and does
+    /// not know (vf 0xdc) gives one of them at random (hero RNG +0x1a0); Secrets of Destruction (case 0x92): one random
+    /// unknown DESTRUCTIVE spell (FUN_00a34350 = 0) of circles 1..3 together; Absolute Wizardry (case 0x89): every spell of
+    /// circles 1..5 (vf 0xec, no can-learn test). Case 0x89 then falls through into the Master-perk mass-spell grant
+    /// (cases 0x2e..0x33, 00b5527a), which is not ported.
+    /// </summary>
+    void PerkSpellsOnLearn(HeroState h, string id)
+    {
+        switch (id)
+        {
+            case "HERO_SKILL_INSIGHTS":
+                for (int lvl = 1; lvl <= 3; lvl++)
+                {
+                    var cand = Buckets.All[lvl].Where(sp => CanLearnSpell(h, sp) && !h.Spells.Contains(sp)).ToList();
+                    if (cand.Count == 0) continue;
+                    LearnSpell(h, cand[S.Rng.Next(cand.Count)], force: true);
+                    return;
+                }
+                break;
+            case "HERO_SKILL_SECRETS_OF_DESTRUCTION":
+            {
+                var cand = new List<string>();
+                for (int lvl = 1; lvl <= 3; lvl++)
+                    cand.AddRange(Buckets.All[lvl].Where(sp => SchoolNo(Core.Spell(sp)!.School) == 0 && !h.Spells.Contains(sp)));
+                if (cand.Count > 0) LearnSpell(h, cand[S.Rng.Next(cand.Count)], force: true);
+                break;
+            }
+            case "HERO_SKILL_ABSOLUTE_WIZARDY":
+                for (int lvl = 1; lvl <= 5; lvl++)
+                    foreach (var sp in Buckets.All[lvl].ToList()) LearnSpell(h, sp, force: true);
+                break;
         }
     }
 
