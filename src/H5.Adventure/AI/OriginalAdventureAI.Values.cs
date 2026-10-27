@@ -275,14 +275,3 @@ public sealed partial class OriginalAdventureAI
         return (state, (long)(a - b));
     }
 }
-
-public sealed partial class OriginalAdventureAI
-{
-    /// <summary>
-    /// The resource weights (player vf 0x28 = CPlayerAIInformation, vf 8(i) = its vector of 7 doubles): 1.0 from the
-    /// constructor (FUN_00c28ce0). GAP: each AI turn CSetPlayerAIDemandInfoCmd (00868bb0 / 00427e50) replaces them with
-    /// the "AI money values" of FUN_00a325b0 (each ≥ 1.0), which are not decoded.
-    /// </summary>
-    static readonly double[] Weights = { 1, 1, 1, 1, 1, 1, 1 };
-    static double[] ResourceWeights(Engine.Adventure g, int player) => Weights;
-}

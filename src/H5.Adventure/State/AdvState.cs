@@ -100,6 +100,12 @@ public sealed class PlayerState
     public int HeroesNotForHire;
     /// <summary>DoNotGiveTurnToPlayerAIIfNoTownsAndActiveHeroes: without towns the AI only gets a turn while one of its heroes is AI-enabled.</summary>
     public bool AiNoTurnWithoutTownsAndActiveHeroes;
+    /// <summary>
+    /// The AI's resource weights and average resource value (CPlayerAIInformation +0x40 / +0x4c, set at each AI day start by
+    /// CSetPlayerAIDemandInfoCmd from FUN_00a325b0); null until the player's first AI turn (weights 1.0).
+    /// </summary>
+    public double[]? AiMoneyValues;
+    public double? AiMoneyAverage;
 }
 
 /// <summary>An AI attractor entry {object, priority -1..2} (exe list of {objId, priority}, FUN_00b4e880).</summary>

@@ -26,12 +26,6 @@ public sealed partial class OriginalAdventureAI
     static int Adv(Engine.Adventure g, string field, int d) => XmlHelpers.Int(g.Db.Stats.Root.Element("adventure"), field, d);
 
     /// <summary>
-    /// The "average resource value" (CPlayerAIInformation vf 0xc): (v0 + … + v5) / 7 of the AI money values before their
-    /// clamp to ≥ 1. GAP-detail: the money values (FUN_00a325b0) are not decoded; with all weights 1.0 this is 6 / 7.
-    /// </summary>
-    static double AverageResourceValue => (1.0 + 1.0 + 1.0 + 1.0 + 1.0 + 1.0) * (1.0 / 7.0);
-
-    /// <summary>
     /// Treasure value (FUN_00a832b0) from the shared descriptor only (MinResource / MaxResource; neither the rolled
     /// amount nor Fortunate Adventurer): A = max(1, (Min + 2 · Max) / 3); a resource pile A (gold 100 · A); campfire
     /// 100 · A gold and 1 of every resource; chest with p = ChestMinorArtifactChance: the better of gold
@@ -110,7 +104,7 @@ public sealed partial class OriginalAdventureAI
         bool taken = os != null && os.LastVisitWeek == g.S.Week;
         int day = g.S.Day - 1, dow1 = g.S.DayOfWeek;
         int maxMana = g.ScriptMaxMana(h);
-        double w6 = ResourceWeights(g, h.Owner)[Purse.Gold], w5 = ResourceWeights(g, h.Owner)[Purse.Gem], avg = AverageResourceValue;
+        double w6 = ResourceWeights(g, h.Owner)[Purse.Gold], w5 = ResourceWeights(g, h.Owner)[Purse.Gem], avg = AverageResourceValue(g, h.Owner);
         switch (kind)
         {
             case "BUILDING_WATER_WHEEL": return taken ? 0 : (long)(w6 * (g.S.Month == 1 && g.S.WeekOfMonth == 1 ? 500 : 1000));

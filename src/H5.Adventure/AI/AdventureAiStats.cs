@@ -40,6 +40,9 @@ public sealed class AdventureAiStats
     public int SearchStrategicDistance { get; init; }
     public int RolesCollectorFreeScanMaxMoves { get; init; }
     public int RolesSupplierFreeScanMaxMoves { get; init; }
+    /// <summary>SupplyDayIncomes (+0x244, int) / WeakMoneyForDeniedBuildings (+0x248, float), read by the money values FUN_00a325b0.</summary>
+    public int SupplyDayIncomes { get; init; }
+    public double WeakMoneyForDeniedBuildings { get; init; }
     /// <summary>Creature* coefficients of the stack value 004e9b90 (+0x250..+0x278, float).</summary>
     public double CreatureOverHealthCoef { get; init; }
     public double CreatureOverDamageCoef { get; init; }
@@ -131,6 +134,7 @@ public sealed class AdventureAiStats
             SearchStrategicDistance = I("SearchStrategicDistance", 4),
             RolesCollectorFreeScanMaxMoves = I("RolesCollectorFreeScanMaxMoves", 5),
             RolesSupplierFreeScanMaxMoves = I("RolesSupplierFreeScanMaxMoves", 10),
+            SupplyDayIncomes = I("SupplyDayIncomes", 2), WeakMoneyForDeniedBuildings = D("WeakMoneyForDeniedBuildings", 0.1),
             CreatureOverHealthCoef = D("CreatureOverHealthCoef", 0.1), CreatureOverDamageCoef = D("CreatureOverDamageCoef", 0.5),
             CreatureOverAttributesCoef = D("CreatureOverAttributesCoef", 1),
             CreatureMaeDefenceCrush = D("CreatureMAECoef_DefenceCrush", 1), CreatureMaeSpellReduce = D("CreatureMAECoef_SpellReduce", 1),

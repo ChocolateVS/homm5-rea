@@ -43,7 +43,8 @@ public sealed partial class OriginalAdventureAI
 
         ResolvePending(g, battleSeedBase);
         var towns = g.S.Towns.Where(t => t.Owner == me).ToList();
-        // Phase 0 (FUN_0086d750): the threat table is rebuilt every day.
+        // Phase 0 (FUN_0086d750): the AI money values (00868bb0, before the puzzle map and threats), then the threat table.
+        SetMoneyValues(g, st, me);
         CheckThreats(g, st, diff, me);
 
         // Phase order of the exe's state machine (CPlayerAI +0x128, dispatcher at 0x0086dea0): day start and
