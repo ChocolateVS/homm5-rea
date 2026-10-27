@@ -106,6 +106,8 @@ public sealed class PlayerState
     /// </summary>
     public double[]? AiMoneyValues;
     public double? AiMoneyAverage;
+    /// <summary>The demand and supply of the same pass (CPlayerAIInformation +0x8 / +0x24, zero until then): the market trade reads supply − demand.</summary>
+    public int[]? AiDemand, AiSupply;
 }
 
 /// <summary>An AI attractor entry {object, priority -1..2} (exe list of {objId, priority}, FUN_00b4e880).</summary>

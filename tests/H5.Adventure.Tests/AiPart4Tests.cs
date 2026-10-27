@@ -68,4 +68,79 @@ public class AiPart4Tests(Fixture f)
         want = (long)(p.AiMoneyValues[Purse.Wood] * 3.0 + want);
         Assert.Equal(want, OriginalAdventureAI.ResourceValue(g, me, purse));
     }
+
+    static (Engine.Adventure G, PlayerState P, int Markets) MarketGame(Fixture f)
+    {
+        var g = f.NewGame("A2M1", 5);
+        var p = g.Current;
+        foreach (var t in g.S.Towns.Where(x => x.Owner == p.Index)) t.Built["TB_MARKETPLACE"] = 1;
+        return (g, p, g.MarketplaceCount(p));
+    }
+
+    [Fact]
+    public void Market_trade_sells_the_fewest_units_for_the_missing_gold()
+    {
+        // FUN_008e70d0: gold deficit d, source rate q → give (d − 1) / q + 1 units for give · q gold.
+        var (g, p, m) = MarketGame(f);
+        Assert.True(m >= 1);
+        p.Purse.R = new[] { 100, 0, 0, 0, 0, 0, 0 };
+        var cost = new[] { 0, 0, 0, 0, 0, 0, 500 };
+        Assert.True(OriginalAdventureAI.MarketTrade(g, p.Index, cost));
+        int q = Engine.Adventure.MarketRates(Purse.Wood, m)[Purse.Gold];
+        int give = (500 - 1) / q + 1;
+        Assert.Equal(100 - give, p.Purse[Purse.Wood]);
+        Assert.Equal(give * q, p.Purse[Purse.Gold]);
+    }
+
+    [Fact]
+    public void Market_trade_buys_whole_lots_and_fails_without_enough_to_sell()
+    {
+        // Non-gold target: q · d of the source, at most the surplus rounded down to whole lots; nothing left → false.
+        var (g, p, m) = MarketGame(f);
+        int q = Engine.Adventure.MarketRates(Purse.Gold, m)[Purse.Ore];
+        p.Purse.R = new[] { 0, 0, 0, 0, 0, 0, q * 10 };
+        Assert.True(OriginalAdventureAI.MarketTrade(g, p.Index, new[] { 0, 10, 0, 0, 0, 0, 0 }));
+        Assert.Equal(new[] { 0, 10, 0, 0, 0, 0, 0 }, p.Purse.R);
+        p.Purse.R = new[] { 0, 0, 0, 0, 0, 0, q * 3 + 1 };
+        Assert.False(OriginalAdventureAI.MarketTrade(g, p.Index, new[] { 0, 10, 0, 0, 0, 0, 0 }));
+    }
+
+    [Fact]
+    public void Market_trade_sells_the_resource_with_the_most_weighted_surplus()
+    {
+        // Score = weight · max(0, supply − demand) · 0.5; strict >, so the first source wins ties.
+        var (g, p, m) = MarketGame(f);
+        p.Purse.R = new[] { 50, 50, 0, 0, 0, 0, 0 };
+        var cost = new[] { 0, 0, 0, 0, 0, 0, 100 };
+        p.AiSupply = new[] { 10, 30, 0, 0, 0, 0, 0 };
+        p.AiDemand = new int[7];
+        Assert.True(OriginalAdventureAI.MarketTrade(g, p.Index, cost));
+        Assert.Equal(50, p.Purse[Purse.Wood]);
+        Assert.True(p.Purse[Purse.Ore] < 50);
+        p.Purse.R = new[] { 50, 50, 0, 0, 0, 0, 0 };
+        p.AiSupply = new int[7];
+        Assert.True(OriginalAdventureAI.MarketTrade(g, p.Index, cost));
+        Assert.True(p.Purse[Purse.Wood] < 50);
+        Assert.Equal(50, p.Purse[Purse.Ore]);
+    }
+
+    [Fact]
+    public void Market_trade_builds_a_marketplace_first_when_there_is_none()
+    {
+        // FUN_008e6d60: no marketplace → build one where the purse allows, its cost comes off before the trade.
+        var g = f.NewGame("A2M1", 5);
+        var p = g.Current;
+        var t = g.S.Towns.First(x => x.Owner == p.Index);
+        foreach (var x in g.S.Towns.Where(x => x.Owner == p.Index)) x.Built.Remove("TB_MARKETPLACE");
+        Assert.Equal(Engine.BuildDenial.CanBuild, g.BuildCheck(t, "TB_MARKETPLACE", new Purse { R = Enumerable.Repeat(1_000_000, 7).ToArray() }));
+        var mc = new Purse(g.Db.Building(t.Type, "TB_MARKETPLACE", 1)!.Cost).R;
+        p.Purse.R = (int[])mc.Clone();
+        p.Purse[Purse.Wood] += 200;
+        Assert.True(OriginalAdventureAI.MarketTrade(g, p.Index, new[] { 0, 0, 0, 0, 0, 0, 1000 }));
+        Assert.Equal(1, t.Level("TB_MARKETPLACE"));
+        int q = Engine.Adventure.MarketRates(Purse.Wood, g.MarketplaceCount(p))[Purse.Gold];
+        int give = (1000 - 1) / q + 1;
+        Assert.Equal(200 - give, p.Purse[Purse.Wood]);
+        Assert.Equal(give * q, p.Purse[Purse.Gold]);
+    }
 }

@@ -150,8 +150,8 @@ public sealed partial class OriginalAdventureAI
     /// <summary>
     /// One build in one town (exe FUN_009c5650): a town blocked by its build period (town vf 0x9c, TownBuildPeriodInDays
     /// for a computer owner) counts as a success without building; otherwise the wanted building is checked
-    /// (00cd6a90): buildable → built; no money → success when something was built already, otherwise the exe tries a
-    /// market exchange (FUN_008e70d0, GAP: not ported, so it fails); a missing prerequisite → success when built,
+    /// (00cd6a90): buildable → built; no money → success when something was built already, otherwise a market exchange
+    /// (<see cref="MarketTrade"/>): failed → fail, the town now blocked → success, else check again; a missing prerequisite → success when built,
     /// otherwise the first unmet prerequisite (FUN_009c4f60, in the building's dependency order) is wanted instead;
     /// town level too low → the cheapest building that can be built or only lacks money (FUN_009c5140); anything
     /// else fails.
@@ -171,7 +171,13 @@ public sealed partial class OriginalAdventureAI
                 case BuildDenial.CanBuild:
                     return Send(g, new BuildCmd(t.Object, key) { Player = t.Owner }).Ok;
                 case BuildDenial.NoMoney:
-                    return built;
+                    // 009c5650: a later town only counts; otherwise trade at the market for the next level's cost
+                    // (00cd4180, FUN_008e70d0), stop when that fails, succeed when the town is now blocked
+                    // (vf 0x9c, e.g. a marketplace was just built there), else check again.
+                    if (built) return true;
+                    if (!MarketTrade(g, t.Owner, NextLevelCost(g, t, key))) return false;
+                    if (BuildBlocked(g, t, diff)) return true;
+                    continue;
                 case BuildDenial.Prereq:
                 {
                     if (built) return true;

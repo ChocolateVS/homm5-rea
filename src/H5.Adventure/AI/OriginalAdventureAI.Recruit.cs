@@ -15,8 +15,8 @@ public sealed partial class OriginalAdventureAI
     /// affordable amount, FUN_00cdd630) and scored Δ = (V1 − V0) + M1 − M0, V = the buyer hero's estimate (FUN_004eb050)
     /// or, without a hero, the army value of the target, M = the resource value of the purse (0 when money is ignored);
     /// the best Δ &gt; 0 (strict, the lower offer on ties) is bought for real; repeat until nothing gains.
-    /// GAP-details: the market exchange to afford a purchase (FUN_008e70d0) and the stack offload / final arrangement
-    /// (FUN_00cdcfd0, FUN_00cddfd0) are not ported.
+    /// Each trial and the real purchase first trade at the market for the whole stock (<see cref="BuyOffer"/>).
+    /// GAP-detail: the stack offload / final arrangement (FUN_00cdcfd0, FUN_00cddfd0) are not ported.
     /// </summary>
     public void Purchase(Engine.Adventure g, AdventureAiStats st, int buyer, HeroState? hero, bool ignoreMoney)
     {
@@ -26,16 +26,16 @@ public sealed partial class OriginalAdventureAI
             long v0 = PurchaseValue(g, st, buyer, hero);
             double m0 = ignoreMoney ? 0.0 : ResourceValue(g, me, g.Current.Purse);
             double best = 0.0;
-            RecruitCmd? bestCmd = null;
-            foreach (var cmd in PurchaseOffers(g, buyer, hero))
+            (RecruitCmd Cmd, string Creature)? bestCmd = null;
+            foreach (var (cmd, creature) in PurchaseOffers(g, buyer, hero))
             {
                 var sim = Simulation(g);
-                if (!sim.Apply(cmd).Ok) continue;
+                if (!BuyOffer(sim, cmd, creature, real: false)) continue;
                 var sh = hero == null ? null : sim.S.Hero(hero.Id);
                 double d = (double)PurchaseValue(sim, st, buyer, sh) - v0 + (ignoreMoney ? 0.0 : ResourceValue(sim, me, sim.Current.Purse)) - m0;
-                if (d > best) { best = d; bestCmd = cmd; }
+                if (d > best) { best = d; bestCmd = (cmd, creature); }
             }
-            if (bestCmd == null || !Send(g, bestCmd).Ok) break;
+            if (bestCmd is not { } bc || !BuyOffer(g, bc.Cmd, bc.Creature, real: true)) break;
         }
     }
 
@@ -52,7 +52,24 @@ public sealed partial class OriginalAdventureAI
     /// GAP-detail: FUN_00cdbcc0's per-creature rules (and the 0x29 / 0x41 base rule) are not decoded; the first
     /// upgrade is taken otherwise.
     /// </summary>
-    IEnumerable<RecruitCmd> PurchaseOffers(Engine.Adventure g, int buyer, HeroState? hero)
+    /// <summary>
+    /// FUN_00cdd630 after the variant choice: total = unit cost × the whole stock; the market exchange for it
+    /// (<see cref="MarketTrade"/>, result not checked); then the count is cut to what the purse affords and bought.
+    /// </summary>
+    static bool BuyOffer(Engine.Adventure g, RecruitCmd cmd, string creature, bool real)
+    {
+        var p = g.Current;
+        if (!g.Core.Creatures.TryGetValue(creature, out var c)) return false;
+        var unit = new Purse(c.Cost).R;
+        var total = new int[7];
+        for (int i = 0; i < 7; i++) total[i] = unchecked(unit[i] * cmd.Count);
+        MarketTrade(g, p.Index, total);
+        if (Count(g, p, creature, cmd.Count) is not (int k and > 0)) return false;
+        var buy = cmd with { Count = k };
+        return (real ? Send(g, buy) : g.Apply(buy)).Ok;
+    }
+
+    IEnumerable<(RecruitCmd Cmd, string Creature)> PurchaseOffers(Engine.Adventure g, int buyer, HeroState? hero)
     {
         var p = g.Current;
         var army = hero?.Army ?? g.S.Town(buyer)?.Garrison ?? Army.Empty();
@@ -66,15 +83,14 @@ public sealed partial class OriginalAdventureAI
                 for (int v = 0; v <= 2; v++) if (g.DwellingCreature(t, tier, v) is { } c && !ids.Contains(c)) ids.Add(c);
                 int idx = ids.Count switch { 0 => -1, 1 => 0, 2 => 1, _ => UpgradeChoice(army, ids[1], ids[2]) };
                 if (idx < 0) continue;
-                int variant = idx;
-                if (Count(g, p, ids[idx], n) is int k and > 0) yield return new RecruitCmd(t.Object, tier, k, variant) { Player = p.Index };
+                yield return (new RecruitCmd(t.Object, tier, n, idx) { Player = p.Index }, ids[idx]);
             }
         }
         else if (g.S.Objects.TryGetValue(buyer, out var os) && g.Map.Objects[buyer] is { Kind: ObjectKind.Dwelling } o)
         {
             for (int i = 0; i < o.Shared.DwellingCreatures.Count && i < os.Available.Length; i++)
-                if (os.Available[i] > 0 && Count(g, p, o.Shared.DwellingCreatures[i], os.Available[i]) is int k and > 0)
-                    yield return new RecruitCmd(buyer, i + 1, k) { Player = p.Index };
+                if (os.Available[i] > 0)
+                    yield return (new RecruitCmd(buyer, i + 1, os.Available[i]) { Player = p.Index }, o.Shared.DwellingCreatures[i]);
         }
     }
 

@@ -28,6 +28,8 @@ public sealed partial class OriginalAdventureAI
         var m = MoneyValues(g, st, player);
         p.AiMoneyValues = m.Values;
         p.AiMoneyAverage = m.Average;
+        p.AiDemand = m.Demand;
+        p.AiSupply = m.Supply;
     }
 
     /// <summary>
