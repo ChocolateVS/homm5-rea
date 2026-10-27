@@ -302,6 +302,7 @@ public sealed class GameDatabase
             ReadEditable(ed, out h.Attack, out h.Defence, out h.SpellPower, out h.Knowledge, h.Skills, h.Perks, h.Spells,
                 out h.Ballista, out h.FirstAidTent, out h.AmmoCart);
             h.FavoriteEnemies.AddRange(ed.Items("FavoriteEnemies").Select(e => e.Value.Trim()).Where(v => v.StartsWith("CREATURE_")));
+            h.TalismanLevel = ed.Int("TalismanLevel");
             if (h.Id.Length == 0) h.Id = Path.GetFileName(path).Split('.')[0];
             RegisterHero(h);
         }
@@ -349,6 +350,7 @@ public sealed class GameDatabase
         hi.Artifacts.AddRange(root.StrItems("artifactIDs"));
         ReadEditable(root.Element("Editable"), out hi.Attack, out hi.Defence, out hi.SpellPower, out hi.Knowledge,
             hi.Skills, hi.Perks, hi.Spells, out hi.Ballista, out hi.FirstAidTent, out hi.AmmoCart);
+        hi.TalismanLevel = root.Element("Editable").Int("TalismanLevel");
         // The class's primary skill (e.g. Training for Knights) is always known.
         if (shared?.PrimarySkill is { } primary && hi.Skills.All(s => s.SkillId != primary.SkillId))
             hi.Skills.Insert(0, primary);

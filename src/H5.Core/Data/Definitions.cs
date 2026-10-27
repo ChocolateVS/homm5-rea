@@ -173,6 +173,8 @@ public sealed class HeroDef
     public bool Ballista, FirstAidTent, AmmoCart;
     /// <summary>Editable FavoriteEnemies of the shared hero (e.g. Diraya: CREATURE_FAMILIAR).</summary>
     public List<string> FavoriteEnemies = new();
+    /// <summary>Editable TalismanLevel (SAdvMapHeroEditable +0x60, reader 00a08b50).</summary>
+    public int TalismanLevel;
 }
 
 /// <summary>A configured hero placed on a map (duel presets use these): overrides the shared hero.</summary>
@@ -191,6 +193,11 @@ public sealed class HeroInstance
     public List<string> Perks = new();
     public List<string> Spells = new();
     public bool Ballista, FirstAidTent, AmmoCart;
+    /// <summary>
+    /// Editable TalismanLevel (SAdvMapHeroEditable +0x60, reader 00a08b50); on a map hero combined with the shared hero's
+    /// by the map loader (009a9cf0).
+    /// </summary>
+    public int TalismanLevel;
     /// <summary>Current spell points the hero brings into battle; negative = full (duels, presets).</summary>
     public int Mana = -1;
     /// <summary>Next-battle bonuses (the adventure hero's struct returned by vfunc 0x330): luck, morale, attack, defence,

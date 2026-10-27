@@ -43,7 +43,11 @@ public sealed partial class OriginalAdventureAI
         return null;
     }
 
-    /// <summary>The free land tile next to the sea that is closest to <paramref name="t"/>.</summary>
+    /// <summary>
+    /// The free land tile next to the sea that is closest to <paramref name="t"/>. Tiles are tested with the
+    /// pathfinder's passability rule 009d1410 (<c>StaticallyEnterable</c>: the object map's blocked set, then live
+    /// objects' action tiles, then the terrain), as the move itself (<c>FindPath</c>) does.
+    /// </summary>
     static Tile? NearestLanding(Engine.Adventure g, MapFloor f, Tile t)
     {
         for (int r = 0; r <= 12; r++)
@@ -53,13 +57,13 @@ public sealed partial class OriginalAdventureAI
                 {
                     if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != r) continue;
                     var c = t.Offset(dx, dy);
-                    if (!f.InBounds(c.X, c.Y) || f.IsWater(c.X, c.Y) || f.IsBlocked(c.X, c.Y)) continue;
+                    if (!f.InBounds(c.X, c.Y) || f.IsWater(c.X, c.Y) || !g.StaticallyEnterable(f, c)) continue;
                     if (g.S.Heroes.Any(x => x.Alive && x.Pos == c) || g.GuardingMonster(c) != null) continue;
                     for (int ny = -1; ny <= 1; ny++)
                         for (int nx = -1; nx <= 1; nx++)
                         {
                             var n = c.Offset(nx, ny);
-                            if (f.InBounds(n.X, n.Y) && f.IsWater(n.X, n.Y) && !f.IsBlocked(n.X, n.Y)) return c;
+                            if (f.InBounds(n.X, n.Y) && f.IsWater(n.X, n.Y) && g.StaticallyEnterable(f, n)) return c;
                         }
                 }
         }

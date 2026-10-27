@@ -113,6 +113,7 @@ public sealed partial class OriginalAdventureAI
                 if (h.Alive && h.InTown >= 0 && g.S.Town(h.InTown) is { } shop && shop.Owner == me)
                 {
                     Purchase(g, st, shop.Object, h, false);
+                    BuyTalismanLevel(g, h, shop);
                     GarrisonHeroInTown(g, st, diff, h, shop);
                     if (h.Garrisoned) break;
                 }
@@ -156,6 +157,30 @@ public sealed partial class OriginalAdventureAI
         if (role is HeroRole.Collector or HeroRole.Supplier) return;
         if (!h.AiEnabled || h.Garrisoned || h.InTown < 0 || g.S.Town(h.InTown) is not { } t || t.Owner != h.Owner || t.AiGarrisonBlocked) return;
         Send(g, new GarrisonHeroCmd(t.Object, h.Id, true) { Player = h.Owner });
+    }
+
+    /// <summary>
+    /// 009c4710 after the purchase (009c4aae..009c4bfe): in an own town with ability 0x2b (Walker's Hut, town vf 0x44)
+    /// a Barbarian (hero vf 0x258 = 8) takes next = talisman level (vf 0x300) + 1; only when next &lt; the town maximum
+    /// (vf 0x11c, strictly: the last level is never bought here) the quote (vf 0x118, next..next) must be 0, the purse
+    /// (player vf 0xd8) and the AI supply (player vf 0x28 → CPlayerAIInformation vf 4 = 00a367b0, the set at +0x24
+    /// stored by CSetPlayerAIDemandInfoCmd, our <c>AiSupply</c>, zero before the first AI day) must each cover the cost
+    /// (009d0720); then pay (vf 0xe0), learn the quote's available spells (hero vf 0xe8) and set the level (vf 0x304).
+    /// Sent as <see cref="UpgradeTalismanCmd"/> (00429730: same checks, pays, sets the level, then vf 0x384).
+    /// UNVERIFIED-detail: the command's vf 0x384 re-grants every level's spells, the AI path only learns the new level's.
+    /// </summary>
+    public static void BuyTalismanLevel(Engine.Adventure g, HeroState h, TownState t)
+    {
+        if (!h.Alive || h.InTown != t.Object || t.Owner != h.Owner || g.Player(h.Owner) is not { } p) return;
+        if (t.Type != "TOWN_STRONGHOLD" || t.Level(Engine.Adventure.WalkersHut) < 1 || h.Class != "HERO_CLASS_BARBARIAN") return;
+        int next = h.TalismanLevel + 1;
+        if (next >= g.TalismanMaxLevel) return;
+        var q = g.TalismanQuoteFor(t, h, next, next);
+        if (q.Status != TalismanStatus.Ok || !p.Purse.CanAfford(q.Cost)) return;
+        var supply = p.AiSupply ?? new int[7];
+        var need = new[] { q.Cost.Wood, q.Cost.Ore, q.Cost.Mercury, q.Cost.Crystal, q.Cost.Sulfur, q.Cost.Gem, q.Cost.Gold };
+        for (int i = 0; i < 7; i++) if (supply[i] < need[i]) return;
+        Send(g, new UpgradeTalismanCmd(t.Object, h.Id, next) { Player = h.Owner });
     }
 
     /// <summary>

@@ -58,7 +58,7 @@ public sealed partial class Adventure
     /// H5_Game.exe 009d1410: a tile in the object map's blocked set (0045d670) is refused; else a tile holding a live
     /// object's action tile (0045d690) is enterable whatever the terrain kind or ground type; else the static rule.
     /// </summary>
-    bool StaticallyEnterable(MapFloor f, Tile t)
+    internal bool StaticallyEnterable(MapFloor f, Tile t)
     {
         int i = t.Y * f.Width + t.X;
         if (i < f.ObjectBlocked.Length && f.ObjectBlocked[i]) return false;

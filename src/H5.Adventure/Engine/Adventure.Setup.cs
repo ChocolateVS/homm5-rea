@@ -304,6 +304,10 @@ public sealed partial class Adventure
         };
         foreach (var a in hi.Army) h.Army.TryAdd(a.Creature, a.Count);
         if (h.Army.StackCount() == 0) GiveStartingArmy(h);
+        // 009aacb0 after creating the hero: vf 0x304 (00b4ce30, clamped) with the combined Editable's TalismanLevel, then
+        // vf 0x384 (00b56b50) grants the talisman spells.
+        SetTalismanLevel(h, hi.TalismanLevel);
+        GrantTalismanSpells(h);
         return h;
     }
 

@@ -369,13 +369,8 @@ public sealed class MapLoader
                 break;
             }
             case ObjectKind.HillFort when e.Element("CreaturesUpgradesFilter") is { } f:
-            {
-                HashSet<int> Tiers(string n) => f.Items(n).Select(i => int.TryParse(i.Value.Trim(), out var t) ? t : 0).Where(t => t > 0).ToHashSet();
-                HashSet<string> Ids(string n) => f.Items(n).Select(i => i.Value.Trim()).Where(v => v.Length > 0).ToHashSet(StringComparer.Ordinal);
-                o.HillFortFilter = new UpgradesFilter(Tiers("ForbiddenBasicUpgradeTiers"), Tiers("ForbiddenAlterUpgradeTiers"),
-                    Ids("NotUpgradeable"), Ids("ForbiddenUpgrades"));
+                o.HillFortFilter = ReadUpgradesFilter(f);
                 break;
-            }
             case ObjectKind.Sphinx:
             {
                 // AdvMapSphinx reader 00a02330: Shared, Riddle (href), RandomRiddle.
@@ -400,6 +395,8 @@ public sealed class MapLoader
                 foreach (var b in e.Items("buildings"))
                     o.Buildings.Add(new TownBuildingInit(b.Str("Type"), UpgradeLevel(b.Str("InitialUpgrade")), UpgradeLevel(b.Str("MaxUpgrade"))));
                 o.TownSpells = e.StrItems("spellIDs");
+                // AdvMapTown reader 00a0a490: CreaturesUpgradesFilter at +0x130 through the same reader 00a0f620 as the Hill Fort's.
+                if (e.Element("CreaturesUpgradesFilter") is { } tf) o.TownFilter = ReadUpgradesFilter(tf);
                 if (e.Element("GarrisonHero")?.Element("AdvMapHero") is { } gh && gh.Element("Shared") != null)
                     o.GarrisonHero = LoadHero(gh, files);
                 break;
@@ -412,6 +409,25 @@ public sealed class MapLoader
         }
         return o;
     }
+
+    /// <summary>
+    /// A CreaturesUpgradesFilter (reader 00a0f620, shared by AdvMapHillFort +0x84 and AdvMapTown +0x130):
+    /// ForbiddenBasicUpgradeTiers, ForbiddenAlterUpgradeTiers, NotUpgradeable, ForbiddenUpgrades.
+    /// </summary>
+    public static UpgradesFilter ReadUpgradesFilter(XElement f)
+    {
+        HashSet<int> Tiers(string n) => f.Items(n).Select(i => int.TryParse(i.Value.Trim(), out var t) ? t : 0).Where(t => t > 0).ToHashSet();
+        HashSet<string> Ids(string n) => f.Items(n).Select(i => i.Value.Trim()).Where(v => v.Length > 0).ToHashSet(StringComparer.Ordinal);
+        return new UpgradesFilter(Tiers("ForbiddenBasicUpgradeTiers"), Tiers("ForbiddenAlterUpgradeTiers"), Ids("NotUpgradeable"), Ids("ForbiddenUpgrades"));
+    }
+
+    /// <summary>
+    /// 009aacb0 combines the shared hero's Editable (AdvMapHeroShared +0x168) with the map hero's (AdvMapHero +0xb0, reader
+    /// 00a0c660) under its OverrideMask (+0x114) by 009a9cf0: TalismanLevel (+0x60) is the map hero's with mask bit 0x40
+    /// set, else the larger of the two.
+    /// </summary>
+    public static int CombineTalismanLevel(int overrideMask, int shared, int map) =>
+        (overrideMask & 0x40) != 0 ? map : Math.Max(shared, map);
 
     /// <summary>Reserve heroes are inline AdvMapHero objects in each player's &lt;ReserveHeroes&gt; list.</summary>
     void ReadReserveHeroes(XElement root, AdvMap m, MapFiles files)
@@ -468,6 +484,7 @@ public sealed class MapLoader
         def.Spells.AddRange(ed.StrItems("spellIDs"));
         def.Ballista = ed.Bool("Ballista"); def.FirstAidTent = ed.Bool("FirstAidTent"); def.AmmoCart = ed.Bool("AmmoCart");
         def.FavoriteEnemies.AddRange(ed.Items("FavoriteEnemies").Select(e => e.Value.Trim()).Where(v => v.StartsWith("CREATURE_")));
+        def.TalismanLevel = ed.Int("TalismanLevel");
         // Campaign variants reuse a stock hero's InternalName (RedHeaven07_Orlando is "Orlando"):
         // keep both definitions, the variant under its file path; scripts still see def.Id.
         if (!_db.Heroes.TryAdd(def.Id, def)) _db.Heroes[path] = def;
@@ -496,6 +513,7 @@ public sealed class MapLoader
             if (hi.FavoriteEnemies.Count == 0) hi.FavoriteEnemies.AddRange(sh.FavoriteEnemies);
             if (!hi.Ballista && !hi.FirstAidTent && !hi.AmmoCart)
             { hi.Ballista = sh.Ballista; hi.FirstAidTent = sh.FirstAidTent; hi.AmmoCart = sh.AmmoCart; }
+            hi.TalismanLevel = CombineTalismanLevel(e.Int("OverrideMask"), sh.TalismanLevel, hi.TalismanLevel);
         }
         var nameRef = e.Element("Editable").Href("NameFileRef");
         if ((e.Int("OverrideMask") & 1) != 0 && files.ReadText(nameRef)?.Trim() is { Length: > 0 } name)
