@@ -91,7 +91,8 @@ public static partial class AdvDialogs
 
     /// <summary>Pick one of two options (left/right buttons with icon and caption), then OK.</summary>
     public static void Choose2(Control parent, string title, string text, Texture2D? face,
-        (Texture2D? Icon, string Text) left, (Texture2D? Icon, string Text) right, Action<int> picked, string? header = null)
+        (Texture2D? Icon, string Text) left, (Texture2D? Icon, string Text) right, Action<int> picked, string? header = null,
+        bool choicesEnabled = true, bool okEnabled = false, (string? Title, string? Left, string? Right) tooltips = default)
     {
         Control? blocker = null;
         var s = Open(parent, Box2p, b => blocker = b);
@@ -110,10 +111,16 @@ public static partial class AdvDialogs
         // Picking (00675f60 left / 00675eb0 right) presses that side, releases the other and enables OK;
         // picking the side already chosen confirms, as do left_force / right_force (double click, 006760c0 / 00676010).
         EnableButtons(s, "ButtonLeft", "ButtonRight");
-        if (ok != null) ok.Enabled = false;
+        // Callers may disable both choices and enable OK up front (CTreeOfKnowledgeBox 006ac530 via 00675760);
+        // OK then closes with no choice (-1).
+        if (!choicesEnabled) { if (lb != null) lb.Enabled = false; if (rb != null) rb.Enabled = false; }
+        if (ok != null) ok.Enabled = okEnabled;
+        if (tooltips.Title != null) s.Find("Title")?.SetTooltip(tooltips.Title);
+        if (tooltips.Left != null) lb?.SetTooltip(tooltips.Left);
+        if (tooltips.Right != null) rb?.SetTooltip(tooltips.Right);
         int choice = -1;
         bool closed = false;
-        void Done() { if (closed || choice < 0) return; closed = true; blocker?.QueueFree(); picked(choice); }
+        void Done() { if (closed || (choice < 0 && !okEnabled)) return; closed = true; blocker?.QueueFree(); picked(choice); }
         void Pick(int c)
         {
             if (choice == c) { Done(); return; }

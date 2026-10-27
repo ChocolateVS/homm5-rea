@@ -684,19 +684,29 @@ public partial class AdventureScreen : Control
                 var me = Session.Human;
                 bool afford = me.Purse.CanAfford(price);
                 int maxLevel = Session.Map.HeroMaxLevel > 0 ? Session.Map.HeroMaxLevel : 40;
-                // CTreeOfKnowledgeBox 006ac530: ID_DESC_FREE / GOLD / GEMS, ID_TITLE_TEXT, ID_HEADER_TEXT; the decline
-                // button's caption is ID_NOGOLD / ID_NOGEMS when the price cannot be paid, LEVEL_CAP_REACHED at the
-                // level cap, else ID_DECLINE_TEXT; the accept button says ID_ACCEPT_TEXT.
-                var desc = T(price.Gold > 0 ? "desc_gold_text.txt" : price.Gem > 0 ? "desc_gems_text.txt" : "desc_free_text.txt");
-                var decline = !afford ? T(price.Gold > 0 ? "NoGold_Text.txt" : "NoGems_Text.txt")
-                    : learner.Level >= maxLevel ? T("level-cap-reached.txt") : T("Decline_Text.txt");
+                // CTreeOfKnowledgeBox 006ac530 (two-choice box: ButtonLeft +0x10c accept, ButtonRight +0x110 decline):
+                // ID_DESC_FREE / GOLD / GEMS, ID_TITLE_TEXT, ID_HEADER_TEXT; both choices are enabled only when the
+                // hero can learn; the decline caption is ID_DECLINE_TEXT then, else LEVEL_CAP_REACHED at the level cap,
+                // else ID_NOGOLD / ID_NOGEMS; ButtonOk (+0x114, 00675760) starts enabled unless the hero can learn a
+                // paid level. Tooltips: title_tooltip; a free tree has no button tooltips; else levelup_button_tooltip /
+                // refuse_button_tooltip when he can learn, otherwise only the decline button's level_cap_tooltip /
+                // no_resources_tooltip.
+                bool free = price.Gold <= 0 && price.Gem <= 0;
+                bool capped = learner.Level >= maxLevel;
+                bool can = afford && !capped;
+                var desc = T(free ? "desc_free_text.txt" : price.Gem > 0 ? "desc_gems_text.txt" : "desc_gold_text.txt");
+                var decline = can ? T("Decline_Text.txt") : capped ? T("level-cap-reached.txt") : T(price.Gem > 0 ? "NoGems_Text.txt" : "NoGold_Text.txt");
+                const string tips = "UI/TreeOfKnowledge/Texts.(WindowRelatedTexts).xdb";
+                string? Tip(string key) => UiGameRoot.RelatedTextAt(tips, key);
+                var tooltips = (Tip("title_tooltip"), free || !can ? null : Tip("levelup_button_tooltip"),
+                    free ? null : can ? Tip("refuse_button_tooltip") : Tip(capped ? "level_cap_tooltip" : "no_resources_tooltip"));
                 Texture2D? Tex(string path) => Game.Instance.LoadTexture(path);
                 int pick = 1;
                 await Dialog(done => AdvDialogs.Choose2(_dialogLayer, title, desc, null,
                     (Tex("Textures/Interface/TreeOfKnowledge/exp_texture.xdb"), T("Accept_Text.txt")),
                     (Tex("Textures/Interface/TreeOfKnowledge/Decline_Texture.xdb"), decline),
-                    c => { pick = c; done(); }, T("Header_Text.txt")));
-                if (pick != 0 || !afford || learner.Level >= maxLevel) break;
+                    c => { pick = c; done(); }, T("Header_Text.txt"), choicesEnabled: can, okEnabled: !can || free, tooltips: tooltips));
+                if (pick != 0 || !can) break;
                 Session.Apply(new UseTreeOfKnowledgeCmd(learner.Id, tk.Object) { Player = me.Index });
                 Hud.Refresh();
                 break;

@@ -110,10 +110,44 @@ public sealed partial class HillFortScreen : MapBuildingScreen
             if (icon != null) icon.Visible = s is { Count: > 0 };
             TownUi.SetPicture(icon, s is { Count: > 0 } ? TownUi.CreatureIcon(s.Creature) : null);
             (icon?.FindChild("Text", false, false) as UiNode)?.SetValue("NumberOfCreatures", s?.Count.ToString() ?? "");
-            if (Ui.Find($"FortHill/creaturesholder/creature{i + 1}/button") is { } b)
-                b.Enabled = s is { Count: > 0 } && (game.UpgradeQuote(s.Creature, 1, s.Count, true).Target != null
-                                                   || game.UpgradeQuote(s.Creature, 2, s.Count, true).Target != null);
+            if (Ui.Find($"FortHill/creaturesholder/creature{i + 1}/button") is { } b) SetButton(b, s);
         }
+    }
+
+    /// <summary>
+    /// The stack's button per H5_Game.exe 006d4950 / 006d40c0 / 006d41f0: the slot's status is the best of its
+    /// upgrade options' statuses (0 or 1 over 2 over 3; the later option wins a tie), 4 (button hidden) when the
+    /// slot is empty or has no option. Status 0 → enabled, visual 0; 1 → enabled, 3; 2 → enabled, 4 for an
+    /// upgraded creature (creature def +0x100) else 1; 3 → disabled, 3 / 0. Tooltip: action_tooltip_&lt;visual&gt;
+    /// (CAN_UPGRADE, NO_RESOURCES, ALREADY_UPGRADED, CAN_REGRADE, NO_RESOURCES), for status 3
+    /// action_tooltip_no_regrades / _no_upgrades. The option statuses come from CHillFortDialogLogEntry (not
+    /// decoded): here 0 / 1 (upgrade / regrade) when affordable, else 2; no map forbids upgrades (status 3).
+    /// </summary>
+    void SetButton(UiNode b, H5.Adventure.State.Stack? s)
+    {
+        var game = Adv.Session.Game;
+        int status = 4;
+        bool upgraded = false;
+        if (s is { Count: > 0 })
+        {
+            upgraded = Game.Instance.Db.Creatures.TryGetValue(s.Creature, out var cd) && cd.Upgrade;
+            int best = -1;
+            for (int u = 1; u <= 2; u++)
+            {
+                var (target, cost) = game.UpgradeQuote(s.Creature, u, s.Count, true);
+                if (target == null) continue;
+                int st = Me.Purse.CanAfford(cost) ? (upgraded ? 1 : 0) : 2;
+                int rank = st <= 1 ? 2 : st == 2 ? 1 : 0;
+                if (rank >= best) { best = rank; status = st; }
+            }
+        }
+        b.Visible = status != 4;
+        if (status == 4) return;
+        int visual = status switch { 0 => 0, 1 => 3, 2 => upgraded ? 4 : 1, _ => upgraded ? 3 : 0 };
+        b.Enabled = status != 3;
+        if (b.Window.ButtonStates.Count > 1) b.SetState(visual);
+        string key = status == 3 ? (upgraded ? "action_tooltip_no_regrades" : "action_tooltip_no_upgrades") : $"action_tooltip_{visual}";
+        if (Ui.Find("FortHill")?.Window.RelatedTexts.TryGetValue(key, out var path) == true) b.SetTooltip(UiResources.Instance.Text(path));
     }
 
     void OpenChoice(int slot)
