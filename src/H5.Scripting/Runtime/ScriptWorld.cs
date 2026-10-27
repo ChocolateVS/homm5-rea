@@ -63,7 +63,6 @@ public sealed class ScriptWorld
     public Dictionary<int, int> VisitedMarks = new();
     /// <summary>Saved combat results (GetSavedCombat*), newest last.</summary>
     public List<SavedCombat> SavedCombats = new();
-    public double HeroesExpCoef = 1.0;
     /// <summary>Objects moved/rotated by scripts (map index → placement), re-applied when loading.</summary>
     public Dictionary<int, ObjectPlacement> ObjectPlacements = new();
     /// <summary>Objects created by scripts, in creation order (map indices continue after the map's own).</summary>

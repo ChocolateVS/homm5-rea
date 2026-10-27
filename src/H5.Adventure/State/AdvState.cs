@@ -237,6 +237,13 @@ public sealed class HeroState
     public bool Alive = true;
     /// <summary>EnableHeroAI (CHero AI settings +0): an AI player's hero the AI moves; false leaves it to scripts.</summary>
     public bool AiEnabled = true;
+    /// <summary>
+    /// CHero +0x2a8 (setter vf 0x364 = 0x00b4c9a0, getter vf 0x368 = 0x00b5ac50): MakeHeroNecromancer's level 0..4,
+    /// used as the necromancy level when the hero has no Necromancy mastery (FUN_00c25ff0 / FUN_00c26040).
+    /// </summary>
+    public int ScriptNecromancyLevel;
+    /// <summary>CHero +0x218 (setter vf 0xb0 = 0x00b4b740, getter vf 0xac = 0x00b5aa00): SetHeroLootable.</summary>
+    public bool Lootable = true;
     /// <summary>SetAIHeroAttractor (settings +0x14): per-hero object priorities, checked before the player's.</summary>
     public List<AiAttractor> AiAttractors = new();
     /// <summary>DenyAIHeroFlee (settings +0x20): enemy hero names ("" = any enemy) this AI hero never flees from.</summary>
@@ -393,6 +400,11 @@ public sealed class AdvState
     /// <summary>CWorld +0x1dc: the day of the week (1..7) on which the start-of-week notice shows (009946e0).</summary>
     public int WeekNoticeDay = 1;
     public int Difficulty = 1;            // 0 easy .. 3 heroic
+    /// <summary>
+    /// CWorld +0x16c (100 from the world ctors 0x00997600/0x009978d0): SetHeroesExpCoef's percentage, clamped to
+    /// 0..1000 by world vf 0x1b0 (0x0099e5b0); applied by world vf 0x1b4 (0x0099e500).
+    /// </summary>
+    public int HeroesExpCoef = 100;
     public bool Campaign;
     public Rng Rng = new(1);
     public List<PlayerState> Players = new();

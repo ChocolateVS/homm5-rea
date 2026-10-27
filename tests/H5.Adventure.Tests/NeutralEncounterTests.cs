@@ -115,6 +115,28 @@ public class NeutralEncounterTests(Fixture f)
     }
 
     [Fact]
+    public void HeroesExpCoefScalesTheFleeExperience()
+    {
+        // SetHeroesExpCoef → world +0x16c (clamped 0..1000, 0x0099e5b0); CMonsterFleeCmd passes the half through
+        // world vf 0x1b4 (0x0099e500): coef · exp / 100 in integers.
+        var (g, h, m) = Setup(f, "CREATURE_WOLF", 13, "MONSTER_MOOD_WILD");
+        h.Perks.Remove("HERO_SKILL_DIPLOMACY");
+        h.Army = Army.Empty();
+        h.Army[0] = new Stack("CREATURE_BLACK_DRAGON", 500);
+        g.SetHeroesExpCoef(5000);
+        Assert.Equal(1000, g.S.HeroesExpCoef);
+        g.SetHeroesExpCoef(-3);
+        Assert.Equal(0, g.S.HeroesExpCoef);
+        g.SetHeroesExpCoef(37);
+        Attack(g, h, m);
+        var wolf = g.Core.Creatures["CREATURE_WOLF"];
+        long exp = h.Experience;
+        Assert.True(g.Apply(new AnswerChoiceCmd(false) { Player = h.Owner }).Ok);
+        long half = 13L * (wolf.Exp != 0 ? wolf.Exp : wolf.Health) / 2;
+        Assert.Equal(exp + 37 * half / 100, h.Experience);
+    }
+
+    [Fact]
     public void PursuingFleeingMonstersStartsTheFight()
     {
         var (g, h, m) = Setup(f, "CREATURE_WOLF", 10, "MONSTER_MOOD_WILD");

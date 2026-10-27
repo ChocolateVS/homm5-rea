@@ -51,8 +51,12 @@ host, with the stock engine's quirks — including the checks the DLL would have
   FUN_005d4a70, the map object's CombatScript) is not traced; our sessions run only combat-startup.lua.
 
 ### Town screen (FUN_006146f0)
-`scripts/town-startup.lua`: MMH55's version loads `common.lua` and defines no-op `HeroHired` / `CreatureHired`. No
-gameplay effect; not hosted (GAP, observationally equivalent).
+CTownScreen has its own script engine (+0x390): DoString(`scripts/town-startup.lua`), then the text of the town
+object's script resource (town vf 0xd0, when set). The screen's notify observers DoString `HeroHired('%s')` (0x00663ec0,
+a hero hired in the tavern, string at 0x00e2e084) and `CreatureHired(%i,%i)` (0x00663f00, 0x00e2e094) on that engine.
+MMH55's town-startup.lua loads `common.lua` and defines both as no-ops; the only towns with a script resource are
+A2C1M3 (`A2C1M3_CombatScript`) and MMH55's A1C3M5 (`THcombatscript.xdb`). GAP: not hosted — the town engine's
+registration table and which AdvMapTown field vf 0xd0 returns are not traced (observationally equivalent for MMH55).
 
 ## 2. Script VM (src/H5.Scripting/Lua)
 - **Tables are not Lua 4.0's ltable.c** but an SGI-style chained hash map: find FUN_004c0900, set FUN_004c0b10, resize
@@ -105,8 +109,11 @@ scripted battle (file read + compile, no caching needed). A scripted map runs 7 
 Result (2026-10-20, HEAD d2567ec): **117 maps, 0 engine exceptions, 106 without any error of ours** (114 stock-matching
 errors); 50 maps have a map script (MMH55 runs), 65 have none (nothing runs, as stock), 2 are not playable. The remaining
 21 errors on 10 maps were each checked and are script/map logic the exe hits the same way under the same game state:
-A1C2M4 `EnableHeroAI("Brem")` on a tavern-only hero (the exe stops the thread too, with "is not belong to AI player"
-instead of our "is not exists" — GAP: our hero lookup does not include tavern-pool heroes); SM2 `GetObjectOwner("Haven")`
+A1C2M4 `EnableHeroAI("Brem")` on a tavern-only hero (ours: "is not exists". The exe (0x005da500) raises "is not belong
+to AI player" only for a hero whose owner is human (player vf 0x184 = 0x00500d60: AI controller +0x74 is null) and
+posts the command for an ownerless hero, so the exe either stops with "is not exists" or raises nothing — GAP: whether
+the name lookup IAdventureMap vf 0x14 (CAdventureController 0x006033c0 → +0x18 → vf 0x140 → vf 0x14) sees
+tavern-pool heroes is not traced; our tavern pool holds hero ids only); SM2 `GetObjectOwner("Haven")`
 (no such object in the map) → its `H55_TriggerDaily` is never defined → MMH55's crash protection calls nil; A2C2M1
 `H55_TriggerDaily` indexes `targetsArray` after shrinking it inside the loop; A1C3M5 completes an objective that is still
 in its initial state (exe's transition table); A2C2M3/A2C3M4/SL2 objects or players removed by the bots' play
@@ -193,17 +200,17 @@ note a residual gap.
 | KnowHeroSpell | heroes | 0x005c4770 | FIXED | out-of-range id read as 0, then FUN_00a349f0 validity (runic/warcry ok; id 67 and SPECIAL/NONE schools invalid) -> "Invalid spell id #%i" with the original id; text "Hero \"%s\" is not exists" |
 | LevelUpHero | heroes | 0x005c3c00 | FIXED | only below level 40 (hard-coded 0x28); gives the exp missing for the next level through the capped exp path; returns level<40 (was nothing) |
 | MakeHeroInteractWithObject | heroes | 0x005d2220 | FIXED | cmd -> adventure hero vf0x74: visit WITHOUT moving (was walking the hero there); "Object name is not specified", "Object \"%s\" does not exist!"; no-op for heroes not on the map |
-| MakeHeroNecromancer | heroes | 0x005e4d50 | GAP | level 0..4 validated ("Invalid necromancy level %d!") and stored. GAP: necromancy effect not modelled by the engine |
-| MakeHeroReturnToTavernAfterDeath | heroes | 0x005e4fc0 | GAP | no hero validation; 2nd/3rd args (n) tested !=0 and both stored. GAP: effect on death not modelled |
+| MakeHeroNecromancer | heroes | 0x005e4d50 | FIXED | level 0..4 validated ("Invalid necromancy level %d!"); CMakeHeroNecromancerCmd (Execute 0x0042a140) → hero vf 0x364 (0x00b4c9a0) sets CHero +0x2a8 (HeroState.ScriptNecromancyLevel); read by hero vf 0x368 in FUN_00c25ff0/FUN_00c26040: necromancy level = Necromancy mastery if > 0, else this level if > 0 (Adventure.NecromancyLevel: raise percent and raising). GAP: the Execute sets it only when two bytes of an owner record (player vf 0x14 → +0x1cc) are 0 — not traced, ignored; third reader FUN_00c26360 (from 0x004fb920) not identified |
+| MakeHeroReturnToTavernAfterDeath | heroes | 0x005e4fc0 | GAP | no hero validation; 2nd/3rd args (n) tested !=0 and both stored. Traced: CMakeHeroReturnToTavernAfterDeathCmd (Execute 0x0042a090) → hero vf 0x74 (0x00724940: CHero sub-object +0x18) vf 0x44(hero name, flag1, flag2). GAP: that object and the death-time reader not traced; our engine returns every dead hero to the pool |
 | MoveHero | heroes | 0x005cef50 | FIXED | AI-owned heroes only (human -> error); not exists / not belong / not on map / floor errors; a missing path is only logged (exe text). GAP: exe sets an AI move target, we move at once using move points |
 | MoveHeroRealTime | heroes | 0x005cf310 | FIXED | any owner; same checks without the human test; missing path logged and nothing moves; moves ignoring move points |
 | RemoveArtefact | heroes | 0x005c54d0 | FIXED | "Invalid artefact #%d"; "Hero %s hasn't such artefact!" when neither worn nor in backpack; worn copy removed first else backpack; engine hook no longer subtracts artifact stats from the base attributes (it corrupted stats: bonuses are never added to the base) |
 | RemoveHeroCreatures | heroes | 0x005c64a0 | FIXED | count<=0 errors "Quantity cannot be negative"; removing all of a type when the army is only that type keeps one; removal starts at the 4th-arg slot then last->first (FUN_0045a440); returns the number removed (exe value, -1 on an empty army) |
 | ResetHeroCombatScript | heroes | 0x005c72e0 | FIXED | errors "Hero \"%s\" is not exists", "Hero \"%s\" not belongs to any player" |
 | SetHeroCombatScript | heroes | 0x005c6fd0 | GAP | same hero/owner errors. GAP: script resource lookup ("Script \"%s\" is not exists", FUN_00bf6c30/FUN_005d4a70) not reproduced; the combat host does not run the stored script |
-| SetHeroLootable | heroes | 0x005c5c80 | FIXED | text "Hero with name \"%s\" doesn't exist"; empty-name check. GAP: lootability not consumed by the engine |
+| SetHeroLootable | heroes | 0x005c5c80 | FIXED | text "Hero with name \"%s\" doesn't exist"; empty-name check. CSetHeroLootableCmd (Execute 0x00427a00) → hero vf 0xb0 (0x00b4b740) sets CHero +0x218 (HeroState.Lootable, default true); IsHeroLootable reads it (vf 0xac = 0x00b5aa00). GAP: our engine does not move a defeated hero's artifacts to the winner, so nothing consumes the flag; the vf 0xac readers (151 call sites of that slot) were not isolated |
 | SetHeroRoleMode | heroes | 0x005e7260 | GAP | mode mapped like the exe (1->1, 2->2, other->0); text "Hero \"%s\" is not exists". GAP: role effect (AI) not modelled |
-| SetHeroesExpCoef | heroes | 0x005e2c70 | GAP | stored as the exe's integer percent (int)(coef*100+0.5); no longer applied by ChangeHeroStat. GAP: consumer of world vf0x1b0 (presumably battle exp) not traced/applied |
+| SetHeroesExpCoef | heroes | 0x005e2c70 | FIXED | (int)(coef*100+0.5) posted as CSetHeroesExpCoefCmd (Execute 0x00428ef0) → world vf 0x1b0 (0x0099e5b0): AdvState.HeroesExpCoef = clamp 0..1000 (world +0x16c, 100 in the ctors 0x00997600/0x009978d0). The only caller of world vf 0x1b4 (0x0099e500: coef·exp/100 unless 100; no other reference) is CMonsterFleeCmd 0x0042ad40: the experience for letting monsters flee (Adventure.ApplyHeroesExpCoef). Battle experience is not scaled (exe) |
 | SinkHero | heroes | 0x005e37f0 | FIXED | text "Hero \"%s\" is not exists"; only a hero on the map sinks, otherwise no-op |
 | TakeAwayHeroExp | heroes | 0x005e5a00 | GAP | hero vf0x354 (0x00b56430): experience removed level by level and the level drops (was exp only). GAP: per-level skill loss and attribute loss (vf0x338/0x340/0x308) not reproduced |
 | TeachHeroSpell | heroes | 0x005c49e0 | FIXED | same spell-id validation as KnowHeroSpell; always teaches; returns !vf0xdc (approximated as "hero did not know it"); text "Hero \"%s\" is not exists" |

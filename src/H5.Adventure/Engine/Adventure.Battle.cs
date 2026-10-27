@@ -96,9 +96,15 @@ public sealed partial class Adventure
 
     /// <summary>
     /// CMonsterFleeCmd (execute 0042ad40): the hero lets the monsters go and gains half of Σ count · (creature Exp, or
-    /// Health when Exp is 0; FUN_0045a600 / 004baad0) through +0x198. TODO(exe): the value first passes vcall 0x1b4 of
-    /// the command's +0xc object, not decoded (taken unchanged).
+    /// Health when Exp is 0; FUN_0045a600 / 004baad0) through +0x198, after world vf 0x1b4 (0x0099e500): × HeroesExpCoef / 100
+    /// unless the coefficient is 100. That command is the only caller of the world's vf 0x1b4 (SetHeroesExpCoef).
     /// </summary>
+    /// <summary>World vf 0x1b4 (0x0099e500): coef · exp / 100 (integer), unchanged at 100.</summary>
+    public long ApplyHeroesExpCoef(long exp) => S.HeroesExpCoef != 100 ? S.HeroesExpCoef * exp / 100 : exp;
+
+    /// <summary>World vf 0x1b0 (0x0099e5b0): stores the percentage clamped to 0..1000.</summary>
+    public void SetHeroesExpCoef(int percent) => S.HeroesExpCoef = Math.Clamp(percent, 0, 1000);
+
     void LetMonstersFlee(HeroState h, int monster)
     {
         long total = 0;
@@ -106,7 +112,7 @@ public sealed partial class Adventure
             if (Core.Creatures.TryGetValue(g.Creature, out var c)) total += (long)g.Count * (c.Exp != 0 ? c.Exp : c.Health);
         RemoveObject(monster);
         Emit(new ObjectVisited(h.Id, monster, "monster_fled"));
-        GainExperience(h, total / 2, modifiersApplied: true);
+        GainExperience(h, ApplyHeroesExpCoef(total / 2), modifiersApplied: true);
     }
 
     /// <summary>

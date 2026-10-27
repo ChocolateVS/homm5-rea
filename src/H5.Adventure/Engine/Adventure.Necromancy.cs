@@ -5,7 +5,8 @@ namespace H5.Adventure.Engine;
 // Necromancy raise after a won battle, H5_Game.exe:
 //   FUN_00c26be0  loops over the killed enemy creature types (entries flagged as summoned are skipped)
 //   FUN_00c264d0  raised = min(killed, (percent x Health(dead) x killed / 100) / Health(risen))
-//   FUN_00c25ff0  needs Necromancy mastery > 0
+//   FUN_00c25ff0  necromancy level = Necromancy mastery (hero vf 0x174(15)) when > 0, else the level a script gave
+//                 with MakeHeroNecromancer (hero vf 0x368, +0x2a8) when > 0, else none
 //   FUN_00c25f90  risen type from DefaultStats Necromancy/TransformTable; none when the dead creature is a
 //                 Necropolis (TOWN_NECROMANCY = 7) creature
 //   FUN_00c26040  percent = RaisePercentBase + RaisePercentPerSkillLevel x mastery (each term clamped 0..100)
@@ -18,10 +19,18 @@ public sealed partial class Adventure
 
     static int Clamp100(double v) => Math.Clamp((int)v, 0, 100);
 
+    /// <summary>FUN_00c25ff0: Necromancy mastery if above 0, else MakeHeroNecromancer's level if above 0, else 0.</summary>
+    public static int NecromancyLevel(HeroState h)
+    {
+        int mastery = (int)h.MasteryOf("HERO_SKILL_NECROMANCY");
+        if (mastery >= 1) return mastery;
+        return Math.Max(0, h.ScriptNecromancyLevel);
+    }
+
     /// <summary>Total necromancy raise percent of a hero (exe FUN_00c26040).</summary>
     public int NecromancyPercent(HeroState h)
     {
-        int mastery = (int)h.MasteryOf("HERO_SKILL_NECROMANCY");
+        int mastery = NecromancyLevel(h);
         int pct = Clamp100(Core.Stats.Get(NecroPath + "RaisePercentBase", 10))
                   + Clamp100(Core.Stats.Get(NecroPath + "RaisePercentPerSkillLevel", 10)) * Math.Max(0, mastery);
         if (h.HasPerk("HERO_SKILL_LORD_OF_UNDEAD")) pct += Clamp100(Core.Stats.Get(NecroPath + "LordOfUndeadBonus", 0));
@@ -56,7 +65,7 @@ public sealed partial class Adventure
     public List<(string Creature, int Count)> NecromancyRaise(HeroState h, IEnumerable<(string Creature, int Killed)> killed)
     {
         var raised = new List<(string, int)>();
-        if ((int)h.MasteryOf("HERO_SKILL_NECROMANCY") <= 0) return raised;
+        if (NecromancyLevel(h) <= 0) return raised;
         int pct = NecromancyPercent(h);
         foreach (var (dead, count) in killed)
         {

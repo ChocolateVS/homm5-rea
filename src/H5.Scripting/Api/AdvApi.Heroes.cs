@@ -102,8 +102,13 @@ public sealed partial class AdventureScripting
             if (below) Change(() => AddExperienceCapped(h, Core.Experience.For(h.Level + 1) - h.Experience));
             c.ReturnBool(below);
         });
-        // 0x005e2c70: the world keeps an integer percentage, (int)(coef * 100 + 0.5).
-        Reg("SetHeroesExpCoef", c => World.HeroesExpCoef = (int)((float)c.Number(0) * 100f + 0.5f) / 100.0);
+        // 0x005e2c70: (int)(coef * 100 + 0.5) posted as CSetHeroesExpCoefCmd (Execute 0x00428ef0 → world vf 0x1b0, clamp
+        // 0..1000). Its only consumer is CMonsterFleeCmd (Adventure.ApplyHeroesExpCoef).
+        Reg("SetHeroesExpCoef", c =>
+        {
+            int percent = (int)((float)c.Number(0) * 100f + 0.5f);
+            Change(() => Game.SetHeroesExpCoef(percent));
+        });
 
         // 0x005c3ee0 / 0x005c4140: hero vf 0x174 (0x00b4d150).
         Reg("HasHeroSkill", c =>
@@ -265,12 +270,13 @@ public sealed partial class AdventureScripting
             c.Return(res.ToArray());
         });
 
-        Reg("IsHeroLootable", c => c.ReturnBool(!World.Settings.ContainsKey($"unlootable:{Hero(c, 0).Id}")));
+        Reg("IsHeroLootable", c => c.ReturnBool(Hero(c, 0).Lootable));
         Reg("SetHeroLootable", c =>
         {
             var h = HeroArg(c, 0, HeroWithNameDoesntExist);
-            if (c.Bool(1)) World.Settings.Remove($"unlootable:{h.Id}");
-            else World.Settings[$"unlootable:{h.Id}"] = "1";
+            // CSetHeroLootableCmd (Execute 0x00427a00) → hero vf 0xb0 (0x00b4b740): CHero +0x218, read by vf 0xac.
+            bool lootable = c.Bool(1);
+            Change(() => h.Lootable = lootable);
         });
         // 0x005c67f0 / 0x005c6a50: war machine ids 1..4 (FUN_0089fc10); Give returns whether the hero
         // did not have it (and gives it).
@@ -398,7 +404,10 @@ public sealed partial class AdventureScripting
             var h = HeroArg(c, 0, HeroIsNotExists);
             int level = c.Int(1);
             if (level < 0 || level > 4) throw c.Error($"Invalid necromancy level {level}!");
-            World.Settings[$"necromancer:{h.Id}"] = level.ToString();
+            // CMakeHeroNecromancerCmd (Execute 0x0042a140) → hero vf 0x364 (0x00b4c9a0, +0x2a8): read as the
+            // necromancy level of heroes without the skill (Adventure.NecromancyLevel). GAP: the Execute only sets it
+            // when two bytes of the owner's record (player vf 0x14 → +0x1cc) are 0 — meaning not traced, ignored.
+            Change(() => h.ScriptNecromancyLevel = level);
         });
         Reg("LockMinHeroSkillsAndAttributes", c => World.Settings[$"lock_min_skills:{Hero(c, 0).Id}"] = "1");
         // 0x005e7260: modes other than 1 and 2 become 0.
