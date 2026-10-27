@@ -24,6 +24,7 @@ namespace H5.Adventure.Engine;
 [JsonDerivedType(typeof(SwapStacksCmd), "swap")]
 [JsonDerivedType(typeof(GarrisonHeroCmd), "garrison")]
 [JsonDerivedType(typeof(MoveArtifactCmd), "move_artifact")]
+[JsonDerivedType(typeof(SwapWarMachinesCmd), "swap_war_machines")]
 [JsonDerivedType(typeof(CastAdventureSpellCmd), "cast_adventure_spell")]
 [JsonDerivedType(typeof(BuildShipCmd), "build_ship")]
 [JsonDerivedType(typeof(ExchangeResourcesCmd), "exchange")]
@@ -104,6 +105,8 @@ public sealed record GarrisonHeroCmd(int TownObject, int HeroId, bool Garrison) 
 /// standing next to it (hero meeting). Worn artifacts must fit their slot (ring slot holds two).
 /// </summary>
 public sealed record MoveArtifactCmd(int HeroId, string Artifact, bool FromBackpack, int ToHero, bool ToBackpack) : AdvCommand;
+/// <summary>Exchange one war machine slot between two meeting heroes (exe CSwapWarMachinesCmd).</summary>
+public sealed record SwapWarMachinesCmd(int HeroId, int OtherHero, string Machine) : AdvCommand;
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$t")]
 [JsonDerivedType(typeof(TurnStarted), "turn")]

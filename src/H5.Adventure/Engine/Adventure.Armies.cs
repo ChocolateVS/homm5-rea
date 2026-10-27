@@ -96,6 +96,29 @@ public sealed partial class Adventure
         return null;
     }
 
+    /// <summary>
+    /// CSwapWarMachinesCmd (vtable 00e0da24, execute 00430d10): heroes +0xc / +0x10 and a war machine slot 0..3; the two
+    /// heroes' entries of that slot (hero vfunc 100) are exchanged — so a machine only one of them has changes hands.
+    /// The rest of the execute is the allied-player notification (TEAM_RECEIVE_CREATURES), not modelled.
+    /// </summary>
+    string? DoSwapWarMachines(SwapWarMachinesCmd c)
+    {
+        var a = S.Hero(c.HeroId);
+        var b = S.Hero(c.OtherHero);
+        if (a == null || b == null || a == b || !a.Alive || !b.Alive || a.Owner != Current.Index || b.Owner != Current.Index) return "not your heroes";
+        if (Math.Max(Math.Abs(a.Pos.X - b.Pos.X), Math.Abs(a.Pos.Y - b.Pos.Y)) > 1) return "heroes are not together";
+        switch (c.Machine)
+        {
+            case "WAR_MACHINE_BALLISTA": (a.Ballista, b.Ballista) = (b.Ballista, a.Ballista); break;
+            case "WAR_MACHINE_FIRST_AID_TENT": (a.FirstAidTent, b.FirstAidTent) = (b.FirstAidTent, a.FirstAidTent); break;
+            case "WAR_MACHINE_AMMO_CART": (a.AmmoCart, b.AmmoCart) = (b.AmmoCart, a.AmmoCart); break;
+            default: return "not a war machine slot";
+        }
+        Emit(new ArmyChanged(a.Id, -1));
+        Emit(new ArmyChanged(b.Id, -1));
+        return null;
+    }
+
     string? DoMoveArtifact(MoveArtifactCmd c)
     {
         var h = S.Hero(c.HeroId);

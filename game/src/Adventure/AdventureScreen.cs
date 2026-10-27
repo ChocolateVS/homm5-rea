@@ -663,8 +663,9 @@ public partial class AdventureScreen : Control
                     "full" => Msg(4, "You cannot learn any more skills."),
                     _ => Msg(3, "The Skill is already known"),
                 };
-                var icon = skill.Length > 0 ? AdvDialogs.SkillIcon(skill, Math.Max(1, (int)mastery)) : null;
-                await Dialog(done => AdvDialogs.Message(_dialogLayer, ObjectName(wv.Object), text, icon, done));
+                // 005a5d90 case 0x11 (CWitchHutDialogLogEntry): the text (the skill name put into %s) in the plain box
+                // 00679150 — no picture.
+                await Dialog(done => AdvDialogs.Message(_dialogLayer, ObjectName(wv.Object), text, null, done));
                 Hud.Refresh();
                 break;
             }
@@ -683,15 +684,18 @@ public partial class AdventureScreen : Control
                 var me = Session.Human;
                 bool afford = me.Purse.CanAfford(price);
                 int maxLevel = Session.Map.HeroMaxLevel > 0 ? Session.Map.HeroMaxLevel : 40;
+                // CTreeOfKnowledgeBox 006ac530: ID_DESC_FREE / GOLD / GEMS, ID_TITLE_TEXT, ID_HEADER_TEXT; the decline
+                // button's caption is ID_NOGOLD / ID_NOGEMS when the price cannot be paid, LEVEL_CAP_REACHED at the
+                // level cap, else ID_DECLINE_TEXT; the accept button says ID_ACCEPT_TEXT.
                 var desc = T(price.Gold > 0 ? "desc_gold_text.txt" : price.Gem > 0 ? "desc_gems_text.txt" : "desc_free_text.txt");
-                if (!afford) desc += "<br>" + T(price.Gold > 0 ? "NoGold_Text.txt" : "NoGems_Text.txt");
-                if (learner.Level >= maxLevel) desc += "<br>" + T("level-cap-reached.txt");
+                var decline = !afford ? T(price.Gold > 0 ? "NoGold_Text.txt" : "NoGems_Text.txt")
+                    : learner.Level >= maxLevel ? T("level-cap-reached.txt") : T("Decline_Text.txt");
                 Texture2D? Tex(string path) => Game.Instance.LoadTexture(path);
                 int pick = 1;
                 await Dialog(done => AdvDialogs.Choose2(_dialogLayer, title, desc, null,
                     (Tex("Textures/Interface/TreeOfKnowledge/exp_texture.xdb"), T("Accept_Text.txt")),
-                    (Tex("Textures/Interface/TreeOfKnowledge/Decline_Texture.xdb"), T("Decline_Text.txt")),
-                    c => { pick = c; done(); }));
+                    (Tex("Textures/Interface/TreeOfKnowledge/Decline_Texture.xdb"), decline),
+                    c => { pick = c; done(); }, T("Header_Text.txt")));
                 if (pick != 0 || !afford || learner.Level >= maxLevel) break;
                 Session.Apply(new UseTreeOfKnowledgeCmd(learner.Id, tk.Object) { Player = me.Index });
                 Hud.Refresh();

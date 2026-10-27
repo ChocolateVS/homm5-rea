@@ -95,6 +95,7 @@ public sealed partial class Adventure
             SwapStacksCmd c => DoSwap(c),
             GarrisonHeroCmd c => DoGarrison(c),
             MoveArtifactCmd c => DoMoveArtifact(c),
+            SwapWarMachinesCmd c => DoSwapWarMachines(c),
             CastAdventureSpellCmd c => DoCastAdventureSpell(c),
             BuildShipCmd c => DoBuildShip(c),
             ExchangeResourcesCmd c => DoExchange(c),

@@ -116,6 +116,20 @@ public partial class HeroScreen : Control
             for (int i = 1; i <= 7; i++)
                 if (Find(p, $"Army/ArmyStacks/Slot_{i}") is { } slot)
                     _army.Add(new ArmySlotView { Node = slot, Hero = p.Hero.Id, Slot = i - 1 });
+        // Meeting: clicking a war machine sends that slot to the other hero (CSwapWarMachinesCmd exchanges the slot).
+        if (_meet != null)
+            foreach (var p in _panels)
+                foreach (var (window, machine) in new[] { ("Ballista", "WAR_MACHINE_BALLISTA"), ("FirstAidTent", "WAR_MACHINE_FIRST_AID_TENT"), ("AmmoCart", "WAR_MACHINE_AMMO_CART") })
+                    if (Find(p, $"Army/WarMachinesStacks/{window}") is { } wm)
+                    {
+                        var panel = p;
+                        wm.MouseFilter = MouseFilterEnum.Stop;
+                        wm.GuiInput += ev =>
+                        {
+                            if (ev is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } && panel.Other is { } other)
+                                Apply(new SwapWarMachinesCmd(panel.Hero.Id, other.Hero.Id, machine));
+                        };
+                    }
         foreach (var p in _panels) ShowPage(p, "Army");
         // Dev (screenshots): `--hero-page=Inventory|Skills|Abilities|Biography` opens that bookmark.
         if (OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--hero-page=")) is { } pg) ShowPage(_panels[0], pg["--hero-page=".Length..]);

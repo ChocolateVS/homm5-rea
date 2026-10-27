@@ -204,4 +204,28 @@ public class InteractionTests(Fixture f)
             return;
         }
     }
+    [Fact]
+    public void MeetingHeroesExchangeAWarMachineSlot()
+    {
+        var g = f.NewGame("A2M1");
+        var h = MyHero(g);
+        var other = g.S.Heroes.First(x => x.Alive && x.Id != h.Id);
+        int owner = other.Owner;
+        var pos = other.Pos;
+        try
+        {
+            other.Owner = h.Owner;
+            other.Pos = h.Pos.Offset(1, 0);
+            h.Ballista = true; other.Ballista = false; h.AmmoCart = true; other.AmmoCart = true;
+            // 00430d10: the slot's entries are exchanged.
+            Assert.True(g.Apply(new SwapWarMachinesCmd(h.Id, other.Id, "WAR_MACHINE_BALLISTA") { Player = h.Owner }).Ok);
+            Assert.False(h.Ballista);
+            Assert.True(other.Ballista);
+            Assert.True(g.Apply(new SwapWarMachinesCmd(h.Id, other.Id, "WAR_MACHINE_AMMO_CART") { Player = h.Owner }).Ok);
+            Assert.True(h.AmmoCart && other.AmmoCart);
+            other.Pos = h.Pos.Offset(3, 0);
+            Assert.False(g.Apply(new SwapWarMachinesCmd(h.Id, other.Id, "WAR_MACHINE_BALLISTA") { Player = h.Owner }).Ok);
+        }
+        finally { other.Owner = owner; other.Pos = pos; }
+    }
 }
