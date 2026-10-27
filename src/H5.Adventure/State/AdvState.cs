@@ -198,6 +198,8 @@ public sealed class HeroState
     public List<SkillEntry> Skills = new();
     public List<string> Perks = new();
     public List<string> Spells = new();
+    /// <summary>Talisman of Adventure level (hero +0x230; vf 0x300 / setter 0x304 = FUN_00b4ce30), Walker's Hut.</summary>
+    public int TalismanLevel;
     public List<string> Artifacts = new();
     /// <summary>Carried but not worn (hero screen backpack); worn ones are <see cref="Artifacts"/>.</summary>
     public List<string> Backpack = new();

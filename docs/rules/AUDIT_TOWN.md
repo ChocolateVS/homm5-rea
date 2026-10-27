@@ -5,13 +5,13 @@ original UI layouts / data. Status: **MATCH** (already as the exe), **FIXED** (c
 difference or not built), **UNVERIFIED** (implemented from data, exe path not traced). Rows carrying two statuses
 count once for each.
 
-Rows at 2026-10-28: 104 FIXED, 48 MATCH, 27 GAP, 35 UNVERIFIED.
+Rows at 2026-10-28: 115 FIXED, 48 MATCH, 30 GAP, 37 UNVERIFIED.
 
 Commits: 9153b62 (dwelling growth incl. moon weeks), afe1e7b + 844ce53 (build check codes, town income),
 6690c81 (level-up offers, experience table, Enlightenment, perk effects, hero screen fixes),
 f65f434 + c6f0b5b (spell learning, blacksmith prices, zero-count transfers), 5d81148 (Town Portal, hover colour),
 51d3aa3 (map-start buildings), the user-report commit (hire screen, tavern + rumours, marketplace, town camera, army rows).
-Tests: `tests/H5.Adventure.Tests/TownGrowthTests.cs`, `SpellLearnTests.cs`, `LevelUpRulesTests.cs`, `TownBuildRulesTests.cs`, `TownInitialBuildingsTests.cs`, `TownHireTests.cs`, `TavernRumourTests.cs`, `MageGuildTests.cs`;
+Tests: `tests/H5.Adventure.Tests/TownGrowthTests.cs`, `SpellLearnTests.cs`, `LevelUpRulesTests.cs`, `TownBuildRulesTests.cs`, `TownInitialBuildingsTests.cs`, `TownHireTests.cs`, `TavernRumourTests.cs`, `WalkersHutTests.cs`, `MageGuildTests.cs`, `WalkersHutTests.cs`;
 screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stock.
 
 # Town
@@ -148,6 +148,25 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Rumour generation | CRumours (vtables 00e549ac/cc/f0), generator 008e85b0 (RUMOUR_FORMAT_PLAYER_* / _OBJECT_*, weight 100, duplicate test 008ea5d0); CommonGameRumours; MapRumours (00a0b4b0) | player / object rumours plus common and map rumours | weighted draw from CommonGameRumours only | GAP |
 | Thieves page in town | 006393e0 +0x2c = vcall 0x138; 00637b50 enables Thiefs when level > 0 | level from that call | bookmark disabled | GAP |
 | Hero info button | 006c44f0 | the offered hero's screen | disabled | GAP |
+
+## Walker's Hut (Stronghold, UI/ArtefactMagic)
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Opening | buy_artifacts 0061a260 (town vf 0xd4 = 10 → 00618920, else the merchant 00618a90); hut double click 0061b760 case 0x2b → 00618920; 00618920: town hero slot 0 (visiting) when hero vf 0x258 = 8 (HERO_CLASS_BARBARIAN), else slot 1 (garrison), must be a Barbarian → 007bdfd0 → 007c1ba0 → screen 007c0c10 (ID_ARTEFACT_MAGIC_SCREEN = UI/ArtefactMagicScreen) | screen for that hero; nothing without a Barbarian; the hut is not checked here | `WalkersHutScreen.TryOpen` from buy_artifacts and the TB_SPECIAL_3 double click | FIXED (was: not built) |
+| Town ability | table 00f7c998 row 0x2b: town 0xa, building 0x13 (TB_SPECIAL_3), level 1 | Stronghold TB_SPECIAL_3 | `Adventure.WalkersHut` | FIXED |
+| Levels | RPGStats +0x194 (0x2c records: +4 spell, +8 CostOfUpgrade, +0x28 HeroLevel) = DefaultStats adventure/TalismanOfAdventure/Levels; town maximum slot 0x11c = 00ccec40 = the record count (the hut's level is not used) | levels 1..n | `TalismanLevels`, `TalismanMaxLevel` | FIXED |
+| Talisman level | hero +0x230 (vf 0x300); setter vf 0x304 = 00b4ce30 clamps to 0..n | — | `HeroState.TalismanLevel`, `SetTalismanLevel` | FIXED |
+| Quote | town slot 0x118 = 00ccf7b0 (cost, allowed list, forbidden list, hero, first, last): no hero 1; ability 0x2b 2; class 8 3; first < 1, last > maximum or first > last 1; costs of first..last summed, any HeroLevel above the hero's level noted, spells split by availability; last ≤ owned (min(talisman, maximum) ≥ 0) 4, first ≤ owned 5, level too low 6, else 0 | as listed | `TalismanQuoteFor` (`WalkersHutTests`) | FIXED |
+| Upgrade command | CUpgradeHeroTalismanOfAdventureAtTownCmd (vtable 00e0ed44) execute 00429730: owned < target ≤ maximum, quote(owned + 1, target) = 0, affordable (FUN_009d0720) → pay (player vf 0xe0), vf 0x304(target), vf 0x384 | as listed | `UpgradeTalismanCmd` | FIXED |
+| Talisman spells | hero vf 0x384 = 00b56b50 (class 8 only): levels 1..talisman, return at the first HeroLevel above the hero's level; available spell → spell map +0x1c4 (00b4e590) and lists +0x1e8 / +0x2f4, else removed from them; callers: the command, hero creation 009aacb0 / 009aafa0 (not level-up) | as listed | `GrantTalismanSpells` (learn / remove `Spells`) | FIXED / lists +0x1e8 / +0x2f4 not modelled |
+| Spell availability | world vf 0x34 → CMagicSystem (vtable 00e6eb00) vf 0x18 = 00a34af0: per spell level list +0x24 (+0x3c count), school 6 list +0x60 | some spells forbidden on a map (TTSpellForbidden) | every spell available | GAP (list fillers not traced) |
+| Screen rows | 007bfe40: UpgradeToLevel%dBtn per level, Choose = ARTEFACT_LEVEL%d, FaceSkill = ARTEFACT_LEVEL_%d; row status = quote(n, n), affordable = cost of owned + 1..n, enabled = status 0 and affordable (disabled: text 0x3eb33333, picture 75,75,75,75); Picture / Description (DESCRIPTION_FORMAT: hero_name, talisman_level) | as listed | same; disabled colours as modulate | FIXED / colour semantics UNVERIFIED |
+| Row tooltips | 007bdd90: 4 LEVEL_ALREADY_UPGRADED, 6 NOT_ENOUGH_HERO_LEVEL (hero_level = HeroLevel of the level), forbidden spell SPELL_FORBIDDEN, not affordable NOT_ENOUGH_MONEY, 0 UPGRADE_POSSIBLE, else none | as listed | same | FIXED |
+| Selection and spells panel | select_level1..4 (007bead0 ..) / 007be270: button state 1, BuyBtn enabled with the row and its tooltip; 007be0b0 / 007bf2b0: UpgradeLevelInfoTmpl n with the spells of quote(1, n); nothing selected 007bdab0: panel hidden, BuyBtn disabled + UPGRADE_NOT_SELECTED_TOOLTIP | as listed | same (spell order allowed then forbidden assumed) | FIXED |
+| Buy | upgrade 007bda50 / upgrade_to_level%d 007be400 ..: enabled row → 007bd8e0: CONFIRM_CAPTION / CONFIRM_TEXT with the cost (box 0077fcc0) | confirmation then the command | `AdvDialogs.YesNo` with the cost line | FIXED / box type UNVERIFIED |
+| Map-start level | AdvMapHero TalismanLevel (schema 009ffe90) → 009aacb0 vf 0x304 then 0x384 | map heroes start with a talisman | 0 (MapLoader does not read TalismanLevel) | GAP |
+| Computer heroes | AI town visit 009c4710: ability 0x2b, class 8, level + 1 < maximum, quote 0, affordable within the AI budget (player vf 0x28) → pay, learn the spells (vf 0xe8), vf 0x304 | the AI buys one level per visit | not built (AI area) | GAP |
 
 ## Computer build period (found, not built)
 

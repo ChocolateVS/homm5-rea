@@ -278,6 +278,8 @@ public partial class TownScreen : Control
             "upgrade" => new UpgradeCreaturesScreen(this),
             "info" => new TownInfoScreen(this),
             // 00618a90: only when the town has a CBlackMarket (town vf 0x10c, abilities 0x17 / 0x1d).
+            // buy_artifacts (0061a260): a Stronghold opens the Walker's Hut (00618920), other towns the merchant (00618a90).
+            "artifacts" when Town.Type == "TOWN_STRONGHOLD" => WalkersHutScreen.TryOpen(this),
             "artifacts" => H5.Adventure.Engine.Adventure.TownHasArtifactMerchant(Town) ? new ArtifactMerchantScreen(this) : null,
             "special" => SpecialScreen(Town.Type),
             "training" => HavenTrainingScreen.CanOpen(this) ? new HavenTrainingScreen(this) : null,
@@ -285,6 +287,8 @@ public partial class TownScreen : Control
         };
         // enter_special (FUN_0061b570) and the building handlers open nothing when the screen's conditions fail.
         if (sub == null && key is "special" or "training" && SpecialScreenBuilt(Town.Type)) return;
+        // 00618920 opens nothing without a Barbarian in the town.
+        if (sub == null && key == "artifacts" && Town.Type == "TOWN_STRONGHOLD") return;
         if (sub == null)
         {
             var reason = key switch
@@ -337,6 +341,7 @@ public partial class TownScreen : Control
         ("TOWN_INFERNO", "TB_SPECIAL_5") => "special",
         ("TOWN_DUNGEON", "TB_SPECIAL_3") => "special",
         ("TOWN_STRONGHOLD", "TB_SPECIAL_5") => "special",
+        ("TOWN_STRONGHOLD", "TB_SPECIAL_3") => "artifacts",   // town ability 0x2b, the Walker's Hut (00618920)
         ("TOWN_STRONGHOLD", "TB_SPECIAL_1") => "guild",   // abilities 0x27..0x29 → FUN_00619d70 (the guild screen)
         ("TOWN_FORTRESS", "TB_SPECIAL_1") => "special",
         ("TOWN_ACADEMY", "TB_SPECIAL_2") => "special",   // town ability 0x16, the Arcane Forge

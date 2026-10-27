@@ -9,7 +9,7 @@ namespace H5Reborn.Town;
 /// `--town-open` (with --adventure=…: open the human's first town once the map is up),
 /// `--town-goto=hall|recruit|tavern|guild|market|blacksmith|fort|hero|trade|spellbook|kingdom`
 /// (then open that sub-screen), `--town-build-all` (grant every building first),
-/// `--town-orbit=yaw,pitch` (rotate the town camera).
+/// `--town-orbit=yaw,pitch` (rotate the town camera), `--town-goto=artifacts` (merchant / Walker's Hut).
 /// </summary>
 public static class TownLauncher
 {
@@ -153,6 +153,13 @@ public static class TownLauncher
                 h.Kills[c.Id] = 2 * c.WeeklyGrowth;
             h.FavoriteEnemies = new() { "CREATURE_PEASANT", "" };
             town.Built[H5.Adventure.Engine.Adventure.AvengersGuild] = 1;
+        }
+        // `--town-dev-hero=barbarian`: a level 12 Barbarian with the Walker's Hut built (talisman screen checks).
+        if (what == "barbarian")
+        {
+            h.Class = "HERO_CLASS_BARBARIAN";
+            h.Level = 12;
+            town.Built[H5.Adventure.Engine.Adventure.WalkersHut] = 1;
         }
         // `--town-dev-hero=artificer`: Expert Artificer, Knowledge 12, a gremlin stack and two crafted creature artifacts.
         if (what == "artificer")
