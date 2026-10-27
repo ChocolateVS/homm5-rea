@@ -322,7 +322,7 @@ public sealed partial class Adventure
                 int max = MaxMana(h);
                 if (h.DrankFromWellToday) Emit(new ObjectVisited(h.Id, o.Index, "msg:3"));
                 else if (max - h.Mana < 1) Emit(new ObjectVisited(h.Id, o.Index, "msg:4"));
-                else { h.Mana = max; h.DrankFromWellToday = true; Emit(new ObjectVisited(h.Id, o.Index, type)); }
+                else { int gain = max - h.Mana; h.Mana = max; h.DrankFromWellToday = true; Emit(new ObjectVisited(h.Id, o.Index, $"mana:{gain}")); }
                 break;
             }
             case "BUILDING_MAGIC_SPRING":
@@ -333,7 +333,7 @@ public sealed partial class Adventure
                 int twice = 2 * MaxMana(h);
                 if (os.LastVisitWeek == S.Week) Emit(new ObjectVisited(h.Id, o.Index, "msg:4"));
                 else if (twice - h.Mana < 1) Emit(new ObjectVisited(h.Id, o.Index, "msg:3"));
-                else { os.LastVisitWeek = S.Week; h.Mana = twice; Emit(new ObjectVisited(h.Id, o.Index, type)); }
+                else { int gain = twice - h.Mana; os.LastVisitWeek = S.Week; h.Mana = twice; Emit(new ObjectVisited(h.Id, o.Index, $"mana:{gain}")); }
                 break;
             }
 

@@ -536,6 +536,11 @@ public partial class AdventureScreen : Control
             case ObjectVisited ov when HumanCaused(player) && !Autoplay && VisitMessage(ov) is { Length: > 0 } visitText:
                 await Dialog(done => Message("", visitText, null, done));
                 break;
+            case ObjectVisited mv when mv.What.StartsWith("mana:") && HumanCaused(player) && !Autoplay && s.Hero(mv.HeroId) is { } drinker:
+                // Eldritch Well / Spring (00b02740 cases 0x1c / 0x14): an ICON_MANA flyoff of the gain over the hero, no box.
+                FlyTextAt(World.TileCenter(drinker.Pos), "+" + mv.What["mana:".Length..]);
+                Hud.Refresh();
+                break;
             case ObjectVisited bb when bb.What.StartsWith("battlebonus:") && HumanCaused(player) && !Autoplay && s.Hero(bb.HeroId) is { } blessed:
             {
                 // Next-battle bonus buildings (00af9a10 & co.): one flyoff per changed field over the hero (009c9120 with

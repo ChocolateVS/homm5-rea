@@ -45,7 +45,7 @@ public class VisitRulesTests(Fixture f)
         int max = g.MaxMana(h);
         Assert.True(max > 0);
         h.Mana = 0;
-        Visit(g, h, wells[0]);
+        Assert.True(Says(Visit(g, h, wells[0]), $"mana:{max}"));   // the ICON_MANA flyoff carries the gain
         Assert.Equal(max, h.Mana);
         h.Mana = 0;
         // 00b02d76: the hero's daily flag (+0x174), not the well's: a second well the same day refuses with [3].
@@ -68,7 +68,7 @@ public class VisitRulesTests(Fixture f)
         var (g, h, springs) = Setup(f, "BUILDING_MAGIC_SPRING");
         int max = g.MaxMana(h);
         h.Mana = 0;
-        Visit(g, h, springs[0]);
+        Assert.True(Says(Visit(g, h, springs[0]), $"mana:{2 * max}"));
         Assert.Equal(2 * max, h.Mana);
         // The flag is the spring's (+0xe8): anyone after that in the week gets [4].
         h.Mana = 0;
