@@ -7,6 +7,7 @@
     <ProjectReference Include="..\H5.Adventure\H5.Adventure.csproj" />
     <ProjectReference Include="..\H5.Rmg\H5.Rmg.csproj" />
     <ProjectReference Include="..\H5.Scripting\H5.Scripting.csproj" />
+    <ProjectReference Include="..\H5.Save\H5.Save.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

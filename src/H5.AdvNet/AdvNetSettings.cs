@@ -62,6 +62,13 @@ public sealed class AdvNetSettings
     public bool Autosave { get; set; } = true;
     /// <summary>Test/dev only: side 1's first hero starts next to side 0's (immediate human-versus-human battle).</summary>
     public bool DevStartAdjacent { get; set; }
+    /// <summary>
+    /// Room made from a network save: the host's id of the save registered in <see cref="NetSaveLoads"/>; the game
+    /// resumes from it instead of starting the map (CMultiplayerHostLoadLogic).
+    /// </summary>
+    public string? Load { get; set; }
+    /// <summary>The saved human slots (map player and saved name) players choose from in the wait screen.</summary>
+    public List<NetSaveSlot>? LoadSlots { get; set; }
 
     static readonly JsonSerializerOptions Json = new() { IncludeFields = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 

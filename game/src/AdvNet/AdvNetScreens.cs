@@ -65,8 +65,10 @@ public partial class AdvSetupScreen : UiScreen
         _network = network;
         // Simultaneous turns (room key simultaneus_turns, docs/rules/SIMULTANEOUS.md): off by default.
         if (Find("simultaneus") is { } sim) { sim.SetState(1); sim.Clicked += _ => { Read(); ShowValues(); }; }
-        if (Find("loadbutton") is { } load) load.Enabled = false;
-        if (Find("load") is { } load2) load2.Enabled = false;
+        // Network: Load reopens a network save on this host (CMultiplayerHostLoadLogic); hot-seat loading is the load screen's.
+        foreach (var n in new[] { "loadbutton", "load" })
+            if (Find(n) is { } load) load.Enabled = network;
+        if (network) Bus.On("load", () => UiNavigator.ShowOverlay(H5Reborn.Save.NetLoadList.Open(LoadNetworkSave)));
 
         var maps = Root.Find("maps")!;
         float ox = maps.Rect.X, oy = maps.Rect.Y;
@@ -239,6 +241,7 @@ public partial class AdvSetupScreen : UiScreen
             return;
         }
         var lobby = LobbyService.Instance;
+        EnableHostSaves();
         if (!lobby.Connected)
         {
             try { await lobby.HostAsync(); }
@@ -251,6 +254,45 @@ public partial class AdvSetupScreen : UiScreen
     }
 
     void Back() => UiNavigator.Goto(_network ? "lobby" : "mainmenu");
+
+    /// <summary>
+    /// The host stores network saves in its own profile (CSaveScreen&lt;SLanSaveHeaderInfo&gt;): the session writes them
+    /// from the server thread, so a plain directory store is captured here on the main thread.
+    /// </summary>
+    internal static void EnableHostSaves()
+    {
+        var dir = ProjectSettings.GlobalizePath(H5Reborn.Profiles.ProfileManager.SavesDir(H5Reborn.Profiles.ProfileManager.CurrentName));
+        var storage = new H5.Save.DirectorySaveStorage(dir);
+        AdventureNetSession.Fingerprint = Game.Instance.Install.DataFingerprint();
+        AdventureNetSession.SaveSink = archive =>
+        {
+            try { H5.Save.SaveSlots.Write(storage, archive); return null; }
+            catch (Exception e) { return e.Message; }
+        };
+    }
+
+    /// <summary>
+    /// "Load" on the network create screen (CMultiplayerHostLoadLogic): a network save from this profile is registered
+    /// with the session factory and a room is created from its settings; the saved human slots wait for players.
+    /// </summary>
+    async void LoadNetworkSave(H5.Save.SaveEntry entry)
+    {
+        H5.AdvNet.NetSave save;
+        try { save = H5.AdvNet.NetSave.FromArchive(H5.Save.SaveArchive.FromBytes(H5Reborn.Save.SaveManager.Storage.Read(entry.FileName))); }
+        catch (Exception e) { UiNavigator.ShowOverlay(new MessageNotice(e.Message)); return; }
+        var id = H5.AdvNet.NetSaveLoads.Register(save);
+        var lobby = LobbyService.Instance;
+        EnableHostSaves();
+        if (!lobby.Connected)
+        {
+            try { await lobby.HostAsync(); }
+            catch (Exception e) { UiNavigator.ShowOverlay(new MessageNotice(e.Message)); return; }
+        }
+        var name = (Find("name") as UiEditLine)?.Value ?? entry.Header.Name;
+        var password = (Find("password") as UiEditLine)?.Value;
+        lobby.Send(new CreateRoom(name, "adventure", Math.Max(2, save.Humans.Count), string.IsNullOrEmpty(password) ? null : password, H5.AdvNet.NetSaveLoads.RoomSettings(save, id)));
+        UiNavigator.Goto("advwait");
+    }
 }
 
 /// <summary>A plain modal notice using the original fonts (for setup errors).</summary>
@@ -348,7 +390,14 @@ public partial class AdvWaitScreen : UiScreen
         _slotsFor = key;
         try
         {
-            if (s.Map != null && MapCatalog.Find(Game.Instance.Fs, Game.Instance.Install, s.Map) is { } r)
+            if (s.LoadSlots is { } saved && s.Map != null && MapCatalog.Find(Game.Instance.Fs, Game.Instance.Install, s.Map) is { } lr)
+            {
+                // Reloaded game (00754350): only the saved human slots can be taken.
+                using var files = lr.Open(Game.Instance.Fs);
+                var players = new MapLoader(Game.Instance.Db, Game.Instance.Fs).Load(files).Players;
+                _slots = saved.Select(x => players[x.MapPlayer]).ToList();
+            }
+            else if (s.Map != null && MapCatalog.Find(Game.Instance.Fs, Game.Instance.Install, s.Map) is { } r)
             {
                 using var files = r.Open(Game.Instance.Fs);
                 _slots = new MapLoader(Game.Instance.Db, Game.Instance.Fs).Load(files).Players.Where(p => p.Active && p.CanBeHuman).ToList();

@@ -55,7 +55,7 @@ public sealed class AdventureSessionFactory(AdvMapSource maps) : IGameSessionFac
 ///   {"$t":"chat","text":"…"}              in-game chat; "/a" all, "/t" team, "/&lt;name&gt; " private (UI/MPChatInGame)
 /// Update payload per side: {"events":[AdvEvent], "view":patch, "battle":[…], "chat":[…], "ghosts":{…}, "turn":{…}}.
 /// </summary>
-public sealed class AdventureNetSession : IGameSession, ITickableSession
+public sealed partial class AdventureNetSession : IGameSession, ITickableSession
 {
     readonly AdvMapSource _src;
     readonly GhostData _ghostData;
@@ -173,6 +173,8 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
     public IReadOnlyList<JsonNode> Start(IReadOnlyList<RoomPlayer> playersBySide, JsonObject? roomSettings, ulong seed)
     {
         _set = AdvNetSettings.From(roomSettings);
+        // A room made from a network save (CMultiplayerHostLoadLogic): the game continues from the saved state.
+        if (_set.Load != null) return StartLoaded(playersBySide, seed);
         _seed = seed;
         if (_set.Rmg is { Seed: 0 } r) r.Seed = (int)(seed % int.MaxValue) | 1;
         _lm = _src.Load(_set);
@@ -200,6 +202,13 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
         var (game, opening) = H5.Adventure.Engine.Adventure.NewGame(_lm.Db, map, setup);
         _g = game;
         StartScripts();
+        return Begin(opening, null);
+    }
+
+    /// <summary>Hooks the engine up, starts the turn flow and builds each side's GameStarted payload.</summary>
+    IReadOnlyList<JsonNode> Begin(IEnumerable<AdvEvent> opening, NetSave? loaded)
+    {
+        var map = _lm.Map;
         var inner = _g.CommandSink;
         _g.CommandSink = cmd => Intercept(cmd) ?? (inner != null ? inner(cmd) : _g.Apply(cmd));
         _g.Observer = (cmd, res) =>
@@ -214,11 +223,15 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
             // Humans first, then the computer players (00998060); all humans move at once until areas meet.
             _simul = new SimultaneousTurns(_g, IsHuman, _set.Pest ? new PestSimultaneousPolicy() : new OriginalSimultaneousPolicy());
             _g.TurnOrder = i => _g.HumansFirstOrder(i, IsHuman);
-            int firstHuman = _g.HumansFirstOrder(-1, IsHuman);
-            if (firstHuman >= 0) _g.S.CurrentPlayer = firstHuman;
+            if (loaded?.Simul is { } snap) _simul.Restore(snap);
+            else
+            {
+                int firstHuman = _g.HumansFirstOrder(-1, IsHuman);
+                if (firstHuman >= 0) _g.S.CurrentPlayer = firstHuman;
+            }
         }
         if (_set.GhostMode) _ghosts = new GhostMode(_ghostData, _g);
-        if (_set.DevStartAdjacent) PlaceSecondHumanNextToFirst();
+        if (_set.DevStartAdjacent && loaded == null) PlaceSecondHumanNextToFirst();
 
         CaptureHeroes();
         foreach (var e in opening) _events.Add((e, -1));
@@ -293,6 +306,7 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
             "ghost" => _ghosts == null ? "ghost mode is off" : MarkDirty(_ghosts.Command(me, c)),
             "chat" => DoChat(side, (string?)c["text"]),
             "simul" => DoSimul(me, (string?)c["action"]),
+            "save" => OrderSave(side, (string?)c["name"]),
             _ => "unknown command",
         };
         if (err != null) return new SessionResult.Rejected(err);
@@ -746,6 +760,7 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
 
     SessionResult BuildResult(int actor)
     {
+        RunOrderedSave();
         if (_scripts != null)
         {
             foreach (var e in _scripts.GameEvents) _events.Add((e, -1));
@@ -808,6 +823,7 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
                 if (deliver) chat.Add(new JsonObject { ["from"] = from, ["name"] = _sideName[from], ["scope"] = scope, ["text"] = text });
             }
             if (chat.Count > 0) payload["chat"] = chat;
+            if (_saveNotices.Count > 0) payload["save"] = new JsonArray(_saveNotices.Select(x => (JsonNode)x.DeepClone()).ToArray());
             if (_ghosts != null) payload["ghosts"] = _ghosts.ViewFor(mp, _lm.Map);
             if (_simul != null && _simul.Notices.Any(x => x.MapPlayer == mp))
                 payload["simul"] = new JsonArray(_simul.Notices.Where(x => x.MapPlayer == mp)
@@ -819,6 +835,7 @@ public sealed class AdventureNetSession : IGameSession, ITickableSession
         _events.Clear();
         _battleOut.Clear();
         _chat.Clear();
+        _saveNotices.Clear();
         _dirty = false;
 
         NetGameEnded? ended = null;

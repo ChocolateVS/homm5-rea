@@ -37,7 +37,7 @@ public static class SaveManager
     /// yet, so it refuses instead of writing a single-player save of the replica (docs/rules/AUDIT_CAMPAIGN.md).
     /// </remarks>
     public static string? CannotSave(AdventureScreen screen, bool beforeCombat = false) =>
-        screen.Session.Remote != null ? "network games cannot be saved yet"
+        screen.Session.Remote != null ? null
         : beforeCombat && screen.Session.S.Battle != null && !screen.Session.S.Finished ? null
         : AdventureSave.CannotSaveReason(screen.Session.Game);
 
@@ -70,6 +70,14 @@ public static class SaveManager
     {
         if (CannotSave(screen, beforeCombat) is { } reason) return reason;
         var session = screen.Session;
+        // Network game: the save is ordered from the host, which writes it when every player has ended the turn
+        // (CAnnounceSaveGameOrderedCmd); the order and the result come back as notices (ShowNetSaveNotice).
+        if (session.Remote is { } remote)
+        {
+            if (beforeCombat) return null;
+            remote.Net.OrderSave(name);
+            return null;
+        }
         try
         {
             var bridge = screen.GetNodeOrNull<ScriptUiBridge>("ScriptUiBridge");
@@ -153,17 +161,35 @@ public static class SaveManager
     /// 007ea770 → 007f84a0: after a save the "ID_SAVE_COMPLETE" text (UI/ID_SAVE_COMPLETE.txt) is shown for
     /// "save_ok_time" ms (var default 1000, 007ea1c0).
     /// </summary>
-    static void ShowSaveComplete(AdventureScreen screen)
+    static void ShowSaveComplete(AdventureScreen screen) =>
+        ShowNotice(screen, Text("UI/ID_SAVE_COMPLETE.txt", "Save completed"), null);
+
+    /// <summary>
+    /// Network save notices: the order (ID_SAVEGAMEORDERED_EVENTMESSAGE, Text/Interface/FadedText/SaveGameOrdered
+    /// "Save was ordered and will be done when every player will end the turn.") for every player, then the
+    /// save complete text (or the host's error).
+    /// </summary>
+    public static void ShowNetSaveNotice(AdventureScreen screen, JsonObject n)
+    {
+        if (!GodotObject.IsInstanceValid(screen)) return;
+        if (n["ordered"] != null)
+            ShowNotice(screen, Text("Text/Interface/FadedText/SaveGameOrdered.(Text).txt", "Save was ordered and will be done when every player will end the turn."), 4000);
+        else if (n["saved"] != null)
+            ShowNotice(screen, Text("UI/ID_SAVE_COMPLETE.txt", "Save completed"), null);
+        else if ((string?)n["error"] is { } error)
+            screen.Message(Text("UI/SaveLoad/SaveErrorTitle.txt", "Cannot create a save"), error);
+    }
+
+    static void ShowNotice(AdventureScreen screen, string text, float? fixedMs)
     {
         if (!screen.IsInsideTree()) return;
-        var text = Text("UI/ID_SAVE_COMPLETE.txt", "Save completed");
         var label = new BitmapText
         {
             Markup = $"<h3><center>{Ui.Screens.ChatLogView.Escape(text)}", AnchorLeft = 0.25f, AnchorRight = 0.75f,
             AnchorTop = 0.45f, AnchorBottom = 0.5f, MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         screen.AddChild(label);
-        float ms = float.TryParse(OptionsStore.Get("save_ok_time", "1000"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 1000;
+        float ms = fixedMs ?? (float.TryParse(OptionsStore.Get("save_ok_time", "1000"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 1000);
         screen.GetTree().CreateTimer(Math.Max(0.1, ms / 1000.0)).Timeout += () => { if (GodotObject.IsInstanceValid(label)) label.QueueFree(); };
     }
 

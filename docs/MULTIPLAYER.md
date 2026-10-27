@@ -188,6 +188,13 @@ its port, or list it on a master.
   sender's side, each participant gets only its own battle's updates, and a reconnecting
   client rebuilds a running battle from the replayed updates.
 
+## Saving network games
+Any player can save from the in-game menu: the host announces the order to everybody and writes the save into
+its own profile when the turn has passed (no battle running). To continue, the host opens *Multi Player →
+Create game → Load*, picks the save and creates the room; the other players join and take the saved human
+slots (a player gets the slot saved under its name when it picks none). The game starts once every saved human
+slot is taken. Dedicated servers cannot store saves.
+
 ## Tests
 `tests/H5.Net.Tests` (plus `tests/H5.Tests`):
 reliable UDP under 20 % loss with a 400 KB frame, thread-free manual pump, LAN discovery,

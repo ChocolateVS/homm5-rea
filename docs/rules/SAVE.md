@@ -22,9 +22,12 @@ H5Reborn reproduces them.
   registered in `FUN_007f7190` dispatch to the save manager's vtable (+0x1c named save = `FUN_007ea770`,
   +0x20 quicksave, +0x24 quickload, +0x28 save screen, +0x2c load screen).
 - **Thumbnails**: SaveInfo/ScreenShoot (274×180) shows the save's screenshot.
-- **Network games**: the exe saves them (`CSaveScreen<SLanSaveHeaderInfo/SUbicomSaveHeaderInfo>`, host reload
-  through `CMultiplayerHostLoadLogic`); H5Reborn refuses to save a network game for now. Hot-seat games are
-  written with the hot-seat kind. Full ledger: `docs/rules/AUDIT_CAMPAIGN.md`.
+- **Network games**: any player orders a save; everybody is told ("Save was ordered and will be done when every
+  player will end the turn.") and the host writes it into its own profile once the turn has passed
+  (SaveKind.Multiplayer, `netgame.json`: room settings, rules state, scripts, human slots, simultaneous-turns
+  state). The host reloads it with Load on the network create screen; players rejoin into the saved human slots
+  and the game starts when all are taken (`CMultiplayerHostLoadLogic`). Hot-seat games are written with the
+  hot-seat kind. Full ledger: `docs/rules/AUDIT_CAMPAIGN.md`.
 - **Save before combat**: `save_before_combat` ("Before Combat <id>", var `FUN_005aadc0`, default 0) saves
   when a human-vs-computer battle starts (`FUN_005a5d90`); the save holds the pending battle, which starts
   again on load. Saving during combat is refused otherwise.

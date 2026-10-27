@@ -30,6 +30,8 @@ public sealed class AdvNetGame
     public event Action<string>? Rejected;
     /// <summary>"Simultaneous turns finished" must be shown (CEventSimultaneousConflict with the message flag).</summary>
     public event Action? SimultaneousTurnsFinished;
+    /// <summary>Network save notices from the host: {"ordered","by"}, {"saved"} or {"failed","error"}.</summary>
+    public event Action<JsonObject>? SaveNotice;
     /// <summary>Set when the message arrived while nobody listened (the adventure screen shows it when it opens).</summary>
     public bool SimultaneousMessagePending { get; set; }
 
@@ -53,6 +55,8 @@ public sealed class AdvNetGame
         {
             case GameUpdate u:
                 Replica.Apply(u);
+                if (u.Events is JsonObject payload && payload["save"] is JsonArray notices)
+                    foreach (var n in notices.OfType<JsonObject>()) SaveNotice?.Invoke(n);
                 if (Replica.Desynced) GD.PushWarning("[advnet] view desync — the client will resync on reconnect");
                 // 005a5d90 case 0x21: approve at once when asked; show the message box when flagged.
                 while (Replica.SimultaneousNotices.TryDequeue(out var n))
@@ -78,6 +82,8 @@ public sealed class AdvNetGame
     public int Send(BattleCommand c) => _send(AdvNetCommands.Battle(c));
     public int Chat(string text) => _send(AdvNetCommands.Chat(text));
     public int Ghost(JsonNode ghostCommand) => _send(ghostCommand);
+    /// <summary>Orders a save of the network game (the host writes it when the turn has passed).</summary>
+    public int OrderSave(string name) => _send(new JsonObject { ["$t"] = "save", ["name"] = name });
 }
 
 /// <summary>

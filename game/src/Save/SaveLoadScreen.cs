@@ -29,9 +29,15 @@ public partial class SaveLoadScreen : UiScreen
     readonly DefinitionView _definition = new();
     UiEditLine? _edit;
 
-    public SaveLoadScreen(Mode mode, AdventureScreen? game, byte[]? thumbnail, Action close)
+    /// <summary>Which saves the list shows: network saves only on the network load list, the others elsewhere.</summary>
+    readonly bool _network;
+    readonly Action<SaveEntry>? _onLoad;
+
+    public SaveLoadScreen(Mode mode, AdventureScreen? game, byte[]? thumbnail, Action close, bool network = false, Action<SaveEntry>? onLoad = null)
         : base(mode == Mode.Save ? "UI/Save.(WindowScreen).xdb" : "UI/Load.(WindowScreen).xdb")
     {
+        _network = network || game?.Session.IsRemote == true;
+        _onLoad = onLoad;
         _mode = mode;
         _game = game;
         _thumbnail = thumbnail;
@@ -64,7 +70,8 @@ public partial class SaveLoadScreen : UiScreen
 
     void Refresh(string? select = null)
     {
-        _entries = SaveSlots.List(SaveManager.Storage);
+        // The exe keeps separate save/load screens per header type (SHeaderInfo, SLanSaveHeaderInfo, …).
+        _entries = SaveSlots.List(SaveManager.Storage).Where(e => (e.Header.Kind == SaveKind.Multiplayer) == _network).ToList();
         _list.SetEntries(_entries);
         int index = select != null ? _entries.FindIndex(e => e.FileName == select) : -1;
         _list.Select(index >= 0 ? index : _mode == Mode.Load && _entries.Count > 0 ? 0 : -1);
@@ -137,6 +144,7 @@ public partial class SaveLoadScreen : UiScreen
     void DoLoad()
     {
         if (Current is not { } e) return;
+        if (_onLoad != null) { _close(); _onLoad(e); return; }
         if (SaveManager.Load(e.FileName) is { } error)
             MessageBoxes.Message(this, SaveManager.Text("UI/SaveLoad/LoadSpecific/load.txt", "Load"), error);
     }
@@ -313,5 +321,16 @@ public partial class DefinitionView : Control
         BitmapTextLayout.Build(_descHeader, null, new Rect2(0, y, w, 22), UiAlign.LowEnd, wrap: false).Draw(this);
         y += 22;
         BitmapTextLayout.Build(_desc, null, new Rect2(0, y, w, Math.Max(20, Size.Y - y)), UiAlign.LowEnd, wrap: true).Draw(this);
+    }
+}
+
+/// <summary>The network game load list (CLoadScreen&lt;SLanSaveHeaderInfo&gt;) opened by Load on UI/MPCreate.</summary>
+public static class NetLoadList
+{
+    public static Control Open(Action<SaveEntry> load)
+    {
+        SaveLoadScreen? s = null;
+        s = new SaveLoadScreen(SaveLoadScreen.Mode.Load, null, null, () => UiNavigator.CloseOverlay(s!), network: true, onLoad: load);
+        return s;
     }
 }

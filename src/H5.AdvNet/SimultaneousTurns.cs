@@ -170,6 +170,28 @@ public sealed class SimultaneousTurns
         foreach (var h in Humans) Notices.Add(new SimultaneousNotice(h, false, message));
     }
 
+    /// <summary>
+    /// Saved with a network game: the exe keeps the "still simultaneous" flag in the saved world settings
+    /// (CWorld+0x90, 00999f60); the phase flags are saved too because H5Reborn may save inside the phase.
+    /// </summary>
+    public System.Text.Json.Nodes.JsonObject Snapshot() => new()
+    {
+        ["active"] = Active, ["inPhase"] = InPhase, ["requested"] = (int)_requested,
+        ["ended"] = new System.Text.Json.Nodes.JsonArray(Ended.Select(x => (System.Text.Json.Nodes.JsonNode)x).ToArray()),
+        ["pending"] = new System.Text.Json.Nodes.JsonArray(Pending.Select(x => (System.Text.Json.Nodes.JsonNode)x).ToArray()),
+    };
+
+    public void Restore(System.Text.Json.Nodes.JsonObject o)
+    {
+        Active = (bool?)o["active"] ?? true;
+        InPhase = (bool?)o["inPhase"] ?? false;
+        _requested = (CheckKind)((int?)o["requested"] ?? 0);
+        Ended.Clear();
+        Pending.Clear();
+        foreach (var x in o["ended"]?.AsArray() ?? new()) Ended.Add((int)x!);
+        foreach (var x in o["pending"]?.AsArray() ?? new()) Pending.Add((int)x!);
+    }
+
     /// <summary>The current player shown in <paramref name="mapPlayer"/>'s view: itself while it plays the phase.</summary>
     public int? ViewCurrentFor(int mapPlayer)
     {

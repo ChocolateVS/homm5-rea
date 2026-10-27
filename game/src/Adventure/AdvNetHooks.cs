@@ -27,6 +27,7 @@ static class AdvNetHooks
             })).CallDeferred();
             net.BattleStarted += StartBattle;
             var screen = AdventureScreen.Open(session);
+            net.SaveNotice += n => Callable.From(() => Save.SaveManager.ShowNetSaveNotice(screen, n)).CallDeferred();
             if (net.Replica.Settings.GhostMode) screen.AddChild(new GhostController(net, screen));
             // A battle already running when the game opens (e.g. after a reconnect) starts at once.
             if (net.Replica.Battle is { } running) StartBattle(running);
