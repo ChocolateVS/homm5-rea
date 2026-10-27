@@ -42,7 +42,9 @@ public sealed class CombatCamera
 
     /// <summary>Glide toward the target: remaining fraction per second and stop thresholds (007cccb0).</summary>
     const double RodBase = 1.0 / 300.0, AngleBase = 1.0 / 9000.0, AnchorBase = 1.1111111e-4;
-    const float RodEps = 0.02f, PitchEps = 0.01f, AngleEps = 1e-5f, AnchorEps = 1e-4f;
+    const float RodEps = 0.02f, PitchEps = 0.01f, AngleEps = 1e-5f;
+    /// <summary>Anchor stop distance: every caller of 007cccb0 (007d5963, 007d54fe, 007cf5c8) passes 0.03 (0x3cf5c28f).</summary>
+    const float AnchorEps = 0.03f;
 
     /// <summary>combat_scroll_speed / combat_max_scroll_speed / combat_scroll_speed_zoom_factor (profiles/autoexec_a2.cfg).</summary>
     const float ScrollSpeed = 1f, MaxScrollSpeed = 3f, ScrollZoomFactor = 3f;
@@ -278,10 +280,10 @@ public sealed class CombatCamera
         _current.Anchor.Z = Approach(_target.Anchor.Z, _current.Anchor.Z, AnchorBase, dt, AnchorEps);
     }
 
-    /// <summary>FUN_007ccc10: target + (current − target)·base^dt, snapping inside eps.</summary>
+    /// <summary>FUN_007ccc10 / 007cccb0: target + (current − target)·base^dt; inside eps the pose stays where it is (no snap).</summary>
     static float Approach(float target, float current, double basePerSecond, float dt, float eps)
     {
-        if (Mathf.Abs(target - current) < eps) return target;
+        if (Mathf.Abs(target - current) < eps) return current;
         return (float)(target + (current - target) * Math.Pow(basePerSecond, dt));
     }
 

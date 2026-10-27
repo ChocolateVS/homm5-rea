@@ -91,7 +91,7 @@ rectangle grown by 8 units on every side. Speeds, glide and the default pose are
   DAT_00e22820 = 10). Speeds come from SCameraLimits defaults DAT_00f33900 (1, 4, 1.2, 1, 5, 0.1, 1, 1, 1).
 * The rendered pose glides to the target (007cccb0, FUN_007ccc10: target + (current − target)·base^(dt)):
   rod base 1/300 per second (stop 0.02), pitch/yaw/roll base 1/9000 (stops 0.01 / 1e−5; yaw wrapped to ±π),
-  anchor base 1.111e−4.
+  anchor base 1.111e−4, stop 0.03 (every caller passes 0x3cf5c28f). Inside a stop distance the pose stays put (no snap to the target).
 
 Bindings (profiles/default_profile/input_a2.cfg): arrows forward/strafe, PG_DOWN/PG_UP zoom, CTRL+arrows
 pitch/rotate, wheel zoom, MOUSE_BUTTON1 (= DirectInput rgbButtons[1] = right button; descriptor table

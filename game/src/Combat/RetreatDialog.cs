@@ -129,25 +129,40 @@ public static class RetreatDialog
             s.Find("ButtonRight/Text")?.SetText(UiGameRoot.Text("ID_RETREAT_SURRENDER_TEXT"));
             right?.SetTooltip(UiGameRoot.RelatedText("ID_COMBAT_RETREAT", "T_SURRENDER_TOOLTIP"));
         }
+        // The CommonBoxes/Box2p data ships ButtonLeft, ButtonRight and ButtonOk disabled; the box code enables
+        // the ones it uses (00676290; window vfunc +0x3c = 00b95010 -> 00a50e90). Base 00676de0: no preselection,
+        // OK disabled until a side is picked (00675f60 left / 00675eb0 right press that side and enable OK);
+        // picking the chosen side again or double-clicking it (left_force / right_force, 006760c0 / 00676010)
+        // confirms. 00570cf0 enables Surrender only when the ransom is possible and affordable.
+        var ok = s.Find("ButtonOk");
+        if (left != null) left.Enabled = true;
         if (right != null) right.Enabled = canSurrender && hasGold;
+        if (ok != null) ok.Enabled = false;
 
-        int choice = 0;
+        int choice = -1;
+        bool closed = false;
+        void Close() { if (closed) return; closed = true; blocker.QueueFree(); }
+        void Confirm()
+        {
+            if (closed || choice < 0) return;
+            Close();
+            screen.Submit(new SurrenderCmd { Side = side, PayRansom = choice == 1 });
+        }
+        bool Allowed(int c) => c == 0 || (canSurrender && hasGold);
         void Pick(int c)
         {
-            if (c == 1 && !(canSurrender && hasGold)) return;
+            if (!Allowed(c)) return;
+            if (choice == c) { Confirm(); return; }
             choice = c;
             left?.SetState(c == 0 ? 1 : 0);
             right?.SetState(c == 1 ? 1 : 0);
+            if (ok != null) ok.Enabled = true;
         }
         s.Bus.On("left", () => Pick(0));
         s.Bus.On("right", () => Pick(1));
-        Pick(0);
-        void Close() => blocker.QueueFree();
-        s.Bus.On("confirm", () =>
-        {
-            Close();
-            screen.Submit(new SurrenderCmd { Side = side, PayRansom = choice == 1 });
-        });
+        s.Bus.On("left_force", () => { if (Allowed(0)) { choice = 0; Confirm(); } });
+        s.Bus.On("right_force", () => { if (Allowed(1)) { choice = 1; Confirm(); } });
+        s.Bus.On("confirm", Confirm);
         s.Bus.On("cancel", Close);
         s.AddChild(new RetreatKeys { Name = "Keys", OnClose = Close });
     }
