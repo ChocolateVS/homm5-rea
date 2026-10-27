@@ -74,6 +74,7 @@ public sealed class RmgResult
                 Index = index, Uid = UidOf(index++, o), Kind = kind, Tag = o.Def.Tag.Replace("Shared", ""),
                 Pos = new Tile(o.X, o.Y, o.Floor), Rot = o.Rot, SharedPath = o.Shared, Shared = o.Def, Owner = o.Owner,
             };
+            if (o.GroupId is int gid) mo.Props["GroupID"] = gid.ToString(System.Globalization.CultureInfo.InvariantCulture);
             switch (kind)
             {
                 case ObjectKind.Monster:
@@ -89,6 +90,7 @@ public sealed class RmgResult
                 case ObjectKind.Artifact: mo.ArtifactId = o.Def.ArtifactId; break;
                 case ObjectKind.Town:
                     mo.TownType = o.Def.TownType;
+                    mo.Specialization = o.Specialization;
                     mo.Guards.AddRange(o.Garrison.Select(a => new H5.Core.Data.ArmySlot(a.Creature, a.Count)));
                     break;
             }

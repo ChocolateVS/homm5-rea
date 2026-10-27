@@ -34,9 +34,23 @@ public sealed class RmgOptions
     public int ExpLevel = 2;
 }
 
+/// <summary>The zone classes of 0x0090bd80 (vtables 0x00e58134, 0x00e827b4, 0x00e583cc, 0x00e58374).</summary>
+public enum RmgZoneClass { Game, SubInferno, Subterra, Dwarven }
+
 /// <summary>A zone during generation (NRMG::CGameZone; offsets are the exe's).</summary>
 public sealed class RmgZone
 {
+    /// <summary>The class 0x0090bd80 created: surface zones CGameZone; underground zones CGameDwarvenZone when builder +0x8c
+    /// is set, else CGameSubInfernoZone (Next(2) == 0) or CGameSubterraZone.</summary>
+    public RmgZoneClass Class;
+    /// <summary>
+    /// +0x20, the race preset the zone's objects, statics and terrain come from (vf 0x1c): CGameZone 0x00918a50 the zone
+    /// race (3 = Haven for a Dungeon zone on the surface), CGameSubInfernoZone 0x00baa380 preset 0, CGameDwarvenZone
+    /// 0x00926d40 preset 2, CGameSubterraZone 0x00928b90 preset 6. +0x1c (the zone race's preset) gives the town.
+    /// </summary>
+    public int Preset;
+    /// <summary>+0x148: the dwarven zone's placed statics (0x00926e80; the constructor 0x00928a30 clears it).</summary>
+    public List<(float X, float Y)> DwarvenPoints = new();
     public required RmgZoneDef Def;
     public int Id => Def.Index;          // +0xec: value written into the zone map
     public int Floor;                    // +0xf4
@@ -76,6 +90,14 @@ public sealed class RmgFloor
     public readonly int[] Dist;
     /// <summary>+0xd4: the tile flags (<see cref="TileFlags"/>).</summary>
     public readonly int[] Flags;
+    /// <summary>
+    /// +0x24: the per-vertex height level grid ((W+1) x (H+1), indexed [y][x]); 0x00912940 fills the underground floor
+    /// with 0x10 (the surface with 0x20, then edge bands and 0x10 inside — not modelled, no surface placer reads it).
+    /// The rock fill 0x009159a0 raises it to 0x20 and smooths it (0x009131d0); 0x00915d90 (level &gt; 0x10) and the
+    /// dwarven statics (level != 0x10) read it.
+    /// </summary>
+    public readonly byte[] Level;
+    public int Lv(int y, int x) => y * (W + 1) + x;
     public readonly NivalHashMap<RmgZone> Zones = new();
 
     public RmgFloor(int index, int w, int h)
@@ -85,6 +107,7 @@ public sealed class RmgFloor
         BorderDist = Enumerable.Repeat(-1, w * h).ToArray();
         Flags = new int[w * h];
         Dist = Enumerable.Repeat(-1, w * h).ToArray();
+        Level = Enumerable.Repeat((byte)(index == 0 ? 0x20 : 0x10), (w + 1) * (h + 1)).ToArray();
     }
 
     public bool In(int x, int y) => x >= 0 && y >= 0 && x < W && y < H;
@@ -147,6 +170,9 @@ public sealed partial class RmgGenerator
         Mark("CalcBorderTiles");
         ComputeBorderDistances();
         Mark("FillTerrain");
+        // 0x00915dc0 (builder +0x8c set): with an underground floor 0x009133e0 draws Next(8) for the floor's +0x78 cell grid
+        // (byte 1 = 1, byte 2 = Next(8) + 8). TODO(exe): that grid is not modelled (terrain).
+        if ((BuilderDraw & 1) != 0 && Floors.Count > 1) Rng.Next(8);
         var result = new RmgResult(this);
         PaintTerrain(result);
         Mark("PlaceTowns");
@@ -266,7 +292,10 @@ public sealed partial class RmgGenerator
             }
         }
         recs = StridedMergeSort(recs, (l, r) => l.Zone.Index < r.Zone.Index);
-        Rng.Next(2); // zone class selector (CGameZone variant)
+        // 0x0090bd80: one Next(2) chooses the class of every underground zone when builder +0x8c (the odd builder draw,
+        // set in 0x0090e7e0) does not make them dwarven.
+        bool subterra = Rng.Next(2) != 0;
+        bool dwarven = (BuilderDraw & 1) != 0;
 
         int starts = 0;
         foreach (var rec in recs)
@@ -303,7 +332,13 @@ public sealed partial class RmgGenerator
             }
             // Zone construction (base ctor 0x00925850) keeps one draw as the zone's own seed (+0x13c).
             int zoneSeed = (int)Rng.Advance();
-            var zone = new RmgZone { Def = rec.Zone, Floor = rec.Floor, Race = race, Player = player, ZoneSeed = zoneSeed };
+            var cls = rec.Floor == 0 ? RmgZoneClass.Game : dwarven ? RmgZoneClass.Dwarven : subterra ? RmgZoneClass.Subterra : RmgZoneClass.SubInferno;
+            int preset = cls switch
+            {
+                RmgZoneClass.SubInferno => 0, RmgZoneClass.Dwarven => 2, RmgZoneClass.Subterra => 6,
+                _ => race == 6 && rec.Floor == 0 ? 3 : race,
+            };
+            var zone = new RmgZone { Def = rec.Zone, Floor = rec.Floor, Race = race, Player = player, ZoneSeed = zoneSeed, Class = cls, Preset = preset };
             Zones.Add(zone);
             Floors[rec.Floor].Zones.Add(zone.Id, zone);
         }

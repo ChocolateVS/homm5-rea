@@ -131,10 +131,9 @@ first pass nothing can be stolen (division by an empty list).
 
 ## Not yet line by line (see AUDIT_RMG.md)
 
-* Underground zones use other classes (CGameSubInfernoZone / CGameSubterraZone / CGameDwarvenZone, chosen in
-  `0x0090bd80`) whose statics and town placement (vf 0x30 / 0x34 / 0x20) are not ported; they get no statics.
-* Terrain: lakes, mountains and big statics repaint terrain (`0x00916f80`, `0x00915e00`); not done.
-* The town specialization draw after `0x009228e0` is not ported.
+* Underground zones (CGameSubInfernoZone / CGameSubterraZone / CGameDwarvenZone, `0x0090bd80`) place their statics,
+  rock fill and point-light draws as the exe does; heights, light values and the water option's zone class are not built.
+* Terrain: lakes take the preset's WaterTile; mountain terrain (`0x00915e00`), tile strengths and transitions are not done.
 
 Reference comparison (`h5tool rmg-ref`, same template/size/seed/players/races/levels): mines, prisons and towns
 match exactly on every map; the other object counts are within a few percent (AUDIT_RMG.md).

@@ -100,6 +100,9 @@ public sealed class RmgParams
     public int MinDistanceBetweenBigObjects, MinDistanceBetweenTreasureBlocks;                        // +0x90, +0x94
     public string DefaultSurfaceTile = "", DefaultSubterraTile = "", DeepWaterTile = "", DeepWaterBottom = "", DefaultTransitiveTile = "";
     public int TransitiveTileIntensity;
+    /// <summary>PointLightParams zMin / zMax (+0xb4 / +0xb8) and LightRadiusMin / Max (+0xbc / +0xc0): the underground
+    /// zones' point lights draw Next(zMax − zMin) and Next(LightRadiusMax − LightRadiusMin) (0x00bab980 etc.).</summary>
+    public int LightZMin, LightZMax, LightRadiusMin, LightRadiusMax;
     public List<string> GroundTerrainLights = new();       // +0x1f4
     public string? Obelisk, Grail;
     public List<string> WaterTreasures = new();
@@ -116,6 +119,8 @@ public sealed class RmgRacePreset
     public string? TownProto;
     public List<string> HeroPool = new();
     public List<RmgValuedObject> NewDwellings = new();
+    /// <summary>Preset +0x28 (after TownProto +0x14 and HeroPool +0x1c): the dwellings 0x0091e910 places, by tier.</summary>
+    public List<string> Dwellings = new();
     public string DefaultTile = "", RoadTile = "", SecondaryRoadTile = "", WaterTile = "", WaterBottomTile = "", WaterCoastTile = "";
     public List<string> OneTileSmallBlockers = new(), OneTileSmallNonblockers = new(), OneTileBigObjects = new(),
         BigStatics = new(), Mountains = new(), OverTownCenterObjects = new();
@@ -149,6 +154,12 @@ public sealed class RmgDatabase
     public List<RmgArtifact> Artifacts { get; } = new();
     /// <summary>The two-stack guard templates (exe 0x00ba7e30: the group named at 0x00e568c0), in group order.</summary>
     public List<RmgArmyTemplate> ArmyTemplates { get; } = new();
+    /// <summary>
+    /// The town specializations of RMG/TownRandomSpecGroup.xdb (global ref 0x00ff9944, STownRandomSpecGroup, link +0x44)
+    /// in group order: path, TownType (+0x6c) and RandomTown (+0x70; 0 = TOWN_RANDOM, 1 = TOWN_SCRIPT_ONLY).
+    /// </summary>
+    public List<(string Path, string TownType, string RandomTown)> TownSpecs { get; } = new();
+    public const string TownSpecGroupPath = "RMG/TownRandomSpecGroup.xdb";
     public XdbLoader Xdb { get; }
 
     public const string ParamsPath = "RMG/Params/Default.xdb";
@@ -169,6 +180,7 @@ public sealed class RmgDatabase
         db.LoadCreatures();
         db.LoadArtifacts();
         db.LoadArmyTemplates();
+        db.LoadTownSpecs();
         return db;
     }
 
@@ -250,6 +262,8 @@ public sealed class RmgDatabase
         DeepWaterTile = Ref(r.Element("DeepWaterTile"), path), DeepWaterBottom = Ref(r.Element("DeepWaterBottom"), path),
         DefaultTransitiveTile = Ref(r.Element("DefaultTransitiveTile"), path),
         TransitiveTileIntensity = I(r, "TransitiveTileIntensity"),
+        LightZMin = I(r.Element("PointLightParams"), "zMin"), LightZMax = I(r.Element("PointLightParams"), "zMax"),
+        LightRadiusMin = I(r.Element("PointLightParams"), "LightRadiusMin"), LightRadiusMax = I(r.Element("PointLightParams"), "LightRadiusMax"),
         GroundTerrainLights = Refs(r.Element("GroundTerrainLights"), path),
         Obelisk = Ref(r.Element("Obelisk"), path) is { Length: > 0 } o ? o : null,
         Grail = Ref(r.Element("Grail"), path) is { Length: > 0 } g ? g : null,
@@ -274,6 +288,7 @@ public sealed class RmgDatabase
                 TownProto = Ref(o?.Element("TownProto"), PresetPath) is { Length: > 0 } tp ? tp : null,
                 HeroPool = Refs(o?.Element("HeroPool"), PresetPath),
                 NewDwellings = Valued(o?.Element("NewDwellings"), PresetPath),
+                Dwellings = Refs(o?.Element("Dwellings"), PresetPath),
                 DefaultTile = Ref(tiles?.Element("DefaultTile"), PresetPath), RoadTile = Ref(tiles?.Element("RoadTile"), PresetPath),
                 SecondaryRoadTile = Ref(tiles?.Element("SecondaryRoadTile"), PresetPath),
                 WaterTile = Ref(tiles?.Element("WaterTile"), PresetPath), WaterBottomTile = Ref(tiles?.Element("WaterBottomTile"), PresetPath),
@@ -295,6 +310,17 @@ public sealed class RmgDatabase
                 Mines = Refs(o?.Element("Mines"), PresetPath),
                 AbandonedMine = Ref(o?.Element("AbandonedMine"), PresetPath) is { Length: > 0 } am ? am : null,
             });
+        }
+    }
+
+    void LoadTownSpecs()
+    {
+        if (!Xdb.FileSystem.Exists(TownSpecGroupPath)) return;
+        foreach (var p in Refs(Xdb.Load(TownSpecGroupPath).Root?.Element("link"), TownSpecGroupPath))
+        {
+            if (!Xdb.FileSystem.Exists(p)) continue;
+            var e = Xdb.Load(p).Root;
+            TownSpecs.Add((p, S(e, "TownType"), S(e, "RandomTown")));
         }
     }
 

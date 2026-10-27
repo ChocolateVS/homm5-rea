@@ -168,7 +168,10 @@ public class GeneratorTests(RmgFixture f)
             var r = new RmgGenerator(f.Db, o).Generate();
             int starts = t.Zones.Count(z => z.CanBePlayerStart);
             Assert.True(r.StartTowns.Count == Math.Min(r.Generator.Players, starts), $"{t.Name}: {r.StartTowns.Count} start towns");
-            Assert.Equal(0, r.Unreachable);
+            // Underground treasures (0x00906380) come after the statics and test only the tile's flags (0x0091f8a0), so a
+            // pocket inside an underground static mass can hold one; on the surface every object is reachable.
+            var bad = r.Warnings.Where(w => w.StartsWith("unreachable") && !w.Contains("floor 1")).ToList();
+            Assert.True(bad.Count == 0, $"{t.Name}: " + string.Join("; ", bad.Take(4)));
         }
     }
 
@@ -242,6 +245,32 @@ public class GeneratorTests(RmgFixture f)
         // The underground treasures come after the statics in the object list.
         int lastStatic = r.Objects.FindLastIndex(x => x.Note == "static");
         Assert.All(r.Objects.Where(x => x.Floor == 1 && x.Note is "treasure" or "chest"), x => Assert.True(r.Objects.IndexOf(x) > lastStatic));
+    }
+
+    /// <summary>
+    /// 0x0090bd80: underground zones share one class (dwarven when the builder draw is odd, else Next(2)), and vf 0x1c
+    /// gives their object preset (SubInferno 0, Dwarven 2, Subterra 6); underground statics are placed; teleports carry
+    /// GroupID = min zone x 100 + max zone (0x00914980), two per group; towns get a Specialization (0x00923e50).
+    /// </summary>
+    [StockFact]
+    public void UndergroundClassesStaticsAndTeleportGroups()
+    {
+        foreach (int seed in new[] { 77, 78, 79, 80 })
+        {
+            var g = new RmgGenerator(f.Db, new RmgOptions { Template = "S1-2P2-4Z4K1S", Size = 2, Underground = true, Seed = seed, Players = 2 });
+            var r = g.Generate();
+            var under = g.Zones.Where(z => z.Floor == 1).ToList();
+            Assert.NotEmpty(under);
+            Assert.Single(under.Select(z => z.Class).Distinct());
+            var cls = under[0].Class;
+            Assert.Equal((g.BuilderDraw & 1) != 0, cls == RmgZoneClass.Dwarven);
+            Assert.All(under, z => Assert.Equal(cls switch { RmgZoneClass.SubInferno => 0, RmgZoneClass.Dwarven => 2, _ => 6 }, z.Preset));
+            Assert.All(g.Zones.Where(z => z.Floor == 0), z => Assert.Equal(RmgZoneClass.Game, z.Class));
+            Assert.Contains(r.Objects, o => o.Floor == 1 && o.Note == "static");
+            var groups = r.Objects.Where(o => o.GroupId != null).GroupBy(o => o.GroupId).ToList();
+            Assert.All(groups, gr => Assert.Equal(2, gr.Count()));
+            Assert.All(r.StartTowns.Values, t => Assert.NotNull(t.Specialization));
+        }
     }
 
     /// <summary>

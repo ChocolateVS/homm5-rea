@@ -175,6 +175,7 @@ public sealed partial class RmgGenerator
                 angle = TeleportFacing(z, x, y);
                 if (!FootprintFits(z, x, y, angle, d)) { far.RemoveAt(i); continue; }
                 o = CreateObject(r, z, shared, x, y, angle, "teleport");
+                o.GroupId = Math.Min(z.Id, other) * 100 + Math.Max(z.Id, other);   // 0x0091dbf0 → 0x00914980 "GroupID"
                 Stamp(z, x, y, angle, d, z.ConnectionPoints);
             }
             r.Passages.Add((z.Floor, z.Id, other, o.X, o.Y));

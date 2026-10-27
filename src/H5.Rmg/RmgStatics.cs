@@ -2,8 +2,9 @@ namespace H5.Rmg;
 
 /// <summary>
 /// Statics (exe 0x00906130, after the roads): every template zone in order, its zone's vf 0x34 ("at %g big statics in
-/// zone %d set") then vf 0x30 ("one tile statics"). Surface zones are CGameZone (0x009253b0 / 0x00922f70); the
-/// underground classes (CGameSubInfernoZone / CGameSubterraZone / CGameDwarvenZone, 0x0090bd80) are not ported.
+/// zone %d set") then vf 0x30 ("one tile statics"). Surface zones are CGameZone (0x009253b0 / 0x00922f70); underground
+/// zones CGameSubInfernoZone (0x00baa4a0 / 0x00baa900), CGameSubterraZone (0x00928cb0 / 0x00929110) or
+/// CGameDwarvenZone (0x00926d60 / 0x00926e80), chosen in 0x0090bd80.
 /// </summary>
 public sealed partial class RmgGenerator
 {
@@ -13,15 +14,52 @@ public sealed partial class RmgGenerator
         {
             var z = Zones.FirstOrDefault(zz => zz.Def == _t.Zones[zi]);
             if (z == null) continue;
-            if (z.Floor != 0)
+            switch (z.Class)
             {
-                // TODO(exe): underground zone classes' statics (0x00baa4a0/0x00baa900, 0x0092ac10's 0x00928cb0/0x00929110,
-                // 0x00926d60/0x00926e80) are not ported; their zones get no statics.
-                continue;
+                case RmgZoneClass.Game:
+                    BigStatics(r, z, lakesAndMountains: z.Floor != 1);
+                    OneTileStatics(r, z);
+                    break;
+                case RmgZoneClass.SubInferno:          // 0x00baa4a0: no lakes or mountains, vf 0x3c after each static
+                    BigStatics(r, z, lakesAndMountains: false);
+                    UndergroundOneTileStatics(r, z);
+                    break;
+                case RmgZoneClass.Subterra:            // 0x00928cb0: vf 0x40 first, no vf 0x3c on big statics
+                    RockFill(z);
+                    BigStatics(r, z, lakesAndMountains: false);
+                    UndergroundOneTileStatics(r, z);   // 0x00929110 is 0x00baa900 instruction for instruction
+                    break;
+                case RmgZoneClass.Dwarven:             // 0x00926d60: vf 0x40, then 0x009191a0(0x3c); no big statics
+                    RockFill(z);
+                    DistanceField(z, 0x3c);
+                    DwarvenOneTileStatics(r, z);
+                    break;
             }
-            BigStatics(r, z);
-            OneTileStatics(r, z);
         }
+    }
+
+    /// <summary>
+    /// vf 0x3c, called by the underground classes' static placers after an object is created (CGameZone 0x00918b50 does
+    /// nothing): CGameSubInfernoZone 0x00bab980 lights "Crater" (path longer than 5), "Lavacrack" / "Hellpikes" (longer
+    /// than 8) statics (0x00914460 → 0x009142d0), CGameSubterraZone 0x0092a190 "Crystal" (longer than 6, 0x009143a0),
+    /// CGameDwarvenZone 0x00927f90 "Fakel" (longer than 4) or "FireColumn" (longer than 9) (0x00914420 / 0x00914440).
+    /// A lit static gets pointLights.[0] with Pos.z = zMin + Next(zMax − zMin), a radius from Next(LightRadiusMax −
+    /// LightRadiusMin) and the PointLightParams colour of the zone index. TODO(exe): the light is not emitted.
+    /// </summary>
+    void StaticLight(RmgZone z, string shared)
+    {
+        bool Has(int longer, string part) => shared.Length > longer && NameHas(shared, part);
+        bool lit = z.Class switch
+        {
+            RmgZoneClass.SubInferno => Has(5, "Crater") || Has(8, "Lavacrack") || Has(8, "Hellpikes"),
+            RmgZoneClass.Subterra => Has(6, "Crystal"),
+            RmgZoneClass.Dwarven => Has(4, "Fakel") || Has(9, "FireColumn"),
+            _ => false,
+        };
+        if (!lit) return;
+        var p = _db.Params;
+        Rng.Next(p.LightZMax - p.LightZMin);
+        Rng.Next(p.LightRadiusMax - p.LightRadiusMin);
     }
 
     static bool NameHas(string shared, string part) => shared.Contains(part, StringComparison.Ordinal);
@@ -33,12 +71,14 @@ public sealed partial class RmgGenerator
     /// to an earlier big static (+0xb4 of the zone) when its name holds "Crater" (0x009141b0), and tries the 4 quarter
     /// turns in order, a smaller one one Next(4) turn; the first turn passing 0x00919a50 draws Float(0,1) and places the
     /// static when it is below 1 / (blocked tiles + 1) (0x009145b0, 0x0091a420; a big one's tile joins +0xb4).
+    /// The underground copies 0x00baa4a0 (CGameSubInfernoZone, vf 0x3c after each creation) and 0x00928cb0
+    /// (CGameSubterraZone) are this loop without the lakes, the mountains and 0x00915e00.
     /// TODO(exe): the terrain under "Mountain" statics with more than 15 tiles (0x00915e00) is not painted.
     /// </summary>
-    void BigStatics(RmgResult r, RmgZone z)
+    void BigStatics(RmgResult r, RmgZone z, bool lakesAndMountains)
     {
-        var race = _db.Race(z.Race);
-        if (z.Floor != 1)
+        var race = _db.Race(z.Preset);
+        if (lakesAndMountains)
         {
             Lakes(r, z, race);
             Mountains(r, z, race);
@@ -63,6 +103,7 @@ public sealed partial class RmgGenerator
                     if (Rng.Float(0, 1) < chance)
                     {
                         CreateObject(r, z, s, x, y, a, "static");
+                        if (z.Class == RmgZoneClass.SubInferno) StaticLight(z, s);   // 0x00baa4a0 only
                         if (big) z.BigStaticPoints.Add((x, y));
                         Stamp(z, x, y, a, d, null);
                     }
@@ -80,7 +121,11 @@ public sealed partial class RmgGenerator
     /// 0, distance and border distance &gt; 2 get level + 2, diagonal ones + 3, both flag 0x80; a pass that found fewer
     /// than its level (but some) tiles ends it. The lake's tiles are those with a level and distance &gt; 3; then
     /// 0x009225b0 per centre and 0x00922760 over the tiles.
-    /// TODO(exe): the lake terrain (0x00916f80) is not painted.
+    /// The lake tiles go to 0x00916f80 (zone id, race) before the objects: each tile's four corners are painted with the
+    /// zone preset's WaterTile (Tiles +0x64) at strength 0x96, then WaterBottomTile (+0x70) with a strength from the
+    /// tile's distance (x 0x1e, or 0xf for Necropolis, capped at 200) and the depth grid (floor +0x44). Our one-entry-per-tile
+    /// layer takes the WaterTile (TT_SMALL_WATER: not walkable). TODO(exe): corner strengths, WaterBottomTile and the
+    /// depth grid are not modelled.
     /// </summary>
     void Lakes(RmgResult r, RmgZone z, RmgRacePreset race)
     {
@@ -137,6 +182,8 @@ public sealed partial class RmgGenerator
         for (int x = 1; x < W - 1; x++)
             for (int y = 1; y < H - 1; y++)
                 if (level[f.At(x, y)] != 1000f && f.Dist[f.At(x, y)] > 3) lake.Add((x, y));
+        if (race.WaterTile.Length > 0)
+            foreach (var (x, y) in lake) r.TileLayers[z.Floor][y * W + x] = race.WaterTile;
         foreach (var c in centres) LakeCentreObjects(r, z, race, c.X, c.Y);
         LakeTileObjects(r, z, race, lake);
     }
@@ -218,7 +265,7 @@ public sealed partial class RmgGenerator
     /// </summary>
     void OneTileStatics(RmgResult r, RmgZone z)
     {
-        var race = _db.Race(z.Race);
+        var race = _db.Race(z.Preset);
         var f = Floors[z.Floor];
         DistanceField(z, 0x3c);
         var far = new List<(int X, int Y)>();
@@ -272,6 +319,216 @@ public sealed partial class RmgGenerator
         {
             float a = QuarterAngle(Rng.Next(4));
             if (Rng.Float(0, 1) <= 0.5f && bigs.Count > 0) Put(bigs, x, y, a, false, TileFlags.Blocked);
+        }
+    }
+
+    /// <summary>
+    /// exe 0x00baa900 (CGameSubInfernoZone vf 0x30; CGameSubterraZone's 0x00929110 is the same code). 0x009191a0(0x3c);
+    /// zone tiles with flags 0, border distance != 0, level not above 0x10 (0x00915d90) and 1 ≤ x, y &lt; size − 1
+    /// (0x009157b0) fall into the lists distance &gt; 4, 3..4 and 2. Border pass over the zone tiles (level not above
+    /// 0x10, inside the 1-tile frame): a Next(4) turn, then for border tiles with flags 0/1/8/0x10/0x20 and
+    /// Float(0,1) ≥ 0.7 (0x00e15698) the CGameZone choice (Float &lt; 0.4 a small blocker with vf 0x3c, else a big
+    /// object; flag 2). Distance 2: Float ≥ 0.6 (0x00e18580), Next(4), Float &lt; 0.15 a big object, else Float &lt; 0.4 a
+    /// small blocker, else Float &lt; 0.6 a nonblocker (flag 1). Distance 3..4: Float ≥ 0.9 (0x00e1a704), Next(4), Float &lt;
+    /// 0.3 a big object, else Float &lt; 0.5 a small blocker. Distance &gt; 4: Float ≥ 0.9, Next(4), Float ≤ 0.5 a big object.
+    /// Blockers and nonblockers take the builder angle when "FireDot" (0x009140f0) and get vf 0x3c; big objects neither.
+    /// </summary>
+    void UndergroundOneTileStatics(RmgResult r, RmgZone z)
+    {
+        var race = _db.Race(z.Preset);
+        var f = Floors[z.Floor];
+        DistanceField(z, 0x3c);
+        bool High(int x, int y) => f.Level[f.Lv(y, x)] > 0x10;                               // 0x00915d90 / 0x009128e0
+        bool Inner(int x, int y) => x >= 1 && x < W - 1 && y >= 1 && y < H - 1;              // 0x009157b0
+        var far = new List<(int X, int Y)>();
+        var mid = new List<(int X, int Y)>();
+        var near = new List<(int X, int Y)>();
+        foreach (var (x, y) in z.Tiles)
+        {
+            int i = f.At(x, y);
+            if (f.Flags[i] != 0 || f.BorderDist[i] == 0 || High(x, y) || !Inner(x, y)) continue;
+            int d = f.Dist[i];
+            if (d > 4) far.Add((x, y));
+            else if (d > 2) mid.Add((x, y));
+            else if (d > 1) near.Add((x, y));
+        }
+        var blockers = race.OneTileSmallBlockers;
+        var nonblockers = race.OneTileSmallNonblockers;
+        var bigs = race.OneTileBigObjects;
+
+        void Put(List<string> list, int x, int y, float a, bool lit, int flag)
+        {
+            if (list.Count == 0) return;
+            var s = list[Rng.Next(list.Count)];
+            if (lit && NameHas(s, "FireDot")) a = BuilderAngle;
+            CreateObject(r, z, s, x, y, a, "static");
+            if (lit) StaticLight(z, s);
+            f.Flags[f.At(x, y)] = flag;
+        }
+
+        foreach (var (x, y) in z.Tiles)
+        {
+            if (High(x, y) || !Inner(x, y)) continue;
+            float a = QuarterAngle(Rng.Next(4));
+            int i = f.At(x, y);
+            if (f.BorderDist[i] != 0 || f.Flags[i] is not (0 or 1 or 8 or 0x10 or 0x20)) continue;
+            if (Rng.Float(0, 1) < 0.7f) continue;
+            float roll = Rng.Float(0, 1);
+            if ((roll < 0.4f && blockers.Count > 0) || bigs.Count == 0) Put(blockers, x, y, a, true, TileFlags.Blocked);
+            else Put(bigs, x, y, a, false, TileFlags.Blocked);
+        }
+        foreach (var (x, y) in near)
+        {
+            if (Rng.Float(0, 1) < 0.6f) continue;
+            float a = QuarterAngle(Rng.Next(4));
+            if (Rng.Float(0, 1) < 0.15f && bigs.Count > 0) { Put(bigs, x, y, a, false, TileFlags.Blocked); continue; }
+            if (blockers.Count > 0 && Rng.Float(0, 1) < 0.4f) { Put(blockers, x, y, a, true, TileFlags.Blocked); continue; }
+            if (nonblockers.Count > 0 && Rng.Float(0, 1) < 0.6f) Put(nonblockers, x, y, a, true, TileFlags.Nonblocker);
+        }
+        foreach (var (x, y) in mid)
+        {
+            if (Rng.Float(0, 1) < 0.9f) continue;
+            float a = QuarterAngle(Rng.Next(4));
+            if (Rng.Float(0, 1) < 0.3f && bigs.Count > 0) { Put(bigs, x, y, a, false, TileFlags.Blocked); continue; }
+            if (blockers.Count > 0 && Rng.Float(0, 1) < 0.5f) Put(blockers, x, y, a, true, TileFlags.Blocked);
+        }
+        foreach (var (x, y) in far)
+        {
+            if (Rng.Float(0, 1) < 0.9f) continue;
+            float a = QuarterAngle(Rng.Next(4));
+            if (Rng.Float(0, 1) <= 0.5f && bigs.Count > 0) Put(bigs, x, y, a, false, TileFlags.Blocked);
+        }
+    }
+
+    /// <summary>
+    /// vf 0x40 of the underground classes (0x00baa3a0 / 0x00928bb0 / 0x00926d80; CGameZone's 0x00918b40 is empty):
+    /// 0x009191a0(0x3c, all zones), then 0x009159a0 on the underground floor: for each 3x3 block (bx, by from 1 while
+    /// below size/3 − 1; bx outer) whose 9x9 surrounding (3b − 3 .. 3b + 5) carries no flag of 0x3e (low byte), the 4x4
+    /// level vertices from 3b get 0x20 (and the height 2 x 18, 0x00f466b8 — TODO(exe): heights are not emitted),
+    /// 0x009131d0 smooths the 3-cells from 3b − 3 to 3b + 6, and the 9x9 tiles get flag 0x40; at the end 0x40 becomes 2.
+    /// </summary>
+    void RockFill(RmgZone z)
+    {
+        DistanceField(z, 0x3c, allZones: true);
+        if (Floors.Count < 2) return;
+        var f = Floors[1];
+        for (int bx = 1; bx < W / 3 - 1; bx++)
+            for (int by = 1; by < H / 3 - 1; by++)
+            {
+                bool busy = false;
+                for (int y = 3 * by - 3; y <= 3 * by + 5 && !busy; y++)
+                    for (int x = 3 * bx - 3; x <= 3 * bx + 5; x++)
+                        if ((f.Flags[f.At(x, y)] & 0x3e) != 0) { busy = true; break; }
+                if (busy) continue;
+                for (int k = 0; k < 4; k++)
+                    for (int m = 0; m < 4; m++)
+                        f.Level[f.Lv(3 * by + k, 3 * bx + m)] = 0x20;
+                for (int r0 = 3 * by - 3; r0 <= 3 * by + 6; r0 += 3)
+                    for (int c0 = 3 * bx - 3; c0 <= 3 * bx + 6; c0 += 3)
+                        SmoothLevel(f, r0, c0);
+                for (int x = 3 * bx - 3; x <= 3 * bx + 5; x++)
+                    for (int y = 3 * by - 3; y <= 3 * by + 5; y++)
+                        f.Flags[f.At(x, y)] = 0x40;
+            }
+        for (int i = 0; i < f.Flags.Length; i++)
+            if (f.Flags[i] == 0x40) f.Flags[i] = TileFlags.Blocked;
+    }
+
+    /// <summary>
+    /// exe 0x009131d0 (level part): the 3x3 vertices from (r0, c0) take the bilinear mix of the corners (r0, c0),
+    /// (r0 + 3, c0), (r0, c0 + 3), (r0 + 3, c0 + 3) (0x20 off the grid, 0x00f46670), integer / 9; vertices off the grid
+    /// are skipped. (The heights move by (new − old) x 1.125, 0x00e0d3e4 — not modelled.)
+    /// </summary>
+    static void SmoothLevel(RmgFloor f, int r0, int c0)
+    {
+        int rows = f.H + 1, cols = f.W + 1;
+        int Get(int r, int c) => r < 0 || r >= rows || c < 0 || c >= cols ? 0x20 : f.Level[f.Lv(r, c)];
+        for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++)
+            {
+                int a = Get(r0, c0), b = Get(r0 + 3, c0), c = Get(r0, c0 + 3), d = Get(r0 + 3, c0 + 3);
+                int v = ((b * i + a * (3 - i)) * (3 - j) + (c * (3 - i) + d * i) * j) / 9;
+                int rr = r0 + i, cc = c0 + j;
+                if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) continue;
+                f.Level[f.Lv(rr, cc)] = (byte)v;
+            }
+    }
+
+    /// <summary>
+    /// exe 0x00926e80 (CGameDwarvenZone vf 0x30). Over the whole floor (y outer): tiles whose level vertices (y, x),
+    /// (y + 1, x), (y, x + 1) all differ from 0x10, tiles with x or y below 2 and tiles beyond ((size − 1) / 3)·3 get
+    /// flags |= 0x440. 0x009191a0(0x400, all zones). Zone tiles at distance 1 where x % 10 == 5 or y % 10 == 5 and no
+    /// static of +0x148 lies closer than 4 (0x00e11c80): OneTileBigObjects[Next(n − 1) + 1]; at distance 2 where
+    /// x % 10 == 0 or y % 10 == 0 (same test): OneTileSmallBlockers[Next(n)]. 0x009191a0(0x3c); zone tiles with flags 0 at
+    /// distance ≥ 3 get OneTileBigObjects[0] (no draw, flags 2 | 0x400), at distance 2 (same test)
+    /// OneTileSmallBlockers[Next(n − 1)]. All at angle 0 with vf 0x3c after each, flag 2; the tested ones join +0x148.
+    /// </summary>
+    void DwarvenOneTileStatics(RmgResult r, RmgZone z)
+    {
+        var race = _db.Race(z.Preset);
+        var f = Floors[z.Floor];
+        for (int y = 0; y < H; y++)
+            for (int x = 0; x < W; x++)
+            {
+                int i = f.At(x, y);
+                if (y < H - 1 && f.Level[f.Lv(y, x)] != 0x10 && f.Level[f.Lv(y + 1, x)] != 0x10 && f.Level[f.Lv(y, x + 1)] != 0x10)
+                    f.Flags[i] |= 0x440;
+                if (y < 2 || x < 2) f.Flags[i] |= 0x440;
+                if ((H - 1) / 3 * 3 < y) f.Flags[i] |= 0x440;
+                if ((W - 1) / 3 * 3 < x) f.Flags[i] |= 0x440;
+            }
+        DistanceField(z, 0x400, allZones: true);
+        var one = new List<(int X, int Y)>();
+        var two = new List<(int X, int Y)>();
+        foreach (var (x, y) in z.Tiles)
+        {
+            int d = f.Dist[f.At(x, y)];
+            if (d == 1) one.Add((x, y));
+            if (d == 2) two.Add((x, y));
+        }
+        var blockers = race.OneTileSmallBlockers;
+        var bigs = race.OneTileBigObjects;
+        bool Crowded(int x, int y) => z.DwarvenPoints.Any(p => MathF.Sqrt((p.X - x) * (p.X - x) + (p.Y - y) * (p.Y - y)) < 4f);
+        void Put(string s, int x, int y, bool remember)
+        {
+            CreateObject(r, z, s, x, y, 0f, "static");
+            StaticLight(z, s);
+            f.Flags[f.At(x, y)] = TileFlags.Blocked;
+            if (remember) z.DwarvenPoints.Add((x, y));
+        }
+        foreach (var (x, y) in one)
+        {
+            if (x % 10 != 5 && y % 10 != 5) continue;
+            if (bigs.Count == 0 || Crowded(x, y)) continue;
+            int k = Rng.Next(bigs.Count - 1) + 1;
+            if (k < bigs.Count) Put(bigs[k], x, y, true);
+        }
+        foreach (var (x, y) in two)
+        {
+            if (x % 10 != 0 && y % 10 != 0) continue;
+            if (blockers.Count == 0 || Crowded(x, y)) continue;
+            Put(blockers[Rng.Next(blockers.Count)], x, y, true);
+        }
+        DistanceField(z, 0x3c);
+        var deep = new List<(int X, int Y)>();
+        var edge = new List<(int X, int Y)>();
+        foreach (var (x, y) in z.Tiles)
+        {
+            int i = f.At(x, y);
+            if (f.Flags[i] != 0) continue;
+            if (f.Dist[i] >= 3) deep.Add((x, y));
+            else if (f.Dist[i] == 2) edge.Add((x, y));
+        }
+        if (bigs.Count > 0)
+            foreach (var (x, y) in deep)
+            {
+                Put(bigs[0], x, y, false);
+                f.Flags[f.At(x, y)] |= 0x400;
+            }
+        foreach (var (x, y) in edge)
+        {
+            if (blockers.Count == 0 || Crowded(x, y)) continue;
+            Put(blockers[Rng.Next(blockers.Count - 1)], x, y, true);
         }
     }
 }

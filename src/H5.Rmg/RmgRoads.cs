@@ -289,7 +289,7 @@ public sealed partial class RmgGenerator
                     int fl = f.Flags[i];
                     if ((fl & (TileFlags.MainRoad | TileFlags.MineRoad)) == 0) continue;
                     if (!f.Zones.TryGetValue(f.Zone[i], out var z)) continue;
-                    var race = _db.Race(z.Race);
+                    var race = _db.Race(z.Preset);
                     string tile = (fl & TileFlags.MainRoad) != 0 ? race.RoadTile : race.SecondaryRoadTile;
                     if (tile.Length > 0) r.TileLayers[f.Index][y * W + x] = tile;
                 }

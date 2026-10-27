@@ -200,8 +200,9 @@ public sealed partial class RmgGenerator
     /// roads +0x80, 0x20 the object paths +0x8c (0x40 / 0x400: zone tiles with those flags); 10000 (0x00e57d84) when
     /// none. Distances are float square roots (x major, y minor).
     /// </summary>
-    internal void DistanceField(RmgZone z, int mask)
+    internal void DistanceField(RmgZone z, int mask, bool allZones = false)
     {
+        if (allZones || (mask & 0x440) != 0) { DistanceFieldFull(z, mask, allZones); return; }
         var f = Floors[z.Floor];
         // Nodes are only ever appended, so the minimum over the node list is kept incrementally.
         float[]? nodeMin = null;
@@ -242,6 +243,39 @@ public sealed partial class RmgGenerator
                 }
             f.Dist[f.At(x, y)] = (int)best;
         }
+    }
+
+    /// <summary>
+    /// exe 0x009191a0 written out: with <paramref name="allZones"/> every zoned tile of the floor (not only the zone's)
+    /// gets the chopped distance to the zone's lists; mask 0x40 / 0x400 add the zone tiles whose flags carry 0x40 (low
+    /// byte) / 0x400 (byte 1 bit 2).
+    /// </summary>
+    void DistanceFieldFull(RmgZone z, int mask, bool allZones)
+    {
+        var f = Floors[z.Floor];
+        var pts = new List<(float X, float Y)>();
+        if ((mask & 4) != 0) pts.AddRange(z.RoadNodes);
+        if ((mask & 2) != 0) pts.AddRange(z.BlockedList);
+        if ((mask & 8) != 0) pts.AddRange(z.Network);
+        if ((mask & 0x10) != 0) pts.AddRange(z.MineNetwork);
+        if ((mask & 0x20) != 0) pts.AddRange(z.ObjectPaths);
+        if ((mask & 0x40) != 0) foreach (var (x, y) in z.Tiles) if ((f.Flags[f.At(x, y)] & 0x40) != 0) pts.Add((x, y));
+        if ((mask & 0x400) != 0) foreach (var (x, y) in z.Tiles) if ((f.Flags[f.At(x, y)] & 0x400) != 0) pts.Add((x, y));
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++)
+            {
+                int i = f.At(x, y);
+                if (f.Zone[i] < 0) { f.Dist[i] = 1000; continue; }
+                if (!allZones && f.Zone[i] != z.Id) continue;
+                float best = 10000f;
+                foreach (var p in pts)
+                {
+                    float dy = y - p.Y, dx = x - p.X;
+                    float d = MathF.Sqrt(dy * dy + dx * dx);
+                    if (d < best) best = d;
+                }
+                f.Dist[i] = (int)best;
+            }
     }
 
     /// <summary>exe 0x00919710: the largest distance field value over the list's tiles in the zone with border distance &gt; 2 and flags != 2 (0 when none).</summary>

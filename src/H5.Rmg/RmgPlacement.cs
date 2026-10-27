@@ -20,6 +20,10 @@ public sealed class RmgObject
     public bool TwoStack;
     /// <summary>A neutral town's garrison (armySlots), 0x00ba6b10.</summary>
     public List<(string Creature, int Count)> Garrison = new();
+    /// <summary>A teleport's GroupID (0x00914980): min zone id x 100 + max zone id; the adventure engine pairs teleports by it.</summary>
+    public int? GroupId;
+    /// <summary>A town's Specialization (0x00923e50), a TownSpecialization path.</summary>
+    public string? Specialization;
     public float? Angle;             // the angle the exe passed in radians
     public float Rot => Angle ?? Quarter * MathF.PI / 2;
 }
@@ -231,7 +235,7 @@ public sealed partial class RmgGenerator
                 {
                     int id = f.Zone[f.At(x, y)];
                     string tile = f.Index == 0 ? _db.Params.DefaultSurfaceTile : _db.Params.DefaultSubterraTile;
-                    if (id != -1 && f.Zones.TryGetValue(id, out var z) && _db.Race(z.Race).DefaultTile is { Length: > 0 } t) tile = t;
+                    if (id != -1 && f.Zones.TryGetValue(id, out var z) && _db.Race(z.Preset).DefaultTile is { Length: > 0 } t) tile = t;   // 0x00918270: zone +0x20
                     tiles[y * W + x] = tile;
                 }
             r.TileLayers.Add(tiles);
@@ -253,7 +257,8 @@ public sealed partial class RmgGenerator
                 z.AnchorOnly = true;
                 continue;
             }
-            var race = _db.Race(z.Race);
+            var race = _db.Race(z.Race);          // 0x00923e50: TownProto of the +0x1c preset
+            var objects = _db.Race(z.Preset);     // 0x009228e0: OverTownCenterObjects of the +0x20 preset
             if (race.TownProto == null) continue;
             var d = Catalog.Get(race.TownProto);
             // exe 0x00923e50: candidates are zone tiles deeper than R/2; each try draws a tile and a
@@ -276,9 +281,6 @@ public sealed partial class RmgGenerator
                 (px, py) = (cx, cy);
                 z.TownPos = (ax, ay);
                 z.TownPlaced = true;
-                // After 0x009145b0's two draws, the town's point light draws twice (0x0092a400 / 0x00babbf0).
-                Rng.Next(2);
-                Rng.Next(2);
             }
             if (town == null) { r.Warnings.Add($"no room for town in zone {z.Id}"); continue; }
             if (z.Player > 0)
@@ -290,13 +292,26 @@ public sealed partial class RmgGenerator
                 // 0x00918b60 → 0x00ba6b10: a neutral town's guard is its garrison (TownGuardStrenght x BasicLevelGuardPower).
                 TownGarrison(town, GuardPower(z.Def.TownGuardStrength), z.Race is >= 3 and <= 10 ? z.Race : 1);
             // 0x009228e0 (no random towns): one of the preset's OverTownCenterObjects at the town's position.
-            if (race.OverTownCenterObjects.Count > 0)
+            if (objects.OverTownCenterObjects.Count > 0)
             {
                 float a = QuarterAngle(Rng.Next(4));
-                var shared = race.OverTownCenterObjects[Rng.Next(race.OverTownCenterObjects.Count)];
+                var shared = objects.OverTownCenterObjects[Rng.Next(objects.OverTownCenterObjects.Count)];
                 CreateObject(r, z, shared, px, py, a, "over town centre");
             }
-            // TODO(exe): the specialization pick after 0x009228e0 (Next over the town type's specializations, FUN_00926510 +0x44) is not ported.
+            // 0x00923e50 after 0x009228e0: the specializations of RMG/TownRandomSpecGroup (0x00926510, link +0x44) whose
+            // TownType (+0x6c) is the town's (+0xfc) and RandomTown (+0x70) TOWN_RANDOM; Next(n) picks the town's
+            // "Specialization". None: no draw, and 0x00923e50 returns false.
+            var specs = _db.TownSpecs.Where(sp => sp.TownType == town.Def.TownType && sp.RandomTown is "" or "TOWN_RANDOM").ToList();
+            if (specs.Count == 0) continue;
+            town.Specialization = specs[Rng.Next(specs.Count)].Path;
+            // The underground classes' vf 0x20 (0x00bac3d0 / 0x0092abe0 / 0x00928a00) call 0x00923e50 and, when it returns
+            // true, the town's point lights (0x00babbf0 / 0x0092a400 / 0x00928220): Next(3), then Next(10).
+            // TODO(exe): the lights' values (pointLights) are not emitted.
+            if (z.Class != RmgZoneClass.Game)
+            {
+                Rng.Next(3);
+                Rng.Next(10);
+            }
         }
     }
 
@@ -344,11 +359,15 @@ public sealed partial class RmgGenerator
         {
             var z = Zones.FirstOrDefault(zz => zz.Def == _t.Zones[zi]);
             if (z == null) continue;
-            var race = _db.Race(z.Race);
-            PlaceMines(r, z, race);
+            // The placers read the zone's +0x20 preset (abandoned mines 0x00920630, upgrades 0x0091f140, 0x00920ec0 …
+            // 0x009221d0); the dwellings 0x0091e910 the +0x1c preset (the zone race). The mines 0x0091c4a0 read no
+            // preset (TODO(exe): their table is not traced; ours: the zone race's Mines, the same objects in every preset).
+            var race = _db.Race(z.Preset);
+            var own = _db.Race(z.Race);
+            PlaceMines(r, z, own);
             PlaceAbandonedMines(r, z, race, z.Def.AbandonedMines);
             // 0x0091c3a0 (hero): the player record's StartHero (PlayersInfo +8) is never set by our screen, so no hero is created.
-            PlaceDwellings(r, z, race);
+            PlaceDwellings(r, z, own);
             if (_o.Grail) PlaceGrailAndObelisks(r, z, zi == grailZone);
             // Upgrade buildings: density x the +0xb0 factor, rounded to nearest (0x00907150 -> 0x0091f140).
             PlaceUpgrades(r, z, race.Upgrades,
@@ -410,7 +429,7 @@ public sealed partial class RmgGenerator
     /// and quarter turn tested by 0x00919be0, created by 0x00914a60 and flagged 4; then every zone gets
     /// (zone tiles · k) / (W · H) + 2 "obelisks" (RMG/Params Obelisk, the stock data's Learning Stone) through
     /// 0x00921a10 → 0x009216f0, k = 10 / 18 / 26 for size index 0 / 1 / larger.
-    /// TODO(exe): which list 0x00921a50 appends the Graal tile to (0x00a68e00 on a hidden list) is not traced.
+    /// The Graal tile joins the zone's node list +0x68 (0x00a68e00 with ECX = zone + 0x68) and gets flag 4.
     /// </summary>
     void PlaceGrailAndObelisks(RmgResult r, RmgZone z, bool grail)
     {
@@ -427,6 +446,7 @@ public sealed partial class RmgGenerator
                 if (FootprintFits(z, x, y, a, d))
                 {
                     CreateObject(r, z, g, x, y, a, "graal");
+                    z.RoadNodes.Add((x, y));
                     Floors[z.Floor].Flags[Floors[z.Floor].At(x, y)] = TileFlags.Active;
                     placed = true;
                 }
@@ -591,15 +611,16 @@ public sealed partial class RmgGenerator
     /// <summary>
     /// exe 0x0091e910: per tier and count, 0x009191a0(4) and the zone tiles with distance &gt; 2M/3; the placer loop;
     /// an exhausted list logs "Can't place dwelling" and ends all dwellings of the zone. No guard.
-    /// TODO(exe): the shared comes from the preset's list at +0x28 (4a6430); ours: NewDwellings[tier] (same objects in the stock presets).
+    /// The shared is the +0x1c preset's Dwellings[tier] (list +0x28, 0x004a6430; with RandomTowns, generator +0xa5, the
+    /// RandomDwelling table 0x00ff9b48 — our screen has no such option).
     /// </summary>
     void PlaceDwellings(RmgResult r, RmgZone z, RmgRacePreset race)
     {
         for (int tier = 0; tier < z.Def.Dwellings.Length; tier++)
             for (int n = 0; n < z.Def.Dwellings[tier]; n++)
             {
-                if (tier >= race.NewDwellings.Count) return;
-                if (PlaceRandom(r, z, race.NewDwellings[tier].Shared, SpreadCandidates(z, z.Tiles, 2, 3), "dwelling") == null) return;
+                if (tier >= race.Dwellings.Count) return;
+                if (PlaceRandom(r, z, race.Dwellings[tier], SpreadCandidates(z, z.Tiles, 2, 3), "dwelling") == null) return;
             }
     }
 
