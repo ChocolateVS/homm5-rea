@@ -22,7 +22,6 @@ Never invent behaviour: anything not traced is a GAP row in the relevant ledger 
 - Do not push (the coordinator pushes) unless your task says so.
 - Commit messages end with:
   Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
-  Claude-Session: https://claude.ai/code/session_01FWTqTU1tQESu5xj2cE7AqR
 
 - Known, harmless: `git fsck`/auto-gc report tree 575ae451 / object 16faaf32 ("scripts" blob vs tree). That object is only in
   old pre-repair commits kept by the local reflog; main and origin are clean. Don't report it; use `git -c gc.auto=0` if gc is in the way.
