@@ -160,6 +160,28 @@ public partial class UiScreen : Control
         return node;
     }
 
+    const string GameRootPath = "UI/UIGameRoot.(UIGameRoot).xdb";
+
+    /// <summary>
+    /// Creates a window registered in UI/UIGameRoot by ID (its <c>windows</c> / <c>typedWindows</c> lists: the exe
+    /// finds the entry by name, 0065cfd0 / 007c3db0, and the window factory from 00a4aa50 builds a new window from
+    /// it, vfunc 0x28) under <paramref name="parent"/>, laid out by its own placement. Null when the ID is unknown.
+    /// </summary>
+    public UiNode? CreateRootWindow(string id, UiWindow parent)
+    {
+        var root = Game.Instance.Xdb.Load(GameRootPath).Root;
+        var item = root?.Elements("windows").Concat(root.Elements("typedWindows")).SelectMany(l => l.Elements("Item"))
+            .FirstOrDefault(i => (string?)i.Element("ID") == id);
+        var r = H5.Core.Xdb.XdbRef.Parse((string?)item?.Element("Window")?.Attribute("href"), GameRootPath);
+        if (r.IsEmpty || !Game.Instance.Fs.Exists(r.Path)) return null;
+        var w = UiResources.Instance.LoadWindow(r.Path);
+        parent.Children.Add(w);
+        var node = Build(w);
+        _nodes[parent].AddChild(node);
+        QueueRelayout();
+        return node;
+    }
+
     /// <summary>Removes a window made by <see cref="Instantiate"/> (and its node) from the screen.</summary>
     public void RemoveInstance(UiNode node)
     {

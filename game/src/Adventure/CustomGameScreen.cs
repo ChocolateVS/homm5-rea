@@ -158,9 +158,9 @@ public partial class CustomGameScreen : UiScreen
         <= 72 => "S", <= 96 => "M", <= 136 => "L", <= 176 => "XL", _ => "XXL",
     };
 
-    static string GoalText(MapEntry m) => m.CustomGoal ?? Text($"UI/MPCreate/Maps/Goals/{m.GoalKey}.txt", m.GoalKey);
+    internal static string GoalText(MapEntry m) => m.CustomGoal ?? Text($"UI/MPCreate/Maps/Goals/{m.GoalKey}.txt", m.GoalKey);
 
-    static string PlayersText(MapEntry m) =>
+    internal static string PlayersText(MapEntry m) =>
         CustomMapList.PlayersText(CustomMapList.TeamSizes(m.Teams), Text("UI/Common/ffa_format.txt", "<value=count> (FFA)"), Text("UI/Common/players_separator.txt", "v"));
 
     static string Text(string path, string fallback) => UiResources.Instance.Text(path)?.Trim() is { Length: > 0 } t ? t : fallback;
