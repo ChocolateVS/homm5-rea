@@ -248,6 +248,36 @@ public class GeneratorTests(RmgFixture f)
     }
 
     /// <summary>
+    /// 0x00912940 (floor 0 flag 1, floor 1 flag 0): the surface starts at level 0x10 / height 6, the underground at
+    /// 0x20 / 36 with the edge bands (32 / 26 / 21, heights 36 / 30 / 24) and 0x10 / 18 inside; the rock fill raises
+    /// vertices to 0x20 / 36; the map's terrain carries the grids (chunks 5, 7, 15).
+    /// </summary>
+    [StockFact]
+    public void TerrainGridsFollowTheExe()
+    {
+        var g = new RmgGenerator(f.Db, new RmgOptions { Template = "S1-2P2-4Z4K1S", Size = 2, Underground = true, Seed = 77, Players = 2 });
+        var r = g.Generate();
+        var fresh = new RmgFloor(1, 136, 136);
+        Assert.Equal(32, fresh.Level[fresh.Lv(0, 10)]);
+        Assert.Equal(26, fresh.Level[fresh.Lv(1, 10)]);
+        Assert.Equal(21, fresh.Level[fresh.Lv(10, 2)]);
+        Assert.Equal(16, fresh.Level[fresh.Lv(10, 10)]);
+        Assert.Equal(36f, fresh.Heights[fresh.Lv(0, 10)], 3);
+        Assert.Equal(30f, fresh.Heights[fresh.Lv(1, 10)], 3);
+        Assert.Equal(18f, fresh.Heights[fresh.Lv(10, 10)], 3);
+        Assert.Equal(0x20, fresh.Level[fresh.Lv(136, 136)]);
+        Assert.Equal(0x20, fresh.Level[fresh.Lv(135, 50)]);   // 135 >= 136 - 136 % 3
+        var u = g.Floors[1];
+        Assert.Contains(Enumerable.Range(0, u.Level.Length), i => u.Level[i] == 0x20 && Math.Abs(u.Heights[i] - 36f) < 1e-3f && i / (u.W + 1) is > 4 and < 120);
+        Assert.All(g.Floors[0].Level, l => Assert.Equal(0x10, l));
+        Assert.InRange(g.Floors[0].Heights.Max(), 6f, 9.5f);
+        var map = r.ToAdvMap(new SharedCatalog(f.Xdb));
+        Assert.Equal(u.Heights, map.Floors[1]!.Data!.Heights.Data);
+        Assert.Equal(u.Level, map.Floors[1]!.Data!.VertexFlags!.Data);
+        Assert.Contains(map.Floors[0]!.Data!.VertexMap15!.Data, b => b == 0);
+    }
+
+    /// <summary>
     /// 0x0090bd80: underground zones share one class (dwarven when the builder draw is odd, else Next(2)), and vf 0x1c
     /// gives their object preset (SubInferno 0, Dwarven 2, Subterra 6); underground statics are placed; teleports carry
     /// GroupID = min zone x 100 + max zone (0x00914980), two per group; towns get a Specialization (0x00923e50).

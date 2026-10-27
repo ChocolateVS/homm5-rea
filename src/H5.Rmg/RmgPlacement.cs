@@ -30,6 +30,9 @@ public sealed class RmgObject
 
 public sealed partial class RmgGenerator
 {
+    /// <summary>0x00ff9b24: "/MapObjects/RandomTown.xdb#xpointer(/AdvMapTownShared)".</summary>
+    const string RandomTownShared = "MapObjects/RandomTown.xdb";
+
     SharedCatalog? _catalog;
     SharedCatalog Catalog => _catalog ??= new SharedCatalog(_db.Xdb);
 
@@ -259,8 +262,10 @@ public sealed partial class RmgGenerator
             }
             var race = _db.Race(z.Race);          // 0x00923e50: TownProto of the +0x1c preset
             var objects = _db.Race(z.Preset);     // 0x009228e0: OverTownCenterObjects of the +0x20 preset
-            if (race.TownProto == null) continue;
-            var d = Catalog.Get(race.TownProto);
+            // 0x00923e50: with RandomTowns (third argument, generator +0xa5) the shared is 0x00ff9b24 (init 0x00dc8890).
+            string? townShared = _o.RandomTowns ? RandomTownShared : race.TownProto;
+            if (townShared == null) continue;
+            var d = Catalog.Get(townShared);
             // exe 0x00923e50: candidates are zone tiles deeper than R/2; each try draws a tile and a
             // quarter turn; the town's anchor (its first active tile) must be at least 2R/3 from the
             // border (relaxed after 100 tries); footprint failures (0x00919be0) drop the candidate.
@@ -276,7 +281,7 @@ public sealed partial class RmgGenerator
                 if (ay < 1 || ay >= H - 1 || ax < 1 || ax >= W - 1) continue;
                 if (f.BorderDist[f.At(ax, ay)] < z.Radius * 2 / 3 && tries < 100) continue;
                 if (!FootprintFits(z, cx, cy, a, d)) { cands.RemoveAt(i); continue; }
-                town = CreateObject(r, z, race.TownProto, cx, cy, a, "town");
+                town = CreateObject(r, z, townShared, cx, cy, a, "town");
                 Stamp(z, cx, cy, a, d, null);
                 (px, py) = (cx, cy);
                 z.TownPos = (ax, ay);
@@ -611,16 +616,19 @@ public sealed partial class RmgGenerator
     /// <summary>
     /// exe 0x0091e910: per tier and count, 0x009191a0(4) and the zone tiles with distance &gt; 2M/3; the placer loop;
     /// an exhausted list logs "Can't place dwelling" and ends all dwellings of the zone. No guard.
-    /// The shared is the +0x1c preset's Dwellings[tier] (list +0x28, 0x004a6430; with RandomTowns, generator +0xa5, the
-    /// RandomDwelling table 0x00ff9b48 — our screen has no such option).
+    /// The shared is the +0x1c preset's Dwellings[tier] (list +0x28, 0x004a6430), with RandomTowns (generator +0xa5) the
+    /// tier's entry of the RandomDwelling table 0x00ff9b48 (init 0x00dc88b0: RandomDwelling1..7).
     /// </summary>
     void PlaceDwellings(RmgResult r, RmgZone z, RmgRacePreset race)
     {
         for (int tier = 0; tier < z.Def.Dwellings.Length; tier++)
             for (int n = 0; n < z.Def.Dwellings[tier]; n++)
             {
-                if (tier >= race.Dwellings.Count) return;
-                if (PlaceRandom(r, z, race.Dwellings[tier], SpreadCandidates(z, z.Tiles, 2, 3), "dwelling") == null) return;
+                string shared;
+                if (_o.RandomTowns) shared = $"MapObjects/Random/RandomDwelling{tier + 1}.xdb";
+                else if (tier >= race.Dwellings.Count) return;
+                else shared = race.Dwellings[tier];
+                if (PlaceRandom(r, z, shared, SpreadCandidates(z, z.Tiles, 2, 3), "dwelling") == null) return;
             }
     }
 

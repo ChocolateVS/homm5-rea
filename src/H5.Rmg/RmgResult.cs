@@ -143,17 +143,24 @@ public sealed class RmgResult
             f.TileType[i] = catalog.TileType(tiles[i]);
             f.Terrain[i] = SharedCatalog.Classify(f.TileType[i]);
         }
-        f.Data = BuildTerrain(tiles, w, h);
+        f.Data = BuildTerrain(tiles, w, h, Generator.Floors[index]);
         return f;
     }
 
-    /// <summary>Flat terrain with one blend layer per tile type: a vertex weight is the share of its four tiles using that type.</summary>
-    static TerrainData BuildTerrain(string[] tiles, int w, int h)
+    /// <summary>
+    /// The floor's terrain as the exe saves it (0x0090a980 → 0x00a57ea0 writes the floor's terrain object): heights
+    /// (chunk 5), levels (chunk 7) and chunk 15 from the generator's vertex grids ([y][x], the file's row-major order);
+    /// one blend layer per tile type, a vertex weight being the share of its four tiles using that type
+    /// (TODO(exe): the exe paints corner strengths, 0x00916570 / 0x00916f80 / 0x00918270).
+    /// </summary>
+    static TerrainData BuildTerrain(string[] tiles, int w, int h, RmgFloor fl)
     {
         var t = new TerrainData
         {
             TilesX = w, TilesY = h,
-            Heights = new Grid<float>(w + 1, h + 1, new float[(w + 1) * (h + 1)]),
+            Heights = new Grid<float>(w + 1, h + 1, (float[])fl.Heights.Clone()),
+            VertexFlags = new Grid<byte>(w + 1, h + 1, (byte[])fl.Level.Clone()),
+            VertexMap15 = new Grid<byte>(w + 1, h + 1, (byte[])fl.Chunk15.Clone()),
         };
         var types = tiles.GroupBy(x => x).OrderByDescending(g => g.Count()).Select(g => g.Key).ToList();
         for (int li = 0; li < types.Count; li++)

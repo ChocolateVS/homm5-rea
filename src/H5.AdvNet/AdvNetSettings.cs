@@ -29,11 +29,30 @@ public sealed class RmgSettings
     public int Seed;
     /// <summary>The RMG screen's EP_GRAAL_ON_MAP check box.</summary>
     public bool Grail;
+    /// <summary>Unchecked rows of the RMG screen (0x00799230): the generator draws these from the seed.</summary>
+    public bool RandomSize, RandomPlayers, RandomUnderground, RandomWater, RandomMonsters;
+    /// <summary>EP_RESOURCE_LEVEL / EP_EXP_LEVEL, 0..4 (2 = normal).</summary>
+    public int ResourceLevel = 2, ExpLevel = 2;
+    /// <summary>EP_TRUE_RANDOM_TOWNS.</summary>
+    public bool RandomTowns;
+    /// <summary>EP_RACE_PLAYER_1..8: PlayersInfo races (3..10, 1 = random); empty = all random.</summary>
+    public List<int> PlayerRaces = new();
 
     public RmgOptions ToOptions() => new()
     {
         Template = Template, Size = Size, Players = Players, Underground = Underground,
         WaterAmount = Water, MonsterLevel = Monsters, Seed = Seed == 0 ? 1 : Seed, Grail = Grail,
+        RandomSize = RandomSize, RandomPlayers = RandomPlayers, RandomUnderground = RandomUnderground,
+        RandomWater = RandomWater, RandomMonsterLevel = RandomMonsters, ResourceLevel = ResourceLevel, ExpLevel = ExpLevel,
+        RandomTowns = RandomTowns, PlayerRaces = new List<int>(PlayerRaces),
+    };
+
+    public static RmgSettings From(RmgOptions o) => new()
+    {
+        Template = o.Template, Size = o.Size, Players = o.Players, Underground = o.Underground, Water = o.WaterAmount,
+        Monsters = o.MonsterLevel, Seed = o.Seed, Grail = o.Grail, RandomSize = o.RandomSize, RandomPlayers = o.RandomPlayers,
+        RandomUnderground = o.RandomUnderground, RandomWater = o.RandomWater, RandomMonsters = o.RandomMonsterLevel,
+        ResourceLevel = o.ResourceLevel, ExpLevel = o.ExpLevel, RandomTowns = o.RandomTowns, PlayerRaces = new List<int>(o.PlayerRaces),
     };
 }
 

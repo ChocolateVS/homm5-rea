@@ -32,6 +32,12 @@ public sealed class RmgOptions
     /// <summary>The screen's Experience combo (InitialParams.ExpMultiplier, EXP_MISERABLE..MUCH = 0..4): chest and
     /// upgrade-building densities x 0.2/0.5/1/2/4.</summary>
     public int ExpLevel = 2;
+    /// <summary>
+    /// The screen's EP_TRUE_RANDOM_TOWNS check box (InitialParams +0x95, generator +0xa5, saved as
+    /// "sRMGProps.InitialParams.RandomTowns"): towns are /MapObjects/RandomTown (0x00923e50, 0x00ff9b24) and dwellings
+    /// /MapObjects/Random/RandomDwelling1..7 (0x0091e910, table 0x00ff9b48); the screen then sends no PlayersInfo.
+    /// </summary>
+    public bool RandomTowns;
 }
 
 /// <summary>The zone classes of 0x0090bd80 (vtables 0x00e58134, 0x00e827b4, 0x00e583cc, 0x00e58374).</summary>
@@ -91,12 +97,21 @@ public sealed class RmgFloor
     /// <summary>+0xd4: the tile flags (<see cref="TileFlags"/>).</summary>
     public readonly int[] Flags;
     /// <summary>
-    /// +0x24: the per-vertex height level grid ((W+1) x (H+1), indexed [y][x]); 0x00912940 fills the underground floor
-    /// with 0x10 (the surface with 0x20, then edge bands and 0x10 inside — not modelled, no surface placer reads it).
-    /// The rock fill 0x009159a0 raises it to 0x20 and smooths it (0x009131d0); 0x00915d90 (level &gt; 0x10) and the
-    /// dwarven statics (level != 0x10) read it.
+    /// +0x24: the per-vertex height level grid ((W+1) x (H+1), indexed [y][x]; terrain chunk 7). 0x00912940 (from
+    /// 0x00912ce0: floor 0 with flag 1, floor 1 with flag 0) fills the surface with 0x10, the underground with 0x20, then
+    /// on the underground the vertices with row or column below 3 get 16 + (3 − min)·16/3 and the others below
+    /// size − size % 3 (both coordinates) 0x10. The rock fill 0x009159a0 raises it to 0x20 and smooths it (0x009131d0);
+    /// 0x00915d90 (level &gt; 0x10) and the dwarven statics (level != 0x10) read it.
     /// </summary>
     public readonly byte[] Level;
+    /// <summary>
+    /// +0x14: vertex heights, same layout (terrain chunk 5, world units). 0x00912940: surface 3·2 = 6, underground
+    /// 18·2 = 36 with ((3 − min)/3 + 1)·2·9 on the edge band and 2·9 = 18 inside; the rock fill writes 36 and its
+    /// smoothing moves a vertex by (new − old level) x 1.125; the surface gets 0x00918180 (<see cref="RmgGenerator"/>).
+    /// </summary>
+    public readonly float[] Heights;
+    /// <summary>+0x68: per-vertex byte grid (terrain chunk 15), 1 from 0x00912940; 0x009198f0 clears it (0x00915d20).</summary>
+    public readonly byte[] Chunk15;
     public int Lv(int y, int x) => y * (W + 1) + x;
     public readonly NivalHashMap<RmgZone> Zones = new();
 
@@ -107,7 +122,34 @@ public sealed class RmgFloor
         BorderDist = Enumerable.Repeat(-1, w * h).ToArray();
         Flags = new int[w * h];
         Dist = Enumerable.Repeat(-1, w * h).ToArray();
-        Level = Enumerable.Repeat((byte)(index == 0 ? 0x20 : 0x10), (w + 1) * (h + 1)).ToArray();
+        Level = new byte[(w + 1) * (h + 1)];
+        Heights = new float[(w + 1) * (h + 1)];
+        Chunk15 = Enumerable.Repeat((byte)1, (w + 1) * (h + 1)).ToArray();
+        InitTerrain(index != 0);
+    }
+
+    /// <summary>exe 0x00912940 (this = floor terrain, size, size, flag): flag 1 for the surface, 0 for the underground.</summary>
+    void InitTerrain(bool underground)
+    {
+        float fill = 2f * (underground ? 18f : 3f);                              // 0x00f46678 x (0x00e44678 | 0x00e13280)
+        Array.Fill(Heights, fill);
+        Array.Fill(Level, (byte)(underground ? 0x20 : 0x10));
+        if (!underground) return;
+        for (int r = 0; r < W; r++)          // the vertex loops stop one short of the grid (param_2 / param_3)
+            for (int c = 0; c < H; c++)
+            {
+                if (r < 3 || c < 3)
+                {
+                    int m = Math.Min(r, c);
+                    Level[Lv(r, c)] = (byte)((3 - m) * 0x10 / 3 + 0x10);
+                    Heights[Lv(r, c)] = ((3 - m) * 0.33333334f + 1f) * 2f * 9f;   // 0x00e19950, 0x00e0a7e4, 0x00e4d7a4
+                }
+                else if (r < W - W % 3 && c < H - H % 3)
+                {
+                    Level[Lv(r, c)] = 0x10;
+                    Heights[Lv(r, c)] = 2f * 9f;
+                }
+            }
     }
 
     public bool In(int x, int y) => x >= 0 && y >= 0 && x < W && y < H;
@@ -188,7 +230,7 @@ public sealed partial class RmgGenerator
         Mark("AdditionalObjects");
         PlaceUndergroundTreasures(result);
         PlaceTreasureBlocks(result);
-        PaintRoads(result);
+        FinishMap(result);
         Finish(result);
         Mark("Finished");
         return result;

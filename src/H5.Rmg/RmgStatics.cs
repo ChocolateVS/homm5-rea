@@ -404,7 +404,7 @@ public sealed partial class RmgGenerator
     /// vf 0x40 of the underground classes (0x00baa3a0 / 0x00928bb0 / 0x00926d80; CGameZone's 0x00918b40 is empty):
     /// 0x009191a0(0x3c, all zones), then 0x009159a0 on the underground floor: for each 3x3 block (bx, by from 1 while
     /// below size/3 − 1; bx outer) whose 9x9 surrounding (3b − 3 .. 3b + 5) carries no flag of 0x3e (low byte), the 4x4
-    /// level vertices from 3b get 0x20 (and the height 2 x 18, 0x00f466b8 — TODO(exe): heights are not emitted),
+    /// level vertices from 3b get 0x20 and the height 2 x 18 (0x00f466b8),
     /// 0x009131d0 smooths the 3-cells from 3b − 3 to 3b + 6, and the 9x9 tiles get flag 0x40; at the end 0x40 becomes 2.
     /// </summary>
     void RockFill(RmgZone z)
@@ -422,7 +422,10 @@ public sealed partial class RmgGenerator
                 if (busy) continue;
                 for (int k = 0; k < 4; k++)
                     for (int m = 0; m < 4; m++)
+                    {
                         f.Level[f.Lv(3 * by + k, 3 * bx + m)] = 0x20;
+                        f.Heights[f.Lv(3 * by + k, 3 * bx + m)] = 18f + 18f;
+                    }
                 for (int r0 = 3 * by - 3; r0 <= 3 * by + 6; r0 += 3)
                     for (int c0 = 3 * bx - 3; c0 <= 3 * bx + 6; c0 += 3)
                         SmoothLevel(f, r0, c0);
@@ -437,7 +440,7 @@ public sealed partial class RmgGenerator
     /// <summary>
     /// exe 0x009131d0 (level part): the 3x3 vertices from (r0, c0) take the bilinear mix of the corners (r0, c0),
     /// (r0 + 3, c0), (r0, c0 + 3), (r0 + 3, c0 + 3) (0x20 off the grid, 0x00f46670), integer / 9; vertices off the grid
-    /// are skipped. (The heights move by (new − old) x 1.125, 0x00e0d3e4 — not modelled.)
+    /// are skipped; the vertex's height moves by (new − old) x 1.125 (0x00e0d3e4).
     /// </summary>
     static void SmoothLevel(RmgFloor f, int r0, int c0)
     {
@@ -450,6 +453,7 @@ public sealed partial class RmgGenerator
                 int v = ((b * i + a * (3 - i)) * (3 - j) + (c * (3 - i) + d * i) * j) / 9;
                 int rr = r0 + i, cc = c0 + j;
                 if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) continue;
+                f.Heights[f.Lv(rr, cc)] += (v - f.Level[f.Lv(rr, cc)]) * 1.125f;
                 f.Level[f.Lv(rr, cc)] = (byte)v;
             }
     }
