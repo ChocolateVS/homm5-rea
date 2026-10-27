@@ -318,10 +318,10 @@ public sealed partial class Adventure
             {
                 // Case 0x1c: one drink per hero per day from any well (vcall 0x208 / 0x20c, hero +0x174, cleared by the
                 // new-day handler 00b50470): set → [3]; max mana (vcall 0x12c) − mana < 1 → [4]; otherwise mana = max
-                // (vcall 0x128) with an ICON_MANA flyoff.
+                // (vcall 0x128) with an ICON_MANA flyoff. [3] / [4] are flyoffs too (00ce14d0 → 009c90e0, no icon).
                 int max = MaxMana(h);
-                if (h.DrankFromWellToday) Emit(new ObjectVisited(h.Id, o.Index, "msg:3"));
-                else if (max - h.Mana < 1) Emit(new ObjectVisited(h.Id, o.Index, "msg:4"));
+                if (h.DrankFromWellToday) Emit(new ObjectVisited(h.Id, o.Index, "fly:3"));
+                else if (max - h.Mana < 1) Emit(new ObjectVisited(h.Id, o.Index, "fly:4"));
                 else { int gain = max - h.Mana; h.Mana = max; h.DrankFromWellToday = true; Emit(new ObjectVisited(h.Id, o.Index, $"mana:{gain}")); }
                 break;
             }
@@ -329,10 +329,10 @@ public sealed partial class Adventure
             {
                 // Case 0x14: one hero per week per spring (the object's weekly flag +0xe8, cleared by its
                 // IAdvMapWeeklyUpdate 009ce1e0): set → [4]; 2 · max mana − mana < 1 → [3]; otherwise the flag, mana =
-                // 2 · max (vcall 0x128) with an ICON_MANA flyoff.
+                // 2 · max (vcall 0x128) with an ICON_MANA flyoff; [3] / [4] fly (009c90e0).
                 int twice = 2 * MaxMana(h);
-                if (os.LastVisitWeek == S.Week) Emit(new ObjectVisited(h.Id, o.Index, "msg:4"));
-                else if (twice - h.Mana < 1) Emit(new ObjectVisited(h.Id, o.Index, "msg:3"));
+                if (os.LastVisitWeek == S.Week) Emit(new ObjectVisited(h.Id, o.Index, "fly:4"));
+                else if (twice - h.Mana < 1) Emit(new ObjectVisited(h.Id, o.Index, "fly:3"));
                 else { int gain = twice - h.Mana; os.LastVisitWeek = S.Week; h.Mana = twice; Emit(new ObjectVisited(h.Id, o.Index, $"mana:{gain}")); }
                 break;
             }
@@ -412,9 +412,7 @@ public sealed partial class Adventure
                 Emit(new ObjectVisited(h.Id, o.Index, "msg:2"));
                 break;
             case "BUILDING_HUT_OF_MAGI":
-                foreach (var eye in Map.Objects.Where(e => e.Shared.Type == "BUILDING_EYE_OF_MAGI" && e.Shared.Path.Contains("Eye_Of_Magi")))
-                    Reveal(p, eye.Pos, 10);   // TODO(exe): reveal radius around each Eye
-                Emit(new ObjectVisited(h.Id, o.Index, type));
+                HutOfMagi(h, p, o);
                 break;
             case "BUILDING_LIGHTHOUSE":
                 Capture(o, os, p);
@@ -530,11 +528,12 @@ public sealed partial class Adventure
     /// Sirens (00b02740 case 0x3d): once per hero (vcall 0x1f4) else [3]. Every stack of more than one creature loses
     /// (count · 30 + 50) / 100 (00b05761, FUN_004bad00); the experience is the creatures lost × the hit points with the
     /// hero's bonuses (FUN_004bc470). None → [3] and the hero is not marked; otherwise the experience through +0x198
-    /// (no modifiers), the mark (vcall 0x1f8) and [2].
+    /// (no modifiers), the mark (vcall 0x1f8) and [2]. [3] is a flyoff (00ce14d0(3) → 009c90e0, "fly:3"); [2] is a
+    /// CDialogMsgBoxEntry (00456250: empty header, the text, a picture, no value) shown as a message box ("msg:2").
     /// </summary>
     void Sirens(HeroState h, MapObject o)
     {
-        if (h.VisitedOnce.Contains(o.Index)) { Emit(new ObjectVisited(h.Id, o.Index, "msg:3")); return; }
+        if (h.VisitedOnce.Contains(o.Index)) { Emit(new ObjectVisited(h.Id, o.Index, "fly:3")); return; }
         long exp = 0;
         foreach (var s in h.Army.Live().ToList())
         {
@@ -543,11 +542,27 @@ public sealed partial class Adventure
             s.Count -= killed;
             exp += (long)killed * CreatureHitPoints(h, s.Creature);
         }
-        if (exp < 1) { Emit(new ObjectVisited(h.Id, o.Index, "msg:3")); return; }
+        if (exp < 1) { Emit(new ObjectVisited(h.Id, o.Index, "fly:3")); return; }
         Emit(new ArmyChanged(h.Id, -1));
         GainExperience(h, exp, modifiersApplied: true);
         h.VisitedOnce.Add(o.Index);
         Emit(new ObjectVisited(h.Id, o.Index, "msg:2"));
+    }
+
+    /// <summary>
+    /// Hut of Magi (00b02740 case 0x21): the eyes are the buildings of type 0x22 (BUILDING_EYE_OF_MAGI) in the hut's
+    /// group (player vfunc 0x40 → vfunc 8(0x22, hut +0x9c GroupID)); radius 10 is revealed around each (0098f4e0).
+    /// For a human player (player vfunc 0x138 false, hero vfunc 0x190) the eye tiles go into a CEventShowMapAreas
+    /// (009c8e20 → 00c5c5e0) and the client tours them (<see cref="MissionCameraTour"/>). No text.
+    /// </summary>
+    void HutOfMagi(HeroState h, PlayerState p, MapObject o)
+    {
+        var group = o.Props.GetValueOrDefault("GroupID", "0");
+        var eyes = Map.Objects.Where(e => e.Shared.Type == "BUILDING_EYE_OF_MAGI" && !S.Obj(e.Index).Removed
+            && e.Props.GetValueOrDefault("GroupID", "0") == group).OrderBy(e => e.Index).ToList();
+        foreach (var eye in eyes) Reveal(p, eye.Pos, 10);
+        if (p.Human && eyes.Count > 0)
+            Emit(new ObjectVisited(h.Id, o.Index, "magi_tour:" + string.Join(";", eyes.Select(e => $"{e.Pos.X},{e.Pos.Y},{e.Pos.Floor}"))));
     }
 
     /// <summary>
@@ -585,19 +600,27 @@ public sealed partial class Adventure
         RevealAround(h);
     }
 
+    /// <summary>
+    /// Prison (CAdvMapPrison visit 00455860). No prisoner (+0x30) → [2] in a box (CDialogMsgBoxEntry); the player
+    /// cannot take another hero (player vfunc 0xb4 = 004fbce0: heroes &lt; 0098de60, 8 by default) → [3] in a box;
+    /// no exit tile (00cec8e0) → the RPGRoot ADVENTURE_HERO_CANT_EXIT_BUILDING flyoff; otherwise the prisoner
+    /// joins (world vfunc 0x18, failing → [3]), the prison's hero is cleared and the hero is placed on the exit
+    /// tile (008e36c0). No text is shown on success and the prison stays on the map (its next visit says [2]);
+    /// [4] (NoExit.txt) is not used by this function.
+    /// </summary>
     void FreePrisoner(HeroState h, MapObject o)
     {
-        // AdvMapPrisonShared messagesFileRef: [2] PrisonEmpty, [3] PrisonCantHire, [4] (named NoExit) the freeing text.
-        if (o.Hero == null) { Emit(new ObjectVisited(h.Id, o.Index, "prison:empty")); return; }
-        if (S.Heroes.Count(x => x.Alive && x.Owner == h.Owner) >= 8) { Emit(new ObjectVisited(h.Id, o.Index, "prison:full")); return; }
-        var freed = HeroFromInstance(o.Hero, h.Owner, h.Pos);
-        // The freed hero appears next to the prison (TODO(exe): exact placement).
-        freed.Pos = FreeTileNear(h.Pos) ?? h.Pos;
+        var os = S.Obj(o.Index);
+        if (o.Hero == null || os.PrisonerFreed) { Emit(new ObjectVisited(h.Id, o.Index, "prison:empty")); return; }
+        if (S.Heroes.Count(x => x.Alive && x.Owner == h.Owner) >= MaxHeroesPerPlayer) { Emit(new ObjectVisited(h.Id, o.Index, "prison:full")); return; }
+        // TODO(exe): 00cec8e0's tile search is not decoded; the first free neighbour of the visitor.
+        if (FreeTileNear(h.Pos) is not { } exit) { Emit(new ObjectVisited(h.Id, o.Index, "prison:noexit")); return; }
+        var freed = HeroFromInstance(o.Hero, h.Owner, exit);
+        freed.Pos = exit;
         freed.MaxMovePoints = ComputeMaxMovePoints(freed);
         S.Heroes.Add(freed);
         S.HeroPool.Remove(freed.DefId);
-        Emit(new ObjectVisited(h.Id, o.Index, "prison:freed"));
-        RemoveObject(o.Index);
+        os.PrisonerFreed = true;
         Emit(new HeroHired(freed.Id, freed.DefId, -1));
     }
 

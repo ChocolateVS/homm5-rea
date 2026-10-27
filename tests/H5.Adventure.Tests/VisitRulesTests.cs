@@ -49,7 +49,7 @@ public class VisitRulesTests(Fixture f)
         Assert.Equal(max, h.Mana);
         h.Mana = 0;
         // 00b02d76: the hero's daily flag (+0x174), not the well's: a second well the same day refuses with [3].
-        Assert.True(Says(Visit(g, h, wells[1]), "msg:3"));
+        Assert.True(Says(Visit(g, h, wells[1]), "fly:3"));
         Assert.Equal(0, h.Mana);
     }
 
@@ -58,7 +58,7 @@ public class VisitRulesTests(Fixture f)
     {
         var (g, h, wells) = Setup(f, "BUILDING_MAGIC_WELL");
         h.Mana = g.MaxMana(h);
-        Assert.True(Says(Visit(g, h, wells[0]), "msg:4"));
+        Assert.True(Says(Visit(g, h, wells[0]), "fly:4"));
         Assert.False(h.DrankFromWellToday);
     }
 
@@ -72,12 +72,12 @@ public class VisitRulesTests(Fixture f)
         Assert.Equal(2 * max, h.Mana);
         // The flag is the spring's (+0xe8): anyone after that in the week gets [4].
         h.Mana = 0;
-        Assert.True(Says(Visit(g, h, springs[0]), "msg:4"));
+        Assert.True(Says(Visit(g, h, springs[0]), "fly:4"));
         Assert.Equal(0, h.Mana);
         // 2 · max − mana < 1 → [3] on a fresh spring week.
         g.S.Obj(springs[0].Index).LastVisitWeek = 0;
         h.Mana = 2 * max;
-        Assert.True(Says(Visit(g, h, springs[0]), "msg:3"));
+        Assert.True(Says(Visit(g, h, springs[0]), "fly:3"));
         // 00b50470 regenerates only below the maximum, so the doubled mana survives the new day.
         int day = g.S.Day;
         while (g.S.Day == day) g.Apply(new EndTurnCmd { Player = g.Current.Index });
@@ -111,7 +111,7 @@ public class VisitRulesTests(Fixture f)
         Assert.Equal(1, h.Army[1]!.Count);
         // 00b057f3: experience through +0x198, no modifiers.
         Assert.Equal(exp + 5L * hp, h.Experience);
-        Assert.True(Says(Visit(g, h, s[0]), "msg:3"));
+        Assert.True(Says(Visit(g, h, s[0]), "fly:3"));   // [3] flies (009c90e0)
         Assert.Equal(10, h.Army[0]!.Count);
     }
 
@@ -121,7 +121,7 @@ public class VisitRulesTests(Fixture f)
         var (g, h, s) = Setup(f, "BUILDING_SIRENS");
         h.Army = Army.Empty();
         h.Army[0] = new Stack("CREATURE_PEASANT", 1);
-        Assert.True(Says(Visit(g, h, s[0]), "msg:3"));
+        Assert.True(Says(Visit(g, h, s[0]), "fly:3"));
         Assert.DoesNotContain(s[0].Index, h.VisitedOnce);
     }
 
@@ -142,5 +142,49 @@ public class VisitRulesTests(Fixture f)
         Assert.True(Says(Visit(g, h, t[0]), "msg:3"));
         Assert.Equal(morale - 6, h.NextBattleMorale);
         Assert.Equal(arts + 1, h.Artifacts.Count);
+    }
+    [Fact]
+    public void HutOfMagiRevealsTheEyesOfItsGroupAndToursThemForAHuman()
+    {
+        var (g, h, o) = Setup(f, "BUILDING_EYE_OF_MAGI", 4);
+        var hut = o[0];
+        hut.Shared = new SharedDef { Type = "BUILDING_HUT_OF_MAGI", Messages = hut.Shared.Messages, Active = hut.Shared.Active, Blocked = hut.Shared.Blocked, Passable = hut.Shared.Passable, Path = hut.Shared.Path };
+        var props = o.Select(x => x.Props.GetValueOrDefault("GroupID")).ToList();
+        try
+        {
+            hut.Props["GroupID"] = "7"; o[1].Props["GroupID"] = "7"; o[2].Props["GroupID"] = "3"; o[3].Props["GroupID"] = "7";
+            var p = g.Current;
+            p.Human = true;
+            bool Seen(MapObject e) => p.Explored[e.Pos.Floor][e.Pos.Y * g.Map.Floor(e.Pos.Floor)!.Width + e.Pos.X];
+            foreach (var e in o.Skip(1)) p.Explored[e.Pos.Floor][e.Pos.Y * g.Map.Floor(e.Pos.Floor)!.Width + e.Pos.X] = false;
+            var ev = Visit(g, h, hut);
+            Assert.True(Seen(o[1]));
+            Assert.True(Seen(o[3]));
+            var tour = ev.OfType<ObjectVisited>().Single(e => e.What.StartsWith("magi_tour:")).What;
+            Assert.Equal("magi_tour:" + string.Join(";", new[] { o[1], o[3] }.OrderBy(e => e.Index).Select(e => $"{e.Pos.X},{e.Pos.Y},{e.Pos.Floor}")), tour);
+            // An AI player gets the reveal but no tour.
+            p.Human = false;
+            Assert.DoesNotContain(Visit(g, h, hut), e => e is ObjectVisited ov && ov.What.StartsWith("magi_tour:"));
+        }
+        finally { for (int i = 0; i < o.Count; i++) { if (props[i] == null) o[i].Props.Remove("GroupID"); else o[i].Props["GroupID"] = props[i]!; } }
+    }
+
+    [Fact]
+    public void CameraTourHoldsEachStopForItsTimeThenRestoresThePose()
+    {
+        var cam = new MissionCamera(100, 100);
+        cam.Target.X = cam.Current.X = 30; cam.Target.Y = cam.Current.Y = 40;
+        var saved = cam.Target;
+        var tour = new MissionCameraTour(cam, new[] { new TourStop(10, 12, 0), new TourStop(50, 60, 1, Time: 2, Rod: 30) });
+        Assert.Equal(0, tour.Update(0)?.Floor);              // the first stop shows at once
+        Assert.Equal((10f, 12f, saved.Rod), (cam.Target.X, cam.Target.Y, cam.Target.Rod));
+        Assert.Null(tour.Update(4.9f));                       // 5 s default time
+        Assert.Equal(1, tour.Update(0.1f)?.Floor);
+        Assert.Equal((50f, 60f, 30f, saved.Pitch), (cam.Target.X, cam.Target.Y, cam.Target.Rod, cam.Target.Pitch));
+        tour.Update(1.9f);
+        Assert.False(tour.Done);
+        tour.Update(0.1f);
+        Assert.True(tour.Done);
+        Assert.Equal((saved.X, saved.Y, saved.Rod), (cam.Current.X, cam.Current.Y, cam.Current.Rod));
     }
 }

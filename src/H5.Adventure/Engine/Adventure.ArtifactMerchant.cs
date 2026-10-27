@@ -17,10 +17,13 @@ public sealed partial class Adventure
     public const string ArtifactMerchantBuilding = "TB_SPECIAL_3";
 
     /// <summary>
-    /// Stock rule of FUN_00ced030: slots 0–2 minor, 3–4 major, 5 relic artifacts, no artifact twice, never an
-    /// artifact marked CanBeGeneratedToSell = false.
+    /// Stock rule of FUN_00ced030 (CBlackMarket vtable 0xe9663c slot 14): slot i draws from the map's artifact
+    /// generator (world vfunc 0x38 → 009cf360) with class lo = hi = 0 for slots 0–2, 1 for 3–4, 2 for slot 5;
+    /// the artifacts already drawn for this stock are excluded and a relic slot takes only artifacts not generated
+    /// yet (param 5 = class 2). The artifact the slot held before goes back to the generator (009cf320).
+    /// So the map's artifact list (artifactIDs) is the allowed set, not a ban list.
     /// </summary>
-    static string MerchantSlotClass(int slot) => slot > 4 ? "ARTF_CLASS_RELIC" : slot > 2 ? "ARTF_CLASS_MAJOR" : "ARTF_CLASS_MINOR";
+    static int MerchantSlotClass(int slot) => slot > 4 ? 2 : slot > 2 ? 1 : 0;
 
     bool IsArtifactMerchant(int market) =>
         S.Town(market) is { } t ? t.Type == "TOWN_ACADEMY" && t.Level(ArtifactMerchantBuilding) > 0
@@ -28,14 +31,17 @@ public sealed partial class Adventure
 
     void Restock(int market)
     {
+        var old = S.ArtifactMarkets.TryGetValue(market, out var prev) ? prev : null;
         var stock = new string?[MerchantSlots];
+        var drawn = new List<string>();
         for (int i = 0; i < MerchantSlots; i++)
         {
-            var cls = MerchantSlotClass(i);
-            var pool = Db.ArtifactClass.Where(kv => kv.Value == cls && !Db.ArtifactsNotForSale.Contains(kv.Key) && !stock.Contains(kv.Key))
-                .Select(kv => kv.Key).Where(a => Map.ArtifactIds.Count == 0 || !Map.ArtifactIds.Contains(a))
-                .OrderBy(a => a, StringComparer.Ordinal).ToList();
-            stock[i] = pool.Count == 0 ? null : pool[S.Rng.Next(pool.Count)];
+            int c = MerchantSlotClass(i);
+            // TODO(exe): the exe seeds the draw per slot (world vfunc 0x124(i, seed) → 008e7a40); one game RNG here.
+            var art = GenerateArtifact(c, c, firstPassOnly: c == 2, exclude: drawn);
+            if (old != null && i < old.Length && old[i] is { } was) ReleaseArtifact(was);
+            stock[i] = art;
+            if (art != null) drawn.Add(art);
         }
         S.ArtifactMarkets[market] = stock;
     }

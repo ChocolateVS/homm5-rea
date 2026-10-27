@@ -51,6 +51,24 @@ public static class AdvTexts
         return path.Length > 0 ? (Ui.UiResources.Instance.Text(path) ?? "").Trim() : "";
     }
 
+    static Dictionary<string, string>? _rpgIcons;
+
+    /// <summary>
+    /// An RPGRoot.xdb icon (e.g. ICON_MANA) by ID — FUN_00bcb8b0 searches SRPGRoot +0x80 (0x18-byte items: ID, Texture).
+    /// </summary>
+    public static Godot.Texture2D? RpgIcon(string id)
+    {
+        if (_rpgIcons == null)
+        {
+            _rpgIcons = new(StringComparer.Ordinal);
+            const string root = "GameMechanics/RPGStats/RPGRoot.xdb";
+            foreach (var item in Game.Instance.Xdb.Load(root).Descendants("Item"))
+                if ((string?)item.Element("ID") is { } key && (string?)item.Element("Texture")?.Attribute("href") is { Length: > 0 } href)
+                    _rpgIcons.TryAdd(key, href);
+        }
+        return _rpgIcons.TryGetValue(id, out var h) ? Game.Instance.LoadTexture(h) : null;
+    }
+
     /// <summary>The text file behind an RPGRoot.xdb text id, or "".</summary>
     public static string RpgPath(string id)
     {

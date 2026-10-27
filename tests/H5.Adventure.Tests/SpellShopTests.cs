@@ -29,22 +29,22 @@ public class SpellShopTests(Fixture f)
         Assert.Equal(0, fire.Gold);
 
         // Buying: the hero needs the school mastery the learn rule asks for; the price is paid and the entry cleared.
-        var spell = stock[0]!;
-        var def = f.Core.Spell(spell)!;
-        string skill = def.School switch
+        // (A slot whose spell needs nothing beyond the school mastery: mass spells also need their Master perk.)
+        string School(string id) => f.Core.Spell(id)!.School switch
         {
             "MAGIC_SCHOOL_DESTRUCTIVE" => "HERO_SKILL_DESTRUCTIVE_MAGIC", "MAGIC_SCHOOL_DARK" => "HERO_SKILL_DARK_MAGIC",
             "MAGIC_SCHOOL_LIGHT" => "HERO_SKILL_LIGHT_MAGIC", _ => "HERO_SKILL_SUMMONING_MAGIC",
         };
-        h.Skills.RemoveAll(s => s.SkillId == skill);
-        h.Skills.Add(new H5.Core.Data.SkillEntry(skill, H5.Core.Data.Mastery.Expert));
+        foreach (var id in stock) { h.Skills.RemoveAll(s => s.SkillId == School(id!)); h.Skills.Add(new H5.Core.Data.SkillEntry(School(id!), H5.Core.Data.Mastery.Expert)); }
+        int slot = Enumerable.Range(0, 6).First(i => g.CanLearnSpell(h, stock[i]!) || h.Spells.Contains(stock[i]!));
+        var spell = stock[slot]!;
         h.Spells.Remove(spell);
         g.Current.Purse = new Purse(new H5.Core.Data.Resources(0, 0, 20, 20, 20, 20, 0));
-        var r = g.Apply(new BuySpellShopSpellCmd(h.Id, o.Index, 0) { Player = h.Owner });
+        var r = g.Apply(new BuySpellShopSpellCmd(h.Id, o.Index, slot) { Player = h.Owner });
         Assert.True(r.Ok, r.Error);
         Assert.Contains(spell, h.Spells);
-        Assert.Null(g.S.Obj(o.Index).ShopSpells![0]);
-        Assert.Equal(5, g.Current.Purse.R.Sum(v => v) - 60);
-        Assert.False(g.Apply(new BuySpellShopSpellCmd(h.Id, o.Index, 0) { Player = h.Owner }).Ok);
+        Assert.Null(g.S.Obj(o.Index).ShopSpells![slot]);
+        Assert.Equal(80 - new Purse(Engine.Adventure.SpellShopCost(f.Core.Spell(spell)!)).R.Sum(v => v), g.Current.Purse.R.Sum(v => v));
+        Assert.False(g.Apply(new BuySpellShopSpellCmd(h.Id, o.Index, slot) { Player = h.Owner }).Ok);
     }
 }

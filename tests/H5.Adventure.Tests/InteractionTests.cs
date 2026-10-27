@@ -185,7 +185,7 @@ public class InteractionTests(Fixture f)
     }
 
     [Fact]
-    public void PrisonReportsWithItsOwnTexts()
+    public void PrisonFreesItsHeroOnceAndStays()
     {
         foreach (var id in new[] { "A2M1", "A2M11", "A2M7", "A2M13" })
         {
@@ -193,8 +193,14 @@ public class InteractionTests(Fixture f)
             var prison = g.Map.Objects.FirstOrDefault(o => o.Kind == ObjectKind.Prison && o.Hero != null && o.ActiveTiles.Any());
             if (prison == null) continue;
             var h = MyHero(g);
-            Assert.Contains(VisitFromEntrance(g, h, prison), e => e is ObjectVisited { What: "prison:freed" });
-            Assert.True(g.S.Obj(prison.Index).Removed);
+            int heroes = g.S.Heroes.Count;
+            // 00455860: the prisoner joins without a text and the prison stays; the next visit finds it empty ([2]).
+            var ev = VisitFromEntrance(g, h, prison);
+            Assert.Contains(ev, e => e is HeroHired);
+            Assert.DoesNotContain(ev, e => e is ObjectVisited { What: "prison:freed" } or ObjectRemoved);
+            Assert.False(g.S.Obj(prison.Index).Removed);
+            Assert.Equal(heroes + 1, g.S.Heroes.Count);
+            Assert.Contains(VisitFromEntrance(g, h, prison), e => e is ObjectVisited { What: "prison:empty" });
             return;
         }
     }

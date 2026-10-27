@@ -70,6 +70,13 @@ public partial class AdvCamera : Camera3D
     /// </summary>
     public void Follow(Vector3 world) => _follow = world;
 
+    /// <summary>Starts a camera tour on the mission camera (<see cref="MissionCameraTour"/>); following stops.</summary>
+    public MissionCameraTour StartTour(IReadOnlyList<TourStop> stops)
+    {
+        StopFollow();
+        return new MissionCameraTour(Cam, stops);
+    }
+
     public void StopFollow() { _follow = null; _followSuspended = false; }
 
     public void SetYaw(float degrees)

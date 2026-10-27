@@ -53,4 +53,25 @@ public class ArtifactGeneratorTests(Fixture f)
         }
         finally { g.Map.ArtifactIds.Clear(); g.Map.ArtifactIds.AddRange(saved); }
     }
+    [Fact]
+    public void MerchantStockComesFromTheMapListNotAgainstIt()
+    {
+        var g = f.NewGame("A2M1");
+        var minor = g.Db.ArtifactClass.First(kv => kv.Value == "ARTF_CLASS_MINOR" && !g.Db.ArtifactsNotForSale.Contains(kv.Key)).Key;
+        var major = g.Db.ArtifactClass.First(kv => kv.Value == "ARTF_CLASS_MAJOR" && !g.Db.ArtifactsNotForSale.Contains(kv.Key)).Key;
+        var wagon = g.Map.Objects.First(o => o.Shared.Type == "BUILDING_BLACK_MARKET");
+        var saved = g.Map.ArtifactIds.ToList();
+        try
+        {
+            g.Map.ArtifactIds.Clear();
+            g.Map.ArtifactIds.AddRange(new[] { minor, major });
+            g.S.ArtifactMarkets.Clear();
+            g.S.ArtifactsGenerated.Clear();
+            var g2 = new Engine.Adventure(g.Db, g.Map, g.S);
+            g2.StockArtifactMerchants();
+            // 00ced030: slots 0–2 minor, 3–4 major, 5 relic, each artifact once per stock.
+            Assert.Equal(new string?[] { minor, null, null, major, null, null }, g2.MerchantStock(wagon.Index));
+        }
+        finally { g.Map.ArtifactIds.Clear(); g.Map.ArtifactIds.AddRange(saved); }
+    }
 }

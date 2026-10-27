@@ -533,12 +533,22 @@ public partial class AdventureScreen : Control
                     Game.Instance.LoadTexture("Textures/Interface/Borderguard/Face_Texture.xdb"), done));
                 break;
             }
+            case ObjectVisited fv when fv.What.StartsWith("fly:") && int.TryParse(fv.What[4..], out int flyMsg) && HumanCaused(player) && !Autoplay && s.Hero(fv.HeroId) is { } flier:
+                // A visit text that flies over the hero instead of a box (00ce14d0(n) → 009c90e0).
+                FlyTextAt(World.TileCenter(flier.Pos), ObjectMessage(fv.Object, flyMsg));
+                break;
+            case ObjectVisited { What: "prison:noexit" } pn when HumanCaused(player) && !Autoplay && s.Hero(pn.HeroId) is { } jailer:
+                FlyTextAt(World.TileCenter(jailer.Pos), AdvTexts.Rpg("ADVENTURE_HERO_CANT_EXIT_BUILDING"));
+                break;
+            case ObjectVisited mt when mt.What.StartsWith("magi_tour:") && HumanCaused(player) && !Autoplay:
+                await MagiTour(mt.What["magi_tour:".Length..]);
+                break;
             case ObjectVisited ov when HumanCaused(player) && !Autoplay && VisitMessage(ov) is { Length: > 0 } visitText:
                 await Dialog(done => Message("", visitText, null, done));
                 break;
             case ObjectVisited mv when mv.What.StartsWith("mana:") && HumanCaused(player) && !Autoplay && s.Hero(mv.HeroId) is { } drinker:
                 // Eldritch Well / Spring (00b02740 cases 0x1c / 0x14): an ICON_MANA flyoff of the gain over the hero, no box.
-                FlyTextAt(World.TileCenter(drinker.Pos), "+" + mv.What["mana:".Length..]);
+                FlyTextAt(World.TileCenter(drinker.Pos), "+" + mv.What["mana:".Length..], AdvTexts.RpgIcon("ICON_MANA"));
                 Hud.Refresh();
                 break;
             case ObjectVisited bb when bb.What.StartsWith("battlebonus:") && HumanCaused(player) && !Autoplay && s.Hero(bb.HeroId) is { } blessed:
@@ -729,7 +739,8 @@ public partial class AdventureScreen : Control
                 string Msg(int i, string fallback) => i < msgs.Count && UiResources.Instance.Text(msgs[i]) is { Length: > 0 } t ? t.Trim() : fallback;
                 if (Session.Game.CartographerBought(me, cv.Object))
                 {
-                    await Dialog(done => AdvDialogs.Message(_dialogLayer, ObjectName(cv.Object), Msg(3, "Already visited."), null, done));
+                    // CAdvMapCartographer visit 004b9c80: an already bought map flies [3] (00ce14d0(3) → 009c90e0).
+                    FlyTextAt(World.TileCenter(buyer.Pos), Msg(3, ""));
                     break;
                 }
                 int cost = Session.Game.CartographerCost(cv.Object);
@@ -1199,6 +1210,7 @@ public partial class AdventureScreen : Control
             if (db.Creatures.Values.Where(c => c.Town == hero.Town && c.Tier == tier && !c.Upgrade && c.Upgrades.Count > 0).OrderBy(c => c.Id, StringComparer.Ordinal).FirstOrDefault() is { } cd)
                 hero.Army[tier - 1] = new Stack(cd.Id, 8 - tier);
         Session.Human.Purse = new Purse(new H5.Core.Data.Resources(50, 50, 50, 50, 50, 50, 60000));
+        hero.Mana = 0;   // so wells and springs have something to refill
         // Step onto the object from a free neighbouring tile, so the engine runs the real visit.
         hero.MovePoints = 5000;
         foreach (var (dx, dy) in new[] { (0, -1), (0, 1), (-1, 0), (1, 0), (-1, -1), (1, -1), (-1, 1), (1, 1) })
@@ -1336,11 +1348,61 @@ public partial class AdventureScreen : Control
         FlyTextAt(World.TileCenter(o.Pos), text);
     }
 
+    /// <summary>
+    /// The Hut of Magi tour (CEventShowMapAreas, 005a5d90 case 0x30): input locked, the camera glides to each eye
+    /// (switching floors, 0060f7c0 → 00594440) and holds it for the stop's time; Esc skips (00593400); the saved
+    /// pose and floor come back at the end (0060f940).
+    /// </summary>
+    async Task MagiTour(string spec)
+    {
+        var stops = new List<TourStop>();
+        foreach (var part in spec.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var v = part.Split(',');
+            var t = new Tile(int.Parse(v[0]), int.Parse(v[1]), int.Parse(v[2]));
+            stops.Add(new TourStop((t.X + 0.5f) * AdvWorld.Unit, (t.Y + 0.5f) * AdvWorld.Unit, t.Floor));
+        }
+        int floor = World.Floor;
+        World.RefreshShroud();
+        Hud.UpdateMinimap();
+        var tour = World.Camera.StartTour(stops);
+        bool input = World.Camera.InputEnabled;
+        World.Camera.InputEnabled = false;
+        while (!tour.Done)
+        {
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            if (Input.IsKeyPressed(Key.Escape) || Autoplay || DevAutoCloseBoxes && _tourFrames++ > 600) { tour.Skip(); break; }
+            if (tour.Update((float)GetProcessDeltaTime()) is { } stop && stop.Floor != World.Floor) World.SetFloor(stop.Floor);
+        }
+        _tourFrames = 0;
+        if (World.Floor != floor) World.SetFloor(floor);
+        World.Camera.InputEnabled = input;
+    }
+    int _tourFrames;
+
     /// <summary>A rising caption over a map position (the original's "flyoff" messages).</summary>
-    void FlyTextAt(Vector3 world, string text)
+    void FlyTextAt(Vector3 world, string text, Texture2D? icon = null)
     {
         // Stock sign style: Text/Interface/FlyingSignFormat_Text.txt ("<flying_signs>").
-        var label = new BitmapText { Markup = $"<center>{AdvTexts.Get(AdvTexts.FlyingSignFormat)}{text}", Size = new Vector2(240, 24) };
+        Control label;
+        if (icon == null)
+        {
+            label = new BitmapText { Markup = $"<center>{AdvTexts.Get(AdvTexts.FlyingSignFormat)}{text}", Size = new Vector2(240, 24) };
+        }
+        else
+        {
+            // The sign's picture (009c9120: an RPGRoot icon, 0x20 px) then the text, centred together.
+            var markup = $"{AdvTexts.Get(AdvTexts.FlyingSignFormat)}{text}";
+            float w = BitmapTextLayout.Block(markup, null, 240, wrap: false).MaxLineWidth;
+            float x0 = 120 - (34 + w) / 2;
+            label = new Control { Size = new Vector2(240, 24), MouseFilter = MouseFilterEnum.Ignore };
+            label.AddChild(new TextureRect
+            {
+                Texture = icon, Position = new Vector2(x0, -6), Size = new Vector2(32, 32), MouseFilter = MouseFilterEnum.Ignore,
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            });
+            label.AddChild(new BitmapText { Markup = markup, Position = new Vector2(x0 + 34, 0), Size = new Vector2(w + 8, 24) });
+        }
         _flyLayer.AddChild(label);
         var start = world + new Vector3(0, 2.5f, 0);
         double t = 0;

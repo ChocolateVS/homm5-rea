@@ -196,3 +196,85 @@ public sealed class MissionCamera
         return v;
     }
 }
+
+/// <summary>
+/// One stop of a camera tour: an AdvMapShowCamera entry (types.xml 2306e332: Time, Pos, Yaw, Pitch, Roll, Rod, FOV)
+/// behind the tile it shows. The Hut of Magi builds one per Eye of Magi (00b06a30 defaults: Time 5, Pos 0,
+/// Yaw / Pitch / Rod / FOV −1 = keep, Roll 0; a building's first <c>showCameras</c> item replaces them).
+/// X / Y are the tile centre in world units; angles in degrees.
+/// </summary>
+public readonly record struct TourStop(float X, float Y, int Floor, float Time = 5f, float Yaw = -1f, float Pitch = -1f, float Rod = -1f);
+
+/// <summary>
+/// The adventure screen's map-areas tour (exe CEventShowMapAreas → 005a5d90 case 0x30 → player 005aa150, ticked by
+/// 0060fb50): the input is locked (00593190) and the pose saved; elapsed milliseconds accumulate and stop i shows
+/// while the sum of the durations round(Time · 1000) before it has passed (the stops already finished are
+/// counted, the next one is shown, 0060f7c0). Each stop starts from the saved pose and changes only the anchor
+/// (tile + Pos) and the angles / rod given ≥ 0 (yaw · π/180, pitch · −π/180), then glides there (camera vfunc 0x34).
+/// After the last stop, or on Esc (00593400 → 0060f940), the saved pose comes back and the input is unlocked.
+/// </summary>
+public sealed class MissionCameraTour
+{
+    readonly MissionCamera _cam;
+    readonly IReadOnlyList<TourStop> _stops;
+    readonly CameraPose _saved;
+    long _elapsedMs;
+
+    /// <summary>Index of the stop being shown (−1 before the first update).</summary>
+    public int Index { get; private set; } = -1;
+    public bool Done { get; private set; }
+    public CameraPose Saved => _saved;
+
+    public MissionCameraTour(MissionCamera cam, IReadOnlyList<TourStop> stops)
+    {
+        _cam = cam;
+        _stops = stops;
+        _saved = cam.Target;
+        if (stops.Count == 0) Finish();
+    }
+
+    /// <summary>Advances the clock; returns the stop that started on this update, if any.</summary>
+    public TourStop? Update(float dt)
+    {
+        if (Done) return null;
+        _elapsedMs += (long)MathF.Round(MathF.Max(0, dt) * 1000f);
+        int finished = 0;
+        long sum = 0;
+        foreach (var s in _stops)
+        {
+            sum += (long)MathF.Round(s.Time * 1000f);
+            if (_elapsedMs < sum) break;
+            finished++;
+        }
+        TourStop? started = null;
+        while (Index < finished)
+        {
+            Index++;
+            if (Index < _stops.Count) { Show(_stops[Index]); started = _stops[Index]; }
+        }
+        if (Index >= _stops.Count) Finish();
+        return started;
+    }
+
+    /// <summary>Esc: ends the tour at once and restores the saved pose (0060f940).</summary>
+    public void Skip() { if (!Done) Finish(); }
+
+    void Show(TourStop s)
+    {
+        var p = _saved;
+        p.X = s.X;
+        p.Y = s.Y;
+        const float Deg = MathF.PI / 180f;
+        if (s.Yaw >= 0) p.Yaw = s.Yaw * Deg;
+        if (s.Pitch >= 0) p.Pitch = s.Pitch * -Deg;
+        if (s.Rod >= 0) p.Rod = s.Rod;
+        _cam.Target = p;
+    }
+
+    void Finish()
+    {
+        Done = true;
+        _cam.Target = _saved;
+        _cam.Current = _saved;
+    }
+}

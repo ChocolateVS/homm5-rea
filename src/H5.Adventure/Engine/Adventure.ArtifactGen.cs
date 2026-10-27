@@ -37,17 +37,24 @@ public sealed partial class Adventure
     /// is set. A first pass takes only those not generated yet (count +4 &lt; 1); when none is left a second pass
     /// takes them all. One is drawn uniformly (008e7840) and its count rises. Null when no candidate exists.
     /// </summary>
-    public string? GenerateArtifact(int lo, int hi)
+    public string? GenerateArtifact(int lo, int hi) => GenerateArtifact(lo, hi, firstPassOnly: false, exclude: null);
+
+    /// <summary>
+    /// 009cf360 with its last two arguments: <paramref name="firstPassOnly"/> (param 5) drops the second pass, so
+    /// only artifacts not generated yet qualify; artifacts in <paramref name="exclude"/> (param 6) never do.
+    /// </summary>
+    public string? GenerateArtifact(int lo, int hi, bool firstPassOnly, IReadOnlyCollection<string>? exclude)
     {
         lo = Math.Max(lo, 0);
         hi = Math.Min(hi, 2);
         var pools = ArtifactPools();
-        for (int pass = 0; pass < 2; pass++)
+        for (int pass = 0; pass < (firstPassOnly ? 1 : 2); pass++)
         {
             var cand = new List<string>();
             for (int c = lo; c <= hi; c++)
                 foreach (var id in pools[c])
-                    if (!Db.ArtifactsNotForSale.Contains(id) && (pass != 0 || S.ArtifactsGenerated.GetValueOrDefault(id) < 1))
+                    if (!Db.ArtifactsNotForSale.Contains(id) && exclude?.Contains(id) != true
+                        && (pass != 0 || S.ArtifactsGenerated.GetValueOrDefault(id) < 1))
                         cand.Add(id);
             if (cand.Count == 0) continue;
             var pick = cand[S.Rng.Range(0, cand.Count - 1)];
@@ -55,6 +62,12 @@ public sealed partial class Adventure
             return pick;
         }
         return null;
+    }
+
+    /// <summary>009cf320 (interface slot 5): gives an artifact back — its generated count drops by one (not below 0).</summary>
+    void ReleaseArtifact(string id)
+    {
+        if (S.ArtifactsGenerated.GetValueOrDefault(id) > 0) S.ArtifactsGenerated[id]--;
     }
 
     /// <summary>The generator by class name (null = any class, 009cf1e0 case 3: 0..2).</summary>
