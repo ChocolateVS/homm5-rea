@@ -39,9 +39,16 @@ host, with the stock engine's quirks — including the checks the DLL would have
   CCreateCombatArenaScreen (0x005a789b); the arena keeps it at +0x2e8. Nothing is copied either way.
   `AdventureScripting.CreateCombatScripts(battle)` shares `ScriptWorld.GameVars`. **FIXED** (combat scripts were never run).
 - Wiring: `Adventure.BattleScripts` (factory) → `IBattleScriptSession`; `BattleRunner.RunToEnd` / `QuickCombat` route
-  commands through it. The headless harness attaches it to battles with a human side. GAP: the Godot combat screen
-  (`game/src/Combat`, other workstream's WIP) does not call it yet — it should create the session where the exe's screen
-  does, single player only.
+  commands through it. The headless harness attaches it to battles with a human side. **FIXED**: the Godot client creates
+  the session where the exe's screen does — `AdventureScreen.StartBattle` (a battle shown on the combat screen) passes
+  `AdventureScripting.CreateCombatScripts` to `AdventureCombatSession` when the map's script host runs and the game is
+  neither networked nor hotseat; commands go through the session (UnitMove/UnitDeath), script time runs at one segment
+  per 200 ms, and battle events of script-issued commands are queued for the screen to animate
+  (`CombatScripting.TakeScriptEvents`). Quick combat has no screen, hence no scripts (exe).
+- FUN_0053e810 order: DoString(combat-startup.lua), DoString("createCombatAliases();"), **engine vf8 (one scheduler
+  pass)**, then the combat script text from the combat game (arena +0x2a0 vf 0x28). **FIXED** (the pass was missing).
+  GAP: which script the combat game carries (StartCombat's script, SetHeroCombatScript's per-hero script resolved by
+  FUN_005d4a70, the map object's CombatScript) is not traced; our sessions run only combat-startup.lua.
 
 ### Town screen (FUN_006146f0)
 `scripts/town-startup.lua`: MMH55's version loads `common.lua` and defines no-op `HeroHired` / `CreatureHired`. No

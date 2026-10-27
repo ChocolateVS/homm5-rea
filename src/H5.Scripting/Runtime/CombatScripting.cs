@@ -185,6 +185,8 @@ public sealed class CombatScripting : IBattleScriptSession
         if (startup != null) L.DoString(startup, "scripts/combat-startup.lua");
         foreach (var alias in TutorialArena ? new[] { "createCombatAliases", "createTutorialAliases" } : new[] { "createCombatAliases" })
             if (L.GetGlobal(alias).IsFunction) L.CallGlobal(alias);
+        // FUN_0053e810: engine vf8 (one scheduler pass, FUN_004c0720) between the aliases and the combat script.
+        L.Step();
         if (scriptSource != null) L.DoString(scriptSource, scriptPath ?? "CombatScript");
         if (L.GetGlobal("DoPrepare").IsFunction) L.CallGlobal("DoPrepare");
     }
@@ -235,6 +237,19 @@ public sealed class CombatScripting : IBattleScriptSession
         if (r.Ok) OnEvents(r.Events);
         if (SegmentsPerCommand > 0) Tick(SegmentsPerCommand);
         return r;
+    }
+
+    /// <summary>
+    /// Battle events of commands the scripts issued (command*/UnitCast*Spell), for a client that animates
+    /// events: the combat screen takes them after each tick or command (<see cref="TakeScriptEvents"/>).
+    /// </summary>
+    public readonly List<BattleEvent> ScriptBattleEvents = new();
+
+    public List<BattleEvent> TakeScriptEvents()
+    {
+        var l = ScriptBattleEvents.ToList();
+        ScriptBattleEvents.Clear();
+        return l;
     }
 
     /// <summary>Script segments run after each command (headless drivers; a real client ticks by time).</summary>
@@ -553,6 +568,7 @@ public sealed class CombatScripting : IBattleScriptSession
         var r = Battle.Apply(cmd);
         if (!r.Ok) { Log.Add($"script command rejected: {cmd.GetType().Name}: {r.Error}"); return false; }
         Emit("script_command", ("command", cmd.GetType().Name));
+        ScriptBattleEvents.AddRange(r.Events);
         OnEvents(r.Events);
         return true;
     }
@@ -575,6 +591,7 @@ public sealed class CombatScripting : IBattleScriptSession
         var r = Battle.Apply(cmd);
         if (!r.Ok) { Log.Add($"script command rejected: {cmd.GetType().Name}: {r.Error}"); return; }
         Emit("script_command", ("command", cmd.GetType().Name));
+        ScriptBattleEvents.AddRange(r.Events);
         OnEvents(r.Events);
     }
 }

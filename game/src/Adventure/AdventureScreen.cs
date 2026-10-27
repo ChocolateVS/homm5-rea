@@ -1082,7 +1082,12 @@ public partial class AdventureScreen : Control
             return;
         }
         var state = Session.CreatePendingBattle(out var seed);
-        var combat = new AdventureCombatSession(state, seed, H5Reborn.AdvNet.HotSeatBattles.HumanSides(Session.S, pb));
+        // CCombatArenaScreen's ctor (FUN_0054c2f0, 0x0054ce2a) runs combat scripts only outside multiplayer and hotseat.
+        var scriptHost = GetNodeOrNull<Campaign.ScriptUiBridge>("ScriptUiBridge")?.Host;
+        Func<H5.Combat.Battle, H5.Scripting.Runtime.CombatScripting?>? scripts =
+            scriptHost != null && H5.Scripting.Runtime.CombatScripting.ScriptsAllowed(Session.IsRemote, Session.IsHotSeat)
+                ? battle => scriptHost.CreateCombatScripts(battle) : null;
+        var combat = new AdventureCombatSession(state, seed, H5Reborn.AdvNet.HotSeatBattles.HumanSides(Session.S, pb), scripts: scripts);
         // Keep the adventure screen alive while the combat screen owns the scene.
         var tree = GetTree();
         var placeholder = new Node { Name = "AdventurePause" };
