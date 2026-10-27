@@ -37,35 +37,86 @@ public static class UiLayout
     static void Layout(UiWindow w, UiRect parent)
     {
         w.Rect = Place(w.Placement, parent);
+        if (w.Type == "WindowGathering" && w.StackInterval is null) { Gather(w, parent); return; }
         LayoutChildren(w);
     }
 
-    /// <summary>
-    /// A WindowGathering (tooltips, info lists) stacks its visible children top to bottom in
-    /// list order, each in a slot as tall as the child, and takes the stacked height; other
-    /// windows place children against their own rectangle.
-    /// </summary>
     static void LayoutChildren(UiWindow w)
     {
         if (w.StackInterval is int gap) { Stack(w, gap); return; }
-        if (w.Type != "WindowGathering")
-        {
-            foreach (var c in w.Children) Layout(c, w.Rect);
-            return;
-        }
-        int y = w.Rect.Y;
+        if (w.Type == "WindowGathering") { Gather(w, null); return; }
+        foreach (var c in w.Children) Layout(c, w.Rect);
+    }
+
+    /// <summary>
+    /// CCommonGatheringWindow layout (00ac0690; instance fields sMargins Left/Right/Top/Bottom/Delta, Orientation,
+    /// ChangePosSize at +0xf4..+0x10c of its data): the inner size is its own size less the margins, grown to the
+    /// largest child across the stacking axis; the shown children are placed one after the other from the Left
+    /// (ECHO_HORISONTAL) or Top (ECHO_VERTICAL) margin with Delta between them (added whenever the running offset
+    /// is past the margin). With ChangePosSize each child takes the whole inner cross size and sits at the cross
+    /// margin (flags 0xffff); without it only the stacking coordinate and size are set (flags 5 / 0xa).
+    /// The gathering then takes the stacked size plus the margins (00a4f810 flags 0xc).
+    /// </summary>
+    static void Gather(UiWindow w, UiRect? parent)
+    {
+        var inst = w.RawInstance;
+        var m = inst?.Element("sMargins");
+        int left = (int?)m?.Element("Left") ?? 0, right = (int?)m?.Element("Right") ?? 0;
+        int top = (int?)m?.Element("Top") ?? 0, bottom = (int?)m?.Element("Bottom") ?? 0, delta = (int?)m?.Element("Delta") ?? 0;
+        bool horizontal = ((string?)inst?.Element("Orientation"))?.Trim() == "ECHO_HORISONTAL";
+        bool fit = H5.Core.Data.XmlHelpers.BoolValue(inst?.Element("ChangePosSize"));
+        int x0 = w.Rect.X, y0 = w.Rect.Y;
+        int innerW = w.Rect.W - left - right, innerH = w.Rect.H - top - bottom;
+        var shown = new List<UiWindow>();
         foreach (var c in w.Children)
         {
-            if (!c.Visible) { Layout(c, new UiRect(w.Rect.X, y, w.Rect.W, 0)); continue; }
-            var slot = new UiRect(w.Rect.X, y, w.Rect.W, c.Placement.Size.Value.Y);
-            Layout(c, slot);
-            // The gathering positions its children itself: a child's own vertical Position offset
-            // is ignored (CommonInfo's Damage row carries a stray y=52 in the stock data).
-            if (c.Rect.Y != y) Shift(c, y - c.Rect.Y);
-            if (c.Type == "WindowGathering") y += c.Rect.H;
-            else y += Math.Max(c.Rect.H, c.Placement.Size.Value.Y);
+            Layout(c, w.Rect);
+            if (!c.Visible || c.Part != null) continue;
+            shown.Add(c);
+            var (cw, ch) = Measure(c);
+            if (horizontal) innerH = Math.Max(innerH, ch); else innerW = Math.Max(innerW, cw);
         }
-        w.Rect = new UiRect(w.Rect.X, w.Rect.Y, w.Rect.W, y - w.Rect.Y);
+        int start = horizontal ? left : top, at = start;
+        foreach (var c in shown)
+        {
+            if (at != start) at += delta;
+            if (horizontal)
+            {
+                if (fit) Resize(c, c.Rect with { H = innerH });
+                int cw = Measure(c).W;
+                Resize(c, fit ? new UiRect(x0 + at, y0 + top, cw, innerH) : c.Rect with { X = x0 + at, W = cw });
+                at += cw;
+            }
+            else
+            {
+                if (fit) Resize(c, c.Rect with { W = innerW });
+                int ch = Measure(c).H;
+                Resize(c, fit ? new UiRect(x0 + left, y0 + at, innerW, ch) : c.Rect with { Y = y0 + at, H = ch });
+                at += ch;
+            }
+        }
+        int width = horizontal ? at + right : left + right + innerW;
+        int height = horizontal ? top + bottom + innerH : at + bottom;
+        var final = parent is { } p
+            ? Place(w.Placement.MergedWith(new UiPlacement { Size = (new Int2(width, height), true) }), p)
+            : w.Rect with { W = width, H = height };
+        int dx = final.X - x0, dy = final.Y - y0;
+        w.Rect = final;
+        if (dx != 0 || dy != 0) foreach (var c in w.Children) Shift(c, dx, dy);
+    }
+
+    /// <summary>A child's current size (vfunc 0x50): a gathering's computed size, else at least its placement size.</summary>
+    static (int W, int H) Measure(UiWindow c) => c.Type == "WindowGathering"
+        ? (c.Rect.W, c.Rect.H)
+        : (Math.Max(c.Rect.W, c.Placement.Size.Value.X), Math.Max(c.Rect.H, c.Placement.Size.Value.Y));
+
+    /// <summary>Sets a child's rectangle (vfunc 0x58) and lays its own children out against it.</summary>
+    static void Resize(UiWindow c, UiRect r)
+    {
+        if (r == c.Rect) return;
+        if (r.W == c.Rect.W && r.H == c.Rect.H) { Shift(c, r.X - c.Rect.X, r.Y - c.Rect.Y); return; }
+        c.Rect = r;
+        LayoutChildren(c);
     }
 
     /// <summary>
@@ -93,10 +144,10 @@ public static class UiLayout
         w.StackedSize = at;
     }
 
-    static void Shift(UiWindow w, int dy)
+    static void Shift(UiWindow w, int dx, int dy)
     {
-        w.Rect = w.Rect with { Y = w.Rect.Y + dy };
-        foreach (var c in w.Children) Shift(c, dy);
+        w.Rect = w.Rect with { X = w.Rect.X + dx, Y = w.Rect.Y + dy };
+        foreach (var c in w.Children) Shift(c, dx, dy);
     }
 
     /// <summary>

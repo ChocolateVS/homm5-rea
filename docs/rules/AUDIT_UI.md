@@ -159,7 +159,15 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 | Common boxes | MsgText (ResizeOnTextSet) in ScrollableText (UI/CommonBoxes Text / Text0 containers) | item of the container | FIXED (was stretched to the box: long messages ran out of it) |
 | Tavern rumours | RumorsText (ResizeOnTextSet) added to ScrollContainer (vfunc 8, 00637b50) | item of the container | FIXED (was a hand-made wheel offset, no bar) |
 | Seer hut quest | DescView (ResizeOnTextSet) in DescContainer | item of the container | FIXED (was a separate text block with a wheel offset) / call site untraced |
-| Other hand-made scrolling | MapTavern thieves list, MissionBox views, save/load list, custom game wait players, hotseat preset grid scroll rows from code with the wheel only | — | GAP (to move onto the container) |
+| Tavern thieves list | 00635a60: container cleared (slot 0x2c); per category an InfoLine clone (EPA_MARGIN, 100 high) with its caption, InfoBox0 cloned per further entry into the Boxes gathering (00634580, then relayout), shown and added (slot 8) | same (`MapTavernScreen.FillThieves`) | FIXED (lines were placed by code at a wheel-driven row offset, no bar; boxes laid side by side by code) / the exe ends the list at a shown category without entries, we skip it (GAP) |
+| Kingdom overview | 005bba30: scroll_area takes the screen's scroll_of_views bar (slot 14); 005baa00: one townview1 / heroview1 clone per town / hero added as items; 005ba510 keeps the scroll position per page (towns / heroes) | same; positions kept while the box is open | FIXED (two views per page redrawn from a wheel index) / persistence across openings (005ba510 stores into a struct outside the box) GAP |
+| Mission objectives | 005b5e70: header clones (ID_SCENARIO_INFO / ID_MAIN_QUESTS / ID_SIDE_QUESTS) and QuestName buttons are items of ScrollContaner1; the entry text an item of ScrollContaner2 | same | FIXED (placed at hand-made offsets 26 / 45 px, no scrolling) |
+
+## Gathering windows (CCommonGatheringWindow, vt 00e73c70; IWindowGathering vt 00e73c48; `src/H5.Core/Ui/UiLayout.cs`)
+
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Layout | 00ac0690 (slot 0x1c → 00ac0a70 relayouts nested gatherings first): instance sMargins Left/Right/Top/Bottom/Delta, Orientation, ChangePosSize (data +0xf4..+0x10c); inner size = own size − margins, grown to the largest shown child across the axis; children from the Left (ECHO_HORISONTAL) / Top (ECHO_VERTICAL) margin, Delta added whenever the offset is past the margin; ChangePosSize: child rect (offset, cross margin, size, inner cross size) flags 0xffff, else only the stacking coordinate + size (flags 5 / 0xa); own size = stacked + margins (00a4f810 flags 0xc) | same (`UiLayout.Gather`); the gathering is re-placed in its parent with the new size | FIXED (every gathering stacked vertically without margins or Delta, e.g. the tavern info boxes, resource price rows) |
 
 ## Custom game screen text (CCustomGameCreateScreen 00774f80, map info 007074b0 / 00707920)
 

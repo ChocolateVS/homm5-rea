@@ -11,13 +11,13 @@ namespace H5Reborn.Adventure;
 /// <summary>
 /// The adventure "information" box (UI/MissionObjectives/Main): Mission Objectives, Mission Log and Kingdom
 /// Overview tabs, the Puzzle Map button and Close. The kingdom tab lists the player's towns or heroes with the
-/// stock townview1 / heroview1 templates (two views per page, the mouse wheel scrolls), the kingdom's
-/// resources with their daily income, the moon week and the date.
+/// stock townview1 / heroview1 templates (items of the scroll_area container, scrolled by the screen's
+/// scroll_of_views bar: 005bba30 / 005baa00), the kingdom's resources with their daily income, the moon week and
+/// the date.
 /// </summary>
 public sealed partial class MissionBoxScreen : Control
 {
     const string Ko = "UI/MissionObjectives/KingdomOverview/";
-    const int ViewHeight = 205, ViewsPerPage = 2;
     static readonly string[] ResKeys = { "wood", "ore", "mercury", "crystals", "sulfur", "gems", "gold" };
 
     readonly AdventureScreen _adv;
@@ -25,7 +25,9 @@ public sealed partial class MissionBoxScreen : Control
     readonly List<UiNode> _views = new();
     string _tab = "TabKingdom";
     bool _heroes;
-    int _top;
+    readonly UiScrollableContainer? _area, _left, _right;
+    // 005ba510: the kingdom list keeps its scroll position per page (towns / heroes) across refills.
+    readonly float[] _kingdomPos = new float[2];
 
     public MissionBoxScreen(AdventureScreen adv, string tab = "TabKingdom")
     {
@@ -42,21 +44,29 @@ public sealed partial class MissionBoxScreen : Control
         bus.On("tab_objectives", () => ShowTab("TabObjectives"));
         bus.On("tab_log", () => ShowTab("TabLog"));
         bus.On("tab_kingdom", () => ShowTab("TabKingdom"));
-        bus.On("kingdom_overview_towns", () => { _heroes = false; _top = 0; Refresh(); });
-        bus.On("kingdom_overview_heroes", () => { _heroes = true; _top = 0; Refresh(); });
+        bus.On("kingdom_overview_towns", () => { SaveKingdomPos(); _heroes = false; Refresh(); });
+        bus.On("kingdom_overview_heroes", () => { SaveKingdomPos(); _heroes = true; Refresh(); });
         bus.On("puzzle", () => { Close(); _adv.ShowPuzzleMap(); });
         foreach (var t in new[] { "townview1", "heroview1" }) _ui.SetVisible(t, false);
+        // 005bba30: scroll_area takes the screen's scroll_of_views bar (container slot 14).
+        _area = _ui.Find("scroll_area") as UiScrollableContainer;
+        _area?.SetScrollBar(_ui.Find("scroll_of_views") as UiScrollBar);
+        _left = _ui.Find("ScrollContaner1") as UiScrollableContainer;
+        _right = _ui.Find("ScrollContaner2") as UiScrollableContainer;
     }
+
+    void SaveKingdomPos() { if (_area != null) _kingdomPos[_heroes ? 1 : 0] = _area.ScrollPosition; }
 
     PlayerState Me => _adv.Session.Human;
 
     /// <summary>Dev (`--adventure-open=heroes`): the kingdom tab's hero list.</summary>
-    public void ShowHeroesForDev() { _heroes = true; _top = 0; Refresh(); }
+    public void ShowHeroesForDev() { _heroes = true; Refresh(); }
 
     public override void _Ready() => ShowTab(_tab);
 
     void ShowTab(string tab)
     {
+        if (_tab == "TabKingdom" && _views.Count > 0) SaveKingdomPos();
         _tab = tab;
         _ui.ShowOnly(tab switch { "TabObjectives" => "Objectives", "TabLog" => "Log", _ => "KingdomOverview" }, "Objectives", "Log", "KingdomOverview");
         // The Puzzle Map button shares its place with the kingdom's Towns button.
@@ -77,18 +87,11 @@ public sealed partial class MissionBoxScreen : Control
         }
     }
 
-    public override void _GuiInput(InputEvent e)
-    {
-        if (_tab != "TabKingdom" || e is not InputEventMouseButton { Pressed: true } mb) return;
-        int count = _heroes ? _adv.MyHeroes().Count : _adv.MyTowns().Count;
-        if (mb.ButtonIndex == MouseButton.WheelDown && _top + ViewsPerPage < count) { _top++; Refresh(); }
-        else if (mb.ButtonIndex == MouseButton.WheelUp && _top > 0) { _top--; Refresh(); }
-    }
-
     void Refresh()
     {
         foreach (var v in _views) _ui.RemoveInstance(v);
         _views.Clear();
+        foreach (var c in new[] { _area, _left, _right }) c?.ClearItems();
         if (_tab == "TabKingdom") RefreshKingdom();
         else if (_tab == "TabObjectives") RefreshObjectives();
     }
@@ -113,32 +116,36 @@ public sealed partial class MissionBoxScreen : Control
             ("UI/MissionObjectives/MainQuests.(WindowStaticText).xdb", mine.Where(o => o.Primary).Select(o => (Line(o), Line(o))).DefaultIfEmpty((defeat, defeat)).ToList()),
             ("UI/MissionObjectives/SideQuests.(WindowStaticText).xdb", mine.Where(o => !o.Primary).Select(o => (Line(o), Line(o))).ToList()),
         };
-        if (_ui.Find("ScrollContaner1") is not { } left) return;
+        // 005b5e70: the headers (ID_SCENARIO_INFO / ID_MAIN_QUESTS / ID_SIDE_QUESTS clones) and the quest buttons
+        // are items of ScrollContaner1; the selected entry's text goes into ScrollContaner2.
+        if (_left == null) return;
         var questTemplate = UiResources.Instance.LoadWindow("UI/MissionObjectives/QuestName.(WindowMSButton).xdb");
-        int y = 0, index = 0;
+        int index = 0;
         string selected = map.Description;
         foreach (var (header, items) in entries)
         {
             if (items.Count == 0) continue;
-            _views.Add(_ui.Instantiate(UiResources.Instance.LoadWindow(header), left.Window, new Int2(0, y)));
-            y += 26;
+            var h = _ui.Instantiate(UiResources.Instance.LoadWindow(header), _left.Window, new Int2(0, 0));
+            _views.Add(h);
+            _left.AddItem(h);
             foreach (var (name, text) in items)
             {
                 int i = index++;
-                var q = _ui.Instantiate(questTemplate, left.Window, new Int2(0, y));
+                var q = _ui.Instantiate(questTemplate, _left.Window, new Int2(0, 0));
                 F(q, "QuestDesc")?.SetText($"<body>{name}");
                 if (F(q, "Marker") is { } marker) marker.Visible = false;
                 if (i == _quest) { selected = text; if (q.Window.ButtonStates.Count > 1) q.SetState(1); }
                 q.Clicked += _ => { _quest = i; Refresh(); };
                 _views.Add(q);
-                y += 45;
+                _left.AddItem(q);
             }
         }
-        if (_ui.Find("ScrollContaner2") is { } right)
+        if (_right != null)
         {
-            var bio = _ui.Instantiate(UiResources.Instance.LoadWindow("UI/MissionObjectives/Bio.(WindowStaticText).xdb"), right.Window, new Int2(0, 0));
+            var bio = _ui.Instantiate(UiResources.Instance.LoadWindow("UI/MissionObjectives/Bio.(WindowStaticText).xdb"), _right.Window, new Int2(0, 0));
             bio.SetText($"<body_bright>{selected}");
             _views.Add(bio);
+            _right.AddItem(bio);
         }
     }
 
@@ -159,21 +166,20 @@ public sealed partial class MissionBoxScreen : Control
         var game = _adv.Session.Game;
         var s = _adv.Session.S;
         _ui.Find("KingdomHeader")?.SetText($"<h1>{T("Kingdom_Header.txt", "Kingdom Overview")}");
-        if (_ui.Find("scroll_area") is { } area)
+        // 005baa00: one clone of townview1 / heroview1 per town / hero, shown and added to scroll_area (slot 8).
+        if (_area != null)
         {
-            area.ClipContents = true;
             if (_heroes)
             {
                 var heroes = _adv.MyHeroes();
-                for (int i = _top; i < Math.Min(heroes.Count, _top + ViewsPerPage); i++)
-                    _views.Add(HeroView(area, heroes[i], i - _top));
+                for (int i = 0; i < heroes.Count; i++) AddView(HeroView(_area, heroes[i], i));
             }
             else
             {
                 var towns = _adv.MyTowns();
-                for (int i = _top; i < Math.Min(towns.Count, _top + ViewsPerPage); i++)
-                    _views.Add(TownView(area, towns[i], i - _top));
+                for (int i = 0; i < towns.Count; i++) AddView(TownView(_area, towns[i], i));
             }
+            _area.RestorePosition(_kingdomPos[_heroes ? 1 : 0]);
         }
         // Kingdom resources and their daily income.
         var income = game.ExpectedIncome(Me);
@@ -190,6 +196,12 @@ public sealed partial class MissionBoxScreen : Control
         date?.SetValue("day", s.DayOfWeek.ToString());
         // TODO: allied players' flags (KO_Allies) need the player flag icons; hidden for now.
         _ui.SetVisible("KO_Allies", false);
+    }
+
+    void AddView(UiNode v)
+    {
+        _views.Add(v);
+        _area!.AddItem(v);
     }
 
     static void SetCreatures(Node? block, IReadOnlyList<(string? Creature, int Count)> slots, bool plus = false)
@@ -213,7 +225,7 @@ public sealed partial class MissionBoxScreen : Control
     UiNode TownView(UiNode area, TownState t, int row)
     {
         var game = _adv.Session.Game;
-        var v = _ui.Instantiate(_ui.Find("townview1")!.Window, area.Window, new Int2(0, row * ViewHeight), $"town{row}");
+        var v = _ui.Instantiate(_ui.Find("townview1")!.Window, area.Window, new Int2(0, 0), $"town{row}");
         var name = F(v, "TownName");
         name?.SetValue("TownName", TownTitle(t));
         name?.SetValue("TownLevel", t.DevLevel.ToString());
@@ -279,7 +291,7 @@ public sealed partial class MissionBoxScreen : Control
 
     UiNode HeroView(UiNode area, HeroState h, int row)
     {
-        var v = _ui.Instantiate(_ui.Find("heroview1")!.Window, area.Window, new Int2(0, row * ViewHeight), $"hero{row}");
+        var v = _ui.Instantiate(_ui.Find("heroview1")!.Window, area.Window, new Int2(0, 0), $"hero{row}");
         var name = F(v, "HeroName");
         name?.SetValue("HeroName", h.Name);
         name?.SetValue("HeroClass", Game.Instance.Db.HeroClasses.TryGetValue(h.Class, out var cls) && cls.Name.Length > 0 ? cls.Name : h.Class);

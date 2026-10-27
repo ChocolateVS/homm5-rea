@@ -30,7 +30,7 @@ public sealed partial class MapTavernScreen : MapBuildingScreen
     readonly ThievesInfo? _thieves;
     readonly UiScreen _jog;
     readonly List<UiNode> _lines = new();
-    int _tab, _scroll;
+    int _tab;
 
     public MapTavernScreen(AdventureScreen adv, int heroId, int obj, bool den) : base(adv, "UI/TavernScreen.(WindowScreen).xdb", heroId, obj)
     {
@@ -53,19 +53,6 @@ public sealed partial class MapTavernScreen : MapBuildingScreen
 
         // 00637b50: the den starts on the thieves page; the tavern on the first hero, else on rumours.
         _tab = den ? 3 : Offers()[0] != null ? 0 : 2;
-        if (Ui.Find("tavern-thieves-window/ScrollContainer") is { } box)
-        {
-            box.ClipContents = true;
-            box.MouseFilter = MouseFilterEnum.Stop;
-            box.GuiInput += e =>
-            {
-                if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp or MouseButton.WheelDown } mb)
-                {
-                    _scroll = Math.Max(0, _scroll + (mb.ButtonIndex == MouseButton.WheelDown ? 1 : -1));
-                    FillThieves();
-                }
-            };
-        }
     }
 
     static string T(string key) => UiGameRoot.RelatedTextAt(Texts, key) ?? "";
@@ -190,46 +177,47 @@ public sealed partial class MapTavernScreen : MapBuildingScreen
     /// </summary>
     void FillThieves()
     {
+        // 00635a60: clear the container (slot 0x2c), then per category clone InfoLine (vfunc 0x28), set its caption,
+        // clone InfoBox0 once per further entry into the Boxes gathering (00634580: InfoBox1.., relayout), fill the
+        // boxes (006346b0 / 00635540), show the line and add it as the container's next item (slot 8).
         foreach (var l in _lines) Ui.RemoveInstance(l);
         _lines.Clear();
-        if (_thieves == null || Ui.Find("tavern-thieves-window/ScrollContainer") is not { } box || Ui.Find("tavern-thieves-window/InfoLine") is not { } template) return;
+        if (Ui.Find("tavern-thieves-window/ScrollContainer") is not UiScrollableContainer box || Ui.Find("tavern-thieves-window/InfoLine") is not { } template) return;
+        box.ClearItems();
+        if (_thieves == null) return;
+        // GAP: the exe stops the whole list at a shown category without entries; ours skips empty categories.
         var cats = _thieves.Visible().Where(c => c.Entries.Count > 0).ToList();
-        _scroll = Math.Min(_scroll, Math.Max(0, cats.Count - 1));
-        const int lineH = 104, boxW = 74;
         for (int row = 0; row < cats.Count; row++)
         {
             var cat = cats[row];
-            var line = Ui.Instantiate(template.Window, box.Window, new Int2(0, (row - _scroll) * lineH), $"line{row}");
+            var line = Ui.Instantiate(template.Window, box.Window, new Int2(0, 0), $"line{row}");
+            // The clone keeps the template's placement (EPA_MARGIN: the container's width, 100 high).
+            line.Window.Placement = template.Window.Placement;
             _lines.Add(line);
-            if (line.FindChild("InfoCaption", true, false) is UiNode cap)
-            {
-                cap.SetValue("caption", TT(cat.Name));
-                // The template caption has no width; give it the container's (after the screen's layout pass).
-                Callable.From(() => { if (IsInstanceValid(cap)) { cap.Position = new Vector2(0, cap.Position.Y); cap.Size = new Vector2(box.Size.X, Math.Max(cap.Size.Y, 24)); } }).CallDeferred();
-            }
-            // The Boxes gathering stacks its children; the boxes go side by side under the caption instead.
+            if (line.FindChild("InfoCaption", true, false) is UiNode cap) cap.SetValue("caption", TT(cat.Name));
             var boxes = line.FindChild("Boxes", true, false) as UiNode;
             var proto = boxes?.FindChild("InfoBox0", true, false) as UiNode;
-            if (boxes == null || proto == null) continue;
-            boxes.Visible = false;
-            for (int i = 0; i < cat.Entries.Count; i++)
-            {
-                var e = cat.Entries[i];
-                var b = Ui.Instantiate(proto.Window, line.Window, new Int2(i * boxW, 28), $"InfoBox{i + 1}");
-                string color = e.Player is >= 1 and <= 8 ? PlayerColors[e.Player - 1] : "UnknownPlayer";
-                TownUi.SetPicture(b.FindChild("inner", true, false) as Control, Game.Instance.LoadTexture($"UI/Tavern/{color}.(Texture).dds"));
-                Texture2D? pic = e.Hero != null && Combat.CombatIcons.Hero(e.Hero, false) is { } hf ? Game.Instance.LoadTexture(hf)
-                    : e.Creature != null ? TownUi.CreatureIcon(e.Creature) : null;
-                TownUi.SetPicture(b.FindChild("pic", true, false) as Control, pic);
-                string number = e.CountType switch
+            if (boxes != null && proto != null)
+                for (int i = 0; i < cat.Entries.Count; i++)
                 {
-                    -2 => TT("CountTypeUnknown") is { Length: > 0 } u ? u : "???",
-                    -1 => e.Value.ToString(),
-                    _ => TT((cat.Name == "BestCreature" ? "CrCountType" : "CountType") + e.CountType),
-                };
-                var fmt = TT("TooltipFormat");
-                b.SetTooltip(fmt.Replace("<value=name>", TT(cat.Name + "Tooltip")).Replace("<value=number>", e.Player >= 1 || e.CountType != -2 ? number : "???"));
-            }
+                    var e = cat.Entries[i];
+                    var b = i == 0 ? proto : Ui.Instantiate(proto.Window, boxes.Window, new Int2(0, 0), $"InfoBox{i}");
+                    if (i > 0) b.Window.Placement = proto.Window.Placement;
+                    string color = e.Player is >= 1 and <= 8 ? PlayerColors[e.Player - 1] : "UnknownPlayer";
+                    TownUi.SetPicture(b.FindChild("inner", true, false) as Control, Game.Instance.LoadTexture($"UI/Tavern/{color}.(Texture).dds"));
+                    Texture2D? pic = e.Hero != null && Combat.CombatIcons.Hero(e.Hero, false) is { } hf ? Game.Instance.LoadTexture(hf)
+                        : e.Creature != null ? TownUi.CreatureIcon(e.Creature) : null;
+                    TownUi.SetPicture(b.FindChild("pic", true, false) as Control, pic);
+                    string number = e.CountType switch
+                    {
+                        -2 => TT("CountTypeUnknown") is { Length: > 0 } u ? u : "???",
+                        -1 => e.Value.ToString(),
+                        _ => TT((cat.Name == "BestCreature" ? "CrCountType" : "CountType") + e.CountType),
+                    };
+                    var fmt = TT("TooltipFormat");
+                    b.SetTooltip(fmt.Replace("<value=name>", TT(cat.Name + "Tooltip")).Replace("<value=number>", e.Player >= 1 || e.CountType != -2 ? number : "???"));
+                }
+            box.AddItem(line);
         }
     }
 }

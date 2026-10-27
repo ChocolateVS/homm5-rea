@@ -140,6 +140,29 @@ public partial class UiScrollableContainer : UiNode
         Screen?.QueueRelayout();
     }
 
+    /// <summary>
+    /// Container slot 14 (00888fa0): uses another window's scroll bar (a CWindowScrollBar elsewhere on the screen,
+    /// e.g. the kingdom overview's scroll_of_views) instead of its own: the own bar is removed from the window
+    /// (vfunc 0xe4), the container listens to the new one and sets its range again (00887ba0).
+    /// </summary>
+    public void SetScrollBar(UiScrollBar? bar)
+    {
+        if (bar == null || bar == ScrollBar) return;
+        if (ScrollBar is { } own)
+        {
+            Window.Children.Remove(own.Window);
+            own.QueueFree();
+        }
+        ScrollBar = bar;
+        bar.ValueChanged += _ => PlaceContent();
+        UpdateRange();
+    }
+
+    float? _restore;
+
+    /// <summary>Scroll position to apply once the next layout has set the range (refills that keep their place).</summary>
+    public void RestorePosition(float pos) { _restore = pos; Screen?.QueueRelayout(); }
+
     /// <summary>Content size for code-drawn content in <see cref="Content"/> (no items).</summary>
     public void SetContentSize(float size)
     {
@@ -164,6 +187,7 @@ public partial class UiScrollableContainer : UiNode
         bool h = Horizontal;
         Content.Size = h ? new Vector2(size, b.H) : new Vector2(b.W, size);
         ScrollBar?.SetRange(0, size, h ? b.W : b.H);
+        if (_restore is float r && ScrollBar != null) { ScrollBar.SetValue(r); _restore = null; }
         PlaceContent();
     }
 

@@ -56,8 +56,7 @@ public partial class MainMenu : Control
         ReturnScreen = null;
         UiNavigator.Goto(start);
         if (DevArgs.Goto == "create") UiNavigator.Goto("lobby");
-        foreach (var (pos, at) in DevArgs.Clicks)
-            GetTree().CreateTimer(at).Timeout += () => Click(pos);
+        DevArgs.ScheduleInput(GetTree(), fromMenu: true);
     }
 
     internal static void Click(Vector2 pos)

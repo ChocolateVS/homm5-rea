@@ -516,6 +516,8 @@ public static partial class AdventureLauncher
         }
         if (_zoom is float z) screen.World.Camera.SetDistance(z);
         if (_pitch is float pd) screen.World.Camera.SetPitch(pd);
+        // `--click=` / `--wheel=` / `--press=` … run relative to the map being up (the main menu is skipped).
+        H5Reborn.Ui.DevArgs.ScheduleInput(tree);
         if (_testAttack) After(0.5).Timeout += screen.TestAttackNearest;
         if (_endTurn) After(0.5).Timeout += screen.EndTurn;
         if (_meetTest) After(0.5).Timeout += screen.MeetTest;
