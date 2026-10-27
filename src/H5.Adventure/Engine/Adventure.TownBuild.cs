@@ -98,7 +98,8 @@ public sealed partial class Adventure
     /// +500, TOWN_BONUS_250_GOLD +250; with a Resource Silo (marketplace level ≥ 2) the TownTypesInfo silo income, and
     /// +1 ore / +1 wood for TOWN_BONUS_EXTRA_ORE / _EXTRA_WOOD; a built grail +5000; +1 gold per creature with
     /// ABILITY_TAXPAYER (0x46) in the town's garrison; town ability 0x18 (Academy Treasure Cave, TB_SPECIAL_4) +500.
-    /// The extra resource (vcall +0x88 = 00cce3c0, the Trade Guild) is paid in DailyIncome (see Adventure.TradeGuild).
+    /// The building interface's extra income (vcall +0x88 = 00cce3c0, called at 00cd4521 with the gold purse only) adds
+    /// the Trade Guild gold (+0x1d8); its extra resource is paid in DailyIncome (see Adventure.TradeGuild).
     /// </summary>
     public Purse TownIncome(TownState t)
     {
@@ -115,6 +116,7 @@ public sealed partial class Adventure
             if (spec == "TOWN_BONUS_EXTRA_ORE") inc[Purse.Ore] += 1;
             else if (spec == "TOWN_BONUS_EXTRA_WOOD") inc[Purse.Wood] += 1;
         }
+        inc[Purse.Gold] += t.TradeGuildGold;
         if (t.Level("TB_GRAIL") > 0) inc[Purse.Gold] += 5000;
         foreach (var s in t.Garrison)
             if (s is { Count: > 0 } && Core.Creatures.TryGetValue(s.Creature, out var cd) && cd.Has("ABILITY_TAXPAYER"))

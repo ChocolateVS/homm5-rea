@@ -321,6 +321,8 @@ public sealed class TownState
     /// <summary>Trade Guild extra resource (CTown +0x1dc, −1 = none) and amount (+0x1e0), drawn by FUN_00cce410.</summary>
     public int TradeGuildResource = -1;
     public int TradeGuildAmount;
+    /// <summary>Trade Guild gold bonus (CTown +0x1d8), raised by artifacts bought here (FUN_00cd0190), paid with the income.</summary>
+    public int TradeGuildGold;
     /// <summary>BlockTownGarrisonForAI: AI heroes do not exchange creatures with this garrison.</summary>
     public bool AiGarrisonBlocked;
     /// <summary>AllowHeroHiringByRaceInTown / AllowHiringOfHeroInTown (town +0x224), for every player.</summary>

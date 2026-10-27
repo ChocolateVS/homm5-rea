@@ -79,7 +79,7 @@ public sealed class ArtifactMerchantController
     }
 }
 
-/// <summary>The Academy's Artifact Merchant (TB_SPECIAL_3) in the town screen (`buy_artifacts`).</summary>
+/// <summary>A town's Artifact Merchant (Academy TB_SPECIAL_3, Dungeon Trade Guild) in the town screen (`buy_artifacts`).</summary>
 public sealed partial class ArtifactMerchantScreen : TownSubScreen
 {
     readonly ArtifactMerchantController _merchant;

@@ -78,7 +78,7 @@ public sealed partial class Adventure
             && Db.Building(t.Type, c.Building, 1)?.Creature is { } dc && Core.Creatures.TryGetValue(dc, out var dcd))
             t.Available[tier - 1] += dcd.WeeklyGrowth;
         Emit(new BuildingBuilt(t.Object, c.Building, next));
-        if (c.Building == ArtifactMerchantBuilding) StockArtifactMerchants();
+        StockArtifactMerchants();   // 00cd4a40 at 00cd4db7: a merchant town without a CBlackMarket gets one stocked
         foreach (var h in S.Heroes.Where(h => h.Alive && h.InTown == t.Object && c.Building == "TB_MAGIC_GUILD")) LearnFromGuild(h, t);
         if (c.Building == ArcaneForgeBuilding) foreach (var h in S.Heroes.Where(h => h.Alive && h.InTown == t.Object).ToList()) UpgradeMicroArtifacts(h, t);
         return null;

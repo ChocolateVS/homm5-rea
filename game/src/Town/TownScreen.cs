@@ -277,7 +277,8 @@ public partial class TownScreen : Control
             "hero" => VisitingHero() is { } h ? new HeroScreen(Adv, h, this) : GarrisonHero() is { } g ? new HeroScreen(Adv, g, this) : null,
             "upgrade" => new UpgradeCreaturesScreen(this),
             "info" => new TownInfoScreen(this),
-            "artifacts" => Town.Type == "TOWN_ACADEMY" && Town.Level(H5.Adventure.Engine.Adventure.ArtifactMerchantBuilding) > 0 ? new ArtifactMerchantScreen(this) : null,
+            // 00618a90: only when the town has a CBlackMarket (town vf 0x10c, abilities 0x17 / 0x1d).
+            "artifacts" => H5.Adventure.Engine.Adventure.TownHasArtifactMerchant(Town) ? new ArtifactMerchantScreen(this) : null,
             "special" => SpecialScreen(Town.Type),
             "training" => HavenTrainingScreen.CanOpen(this) ? new HavenTrainingScreen(this) : null,
             _ => null,
@@ -339,6 +340,8 @@ public partial class TownScreen : Control
         ("TOWN_STRONGHOLD", "TB_SPECIAL_1") => "guild",   // abilities 0x27..0x29 → FUN_00619d70 (the guild screen)
         ("TOWN_FORTRESS", "TB_SPECIAL_1") => "special",
         ("TOWN_ACADEMY", "TB_SPECIAL_2") => "special",   // town ability 0x16, the Arcane Forge
+        ("TOWN_ACADEMY", "TB_SPECIAL_3") => "artifacts", // 0061b760 cases 0x17 / 0x1d → 00618a90 (artifact merchant)
+        ("TOWN_DUNGEON", "TB_SPECIAL_4") => "artifacts",
         _ => null,
     };
 

@@ -4,8 +4,8 @@ using H5.Adventure.State;
 namespace H5.Adventure.Engine;
 
 /// <summary>
-/// Buy one of an artifact merchant's six artifacts: a town's Artifact Merchant (Academy TB_SPECIAL_3, the hero
-/// in town) or the map's Artifact Merchant wagon (BUILDING_BLACK_MARKET, the hero standing at it).
+/// Buy one of an artifact merchant's six artifacts: a town's Artifact Merchant (Academy TB_SPECIAL_3 or the Dungeon
+/// Trade Guild, the hero in town) or the map's Artifact Merchant wagon (BUILDING_BLACK_MARKET, the hero standing at it).
 /// Exe: CBuyBlackMarketArtifactCmd (vtable 0xe0e270, execute 0x432640).
 /// </summary>
 public sealed record BuyMerchantArtifactCmd(int HeroId, int Market, int Slot) : AdvCommand;
@@ -26,8 +26,16 @@ public sealed partial class Adventure
     static int MerchantSlotClass(int slot) => slot > 4 ? 2 : slot > 2 ? 1 : 0;
 
     bool IsArtifactMerchant(int market) =>
-        S.Town(market) is { } t ? t.Type == "TOWN_ACADEMY" && t.Level(ArtifactMerchantBuilding) > 0
+        S.Town(market) is { } t ? TownHasArtifactMerchant(t)
         : Map.Objects.ElementAtOrDefault(market)?.Shared.Type == "BUILDING_BLACK_MARKET" && !S.Obj(market).Removed;
+
+    /// <summary>
+    /// FUN_00cce140: town ability 0x17 (Academy TB_SPECIAL_3) or 0x1d (Dungeon TB_SPECIAL_4, the Trade Guild). With it
+    /// 00cd4a40 creates the town's CBlackMarket (+0x1c8, town vf 0x10c = 00cd8ed0) on any build when there is none yet,
+    /// and the town screen (0061b760 cases 0x17 / 0x1d → 00618a90) opens the merchant screen.
+    /// </summary>
+    public static bool TownHasArtifactMerchant(TownState t) =>
+        (t.Type == "TOWN_ACADEMY" && t.Level(ArtifactMerchantBuilding) > 0) || HasTradeGuild(t);
 
     void Restock(int market)
     {
@@ -97,6 +105,7 @@ public sealed partial class Adventure
         GiveOne(p, Purse.Gold, -price);
         S.ArtifactMarkets[c.Market][c.Slot] = null;
         GiveArtifact(h, art);
+        if (S.Town(c.Market) is { } town) TradeGuildArtifactBought(town, art);   // 00432640: market owner vf 0x8c
         return null;
     }
 }

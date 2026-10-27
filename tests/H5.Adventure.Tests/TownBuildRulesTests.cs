@@ -183,5 +183,39 @@ public class TownBuildRulesTests(Fixture f)
         extra[res] += amt;
         for (int i = 0; i < 6; i++) Assert.Equal(before[i] + expected[i] + extra[i], p.Purse[i]);
     }
-}
 
+    [Fact]
+    public void TradeGuildIsAnArtifactMerchantAndPurchasesRaiseItsBonus()
+    {
+        // FUN_00cce140: abilities 0x17 / 0x1d give the town a CBlackMarket (stocked on a build, 00cd4a40 at 00cd4db7).
+        // CBuyBlackMarketArtifactCmd 00432640 → town vf 0x8c = FUN_00cd0190: minor +25 gold (+1 amount for wood / ore),
+        // major +50 / +1, relic +100 / +2; the gold is paid with the town income (00cd43f0 → vf 0x88 at 00cd4521).
+        var (g, t) = Town();
+        t.Type = "TOWN_DUNGEON";
+        t.Built["TB_SPECIAL_4"] = 1;
+        Assert.True(Engine.Adventure.TownHasArtifactMerchant(t));
+        g.StockArtifactMerchants();
+        var stock = g.MerchantStock(t.Object);
+        Assert.Equal(6, stock.Count);
+        g.RollTradeGuild(t);
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == g.Current.Index);
+        h.InTown = t.Object;
+        var incomeBefore = g.TownIncome(t)[Purse.Gold];
+        int gold = 0, amount = t.TradeGuildAmount;
+        bool woodOre = t.TradeGuildResource <= Purse.Ore;
+        for (int slot = 0; slot < 6; slot++)
+        {
+            if (stock[slot] is not { } art) continue;
+            Assert.True(g.Apply(new BuyMerchantArtifactCmd(h.Id, t.Object, slot) { Player = g.Current.Index }).Ok);
+            switch (f.Db.ArtifactClass[art])
+            {
+                case "ARTF_CLASS_MINOR": gold += 25; if (woodOre) amount += 1; break;
+                case "ARTF_CLASS_MAJOR": gold += 50; amount += 1; break;
+                case "ARTF_CLASS_RELIC": gold += 100; amount += 2; break;
+            }
+        }
+        Assert.True(gold > 0);
+        Assert.Equal((gold, amount), (t.TradeGuildGold, t.TradeGuildAmount));
+        Assert.Equal(incomeBefore + gold, g.TownIncome(t)[Purse.Gold]);
+    }
+}

@@ -22,6 +22,24 @@ public sealed partial class Adventure
     }
 
     /// <summary>
+    /// FUN_00cd0190 (town vf 0x8c), called by CBuyBlackMarketArtifactCmd (execute 00432640) after the artifact is given:
+    /// with ability 0x1d, by the artifact's class (record +0x24, FUN_00ca63d0): minor gold +25 and, when the drawn
+    /// resource is wood or ore, amount +1; major gold +50, amount +1; relic gold +100, amount +2. The gold (+0x1d8) stays
+    /// and is paid with the town income (00cd43f0 → vf 0x88); the amount lasts until the next draw (00cce410).
+    /// </summary>
+    public void TradeGuildArtifactBought(TownState t, string artifact)
+    {
+        if (!HasTradeGuild(t) || !Db.ArtifactClass.TryGetValue(artifact, out var cls)) return;
+        bool woodOre = t.TradeGuildResource is Purse.Wood or Purse.Ore;
+        switch (cls)
+        {
+            case "ARTF_CLASS_MINOR": t.TradeGuildGold += 25; if (woodOre) t.TradeGuildAmount += 1; break;
+            case "ARTF_CLASS_MAJOR": t.TradeGuildGold += 50; t.TradeGuildAmount += 1; break;
+            case "ARTF_CLASS_RELIC": t.TradeGuildGold += 100; t.TradeGuildAmount += 2; break;
+        }
+    }
+
+    /// <summary>
     /// FUN_00cd2b90 (the town's daily handler), owner part: TOWN_BONUS_MERCURY / _SULFUR / _GEMS / _CRYSTALS
     /// (0x1e..0x21, jump table 00cd2cc4) add 2 of that resource, and the extra income (building interface vcall 0x88 =
     /// 00cce3c0 with gold excluded) adds +0x1e0 of resource +0x1dc; both straight to the purse, beside the town income.
