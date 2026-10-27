@@ -925,13 +925,19 @@ public partial class AdventureScreen : Control
     Task Dialog(Action<Action> open)
     {
         var tcs = new TaskCompletionSource();
+        var before = new HashSet<Node>(_dialogLayer.GetChildren());
         open(() => tcs.TrySetResult());
         // Automated runs close boxes by themselves after a moment (so screenshots still catch them).
-        if (Autoplay || DevAutoCloseBoxes) GetTree().CreateTimer(0.6).Timeout += () =>
+        // Only the boxes this dialog opened: screens opened meanwhile (a town via --town-open) share the layer.
+        if (Autoplay || DevAutoCloseBoxes)
         {
-            foreach (var c in _dialogLayer.GetChildren()) c.QueueFree();
-            tcs.TrySetResult();
-        };
+            var mine = _dialogLayer.GetChildren().Where(c => !before.Contains(c)).ToList();
+            GetTree().CreateTimer(0.6).Timeout += () =>
+            {
+                foreach (var c in mine) if (IsInstanceValid(c)) c.QueueFree();
+                tcs.TrySetResult();
+            };
+        }
         return tcs.Task;
     }
 
