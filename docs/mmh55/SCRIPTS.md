@@ -124,7 +124,7 @@ nil to IsObjectExists.
 ## 6. Natives ledger
 Every native MMH55's system scripts and campaign/SP map scripts call (213, from the inventory call graphs) was compared
 with its exe wrapper (decompiles of all 300 natives). The 16 "missing" natives of `missing_natives.txt` were registered
-before but as inert flags; they are now real (group AI/hiring). Totals: 24 MATCH, 182 FIXED, 11 GAP-only; many FIXED rows
+before but as inert flags; they are now real (group AI/hiring). Totals: 24 MATCH, 185 FIXED, 8 GAP-only; many FIXED rows
 note a residual gap.
 
 | Native | Group | exe VA | Status | Note |
@@ -217,12 +217,12 @@ note a residual gap.
 | UnreserveHero | heroes | 0x005c2c90 | FIXED | errors not specified / not exists / not belong / not in reserve of player #%i; only removes the hero from the reserve (invented tavern-pool add removed). GAP: owner vf0x170 exact effect untraced |
 | AddObjectCreatures | objects/towns | 0x005ccec0 | FIXED | order name/object("doesn't exist")/creature("Invalid creature ID #%i")/count<1("Quantity cannot be negative", 0 now errors)/army("has no army"); invented "monster can only get own type" error removed. GAP: slot arg and the bool the exe pushes not modelled |
 | CreateArtifact | objects/towns | 0x005c8730 | FIXED | "Invalid artifact ID #%i"; floor 0..1 "Invalid floor ID #%i", "Floor #%i is not exists", "Cell (%i,%i) is not inside floor #%i borders", "Can`t find an empty cell to place artifact" |
-| CreateCaravan | objects/towns | 0x005e32c0 | FIXED | empty name -> "Caravan name is not specified! ..."; player 1..8 else "Incorrect player ID #%i!". GAP: no caravan engine (stored in Settings) |
+| CreateCaravan | objects/towns | 0x005e32c0 | FIXED | empty name -> "Caravan name is not specified! ..."; player 1..8 else "Incorrect player ID #%i!". GAP: no caravan engine (stored in Settings) Traced: Execute 0x00429250 → player by id (world vf 0x68), FUN_00cea010 (existing caravan?) else FUN_00ce5b30 creates a caravan map object from the command's fields; not ported (no caravan object in our engine). |
 | CreateDwelling | objects/towns | 0x005c9530 | FIXED | was taking a shared path; now (name,townType,tier,owner,x,y,floor,rot): "Invalid town type %d!", "Invalid player %d!", floor/cell checks, RPGRoot DWELLINGS_<town> group link clamp(tier-1,0,3), tier 4..7 enables one post creature / 8 all, footprint "Cell is not empty: (%d, %d, %d)", group errors |
 | CreateMonster | objects/towns | 0x005c8aa0 | FIXED | removed invented duplicate-name error and count clamp; checks type, floor, cell, empty cell ("Can`t find an empty cell to place monster"), mood 0..3, courage 0..2 in exe order; rotation truncated to int degrees. GAP: 10th arg unknown; FUN_005c0f00 nearest-cell search approximated by FreeTileNear |
 | CreateStatic | objects/towns | 0x005d1810 | FIXED | "Not found static shared '%s'!", floor/cell checks, rotation arg now applied, no empty-cell check (as exe). GAP: args 7/8 (flag, 100) not modelled |
 | DestroyTownBuildingToLevel | objects/towns | 0x005c8140 | FIXED | "Town name is not specified"/"Town \"%s\" is not specified"/"not containing building #%i" (building must exist in the town type), level<0 and >max errors; canRebuild==0 caps the limit (was ignored) |
-| DisableAutoEnterTown | objects/towns | 0x005e6a00 | FIXED | "Object \"%s\" does not exist!"/"is not town!"; the exe ignores the flag argument and always disables. GAP: engine does not consume the setting |
+| DisableAutoEnterTown | objects/towns | 0x005e6a00 | FIXED | "Object \"%s\" does not exist!"/"is not town!"; the exe ignores the flag argument and always disables. GAP: engine does not consume the setting Traced: CDisableAutoEnterTownCmd (Execute 0x0042a4b0) → CAdvMapTown vf 0x130 (0x00cd8980) sets +0x221, getter vf 0x12c (0x00cd8970); reader not isolated (slot 0x12c has 64 call sites). |
 | GenerateMonsters | objects/towns | 0x005cf8c0 | FIXED | exe validations (min groups<0, max<min, min count<1, max<min) instead of clamping; group count min+rng%n; groups spread to random existing floors (rng&1). GAP: per-floor placement algorithm (FUN_00ce9e40..) not reproduced |
 | GetObjectCreatures | objects/towns | 0x005cc590 | FIXED | object check before creature id; "Object \"%s\" doesn`t exist", "Invalid creature ID #%i", "has no army" (objects without army now error) |
 | GetObjectCreaturesTypes | objects/towns | 0x005cc820 | FIXED | distinct creature types in slot order (was one per slot with duplicates), padded to 7 returns; exe error texts |
@@ -236,7 +236,7 @@ note a residual gap.
 | IsObjectExists | objects/towns | 0x005c8520 | FIXED | empty name now errors "Object name is not specified" (was false) |
 | IsObjectInRegion | objects/towns | 0x005cbcd0 | FIXED | object checked before region; empty region name -> "Region name is not specified" |
 | IsObjectVisible | objects/towns | 0x005cc2a0 | FIXED | "Invalid player ID #%i (must be in [1,8] )", "Player #%i doesn`t taking part in the current game", empty-name error |
-| MakeTownMovable | objects/towns | 0x005e5770 | FIXED | "does not exist!"/"is not town!" texts. GAP: engine does not consume the setting (SetObjectPosition moves towns regardless) |
+| MakeTownMovable | objects/towns | 0x005e5770 | FIXED | "does not exist!"/"is not town!" texts. GAP: engine does not consume the setting (SetObjectPosition moves towns regardless) Traced: CMakeTownMovableCmd (Execute 0x0042a450) → CAdvMapTown vf 0x124 (0x00cd8940) sets +0x220 = 1, getter vf 0x128 (0x00cd8960); reader not isolated (26 call sites of that slot). |
 | MarkObjectAsVisited | objects/towns | 0x005ce0f0 | FIXED | interactive object or hero; "is not exists or is not interactive", "is enabled, so can`t mark it as visited manualy", hero must be on map ("Hero \"%s\" is not on map"). GAP: object-specific visited state (interactive vf 0x1c, e.g. banks) approximated by hero.VisitedOnce |
 | OpenCircleFog | objects/towns | 0x005da1e0 | FIXED | player 1..8 / taking-part errors, "Floor #%i is not exists", "Range is negative". GAP: exact circle shape of CModifyPlayerFogInCircleCmd not traced |
 | OpenRegionFog | objects/towns | 0x005d9df0 | FIXED | reveals exactly the region cells (new engine hook Adventure.ScriptRevealTiles) instead of a circle; floor/border errors. GAP: border margin (floor vf 0x68) assumed 0 |
@@ -259,7 +259,7 @@ note a residual gap.
 | SetRegionBlocked | objects/towns | 0x005d9a50 | FIXED | player -1 = all players (stored per player so unblocking one after block-all works); 0 or out of range -> "Invalid player number #%i" (0 used to mean all) |
 | SetStandState | objects/towns | 0x005d0570 | FIXED | "Stand name is not specified", "Stand \"%s\" is not exists", state index bounded by the shared's <States> count |
 | SetTownBuildingLimitLevel | objects/towns | 0x005c7dd0 | FIXED | removed invented "Level (%d) is lesser than 0"; added "Limit (%i) is greater then maximum ..." check; building existence check |
-| SetWarfogBehaviour | objects/towns | 0x005df9d0 | FIXED | 3rd arg player (-1 = local player, approximated by the current player); "No player!", "Specified player is not human player!"; stored per player. GAP: fog engine does not consume it |
+| SetWarfogBehaviour | objects/towns | 0x005df9d0 | FIXED | 3rd arg player (-1 = local player, approximated by the current player); "No player!", "Specified player is not human player!"; stored per player. GAP: fog engine does not consume it Traced: Execute 0x00428a20 → player vf 0x1dc(byte, byte); the fog consumer is not traced. |
 | SiegeTown | objects/towns | 0x005d4460 | FIXED | hero must be on the map ("Hero \"%s\" is not exists", "is not belongs to any player"), "Can`t siege allied town", arena existence ("Arena \"%s\" is not exists"). GAP: arena not passed to the battle |
 | StartCombat | objects/towns | 0x005d3b90 | FIXED | native-side parsing with all exe messages in order (string-or-nil types, count>0, creature type 0 allowed, amount message formatted with the amount as the exe does, script/arena existence); enemy hero must be a reserved hero of a player; allowQuickCombat stored. GAP: a reserved enemy hero is not resolvable by the battle engine |
 | TransformTown | objects/towns | 0x005c9ee0 | FIXED | "Invalid town type #%i"; format "sn" added to NativeFormats. GAP: the exe recreates the town (only name/owner kept, TOWN_TRANSFORM effect); the engine only changes the type |
