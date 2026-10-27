@@ -143,4 +143,75 @@ public class AiPart4Tests(Fixture f)
         Assert.Equal(200 - give, p.Purse[Purse.Wood]);
         Assert.Equal(give * q, p.Purse[Purse.Gold]);
     }
+
+    static (Engine.Adventure G, HeroState Com, HeroState Sup) TwoHeroes(Fixture f)
+    {
+        var g = f.NewGame("A2M1", 5);
+        int me = g.Current.Index;
+        var com = g.S.Heroes.First(x => x.Alive && x.Owner == me);
+        var sup = StateCopy.Of(g.S).Heroes.First(x => x.Id == com.Id);
+        sup.Id = g.S.Heroes.Max(x => x.Id) + 1;
+        sup.Pos = com.Pos with { X = com.Pos.X + 1 };
+        g.S.Heroes.Add(sup);
+        return (g, com, sup);
+    }
+
+    [Fact]
+    public void Transfer_rule_table_decides_who_takes()
+    {
+        // DAT_00f7a6f0[role(a) · 4 + role(b)]: commander with its own supplier → the commander takes (rule 6);
+        // two collectors → nothing (0).
+        var (g, com, sup) = TwoHeroes(f);
+        var st = Stats(g);
+        var ai = new OriginalAdventureAI();
+        ai.SetRole(com.Id, HeroRole.Commander, sup.Id);
+        ai.SetRole(sup.Id, HeroRole.Supplier, com.Id);
+        var sides = ai.TransferSides(g, st, com, sup);
+        Assert.NotNull(sides);
+        Assert.Equal(com.Id, sides!.Value.Taker.Id);
+        Assert.Equal(sup.Id, sides.Value.Giver.Id);
+        ai.SetRole(com.Id, HeroRole.Collector, sup.Id);
+        ai.SetRole(sup.Id, HeroRole.Collector, com.Id);
+        Assert.Null(ai.TransferSides(g, st, com, sup));
+    }
+
+    [Fact]
+    public void Commander_takes_the_stacks_that_raise_its_estimate_and_the_giver_keeps_one_creature()
+    {
+        // FUN_00cde140 / FUN_00cdd180: greedy moves while the taker's estimate grows; the giver hero's last stack
+        // leaves one creature behind.
+        var (g, com, sup) = TwoHeroes(f);
+        var st = Stats(g);
+        var ai = new OriginalAdventureAI();
+        ai.SetRole(com.Id, HeroRole.Commander, sup.Id);
+        ai.SetRole(sup.Id, HeroRole.Supplier, com.Id);
+        string c = com.Army.Live().First().Creature;
+        for (int i = 0; i < 7; i++) sup.Army[i] = null;
+        sup.Army[0] = new Stack(c, 40);
+        int before = com.Army.Live().Where(x => x.Creature == c).Sum(x => x.Count);
+        ai.HeroesMeet(g, st, com, sup);
+        Assert.Equal(before + 39, com.Army.Live().Where(x => x.Creature == c).Sum(x => x.Count));
+        Assert.Equal(1, sup.Army.Live().Sum(x => x.Count));
+        // FUN_00c5ab30: having met its partner, the supplier is a collector again.
+        Assert.Equal(HeroRole.Collector, ai.Role(sup.Id));
+    }
+
+    [Fact]
+    public void Supplier_test_needs_more_than_ten_percent_for_the_commander()
+    {
+        // FUN_00c5af30: commander's estimate after the simulated transfer / before > 1.1; nothing changes in the game.
+        var (g, com, sup) = TwoHeroes(f);
+        var st = Stats(g);
+        var ai = new OriginalAdventureAI();
+        string c = com.Army.Live().First().Creature;
+        for (int i = 0; i < 7; i++) sup.Army[i] = null;
+        sup.Army[0] = new Stack(c, 500);
+        string hash = g.S.ComputeHash();
+        Assert.True(ai.SupplierTest(g, st, sup, com, HeroRole.Collector, HeroRole.Commander));
+        Assert.Equal(hash, g.S.ComputeHash());
+        sup.Army[0] = new Stack(c, 2);
+        sup.Army[1] = new Stack(c, 1);
+        Assert.False(ai.SupplierTest(g, st, sup, com, HeroRole.Collector, HeroRole.Commander));
+        Assert.False(ai.SupplierTest(g, st, sup, com, HeroRole.Freelancer, HeroRole.Commander));
+    }
 }

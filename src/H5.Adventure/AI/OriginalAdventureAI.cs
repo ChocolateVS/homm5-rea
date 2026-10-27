@@ -92,6 +92,7 @@ public sealed partial class OriginalAdventureAI
                 LevelUps(g, h, st);
                 var target = ChooseDestination(g, h, roles, diff, st, claimed);
                 if (target == null) break;
+                var mate = g.S.Heroes.FirstOrDefault(x => x.Alive && x.Owner == me && x.Id != h.Id && !x.Garrisoned && x.Pos == target.Value.Tile);
                 var r = Send(g, new MoveHeroCmd(h.Id, target.Value.Tile) { Player = me });
                 actions++;
                 if (!r.Ok) break;
@@ -100,6 +101,12 @@ public sealed partial class OriginalAdventureAI
                 _lastCost[h.Id] = target.Value.Cost;
                 ResolvePending(g, battleSeedBase + (ulong)actions);
                 LevelUps(g, h, st);
+                // Visiting an own hero (004e6d30 → FUN_00c5ad90): the army exchange by roles and the role update.
+                if (mate is { Alive: true } && h.Alive && Math.Max(Math.Abs(mate.Pos.X - h.Pos.X), Math.Abs(mate.Pos.Y - h.Pos.Y)) <= 1)
+                {
+                    HeroesMeet(g, st, h, mate);
+                    foreach (var x in new[] { h, mate }) if (_role.TryGetValue(x.Id, out var nr)) roles[x.Id] = nr;
+                }
                 // BlockTownGarrisonForAI: no creature exchange with that garrison (exe reader 0x008687a0).
                 if (h.InTown >= 0 && g.S.Town(h.InTown) is { } home && home.Owner == me && !home.AiGarrisonBlocked) TakeGarrison(g, h, home);
                 // A hero in an own town buys creatures (009c4710 step 6), at an own external dwelling too (004e6d30 case 5).
@@ -164,8 +171,8 @@ public sealed partial class OriginalAdventureAI
     ///     FUN_00a33600 dx² + dy² + (floors · map +0x6c)², strict &lt;, heroes without a map position skipped);
     ///     the partner becomes its collector (2) or supplier (3) and leaves the list;
     ///   • everybody left becomes a freelancer (role 0).
-    /// GAP-details: the collector / supplier test FUN_00c5af30 (army value FUN_004eb050 before / after a simulated
-    /// transfer, ratio vs DAT_00e72bf8) is not ported — partners are collectors; the floor factor (map +0x6c) is not
+    /// The partner's role is collector or, when the supplier test FUN_00c5af30 holds, supplier (see SupplierTest).
+    /// GAP-details: the floor factor (map +0x6c) is not
     /// traced (taken as 0); heroes fixed by SetHeroRoleMode (vf 0x2d4 ∈ {1, 2}, left out of the list and given role 0)
     /// are not separated because the script setting is not visible to the engine.
     /// </summary>
@@ -183,7 +190,10 @@ public sealed partial class OriginalAdventureAI
             roles[c.Id] = HeroRole.Commander;
             if (partner == null) continue;
             partners[c.Id] = partner.Id;
-            roles[partner.Id] = HeroRole.Collector;
+            // 00869ad0: the partner is a supplier when the supplier test (FUN_00c5af30) holds with the roles of the
+            // previous assignment (the new roles are only applied after the pass), else a collector.
+            roles[partner.Id] = SupplierTest(g, st, partner, c, _role.GetValueOrDefault(partner.Id, HeroRole.Freelancer),
+                _role.GetValueOrDefault(c.Id, HeroRole.Freelancer)) ? HeroRole.Supplier : HeroRole.Collector;
             partners[partner.Id] = c.Id;
             list.Remove(partner);
         }
