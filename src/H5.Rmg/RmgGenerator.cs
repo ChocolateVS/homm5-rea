@@ -49,6 +49,14 @@ public sealed class RmgZone
     public bool HasTown => Def.Town || Player != 0;
     public (int X, int Y)? TownPos;      // +0x0c/+0x10 once placed (town anchor, or tile centroid)
     public bool AnchorOnly;              // TownPos is the centroid of a zone without a town
+    public bool TownPlaced;              // +0xf8: set by 0x00923e50 once the town is committed
+    // Point lists of the road stages (0x0091bdb0, 0x0091bf90), positions as floats like the exe's.
+    public List<(float X, float Y)> RoadNodes = new();        // +0x68: visit tiles of committed objects, connection points
+    public List<(float X, float Y)> Network = new();          // +0x74: main-road tiles (flag 8)
+    public List<(float X, float Y)> MineNetwork = new();      // +0x80: mine-road tiles (flag 0x10)
+    public List<(float X, float Y)> ObjectPaths = new();      // +0x8c: object-path tiles (flag 0x20)
+    public List<(float X, float Y)> ConnectionPoints = new(); // +0xc0
+    public List<(float X, float Y)> MinePoints = new();       // +0x11c: visit tiles of the zone's mines
     public override string ToString() => $"zone {Id} floor {Floor} race {Race} player {Player} R={Radius} c=({CenterX},{CenterY})";
 }
 
@@ -64,6 +72,8 @@ public sealed class RmgFloor
     public readonly int[] Occ;
     /// <summary>+0xf4: scratch distance used by object placement (distance to towns/objects).</summary>
     public readonly int[] Dist;
+    /// <summary>+0xd4 in the exe's own encoding (<see cref="TileFlags"/>), for the writers ported so far.</summary>
+    public readonly int[] Flags;
     public readonly NivalHashMap<RmgZone> Zones = new();
 
     public RmgFloor(int index, int w, int h)
@@ -72,6 +82,7 @@ public sealed class RmgFloor
         Zone = Enumerable.Repeat(-1, w * h).ToArray();
         BorderDist = Enumerable.Repeat(-1, w * h).ToArray();
         Occ = new int[w * h];
+        Flags = new int[w * h];
         Dist = Enumerable.Repeat(-1, w * h).ToArray();
     }
 
@@ -154,11 +165,14 @@ public sealed partial class RmgGenerator
         CreateConnections(result);
         Mark("MainObjects");
         PlaceMainObjects(result);
+        Mark("Roads");
         CreateRoads(result);
+        ReserveRoadTiles();
         PlaceStatics(result);
         Mark("AdditionalObjects");
         PlaceUndergroundTreasures(result);
         PlaceTreasureBlocks(result);
+        PaintRoads(result);
         Finish(result);
         Mark("Finished");
         return result;

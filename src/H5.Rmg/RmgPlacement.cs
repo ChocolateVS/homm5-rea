@@ -98,7 +98,15 @@ public sealed partial class RmgGenerator
         var f = Floors[z.Floor];
         var active = new HashSet<(int, int)>(d.Active.Count > 0 ? new[] { ActiveTile(d, x, y, quarter) } : Array.Empty<(int, int)>());
         foreach (var (tx, ty) in Footprint(d, x, y, quarter, includeActive: false))
-            if (f.In(tx, ty)) f.Occ[f.At(tx, ty)] = Occ.Object;
+            if (f.In(tx, ty)) { f.Occ[f.At(tx, ty)] = Occ.Object; f.Flags[f.At(tx, ty)] = TileFlags.Blocked; }
+        // 0x0091a420: blockedTiles get flag 2, then every activeTiles entry flag 4 and a node on the zone list +0x68.
+        foreach (var a in d.Active)
+        {
+            var t = H5.Adventure.Map.Footprint.Place(new Tile(x, y), a, quarter * MathF.PI / 2);
+            if (!f.In(t.X, t.Y)) continue;
+            f.Flags[f.At(t.X, t.Y)] = TileFlags.Active;
+            z.RoadNodes.Add((t.X, t.Y));
+        }
         foreach (var (tx, ty) in active)
             if (f.In(tx, ty)) f.Occ[f.At(tx, ty)] = Occ.Entrance;
         if (access.X >= 0 && f.In(access.X, access.Y) && f.Occ[f.At(access.X, access.Y)] == Occ.Free)
@@ -356,6 +364,7 @@ public sealed partial class RmgGenerator
                 if (!CanPlace(z, d, cx, cy, q, out var access)) { cands.RemoveAt(i); continue; }
                 town = Commit(r, z, race.TownProto, d, cx, cy, q, access, "town");
                 z.TownPos = (ax, ay);
+                z.TownPlaced = true;
                 // Post-placement (0x0092a400 / 0x00babbf0): the town's point light draws twice.
                 Rng.Next(2);
                 Rng.Next(2);
@@ -421,6 +430,9 @@ public sealed partial class RmgGenerator
             }
         r.Passages.Add((a.Floor, a.Id, b.Id, pick.X, pick.Y));
         r.Passages.Add((a.Floor, b.Id, a.Id, pick.Bx, pick.By));
+        // 0x00925a00: each side's connection point goes to the zone's connection list +0xc0 and its node list +0x68.
+        a.ConnectionPoints.Add((pick.X, pick.Y)); a.RoadNodes.Add((pick.X, pick.Y));
+        b.ConnectionPoints.Add((pick.Bx, pick.By)); b.RoadNodes.Add((pick.Bx, pick.By));
         if (guard > 0) PlaceGuard(r, a, pick.X, pick.Y, guard, "connection guard");
         return true;
     }
@@ -440,6 +452,9 @@ public sealed partial class RmgGenerator
             var o = PlaceRandom(r, z, monolith, cands, "teleport");
             if (o == null) continue;
             r.Passages.Add((z.Floor, z.Id, z == a ? b.Id : a.Id, o.X, o.Y));
+            // TODO(exe): which point a teleport adds to +0xc0 is not traced (0x0091a950 writes the list); ours: its visit tile.
+            var (vx, vy) = ActiveTile(o.Def, o.X, o.Y, o.Quarter);
+            z.ConnectionPoints.Add((vx, vy));
             if (guard > 0 && r.Access.TryGetValue(o, out var acc)) PlaceGuard(r, z, acc.X, acc.Y, guard, "teleport guard");
         }
     }
@@ -495,6 +510,8 @@ public sealed partial class RmgGenerator
             // 0x00905e60 here for surface zones only (zone floor +0xf4 == 0); underground zones get theirs after
             // the statics (0x00906380, PlaceUndergroundTreasures).
             if (z.Floor == 0) PlaceZoneTreasures(r, z);
+            ConnectObjectNodes(z);
+            ReserveRoadTiles();
         }
     }
 
@@ -594,6 +611,12 @@ public sealed partial class RmgGenerator
                 var cands = SpreadCandidates(r, z, type < 2 ? near : far, 2, 5);
                 var o = PlaceRandom(r, z, race.Mines[type], cands, "mine");
                 if (o == null || !r.Access.TryGetValue(o, out var acc)) continue;
+                // 0x0091c4a0 → 0x0091a420 with the mine list +0x11c: the mine's visit tiles.
+                foreach (var a in o.Def.Active)
+                {
+                    var t = H5.Adventure.Map.Footprint.Place(new Tile(o.X, o.Y), a, o.Rot);
+                    if (f.In(t.X, t.Y)) z.MinePoints.Add((t.X, t.Y));
+                }
                 int level = type < 2 ? p.Mine1LevelGuardLevel : type == 6 ? p.MineGoldGuardLevel : p.Mine2LevelGuardLevel;
                 PlaceGuard(r, z, acc.X, acc.Y, GuardPower(level), "mine guard");
                 MarkNear(f, o, 2);
@@ -609,7 +632,11 @@ public sealed partial class RmgGenerator
                 for (int dy = -radius; dy <= radius; dy++)
                 {
                     int nx = tx + dx, ny = ty + dy;
-                    if (f.In(nx, ny) && f.Occ[f.At(nx, ny)] == Occ.Free && Rng.Float(0, 1) < 0.8f) f.Occ[f.At(nx, ny)] = Occ.Near;
+                    if (f.In(nx, ny) && f.Occ[f.At(nx, ny)] == Occ.Free && Rng.Float(0, 1) < 0.8f)
+                    {
+                        f.Occ[f.At(nx, ny)] = Occ.Near;
+                        // TODO(exe): 0x0091c4a0 writes flag 2 around the mine under its own rule; this ring is not that rule.
+                    }
                 }
     }
 
@@ -805,74 +832,12 @@ public sealed partial class RmgGenerator
         }
     }
 
-    // ------------------------------------------------------------------ roads (exe 0x00904cf0)
-
-    void CreateRoads(RmgResult r)
-    {
-        foreach (var z in Zones)
-        {
-            var f = Floors[z.Floor];
-            (int X, int Y)? hub = z.TownPos is { } tp && r.StartTownAccess(z, out var acc) ? acc : HubOf(z);
-            if (hub == null) continue;
-            var race = _db.Race(z.Race);
-            string roadTile = race.RoadTile.Length > 0 ? race.RoadTile : race.SecondaryRoadTile;
-            foreach (var p in r.Passages.Where(p => p.Floor == z.Floor && p.Zone == z.Id))
-            {
-                var path = FindPath(f, z, hub.Value, (p.X, p.Y), allowZoneExit: false);
-                if (path == null) continue;
-                foreach (var (x, y) in path)
-                {
-                    int i = f.At(x, y);
-                    if (f.Occ[i] == Occ.Free || f.Occ[i] == Occ.Near) f.Occ[i] = Occ.Road;
-                    if (z.TownPos != null && roadTile.Length > 0) r.TileLayers[z.Floor][y * W + x] = roadTile;
-                }
-            }
-        }
-    }
-
     (int X, int Y)? HubOf(RmgZone z)
     {
         var f = Floors[z.Floor];
         var best = z.Tiles.Where(t => f.Occ[f.At(t.X, t.Y)] is Occ.Free or Occ.Road)
             .OrderBy(t => (t.X - z.CenterX) * (t.X - z.CenterX) + (t.Y - z.CenterY) * (t.Y - z.CenterY)).FirstOrDefault((-1, -1));
         return best.Item1 < 0 ? null : best;
-    }
-
-    /// <summary>A* over walkable tiles of a zone (objects, guards and obstacles block; roads are cheap).</summary>
-    List<(int X, int Y)>? FindPath(RmgFloor f, RmgZone z, (int X, int Y) from, (int X, int Y) to, bool allowZoneExit)
-    {
-        var open = new PriorityQueue<(int X, int Y), float>();
-        var cost = new Dictionary<(int, int), float> { [from] = 0 };
-        var prev = new Dictionary<(int, int), (int, int)>();
-        open.Enqueue(from, 0);
-        while (open.TryDequeue(out var cur, out _))
-        {
-            if (cur == to) break;
-            foreach (var (dx, dy) in Neighbours8)
-            {
-                var n = (X: cur.X + dx, Y: cur.Y + dy);
-                if (!f.In(n.X, n.Y)) continue;
-                int i = f.At(n.X, n.Y);
-                if (n != to)
-                {
-                    if (!allowZoneExit && f.Zone[i] != z.Id) continue;
-                    if (f.Occ[i] is Occ.Object or Occ.Obstacle or Occ.Guard or Occ.Entrance) continue;
-                }
-                float step = (dx != 0 && dy != 0 ? 1.41f : 1f) * (f.Occ[i] == Occ.Road ? 0.5f : 1f);
-                float c = cost[cur] + step;
-                if (cost.TryGetValue(n, out var old) && old <= c) continue;
-                cost[n] = c;
-                prev[n] = cur;
-                float h = MathF.Sqrt((n.X - to.X) * (n.X - to.X) + (n.Y - to.Y) * (n.Y - to.Y));
-                open.Enqueue(n, c + h);
-            }
-        }
-        if (!prev.ContainsKey(to) && from != to) return null;
-        var path = new List<(int, int)>();
-        for (var p = to; p != from; p = prev[p]) path.Add(p);
-        path.Add(from);
-        path.Reverse();
-        return path;
     }
 
     // ------------------------------------------------------------------ statics (exe 0x00906130)

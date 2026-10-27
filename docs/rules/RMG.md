@@ -28,7 +28,8 @@ Analysis: private Ghidra project `tools/ghidra-projects/rmg`, scripts in `tools/
 | Treasures / chests | `0x0091f8a0`, `0x00905e60` | ported (table, count, candidates, surface zones only) |
 | Buildings, shrines, observatories | `0x0091bb10`, `0x00920000`, `0x009219a0`, `0x00920c50` | ported (AUDIT_RMG.md) |
 | Guards | `0x00ba7690`, `0x00ba6910`, `0x00ba71b0` | ported: two-stack army templates (p = 0.6) and the single-stack band search |
-| Connections, roads, statics, treasure blocks | `0x00904920`, `0x00904cf0`, `0x00906130`, `0x009198a0` | reimplemented from the observed structure, not line by line |
+| Roads | `0x0091aee0`, `0x0091bdb0`, `0x00904cf0` → `0x0091bf90`, paint `0x00916570` | ported (AUDIT_RMG.md); the node lists come from our own placers |
+| Connections, statics, treasure blocks | `0x00904920`, `0x00906130`, `0x009198a0` | reimplemented from the observed structure, not line by line |
 
 ## RNG (0x00ba6650 …)
 

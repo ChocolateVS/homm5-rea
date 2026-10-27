@@ -244,6 +244,35 @@ public class GeneratorTests(RmgFixture f)
         Assert.All(r.Objects.Where(x => x.Floor == 1 && x.Note is "treasure" or "chest"), x => Assert.True(r.Objects.IndexOf(x) > lastStatic));
     }
 
+    /// <summary>
+    /// Roads (0x0091aee0 via 0x0091bdb0 and 0x0091bf90): the pass-bucket search gives the same maps as the literal
+    /// full-scan transcription of the exe's loop; main roads (flag 8) start at the town.
+    /// </summary>
+    [Fact]
+    public void RoadSearchMatchesTheFullScanTranscription()
+    {
+        var t = f.Db.Templates.Values.First(t => !t.TestTemplate && t.ListedFor(1, false, false, t.MinPlayers));
+        foreach (int seed in new[] { 3, 1234 })
+        {
+            var o = new RmgOptions { Template = t.Name, Size = 1, Seed = seed, Players = t.MinPlayers };
+            var a = new RmgGenerator(f.Db, o);
+            var ra = a.Generate();
+            RmgGenerator.FullScanRoadSearch = true;
+            try
+            {
+                var b = new RmgGenerator(f.Db, o);
+                var rb = b.Generate();
+                Assert.Equal(ra.Objects.Select(x => (x.Shared, x.X, x.Y)), rb.Objects.Select(x => (x.Shared, x.X, x.Y)));
+                Assert.Equal(a.Floors[0].Flags, b.Floors[0].Flags);
+                Assert.Equal(a.Rng.Counter, b.Rng.Counter);
+            }
+            finally { RmgGenerator.FullScanRoadSearch = false; }
+            foreach (var z in a.Zones.Where(z => z.TownPlaced && z.Network.Count > 0))
+                Assert.Equal((float)z.TownPos!.Value.X, z.Network[0].X);
+            Assert.Contains(a.Floors[0].Flags, fl => (fl & TileFlags.MainRoad) != 0);
+        }
+    }
+
     [StockFact]
     public void MineAndPrisonCountsFollowTheTemplate()
     {
