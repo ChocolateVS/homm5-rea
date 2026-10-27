@@ -74,4 +74,19 @@ public class CombatScriptTests(ScriptDataFixture f)
         Assert.NotEmpty(cs.TakeScriptEvents());
         Assert.Empty(cs.TakeScriptEvents());
     }
+
+    [Fact]
+    public void CommandsFillTheUnitsAtbUnlessTheLastArgumentIsSet()
+    {
+        // CCombatArenaImpl vf 0x2c (0x00566090): CSetATBValue(unit, 1.0) is posted first unless the bool is true.
+        var b = new Battle(f.Db, BattleSetup.CreateDuel(f.Db, 0, 1, 3));
+        var opening = b.Begin();
+        var cs = Session(b, "");
+        ((IBattleScriptSession)cs).Begun(opening);
+        var units = b.State.Units.Where(u => u.Alive && u.Kind == UnitKind.Creature && u.Id != b.State.Active).Take(2).ToList();
+        foreach (var u in units) u.Atb = 0.25;
+        Assert.True(cs.L.DoString($"commandDefend('{cs.NameOf(units[0])}', 1) commandDefend('{cs.NameOf(units[1])}')", "t"));
+        Assert.Equal(0.25, units[0].Atb);
+        Assert.Equal(1.0, units[1].Atb);
+    }
 }

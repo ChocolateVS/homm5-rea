@@ -276,6 +276,18 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
         return setups;
     }
 
+    /// <summary>
+    /// CPlayer turn state 2 (ghost). GiveTurnToNextPlayers (00998060): with Ghost Mode on in a network game and
+    /// simultaneous turns off, every alive human other than the next player gets state 2 when that player is human
+    /// (state 1 when it is a computer). Simultaneous phase: humans that ended their turn move to state 2 (tick 00998520).
+    /// </summary>
+    public bool InGhostMode(int mapPlayer)
+    {
+        if (_ghosts == null || _g.Player(mapPlayer) is not { Alive: true } || !_humanPlayers.Contains(mapPlayer)) return false;
+        if (_simul is { Active: true, InPhase: true }) return _simul.Ended.Contains(mapPlayer);
+        return _humanPlayers.Contains(_g.Current.Index) && _g.Current.Index != mapPlayer;
+    }
+
     void StartScripts()
     {
         if (_lm.Files == null || string.IsNullOrEmpty(_lm.Map.ScriptSource)) return;
@@ -286,6 +298,7 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
             // Map-script dialogs cannot block a shared game: they are answered on the host and
             // their texts are passed on as messages.
             _scripts.AutoAnswerUi = true;
+            _scripts.PlayerInGhostMode = InGhostMode;
             _scripts.Start(_lm.Map.ScriptPath, _lm.Map.ScriptSource);
         }
         catch (Exception) { _scripts = null; }

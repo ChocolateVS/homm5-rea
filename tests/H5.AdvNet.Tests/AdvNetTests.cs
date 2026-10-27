@@ -278,6 +278,23 @@ public class SessionTests
     }
 }
 
+public class GhostStateTests
+{
+    [Fact]
+    public void WaitingHumansAreGhostsOnlyWithGhostMode()
+    {
+        // 00998060: Ghost Mode, sequential turns, a human to move → the other alive humans have turn state 2
+        // (IsPlayerInGhostMode); the player to move does not.
+        var h = new Harness(2, s => s.GhostMode = true);
+        var active = h.Clients.Single(c => c.IsMyTurn);
+        var waiting = h.Clients.Single(c => !c.IsMyTurn);
+        Assert.True(h.Session.InGhostMode(waiting.MyPlayer));
+        Assert.False(h.Session.InGhostMode(active.MyPlayer));
+        var off = new Harness(2);
+        Assert.False(off.Session.InGhostMode(off.Clients.Single(c => !c.IsMyTurn).MyPlayer));
+    }
+}
+
 public class LoopbackTests
 {
     [Fact]

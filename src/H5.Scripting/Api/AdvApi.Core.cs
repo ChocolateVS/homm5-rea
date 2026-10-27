@@ -137,7 +137,13 @@ public sealed partial class AdventureScripting
         Reg("GetCurrentPlayer", c => c.Return(Game.Player(S.CurrentPlayer) != null ? S.CurrentPlayer + 1 : -1));
         // 0x005d75c0 / 0x005d7810: player turn status vf0x44 == 0 (current) / == 2 (ghost mode, not modelled).
         Reg("IsPlayerCurrent", c => c.ReturnBool(TurnPlayerArg(c) == S.CurrentPlayer));
-        Reg("IsPlayerInGhostMode", c => { TurnPlayerArg(c); c.ReturnBool(false); });
+        // 0x005d7810: id 1..8 ("Invalid player ID %d!"), then "No player with ID %d!", then player vf 0x44 (turn state) == 2.
+        Reg("IsPlayerInGhostMode", c =>
+        {
+            int p = TurnPlayerArg(c);
+            if (Game.Player(p) == null) throw c.Error($"No player with ID {p + 1}!");
+            c.ReturnBool(PlayerInGhostMode?.Invoke(p) ?? false);
+        });
         // 0x005d7cb0: the team has players and every active one (state 1) is on its turn.
         Reg("IsTeamCurrent", c =>
         {

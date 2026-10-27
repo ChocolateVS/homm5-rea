@@ -152,7 +152,7 @@ note a residual gap.
 | GiveBorderguardKey | core | 0x005c2540 | FIXED | "Invalid player ID #%i", doesn't-taking-part, "Invalid borderguard key color #%i" (1..8) |
 | HasBorderguardKey | core | 0x005c22a0 | FIXED | same validation as GiveBorderguardKey; returns bool |
 | IsPlayerCurrent | core | 0x005d75c0 | FIXED | "Invalid player ID %d!"; returns turn status vf0x44==0 (= current player) |
-| IsPlayerInGhostMode | core | 0x005d7810 | GAP | validation added ("Invalid player ID %d!"); status==2 ghost mode is not modelled in the engine, always false |
+| IsPlayerInGhostMode | core | 0x005d7810 | FIXED | "Invalid player ID %d!" (1..8), then "No player with ID %d!" (added), then player vf 0x44 (0x00500c10: turn state +0x634) == 2. State 2 (00998060): network game with Ghost Mode (+0x8a) and sequential turns, an alive human other than the next player when that player is human; simultaneous phase: humans that ended their turn (tick 00998520). Single player: +0x8a = the never-written global 0x00ffad3c (0x0098f76e), so always false. AdventureNetSession.InGhostMode feeds AdventureScripting.PlayerInGhostMode |
 | IsTeamCurrent | core | 0x005d7cb0 | FIXED | true iff team has players and every active (state 1) member is on its turn (was: current player's team) |
 | IsTilePassable | core | 0x005e11a0 | FIXED | errors: "Can`t run: cant get ground floor", "X/Y is out of range (must be in [0,%i], now is %i" (was silently false); passability via vf0x160 approximated by IsBlocked |
 | IsTutorialEnabled | core | 0x007742f0 | MATCH | profile tutorial_show != 0 (context is CTutorialScriptContext, a base of CAdventureController) |
@@ -309,7 +309,7 @@ note a residual gap.
 | GetRagePoints | combat | 0x0056e4a0 | FIXED | as GetRageLevel (rage points vf2d0) |
 | GetUnitManaPoints | combat | 0x00569570 | FIXED | any unit incl. heroes (vf234); heroes errored before (MMH55 reads hero mana) |
 | GetUnitMaxManaPoints | combat | 0x00569790 | FIXED | any unit incl. heroes (vf238) |
-| GetUnitPosition | combat | 0x00568060 | GAP | any unit, returns x,y (vf40); hero position on the arena not modelled (we return -1/width, height/2) |
+| GetUnitPosition | combat | 0x00568060 | GAP | any unit, returns x,y of unit vf 0x40; for CCombatHero that is the unit-base cell getter 0x00a6a040 (via thunk 0x00bc2a80), the same field pair creatures use. GAP: where the arena places the hero (the writer of that cell) is not located (COMBAT.md "hero / war machine cells"); we return -1/width, height/2 |
 | GetUnitSide | combat | 0x005677a0 | FIXED | unchanged logic; dead stacks now resolvable (exe keeps dead units in the world; UnitDeath handlers call GetUnitSide on them) |
 | GetUnitType | combat | 0x005679f0 | FIXED | HERO0 CREATURE1 WAR_MACHINE2 BUILDING3 SPELL_SPAWN4: siege buildings 3, spell-spawned objects 4 (were: all obstacles 3, phantom clones 4) |
 | GetUnits | combat | 0x00567c70 | FIXED | "Invalid side id #%i" / "Invalid type id #%i" (0..4) checks added; type 0 = army hero; order = army unit list (we use unit order, alive only — dead-stack membership in army list not traced) |
@@ -323,7 +323,7 @@ note a residual gap.
 | combatReadyPerson | combat | 0x0056cd60 | FIXED | returns nothing while finished (vf98) or not started (vf124); else ready unit name (vfbc(0)) |
 | combatSetPause | combat | 0x0056d3c0 | MATCH | posts pause(bool) command; presentation/flow flag |
 | combatStarted | combat | 0x0056cbd0 | MATCH | !world vf124 (preparation/tactics) ~ our Started (set at DoStart) |
-| commandDefend | combat | 0x0056b950 | FIXED | arena lookup error "There is no unit on combat arena with name \"%s\""; then arena vf2c(unit, bool). GAP: meaning of the bool arg (sb[false]) not traced, ignored |
+| commandDefend | combat | 0x0056b950 | FIXED | arena lookup error "There is no unit on combat arena with name \"%s\""; then arena vf 0x2c (0x00566090). The bool (b[false]) of all command* natives (arena vf 0x2c..0x3c: 0x00566090, 0x005661f0, 0x00566300, 0x00566580, 0x00566460): false first posts CSetATBValue(unit, 1.0) (Execute 0x004e0970 → unit vf 0x18c), then the action command — now done for commandDefend/Move/MoveAttack/Shot/DoSpecial/DoSpell. GAP: the exe's action commands (CDefendCreatureCmd 0x004e0280) act on the unit without a turn check; ours go through Battle.Apply (legal on the unit's turn only) |
 | playAnimation | combat | 0x0056d170 | FIXED | unknown unit → "There is no unit on combat arena with name \"%s\""; action must be 0..5 else "Non valid action type %d"; posts animation command (event) |
 | removeUnit | combat | 0x0056b1d0 | FIXED | unknown name only logged "There is no unit on combat arena with name <n>" (no error; we threw before); else posts remove command. GAP: removing a hero not modelled (event only) |
 | setATB | combat | 0x0056cf60 | FIXED | arena lookup error text "There is no unit on combat arena with name \"%s\""; posts ATB(number) command (we set immediately) |

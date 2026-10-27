@@ -65,7 +65,7 @@ public sealed class CombatScripting : IBattleScriptSession
 
     const string HeroPrefix = "hero:";
 
-    string NameOf(Unit u)
+    public string NameOf(Unit u)
     {
         if (_names.TryGetValue(u.Id, out var n)) return n;
         var kind = u.Kind switch { UnitKind.WarMachine => "war_machine", UnitKind.Obstacle => "building", _ => "creature" };
@@ -406,24 +406,24 @@ public sealed class CombatScripting : IBattleScriptSession
         Reg("commandDefend", c =>
         {
             int a = ResolveOnArena(c, 0);
-            Command(c, new DefendCmd(a) { Side = SideOf(a) });
+            Command(c, new DefendCmd(a) { Side = SideOf(a) }, a, keepAtbArg: 1);
         });
         Reg("commandMove", c =>
         {
             var u = UnitArg(c, 0);
-            Command(c, new MoveCmd(u.Id, new Cell(c.Int(1), c.Int(2))) { Side = u.Side });
+            Command(c, new MoveCmd(u.Id, new Cell(c.Int(1), c.Int(2))) { Side = u.Side }, u.Id, keepAtbArg: 3);
         });
         Reg("commandMoveAttack", c =>
         {
             var u = UnitArg(c, 0);
             int target = Resolve(c, 1);
             Cell? from = c.Has(2) ? new Cell(c.Int(2), c.Int(3)) : null;
-            Command(c, new AttackCmd(u.Id, target, from) { Side = u.Side });
+            Command(c, new AttackCmd(u.Id, target, from) { Side = u.Side }, u.Id, keepAtbArg: 4);
         });
         Reg("commandShot", c =>
         {
             var u = UnitArg(c, 0);
-            Command(c, new ShootCmd(u.Id, Resolve(c, 1)) { Side = u.Side });
+            Command(c, new ShootCmd(u.Id, Resolve(c, 1)) { Side = u.Side }, u.Id, keepAtbArg: 2);
         });
         Reg("commandDoSpecial", c =>
         {
@@ -431,7 +431,7 @@ public sealed class CombatScripting : IBattleScriptSession
             int abilityId = c.Int(1);
             Cell? cell = c.Has(2) ? new Cell(c.Int(2), c.Int(3)) : null;
             var ability = Db.Abilities.Keys.ElementAtOrDefault(abilityId) ?? abilityId.ToString();
-            Command(c, new UseAbilityCmd(u.Id, ability, null, cell) { Side = u.Side });
+            Command(c, new UseAbilityCmd(u.Id, ability, null, cell) { Side = u.Side }, u.Id, keepAtbArg: 4);
         });
         Reg("commandDoSpell", c =>
         {
@@ -441,7 +441,7 @@ public sealed class CombatScripting : IBattleScriptSession
             Cell? cell = null;
             if (c.Has(2) && c.Arg(2).IsString) target = Resolve(c, 2);
             else if (c.Has(2)) cell = new Cell(c.Int(2), c.Int(3));
-            Command(c, new CastSpellCmd(a, spell, target, cell) { Side = SideOf(a) });
+            Command(c, new CastSpellCmd(a, spell, target, cell) { Side = SideOf(a) }, a, keepAtbArg: 4);
         });
 
         Reg("combatStarted", c => c.ReturnBool(Started));
@@ -586,8 +586,19 @@ public sealed class CombatScripting : IBattleScriptSession
         return null;
     }
 
-    void Command(HostContext c, BattleCommand cmd)
+    /// <summary>
+    /// command* natives: the arena methods (CCombatArenaImpl vf 0x2c..0x3c = 0x00566090, 0x005661f0, 0x00566300,
+    /// 0x00566580, 0x00566460) first post CSetATBValue(unit, 1.0) (Execute 0x004e0970 → unit vf 0x18c) unless the
+    /// trailing bool argument (default false) is set, then the action command. GAP: the exe's action commands act on the
+    /// unit without a turn check (CDefendCreatureCmd 0x004e0280); ours go through Battle.Apply (the unit's turn).
+    /// </summary>
+    void Command(HostContext c, BattleCommand cmd, int actor, int keepAtbArg)
     {
+        if (!c.Bool(keepAtbArg))
+        {
+            if (Actor.IsHero(actor)) S.Heroes[Actor.HeroSide(actor)].Atb = 1.0;
+            else if (S.Unit(actor) is { } u) u.Atb = 1.0;
+        }
         var r = Battle.Apply(cmd);
         if (!r.Ok) { Log.Add($"script command rejected: {cmd.GetType().Name}: {r.Error}"); return; }
         Emit("script_command", ("command", cmd.GetType().Name));

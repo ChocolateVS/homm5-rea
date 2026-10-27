@@ -105,6 +105,13 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
     public bool RunWithoutMapScript { get; set; }
 
     /// <summary>
+    /// Player turn state 2 ("ghost", CPlayer +0x634, vf 0x44 = 0x00500c10) for IsPlayerInGhostMode, supplied by a
+    /// networked host that runs Ghost Mode (engine player index). Null: never (single player: the setting +0x8a only
+    /// comes from the unset global 0x00ffad3c, 0x0098f76e).
+    /// </summary>
+    public Func<int, bool>? PlayerInGhostMode { get; set; }
+
+    /// <summary>
     /// Registers the API, then starts the scripts like FUN_00992d00: only when the map has a script
     /// (else nothing runs at all); DoString(scripts/advmap-startup.lua), DoString("createAdvmapAliases();"),
     /// one scheduler pass (engine vf8 = FUN_004c0720), then the map script text if it is not empty.
