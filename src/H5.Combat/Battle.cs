@@ -186,6 +186,7 @@ public sealed partial class Battle
             if (next == null) { EndBattle(null, "no actors"); return; }
             int actor = next.Value;
             S.Active = actor;
+            S.TurnArmy = Actor.IsHero(actor) ? Actor.HeroSide(actor) : S.Unit(actor)!.Side;   // exe CCombat +0x170 (FUN_00af5930)
             S.TurnCounter++;
             Emit(new TurnStarted(actor, S.Time));
             if (BeginTurn(actor)) return;      // needs a command
@@ -422,12 +423,14 @@ public sealed partial class Battle
         if (S.Phase == BattlePhase.Combat) AdvanceUntilDecision();
     }
 
-    bool CheckEnd()
+    internal bool CheckEnd()
     {
         if (S.Phase == BattlePhase.Finished) return true;
         bool alive0 = SideHasArmy(0), alive1 = SideHasArmy(1);
         if (alive0 && alive1) return false;
-        int? winner = alive0 ? 0 : alive1 ? 1 : 1;   // mutual destruction: defender holds the field
+        // Mutual destruction (exe FUN_00af2380 from the end check FUN_00af4f40): the army whose stack was given the
+        // current turn (CCombat +0x170), else the attacker (+0x8c, vf 0x84(1)).
+        int? winner = alive0 ? 0 : alive1 ? 1 : S.TurnArmy ?? 0;
         EndBattle(winner, "army destroyed");
         return true;
     }

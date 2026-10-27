@@ -79,4 +79,33 @@ public class AuditSweep11Tests(GameDataFixture f)
         corpse.Count = 0;
         Assert.Equal(1, b.CorpseExplosionPower(corpse));
     }
+
+    // exe FUN_00af4f40 → FUN_00af2380: when both armies are defeated (army vf 0xe8 = FUN_004d8b00) the winner is the army
+    // stored at CCombat +0x170 — set by the turn hand-out FUN_00af5930 to the next actor's army — else the attacker
+    // (+0x8c: army vf 0xac "is attacker" = FUN_004d9380 compares with CCombat vf 0x84(1) = +0x8c). The engine gave the
+    // field to the defender.
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 1)]
+    [InlineData(null, 0)]
+    public void MutualDestructionGoesToTheArmyWhoseTurnItIs(int? turnArmy, int winner)
+    {
+        var (b, a, t) = Make("CREATURE_PEASANT", 5, "CREATURE_PEASANT", 5, new Cell(5, 5), new Cell(6, 5));
+        b.Begin();
+        foreach (var u in b.State.Units) u.Count = 0;
+        b.State.TurnArmy = turnArmy;
+        b.State.Phase = BattlePhase.Combat;
+        Assert.True(b.CheckEnd());
+        Assert.Equal(winner, b.State.Winner);
+    }
+
+    [Fact]
+    public void TheTurnArmyFollowsTheActor()
+    {
+        var (b, a, _) = Make("CREATURE_PEASANT", 5, "CREATURE_PEASANT", 5, new Cell(1, 1), new Cell(14, 10));
+        b.Begin();
+        int actor = b.State.Active!.Value;
+        int side = Actor.IsHero(actor) ? Actor.HeroSide(actor) : b.State.Unit(actor)!.Side;
+        Assert.Equal(side, b.State.TurnArmy);
+    }
 }

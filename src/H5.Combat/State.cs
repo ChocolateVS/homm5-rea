@@ -266,6 +266,9 @@ public sealed class BattleState
     public double Time;
     /// <summary>Current actor (unit id, or Actor.Hero(side)); null while no one is acting.</summary>
     public int? Active;
+    /// <summary>Side of the army whose stack (or hero) was last given a turn — exe CCombat +0x170, set by the turn hand-out
+    /// FUN_00af5930 from the next actor's army (vf 0x18); null before the first turn.</summary>
+    public int? TurnArmy;
     public int? Winner;
     public string EndReason = "";
     public int NextId;
