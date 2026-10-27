@@ -24,6 +24,9 @@ Never invent behaviour: anything not traced is a GAP row in the relevant ledger 
   Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
   Claude-Session: https://claude.ai/code/session_01FWTqTU1tQESu5xj2cE7AqR
 
+- Known, harmless: `git fsck`/auto-gc report tree 575ae451 / object 16faaf32 ("scripts" blob vs tree). That object is only in
+  old pre-repair commits kept by the local reflog; main and origin are clean. Don't report it; use `git -c gc.auto=0` if gc is in the way.
+
 ## Machine
 - The user uses this PC. Godot only off-screen: `--position -32000,-32000 --window-size=1920x1080`.
 - Never launch H5_Game.exe or any mod exe; never capture the user's screen.
