@@ -198,6 +198,12 @@ public sealed class HeroState
     public List<SkillEntry> Skills = new();
     public List<string> Perks = new();
     public List<string> Spells = new();
+    /// <summary>
+    /// Spells of <see cref="Spells"/> that are only book entries with sources (hero +0x1e0 entry +0x8 list: the perk
+    /// that granted them, FUN_00b545a0 with a source), not in the known list (+0x204). A plain learn drops the entry
+    /// from here (its sources are then not kept).
+    /// </summary>
+    public Dictionary<string, List<string>> SpellSources = new();
     /// <summary>Talisman of Adventure level (hero +0x230; vf 0x300 / setter 0x304 = FUN_00b4ce30), Walker's Hut.</summary>
     public int TalismanLevel;
     public List<string> Artifacts = new();

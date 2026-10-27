@@ -706,14 +706,59 @@ public sealed partial class Adventure
         Emit(new ArtifactGained(h.Id, id));
     }
 
-    /// <summary>Learns a spell (unless <paramref name="force"/>, only when <see cref="CanLearnSpell"/> allows it).</summary>
-    bool LearnSpell(HeroState h, string spell, bool force)
+    /// <summary>
+    /// Learns a spell (unless <paramref name="force"/>, only when <see cref="CanLearnSpell"/> allows it): the hero's
+    /// learn = FUN_00b545a0 (vf 0xec / 0xe8). Without a source the spell joins the known list (hero +0x204, what vf 0xdc
+    /// reads) and FUN_00b4bb40 follows — even when it was known already: with Empowered Spells (0x46) its empowered
+    /// version (FUN_00a34060), with its Master perk (FUN_00a33cf0) held its mass version (FUN_00a33eb0), each learned with
+    /// that perk as the source. With a <paramref name="source"/> (a perk) only the book (+0x1e0) gets the entry and the
+    /// source joins it (<see cref="HeroState.SpellSources"/>). Returns whether something new was learned.
+    /// </summary>
+    bool LearnSpell(HeroState h, string spell, bool force, string? source = null)
     {
-        if (h.Spells.Contains(spell)) return false;
         if (!force && !CanLearnSpell(h, spell)) return false;
-        h.Spells.Add(spell);
-        Emit(new SpellLearned(h.Id, spell));
-        return true;
+        if (source != null)
+        {
+            if (h.Spells.Contains(spell))
+            {
+                if (h.SpellSources.TryGetValue(spell, out var l) && !l.Contains(source)) l.Add(source);
+                return false;
+            }
+            h.Spells.Add(spell);
+            h.SpellSources[spell] = new() { source };
+            Emit(new SpellLearned(h.Id, spell));
+            return true;
+        }
+        bool learned = !KnowsSpell(h, spell);
+        if (learned)
+        {
+            h.SpellSources.Remove(spell);
+            if (!h.Spells.Contains(spell)) { h.Spells.Add(spell); Emit(new SpellLearned(h.Id, spell)); }
+        }
+        LearnFollowUps(h, spell);
+        return learned;
+    }
+
+    /// <summary>Hero vf 0xdc (FUN_00b4c670): the spell is in the known list (+0x204), not only a sourced book entry.</summary>
+    public static bool KnowsSpell(HeroState h, string spell) => h.Spells.Contains(spell) && !h.SpellSources.ContainsKey(spell);
+
+    /// <summary>FUN_00a33eb0: the mass version of a spell (none for anything else).</summary>
+    static string? MassVersion(string spell) =>
+        spell.StartsWith("SPELL_", StringComparison.Ordinal) && MassSpellPerk.ContainsKey("SPELL_MASS_" + spell["SPELL_".Length..])
+            ? "SPELL_MASS_" + spell["SPELL_".Length..] : null;
+
+    /// <summary>FUN_00a34060: the empowered version of a spell, when the table has one.</summary>
+    string? EmpoweredVersion(string spell) =>
+        spell.StartsWith("SPELL_", StringComparison.Ordinal) && !spell.StartsWith("SPELL_EMPOWERED_", StringComparison.Ordinal)
+            && Core.Spell("SPELL_EMPOWERED_" + spell["SPELL_".Length..]) is { } e ? e.Id : null;
+
+    /// <summary>FUN_00b4bb40, after a plain learn (see <see cref="LearnSpell"/>).</summary>
+    void LearnFollowUps(HeroState h, string spell)
+    {
+        if (h.HasPerk("HERO_SKILL_EMPOWERED_SPELLS") && EmpoweredVersion(spell) is { } emp)
+            LearnSpell(h, emp, force: true, source: "HERO_SKILL_EMPOWERED_SPELLS");
+        if (MassVersion(spell) is { } mass && MassSpellPerk[mass] is var perk && h.HasPerk(perk))
+            LearnSpell(h, mass, force: true, source: perk);
     }
 
     /// <summary>Mass spells and the Master perk each needs (FUN_00a33e20 / FUN_00a33cf0).</summary>

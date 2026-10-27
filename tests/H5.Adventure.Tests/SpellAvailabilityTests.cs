@@ -176,4 +176,59 @@ public class SpellAvailabilityTests(Fixture f)
         g.ScriptLearnPerk(h, "HERO_SKILL_ABSOLUTE_WIZARDY");
         Assert.Equal(new[] { "SPELL_FIREBALL", "SPELL_MAGIC_ARROW", "SPELL_SUMMON_BOAT" }, h.Spells.OrderBy(s => s, StringComparer.Ordinal));
     }
+    [Fact]
+    public void MasterPerksGiveTheMassVersionsOfKnownSpells()
+    {
+        // 00b54770 cases 0x2e..0x33 (00b5527a): the known list +0x204, FUN_00a344c0 / FUN_00a33eb0, learned with the perk as source.
+        var g = Game();
+        var h = Hero(g);
+        h.Spells.AddRange(new[] { "SPELL_CURSE", "SPELL_SLOW", "SPELL_WEAKNESS" });
+        g.ScriptLearnPerk(h, "HERO_SKILL_MASTER_OF_CURSES");
+        Assert.Equal(new[] { "SPELL_CURSE", "SPELL_SLOW", "SPELL_WEAKNESS", "SPELL_MASS_CURSE", "SPELL_MASS_WEAKNESS" }, h.Spells);
+        Assert.Equal(new[] { "HERO_SKILL_MASTER_OF_CURSES" }, h.SpellSources["SPELL_MASS_CURSE"]);
+        Assert.False(Engine.Adventure.KnowsSpell(h, "SPELL_MASS_CURSE"));
+        Assert.True(Engine.Adventure.KnowsSpell(h, "SPELL_CURSE"));
+    }
+
+    [Fact]
+    public void LearningASpellWithItsMasterPerkOrEmpoweredSpellsAddsTheirVersions()
+    {
+        // 00b545a0 → 00b4bb40: Empowered Spells (0x46) → FUN_00a34060, the spell's Master perk → FUN_00a33eb0.
+        var g = Game();
+        var h = Hero(g);
+        h.Perks.Add("HERO_SKILL_MASTER_OF_WRATH");
+        h.Perks.Add("HERO_SKILL_EMPOWERED_SPELLS");
+        g.ScriptLearnSpell(h, "SPELL_HASTE");
+        g.ScriptLearnSpell(h, "SPELL_MAGIC_ARROW");
+        g.ScriptLearnSpell(h, "SPELL_CURSE");
+        Assert.Equal(new[] { "SPELL_HASTE", "SPELL_MASS_HASTE", "SPELL_MAGIC_ARROW", "SPELL_EMPOWERED_MAGIC_ARROW", "SPELL_CURSE" }, h.Spells);
+    }
+
+    [Fact]
+    public void EmpoweredSpellsGivesTheEmpoweredVersionsOfKnownSpells()
+    {
+        // 00b54770 case 0x46: FUN_00a34060 over the known list +0x204.
+        var g = Game();
+        var h = Hero(g);
+        h.Spells.AddRange(new[] { "SPELL_MAGIC_ARROW", "SPELL_BLESS" });
+        g.ScriptLearnPerk(h, "HERO_SKILL_EMPOWERED_SPELLS");
+        Assert.Equal(new[] { "SPELL_MAGIC_ARROW", "SPELL_BLESS", "SPELL_EMPOWERED_MAGIC_ARROW" }, h.Spells);
+    }
+
+    [Fact]
+    public void AbsoluteWizardrySpellsAreSourcedAndItsFallThroughGivesNoMassSpells()
+    {
+        // Case 0x89 learns with the perk as source (no 00b4bb40, not in +0x204); the fall-through into 00b5527a calls
+        // FUN_00a344c0(0x89, spell), which never holds.
+        var g = Game("SPELL_CURSE");
+        var h = Hero(g);
+        h.Perks.Add("HERO_SKILL_MASTER_OF_CURSES");
+        g.ScriptLearnPerk(h, "HERO_SKILL_ABSOLUTE_WIZARDY");
+        Assert.Equal(new[] { "SPELL_CURSE" }, h.Spells);
+        Assert.False(Engine.Adventure.KnowsSpell(h, "SPELL_CURSE"));
+        // A plain learn afterwards puts it in the known list and runs 00b4bb40.
+        g.ScriptLearnSpell(h, "SPELL_CURSE");
+        Assert.True(Engine.Adventure.KnowsSpell(h, "SPELL_CURSE"));
+        Assert.Equal(new[] { "SPELL_CURSE", "SPELL_MASS_CURSE" }, h.Spells);
+    }
 }

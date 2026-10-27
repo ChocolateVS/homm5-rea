@@ -322,12 +322,16 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// The spells 00b54770 gives from the map's spell manager (world vf 0x34, slot 0x14 = the main list +0x24 of a circle):
+    /// The spells 00b54770 gives, each learned with the perk as the source (vf 0xec(spell, param_3[1])), from the map's
+    /// spell manager (world vf 0x34, slot 0x14 = the main list +0x24 of a circle):
     /// Insights (case 0x77): circles 1, 2, 3 in turn, the first holding spells the hero can learn (vf 0xe4) and does
     /// not know (vf 0xdc) gives one of them at random (hero RNG +0x1a0); Secrets of Destruction (case 0x92): one random
     /// unknown DESTRUCTIVE spell (FUN_00a34350 = 0) of circles 1..3 together; Absolute Wizardry (case 0x89): every spell of
-    /// circles 1..5 (vf 0xec, no can-learn test). Case 0x89 then falls through into the Master-perk mass-spell grant
-    /// (cases 0x2e..0x33, 00b5527a), which is not ported.
+    /// circles 1..5 (vf 0xec, no can-learn test), then falls through into the mass grant below (00b5527a) with its own id,
+    /// which FUN_00a344c0 never matches — nothing more.
+    /// The Master perks (cases 0x2e..0x33, 00b5527a..00b5533a): for each spell of the known list (+0x204, in order) whose
+    /// Master perk (FUN_00a344c0: FUN_00a33cf0(spell) = the perk) is this one, its mass version (FUN_00a33eb0, when not 0)
+    /// is collected, then all are learned. Empowered Spells (case 0x46): the same over FUN_00a34060.
     /// </summary>
     void PerkSpellsOnLearn(HeroState h, string id)
     {
@@ -336,9 +340,9 @@ public sealed partial class Adventure
             case "HERO_SKILL_INSIGHTS":
                 for (int lvl = 1; lvl <= 3; lvl++)
                 {
-                    var cand = Buckets.All[lvl].Where(sp => CanLearnSpell(h, sp) && !h.Spells.Contains(sp)).ToList();
+                    var cand = Buckets.All[lvl].Where(sp => CanLearnSpell(h, sp) && !KnowsSpell(h, sp)).ToList();
                     if (cand.Count == 0) continue;
-                    LearnSpell(h, cand[S.Rng.Next(cand.Count)], force: true);
+                    LearnSpell(h, cand[S.Rng.Next(cand.Count)], force: true, source: id);
                     return;
                 }
                 break;
@@ -346,13 +350,22 @@ public sealed partial class Adventure
             {
                 var cand = new List<string>();
                 for (int lvl = 1; lvl <= 3; lvl++)
-                    cand.AddRange(Buckets.All[lvl].Where(sp => SchoolNo(Core.Spell(sp)!.School) == 0 && !h.Spells.Contains(sp)));
-                if (cand.Count > 0) LearnSpell(h, cand[S.Rng.Next(cand.Count)], force: true);
+                    cand.AddRange(Buckets.All[lvl].Where(sp => SchoolNo(Core.Spell(sp)!.School) == 0 && !KnowsSpell(h, sp)));
+                if (cand.Count > 0) LearnSpell(h, cand[S.Rng.Next(cand.Count)], force: true, source: id);
                 break;
             }
             case "HERO_SKILL_ABSOLUTE_WIZARDY":
                 for (int lvl = 1; lvl <= 5; lvl++)
-                    foreach (var sp in Buckets.All[lvl].ToList()) LearnSpell(h, sp, force: true);
+                    foreach (var sp in Buckets.All[lvl].ToList()) LearnSpell(h, sp, force: true, source: id);
+                break;
+            case "HERO_SKILL_MASTER_OF_CURSES" or "HERO_SKILL_MASTER_OF_MIND" or "HERO_SKILL_MASTER_OF_SICKNESS"
+                or "HERO_SKILL_MASTER_OF_BLESSING" or "HERO_SKILL_MASTER_OF_ABJURATION" or "HERO_SKILL_MASTER_OF_WRATH":
+                foreach (var mass in h.Spells.Where(s => KnowsSpell(h, s)).Select(MassVersion).ToList())
+                    if (mass != null && MassSpellPerk[mass] == id) LearnSpell(h, mass, force: true, source: id);
+                break;
+            case "HERO_SKILL_EMPOWERED_SPELLS":
+                foreach (var emp in h.Spells.Where(s => KnowsSpell(h, s)).Select(EmpoweredVersion).ToList())
+                    if (emp != null) LearnSpell(h, emp, force: true, source: id);
                 break;
         }
     }
