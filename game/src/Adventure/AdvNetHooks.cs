@@ -36,7 +36,7 @@ static class AdvNetHooks
         {
             var lm = AdvNetGame.Maps.Load(plan.Settings);
             var seed = BitConverter.ToUInt64(System.Security.Cryptography.RandomNumberGenerator.GetBytes(8));
-            var session = AdventureSession.StartLocal(lm, plan.Humans.Keys, seed, plan.Settings.Difficulty);
+            var session = AdventureSession.StartLocal(lm, plan.Humans.Keys, seed, plan.Settings.Difficulty, plan.Settings.Rmg);
             AdventureScreen.Open(session);
             return true;
         };

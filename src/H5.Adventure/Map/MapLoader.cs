@@ -103,6 +103,7 @@ public sealed class MapLoader
                 Race = p.Str("Race"), Colour = p.Str("Colour"), Behaviour = p.Str("Behaviour"),
                 MainTownUid = UidFromHref(p.Href("MainTown")), MainHeroUid = UidFromHref(p.Href("MainHero")),
                 HeroInTown = p.Bool("HeroInTown"), DefaultBonus = p.Str("DefaultBonus"),
+                CanBeDisabled = p.Bool("CanBeDisabled"), CanChangeBonus = p.Bool("CanChangeBonus"),
                 ReserveHeroes = p.Items("ReserveHeroes").Select(x => x.Value.Trim()).Where(s => s.Length > 0).ToList(),
                 BannedHeroes = tf.StrItems("BannedHeroes"), AllowedHeroes = tf.StrItems("AllowedHeroes"),
                 BannedHeroRaces = tf.StrItems("BannedHeroesRaces"),

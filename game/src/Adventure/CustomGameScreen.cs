@@ -1,66 +1,98 @@
 using System.Text.RegularExpressions;
 using Godot;
+using H5.AdvNet;
 using H5.Adventure.Map;
+using H5Reborn.Options;
 using H5Reborn.Ui;
 
 namespace H5Reborn.Adventure;
 
 /// <summary>
-/// Single Player → Custom Game: the stock UI/CustomGameCreate screen listing every
-/// playable map (stock archives and user .h5m maps) in its Name / Goal / Players /
-/// Map Size columns, with the selected map's name and description; Create starts it.
-/// Rows are drawn with the original fonts over the screen's scrollable container.
+/// Single Player → Custom Game: the stock UI/CustomGameCreate screen (CCustomGameCreateScreen, H5_Game.exe
+/// 00774f80). Lists Maps/SingleMissions, plus Maps/Multiplayer with "Show Multiplayer Maps"
+/// (custom_game_show_mp_maps) and generated maps with "Show RMG Maps" (custom_game_show_rmg_maps), in Name /
+/// Goal / Players / Map Size columns with the stock sort (00705250: clicking the sort column again flips its
+/// direction); Time Limit (1..45 min, else unlimited) and Difficulty bars; Create opens the player setup
+/// (UI/CustomGameWait), Load the load screen, Generate Map the random map generator.
 /// </summary>
 public partial class CustomGameScreen : UiScreen
 {
-    public sealed record MapEntry(MapCatalog.MapRef Ref, string Name, string Description, int Size, int Players, bool Multiplayer);
+    public sealed record MapEntry(MapCatalog.MapRef? Ref, RmgSettings? Rmg, string Name, string Description, int Size,
+        List<int> Teams, string GoalKey, string? CustomGoal, int Folder);
 
-    readonly List<MapEntry> _maps;
+    /// <summary>What Create hands to the player setup screen.</summary>
+    public sealed record Choice(MapEntry Map, int TimeLimitMinutes, int Difficulty);
+    internal static Choice? Pending;
+
+    readonly List<MapEntry> _all;
     readonly Control _list;
-    int _selected, _scroll;
-    bool _showMp = true;
+    readonly CustomMapList.SortState _sort = new();
+    readonly UiScrollerView _timeBar = new(), _diffBar = new();
+    readonly BitmapText _desc = new() { AnchorRight = 1, AnchorBottom = 1, Wrap = true };
+    List<MapEntry> _visible = new();
+    int _selected, _scroll, _top;
     const int RowHeight = 21;
+
+    static bool ShowMp => OptionsStore.GetBool("custom_game_show_mp_maps");
+    static bool ShowRmg => OptionsStore.GetBool("custom_game_show_rmg_maps");
 
     public CustomGameScreen() : base("UI/CustomGameCreate.(WindowScreen).xdb")
     {
-        _maps = LoadEntries();
-        foreach (var n in new[] { "selectionname", "selectionplayers", "selectiongoal", "selectionmapsize", "RMGFilterBtn", "RMGFilterView", "screenshoot1", "screenshoot2", "LoadBtn" })
-            SetVisible(n, false);
+        _all = LoadEntries();
+        _all.AddRange(GeneratedMaps.All().Select(Generated));
+        foreach (var n in new[] { "screenshoot1", "screenshoot2" }) SetVisible(n, false);
+        // The selected map's name and description go in the description panel's scroll area (as on UI/MPCreate).
+        foreach (var n in new[] { "mapname", "mapdescheader", "mapdesc" }) SetVisible(n, false);
+        if (Find("mapinfo/container") is { } descBox) descBox.AddChild(_desc);
         var container = Find("maps/container")!;
         _list = new Control { Name = "Rows", AnchorRight = 1, AnchorBottom = 1, ClipContents = true, MouseFilter = MouseFilterEnum.Stop };
         container.AddChild(_list);
         _list.GuiInput += OnListInput;
+        // TimeLimitBar 1..46 starting at 46 (unlimited); DifficultyBar 4 positions at 1 (00774f80).
+        Find("TimeLimitBar")?.AddChild(_timeBar);
+        _timeBar.Setup(CustomGameOptions.TimeLimitMax - CustomGameOptions.TimeLimitMin + 1, CustomGameOptions.TimeLimitDefault - CustomGameOptions.TimeLimitMin);
+        _timeBar.PositionChanged += _ => ShowOptions();
+        Find("DifficultyBar")?.AddChild(_diffBar);
+        _diffBar.Setup(CustomGameOptions.DifficultyCount, CustomGameOptions.DifficultyDefault);
+        _diffBar.PositionChanged += _ => ShowOptions();
         Bus.On("back", () => UiNavigator.Goto("mainmenu"));
         Bus.On("create", Create);
-        // "Generate Map": the stock random map generator dialog (UI/RMGScreen, game/src/AdvNet); the
-        // generated map starts at once with the first playable colour as the human player.
-        Bus.On("rmg", () => UiNavigator.ShowOverlay(new AdvNet.RmgDialog(StartGenerated)));
-        Bus.On("sortbyname", () => Sort(m => m.Name));
-        Bus.On("sortbyplayers", () => Sort(m => m.Players.ToString("00")));
-        Bus.On("sortbymapsize", () => Sort(m => m.Size.ToString("000")));
-        Bus.On("sortbygoal", () => Sort(m => m.Name));
-        Bus.On("mp_filter_changed", () => { _showMp = !_showMp; _scroll = 0; _selected = 0; Rebuild(); });
-        Rebuild();
+        Bus.On("load", () => UiNavigator.Goto("customload"));
+        Bus.On("rmg", () => UiNavigator.ShowOverlay(new AdvNet.RmgDialog(OnGenerated)));
+        Bus.On("sortbyname", () => SortBy(0));
+        Bus.On("sortbygoal", () => SortBy(1));
+        Bus.On("sortbyplayers", () => SortBy(2));
+        Bus.On("sortbymapsize", () => SortBy(3));
+        // 00774de0 / 00774eb0: each check box flips its profile var and rebuilds the list.
+        Bus.On("mp_filter_changed", () => { OptionsStore.Set("custom_game_show_mp_maps", ShowMp ? "0" : "1"); Rebuild(true); });
+        Bus.On("rmg_filter_changed", () => { OptionsStore.Set("custom_game_show_rmg_maps", ShowRmg ? "0" : "1"); Rebuild(true); });
+        Rebuild(true);
+        ShowOptions();
     }
 
-    IEnumerable<MapEntry> VisibleMaps() => _maps.Where(m => _showMp || !m.Multiplayer);
-
-    void Sort(Func<MapEntry, string> key)
+    public override void _Ready()
     {
-        var sel = VisibleMaps().ElementAtOrDefault(_selected);
-        var sorted = _maps.OrderBy(key, StringComparer.OrdinalIgnoreCase).ToList();
-        _maps.Clear();
-        _maps.AddRange(sorted);
-        _selected = Math.Max(0, VisibleMaps().ToList().IndexOf(sel!));
-        Rebuild();
+        base._Ready();
+        // Dev/test hooks for screenshots: H5_CUSTOM_FILTERS=mp,rmg ticks the filters; H5_CUSTOM_SORT=N clicks sort column N.
+        if (System.Environment.GetEnvironmentVariable("H5_CUSTOM_SORT") is { } sort && int.TryParse(sort, out var col))
+            Callable.From(() => SortBy(col)).CallDeferred();
+        if (System.Environment.GetEnvironmentVariable("H5_CUSTOM_CREATE") == "1")
+            ((SceneTree)Engine.GetMainLoop()).CreateTimer(2).Timeout += Create;
     }
+
+    static MapEntry Generated(GeneratedMaps.Record r) =>
+        new(null, r.Settings, r.Name, r.Settings.Template, RmgSizeTiles(r.Settings.Size), Enumerable.Range(0, r.Settings.Players).ToList(),
+            "goal3", null, CustomMapList.Generated);
+
+    static int RmgSizeTiles(int s) => new[] { 72, 96, 136, 176, 216, 256, 320 }[Math.Clamp(s, 0, 6)];
 
     static readonly Regex NameRef = new(@"<NameFileRef href=""([^""]*)""", RegexOptions.Compiled);
     static readonly Regex DescRef = new(@"<DescriptionFileRef href=""([^""]*)""", RegexOptions.Compiled);
+    static readonly Regex GoalRef = new(@"<CustomGoal href=""([^""]+)""", RegexOptions.Compiled);
     static readonly Regex TileX = new(@"<TileX>(\d+)</TileX>", RegexOptions.Compiled);
-    static readonly Regex Active = new(@"<ActivePlayer>true</ActivePlayer>", RegexOptions.Compiled);
+    static readonly Regex Primary = new(@"<Primary>.*?<Kind>(OBJECTIVE_KIND_[A-Z0-9_]+)</Kind>", RegexOptions.Compiled | RegexOptions.Singleline);
 
-    /// <summary>Header-only scan of every map descriptor (full loading takes ~0.3 s per map).</summary>
+    /// <summary>Descriptor scan of every map (name, description, size, teams, goal); full loading takes ~0.3 s per map.</summary>
     static List<MapEntry> LoadEntries()
     {
         var fs = Game.Instance.Fs;
@@ -73,12 +105,18 @@ public partial class CustomGameScreen : UiScreen
                 var xml = System.Text.Encoding.UTF8.GetString(files.ReadAllBytes(files.MapXdbPath));
                 string? Text(Regex re) => re.Match(xml) is { Success: true } m && m.Groups[1].Value.Length > 0 ? files.ReadText(m.Groups[1].Value, files.MapXdbPath)?.Trim() : null;
                 int size = TileX.Match(xml) is { Success: true } tx ? int.Parse(tx.Groups[1].Value) : 0;
-                list.Add(new MapEntry(r, Text(NameRef) ?? Path.GetFileName(r.Id), Text(DescRef) ?? "", size, Active.Matches(xml).Count,
-                    r.Id.Contains("Multiplayer", StringComparison.OrdinalIgnoreCase)));
+                var teams = new List<int>();
+                var players = System.Xml.Linq.XDocument.Parse(xml).Root?.Element("players")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>();
+                foreach (var p in players)
+                    if ((string?)p.Element("ActivePlayer") == "true") teams.Add((int?)p.Element("Team") ?? teams.Count);
+                var custom = Text(GoalRef);
+                var kind = Primary.Match(xml) is { Success: true } pk ? pk.Groups[1].Value : null;
+                list.Add(new MapEntry(r, null, Text(NameRef) ?? Path.GetFileName(r.Id), Text(DescRef) ?? "", size, teams,
+                    CustomMapList.GoalKey(!string.IsNullOrEmpty(custom), kind), custom, CustomMapList.FolderOf(r.Id, false)));
             }
             catch (Exception e) { GD.PushWarning($"[H5] map list {r.Id}: {e.Message}"); }
         }
-        return list.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        return list;
     }
 
     /// <summary>Map size names by width (UIGameRoot MapSizeTable: S, M, L, XL).</summary>
@@ -87,33 +125,100 @@ public partial class CustomGameScreen : UiScreen
         <= 72 => "S", <= 96 => "M", <= 136 => "L", <= 176 => "XL", _ => "XXL",
     };
 
-    void Rebuild()
+    static string GoalText(MapEntry m) => m.CustomGoal ?? Text($"UI/MPCreate/Maps/Goals/{m.GoalKey}.txt", m.GoalKey);
+
+    static string PlayersText(MapEntry m) =>
+        CustomMapList.PlayersText(CustomMapList.TeamSizes(m.Teams), Text("UI/Common/ffa_format.txt", "<value=count> (FFA)"), Text("UI/Common/players_separator.txt", "v"));
+
+    static string Text(string path, string fallback) => UiResources.Instance.Text(path)?.Trim() is { Length: > 0 } t ? t : fallback;
+
+    void SortBy(int column)
+    {
+        _sort.Click(column);
+        Rebuild(false);
+    }
+
+    int Compare(MapEntry a, MapEntry b)
+    {
+        int c = _sort.Column switch
+        {
+            1 => string.CompareOrdinal(a.GoalKey, b.GoalKey),
+            2 => CustomMapList.ComparePlayers(CustomMapList.TeamSizes(a.Teams), CustomMapList.TeamSizes(b.Teams)),
+            3 => a.Size.CompareTo(b.Size),
+            _ => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase),
+        };
+        return _sort.Descending ? -c : c;
+    }
+
+    void Rebuild(bool keepSelection)
+    {
+        var sel = _visible.ElementAtOrDefault(_selected);
+        int mask = CustomMapList.Mask(ShowMp, ShowRmg);
+        _visible = _all.Where(m => CustomMapList.Shown(mask, m.Folder)).ToList();
+        _visible.Sort(Compare);
+        _selected = Math.Max(0, sel != null ? _visible.IndexOf(sel) : 0);
+        if (Find("MPFilterBtn") is { } mp) mp.SetState(ShowMp ? 1 : 0);
+        if (Find("RMGFilterBtn") is { } rmg) rmg.SetState(ShowRmg ? 1 : 0);
+        var bars = new[] { "selectionname", "selectiongoal", "selectionplayers", "selectionmapsize" };
+        var butts = new[] { "buttname", "buttgoal", "buttplayers", "buttmapsize" };
+        for (int i = 0; i < 4; i++)
+        {
+            SetVisible(bars[i], i == _sort.Column);
+            Find(butts[i])?.SetState(_sort.IsDescending(i) ? 1 : 0);
+        }
+        Redraw();
+    }
+
+    void Redraw()
     {
         foreach (var c in _list.GetChildren()) c.QueueFree();
-        var maps = VisibleMaps().ToList();
-        _selected = Math.Clamp(_selected, 0, Math.Max(0, maps.Count - 1));
-        int rows = Math.Max(1, (int)(_list.Size.Y > 0 ? _list.Size.Y : 264) / RowHeight);
-        _scroll = Math.Clamp(_scroll, 0, Math.Max(0, maps.Count - rows));
-        for (int i = 0; i < rows && _scroll + i < maps.Count; i++)
+        _selected = Math.Clamp(_selected, 0, Math.Max(0, _visible.Count - 1));
+        // Rows start below the column header buttons where the list container reaches under them (MMH55 layout).
+        _top = Find("buttname") is { } head && Find("maps/container") is { } cont ? Math.Max(0, head.Window.Rect.Y + head.Window.Rect.H - cont.Window.Rect.Y) : 0;
+        int rows = Math.Max(1, (int)((_list.Size.Y > 0 ? _list.Size.Y : 264) - _top) / RowHeight);
+        _scroll = Math.Clamp(_scroll, 0, Math.Max(0, _visible.Count - rows));
+        for (int i = 0; i < rows && _scroll + i < _visible.Count; i++)
         {
-            var m = maps[_scroll + i];
-            float y = i * RowHeight;
+            var m = _visible[_scroll + i];
+            float y = _top + i * RowHeight;
             if (_scroll + i == _selected)
                 _list.AddChild(new ColorRect { Color = new Color(1, 0.85f, 0.4f, 0.18f), Position = new Vector2(0, y), Size = new Vector2(580, RowHeight), MouseFilter = MouseFilterEnum.Ignore });
             // Column offsets from the stock row template UI/MPCreate/Maps/SingleMap: name 0, goal 182, players 337, size 461.
             AddCell(m.Name, 0, y, 156);
-            AddCell("Defeat all", 182, y, 142);
-            AddCell(m.Players.ToString(), 337, y, 112);
+            AddCell(GoalText(m), 182, y, 142);
+            AddCell(PlayersText(m), 337, y, 112);
             AddCell(SizeName(m.Size), 461, y, 102);
         }
-        var sel = maps.ElementAtOrDefault(_selected);
-        Find("mapinfo/mapname")?.SetValue("value", sel?.Name ?? "");
-        Find("mapinfo/mapdesc")?.SetValue("value", sel?.Description ?? "");
+        var sel = _visible.ElementAtOrDefault(_selected);
+        _desc.Markup = sel == null ? "" : $"<h3_block>{Ui.Screens.ChatLogView.Escape(sel.Name)}<br><body><left>{Ui.Screens.ChatLogView.Escape(sel.Description)}";
         foreach (var n in FindAll("values"))
         {
-            n.SetValue("players", sel?.Players.ToString() ?? "");
+            n.SetValue("players", sel != null ? PlayersText(sel) : "");
             n.SetValue("size", sel != null ? SizeName(sel.Size) : "");
+            n.SetValue("goal", sel != null ? GoalText(sel) : "");
         }
+        // 007747a0: Create is enabled only with a map selected.
+        if (Find("CreateBtn") is { } create) create.Enabled = sel != null;
+    }
+
+    int TimeLimit => CustomGameOptions.Minutes(_timeBar.Position + CustomGameOptions.TimeLimitMin);
+
+    void ShowOptions()
+    {
+        // 007747a0: below 46 the header shows the minutes (TimeLimitHeader "<value=time> min."), else T_UNLIMITED.
+        if (Find("TimeLimitView") is { } tv)
+        {
+            if (TimeLimit > 0) { tv.SetText(null); tv.SetValue("time", TimeLimit.ToString()); }
+            else tv.SetText(UiResources.Instance.Text("UI/CustomGameCreate/Unlimited.txt"));
+        }
+        Find("DifficultyView")?.SetValue("difficulty", DifficultyName(_diffBar.Position));
+    }
+
+    internal static string DifficultyName(int d)
+    {
+        var names = new[] { "Easy", "Normal", "Hard", "Heroic" };
+        int i = Math.Clamp(d, 0, 3);
+        return UiResources.Instance.Text($"GameMechanics/RefTables/UIDifficultyInfo/Difficulty{names[i]}Name.txt")?.Trim() ?? names[i];
     }
 
     void AddCell(string text, float x, float y, float w)
@@ -126,32 +231,88 @@ public partial class CustomGameScreen : UiScreen
         switch (e)
         {
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } mb:
-                _selected = _scroll + (int)(mb.Position.Y / RowHeight);
-                Rebuild();
+                if (mb.Position.Y < _top) break;
+                _selected = _scroll + (int)((mb.Position.Y - _top) / RowHeight);
+                Redraw();
                 if (mb.DoubleClick) Create();
                 break;
             case InputEventMouseButton { ButtonIndex: MouseButton.WheelUp, Pressed: true }:
-                _scroll--; Rebuild(); break;
+                _scroll--; Redraw(); break;
             case InputEventMouseButton { ButtonIndex: MouseButton.WheelDown, Pressed: true }:
-                _scroll++; Rebuild(); break;
+                _scroll++; Redraw(); break;
         }
     }
 
-    internal static void StartGeneratedForDev(H5.AdvNet.RmgSettings rmg, string name) => StartGenerated(rmg, name);
+    internal static void StartGeneratedForDev(RmgSettings rmg, string name) => StartGenerated(rmg, name);
 
-    static void StartGenerated(H5.AdvNet.RmgSettings rmg, string name)
+    static void StartGenerated(RmgSettings rmg, string name)
     {
-        var lm = AdvNet.AdvNetGame.Maps.Load(new H5.AdvNet.AdvNetSettings { Rmg = rmg });
+        var lm = AdvNet.AdvNetGame.Maps.Load(new AdvNetSettings { Rmg = rmg });
         var human = lm.Map.Players.Where(p => p.Active).OrderByDescending(p => p.CanBeHuman).First().Index;
         GD.Print($"[H5] generated map {name} ({lm.Map.TilesX}x{lm.Map.TilesY})");
-        AdventureScreen.Open(AdventureSession.StartLocal(lm, new[] { human }, (ulong)rmg.Seed, 1));
+        AdventureScreen.Open(AdventureSession.StartLocal(lm, new[] { human }, (ulong)rmg.Seed, 1, rmg));
+    }
+
+    /// <summary>The generator's map is kept (the exe writes Maps/RMG/*.h5m) and listed under "Show RMG Maps".</summary>
+    void OnGenerated(RmgSettings rmg, string name)
+    {
+        var entry = Generated(GeneratedMaps.Add(name, rmg));
+        _all.Add(entry);
+        Rebuild(false);
+        int i = _visible.IndexOf(entry);
+        if (i >= 0) { _selected = i; Redraw(); }
     }
 
     void Create()
     {
-        var sel = VisibleMaps().ElementAtOrDefault(_selected);
+        var sel = _visible.ElementAtOrDefault(_selected);
         if (sel == null) return;
-        AdventureLauncher.Start(sel.Ref.Id, (ulong)Time.GetTicksUsec());
+        Pending = new Choice(sel, TimeLimit, _diffBar.Position);
+        UiNavigator.Goto("customwait");
+    }
+}
+
+/// <summary>
+/// Generated maps kept for the custom-game list and for reopening saves: the stock game writes each generated
+/// map to Maps/RMG/&lt;name&gt;.h5m; H5Reborn has no .h5m writer, so it keeps the generator options (the generator
+/// is deterministic) in user://maps/rmg/*.json.
+/// </summary>
+public static class GeneratedMaps
+{
+    public sealed record Record(string Name, RmgSettings Settings);
+    const string Dir = "user://maps/rmg";
+
+    public static List<Record> All()
+    {
+        var list = new List<Record>();
+        var dir = ProjectSettings.GlobalizePath(Dir);
+        if (!Directory.Exists(dir)) return list;
+        foreach (var f in Directory.EnumerateFiles(dir, "*.json").OrderBy(f => f, StringComparer.Ordinal))
+        {
+            try
+            {
+                var j = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(f))!.AsObject();
+                var s = System.Text.Json.JsonSerializer.Deserialize<RmgSettings>(j["settings"]!.ToJsonString(), Json)!;
+                list.Add(new Record((string?)j["name"] ?? Path.GetFileNameWithoutExtension(f), s));
+            }
+            catch (Exception e) { GD.PushWarning($"[H5] generated map {f}: {e.Message}"); }
+        }
+        return list;
+    }
+
+    static readonly System.Text.Json.JsonSerializerOptions Json = new() { IncludeFields = true };
+
+    public static Record Add(string name, RmgSettings s)
+    {
+        var dir = ProjectSettings.GlobalizePath(Dir);
+        Directory.CreateDirectory(dir);
+        var j = new System.Text.Json.Nodes.JsonObject
+        {
+            ["name"] = name,
+            ["settings"] = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(s, Json)),
+        };
+        File.WriteAllText(Path.Combine(dir, $"rmg_{s.Seed}.json"), j.ToJsonString());
+        return new Record(name, s);
     }
 }
 

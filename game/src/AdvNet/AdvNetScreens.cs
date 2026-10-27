@@ -59,7 +59,6 @@ public partial class AdvSetupScreen : UiScreen
     MapEntry? _selected;
     int _sort;
     readonly BitmapText _desc = new() { AnchorRight = 1, AnchorBottom = 1, Wrap = true };
-    static readonly int[] TimeLimits = { 0, 1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120 };
 
     public AdvSetupScreen(bool network) : base(network ? "UI/MPCreate.(WindowScreen).xdb" : "UI/HotSeat.(WindowScreen).xdb")
     {
@@ -89,8 +88,11 @@ public partial class AdvSetupScreen : UiScreen
         if (Find("password") is UiEditLine pw) pw.Password = true;
         foreach (var t in new[] { "ghostmode", "quick_combat", "realtime" })
             if (Find(t) is { } box) { box.SetState(t == "realtime" ? 0 : 1); box.Clicked += _ => Read(); }
-        Cycle("timelimitvalue", "timelimitscroll", () => _set.TimeLimitMinutes = TimeLimits[(Array.IndexOf(TimeLimits, _set.TimeLimitMinutes) + 1) % TimeLimits.Length]);
-        Cycle("difficultyvalue", "difficultyscroll", () => _set.Difficulty = (_set.Difficulty + 1) % 4);
+        // 0070862c: timelimitscroll 1..46 starting at 46 (above 45 = no limit) and difficultyscroll's 4 positions
+        // starting at 1, as on the custom game screen (CustomGameOptions).
+        Bar("timelimitscroll", CustomGameOptions.TimeLimitMax - CustomGameOptions.TimeLimitMin + 1, CustomGameOptions.TimeLimitDefault - CustomGameOptions.TimeLimitMin,
+            p => _set.TimeLimitMinutes = CustomGameOptions.Minutes(p + CustomGameOptions.TimeLimitMin));
+        Bar("difficultyscroll", CustomGameOptions.DifficultyCount, CustomGameOptions.DifficultyDefault, p => _set.Difficulty = p);
         Cycle("animationspeed_text", "animationspeedscroll", () => _set.AnimationSpeed = (_set.AnimationSpeed + 1) % 3);
         Cycle("combatturnspeed_text", "combatturnspeedscroll", () => _set.DynamicBattles = (_set.DynamicBattles + 1) % 4);
 
@@ -119,6 +121,16 @@ public partial class AdvSetupScreen : UiScreen
         }
     }
 
+    void Bar(string bar, int count, int start, Action<int> changed)
+    {
+        if (Find(bar) is not { } node) return;
+        var view = new H5Reborn.Options.UiScrollerView();
+        node.AddChild(view);
+        view.Setup(count, start);
+        changed(start);
+        view.PositionChanged += p => { changed(p); ShowValues(); };
+    }
+
     void Cycle(string text, string bar, Action next)
     {
         foreach (var n in new[] { Find(text), Find(bar) })
@@ -140,7 +152,7 @@ public partial class AdvSetupScreen : UiScreen
         string limit = _set.TimeLimitMinutes == 0 ? AdvNetScreens.Text("UI/HotSeat/Options/no_limit.txt") : $"{_set.TimeLimitMinutes} {AdvNetScreens.Text("UI/HotSeat/Options/min.txt")}";
         Find("timelimitvalue")?.SetValue("value", limit);
         Find("timelimitvalue")?.SetValue("measurement", "");
-        Find("difficultyvalue")?.SetValue("value", new[] { "Easy", "Normal", "Hard", "Heroic" }[_set.Difficulty]);
+        Find("difficultyvalue")?.SetValue("value", H5Reborn.Adventure.CustomGameScreen.DifficultyName(_set.Difficulty));
         Find("animationspeed_text")?.SetValue("speed", new[] { "Slow", "Normal", "Fast" }[_set.AnimationSpeed]);
         Find("combatturnspeed_text")?.SetValue("speed", new[] { "Off", "Slow", "Normal", "Fast" }[_set.DynamicBattles]);
     }

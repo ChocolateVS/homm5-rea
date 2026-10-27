@@ -51,8 +51,8 @@ public sealed class AdventureSession
     public ulong BattleSeq => _battleSeq;
 
     /// <summary>Rebuilds a session around a game restored from a save (game/src/Save).</summary>
-    public static AdventureSession Restore(MapFiles files, H5.Adventure.Engine.Adventure game, ulong seed, ulong battleSeq) =>
-        new(SharedDb, game.Map, game, Array.Empty<AdvEvent>(), seed) { Files = files, _battleSeq = battleSeq };
+    public static AdventureSession Restore(MapFiles files, H5.Adventure.Engine.Adventure game, ulong seed, ulong battleSeq, H5.AdvNet.RmgSettings? generator = null) =>
+        new(SharedDb, game.Map, game, Array.Empty<AdvEvent>(), seed) { Files = files, _battleSeq = battleSeq, Generator = generator };
 
     /// <summary>Loads a map (catalogue id, short name or .h5m path) and starts a game with one human player.</summary>
     public static AdventureSession Start(string mapQuery, ulong seed, int humanMapPlayer = -1, int difficulty = 1)
@@ -112,7 +112,7 @@ public sealed class AdventureSession
     }
 
     /// <summary>A local game on a loaded map (stock, user or generated) with the given map players as humans (hot-seat).</summary>
-    public static AdventureSession StartLocal(H5.AdvNet.LoadedMap lm, IEnumerable<int> humanMapPlayers, ulong seed, int difficulty)
+    public static AdventureSession StartLocal(H5.AdvNet.LoadedMap lm, IEnumerable<int> humanMapPlayers, ulong seed, int difficulty, H5.AdvNet.RmgSettings? generator = null)
     {
         var humans = humanMapPlayers.ToHashSet();
         var setup = new GameSetup { Seed = seed, Difficulty = difficulty };
@@ -123,8 +123,16 @@ public sealed class AdventureSession
         return new AdventureSession(lm.Db, lm.Map, game, opening, seed)
         {
             Files = lm.Files ?? MapFiles.FromPak(H5Reborn.Game.Instance.Fs, "Maps/Generated/map.xdb"),
+            Generator = generator,
         };
     }
+
+    /// <summary>A local game the custom-game setup (UI/CustomGameWait) already created.</summary>
+    public static AdventureSession FromNewGame(MapFiles files, H5.Adventure.Engine.Adventure game, IEnumerable<AdvEvent> opening, ulong seed, H5.AdvNet.RmgSettings? generator) =>
+        new(game.Db, game.Map, game, opening, seed) { Files = files, Generator = generator };
+
+    /// <summary>The random map generator's options when the map was generated (saves regenerate it, MapSpec "rmg").</summary>
+    public H5.AdvNet.RmgSettings? Generator { get; init; }
 
     public bool TryDequeue(out AdvEvent ev, out int player)
     {

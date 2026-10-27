@@ -12,6 +12,10 @@ public sealed class PlayerSetup
     public bool Human = true;
     /// <summary>Race override for players whose map race is random (TOWN_RANDOM_TYPE / TOWN_NO_TYPE).</summary>
     public string? Race;
+    /// <summary>Custom-game starting hero (HeroDef id) for a player whose hero is created in its main town; null = random.</summary>
+    public string? StartHero;
+    /// <summary>Custom-game starting bonus: 0 random, 1 artifact, 2 gold, 3 resource (application not traced, AUDIT_CAMPAIGN.md).</summary>
+    public int Bonus;
 }
 
 public sealed class GameSetup

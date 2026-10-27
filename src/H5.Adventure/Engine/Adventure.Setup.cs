@@ -37,8 +37,11 @@ public sealed partial class Adventure
         return (g, g._ev);
     }
 
+    readonly Dictionary<int, string> _startHeroes = new();
+
     void SetupPlayers(GameSetup setup)
     {
+        foreach (var ps in setup.Players) if (ps.StartHero != null) _startHeroes[ps.MapPlayer] = ps.StartHero;
         foreach (var ps in setup.Players.OrderBy(p => p.MapPlayer))
         {
             var mp = Map.Players[ps.MapPlayer];
@@ -213,7 +216,9 @@ public sealed partial class Adventure
             if (town == null) continue;
             var def = Core.Heroes.Values.Where(d => d.Town == town.Type && IsHireable(d, mp)).OrderBy(d => d.Id, StringComparer.Ordinal).ToList();
             if (def.Count == 0) continue;
-            var pick = def[S.Rng.Next(def.Count)];
+            // Custom game: the starting hero chosen on UI/CustomGameWait (00c9e1e0) replaces the random pick.
+            var chosen = _startHeroes.GetValueOrDefault(p.Index) is { } sh ? def.FirstOrDefault(d => d.Id == sh) : null;
+            var pick = chosen ?? def[S.Rng.Next(def.Count)];
             var h = HeroFromDef(pick, p.Index, EntranceOf(town));
             h.InTown = town.Object;
             GiveStartingArmy(h);

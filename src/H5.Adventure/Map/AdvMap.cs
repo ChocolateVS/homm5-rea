@@ -72,6 +72,8 @@ public sealed class MapPlayer
     public string? MainHeroUid;
     public bool HeroInTown;
     public string DefaultBonus = "";
+    /// <summary>Map "CanBeDisabled" / "CanChangeBonus": the custom-game setup may close the slot / change its bonus.</summary>
+    public bool CanBeDisabled, CanChangeBonus;
     public List<string> ReserveHeroes = new();
     /// <summary>Editor-defined reserve heroes (DeployReserveHero puts them on the map).</summary>
     public List<HeroInstance> ReserveHeroInstances = new();
