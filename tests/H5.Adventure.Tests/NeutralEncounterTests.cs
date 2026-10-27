@@ -38,6 +38,40 @@ public class NeutralEncounterTests(Fixture f)
     }
 
     [Fact]
+    public void HeirOfUndeadGetsNecropolisStacksForFreeScaledByLevel()
+    {
+        // 008dd0d0: spec 0x1d and only town-7 creatures → mode 0, count = ((level + 25) · count · 2 + 50) / 100.
+        var (g, h, m) = Setup(f, "CREATURE_SKELETON", 40, "MONSTER_MOOD_HOSTILE");
+        m.Courage = "MONSTER_COURAGE_ALWAYS_FIGHT";
+        h.Specialization = "HERO_SPEC_HEIR_OF_UNDEAD";
+        h.Level = 10;
+        var offer = g.JoinOffer(h, m);
+        Assert.Equal(0, offer.Mode);
+        Assert.Equal(((10 + 25) * 40 * 2 + 50) / 100, offer.Stacks[0].Count);
+        Assert.Contains(Attack(g, h, m), e => e is ChoiceOffered { Kind: "join_free" });
+        Assert.Equal(28, g.S.Choice!.Creatures[0].Count);
+        // A living stack among them: the map's courage decides.
+        g.S.Obj(m.Index).Guards.Add(new Stack("CREATURE_PEASANT", 5));
+        Assert.Equal(1, g.JoinOffer(h, m).Mode);
+    }
+
+    [Fact]
+    public void HeraldOfDeathOffersTheUndeadCounterpartAndFitsCountsFreeSlots()
+    {
+        var (g, h, m) = Setup(f, "CREATURE_PEASANT", 10, "MONSTER_MOOD_FRIENDLY");
+        Assert.Equal("CREATURE_PEASANT", g.JoinOffer(h, m).Stacks[0].Creature);
+        h.Perks.Add("HERO_SKILL_HERALD_OF_DEATH");
+        Assert.Equal("CREATURE_SKELETON", g.HeraldOfDeathCreature("CREATURE_PEASANT"));
+        Assert.Equal("CREATURE_SKELETON", g.JoinOffer(h, m).Stacks[0].Creature);
+        Assert.Equal("CREATURE_ZOMBIE", g.HeraldOfDeathCreature("CREATURE_ZOMBIE"));          // undead stays
+        h.Army = Army.Empty();
+        for (int i = 0; i < Army.Slots; i++) h.Army[i] = new Stack("CREATURE_ARCHER", 1);
+        Assert.False(g.JoinOffer(h, m).Fits);
+        h.Army[3] = new Stack("CREATURE_SKELETON", 1);
+        Assert.True(g.JoinOffer(h, m).Fits);
+    }
+
+    [Fact]
     public void CrownOfLeadershipCountsOnlyWithDiplomacy()
     {
         var g = f.NewGame("A2M1");

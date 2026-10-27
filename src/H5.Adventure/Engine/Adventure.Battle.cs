@@ -50,26 +50,18 @@ public sealed partial class Adventure
     /// R ≥ T: flee or join for free; T − 3/M ≤ R &lt; T: fight or join for money; below: fight. The join roll is
     /// rand(1..100) ≤ chance (008dc380). A money join costs the army's price × max(0, 3 − d) and is offered only when
     /// affordable, else the monsters fight; a zero price (Week of Diplomacy, d ≥ 3) joins for free.
-    /// TODO(exe): the Courtier factor on R (hero vcall 0x190(0x3b), RPGStats +0x928 per level); the join-offer builder
-    /// 008dd0d0 (its 0 / 1 / 2 result, courage, the Estates and 0x66 count/upgrade changes) is not decoded.
+    /// The join offer (008dd0d0, <see cref="JoinOffer"/>) comes first: result 0 → the free join box at once, 1 → fight,
+    /// 2 → the check above (mixed armies included).
+    /// TODO(exe): the Courtier factor on R (hero vcall 0x190(0x3b), RPGStats +0x928 per level).
     /// </summary>
     void StartNeutralEncounter(HeroState h, MapObject mon)
     {
         if (Refused(h, -1, mon.Index)) return;
         var os = S.Obj(mon.Index);
         var guards = os.Guards.Select(g => new Stack(g.Creature, g.Count)).ToList();
-        bool mixed = guards.Select(g => g.Creature).Distinct().Count() > 1;
-        switch (mon.Courage)
-        {
-            case "MONSTER_COURAGE_ALWAYS_JOIN":
-                OfferJoin(h, mon, guards, paid: false);
-                return;
-            case "MONSTER_COURAGE_ALWAYS_FIGHT":
-                StartBattle(h, -1, mon.Index, mon.Pos, guards, siege: false);
-                return;
-        }
-        // TODO(exe): mixed armies (the chance 008dc380 counts several creature types) — kept as a fight until 008dd0d0 is decoded.
-        if (mixed) { StartBattle(h, -1, mon.Index, mon.Pos, guards, siege: false); return; }
+        var offer = JoinOffer(h, mon);
+        if (offer.Mode == 0) { OfferJoin(h, mon, offer.Stacks, paid: false); return; }
+        if (offer.Mode == 1) { StartBattle(h, -1, mon.Index, mon.Pos, guards, siege: false); return; }
 
         int diplomacy = DiplomacyLevel(h);
         double moodCoef = new[] { 0.5, 1.0, 1.5, 2.0 }[MoodIndex(mon.Mood)];
@@ -78,12 +70,12 @@ public sealed partial class Adventure
         double threshold = S.Rng.Range(40, 100) * 0.1 * moodCoef;
         bool fleeCase = ratio >= threshold;
         if (!fleeCase && threshold - 3.0 / moodCoef > ratio) { StartBattle(h, -1, mon.Index, mon.Pos, guards, siege: false); return; }
-        int chance = ChanceToJoin(h, guards[0].Creature, mon.Mood, diplomacy);
+        int chance = ChanceToJoin(h, guards, mon.Mood, diplomacy);
         if (S.Rng.Range(1, 100) <= chance)
         {
             int mul = diplomacy > 0 ? Math.Max(0, 3 - diplomacy) : 3;
-            if (fleeCase || mul == 0 || S.MoonWeek == "WEEK_OF_DIPLOMACY") { OfferJoin(h, mon, guards, paid: false); return; }
-            if (JoinPrice(guards, mul) <= (PlayerByIndex(h.Owner)?.Purse[Purse.Gold] ?? 0)) { OfferJoin(h, mon, guards, paid: true, priceMul: mul); return; }
+            if (fleeCase || mul == 0 || S.MoonWeek == "WEEK_OF_DIPLOMACY") { OfferJoin(h, mon, offer.Stacks, paid: false); return; }
+            if (JoinPrice(offer.Stacks, mul) <= (PlayerByIndex(h.Owner)?.Purse[Purse.Gold] ?? 0)) { OfferJoin(h, mon, offer.Stacks, paid: true, priceMul: mul); return; }
             // 008e210d: not enough money → the monsters fight.
         }
         if (fleeCase)
@@ -118,26 +110,98 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// Chance to join (008dc380): mood 10 / 5 / 0 / −5; +5 when all the stacks share one alignment, the hero's; +5 when
-    /// they share one town, the hero's; + 5 · (stacks of creatures the hero has) / stacks; + 5 · (stacks the hero has
-    /// upgraded / related) / stacks; + 10 · diplomacy level; +20 for the hero's creature specialisation.
+    /// Chance to join (008dc380) over the monster's stacks with a count: mood 10 / 5 / 0 / −5; +5 when every stack has
+    /// one alignment and it is the hero's town's (hero vfunc 0x254); +5 when every stack has one town and it is the
+    /// hero's; + 5 · (stacks of a creature the hero's army holds, 0045b170) / stacks; + 5 · (stacks the army holds a
+    /// upgrade of, 0045b180) / stacks (integer divisions); + 10 · diplomacy level; +20 when every stack has one base
+    /// creature (004baf60, up to 3 steps) matching the hero's specialisation (vfunc 0x298 → 004baf90, not modelled).
     /// </summary>
-    int ChanceToJoin(HeroState h, string creature, string mood, int diplomacy)
+    int ChanceToJoin(HeroState h, IReadOnlyList<Stack> stacks, string mood, int diplomacy)
     {
         int chance = new[] { 10, 5, 0, -5 }[MoodIndex(mood)];
-        var cd = Core.Creatures.GetValueOrDefault(creature);
-        if (cd != null)
+        static int Align(string town) => town is "TOWN_ACADEMY" or "TOWN_HEAVEN" or "TOWN_PRESERVE" or "TOWN_FORTRESS" ? 1
+            : town is "TOWN_DUNGEON" or "TOWN_INFERNO" or "TOWN_NECROMANCY" or "TOWN_STRONGHOLD" ? 2 : 0;
+        var defs = stacks.Where(s => s.Count > 0).Select(s => Core.Creatures.GetValueOrDefault(s.Creature))
+            .Where(d => d != null).Select(d => d!).ToList();
+        int n = defs.Count, same = 0, related = 0;
+        var army = h.Army.Live().Select(s => s.Creature).ToHashSet();
+        foreach (var cd in defs)
         {
-            static bool Good(string town) => town is "TOWN_ACADEMY" or "TOWN_HEAVEN" or "TOWN_PRESERVE" or "TOWN_FORTRESS";
-            static bool Evil(string town) => town is "TOWN_DUNGEON" or "TOWN_INFERNO" or "TOWN_NECROMANCY" or "TOWN_STRONGHOLD";
-            if ((Good(cd.Town) && Good(h.Town)) || (Evil(cd.Town) && Evil(h.Town))) chance += 5;
-            if (cd.Town == h.Town) chance += 5;
-            if (h.Army.Live().Any(s => s.Creature == creature)) chance += 5;
-            if (h.Army.Live().Any(s => cd.Upgrades.Contains(s.Creature))) chance += 5;
+            if (army.Contains(cd.Id)) same++;
+            if (cd.Upgrades.Any(army.Contains)) related++;   // 0045b180: the army holds one of its Upgrades
         }
-        chance += 10 * diplomacy;
-        // TODO: +20% for a matching creature specialisation (hero specialisation table).
+        if (n > 0)
+        {
+            if (defs.Select(d => Align(d.Town)).Distinct().Count() == 1 && Align(defs[0].Town) == Align(h.Town)) chance += 5;
+            if (defs.Select(d => d.Town).Distinct().Count() == 1 && defs[0].Town == h.Town) chance += 5;
+            if (same > 0) chance += same * 5 / n;
+            if (related > 0) chance += related * 5 / n;
+        }
+        if (diplomacy > 0) chance += 10 * diplomacy;
+        // TODO(exe): +20 for the hero's creature specialisation (vfunc 0x298 → 004baf90; no specialisation creature table yet).
         return chance;
+    }
+
+    /// <summary>
+    /// The join offer (008dd0d0): Mode = the monster's join mode for the hero's player (interface vfunc 0xc = 004ee9a0,
+    /// a per-player array, 2 by default; the map's Courage ALWAYS_JOIN 0 / ALWAYS_FIGHT 1 / CAN_FLEE_JOIN 2); Stacks =
+    /// the monster's stacks. A HERO_SPEC_HEIR_OF_UNDEAD hero (vfunc 0x190(0x1d)) facing only Necropolis creatures (town
+    /// 7, 004ba910) gets Mode 0 and each count = ((level + 25) · count · 2 + 50) / 100. Herald of Death (skill 0x66,
+    /// vfunc 0x174 &gt; 0) turns each creature into its undead counterpart (004bbe50). Fits (result +4, passed to the join
+    /// box) = the army takes every stack: a creature the army does not hold uses up one empty slot.
+    /// </summary>
+    public (int Mode, List<Stack> Stacks, bool Fits) JoinOffer(HeroState h, MapObject mon)
+    {
+        int mode = mon.Courage switch { "MONSTER_COURAGE_ALWAYS_JOIN" => 0, "MONSTER_COURAGE_ALWAYS_FIGHT" => 1, _ => 2 };
+        var stacks = S.Obj(mon.Index).Guards.Select(g => new Stack(g.Creature, g.Count)).ToList();
+        bool allUndead = stacks.All(s => Core.Creatures.TryGetValue(s.Creature, out var c) && c.Town == "TOWN_NECROMANCY");
+        if (h.Specialization == "HERO_SPEC_HEIR_OF_UNDEAD" && allUndead)
+        {
+            mode = 0;
+            foreach (var s in stacks) s.Count = (int)((((long)h.Level + 25) * s.Count * 2 + 50) / 100);
+        }
+        if (h.HasPerk("HERO_SKILL_HERALD_OF_DEATH"))
+            foreach (var s in stacks) s.Creature = HeraldOfDeathCreature(s.Creature);
+        int free = h.Army.Count(s => s == null);
+        var held = h.Army.Where(s => s != null).Select(s => s!.Creature).ToHashSet();
+        bool fits = true;
+        foreach (var s in stacks)
+        {
+            if (held.Contains(s.Creature)) continue;
+            if (free <= 0) { fits = false; break; }
+            free--;
+            held.Add(s.Creature);
+        }
+        return (mode, stacks, fits);
+    }
+
+    static readonly string[,] HeraldUndead =
+    {
+        { "CREATURE_SKELETON", "CREATURE_SKELETON_ARCHER", "CREATURE_SKELETON_WARRIOR" },
+        { "CREATURE_WALKING_DEAD", "CREATURE_ZOMBIE", "CREATURE_DISEASE_ZOMBIE" },
+        { "CREATURE_MANES", "CREATURE_GHOST", "CREATURE_POLTERGEIST" },
+        { "CREATURE_VAMPIRE", "CREATURE_VAMPIRE_LORD", "CREATURE_NOSFERATU" },
+        { "CREATURE_LICH", "CREATURE_DEMILICH", "CREATURE_LICH_MASTER" },
+        { "CREATURE_WIGHT", "CREATURE_WRAITH", "CREATURE_BANSHEE" },
+        { "CREATURE_BONE_DRAGON", "CREATURE_SHADOW_DRAGON", "CREATURE_HORROR_DRAGON" },
+    };
+
+    /// <summary>
+    /// 004bbe50: a creature without ABILITY_UNDEAD / ABILITY_ELEMENTAL (00b61ba0 0xa / 0xc) of tier 1..7 (def +0x8c)
+    /// becomes the table entry (00f2e734 + tier · 0xc + grade · 4) of its tier and grade (004bb980: 0 without a base
+    /// creature (+0x100), else 1 + its index in its own Upgrades list (+0x104), 0 when absent).
+    /// </summary>
+    public string HeraldOfDeathCreature(string creature)
+    {
+        if (!Core.Creatures.TryGetValue(creature, out var c) || c.Has("ABILITY_UNDEAD") || c.Has("ABILITY_ELEMENTAL") || c.Tier < 1 || c.Tier > 7)
+            return creature;
+        int grade = 0;
+        if (c.BaseCreature is { Length: > 0 } b && b != "CREATURE_UNKNOWN")
+        {
+            int i = c.Upgrades.IndexOf(creature);
+            grade = i >= 0 ? i + 1 : 0;
+        }
+        return grade <= 2 ? HeraldUndead[c.Tier - 1, grade] : creature;
     }
 
     void OfferJoin(HeroState h, MapObject mon, List<Stack> guards, bool paid, int priceMul = 3)
