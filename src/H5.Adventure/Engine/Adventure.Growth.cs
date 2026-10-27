@@ -69,15 +69,20 @@ public sealed partial class Adventure
 
     /// <summary>
     /// FUN_00cd3030: Recruitment (skill 0x1c) of the town's garrison or visiting hero gives max(4 − tier, 0)
-    /// (times 2 when the hero's vfunc 0x310 is positive — not identified, taken as 1); the town specialisation
+    /// times 2 when that hero's vfunc 0x310 (FUN_00b5abd0, hero +0x250 seen from the +0x1c subobject) is positive —
+    /// the worn ARTIFACT_CROWN_OF_LEADER count (00b5a410 case 0x58 adds ±1 on equip / unequip); the larger of the
+    /// two heroes' multipliers is used; the town specialisation
     /// TOWN_BONUS_TIER1..4_CREATURE adds 2 / 1 / 1 / 1 to that tier, +1 more for tiers 1 and 2 in a Fortress town
     /// (town type 9, FUN_00cd35c0).
     /// </summary>
     int SpecializationGrowth(TownState t, int tier)
     {
         int n = 0;
-        if (S.Heroes.Any(h => h.Alive && h.InTown == t.Object && (h.HasPerk("HERO_SKILL_RECRUITMENT") || h.MasteryOf("HERO_SKILL_RECRUITMENT") > H5.Core.Data.Mastery.None)))
-            n = Math.Max(4 - tier, 0);
+        int mul = 0;
+        foreach (var h in S.Heroes)
+            if (h.Alive && h.InTown == t.Object && (h.HasPerk("HERO_SKILL_RECRUITMENT") || h.MasteryOf("HERO_SKILL_RECRUITMENT") > H5.Core.Data.Mastery.None))
+                mul = Math.Max(mul, h.HasArtifact("ARTIFACT_CROWN_OF_LEADER") ? 2 : 1);
+        if (mul != 0) n = Math.Max(4 - tier, 0) * mul;
         bool fortress = t.Type == "TOWN_FORTRESS";
         n += (SpecializationBonus(t), tier) switch
         {

@@ -65,6 +65,13 @@ public class TownGrowthTests(Fixture f)
         Assert.Equal(3, g.GrowthOf(t, 1).Specialization);
         Assert.Equal(1, g.GrowthOf(t, 3).Specialization);
         Assert.Equal(0, g.GrowthOf(t, 7).Specialization);
+        // ×2 with a worn Crown of Leadership: hero vfunc 0x310 (00b5abd0) = hero +0x250, 00b5a410 case 0x58.
+        h.Artifacts.Add("ARTIFACT_CROWN_OF_LEADER");
+        Assert.Equal(6, g.GrowthOf(t, 1).Specialization);
+        Assert.Equal(2, g.GrowthOf(t, 3).Specialization);
+        h.Artifacts.Remove("ARTIFACT_CROWN_OF_LEADER");
+        h.Backpack.Add("ARTIFACT_CROWN_OF_LEADER");               // carried only: no effect
+        Assert.Equal(3, g.GrowthOf(t, 1).Specialization);
         h.InTown = -1;
         t.Specialization = "GameMechanics/TownSpecialization/Academy/Random/Tirith.xdb";   // TOWN_BONUS_TIER1_CREATURE
         Assert.Equal(2, g.GrowthOf(t, 1).Specialization);
