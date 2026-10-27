@@ -63,7 +63,9 @@ public static partial class AdvDialogs
         s.Find("Title")?.SetText($"<h3_header><center>{title}");
         s.Find("MsgText")?.SetValue("text", text);
         SetFace(s, "Face", face);
-        void Close() { blocker?.QueueFree(); onClose?.Invoke(); }
+        EnableButtons(s, "ButtonOk");
+        bool closed = false;
+        void Close() { if (closed) return; closed = true; blocker?.QueueFree(); onClose?.Invoke(); }
         s.Bus.On("confirm", Close);
         Bind(s, Close, Close);
     }
@@ -75,10 +77,12 @@ public static partial class AdvDialogs
         var s = Open(parent, Box0p2, b => blocker = b);
         foreach (var n in new[] { "ButtonOk", "ButtonCancel" }) s.SetVisible(n, false);
         foreach (var n in new[] { "ButtonYes", "ButtonNo" }) s.SetVisible(n, true);
+        EnableButtons(s, "ButtonYes", "ButtonNo");
         s.Find("Title")?.SetText($"<h3_header><center>{title}");
         s.Find("MsgText")?.SetValue("text", text);
         SetFace(s, "Face", face);
-        void Done(bool yes) { blocker?.QueueFree(); answer(yes); }
+        bool closed = false;
+        void Done(bool yes) { if (closed) return; closed = true; blocker?.QueueFree(); answer(yes); }
         s.Bus.On("confirm", () => Done(true));
         s.Bus.On("cancel", () => Done(false));
         Bind(s, () => Done(true), () => Done(false));
@@ -94,18 +98,33 @@ public static partial class AdvDialogs
         if (header != null) s.Find("HeaderMain")?.SetText($"<center>{header}");
         s.Find("MsgText")?.SetValue("text", text);
         SetFace(s, "Face", face);
-        int choice = 0;
         var lb = s.Find("ButtonLeft");
         var rb = s.Find("ButtonRight");
+        var ok = s.Find("ButtonOk");
         SetFace(s, "ButtonLeft/Icon", left.Icon);
         SetFace(s, "ButtonRight/Icon", right.Icon);
         s.Find("ButtonLeft/Text")?.SetText($"<body>{left.Text}");
         s.Find("ButtonRight/Text")?.SetText($"<body>{right.Text}");
-        void Pick(int c) { choice = c; lb?.SetState(c == 0 ? 1 : 0); rb?.SetState(c == 1 ? 1 : 0); }
+        // Box2p (base 00676de0): both choices enabled and unpressed, OK disabled until one is picked.
+        // Picking (00675f60 left / 00675eb0 right) presses that side, releases the other and enables OK;
+        // picking the side already chosen confirms, as do left_force / right_force (double click, 006760c0 / 00676010).
+        EnableButtons(s, "ButtonLeft", "ButtonRight");
+        if (ok != null) ok.Enabled = false;
+        int choice = -1;
+        bool closed = false;
+        void Done() { if (closed || choice < 0) return; closed = true; blocker?.QueueFree(); picked(choice); }
+        void Pick(int c)
+        {
+            if (choice == c) { Done(); return; }
+            choice = c;
+            lb?.SetState(c == 0 ? 1 : 0);
+            rb?.SetState(c == 1 ? 1 : 0);
+            if (ok != null) ok.Enabled = true;
+        }
         s.Bus.On("left", () => Pick(0));
         s.Bus.On("right", () => Pick(1));
-        Pick(0);
-        void Done() { blocker?.QueueFree(); picked(choice); }
+        s.Bus.On("left_force", () => { choice = 0; Done(); });
+        s.Bus.On("right_force", () => { choice = 1; Done(); });
         s.Bus.On("confirm", Done);
         Bind(s, Done, Done);
     }
@@ -159,9 +178,21 @@ public static partial class AdvDialogs
             });
         }
         for (int j = 0; j < 4; j++) s.Find(slots[j])?.SetState(slotOf.IndexOf(j) == 0 ? 1 : 0);
-        void Done() { blocker?.QueueFree(); picked(options.Count == 0 ? 0 : choice); }
+        bool closed = false;
+        void Done() { if (closed) return; closed = true; blocker?.QueueFree(); picked(options.Count == 0 ? 0 : choice); }
         s.Bus.On("MB_Button_Ok", Done);
         Bind(s, Done, Done);
+    }
+
+    /// <summary>
+    /// The CommonBoxes data ships its OK / Cancel / left / right buttons disabled (`Enabled` false, e.g.
+    /// Box0p/ButtonOk); the box code enables the ones it uses (window vfunc +0x3c = 00b95010 → 00a50e90, which
+    /// sets the enabled flag; the two-choice box checks it through +0x40 in 00676120 / 006760c0 / 00676010).
+    /// </summary>
+    static void EnableButtons(UiScreen s, params string[] names)
+    {
+        foreach (var n in names)
+            if (s.Find(n) is { } b) b.Enabled = true;
     }
 
     /// <summary>Enter confirms, Escape cancels (input_a2.cfg confirm_action / close_window).</summary>
@@ -173,12 +204,12 @@ public static partial class AdvDialogs
 
     sealed partial class KeyCatcher(Action ok, Action cancel) : Node
     {
-        bool _done;
         public override void _UnhandledInput(InputEvent e)
         {
-            if (_done || e is not InputEventKey { Pressed: true, Echo: false } k) return;
-            if (k.Keycode is Key.Enter or Key.KpEnter) { _done = true; GetViewport().SetInputAsHandled(); ok(); }
-            else if (k.Keycode == Key.Escape) { _done = true; GetViewport().SetInputAsHandled(); cancel(); }
+            // The box actions guard against closing twice themselves.
+            if (e is not InputEventKey { Pressed: true, Echo: false } k) return;
+            if (k.Keycode is Key.Enter or Key.KpEnter) { GetViewport().SetInputAsHandled(); ok(); }
+            else if (k.Keycode == Key.Escape) { GetViewport().SetInputAsHandled(); cancel(); }
         }
     }
 

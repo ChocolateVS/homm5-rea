@@ -43,14 +43,20 @@ public static partial class AdvDialogs
             s.Find("ButtonRight/Text")?.SetText(T(!gold && !wood ? "ID_NORES_TEXT" : !gold ? "ID_NOGOLD_TEXT" : !wood ? "ID_NOWOOD_TEXT" : "ID_DECLINE_TEXT"));
             right.SetTooltip(T(canBuild ? "T_REFUSE_TOOLTIP" : "T_NOT_ENOUGH_RESOURCES_TOOLTIP"));
         }
-        // Both choices start unpressed (vtable +0xc(0)); OK builds only with Build Boat picked.
+        // Both choices start unpressed (vtable +0xc(0)); OK builds only with Build Boat picked. The data ships
+        // the CommonBoxes buttons disabled; the box enables the ones it uses (see EnableButtons): on Box2p the
+        // choices, OK once one is picked (00675eb0 / 00675f60); on Box0p / Box1p the OK button.
+        var okButton = s.Find("ButtonOk");
+        if (canBuild) { EnableButtons(s, "ButtonLeft", "ButtonRight"); if (okButton != null) okButton.Enabled = false; }
+        else EnableButtons(s, "ButtonOk");
         int choice = -1;
-        void Pick(int c) { if (!canBuild) return; choice = c; left?.SetState(c == 0 ? 1 : 0); right?.SetState(c == 1 ? 1 : 0); }
+        bool closed = false;
+        void Pick(int c) { if (!canBuild) return; choice = c; left?.SetState(c == 0 ? 1 : 0); right?.SetState(c == 1 ? 1 : 0); if (okButton != null) okButton.Enabled = true; }
         s.Bus.On("left", () => Pick(0));
         s.Bus.On("right", () => Pick(1));
         s.Bus.On("left_force", () => { Pick(0); Done(); });
         s.Bus.On("right_force", () => { Pick(1); Done(); });
-        void Done() { blocker?.QueueFree(); answer(canBuild && choice == 0); }
+        void Done() { if (closed) return; closed = true; blocker?.QueueFree(); answer(canBuild && choice == 0); }
         s.Bus.On("confirm", Done);
         s.Bus.On("cancel", () => { choice = -1; Done(); });
         Bind(s, Done, () => { choice = -1; Done(); });
