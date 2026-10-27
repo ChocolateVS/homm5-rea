@@ -77,30 +77,75 @@ public sealed partial class OriginalAdventureAI
         FightValue(g, st, diff, h, monster, null, 1.0, unseen);
 
     /// <summary>
-    /// The battle estimate FUN_00bc3af0 (see <see cref="MonsterFightValue"/>) against an army with an optional hero and
-    /// the fight value coefficient c (1.0 without a defender object; FUN_00c02ae0 aggressivity vs a human / computer
-    /// owner otherwise). UNVERIFIED-detail: with a defender hero only its army and level factor enter; the hero's own
-    /// worth is not added.
+    /// The monster form of the battle estimate (no defender object, minimum survival on, no siege): see
+    /// <see cref="BattleEstimate"/>; null = refused.
     /// </summary>
     public static long? FightValue(Engine.Adventure g, AdventureAiStats st, AdventureDifficulty diff, HeroState h, IReadOnlyList<Stack> monster,
                                    HeroState? defHero, double c, bool unseen)
     {
-        double a = AiArmyPower(g, st, diff, h.Army.Live(), h);
-        double e = AiArmyPower(g, st, diff, monster, defHero);
-        if (a < 1.0 || a <= e) return null;
+        var (state, v) = BattleEstimate(g, st, diff, h.Army.Live(), h, monster, defHero, -1, noMinimum: false, siege: false, unseen, c);
+        return state < 0 ? null : v;
+    }
+
+    /// <summary>
+    /// The battle estimate FUN_00bc3af0(attacker, defender stacks, defender object, noMinimum (arg 5), siege (arg 6),
+    /// unseen (arg 7)) as (state, value):
+    ///   A = <see cref="AiArmyPower"/> of the attacker (siege: flyers × SiegeFlyerCoef), E = that of the defender
+    ///   (siege: shooters × SiegeShootersCoef); c = 1, or with a defender object the aggressivity of its owner
+    ///   (FUN_00c02ae0: AttackHumanAggressivityCoef for a human, AttackComputerAggressivityCoef otherwise);
+    ///   A &lt; 1 or A ≤ E → (−1, 0); f = <see cref="Survival"/>; without noMinimum f &lt; 0.75 → (−1, 0);
+    ///   G = the attacker's experience value gain from the defender stacks (00bc3700);
+    ///   a defender hero (004e9280): (0, ftol(estimate(defender) / n + G · c)), n = players 1..8 not allied with the
+    ///   attacker (FUN_00a85090, at least 1);
+    ///   otherwise without noMinimum the rival-army adjustment of <see cref="MonsterFightValue"/>, else (0, ftol(G · c)).
+    /// The attacker wins (FUN_008664c0) when the state is &gt; 0, or 0 with a value &gt; 0.
+    /// Callers: monsters 004eee00 (unseen, minimum), hero targets 00bc3ee0 (noMinimum), the danger gate 008672d0
+    /// (noMinimum), the threat defence test 0086cd10 (noMinimum, siege).
+    /// GAP-details: the siege war machine part (the town's machines FUN_00cd0a30 → 004ea220) is not added; the
+    /// state change of 009d1250 (attacker hero vf 0x21c == 4 against an owner whose vf 0x21c == 5, FUN_00c214d0) is not
+    /// identified; the defender's estimate uses this AI's role table (an enemy hero counts as a freelancer).
+    /// </summary>
+    public static (int State, long Value) BattleEstimate(Engine.Adventure g, AdventureAiStats st, AdventureDifficulty diff,
+        IEnumerable<Stack> att, HeroState? attHero, IEnumerable<Stack> def, HeroState? defHero, int defOwner,
+        bool noMinimum, bool siege, bool unseen, double? coef = null)
+    {
+        var defList = def.ToList();
+        double a = AiArmyPower(g, st, diff, att, attHero, siege ? 1 : 0);
+        double e = AiArmyPower(g, st, diff, defList, defHero, siege ? 2 : 0);
+        int owner = defHero?.Owner ?? defOwner;
+        double c = coef ?? 1.0;
+        if (coef == null && owner >= 0 && g.Player(owner) is { } op)
+            c = (float)(op.Human ? diff.AttackHumanAggressivityCoef : diff.AttackComputerAggressivityCoef);
+        if (a < 1.0 || a <= e) return (-1, 0);
         double f = Survival(a, e, unseen);
-        if (f < 0.75) return null;
+        if (!noMinimum && f < 0.75) return (-1, 0);
         int gained = 0;
-        foreach (var s in monster)
+        foreach (var s in defList)
             if (s.Count > 0 && g.Core.Creatures.TryGetValue(s.Creature, out var cr))
                 gained = unchecked(gained + s.Count * (cr.Exp != 0 ? cr.Exp : cr.Health));
-        int exp = (int)Math.Min(int.MaxValue, h.Experience);
-        double gain = LevelValue(g, st, unchecked(exp + gained)) - LevelValue(g, st, exp);
-        double m = StrongestEnemyArmies(g, st, diff, h.Owner);
-        if (m <= 0) return (long)(gain * c);
-        double total = PlayerHeroArmies(g, st, diff, h.Owner);
-        if (total <= m) return (long)(((f * total - m) * 0.1 + gain) * c);
-        return f * total >= m ? (long)(gain * c) : 0;
+        double gain = 0.0;
+        if (attHero != null)
+        {
+            int exp = (int)Math.Min(int.MaxValue, attHero.Experience);
+            gain = LevelValue(g, st, unchecked(exp + gained)) - LevelValue(g, st, exp);
+        }
+        if (defHero is { Alive: true })
+        {
+            int n = attHero == null ? 1 : Math.Max(1, g.S.Players.Count(p => !SameTeam(g, attHero.Owner, p.Index)));
+            long est = new OriginalAdventureAI().HeroEstimate(g, st, defHero, HeroRole.Freelancer) / n;
+            return (0, (long)((double)est + gain * c));
+        }
+        if (!noMinimum && attHero != null)
+        {
+            double m = StrongestEnemyArmies(g, st, diff, attHero.Owner);
+            if (m > 0)
+            {
+                double total = PlayerHeroArmies(g, st, diff, attHero.Owner);
+                if (total <= m) return (0, (long)(((f * total - m) * 0.1 + gain) * c));
+                return (0, f * total >= m ? (long)(gain * c) : 0);
+            }
+        }
+        return (0, (long)(gain * c));
     }
 
     /// <summary>Σ over the player's heroes of <see cref="AiArmyPower"/> (exe FUN_004ea9d0, no war machines).</summary>

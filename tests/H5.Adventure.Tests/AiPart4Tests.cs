@@ -237,4 +237,52 @@ public class AiPart4Tests(Fixture f)
         ai.GarrisonHeroInTown(g, st, st.Difficulty[1], h, t);
         Assert.True(h.Garrisoned);
     }
+
+    [Fact]
+    public void Battle_estimate_against_a_hero_adds_its_estimate_over_the_rival_players_and_skips_the_minimum()
+    {
+        // FUN_00bc3af0 with a defender hero and noMinimum (00bc3f48): (0, ftol(estimate / n + gain · aggressivity)),
+        // even when the survival share is below 0.75.
+        var (g, att, def) = TwoHeroes(f);
+        var st = Stats(g);
+        var diff = st.Difficulty[1];
+        string c = att.Army.Live().First().Creature;
+        for (int i = 0; i < 7; i++) { att.Army[i] = null; def.Army[i] = null; }
+        att.Army[0] = new Stack(c, 12);
+        def.Army[0] = new Stack(c, 10);
+        def.Owner = g.S.Players.First(p => p.Index != att.Owner && p.Team != g.S.Players[att.Owner].Team).Index;
+        double a = OriginalAdventureAI.AiArmyPower(g, st, diff, att.Army.Live(), att), e = OriginalAdventureAI.AiArmyPower(g, st, diff, def.Army.Live(), def);
+        Assert.True(OriginalAdventureAI.Survival(a, e, false) < 0.75);
+        Assert.Null(OriginalAdventureAI.FightValue(g, st, diff, att, def.Army.Live().ToList(), null, 1.0, false));
+        var (state, v) = OriginalAdventureAI.BattleEstimate(g, st, diff, att.Army.Live(), att, def.Army.Live(), def, def.Owner, noMinimum: true, siege: false, unseen: false);
+        Assert.Equal(0, state);
+        int n = Math.Max(1, g.S.Players.Count(p => p.Team != g.S.Players[att.Owner].Team));
+        long est = new OriginalAdventureAI().HeroEstimate(g, st, def, HeroRole.Freelancer) / n;
+        var cr = g.Core.Creatures[c];
+        int exp = (int)att.Experience;
+        double gain = OriginalAdventureAI.LevelValue(g, st, exp + 10 * (cr.Exp != 0 ? cr.Exp : cr.Health)) - OriginalAdventureAI.LevelValue(g, st, exp);
+        double k = (float)(g.S.Players[def.Owner].Human ? diff.AttackHumanAggressivityCoef : diff.AttackComputerAggressivityCoef);
+        Assert.Equal((long)(est + gain * k), v);
+        // Equal armies: refused (A ≤ E).
+        att.Army[0]!.Count = 10;
+        Assert.Equal(-1, OriginalAdventureAI.BattleEstimate(g, st, diff, att.Army.Live(), att, def.Army.Live(), def, def.Owner, true, false, false).State);
+    }
+
+    [Fact]
+    public void Siege_estimate_weighs_defending_shooters()
+    {
+        // FUN_00bc3af0 arg 6 (the threat defence test): defender sum in mode 2 (shooters × SiegeShootersCoef).
+        var (g, h, _) = TwoHeroes(f);
+        var st = Stats(g);
+        var diff = st.Difficulty[1];
+        h.Level = 1;
+        var shooter = g.Core.Creatures.Values.First(x => x.Shots > 0 && x.Power > 0);
+        var def = new List<Stack> { new(shooter.Id, 10) };
+        Assert.Equal((long)(shooter.Power * 10 * (double)(float)st.SiegeShootersCoef), OriginalAdventureAI.AiArmyPower(g, st, diff, def, null, 2));
+        var att = new List<Stack> { new(shooter.Id, 15) };
+        // Without an attacker hero there is no experience gain, so the value is 0 and the attacker does not "win".
+        Assert.False(OriginalAdventureAI.AttackerWins(g, st, diff, att, null, def, null));
+        Assert.True(OriginalAdventureAI.AttackerWins(g, st, diff, att, h, def, null));
+        Assert.Equal(st.SiegeShootersCoef >= 1.5, !OriginalAdventureAI.AttackerWins(g, st, diff, att, h, def, null, -1, siege: true));
+    }
 }

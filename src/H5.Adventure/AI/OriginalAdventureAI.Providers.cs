@@ -159,14 +159,13 @@ public sealed partial class OriginalAdventureAI
 
     /// <summary>
     /// Enemy hero as a destination (provider 00bc3740 / 00bc3ee0): not on our team and not in a garrison → the battle
-    /// estimate FUN_00bc3af0 against its army (a refusal is state −1), with the aggressivity coefficient of its owner;
+    /// estimate FUN_00bc3af0 (00bc3f48: noMinimum, no siege, seen) against it — estimate / n + gain · aggressivity;
     /// otherwise null (simulated). GAP-detail: hero vf 0x218 in the direct test is not identified (taken as 0).
     /// </summary>
     (int, long)? HeroTargetValue(Engine.Adventure g, AdventureAiStats st, AdventureDifficulty diff, HeroState h, HeroState other)
     {
         if (SameTeam(g, other.Owner, h.Owner) || other.Garrisoned) return null;
-        double c = g.Player(other.Owner)?.Human == true ? diff.AttackHumanAggressivityCoef : diff.AttackComputerAggressivityCoef;
-        var v = FightValue(g, st, diff, h, other.Army.Live().ToList(), other, (float)c, UnseenByHumans(g, other.Pos));
-        return v is long x ? (0, x) : (-1, 0);
+        var (state, v) = BattleEstimate(g, st, diff, h.Army.Live(), h, other.Army.Live(), other, other.Owner, noMinimum: true, siege: false, unseen: false);
+        return state < 0 ? (-1, 0) : (state, v);
     }
 }

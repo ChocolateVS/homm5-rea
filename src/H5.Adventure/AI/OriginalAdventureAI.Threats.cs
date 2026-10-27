@@ -73,15 +73,15 @@ public sealed partial class OriginalAdventureAI
     }
 
     /// <summary>
-    /// The attacker side of a battle estimate wins (FUN_00bc3af0 judged by FUN_008664c0: state &gt; 0, or 0 with a
-    /// positive value). GAP-detail: the full estimate with a defender hero / town (gain, aggressivity, survival
-    /// minimum) is not ported; here the attacker wins when its AI army sum A ≥ 1 exceeds the defender's E.
+    /// The attacker side of a battle estimate wins (<see cref="BattleEstimate"/> with noMinimum, judged by
+    /// FUN_008664c0: state &gt; 0, or 0 with a positive value); <paramref name="siege"/> for the town defence test.
+    /// UNVERIFIED-detail: the mine / garrison / simulated-battle callers use these flags too (their pushes not read).
     /// </summary>
     public static bool AttackerWins(Engine.Adventure g, AdventureAiStats st, AdventureDifficulty diff, IEnumerable<Stack> att, HeroState? attHero,
-                                    IEnumerable<Stack> def, HeroState? defHero)
+                                    IEnumerable<Stack> def, HeroState? defHero, int defOwner = -1, bool siege = false)
     {
-        double a = AiArmyPower(g, st, diff, att, attHero), e = AiArmyPower(g, st, diff, def, defHero);
-        return a >= 1.0 && a > e;
+        var (state, v) = BattleEstimate(g, st, diff, att, attHero, def, defHero, defOwner, noMinimum: true, siege, unseen: false);
+        return state > 0 || (state == 0 && v > 0);
     }
 
     /// <summary>Exe FUN_00c02b20: threat multiplier by the town owner (neutral, ours, ally, enemy).</summary>
@@ -142,7 +142,7 @@ public sealed partial class OriginalAdventureAI
                     }
                     if (DaysTo(cost, eh.MovePoints, eh.MaxMovePoints) <= 1) defArmy = null;
                     if (!SameTeam(g, town.Owner, e.Index) && defArmy != null && defArmy.Any() &&
-                        !AttackerWins(g, st, diff, eh.Army.Live(), eh, defArmy, defHero)) continue;
+                        !AttackerWins(g, st, diff, eh.Army.Live(), eh, defArmy, defHero, town.Owner, siege: true)) continue;
                     double mult = ThreatMultiplier(g, diff, me, town.Owner);
                     double value = town.Owner == me ? TownValue(g, st, diff, town, me) : diff.ValueOfTown;
                     if (!(value > 0.0)) continue;
