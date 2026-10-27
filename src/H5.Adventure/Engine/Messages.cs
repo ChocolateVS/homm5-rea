@@ -92,6 +92,8 @@ public sealed record ResolveBattleCmd(int WinnerSide, List<ArmySlot> AttackerSur
     public int[]? HeroMana { get; init; }
     /// <summary>Resources the two heroes spent on runes (attacker's 7, then the defender's 7); null = none.</summary>
     public int[]? ResourcesSpent { get; init; }
+    /// <summary>Charges left on the two heroes' worn wands (H5.Combat HeroState.Wands order); null = unchanged.</summary>
+    public int[]?[]? WandCharges { get; init; }
 }
 public sealed record DismissHeroCmd(int HeroId) : AdvCommand;
 public sealed record BuyWarMachineCmd(int TownObject, int HeroId, string Machine) : AdvCommand;

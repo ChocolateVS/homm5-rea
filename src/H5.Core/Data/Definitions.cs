@@ -203,8 +203,20 @@ public sealed class HeroInstance
     /// <summary>Next-battle bonuses (the adventure hero's struct returned by vfunc 0x330): luck, morale, attack, defence,
     /// hit points percent, initiative, speed. Morale and luck are applied by the adventure hand-off itself.</summary>
     public int[] BattleBonus = new int[7];
+    /// <summary>
+    /// The worn wands' book entries (artifact with a charge object, FUN_00a34490): spell and charges left, in worn order.
+    /// Cast for a charge instead of mana (CCombatHero vf 0x220 / 0x224 = 00bc0030 / 00bbf610).
+    /// </summary>
+    public List<SpellCharge> Wands = new();
     public string Class => Shared?.Class ?? "";
     public string Town => Shared?.Town ?? "";
+}
+
+/// <summary>A wand book entry: its spell and the charges of its charge object (+0x20).</summary>
+public sealed class SpellCharge
+{
+    public string Spell = "";
+    public int Charges;
 }
 
 public sealed class DuelPreset

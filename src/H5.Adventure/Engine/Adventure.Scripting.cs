@@ -108,7 +108,9 @@ public sealed partial class Adventure
     /// </summary>
     public bool ScriptRemoveArtifact(HeroState h, string artifact)
     {
-        if (!h.Artifacts.Remove(artifact) && !h.Backpack.Remove(artifact)) return false;
+        if (h.Artifacts.Remove(artifact)) TakeInstance(h, artifact, true);
+        else if (h.Backpack.Remove(artifact)) TakeInstance(h, artifact, false);
+        else return false;
         Emit(new HeroStatChanged(h.Id, "artifact_removed:" + artifact, 0));
         return true;
     }
@@ -179,7 +181,7 @@ public sealed partial class Adventure
     {
         var h = S.OffMapHeroes.Find(x => x.DefId == def.Id);
         if (h != null) { S.OffMapHeroes.Remove(h); h.Pos = pos; h.Owner = owner; h.Alive = true; }
-        else h = HeroFromDef(def, owner, pos);
+        else { h = HeroFromDef(def, owner, pos); SetUpHeroBook(h); }
         S.Heroes.Add(h);
         S.HeroPool.Remove(def.Id);
         RevealAround(h);

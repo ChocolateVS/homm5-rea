@@ -63,6 +63,7 @@ public sealed partial class Adventure
         // Every circle's offer (CTown vf 0x24 = FUN_00ccfab0: guild + Library, runes, warcries).
         for (int lvl = 1; lvl <= 5; lvl++)
             foreach (var sp in TownSpellsAt(t, lvl)) LearnSpell(h, sp, force: false);
+        RechargeWands(h);
     }
 
     string? DoBuild(BuildCmd c)

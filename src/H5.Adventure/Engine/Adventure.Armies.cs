@@ -151,6 +151,7 @@ public sealed partial class Adventure
         else if (h == target && c.FromBackpack) return "already in the backpack";
         src.Remove(c.Artifact);
         (c.ToBackpack ? target.Backpack : target.Artifacts).Add(c.Artifact);
+        MoveInstance(h, c.Artifact, !c.FromBackpack, target, !c.ToBackpack);
         Emit(new ArmyChanged(h.Id, -1));
         if (target != h) Emit(new ArmyChanged(target.Id, -1));
         return null;

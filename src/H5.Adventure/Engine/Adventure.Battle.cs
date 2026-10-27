@@ -398,6 +398,7 @@ public sealed partial class Adventure
         if (h == null)
         {
             h = HeroFromDef(Core.Heroes[defId], owner, pos);
+            SetUpHeroBook(h);
             GiveStartingArmy(h);
             return h;
         }
@@ -426,7 +427,8 @@ public sealed partial class Adventure
             DisplayName = h.Name, Shared = def, Experience = (int)Math.Min(int.MaxValue, h.Experience), Level = h.Level,
             Army = h.Army.ToSlots(), Artifacts = h.Artifacts.ToList(),
             Attack = h.Attack, Defence = h.Defence, SpellPower = h.SpellPower, Knowledge = h.Knowledge,
-            Skills = h.Skills.ToList(), Perks = h.Perks.ToList(), Spells = BookSpells(h),
+            Skills = h.Skills.ToList(), Perks = h.Perks.ToList(), Spells = ManaBookSpells(h),
+            Wands = WandEntries(h).Select(w => new SpellCharge { Spell = w.Spell!, Charges = w.Charges }).ToList(),
             Ballista = h.Ballista, FirstAidTent = h.FirstAidTent, AmmoCart = h.AmmoCart, Mana = h.Mana,
             FavoriteEnemies = h.FavoriteEnemies.Where(e => e.Length > 0).ToList(),
             // Morale and luck ([0], [1]) are added to the combat heroes by CreatePendingBattle.
@@ -447,6 +449,14 @@ public sealed partial class Adventure
         bool attRetreated = retreat && !attackerWon, defRetreated = retreat && attackerWon && defHero != null;
         // Spell points spent in the battle stay spent (exe: the combat hero is the adventure hero).
         if (c.HeroMana is { Length: 2 } mana) { att.Mana = Math.Max(0, mana[0]); if (defHero != null) defHero.Mana = Math.Max(0, mana[1]); }
+        // Wand charges spent in the battle (00bbf610 -> 00ca62f0 on the adventure hero's own charge objects).
+        if (c.WandCharges is { Length: 2 } wc)
+            foreach (var (side, h) in new[] { (0, (HeroState?)att), (1, defHero) })
+                if (h != null && wc[side] is { } left)
+                {
+                    var wands = WandEntries(h);
+                    for (int i = 0; i < wands.Count && i < left.Length; i++) wands[i].Charges = Math.Clamp(left[i], 0, wands[i].MaxCharges);
+                }
         // Rune costs paid in the battle (H5.Combat HeroState.ResourcesSpent) leave the owners' purses.
         if (c.ResourcesSpent is { Length: 14 } spent)
             foreach (var (side, h) in new[] { (0, (HeroState?)att), (1, defHero) })

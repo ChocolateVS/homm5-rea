@@ -52,7 +52,7 @@ public sealed partial class Battle
             {
                 var sp = Db.Spell(id);
                 if (sp == null || !CanCastWarcry(h, sp)) continue;
-                int cost = HeroManaCost(h, sp);
+                int cost = WandFor(h, id) != null ? 0 : HeroManaCost(h, sp);
                 if (h.Mana < cost) continue;
                 var m = HeroMastery(h, sp);
                 var opt = new SpellOption { Spell = id, ManaCost = cost, Mastery = m, Targeting = TargetingOf(sp) };

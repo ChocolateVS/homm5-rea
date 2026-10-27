@@ -75,6 +75,7 @@ public sealed partial class Adventure
         if (!list.Contains(c.Artifact)) return "artifact not carried";
         int exp = AltarArtifactExperience(c.Artifact);
         list.Remove(c.Artifact);
+        TakeInstance(h, c.Artifact, !c.FromBackpack);
         Emit(new ArtifactSacrificed(h.Id, c.Artifact, exp));
         GainExperience(h, exp);
         return null;

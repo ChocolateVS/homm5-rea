@@ -210,6 +210,17 @@ public sealed class HeroState
     /// <summary>Carried but not worn (hero screen backpack); worn ones are <see cref="Artifacts"/>.</summary>
     public List<string> Backpack = new();
     /// <summary>
+    /// Per-instance data of the carried WAND_OF_X / SCROLL_OF_SPELL_X / ARTIFACT_RUNE_OF_FLAME (artifact +0x20 spell,
+    /// +0x1c charge object), matched by order: the k-th worn (backpack) occurrence of a type in <see cref="Artifacts"/>
+    /// (<see cref="Backpack"/>) is the k-th instance of that type with the same <see cref="ArtifactInstance.Worn"/>.
+    /// </summary>
+    public List<ArtifactInstance> ArtifactInstances = new();
+    /// <summary>
+    /// The worn artifacts whose effects are on (FUN_00b5a410): a change of <see cref="Artifacts"/> against this list is
+    /// an artifact going on / off, after which the book is re-derived (FUN_00b53b10).
+    /// </summary>
+    public List<string>? ArtifactsOn;
+    /// <summary>
     /// The creature-artifact bag (hero vf 0xb4, built by FUN_00c0b580): two rows of at least five entries; null = empty
     /// entry (the exe's entry byte 1). See Adventure.ArcaneForge.
     /// </summary>
@@ -284,6 +295,18 @@ public sealed class HeroState
     public bool HasPerk(string perk) => Perks.Contains(perk);
     public bool HasArtifact(string art) => Artifacts.Contains(art);
     public override string ToString() => $"{Name}#{Id} p{Owner + 1} {Pos} L{Level}";
+}
+
+/// <summary>
+/// One artifact object's own data (H5_Game.exe artifact set-up FUN_00ca7e40): the spell (+0x20) of a wand, scroll or
+/// Rune of Flame; a wand's charge object (+0x1c, 0x38 bytes from FUN_00ca7ce0: +0x1c max, +0x20 current).
+/// </summary>
+public sealed class ArtifactInstance
+{
+    public string Artifact = "";
+    public bool Worn;
+    public string? Spell;
+    public int Charges, MaxCharges;
 }
 
 /// <summary>The choices offered on a level up (fan manual p.294): up to 2 skills and 2 perks.</summary>

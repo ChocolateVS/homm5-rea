@@ -219,12 +219,14 @@ public class SpellAvailabilityTests(Fixture f)
     public void AbsoluteWizardrySpellsAreSourcedAndItsFallThroughGivesNoMassSpells()
     {
         // Case 0x89 learns with the perk as source (no 00b4bb40, not in +0x204); the fall-through into 00b5527a calls
-        // FUN_00a344c0(0x89, spell), which never holds.
+        // FUN_00a344c0(0x89, spell), which never holds. The book rebuild 00b53b10 that vf 0x1c8 (00b57ab0) runs after
+        // 00b54770 then gives the sourced entry its mass version (vf 0x158 = 00b526f0 is true for a sourced entry).
         var g = Game("SPELL_CURSE");
         var h = Hero(g);
         h.Perks.Add("HERO_SKILL_MASTER_OF_CURSES");
         g.ScriptLearnPerk(h, "HERO_SKILL_ABSOLUTE_WIZARDY");
-        Assert.Equal(new[] { "SPELL_CURSE" }, h.Spells);
+        Assert.Equal(new[] { "SPELL_CURSE", "SPELL_MASS_CURSE" }, h.Spells);
+        Assert.Equal(new[] { "HERO_SKILL_MASTER_OF_CURSES" }, h.SpellSources["SPELL_MASS_CURSE"]);
         Assert.False(Engine.Adventure.KnowsSpell(h, "SPELL_CURSE"));
         // A plain learn afterwards puts it in the known list and runs 00b4bb40.
         g.ScriptLearnSpell(h, "SPELL_CURSE");

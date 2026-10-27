@@ -146,6 +146,7 @@ public sealed partial class Adventure
         int price = ArtifactSellPrice(c.Artifact);
         if (price <= 0) return "cannot sell this artifact";
         list.Remove(c.Artifact);
+        TakeInstance(h, c.Artifact, !c.FromBackpack);
         Emit(new ArtifactSold(h.Id, c.Artifact, price));
         GiveOne(Current, Purse.Gold, price);
         return null;

@@ -318,6 +318,13 @@ public sealed partial class Adventure
     /// </summary>
     void ApplyPerkOnLearn(HeroState h, string perk)
     {
+        // vf 0x1c8 = 00b57ab0: 00b54770, then the book rebuild 00b53b10 (00b57dbd).
+        OnLearnEffects(h, perk);
+        RebuildBook(h);
+    }
+
+    void OnLearnEffects(HeroState h, string perk)
+    {
         var id = CanonicalSkill(perk);
         if (id == "HERO_SKILL_LEARNING") { ApplyLearningBonus(h); return; }
         if (PerkStat(id) is { } st) AddStat(h, st.Stat, st.Amount);

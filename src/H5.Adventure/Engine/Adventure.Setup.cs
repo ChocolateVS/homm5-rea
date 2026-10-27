@@ -33,6 +33,7 @@ public sealed partial class Adventure
         g.ResetTrainingPoints();
         g.PlaceGrail();
         g.SetupRumours();
+        g.SyncArtifactInstances();
         foreach (var h in s.Heroes) g.ResetHeroDay(h, newWeek: true);
         foreach (var p in s.Players) g.RevealOwned(p);
         s.CurrentPlayer = 0;
@@ -159,7 +160,11 @@ public sealed partial class Adventure
                         "ARTF_RANDOM_RELIC" => "ARTF_CLASS_RELIC",
                         _ => null,
                     });
-                    os.SpellId = o.SpellId ?? (os.ArtifactId == ScrollArtifact ? RandomScrollSpell() : null);
+                    // 004ec660 -> 00ca8300 -> 00ca7e40: a wand / scroll keeps the map's spellID, else rolls one; a Rune of
+                    // Flame always rolls (NewArtifactInstance); other artifacts carry none.
+                    os.SpellId = os.ArtifactId != null && HasInstanceSpell(os.ArtifactId)
+                        ? NewArtifactInstance(os.ArtifactId, worn: false, os.ArtifactId is WandArtifact or ScrollArtifact ? o.SpellId : null).Spell
+                        : null;
                     foreach (var g in o.Guards) os.Guards.Add(new Stack(g.Creature, g.Count));
                     break;
                 }
@@ -254,6 +259,7 @@ public sealed partial class Adventure
             var chosen = _startHeroes.GetValueOrDefault(p.Index) is { } sh ? def.FirstOrDefault(d => d.Id == sh) : null;
             var pick = chosen ?? def[S.Rng.Next(def.Count)];
             var h = HeroFromDef(pick, p.Index, EntranceOf(town));
+            SetUpHeroBook(h);
             h.InTown = town.Object;
             GiveStartingArmy(h);
             S.Heroes.Add(h);
@@ -308,6 +314,7 @@ public sealed partial class Adventure
         // vf 0x384 (00b56b50) grants the talisman spells.
         SetTalismanLevel(h, hi.TalismanLevel);
         GrantTalismanSpells(h);
+        SetUpHeroBook(h);
         return h;
     }
 

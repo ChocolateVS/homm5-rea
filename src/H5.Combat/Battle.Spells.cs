@@ -71,15 +71,19 @@ public sealed partial class Battle
     /// artifact, and passes vf 0x158 (FUN_00b526f0: true for artifact and sourced entries) gets FUN_00b4bb40 — its
     /// empowered version with Empowered Spells, its mass version with its Master perk. So artifact spells (tomes, Band of
     /// Conjurer) get them too, as here. Book entries of school SPECIAL (SPELL_ABILITY_*) are hero abilities, not spells.
+    /// The worn wands' entries (<see cref="HeroState.Wands"/>) are castable while their charge object has a charge
+    /// (vf 0x220 = FUN_00bc0030 → FUN_00ca62e0: +0x20 &gt; 0); their mass / empowered versions are ordinary mana entries.
     /// </summary>
-    public IEnumerable<string> HeroSpells(HeroState h)
+    public IEnumerable<string> HeroSpells(HeroState h) => HeroSpells(h, h.Wands);
+
+    IEnumerable<string> HeroSpells(HeroState h, List<H5.Core.Data.SpellCharge> wands)
     {
         var set = new List<string>();
-        foreach (var s in h.Spells)
+        foreach (var s in h.Spells.Concat(wands.Select(w => w.Spell)))
         {
             var sp = Db.Spell(s);
             if (sp == null || !sp.IsCombatSchool) continue;
-            set.Add(s);
+            if (h.Spells.Contains(s) || wands.Any(w => w.Spell == s && w.Charges > 0)) set.Add(s);
             if (MassSpells.TryGetValue(s, out var mass) && h.HasPerk(mass.Perk)) set.Add(mass.Mass);
         }
         // Perk-granted spells (Power of Speed / Power of Endurance / Teleport Assault, p.108/p.111/p.123).
@@ -89,7 +93,7 @@ public sealed partial class Battle
         if (h.HasPerk(Sk.RuneArmour)) set.Add("SPELL_CELESTIAL_SHIELD");
         // Empowered Spells: empowered versions of the known damaging Destructive spells (double mana, +50% damage).
         if (h.HasPerk(Sk.EmpoweredSpells))
-            foreach (var s in set.ToList())
+            foreach (var s in set.Concat(wands.Select(w => w.Spell)).ToList())
                 if (Db.Spell("SPELL_EMPOWERED_" + s["SPELL_".Length..]) is { } emp) set.Add(emp.Id);
         if (h.SkillLevel(Sk.Runelore) > Mastery.None)
             foreach (var r in Db.Spells.Values.Where(x => x.School == "MAGIC_SCHOOL_RUNIC"))
@@ -99,6 +103,18 @@ public sealed partial class Battle
     }
 
     const string MindCleanerBlock = "MIND_CLEANER:";
+
+    /// <summary>
+    /// The wand entry a cast of <paramref name="spell"/> uses: none when the spell is in the hero's book otherwise (a
+    /// mana entry — the engine's cast names a spell, not a book entry, and prefers that one); else the first worn wand
+    /// of that spell with a charge (00bc0030: FUN_00a34490 artifact +0x1c set → FUN_00ca62e0).
+    /// </summary>
+    internal H5.Core.Data.SpellCharge? WandFor(HeroState h, string spell)
+    {
+        if (h.Wands.Count == 0) return null;
+        if (HeroSpells(h, new()).Contains(spell)) return null;
+        return h.Wands.FirstOrDefault(w => w.Spell == spell && w.Charges > 0);
+    }
 
     /// <summary>
     /// Mind Cleaner (exe 00983790 @ 0098431f-009843f2): chance = 100 / max(1, circle + 1) − caster level + Mind Cleaner
@@ -352,7 +368,8 @@ public sealed partial class Battle
             if (CheckHeroActive(c, out var h) is { } e) return e;
             if (!HeroSpells(h).Contains(sp.Id)) return "spell not known";
             if (!CanCastWarcry(h, sp)) return "hero level too low for this warcry";
-            int cost = HeroManaCost(h, sp);
+            var wand = WandFor(h, sp.Id);
+            int cost = wand != null ? 0 : HeroManaCost(h, sp);
             if (h.Mana < cost) return "not enough mana";
             var mastery = HeroMastery(h, sp);
             double power = HeroSpellPower(h, sp);
@@ -360,9 +377,14 @@ public sealed partial class Battle
             if (ValidateSpellTarget(c.ActorId, h.Side, sp, mastery, c.TargetId, c.Cell) is { } te) return te;
             var target = c.TargetId is int tid ? S.Unit(tid) : null;
             // Mark of the Wizard is a second, separately paid cast after this one (MarkOfTheWizardRecast, exe 009834b0).
-            cost = SkillAuditH.ErraticManaSpend(cost, h.HasPerk(Sk.ErraticMana), HeroRoll, S.Rng);   // exe 00bbf6a6
-            h.Mana -= cost;
-            Emit(new ManaChanged(c.ActorId, h.Mana));
+            // vf 0x224 = FUN_00bbf610: an entry with a charge object spends a charge (FUN_00ca62f0), any other mana.
+            if (wand != null) wand.Charges--;
+            else
+            {
+                cost = SkillAuditH.ErraticManaSpend(cost, h.HasPerk(Sk.ErraticMana), HeroRoll, S.Rng);   // exe 00bbf6a6
+                h.Mana -= cost;
+                Emit(new ManaChanged(c.ActorId, h.Mana));
+            }
             // Pendant of Conflux (ARTIFACT_TWISTING_NEITHER) on the enemy hero: + half the spent points (exe 00983790).
             if (Enemy(h.Side) is { Present: true } conflux && conflux.Artifacts.Contains("ARTIFACT_TWISTING_NEITHER") && cost > 0)
             {

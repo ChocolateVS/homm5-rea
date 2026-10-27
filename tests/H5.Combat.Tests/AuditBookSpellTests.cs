@@ -53,4 +53,26 @@ public class AuditBookSpellTests(GameDataFixture f)
         h.Perks.Add(Sk.MasterBlessing);
         Assert.Contains("SPELL_MASS_BLESS", b.HeroSpells(h));
     }
+
+    /// <summary>
+    /// A wand entry (artifact with a charge object, FUN_00a34490) is castable while the charge object has a charge
+    /// (vf 0x220 = 00bc0030 → FUN_00ca62e0) and the cast spends a charge, not mana (vf 0x224 = 00bbf610 → FUN_00ca62f0).
+    /// </summary>
+    [StockFact]
+    public void WandEntrySpendsAChargeInsteadOfMana()
+    {
+        var b = Started(f, 4);
+        var h = b.State.Heroes[0];
+        h.Spells = new();
+        h.Wands = new() { new SpellCharge { Spell = "SPELL_MAGIC_ARROW", Charges = 1 } };
+        Assert.Contains("SPELL_MAGIC_ARROW", b.HeroSpells(h));
+        var enemy = b.State.Units.First(u => u.Alive && b.Controller(u) == 1);
+        b.State.Active = Actor.Hero(0);
+        int mana = h.Mana;
+        var r = b.Apply(new CastSpellCmd(Actor.Hero(0), "SPELL_MAGIC_ARROW", enemy.Id) { Side = 0 });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(mana, h.Mana);
+        Assert.Equal(0, h.Wands[0].Charges);
+        Assert.DoesNotContain("SPELL_MAGIC_ARROW", b.HeroSpells(h));
+    }
 }

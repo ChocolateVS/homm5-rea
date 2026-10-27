@@ -159,6 +159,7 @@ public static class BattleSetup
         h.Skills = hi.Skills.Where(sk => sk.SkillId != "HERO_SKILL_NONE").ToList();
         h.Perks = hi.Perks.ToList();
         h.Spells = hi.Spells.ToList();
+        h.Wands = hi.Wands.Select(w => new SpellCharge { Spell = w.Spell, Charges = w.Charges }).ToList();
         h.Artifacts = hi.Artifacts.ToList();
         SkillAuditH.ApplyPendantOfMastery(h);
         h.FavoriteEnemies = hi.FavoriteEnemies.ToList();

@@ -175,6 +175,8 @@ public sealed class HeroState
     public List<SkillEntry> Skills = new();
     public List<string> Perks = new();
     public List<string> Spells = new();
+    /// <summary>Worn wands' book entries (spell, charges left): cast for a charge (00bc0030 / 00bbf610), not mana.</summary>
+    public List<H5.Core.Data.SpellCharge> Wands = new();
     public List<string> Artifacts = new();
     public List<string> FavoriteEnemies = new();
     /// <summary>Equipped pieces per artifact set effect id.</summary>

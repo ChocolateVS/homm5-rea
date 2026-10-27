@@ -135,6 +135,7 @@ public sealed partial class Adventure
             AnswerSphinxCmd c => DoAnswerSphinx(c),
             _ => "unknown command",
         };
+        if (err == null) SyncArtifactInstances();
         var result = err != null ? AdvResult.Reject(err) : new AdvResult { Ok = true, Events = _ev };
         Observer?.Invoke(cmd, result);
         return result;

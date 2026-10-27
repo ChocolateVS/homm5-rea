@@ -106,7 +106,8 @@ public sealed partial class Adventure
             switch (kind)
             {
                 case "artifact" when id != null:
-                    if (!h.Artifacts.Remove(id)) h.Backpack.Remove(id);
+                    if (h.Artifacts.Remove(id)) TakeInstance(h, id, true);
+                    else if (h.Backpack.Remove(id)) TakeInstance(h, id, false);
                     break;
                 case "army" when id != null:
                     int left = amount;

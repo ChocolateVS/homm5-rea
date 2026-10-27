@@ -565,7 +565,7 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
         var now = _clock();
         b.CountActingTime(now);
         var cmd = new ResolveBattleCmd(b.Battle.State.Winner ?? 1, b.Survivors(0), b.Survivors(1), b.AttackerFled)
-        { Player = rb.AtkOwner, HeroMana = b.Battle.State.Heroes.Select(h => h.Mana).ToArray(), ResourcesSpent = b.Battle.State.Heroes.SelectMany(h => h.ResourcesSpent).ToArray(), EndReason = b.Battle.State.EndReason ?? "" };
+        { Player = rb.AtkOwner, HeroMana = b.Battle.State.Heroes.Select(h => h.Mana).ToArray(), ResourcesSpent = b.Battle.State.Heroes.SelectMany(h => h.ResourcesSpent).ToArray(), WandCharges = b.Battle.State.Heroes.Select(h => h.Wands.Select(w => w.Charges).ToArray()).ToArray(), EndReason = b.Battle.State.EndReason ?? "" };
         foreach (var side in b.Participants) Out(side).Add(new JsonObject { ["end"] = new JsonObject { ["winner"] = b.Battle.State.Winner } });
         if (rb.Stamp == _turnStamp)
             foreach (var (owner, bs) in new[] { (rb.AtkOwner, 0), (rb.DefOwner, 1) })

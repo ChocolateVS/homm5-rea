@@ -64,8 +64,9 @@ public sealed partial class Adventure
         {
             case ObjectKind.Treasure: VisitTreasure(h, p, o, os); break;
             case ObjectKind.Artifact:
-                if (os.SpellId != null) LearnSpell(h, os.SpellId, force: true);
-                else if (os.ArtifactId != null) GiveArtifact(h, os.ArtifactId);
+                // The map object's artifact object (004ec660: its spell, see SetupObject) goes to the hero (hero
+                // vf 0x84); a scroll is a worn book entry (00b541f0), not a learned spell.
+                if (os.ArtifactId != null) GiveArtifact(h, os.ArtifactId, os.SpellId);
                 RemoveObject(o.Index);
                 break;
             case ObjectKind.Mine:
@@ -728,9 +729,12 @@ public sealed partial class Adventure
         Emit(new HeroStatChanged(h.Id, stat, delta));
     }
 
-    void GiveArtifact(HeroState h, string id)
+    /// <summary>Puts an artifact on the hero; a wand / scroll / Rune of Flame object comes with its own data
+    /// (<paramref name="mapSpell"/>: the map object's spellID, see <see cref="NewArtifactInstance"/>).</summary>
+    void GiveArtifact(HeroState h, string id, string? mapSpell = null)
     {
         h.Artifacts.Add(id);
+        if (HasInstanceSpell(id)) h.ArtifactInstances.Add(NewArtifactInstance(id, worn: true, mapSpell));
         Emit(new ArtifactGained(h.Id, id));
         RumourArtifactGained(h, id);
     }
