@@ -6,6 +6,7 @@ using H5.Adventure.Map;
 using H5.Save;
 using H5Reborn.Adventure;
 using H5Reborn.Campaign;
+using H5Reborn.Options;
 using H5Reborn.Profiles;
 using H5Reborn.Ui;
 
@@ -35,8 +36,10 @@ public static class SaveManager
     /// reloaded by the host through CMultiplayerHostLoadLogic); H5Reborn cannot restore a network game
     /// yet, so it refuses instead of writing a single-player save of the replica (docs/rules/AUDIT_CAMPAIGN.md).
     /// </remarks>
-    public static string? CannotSave(AdventureScreen screen) =>
-        screen.Session.Remote != null ? "network games cannot be saved yet" : AdventureSave.CannotSaveReason(screen.Session.Game);
+    public static string? CannotSave(AdventureScreen screen, bool beforeCombat = false) =>
+        screen.Session.Remote != null ? "network games cannot be saved yet"
+        : beforeCombat && screen.Session.S.Battle != null && !screen.Session.S.Finished ? null
+        : AdventureSave.CannotSaveReason(screen.Session.Game);
 
     /// <summary>
     /// The save list's thumbnail (SaveInfo/ScreenShoot, 274x180): the current frame,
@@ -63,9 +66,9 @@ public static class SaveManager
     }
 
     /// <summary>Saves the game under <paramref name="name"/> (overwriting a save of that name). Returns an error or null.</summary>
-    public static string? Save(AdventureScreen screen, string name, byte[]? thumbnail)
+    public static string? Save(AdventureScreen screen, string name, byte[]? thumbnail, bool beforeCombat = false)
     {
-        if (CannotSave(screen) is { } reason) return reason;
+        if (CannotSave(screen, beforeCombat) is { } reason) return reason;
         var session = screen.Session;
         try
         {
@@ -85,7 +88,7 @@ public static class SaveManager
             var save = AdventureSave.Capture(new AdventureSave.CaptureInput
             {
                 Game = session.Game,
-                Map = AdventureSave.SpecFor(session.Map),
+                Map = session.Generator != null ? GeneratedSpec(session.Map, session.Generator) : AdventureSave.SpecFor(session.Map),
                 Name = name,
                 Kind = campaign != null ? SaveKind.Campaign : session.IsHotSeat ? SaveKind.HotSeat : SaveKind.Scenario,
                 DataFingerprint = Game.Instance.Install.DataFingerprint(),
@@ -100,6 +103,7 @@ public static class SaveManager
             });
             var file = SaveSlots.Write(Storage, save);
             GD.Print($"[H5] saved \"{name}\" to {file} (day {session.S.Day})");
+            ShowSaveComplete(screen);
             return null;
         }
         catch (Exception e)
@@ -115,13 +119,59 @@ public static class SaveManager
             screen.Message(Text("UI/SaveLoad/SaveErrorTitle.txt", "Cannot create a save"), error);
     }
 
-    /// <summary>Autosave at the start of a human player's turn (H5_Game.exe FUN_00607d50, "autosave" option).</summary>
+    /// <summary>
+    /// Autosave when a human player is to act (H5_Game.exe 006082f0 at the new turn, 00607d50 at each player change
+    /// when world settings +0x1c — the hot-seat flag — is set; both need the "autosave" var). Named by
+    /// <see cref="RotatingName"/> from UI/Common/autosavename.txt.
+    /// </summary>
     public static void AutoSave(AdventureScreen screen)
     {
         if (CannotSave(screen) != null) return;
-        var name = SaveSlots.Format(Text("UI/Common/autosavename.txt", "Autosave <value=id>"), screen.Session.S.Day.ToString());
-        Save(screen, name, CaptureThumbnail(screen.GetViewport()));
+        Save(screen, RotatingName(Storage, Text("UI/Common/autosavename.txt", "Autosave <value=id>")), CaptureThumbnail(screen.GetViewport()));
     }
+
+    /// <summary>
+    /// "save_before_combat" (var, default 0 in user_a2.cfg): 005a5d90 saves when a battle starts between a human
+    /// and a computer side (player vf 0x190 differs), named from UI/Common/save_before_combat.txt. The save holds
+    /// the pending battle, which starts again when the save is loaded.
+    /// </summary>
+    public static void SaveBeforeCombat(AdventureScreen screen)
+    {
+        var s = screen.Session;
+        if (s.IsRemote || s.S.Battle is not { } pb || !OptionsStore.GetBool("save_before_combat")) return;
+        if (AdvNet.HotSeatBattles.HumanSides(s.S, pb).Length != 1) return;
+        Save(screen, RotatingName(Storage, Text("UI/Common/save_before_combat.txt", "Before Combat <value=id>")), CaptureThumbnail(screen.GetViewport()), beforeCombat: true);
+    }
+
+    /// <summary>
+    /// CSavesCreator vf 0x1c (007f9e10): the template is formatted with ids 1..3; the first name without a save is
+    /// used, else the oldest of the three is overwritten.
+    /// </summary>
+    public static string RotatingName(ISaveStorage storage, string template) => SaveSlots.RotatingName(storage, template);
+
+    /// <summary>
+    /// 007ea770 → 007f84a0: after a save the "ID_SAVE_COMPLETE" text (UI/ID_SAVE_COMPLETE.txt) is shown for
+    /// "save_ok_time" ms (var default 1000, 007ea1c0).
+    /// </summary>
+    static void ShowSaveComplete(AdventureScreen screen)
+    {
+        if (!screen.IsInsideTree()) return;
+        var text = Text("UI/ID_SAVE_COMPLETE.txt", "Save completed");
+        var label = new BitmapText
+        {
+            Markup = $"<h3><center>{Ui.Screens.ChatLogView.Escape(text)}", AnchorLeft = 0.25f, AnchorRight = 0.75f,
+            AnchorTop = 0.45f, AnchorBottom = 0.5f, MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        screen.AddChild(label);
+        float ms = float.TryParse(OptionsStore.Get("save_ok_time", "1000"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 1000;
+        screen.GetTree().CreateTimer(Math.Max(0.1, ms / 1000.0)).Timeout += () => { if (GodotObject.IsInstanceValid(label)) label.QueueFree(); };
+    }
+
+    /// <summary>A generated map is reopened by regenerating it from the generator options (deterministic, seeded).</summary>
+    static MapSpec GeneratedSpec(AdvMap map, H5.AdvNet.RmgSettings rmg) => new()
+    {
+        Kind = "rmg", Id = map.Id, Source = "", Generator = new H5.AdvNet.AdvNetSettings { Rmg = rmg }.ToJson(),
+    };
 
     // ---------------------------------------------------------------- loading
 
@@ -153,13 +203,27 @@ public static class SaveManager
             var fs = Game.Instance.Fs;
             if (save.Header.DataFingerprint.Length > 0 && save.Header.DataFingerprint != Game.Instance.Install.DataFingerprint())
                 GD.PushWarning("[H5] this save was made with different game data or mods");
-            var files = AdventureSave.OpenMap(save.Header.Map, fs);
-            var map = new MapLoader(Game.Instance.Db, fs).Load(files);
+            MapFiles files;
+            AdvMap map;
+            H5.AdvNet.RmgSettings? generator = null;
+            if (save.Header.Map.Kind == "rmg" && save.Header.Map.Generator is JsonObject gen && H5.AdvNet.AdvNetSettings.From(gen).Rmg is { } rmg)
+            {
+                // Generated maps are regenerated from their options (the exe reopens Maps/RMG/<name>.h5m).
+                var lm = AdvNet.AdvNetGame.Maps.Load(new H5.AdvNet.AdvNetSettings { Rmg = rmg });
+                files = lm.Files ?? MapFiles.FromPak(fs, "Maps/Generated/map.xdb");
+                map = lm.Map;
+                generator = rmg;
+            }
+            else
+            {
+                files = AdventureSave.OpenMap(save.Header.Map, fs);
+                map = new MapLoader(Game.Instance.Db, fs).Load(files);
+            }
             var game = AdventureSave.Restore(save, AdventureSession.SharedDb, map);
             var client = JsonNode.Parse(save.GetText(AdventureSave.ClientPart) ?? "{}")!;
             ulong seed = ulong.TryParse((string?)client["seed"], out var sd) ? sd : 1;
             ulong battleSeq = ulong.TryParse((string?)client["battleSeq"], out var bs) ? bs : 0;
-            var session = AdventureSession.Restore(files, game, seed, battleSeq);
+            var session = AdventureSession.Restore(files, game, seed, battleSeq, generator);
             if (save.GetText(AdventureSave.ScriptsPart) is { } scripts) _pendingScripts.AddOrUpdate(session, scripts);
 
             if (save.GetText(AdventureSave.CampaignPart) is { } cj && JsonNode.Parse(cj) is JsonObject c)

@@ -196,3 +196,27 @@ public class AdventureSaveTests(Fixture f)
         Assert.Equal(host.ComputeHash(), host2.ComputeHash());
     }
 }
+
+/// <summary>Automatic save names (H5_Game.exe 007f9e10): ids 1..3, then the oldest is overwritten.</summary>
+public class RotatingNameTests
+{
+    [Fact]
+    public void UsesTheFirstFreeIdThenTheOldest()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "h5save-rot-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var storage = new DirectorySaveStorage(dir);
+            const string template = "Autosave <value=id>";
+            void Write(string name, DateTime when) =>
+                SaveSlots.Write(storage, new SaveArchive { Header = new SaveHeader { Name = name, SavedUtc = when } });
+            Assert.Equal("Autosave 1", SaveSlots.RotatingName(storage, template));
+            Write("Autosave 1", new DateTime(2020, 1, 3));
+            Assert.Equal("Autosave 2", SaveSlots.RotatingName(storage, template));
+            Write("Autosave 2", new DateTime(2020, 1, 1));
+            Write("Autosave 3", new DateTime(2020, 1, 2));
+            Assert.Equal("Autosave 2", SaveSlots.RotatingName(storage, template));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+}

@@ -1076,6 +1076,8 @@ public partial class AdventureScreen : Control
     void StartBattle()
     {
         var pb = Session.S.Battle!;
+        // save_before_combat (005a5d90): saved before the battle's seed is drawn, so loading replays the same battle.
+        Save.SaveManager.SaveBeforeCombat(this);
         if (Autoplay && !AutoplayRealCombat)
         {
             Session.QuickCombat();

@@ -15,7 +15,7 @@ H5Reborn reproduces them.
   (`src/H5.Save`).
 - **Names**: quicksave/quickload use the save named `UI/Common/defaultsavename.txt` (`FUN_007e7500`
   falls back to `defaultsavename` when no name is given). Autosave name `UI/Common/autosavename.txt`
-  (`Autosave <value=id>`); the id is taken as the day number (inferred, not traced).
+  (`Autosave <value=id>`); CSavesCreator vf 0x1c (`007f9e10`) uses ids 1..3 and then overwrites the oldest.
 - **Autosave**: after the AI moves, when a human player is to act and the `autosave` var is set,
   the game saves with `autosavename` (`FUN_00607d50`, var registered in `FUN_00609910`).
 - **Keys**: `bind quicksave 'F5'`, `save 'F6'`, `load 'F7'`, `quickload 'F8'` (input_a2.cfg); handlers
@@ -25,8 +25,11 @@ H5Reborn reproduces them.
 - **Network games**: the exe saves them (`CSaveScreen<SLanSaveHeaderInfo/SUbicomSaveHeaderInfo>`, host reload
   through `CMultiplayerHostLoadLogic`); H5Reborn refuses to save a network game for now. Hot-seat games are
   written with the hot-seat kind. Full ledger: `docs/rules/AUDIT_CAMPAIGN.md`.
-- **Not reproduced**: `save_before_combat` ("Before Combat <id>") — the var exists (`FUN_005aadc0`) but
-  the engine marks the battle pending before the client can save; saving during combat is refused.
+- **Save before combat**: `save_before_combat` ("Before Combat <id>", var `FUN_005aadc0`, default 0) saves
+  when a human-vs-computer battle starts (`FUN_005a5d90`); the save holds the pending battle, which starts
+  again on load. Saving during combat is refused otherwise.
+- **Save complete**: `ID_SAVE_COMPLETE` ("Save completed") is shown for `save_ok_time` ms after a save.
+- **Generated maps**: saved with the generator options (MapSpec `rmg`) and regenerated on load.
 
 ## Options
 The whole options screen is data: `UI/uiconsts.(UIGameConstsH5).xdb` → `GameOptions/Categories`

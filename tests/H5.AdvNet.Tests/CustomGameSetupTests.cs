@@ -142,3 +142,21 @@ public class CustomGameSetupTests
         Assert.Contains(game.S.Heroes, h => h.Owner == slot.MapPlayer && h.DefId == slot.Hero);
     }
 }
+
+/// <summary>Saves of generated maps regenerate the map from the generator options (MapSpec "rmg").</summary>
+public class GeneratedMapReopenTests
+{
+    [Fact]
+    public void RegeneratedMapIsIdenticalAndRestoresTheState()
+    {
+        var rmg = new RmgSettings { Template = Env.Maps.Rmg.Templates.Values.First(t => !t.TestTemplate).Name, Size = 0, Players = 2, Seed = 4242 };
+        var a = Env.Maps.Load(new AdvNetSettings { Rmg = rmg });
+        var json = new AdvNetSettings { Rmg = rmg }.ToJson().ToJsonString();
+        var b = Env.Maps.Load(new AdvNetSettings { Rmg = AdvNetSettings.From((System.Text.Json.Nodes.JsonObject)System.Text.Json.Nodes.JsonNode.Parse(json)!).Rmg });
+        Assert.Equal(MapHash.Of(a.Map), MapHash.Of(b.Map));
+        var (game, _) = Adventure.Engine.Adventure.NewGame(a.Db, a.Map, GameSetup.AllPlayers(a.Map, 1, 9));
+        var state = Adventure.State.AdvState.Deserialize(game.S.Serialize());
+        var restored = new Adventure.Engine.Adventure(b.Db, b.Map, state);
+        Assert.Equal(game.S.ComputeHash(), restored.S.ComputeHash());
+    }
+}

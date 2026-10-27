@@ -88,6 +88,26 @@ public static class SaveSlots
         return file;
     }
 
+    /// <summary>
+    /// Automatic save names (CSavesCreator vf 0x1c, H5_Game.exe 007f9e10): the template ("Autosave &lt;value=id&gt;",
+    /// "Before Combat &lt;value=id&gt;") is formatted with ids 1..3; the first name without a save is used, else the
+    /// oldest of the three saves is overwritten.
+    /// </summary>
+    public static string RotatingName(ISaveStorage storage, string template)
+    {
+        var saves = List(storage);
+        string? oldest = null;
+        var oldestTime = DateTime.MaxValue;
+        for (int id = 1; id <= 3; id++)
+        {
+            var name = Format(template, id.ToString());
+            var e = saves.FirstOrDefault(x => string.Equals(x.Header.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (e == null) return name;
+            if (e.Header.SavedUtc < oldestTime) { oldestTime = e.Header.SavedUtc; oldest = name; }
+        }
+        return oldest!;
+    }
+
     /// <summary>Formats an original text template such as "Autosave &lt;value=id&gt;".</summary>
     public static string Format(string template, string id) =>
         template.Replace("<value=id>", id, StringComparison.OrdinalIgnoreCase).Trim();
