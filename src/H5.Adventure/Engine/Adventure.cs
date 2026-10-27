@@ -53,6 +53,7 @@ public sealed partial class Adventure
         Db = db;
         Map = map;
         S = state;
+        if (state.RandomObjects.Count > 0) ApplyRandomObjects();
     }
 
     void Emit(AdvEvent e) => _ev.Add(e);

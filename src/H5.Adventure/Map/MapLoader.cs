@@ -264,6 +264,17 @@ public sealed class MapLoader
         e.Items(name).Where(s => s.Str("Creature") is { Length: > 0 } c && c != "CREATURE_UNKNOWN" && s.Int("Count") > 0)
             .Select(s => new ArmySlot(s.Str("Creature"), s.Int("Count"))).ToList();
 
+    /// <summary>RndSource / LinkToPlayer / LinkToTown of a town or dwelling (readers 00a0a490 / 00a09de0).</summary>
+    static void ReadRandomLink(XElement e, MapObject o)
+    {
+        o.RndSource = e.Str("RndSource") switch { "RND_PLAYER" => 1, "RND_TOWN" => 2, "RND_OWN" => 3, _ => 0 };
+        o.LinkToPlayer = PlayerIndex(e.Str("LinkToPlayer"));
+        o.LinkToTownUid = UidFromHref(e.Href("LinkToTown"));
+        o.PlacedSharedPath = o.SharedPath;
+        o.PlacedShared = o.Shared;
+        o.PlacedTownType = o.TownType;
+    }
+
     /// <summary>
     /// A Pos component as the exe turns it into a tile: the float (SAdvMapObject +0x44 / +0x48, reader 00a082d0)
     /// rounded to the nearest, ties to even (FISTP in the object set-up 0041d360 / 0041cfe0). Editor maps store
@@ -370,9 +381,11 @@ public sealed class MapLoader
             case ObjectKind.Dwelling:
                 o.RandomCreatures = e.Bool("RandomCreatures");
                 o.CreaturesEnabled = e.Items("creaturesEnabled").Select(i => i.Value.Trim() == "1" || i.Value.Trim() == "true").ToArray();
+                ReadRandomLink(e, o);
                 break;
             case ObjectKind.Town:
                 o.TownType = o.Shared.TownType;
+                ReadRandomLink(e, o);
                 o.Specialization = files.Resolve(e.Href("Specialization")) is { Length: > 0 } sp2 ? sp2 : null;
                 foreach (var b in e.Items("buildings"))
                     o.Buildings.Add(new TownBuildingInit(b.Str("Type"), UpgradeLevel(b.Str("InitialUpgrade")), UpgradeLevel(b.Str("MaxUpgrade"))));

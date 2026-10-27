@@ -88,6 +88,12 @@ public sealed class RmgResult
                     mo.Courage = "MONSTER_COURAGE_CAN_FLEE_JOIN";
                     break;
                 case ObjectKind.Artifact: mo.ArtifactId = o.Def.ArtifactId; break;
+                case ObjectKind.Dwelling when Objects.FirstOrDefault(t => t.Note == "town" && t.Zone == o.Zone) is { } zoneTown:
+                    // 0x0091e910: in a zone whose town is placed (zone +0xf8) every dwelling gets RndSource RND_TOWN and
+                    // LinkToTown = that town (+0xfc), which a random dwelling's race follows (0041b9f0).
+                    mo.RndSource = 2;
+                    mo.LinkToTownUid = UidOf(Objects.IndexOf(zoneTown), zoneTown);
+                    break;
                 case ObjectKind.Town:
                     mo.TownType = o.Def.TownType;
                     mo.Specialization = o.Specialization;

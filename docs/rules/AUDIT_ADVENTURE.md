@@ -4,7 +4,7 @@ Every adventure mechanic / screen element checked against `H5_Game.exe` (Ghidra 
 the original data. Status: **MATCH** (already as the exe), **FIXED** (changed to match), **GAP** (known difference or
 not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not traced).
 
-Rows at 2026-10-28: 154 FIXED, 22 MATCH, 59 GAP, 69 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
+Rows at 2026-10-28: 157 FIXED, 22 MATCH, 61 GAP, 70 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
 
 ## Seer Huts
 
@@ -334,4 +334,23 @@ objects), `h5tool adv-pass-probe <map> x y [floor]`. Tests `TerrainPassabilityTe
 | Survey (stock + user maps, 117) | `h5tool adv-pass` | | objects whose every entrance is refused: 113, most on chunk 15 holes (campaign set pieces such as A2C2M1's caged monsters, A2C3M2's underground group), about a dozen on cliffs / texture lakes, 8 in the frame or the rock (A2C3M2 / A2C3M3 / A2S3 underground towns in the rock, A1C2M5 obelisks in the frame); heroes on refused tiles: 3; the user's exe-generated RMG maps: 1 | GAP (no exe run to confirm these objects are unreachable in the original) |
 
 Rows in this section: 8 FIXED, 1 UNVERIFIED, 2 GAP.
+
+## Random towns and dwellings
+
+Stock multiplayer maps (A1M4 … A2M4) and True Random Towns RMG maps place `MapObjects/RandomTown.xdb` (Type
+TOWN_RANDOM_TYPE) and `MapObjects/Random/RandomDwelling1..7.xdb` (RandomType DWELLING_TYPE_RANDOM_1L..7L). The world
+resolves them while creating the map's objects (0041d360). Ours: `Adventure.RandomObjects.cs` (run by `NewGame` before
+the towns are set up; the result is kept in `AdvState.RandomObjects` and re-applied by every engine built over the
+state), instance fields read by `MapLoader.ReadRandomLink`. Tests `RandomTownDwellingTests`, `RmgRandomTownTests`.
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Instance fields | readers 00a0a490 (AdvMapTown RndSource +0x11c, LinkToPlayer +0x120, LinkToTown +0x124) / 00a09de0 (AdvMapDwelling RandomCreatures +0x9c, creaturesEnabled, RndSource +0xac, LinkToPlayer +0xb0, LinkToTown +0xb4); enum 009fc040 RND_NONE / PLAYER / TOWN / OWN | | `MapObject.RndSource` / `LinkToPlayer` / `LinkToTownUid` | FIXED (were not read) |
+| Town race | 0041b450 | not TOWN_RANDOM_TYPE → kept; owned and the owner's MainTown → the player's race (player vf 0x34); owned otherwise or unowned with RND_TOWN → the LinkToTown town's race (recursion, 100 levels); unowned RND_PLAYER → LinkToPlayer's race; else, or a race 1 / 2, a random one: 8 races, index + 3 (00af10b0, 00af10f0) | `TownRace` (random towns memoised so linked towns agree) | FIXED (was: the owner's race, else random) |
+| Dwelling race and shared | 0041b9f0; groups 0041a890 (DWELLINGS_HAVEN … _STRONGHOLD) → 00bcb710 (RPGRoot SharedGroups); jump table 0041bc10 | RND_NONE the owner's race, RND_PLAYER LinkToPlayer's, RND_TOWN LinkToTown's (0041b450), RND_OWN / race 1 / 2 random; RandomType 1 / 2 / 3 → link 0 / 1 / 2, 4..7 → link 3 with creature level 4..7, MILITARY_POST → link 3 with −1; too short a group → no object | `ResolveDwelling`, `AdventureDb.DwellingGroup`; RMG maps: `RmgResult.ToAdvMap` gives every dwelling of a zone with a placed town RND_TOWN + LinkToTown = that town (0x0091e910, zone +0xf8 / +0xfc) | FIXED (random dwellings were the stub "abandoned mine" shared with one peasant) |
+| Dwelling creature level | 009a6a00 argument 6 → dwelling +0x128 | not traced how the post uses it, nor RandomCreatures | link 3 hires only creature (level − 4) of the post, as the scripts' CreateDwelling; other links all creatures | UNVERIFIED |
+| Random draw | world vf 0x124 + 008e7860 (per-object stream over the object id, desc +0xc +0x10) → 008e7840(0, 7) (008e77e0: two LCG steps 0x343fd / 0x269ec3, (s2·0x40 ^ s1 >> 7) % 8) | | `S.Rng.Next(8)` in map order | GAP |
+| Random town's shared and specialization | 0041b5e0: the town shared from the race (00cd6bc0) and a specialization of the race (TownType +0x6c, RandomTown +0x70 = 0), least used first, then rand % n | | the town keeps the RandomTown shared (model, blocked tiles) with the resolved type; no specialization drawn | GAP |
+
+Rows in this section: 3 FIXED, 1 UNVERIFIED, 2 GAP.
 

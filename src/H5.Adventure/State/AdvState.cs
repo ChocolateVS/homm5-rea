@@ -441,6 +441,11 @@ public sealed class AdvState
     public List<HeroState> OffMapHeroes = new();
     public List<TownState> Towns = new();
     public Dictionary<int, ObjState> Objects = new();
+    /// <summary>
+    /// Random towns and dwellings as the game start resolved them (object index → town type, or dwelling shared path
+    /// "|" creature level); re-applied to the map objects whenever an engine is built over this state.
+    /// </summary>
+    public Dictionary<int, string> RandomObjects = new();
     /// <summary>Artifact merchant stock (6 slots, null = sold) by town or map object index.</summary>
     public Dictionary<int, string?[]> ArtifactMarkets = new();
     /// <summary>CArtifactsGenerator per-artifact generated count (entry +4; the first pass prefers a count of 0).</summary>

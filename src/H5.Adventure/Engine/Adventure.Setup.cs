@@ -19,6 +19,7 @@ public sealed partial class Adventure
         var g = new Adventure(db, map, s);
         g._ev = new List<AdvEvent>();
         g.SetupPlayers(setup);
+        g.ResolveRandomObjects();
         g.SetupTowns();
         g.SetupObjects();
         g.SetupHeroes();

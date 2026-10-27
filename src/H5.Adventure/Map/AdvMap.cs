@@ -146,6 +146,21 @@ public sealed class MapObject
     public bool[] CreaturesEnabled = Array.Empty<bool>();
     public bool RandomCreatures;
 
+    // Random towns and dwellings (AdvMapTown +0x11c / +0x120 / +0x124, AdvMapDwelling +0xac / +0xb0 / +0xb4, readers
+    // 00a0a490 / 00a09de0): where the race comes from — RND_NONE 0, RND_PLAYER 1, RND_TOWN 2, RND_OWN 3 (enum 009fc040).
+    public int RndSource;
+    /// <summary>LinkToPlayer: player index, -1 for PLAYER_NONE.</summary>
+    public int LinkToPlayer = -1;
+    /// <summary>LinkToTown: the linked town's item id, or null.</summary>
+    public string? LinkToTownUid;
+    /// <summary>The shared the map placed (a RandomTown / RandomDwelling one) before the game resolved it.</summary>
+    public string? PlacedSharedPath;
+    public SharedDef? PlacedShared;
+    /// <summary>The town type the map placed (TOWN_RANDOM_TYPE for a random town).</summary>
+    public string? PlacedTownType;
+    /// <summary>A random dwelling's creature level (009a6a00 argument 6, dwelling +0x128): 1..7, or -1.</summary>
+    public int DwellingTier;
+
     // Treasure
     public bool TreasureCustom;
     public int TreasureAmount;

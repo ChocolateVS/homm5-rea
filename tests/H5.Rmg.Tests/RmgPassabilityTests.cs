@@ -38,3 +38,30 @@ public class RmgPassabilityTests(RmgFixture f)
         Assert.Contains(map.Floors[1]!.Kind, k => k == TileKind.Land);
     }
 }
+
+/// <summary>True Random Towns maps (generator +0xa5) resolved by the adventure start (0041b450 / 0041b9f0).</summary>
+[Collection("rmg")]
+public class RmgRandomTownTests(RmgFixture f)
+{
+    [StockFact]
+    public void RandomDwellingsFollowTheirZoneTown()
+    {
+        var o = new RmgOptions { Template = "S1-2P2-4Z4K1S", Size = 2, Seed = 77, Players = 2, RandomTowns = true };
+        var r = new RmgGenerator(f.Db, o).Generate();
+        var map = r.ToAdvMap(new SharedCatalog(f.Xdb));
+        Assert.Contains(map.Objects, x => x.Kind == ObjectKind.Town && x.TownType == "TOWN_RANDOM_TYPE");
+        var (game, _) = Adventure.Engine.Adventure.NewGame(f.Adventure, map, H5.Adventure.Engine.GameSetup.AllPlayers(map, 0, 1));
+        Assert.All(game.S.Towns, t => Assert.StartsWith("TOWN_", t.Type));
+        Assert.DoesNotContain(game.S.Towns, t => t.Type == "TOWN_RANDOM_TYPE");
+        int checkedLinks = 0;
+        foreach (var d in map.Objects.Where(x => x.Kind == ObjectKind.Dwelling && x.LinkToTownUid != null && x.PlacedSharedPath != x.SharedPath))
+        {
+            // 0x0091e910 links a zone's dwellings to its town (RND_TOWN); 0041b9f0 takes that town's DWELLINGS group.
+            var town = map.Objects.First(x => x.Uid == d.LinkToTownUid);
+            var race = game.S.Towns.First(t => t.Object == town.Index).Type;
+            Assert.Contains(d.SharedPath, game.Db.DwellingGroup(race), StringComparer.OrdinalIgnoreCase);
+            checkedLinks++;
+        }
+        Assert.True(checkedLinks > 0);
+    }
+}
