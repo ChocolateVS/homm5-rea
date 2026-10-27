@@ -179,27 +179,15 @@ public sealed partial class TavernScreen : TownSubScreen
             text = i == 0 ? first.Replace("<value=cur_rumor>", rumour)
                 : next.Replace("<value=prev_rumors>", text).Replace("<value=cur_rumor>", rumour);
         }
-        // The screen puts RumorsText into ScrollContainer (vfunc 8, 00637b50) and scrolls it there.
+        // The screen puts RumorsText into ScrollContainer (vfunc 8, 00637b50); the container scrolls it.
         template.Visible = false;
+        var sc = box as UiScrollableContainer;
+        sc?.ClearItems();
         if (_text != null) Ui.RemoveInstance(_text);
-        _text = Ui.Instantiate(template.Window, box.Window, new H5.Core.Ui.Int2(0, -_scroll), "RumorsTextShown");
+        _text = Ui.Instantiate(template.Window, box.Window, new H5.Core.Ui.Int2(0, 0), "RumorsTextShown");
         _text.SetText(text);
-        box.ClipContents = true;
-        if (!_scrollWired)
-        {
-            _scrollWired = true;
-            box.MouseFilter = MouseFilterEnum.Stop;
-            box.GuiInput += e =>
-            {
-                if (e is not InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp or MouseButton.WheelDown } mb || _text == null) return;
-                float max = Math.Max(0, _text.Size.Y - box.Size.Y);
-                _scroll = (int)Math.Clamp(_scroll + (mb.ButtonIndex == MouseButton.WheelDown ? 40 : -40), 0, max);
-                FillRumours();
-            };
-        }
+        sc?.AddItem(_text);
     }
 
     UiNode? _text;
-    int _scroll;
-    bool _scrollWired;
 }

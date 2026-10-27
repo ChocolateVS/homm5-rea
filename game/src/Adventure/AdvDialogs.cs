@@ -33,15 +33,9 @@ public static partial class AdvDialogs
         blocker.Resized += Center;
         Callable.From(Center).CallDeferred();
         registerClose(blocker);
-        // MsgText sits inside the ScrollableText container in the original engine.
-        if (screen.Find("MsgText") is { } msg && screen.Find("ScrollableText") is { } area)
-        {
-            msg.GetParent()?.RemoveChild(msg);
-            area.AddChild(msg);
-            msg.Position = Vector2.Zero;
-            msg.Size = area.Size;
-            area.Resized += () => msg.Size = area.Size;
-        }
+        // MsgText (ResizeOnTextSet) is the item of the ScrollableText container: long messages scroll with its bar.
+        if (screen.Find("MsgText") is { } msg && screen.Find("ScrollableText") is UiScrollableContainer area)
+            area.AddItem(msg);
         return screen;
     }
 

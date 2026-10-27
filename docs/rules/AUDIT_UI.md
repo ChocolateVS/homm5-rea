@@ -149,6 +149,16 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 | Ensure visible | 00887ab0 / 00887b10 / 00887910 scroll a given item into view | — | GAP |
 | Initial offset | 008888e0 starts the offset at the first item's +0x1c | 0 | GAP |
 
+## Long texts in scroll containers
+
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Rule | a text that can exceed its box is a ResizeOnTextSet WindowTextView added as an item of a WindowScrollableContainer: the view takes its text height (wrapped at its width), the container clips it to the Border and scrolls it (ranges above); text views themselves never scroll | `UiScrollableContainer.AddItem` + ResizeOnTextSet relayout | FIXED |
+| Common boxes | MsgText (ResizeOnTextSet) in ScrollableText (UI/CommonBoxes Text / Text0 containers) | item of the container | FIXED (was stretched to the box: long messages ran out of it) |
+| Tavern rumours | RumorsText (ResizeOnTextSet) added to ScrollContainer (vfunc 8, 00637b50) | item of the container | FIXED (was a hand-made wheel offset, no bar) |
+| Seer hut quest | DescView (ResizeOnTextSet) in DescContainer | item of the container | FIXED (was a separate text block with a wheel offset) / call site untraced |
+| Other hand-made scrolling | MapTavern thieves list, MissionBox views, save/load list, custom game wait players, hotseat preset grid scroll rows from code with the wheel only | — | GAP (to move onto the container) |
+
 ## Custom game screen text (CCustomGameCreateScreen 00774f80, map info 007074b0 / 00707920)
 
 | Item | Original (evidence) | Ours | Status |

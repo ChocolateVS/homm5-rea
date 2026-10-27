@@ -327,24 +327,13 @@ public static class SeerHutBox
         Callable.From(Center).CallDeferred();
         box.Find("MainCaptionView")?.SetText($"<h1>{adv.ObjectTitle(hut)}");
         TownUi.SetPicture(box.Find("Hero"), TownUi.HeroFace(hero));
-        // The description scrolls inside DescContainer (QUEST_FORMAT with the quest caption and description).
-        var desc = box.Find("DescView");
-        if (desc != null && box.Find("DescContainer") is { } area)
+        // The description (QUEST_FORMAT with the quest caption and description) is the ResizeOnTextSet DescView,
+        // the item of the DescContainer scrollable container: long texts scroll with its bar.
+        if (box.Find("DescView") is { } desc)
         {
-            var markup = (UiGameRoot.RelatedText(Texts, "QUEST_FORMAT") ?? "")
-                .Replace("<value=caption>", q.Objective.Caption ?? "").Replace("<value=desc>", q.Description ?? "");
-            desc.Visible = false;
-            area.ClipContents = true;
-            var text = new BitmapText { Markup = markup, VerticalAlign = H5.Core.Ui.UiAlign.LowEnd, Size = new Vector2(desc.Size.X, 4000) };
-            area.AddChild(text);
-            float height = BitmapTextLayout.Build(markup, null, new Rect2(0, 0, desc.Size.X, 4000), H5.Core.Ui.UiAlign.LowEnd).Size.Y;
-            area.MouseFilter = Control.MouseFilterEnum.Stop;
-            area.GuiInput += e =>
-            {
-                if (e is not InputEventMouseButton { Pressed: true } mb) return;
-                float step = mb.ButtonIndex switch { MouseButton.WheelDown => -16, MouseButton.WheelUp => 16, _ => 0 };
-                text.Position = new Vector2(0, Math.Clamp(text.Position.Y + step, Math.Min(0, area.Size.Y - height), 0));
-            };
+            desc.SetText((UiGameRoot.RelatedText(Texts, "QUEST_FORMAT") ?? "")
+                .Replace("<value=caption>", q.Objective.Caption ?? "").Replace("<value=desc>", q.Description ?? ""));
+            if (box.Find("DescContainer") is UiScrollableContainer area) area.AddItem(desc);
         }
         // The quest item (006ef730: a format per objective kind, else UNKNOWN_FORMAT with the riddle texture).
         var (kind, id, amount, name) = game.QuestRequirement(q);
