@@ -76,7 +76,8 @@ public sealed class ThievesInfo
     /// while c &lt; level; its precision is max(0, (last i with T[i]-1 ≤ level) - 1 - (last i with T[i]-1 ≤ c)),
     /// and of its n lines the lowest min(n, level - c) are revealed (the rest are hidden).
     /// </summary>
-    public IReadOnlyList<ThievesCategory> Visible()
+    /// <param name="keepEmpty">Also list the categories without lines (005056b0 leaves their vectors empty), in order.</param>
+    public IReadOnlyList<ThievesCategory> Visible(bool keepEmpty = false)
     {
         var res = new List<ThievesCategory>();
         int c = 0;
@@ -99,7 +100,7 @@ public sealed class ThievesInfo
                     entries.Add(Transform(Names[k], src[j], n - j > vis ? -1 : prec));
             }
             c += n;
-            if (entries.Count > 0) res.Add(new ThievesCategory(Names[k], entries));
+            if (entries.Count > 0 || keepEmpty) res.Add(new ThievesCategory(Names[k], entries));
         }
         return res;
     }

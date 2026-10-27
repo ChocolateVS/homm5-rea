@@ -185,8 +185,9 @@ public sealed partial class MapTavernScreen : MapBuildingScreen
         if (Ui.Find("tavern-thieves-window/ScrollContainer") is not UiScrollableContainer box || Ui.Find("tavern-thieves-window/InfoLine") is not { } template) return;
         box.ClearItems();
         if (_thieves == null) return;
-        // GAP: the exe stops the whole list at a shown category without entries; ours skips empty categories.
-        var cats = _thieves.Visible().Where(c => c.Entries.Count > 0).ToList();
+        // 00635a60 walks the categories in order and returns at the first list with < 1 entry (005056b0 clears every
+        // category's vector and fills it only while the category is reached at the level).
+        var cats = _thieves.Visible(keepEmpty: true).TakeWhile(c => c.Entries.Count > 0).ToList();
         for (int row = 0; row < cats.Count; row++)
         {
             var cat = cats[row];
