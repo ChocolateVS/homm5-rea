@@ -221,10 +221,14 @@ public sealed class UiWindow
         ?? Descendants().FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// Scrollable-container item list (008888e0): when set, the visible children are stacked along the axis in
-    /// list order, each at its own height, with this gap between them; <see cref="StackedSize"/> is the total.
+    /// Scrollable-container item list (008888e0): when set, the windows of <see cref="StackItems"/> (the
+    /// container's item vector +0x160, filled only by its add-item slot) are stacked along the axis in list order,
+    /// each at its own height, with this gap between them; <see cref="StackedSize"/> is the total. Other children
+    /// of the window (hidden templates, markers) are not items and keep their own placement; the exe does not
+    /// test an item's visibility.
     /// </summary>
     public int? StackInterval;
+    public readonly List<UiWindow> StackItems = new();
     public bool StackHorizontal;
     public int StackedSize;
 

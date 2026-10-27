@@ -120,7 +120,8 @@ public static class UiLayout
     }
 
     /// <summary>
-    /// Scrollable-container items (008888e0): each item is placed at the running offset (its own Position on
+    /// Scrollable-container items (008888e0): only the item list is stacked (other children are laid out as
+    /// usual, whatever their visibility); each item is placed at the running offset (its own Position on
     /// the stacking axis is replaced), the offset advances by the item's size plus the container's Interval
     /// between items (shared +0xcc), and the total is the content size (+0x150).
     /// </summary>
@@ -128,8 +129,10 @@ public static class UiLayout
     {
         int at = 0, n = 0;
         foreach (var c in w.Children)
+            if (!w.StackItems.Contains(c)) Layout(c, w.Rect);
+        foreach (var c in w.StackItems)
         {
-            if (!c.Visible || c.Part != null) { Layout(c, w.Rect); continue; }
+            if (!w.Children.Contains(c)) continue;
             if (n++ > 0) at += gap;
             var slot = w.StackHorizontal
                 ? new UiRect(w.Rect.X + at, w.Rect.Y, c.Placement.Size.Value.X, w.Rect.H)

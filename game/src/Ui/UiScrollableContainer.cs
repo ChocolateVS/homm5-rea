@@ -8,7 +8,7 @@ namespace H5Reborn.Ui;
 /// visible area, clipping), an internal content window inside it and a ScrollBar, both parts appended from the
 /// Shared references (UiLoader.LoadParts).
 /// <list type="bullet">
-/// <item>Items (008888e0): windows added by code are stacked in order along the scroll bar's axis with the
+/// <item>Items (008888e0): only windows added by code (the item vector) are stacked in order along the scroll bar's axis with the
 /// shared Interval between them; their total is the content size.</item>
 /// <item>Range (00887ba0): the content window takes the content size; the scroll bar gets
 /// SetRange(0, content size, Border height) (width for a horizontal bar).</item>
@@ -117,6 +117,7 @@ public partial class UiScrollableContainer : UiNode
         if (Border == null || Screen == null) { _pending.Add(item); return; }
         foreach (var p in Screen.Root.Descendants().Prepend(Screen.Root)) p.Children.Remove(item.Window);
         Border.Window.Children.Add(item.Window);
+        Border.Window.StackItems.Add(item.Window);
         Border.Window.StackInterval = _interval;
         Border.Window.StackHorizontal = Horizontal;
         item.GetParent()?.RemoveChild(item);
@@ -133,6 +134,7 @@ public partial class UiScrollableContainer : UiNode
         foreach (var item in _items)
         {
             Border?.Window.Children.Remove(item.Window);
+            Border?.Window.StackItems.Remove(item.Window);
             Content.RemoveChild(item);
         }
         _items.Clear();

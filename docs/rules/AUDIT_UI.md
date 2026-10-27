@@ -156,7 +156,7 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 | Item | Original (evidence) | Ours | Status |
 |---|---|---|---|
 | Parts | Shared Interval / ScrollBar / Border / Selection / PreSelection / NegativeSelection (reader 00bde470); Border is the visible area (+0x158), the content window (+0x15c) moves inside it | Border clips; content control inside it; Selection / PreSelection markers live in the content | FIXED |
-| Items | 008888e0: items in order, each placed at the running offset along the bar's axis, offset += size + Interval between items; total = content size (+0x150) | `UiLayout.Stack` (`UiWindow.StackInterval`) | FIXED |
+| Items | 008888e0: walks only the item vector (+0x160..+0x164, 0x20-byte entries filled by the add-item slot 8), each placed at the running offset along the bar's axis (vfunc 0x58 flags 2 / 1), offset += size + Interval (shared +0xcc) between items; total = content size (+0x150). No visibility test; other children of the content (hidden templates) are not stacked | `UiLayout.Stack` stacks `UiWindow.StackItems` only (`AddItem` / `ClearItems`) | FIXED (stacked every visible child of the Border, so hidden templates there took space: the RMG screen had to remove its templates) |
 | Range | 00887ba0: content window takes the content size; bar SetRange(0, content size, Border height) (width when horizontal) | same | FIXED |
 | Scrolling | 00887c80: content at (0, −pos) / (−pos, 0) | same | FIXED |
 | Selection markers | 00887850: the marker takes the item's rect (content coordinates, flags 0xffff) and is shown; 008888e0 re-places them | `Select` / `Preselect` (rects from code) | FIXED |
