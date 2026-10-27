@@ -39,13 +39,24 @@ public sealed partial class Adventure
             Stoneworks = t.Type == Towns.Fortress && t.Level("TB_SPECIAL_4") > 0,
             WallsSpecialization = spec == "TOWN_BONUS_WALLS",
             TowersSpecialization = spec == "TOWN_BONUS_TOWERS",
-            // Guard Post: 5 Defenders × town level × month (p.308; CreaturesPerTownLevelPerMonth).
-            // TODO(exe): confirm that "town level" here is the built-levels count, as for moat damage.
-            GuardPostDefenders = t.Type == Towns.Fortress && t.Level("TB_SPECIAL_3") > 0
-                ? (int)Core.Stats.Get("adventure/TownBuildingBonuses/Fortress_GuardPostStats/CreaturesPerTownLevelPerMonth", 5)
-                  * Math.Max(1, t.DevLevel) * S.Month
-                : 0,
+            GuardPostDefenders = GuardPostCount(t),
         };
+    }
+
+    /// <summary>
+    /// Fortress Guard Post (town ability 0x24, TB_SPECIAL_3) defender count, exe FUN_00cd0a30 (callers: the siege
+    /// placement 00853f90 and the AI estimate 00bc3af0): none without the ability, without a BaseCreatureToPlace
+    /// (RPGStats +0x178) or when that creature's record has <c>Upgrade</c> set (creature +0x90); else town vf 0x78
+    /// (00cd2120: the sum of every building level, <see cref="TownState.DevLevel"/>) × CreaturesPerTownLevelPerMonth
+    /// (+0x17c) × (day counter (world vf 0xa8, 0-based) / 28 + 1).
+    /// </summary>
+    public int GuardPostCount(TownState t)
+    {
+        if (t.Type != Towns.Fortress || t.Level("TB_SPECIAL_3") <= 0) return 0;
+        const string k = "adventure/TownBuildingBonuses/Fortress_GuardPostStats/";
+        string creature = Core.Stats.Str(k + "BaseCreatureToPlace", "CREATURE_DEFENDER");
+        if (string.IsNullOrEmpty(creature) || !Core.Creatures.TryGetValue(creature, out var c) || c.Upgrade) return 0;   // c.Upgrade: <Upgrade> = record +0x90 (loader 00ad90c0)
+        return t.DevLevel * (int)Core.Stats.Get(k + "CreaturesPerTownLevelPerMonth", 5) * ((S.Day - 1) / 28 + 1);
     }
 
     /// <summary>The TOWN_BONUS_* of the town's specialisation, or null.</summary>

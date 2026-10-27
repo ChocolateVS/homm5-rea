@@ -115,6 +115,28 @@ public class SiegeHandOffTests(Fixture f)
         Assert.Equal(5 * t.DevLevel * g.S.Month, siege.GuardPostDefenders);
     }
 
+    /// <summary>
+    /// FUN_00cd0a30: town vf 0x78 (sum of building levels) × CreaturesPerTownLevelPerMonth (5) × (day counter / 28 + 1),
+    /// the day counter being 0-based (day 28 is still month 1, day 29 month 2).
+    /// </summary>
+    [Fact]
+    public void GuardPostCountFollowsTownLevelAndMonth()
+    {
+        var g = f.NewGame();
+        var t = new TownState { Type = "TOWN_FORTRESS", Owner = 0 };
+        Assert.Equal(0, g.GuardPostCount(t));
+        t.Built["TB_FORT"] = 2;
+        t.Built["TB_SPECIAL_3"] = 1;
+        t.Built["TB_DWELLING_1"] = 2;          // town level 5
+        g.S.Day = 28;
+        Assert.Equal(5 * 5 * 1, g.GuardPostCount(t));
+        g.S.Day = 29;
+        Assert.Equal(5 * 5 * 2, g.GuardPostCount(t));
+        g.S.Day = 85;
+        Assert.Equal(5 * 5 * 4, g.GuardPostCount(t));
+        Assert.Equal(0, g.GuardPostCount(new TownState { Type = "TOWN_HEAVEN", Owner = 0, Built = { ["TB_SPECIAL_3"] = 1 } }));
+    }
+
     [Fact]
     public void GrailsBoostTheOwnersHeroesEverywhere()
     {
