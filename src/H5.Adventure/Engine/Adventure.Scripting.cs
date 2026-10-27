@@ -131,6 +131,7 @@ public sealed partial class Adventure
     {
         if (h != null && h.Owner == player) { CaptureTown(h, t); return; }
         t.Owner = player;
+        t.OwnedSinceDay = S.Day;
         S.Obj(t.Object).Owner = player;
         Emit(new ObjectCaptured(t.Object, player));
     }

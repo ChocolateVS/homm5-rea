@@ -88,8 +88,16 @@ Per-decision ledger with addresses and status: `docs/rules/AUDIT_AI.md`, section
   bonus ×SearchOldTargetMultiplier + 20, random factor (Range(1,R) + 100 − R)·0.01f, distance discount v·T/cost,
   higher state first (FUN_00a78940 / FUN_00a7b630); script attractor priority 2 = state 3. **exact** (ported).
   Computer towns grow by TownCreatureGrowthCoef (FUN_00cd27b0), neutral towns at half. **exact**
-* Still **reconstructed**: object values, roles, search limits, threats, town building/recruiting, boats, map
-  spells, level-ups. Per-area ledger with addresses: `docs/rules/AUDIT_AI.md`.
+* Values (ported, AUDIT_AI.md "Other object values"): stack value FUN_004e9b90, hero value FUN_004eae60 (hire
+  score), hero estimate FUN_004eb050, town value FUN_004eb480, player value FUN_004eb790 (resource weights all 1.0),
+  position value FUN_00872220; a destination is valued by its provider directly or by simulating the visit
+  (FUN_00bc5480) on a `StateCopy` of the game. Threats FUN_0086cd10, town protection FUN_00a78b60, free scan
+  FUN_00a78400, strategic propagation FUN_00a79700, the town build list FUN_009c33d0 (the simulated builder
+  FUN_009c5e20 is dead code), greedy purchase FUN_00cde4c0 and the hire score FUN_0086aa50 are ported. **exact**
+  structure, GAP-details per row.
+* Still **reconstructed** or missing: boats (no exe AI logic beyond the flood), map spells (pathfinder edges),
+  grail search, the market trade 008e70d0, the supplier test, flee / surrender (combat side). Per-area ledger with
+  addresses: `docs/rules/AUDIT_AI.md`.
 
 ## Validation (`h5tool duel-matrix --stride 3`, seed 1, 184 games each)
 

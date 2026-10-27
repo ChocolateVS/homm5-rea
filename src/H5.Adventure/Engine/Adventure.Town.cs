@@ -38,6 +38,7 @@ public sealed partial class Adventure
     {
         var prev = t.Owner;
         t.Owner = h.Owner;
+        t.OwnedSinceDay = S.Day;
         h.InTown = t.Object;
         Emit(new ObjectCaptured(t.Object, h.Owner));
         // Conquering a town is worth 500 experience (p.298).
@@ -335,6 +336,19 @@ public sealed partial class Adventure
         LearnFromGuild(h, t);
         RevealAround(h);
         return null;
+    }
+
+    /// <summary>
+    /// The hero a tavern offer would become when hired (as <see cref="DoHire"/> builds it, not added to the game). Uses the
+    /// game's random stream for the starting army: call it on a copy of the game (the AI's hire score does).
+    /// </summary>
+    public HeroState TavernHeroPreview(string defId, int owner, Tile pos)
+    {
+        var h = HeroFromDef(Core.Heroes[defId], owner, pos);
+        GiveStartingArmy(h);
+        h.MaxMovePoints = ComputeMaxMovePoints(h);
+        h.MovePoints = h.MaxMovePoints;
+        return h;
     }
 
     string? DoDismiss(DismissHeroCmd c)

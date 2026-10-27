@@ -27,7 +27,9 @@ public sealed partial class OriginalAdventureAI
         {
             if (o.Pos.Floor != h.Pos.Floor || o.Kind == ObjectKind.Static || claimed.Contains(o.Index)) continue;
             if (g.S.Objects.TryGetValue(o.Index, out var os) && os.Removed) continue;
-            double value = ObjectValue(g, h, o, os, myPower, diff, st);
+            var tile0 = o.ActiveTiles.FirstOrDefault(o.Pos);
+            var (state0, v0) = ValueOf(g, h, o, os, tile0, int.MaxValue, diff, st);
+            double value = state0 < 0 ? 0 : v0;
             if (value <= 0) continue;
             int d = Math.Max(Math.Abs(o.Pos.X - h.Pos.X), Math.Abs(o.Pos.Y - h.Pos.Y));
             candidates.Add((o, value / (1 + d * st.SearchAverageTerrainCost / (double)Math.Max(100, h.MaxMovePoints))));

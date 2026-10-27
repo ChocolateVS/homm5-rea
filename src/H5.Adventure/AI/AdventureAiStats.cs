@@ -17,7 +17,16 @@ public sealed record AdventureDifficulty(
     int HireHeroesBase, int HireHeroesPerTown, int HireHeroesGlobalLimit,
     int ThreatsMultiplierEnemys, int ThreatsMultiplierNeutral, int ThreatsMultiplierAllys, int ThreatsMultiplierOurs,
     int ThreatsDistanceInDays, double ThreatsTownInDangerThreshold, int ThreatsTownProtectDistanceInDays,
-    int StrategicCaptureDistance, double TownCreatureGrowthCoef);
+    int StrategicCaptureDistance, double TownCreatureGrowthCoef)
+{
+    /// <summary>ThreatsAccComingLimit (+0x64, int), …CalmingDivisor (+0x68, float), …Coef (+0x6c, float), read by FUN_0086cd10.</summary>
+    public int ThreatsAccComingLimit { get; init; } = 5000;
+    public double ThreatsAccComingCalmingDivisor { get; init; } = 1.5;
+    public double ThreatsAccComingCoef { get; init; } = 0.2;
+    /// <summary>GrailSearchOpenPartsMinimum (+0x48) / GrailSearchPercentMatchNeed (+0x4c), read by FUN_00bc6530.</summary>
+    public int GrailSearchOpenPartsMinimum { get; init; } = 15;
+    public int GrailSearchPercentMatchNeed { get; init; } = 80;
+}
 
 /// <summary>Typed view of DefaultStats.xdb AI/Adventure (exe RPGStats+0xc04; field offsets in docs/rules/AI.md).</summary>
 public sealed class AdventureAiStats
@@ -27,6 +36,27 @@ public sealed class AdventureAiStats
     public int SearchBestPositionRandomFactor { get; init; }
     public int SearchNearbyDistance { get; init; }
     public int SearchAverageTerrainCost { get; init; }
+    /// <summary>SearchStrategicDistance (+0x214), read by the strategic propagation FUN_00a79700.</summary>
+    public int SearchStrategicDistance { get; init; }
+    public int RolesCollectorFreeScanMaxMoves { get; init; }
+    public int RolesSupplierFreeScanMaxMoves { get; init; }
+    /// <summary>Creature* coefficients of the stack value 004e9b90 (+0x250..+0x278, float).</summary>
+    public double CreatureOverHealthCoef { get; init; }
+    public double CreatureOverDamageCoef { get; init; }
+    public double CreatureOverAttributesCoef { get; init; }
+    public double CreatureMaeDefenceCrush { get; init; }
+    public double CreatureMaeSpellReduce { get; init; }
+    public double CreatureMaeMovement { get; init; }
+    public double CreatureOverInitiativeCoef { get; init; }
+    public double CreatureGoodLuckCoef { get; init; }
+    public double CreatureBadLuckCoef { get; init; }
+    public double CreatureGoodMoraleCoef { get; init; }
+    public double CreatureBadMoraleCoef { get; init; }
+    public double MovePointsMaxAllTypesSumCoef { get; init; }
+    public int ValueOfBorderGuardKey { get; init; }
+    public int ValueOfSpellSummonCreatures { get; init; }
+    public int ValueOfTalismanBase { get; init; }
+    public int ValueOfTalismanPerLevel { get; init; }
     public double SearchDangerEnemyMobilityMultiplier { get; init; }
     public double SearchDangerEnemyMobilityBonus { get; init; }
     /// <summary>Search{Positive,Negative}AttractorValue (+0x218/+0x21c, int), read by FUN_00bc5740 for script attractors.</summary>
@@ -82,7 +112,14 @@ public sealed class AdventureAiStats
                 i("HireHeroesBase", 1), i("HireHeroesPerTown", 1), i("HireHeroesGlobalLimit", 8),
                 i("ThreatsMultiplierEnemys", 0), i("ThreatsMultiplierNeutral", 1), i("ThreatsMultiplierAllys", 2), i("ThreatsMultiplierOurs", 3),
                 i("ThreatsDistanceInDays", 2), d("ThreatsTownInDangerThreshold", 100000), i("ThreatsTownProtectDistanceInDays", 1),
-                i("StrategicCaptureDistance", 15), d("TownCreatureGrowthCoef", 1));
+                i("StrategicCaptureDistance", 15), d("TownCreatureGrowthCoef", 1))
+            {
+                ThreatsAccComingLimit = i("ThreatsAccComingLimit", 5000),
+                ThreatsAccComingCalmingDivisor = d("ThreatsAccComingCalmingDivisor", 1.5),
+                ThreatsAccComingCoef = d("ThreatsAccComingCoef", 0.2),
+                GrailSearchOpenPartsMinimum = i("GrailSearchOpenPartsMinimum", 15),
+                GrailSearchPercentMatchNeed = i("GrailSearchPercentMatchNeed", 80),
+            };
         }
         return new AdventureAiStats
         {
@@ -91,6 +128,19 @@ public sealed class AdventureAiStats
             SearchBestPositionRandomFactor = I("SearchBestPositionRandomFactor", 25),
             SearchNearbyDistance = I("SearchNearbyDistance", 21),
             SearchAverageTerrainCost = Math.Max(1, I("SearchAverageTerrainCost", 100)),
+            SearchStrategicDistance = I("SearchStrategicDistance", 4),
+            RolesCollectorFreeScanMaxMoves = I("RolesCollectorFreeScanMaxMoves", 5),
+            RolesSupplierFreeScanMaxMoves = I("RolesSupplierFreeScanMaxMoves", 10),
+            CreatureOverHealthCoef = D("CreatureOverHealthCoef", 0.1), CreatureOverDamageCoef = D("CreatureOverDamageCoef", 0.5),
+            CreatureOverAttributesCoef = D("CreatureOverAttributesCoef", 1),
+            CreatureMaeDefenceCrush = D("CreatureMAECoef_DefenceCrush", 1), CreatureMaeSpellReduce = D("CreatureMAECoef_SpellReduce", 1),
+            CreatureMaeMovement = D("CreatureMAECoef_Movement", 1), CreatureOverInitiativeCoef = D("CreatureOverInitiativeCoef", 0.1),
+            CreatureGoodLuckCoef = D("CreatureGoodLuckCoef", 0.0173), CreatureBadLuckCoef = D("CreatureBadLuckCoef", 0.0122),
+            CreatureGoodMoraleCoef = D("CreatureGoodMoraleCoef", 0.0173), CreatureBadMoraleCoef = D("CreatureBadMoraleCoef", 0.0833),
+            MovePointsMaxAllTypesSumCoef = D("MovePointsMaxAllTypesSumCoef", 1),
+            ValueOfBorderGuardKey = I("ValueOfBorderGuardKey", 1500),
+            ValueOfSpellSummonCreatures = I("ValueOfSpellSummonCreatures", 10000),
+            ValueOfTalismanBase = I("ValueOfTalismanBase", 10000), ValueOfTalismanPerLevel = I("ValueOfTalismanPerLevel", 5000),
             SearchDangerEnemyMobilityMultiplier = D("SearchDangerEnemyMobilityMultiplier", 1),
             SearchDangerEnemyMobilityBonus = D("SearchDangerEnemyMobilityBonus", 300),
             SearchPositiveAttractorValue = I("SearchPositiveAttractorValue", 1000000),

@@ -57,6 +57,17 @@ public sealed partial class Adventure
 
     void Emit(AdvEvent e) => _ev.Add(e);
 
+    /// <summary>
+    /// An engine over another state of the same map (the AI's simulations): no scripts, observers or hooks; the static
+    /// object index of the map is shared instead of being rebuilt.
+    /// </summary>
+    public Adventure Simulation(AdvState state)
+    {
+        var a = new Adventure(Db, Map, state);
+        a._activeIndex = _activeIndex;
+        return a;
+    }
+
     public PlayerState Current => S.Players[S.CurrentPlayer];
 
     public AdvResult Apply(AdvCommand cmd)

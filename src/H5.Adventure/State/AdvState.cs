@@ -281,6 +281,8 @@ public sealed class TownState
     public string Name = "";
     public string Type = "";
     public int Owner = -1;
+    /// <summary>Day the current owner took the town (exe town economy +0x24, read by FUN_00451d70); −1 = since the start.</summary>
+    public int OwnedSinceDay = -1;
     public Tile Pos;
     /// <summary>Built level per building type (TB_*), 0 = not built.</summary>
     public Dictionary<string, int> Built = new();

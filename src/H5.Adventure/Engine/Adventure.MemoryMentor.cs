@@ -31,7 +31,7 @@ public sealed partial class Adventure
     /// Mastery as hero vfunc 0x174 (00b4d150) reports it: the stored level, +1 for the racial skill while the hero wears
     /// PEDANT_OF_MASTERY (artifact 15, 00ca6680 on the worn artifacts); outside 0..4 it reads 0.
     /// </summary>
-    static int EffectiveMastery(HeroState h, string skill)
+    public static int EffectiveMastery(HeroState h, string skill)
     {
         int m = (int)h.MasteryOf(skill);
         if (RacialSkills.GetValueOrDefault(h.Town) == skill && h.Artifacts.Contains("PEDANT_OF_MASTERY")) m++;

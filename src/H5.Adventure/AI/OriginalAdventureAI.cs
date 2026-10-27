@@ -43,6 +43,8 @@ public sealed partial class OriginalAdventureAI
 
         ResolvePending(g, battleSeedBase);
         var towns = g.S.Towns.Where(t => t.Owner == me).ToList();
+        // Phase 0 (FUN_0086d750): the threat table is rebuilt every day.
+        CheckThreats(g, st, diff, me);
 
         // Phase order of the exe's state machine (CPlayerAI +0x128, dispatcher at 0x0086dea0): day start and
         // threats (0, FUN_0086d750) → roles (12, FUN_00869ad0) → heroes one by one (1..5, FUN_0086b400 …) →
@@ -58,15 +60,17 @@ public sealed partial class OriginalAdventureAI
         var claimed = new HashSet<int>();
         var done = new HashSet<int>();
         MoveHeroes(g, battleSeedBase, me, diff, st, roles, claimed, done, ref actions);
-        if (HireHeroes(g, towns, diff))
+        if (HireHeroes(g, towns, st, diff))
         {
             // After a hire the exe goes back to the role phase 12 (0x0086b39a), so the new hero gets a role too.
             roles = AssignRoles(g, g.S.Heroes.Where(h => h.Alive && h.Owner == me).ToList(), st, diff);
             MoveHeroes(g, battleSeedBase, me, diff, st, roles, claimed, done, ref actions);
         }
-        if ((g.S.Day - 1) % diff.TownBuildPeriodInDays == 0)
-            foreach (var t in towns) TryBuild(g, t, st);
-        foreach (var t in towns) Recruit(g, t, st);
+        // Phase 6 (FUN_0086d4e0): threatened own towns without a garrison hero buy into the garrison, money ignored
+        // (CAIPurchaseCreaturesInTown, queued before the build commands); then the building pass.
+        foreach (var t in towns)
+            if (Threats(me).T.ContainsKey(t.Object) && TownHeroes(g, t).Garrison == null) Purchase(g, st, t.Object, null, ignoreMoney: true);
+        BuildInTowns(g, me, diff, ThreatenedTownsOf(Threats(me)));
         ResolvePending(g, battleSeedBase + 999);
         foreach (var h in g.S.Heroes.Where(h => h.Alive && h.Owner == me)) LevelUps(g, h, st);
         if (!g.S.Finished) Send(g, new EndTurnCmd { Player = me });
@@ -85,7 +89,7 @@ public sealed partial class OriginalAdventureAI
             {
                 ResolvePending(g, battleSeedBase + (ulong)actions);
                 LevelUps(g, h, st);
-                var target = ChooseDestination(g, h, roles[h.Id], diff, st, claimed);
+                var target = ChooseDestination(g, h, roles, diff, st, claimed);
                 if (target == null) break;
                 var r = Send(g, new MoveHeroCmd(h.Id, target.Value.Tile) { Player = me });
                 actions++;
@@ -97,6 +101,10 @@ public sealed partial class OriginalAdventureAI
                 LevelUps(g, h, st);
                 // BlockTownGarrisonForAI: no creature exchange with that garrison (exe reader 0x008687a0).
                 if (h.InTown >= 0 && g.S.Town(h.InTown) is { } home && home.Owner == me && !home.AiGarrisonBlocked) TakeGarrison(g, h, home);
+                // A hero in an own town buys creatures (009c4710 step 6), at an own external dwelling too (004e6d30 case 5).
+                if (h.Alive && h.InTown >= 0 && g.S.Town(h.InTown) is { } shop && shop.Owner == me) Purchase(g, st, shop.Object, h, false);
+                else if (h.Alive && g.Map.Objects.FirstOrDefault(o => o.Kind == ObjectKind.Dwelling && o.ActiveTiles.Contains(h.Pos)) is { } dw
+                         && g.S.Objects.TryGetValue(dw.Index, out var dws) && dws.Owner == me) Purchase(g, st, dw.Index, h, false);
                 if (h.MovePoints < 100) break;
             }
             if (h.Alive && !g.S.Finished) FinishHero(g, h, roles[h.Id]);
@@ -312,165 +320,12 @@ public sealed partial class OriginalAdventureAI
     /// <summary>
     /// "Player in danger" (exe FUN_00866c30): with n towns of which k have a threat (FUN_00c283d0) above
     /// ThreatsTownInDangerThreshold (row +0x70), true when n &lt; 1, k &gt; n − 1, or the player's heroes ≤ k + 1.
-    /// GAP-detail: town threats are not ported (k = 0), so this is "no towns or at most one hero".
     /// </summary>
-    public static bool PlayerInDanger(Engine.Adventure g, int me)
+    public static bool PlayerInDanger(Engine.Adventure g, int me, int endangered = 0)
     {
-        int towns = g.S.Towns.Count(t => t.Owner == me), endangered = 0;
+        int towns = g.S.Towns.Count(t => t.Owner == me);
         if (towns < 1 || endangered > towns - 1) return true;
         return g.S.Heroes.Count(x => x.Alive && x.Owner == me) <= endangered + 1;
-    }
-
-    readonly Dictionary<int, int> _lastCost = new();
-
-    Destination? ChooseDestination(Engine.Adventure g, HeroState h, HeroRole role, AdventureDifficulty diff, AdventureAiStats st, HashSet<int> claimed)
-    {
-        double myPower = g.ArmyPower(h.Army.Live(), h);
-        int? remembered = _lastTarget.ContainsKey(h.Id) && _lastCost.TryGetValue(h.Id, out int lc) ? lc : null;
-        var limits = SearchLimits(role, diff, remembered, h.MovePoints, PlayerInDanger(g, h.Owner));
-        // The wave spread (exe FUN_00c08be0 from 0086c010): one flood of the hero's path costs up to the widest limit;
-        // each attempt keeps the destinations within its own limit.
-        var costs = g.ReachableCosts(h, limits.Max());
-        var danger = diff.CheckHeroesDanger ? DangerTiles(g, h, st, myPower) : new HashSet<Tile>();
-        foreach (int limit in limits)
-        {
-            var best = ChooseWithin(g, h, diff, st, claimed, myPower, limit, costs, danger);
-            if (best != null && g.FindPath(h, best.Value.Tile) != null) return best;
-        }
-        return SeaTravel(g, h, myPower, diff, st, claimed);
-    }
-
-    Destination? ChooseWithin(Engine.Adventure g, HeroState h, AdventureDifficulty diff, AdventureAiStats st, HashSet<int> claimed, double myPower, int maxCost,
-                              Dictionary<Tile, int> costs, HashSet<Tile> danger)
-    {
-        var rng = new Rng(Mix(g.S.Rng.S0, (ulong)g.S.Day, (ulong)h.Owner, (ulong)h.Id));
-        Destination? best = null;
-        int bestState = 0;
-        long bestValue = 0;
-        bool hasLast = _lastTarget.TryGetValue(h.Id, out var last);
-        foreach (var o in g.Map.Objects)
-        {
-            if (o.Pos.Floor != h.Pos.Floor || o.Kind == ObjectKind.Static || claimed.Contains(o.Index)) continue;
-            if (g.S.Objects.TryGetValue(o.Index, out var os) && os.Removed) continue;
-            double value = ObjectValue(g, h, o, os, myPower, diff, st);
-            // SetAIHeroAttractor / SetAIPlayerAttractor (exe FUN_00bc5740): the hero's entry, else the player's;
-            // -1 subtracts SearchNegativeAttractorValue, 1 adds SearchPositiveAttractorValue, 2 sets the result
-            // state to 3, which outranks every destination of a lower state whatever its value (FUN_00a7b630).
-            int attract = AttractorPriority(g, h, o);
-            int state = attract == 2 ? 3 : 0;
-            // "But the AI will not risk its heroes" (script reference, not traced in the exe): a hostile target
-            // judged too strong stays out even with priority 1.
-            if (attract == 1 && value <= 0 && (o.Kind is ObjectKind.Monster or ObjectKind.Hero ||
-                                               (o.Kind == ObjectKind.Town && g.S.Town(o.Index) is { } at && at.Owner != h.Owner))) continue;
-            if (attract == -1) value -= st.SearchNegativeAttractorValue;
-            else if (attract == 1) value += st.SearchPositiveAttractorValue;
-            if (value <= 0 && state == 0) continue;
-            var tile = o.Kind is ObjectKind.Monster or ObjectKind.Hero ? o.Pos : o.ActiveTiles.FirstOrDefault(o.Pos);
-            // Move cost = the flood's path cost to the destination tile (record +0x18); unreached tiles are not found.
-            if (tile == h.Pos || !costs.TryGetValue(tile, out int cost) || cost > maxCost) continue;
-            if (state == 0)
-            {
-                // Guards on the way: never walk into a stack we would lose to (reconstructed).
-                if (o.Kind != ObjectKind.Monster && g.GuardingMonster(tile) is { } guard &&
-                    g.S.Objects.TryGetValue(guard.Index, out var gs) && g.ArmyPower(gs.Guards, null) > myPower * (1 - diff.CowardiceVersusComputer)) continue;
-                // Danger zones of stronger enemy heroes (FUN_00872330 reach flooded over their path costs).
-                if (danger.Contains(tile)) continue;
-            }
-            // GAP-detail: whether state-3 destinations skip the danger checks is not traced (they do here).
-            long v = (long)value;
-            v = hasLast && last == tile
-                ? OldTargetValue(v, (float)st.SearchOldTargetMultiplier)
-                : RandomizedValue(v, rng.Range(1, Math.Max(1, st.SearchBestPositionRandomFactor)), st.SearchBestPositionRandomFactor);
-            v = DiscountedValue(state, v, cost, st.SearchAverageTerrainCost);
-            if (best == null || Better(state, v, bestState, bestValue))
-            {
-                best = new Destination(o.Index, tile, v, cost);
-                bestState = state;
-                bestValue = v;
-            }
-        }
-        return best;
-    }
-
-    /// <summary>Attractor priority for the hero (own entry first, then its player's; FUN_00b4d5c0 / player vf 0x1e8).</summary>
-    static int AttractorPriority(Engine.Adventure g, HeroState h, MapObject o)
-    {
-        if (o.Name.Length == 0) return 0;
-        int p = AiAttractor.Get(h.AiAttractors, o.Name);
-        if (p == 0 && h.Owner >= 0 && g.Player(h.Owner) is { } pl) p = AiAttractor.Get(pl.AiAttractors, o.Name);
-        return p;
-    }
-
-    /// <summary>Value standing for a negative state (a refused fight): never chosen unless an attractor sets state 3.</summary>
-    const double Refused = -1e15;
-
-    /// <summary>No human player in the game has explored the tile (exe FUN_0098dbf0: player vf 0x19c(floor) fog byte).</summary>
-    public static bool UnseenByHumans(Engine.Adventure g, Tile t)
-    {
-        var f = g.Map.Floor(t.Floor);
-        if (f == null) return true;
-        foreach (var p in g.S.Players)
-            if (p.Alive && p.Human && t.Floor < p.Explored.Count && p.Explored[t.Floor][t.Y * f.Width + t.X]) return false;
-        return true;
-    }
-
-    /// <summary>Gold-equivalent value of visiting an object, using the AI/Adventure ValueOf* tunables.</summary>
-    static double ObjectValue(Engine.Adventure g, HeroState h, MapObject o, ObjState? os, double myPower, AdventureDifficulty diff, AdventureAiStats st)
-    {
-        switch (o.Kind)
-        {
-            case ObjectKind.Treasure:
-                if (os == null) return 500;
-                return os.ResourceKind == Purse.Gold ? os.Amount : os.ResourceKind >= 0 ? os.Amount * (os.ResourceKind <= Purse.Ore ? 250 : 500) : 1000;
-            case ObjectKind.Artifact:
-                var art = o.ArtifactId ?? o.RewardArtifact;
-                return art != null && g.Core.Artifacts.TryGetValue(art, out var ad) ? st.ArtifactValue(ad.Type) : st.ValueOfMinorArtifact;
-            case ObjectKind.Mine:
-            case ObjectKind.AbandonedMine:
-                // Daily income in gold equivalents (gold mine 1000, resource mines 2 units × 250/500) scaled by
-                // IncomeMultiplier/10. Reconstructed: the exe's exact income valuation is not traced yet.
-                if (os != null && os.Owner == h.Owner) return 0;
-                bool goldMine = o.Tag.Contains("GOLD", StringComparison.OrdinalIgnoreCase) || o.SharedPath.Contains("Gold", StringComparison.OrdinalIgnoreCase);
-                bool common = o.Tag.Contains("WOOD", StringComparison.OrdinalIgnoreCase) || o.Tag.Contains("ORE", StringComparison.OrdinalIgnoreCase)
-                              || o.SharedPath.Contains("Sawmill", StringComparison.OrdinalIgnoreCase) || o.SharedPath.Contains("Ore", StringComparison.OrdinalIgnoreCase);
-                return (goldMine ? 1000 : common ? 500 : 1000) * st.IncomeMultiplier / 10.0;
-            case ObjectKind.Dwelling:
-                return os == null || os.Owner != h.Owner ? st.IncomeMultiplier * 40 : 0;
-            case ObjectKind.Shrine:
-                return h.Spells.Count < 64 ? st.ValueOfSpellPerLevel * 2 : 0;
-            case ObjectKind.Monster:
-            {
-                // Exe provider 004eee00 → FUN_00bc3af0 (see MonsterFightValue); a refused fight is state −1.
-                if (os == null) return 0;
-                return MonsterFightValue(g, st, diff, h, os.Guards, UnseenByHumans(g, o.Pos)) ?? Refused;
-            }
-            case ObjectKind.Town:
-            {
-                var t = g.S.Town(o.Index);
-                if (t == null) return 0;
-                if (t.Owner == h.Owner)
-                    return h.InTown != t.Object && t.Garrison.StackCount() > 0 ? diff.ValueOfTown * 0.25 : 0;
-                double garrison = g.ArmyPower(t.Garrison.Live(), null);
-                bool human = t.Owner >= 0 && g.S.Players[t.Owner].Human;
-                double aggr = human ? diff.AttackHumanAggressivityCoef : diff.AttackComputerAggressivityCoef;
-                double coward = human ? diff.CowardiceVersusHuman : diff.CowardiceVersusComputer;
-                if (garrison * (1 + coward) >= myPower * aggr) return 0;
-                return diff.ValueOfTown;
-            }
-            case ObjectKind.Hero:
-            {
-                var other = g.S.Heroes.FirstOrDefault(x => x.Alive && x.Pos == o.Pos && x.Owner != h.Owner);
-                if (other == null) return 0;
-                double enemy = g.ArmyPower(other.Army.Live(), other);
-                bool human = g.S.Players[other.Owner].Human;
-                double aggr = human ? diff.AttackHumanAggressivityCoef : diff.AttackComputerAggressivityCoef;
-                double coward = human ? diff.CowardiceVersusHuman : diff.CowardiceVersusComputer;
-                if (enemy * (1 + coward) >= myPower * aggr) return 0;
-                return st.ValueOfHero + st.ValueOfHeroLevelPow2 * other.Level * other.Level;
-            }
-            default:
-                return 0;
-        }
     }
 
     /// <summary>
@@ -500,69 +355,6 @@ public sealed partial class OriginalAdventureAI
     }
 
     // ---------------------------------------------------------------- towns and heroes
-
-    static void TryBuild(Engine.Adventure g, TownState t, AdventureAiStats st)
-    {
-        if (t.BuiltToday) return;
-        // Income first (IncomeMultiplier weighs income buildings heavily), then dwellings low→high, defences, guild.
-        var order = new List<string> { "TB_TOWN_HALL", "TB_MARKETPLACE" };
-        for (int i = 1; i <= 7; i++) order.Add($"TB_DWELLING_{i}");
-        order.AddRange(new[] { "TB_FORT", "TB_MAGIC_GUILD", "TB_TAVERN", "TB_BLACKSMITH" });
-        foreach (var b in order.Concat(t.MaxLevel.Keys.Except(order).OrderBy(k => k, StringComparer.Ordinal)))
-            if (Send(g, new BuildCmd(t.Object, b) { Player = t.Owner }).Ok) return;
-    }
-
-    /// <summary>Buys creatures high tier first, keeping TownCreaturesReserveCoef of the gold back.</summary>
-    static void Recruit(Engine.Adventure g, TownState t, AdventureAiStats st)
-    {
-        int reserve = (int)(g.Current.Purse[Purse.Gold] * st.TownCreaturesReserveCoef);
-        for (int tier = 7; tier >= 1; tier--)
-        {
-            int variant = g.DwellingCreature(t, tier, 1) != null ? 1 : 0;
-            var cr = g.DwellingCreature(t, tier, variant);
-            if (cr == null || !g.Core.Creatures.TryGetValue(cr, out var cd) || t.Available[tier - 1] <= 0) continue;
-            int gold = Math.Max(1, cd.Cost.Gold);
-            int n = Math.Min(t.Available[tier - 1], Math.Max(0, g.Current.Purse[Purse.Gold] - reserve) / gold);
-            while (n > 0 && !Send(g, new RecruitCmd(t.Object, tier, n, variant) { Player = t.Owner }).Ok) n /= 2;
-        }
-    }
-
-    /// <summary>
-    /// Hero hiring (exe phase 7, FUN_0086b0a0), at most once per day (CPlayerAI +0x60, set after a hire at
-    /// 0x0086b38f, cleared by SFLB_InitDay at 0x008674e6):
-    ///   • heroes &lt; MaxHeroes − SetPlayerHeroesCountNotForHire (FUN_0098de60 − player vf 0xb0);
-    ///   • when the player already has a hero, the heroes of all computer players together (FUN_00866b60:
-    ///     players 1..8, computer, not human) must stay below HireHeroesGlobalLimit (row +0x44);
-    ///   • heroes ≥ HireHeroesBase + HireHeroesPerTown · towns (row +0x3c / +0x40) passes the "over limit" flag to
-    ///     FUN_0086aa50, which then only accepts heroes its AI-hiring settings object marks (vf 0x88) — GAP: that
-    ///     test is not traced, so over the limit nobody is hired here;
-    ///   • the two tavern offers (player vf 0x14c(0..1)) are tried in order; with heroes &gt; 0 an offer is skipped
-    ///     when the hire cost without a town exceeds the gold (FUN_00b4ced0(player, null) vs resources +0x18);
-    ///   • FUN_0086aa50 then keeps the best town: AI-hiring enabled for it (settings vf 0x54, EnableAIHeroHiring),
-    ///     the hero passes the player's AI filter and the town's filter (FUN_00c069d0), the town is not in danger
-    ///     (FUN_008672d0 — GAP: not modelled) and the hire check FUN_004f4570 passes. GAP: the score (race coef
-    ///     FUN_008683f0 × hero value FUN_004eae60 × 1 or 0.1 by town race / (distance FUN_004ea050 + 1)) is not
-    ///     ported; the first eligible town and the first offer win, as the exe's strict comparison does on ties.
-    /// </summary>
-    static bool HireHeroes(Engine.Adventure g, List<TownState> towns, AdventureDifficulty diff)
-    {
-        var me = g.Current;
-        int heroes = g.S.Heroes.Count(h => h.Alive && h.Owner == me.Index);
-        if (!HiringAllowed(g, me, heroes, towns.Count, diff)) return false;
-        for (int slot = 0; slot < me.Tavern.Length && slot < 2; slot++)
-        {
-            if (me.Tavern[slot] is not { } id) continue;
-            // 0x0086b2db: the offer gate passes no town (no TOWN_BONUS_HEROES discount here).
-            if (heroes > 0 && g.HireCost(me) > me.Purse[Purse.Gold]) continue;
-            if (!Engine.Adventure.FilterAccepts(g.Core, me.AiHireFilter, id)) continue;
-            foreach (var t in towns.Where(t => t.Level("TB_TAVERN") > 0 && !me.AiHiringDisabledTowns.Contains(t.Object)))
-            {
-                int shown = Array.IndexOf(g.TownTavernOffers(me, t), id);
-                if (shown >= 0 && Send(g, new HireHeroCmd(t.Object, shown) { Player = me.Index }).Ok) return true;
-            }
-        }
-        return false;
-    }
 
     /// <summary>The count gates of FUN_0086b0a0 (see <see cref="HireHeroes"/>).</summary>
     public static bool HiringAllowed(Engine.Adventure g, PlayerState me, int heroes, int towns, AdventureDifficulty diff)

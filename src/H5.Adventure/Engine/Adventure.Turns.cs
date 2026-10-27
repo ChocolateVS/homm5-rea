@@ -305,7 +305,7 @@ public sealed partial class Adventure
         if (!p.Alive) return;
         p.Alive = false;
         foreach (var h in S.Heroes.Where(h => h.Owner == p.Index && h.Alive)) { h.Alive = false; Emit(new HeroRemoved(h.Id, "player eliminated")); }
-        foreach (var t in S.Towns.Where(t => t.Owner == p.Index)) t.Owner = -1;
+        foreach (var t in S.Towns.Where(t => t.Owner == p.Index)) { t.Owner = -1; t.OwnedSinceDay = S.Day; }
         foreach (var os in S.Objects.Values.Where(o => o.Owner == p.Index)) os.Owner = -1;
         Emit(new PlayerEliminated(p.Index));
     }
