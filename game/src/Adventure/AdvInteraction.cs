@@ -33,10 +33,15 @@ public partial class AdventureScreen
     /// <summary>
     /// Boat cases of the cursor switch (0059e594, byte table 0059e6bc): action 6 (visit) goes to 0059e5a7, which
     /// shows the UNBOARD family (14) when the route lands (action +0x39) or the hero sails (hero movement type 2);
-    /// moves (0) go to 0059e5d3: landing → 14, sailing → SHIP_MOVE (12) — already decided by Adventure.Target.
+    /// moves (0) go to 0059e5d3: landing → 14, sailing → SHIP_MOVE (12) — already decided by Adventure.Target;
+    /// action 5 (a script-disabled object in DISABLED_INTERACT mode) shares 0059e5d3: the route lands → 14, else 12.
     /// </summary>
-    public static AdvAction CursorAction(AdvAction a, bool heroInBoat) =>
-        a == AdvAction.Use && heroInBoat ? AdvAction.UnboardShip : a;
+    public static AdvAction CursorAction(AdvAction a, bool heroInBoat, bool routeLands = true) => a switch
+    {
+        AdvAction.Use when heroInBoat => AdvAction.UnboardShip,
+        AdvAction.Interact when heroInBoat => routeLands ? AdvAction.UnboardShip : AdvAction.ShipMove,
+        _ => a,
+    };
 
     /// <summary>
     /// Cursor per action (0059e1f0 switch, jump table 0059e694/0059e6bc; day families via 0058c500).
@@ -47,7 +52,7 @@ public partial class AdventureScreen
         AdvAction.ShipMove => AdvCursor.ShipMove,
         AdvAction.BoardShip => AdvCursor.BoardShip,
         AdvAction.UnboardShip => AdvCursor.UnboardShip,
-        AdvAction.Use => AdvCursor.Use,
+        AdvAction.Use or AdvAction.Interact => AdvCursor.Use, // 0058c500 cases 5 and 6 share the USE tables
         AdvAction.Attack => AdvCursor.Attack,
         AdvAction.OwnBuilding => AdvCursor.Garrison,
         AdvAction.OwnTown => AdvCursor.Town,

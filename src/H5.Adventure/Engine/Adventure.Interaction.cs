@@ -9,7 +9,10 @@ namespace H5.Adventure.Engine;
 /// </summary>
 public enum AdvAction
 {
-    Move = 0, Wait = 1, Default = 3, NoPath = 4, Use = 6, Attack = 7, NoHero = 8, Cast = 9,
+    Move = 0, Wait = 1, Default = 3, NoPath = 4,
+    /// <summary>5: visit without the boat case of 6 (005ff8f0 for a script-disabled object in DISABLED_INTERACT mode); USE cursor family.</summary>
+    Interact = 5,
+    Use = 6, Attack = 7, NoHero = 8, Cast = 9,
     OwnBuilding = 10, OwnTown = 11, ShipMove = 12, BoardShip = 13, UnboardShip = 14, MeetHero = 15, SelfHero = 16,
 }
 
@@ -80,6 +83,16 @@ public sealed partial class Adventure
             if (os?.Removed == true) picked = null;
             else
             {
+                // 005ff8f0 first asks the object's script state (IAdvMapObject vfunc 0x28 → 00454230): when the
+                // object is disabled (enabled byte, getter 004544f0, clear) its disabled mode (getter 004545e0,
+                // setter 004545b0 = SetDisabledObjectMode) decides: 1 DISABLED_ATTACK → 7, 2 DISABLED_INTERACT → 5,
+                // 3 DISABLED_BLOCKED → 4 (no route); 0 DISABLED_DEFAULT falls through to the normal action.
+                switch (ScriptHooks?.DisabledObjectMode(picked))
+                {
+                    case 1: return picked.Kind == ObjectKind.Monster ? Routed(hero, AdvAction.Attack, picked.Pos, picked.Pos, picked.Index, -1) : Approach(hero, AdvAction.Attack, picked, tile);
+                    case 2: return picked.Kind == ObjectKind.Monster ? Routed(hero, AdvAction.Interact, picked.Pos, picked.Pos, picked.Index, -1) : Approach(hero, AdvAction.Interact, picked, tile);
+                    case 3: return new(AdvAction.NoPath, tile, null, 0, picked.Index, -1);
+                }
                 AdvAction act = ObjectAction(hero, picked, os);
                 if (picked.Kind == ObjectKind.Monster) return Routed(hero, act, picked.Pos, picked.Pos, picked.Index, -1);
                 return Approach(hero, act, picked, tile);
@@ -160,4 +173,35 @@ public sealed partial class Adventure
         }
         return days;
     }
+
+    /// <summary>
+    /// Route marker kind per step of a plotted route (the hero's own tile left out), as the route display
+    /// 005b0c10 / 005b08e0 picks them from the TownTypesInfo plotting set (offsets read by 005b0aac..005b0af7):
+    /// steps from the hero's "today" index (IAdvMapMovable vfunc 0x3c, stored at display +0x18) on are Gray;
+    /// before it, steps from the first route cell lying in an enemy's guard zone (00ceab70 over the route,
+    /// stored at display +0x20; no such cell → today + 1) are Contested; the rest Available. The last step
+    /// takes the Target variant of the same kind. Gray wins over Contested.
+    /// </summary>
+    /// <param name="fightAtEnd">The route ends in a fight with something other than a neutral stack (enemy hero,
+    /// town or guarded object): the end step counts as guarded. The guard radius 00c27d20 gives those objects is
+    /// not traced, so only the end step is taken.</param>
+    public List<RouteMarker> RouteMarkers(HeroState hero, IReadOnlyList<Tile> path, bool fightAtEnd = false)
+    {
+        var steps = path.Where(t => t != hero.Pos).ToList();
+        int today = steps.Count, guard = int.MaxValue, mp = hero.MovePoints;
+        var from = hero.Pos;
+        for (int i = 0; i < steps.Count; i++)
+        {
+            int cost = StepCost(hero, from, steps[i]);
+            if (today == steps.Count && cost > mp) today = i;
+            if (today == steps.Count) mp -= cost;
+            if (guard == int.MaxValue && GuardingMonster(steps[i]) != null) guard = i;
+            from = steps[i];
+        }
+        if (fightAtEnd && steps.Count > 0) guard = Math.Min(guard, steps.Count - 1);
+        return steps.Select((_, i) => i >= today ? RouteMarker.Gray : i >= guard ? RouteMarker.Contested : RouteMarker.Available).ToList();
+    }
 }
+
+/// <summary>Route marker kinds: TownTypesInfo plotting PointAvailable / PointContested / PointGray (and Target*).</summary>
+public enum RouteMarker { Available, Contested, Gray }

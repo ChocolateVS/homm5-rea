@@ -20,6 +20,11 @@ public interface IAdventureScriptHooks
     bool InterceptVisit(HeroState hero, MapObject obj);
     /// <summary>A hero stepped onto a tile; return true to stop the movement there (enter-and-stop regions).</summary>
     bool StopMovementAt(HeroState hero, Tile from, Tile to);
+    /// <summary>
+    /// SetDisabledObjectMode mode (0..3) of an object disabled with SetObjectEnabled, or null while it is enabled
+    /// (read by the hover action 005ff8f0 through the getters 004544f0 / 004545e0).
+    /// </summary>
+    int? DisabledObjectMode(MapObject obj) => null;
 }
 
 public sealed partial class Adventure
@@ -257,7 +262,6 @@ public sealed partial class Adventure
             t.Available[tier - 1] += WeeklyGrowth(t, tier);
         if (t.MaxLevel.GetValueOrDefault(building) < next) t.MaxLevel[building] = next;
         Emit(new BuildingBuilt(t.Object, building, next));
-        StockArtifactMerchants();   // 00cd4a40 at 00cd4db7, as in DoBuild
         if (building == "TB_MAGIC_GUILD")
             foreach (var h in S.Heroes.Where(h => h.Alive && h.InTown == t.Object)) LearnFromGuild(h, t);
     }

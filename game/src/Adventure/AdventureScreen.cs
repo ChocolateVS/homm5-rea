@@ -366,20 +366,12 @@ public partial class AdventureScreen : Control
         if (path == null || path.Count == 0) { World.ClearPath(); _plotted = null; return; }
         _plotted = dest;
         bool fight = fightAtEnd ?? IsFight(hero, dest);
-        int mp = hero.MovePoints;
+        // 005b0c10 / 005b08e0: Gray from today's end, Contested from the first guarded cell, else Available.
+        var kinds = Session.Game.RouteMarkers(hero, path, fight && Session.Game.GuardingMonster(dest) == null);
+        var tiles = path.Where(t => t != hero.Pos).ToList();
         var steps = new List<(Tile, AdvWorld.Marker)>();
-        var prev = hero.Pos;
-        bool today = true;
-        foreach (var t in path)
-        {
-            if (t == hero.Pos) continue;
-            int cost = Session.Game.StepCost(hero, prev, t);
-            if (today && cost > mp) today = false;
-            if (today) mp -= cost;
-            bool last = t == path[^1];
-            steps.Add((t, last && fight ? AdvWorld.Marker.Contested : today ? AdvWorld.Marker.Available : AdvWorld.Marker.Gray));
-            prev = t;
-        }
+        for (int i = 0; i < tiles.Count; i++)
+            steps.Add((tiles[i], kinds[i] switch { RouteMarker.Contested => AdvWorld.Marker.Contested, RouteMarker.Gray => AdvWorld.Marker.Gray, _ => AdvWorld.Marker.Available }));
         World.ShowPath(hero.Town is { Length: > 0 } town ? town : HeroTown(hero), steps);
     }
 
@@ -449,7 +441,8 @@ public partial class AdventureScreen : Control
         if (_pendingSpell != null) { AdvCursors.Set(AdvCursor.Cast); return; }
         if (tile is not { } t || !World.IsExplored(t)) { AdvCursors.Set(AdvCursor.CantGo); return; }
         var target = HoverTarget(mouse, t);
-        AdvCursors.Set(CursorFor(CursorAction(target.Action, Selected?.InBoat == true)), target.Days + 1);
+        bool lands = target.Path is { Count: > 0 } p && !Session.Game.IsWaterTile(p[^1]);
+        AdvCursors.Set(CursorFor(CursorAction(target.Action, Selected?.InBoat == true, lands)), target.Days + 1);
     }
 
     // ---------------------------------------------------------------- frame loop / playback

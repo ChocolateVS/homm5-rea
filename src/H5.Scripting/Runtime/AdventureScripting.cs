@@ -429,6 +429,9 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
         return true;
     }
 
+    public int? DisabledObjectMode(MapObject obj) =>
+        World.DisabledObjects.ContainsKey(obj.Index) ? World.DisabledModes.GetValueOrDefault(obj.Index) : null;
+
     public bool StopMovementAt(HeroState hero, Tile from, Tile to)
     {
         foreach (var r in Data.Regions)
