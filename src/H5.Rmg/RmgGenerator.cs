@@ -156,6 +156,8 @@ public sealed partial class RmgGenerator
         PlaceMainObjects(result);
         CreateRoads(result);
         PlaceStatics(result);
+        Mark("AdditionalObjects");
+        PlaceUndergroundTreasures(result);
         PlaceTreasureBlocks(result);
         Finish(result);
         Mark("Finished");

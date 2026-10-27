@@ -492,12 +492,29 @@ public sealed partial class RmgGenerator
                 PlaceBuilding(r, z, "MapObjects/Redwood_Observatory.(AdvMapBuildingShared).xdb", "redwood observatory");
             if (z.Player == 0 && Rng.Next(10) < 2)
                 PlaceBuilding(r, z, "MapObjects/Den_Of_Thieves.(AdvMapBuildingShared).xdb", "den of thieves");
-            // 0x00905e60, surface zones only (zone floor +0xf4 == 0): density x factor, truncated.
-            if (z.Floor == 0)
-            {
-                PlaceTreasures(r, z, (int)(z.Def.TreasureDensity * Multiplier(_o.ResourceLevel)), chests: false);
-                PlaceTreasures(r, z, (int)(z.Def.TreasureChestDensity * Multiplier(_o.ExpLevel)), chests: true);
-            }
+            // 0x00905e60 here for surface zones only (zone floor +0xf4 == 0); underground zones get theirs after
+            // the statics (0x00906380, PlaceUndergroundTreasures).
+            if (z.Floor == 0) PlaceZoneTreasures(r, z);
+        }
+    }
+
+    /// <summary>exe 0x00905e60: treasures (TreasureDensity x the +0xa8 factor), then chests (TreasureChestDensity x the +0xb0 factor), truncated.</summary>
+    void PlaceZoneTreasures(RmgResult r, RmgZone z)
+    {
+        PlaceTreasures(r, z, (int)(z.Def.TreasureDensity * Multiplier(_o.ResourceLevel)), chests: false);
+        PlaceTreasures(r, z, (int)(z.Def.TreasureChestDensity * Multiplier(_o.ExpLevel)), chests: true);
+    }
+
+    /// <summary>
+    /// exe 0x00906380 ("additional objects set", after the statics 0x00906130): every template zone, in template
+    /// list order, whose generated zone lies underground (+0xf4 != 0) gets its treasures and chests (0x00905e60).
+    /// </summary>
+    void PlaceUndergroundTreasures(RmgResult r)
+    {
+        for (int zi = 0; zi < _t.Zones.Count; zi++)
+        {
+            var z = Zones.FirstOrDefault(zz => zz.Def == _t.Zones[zi]);
+            if (z != null && z.Floor != 0) PlaceZoneTreasures(r, z);
         }
     }
 

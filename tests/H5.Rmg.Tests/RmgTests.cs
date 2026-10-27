@@ -226,6 +226,24 @@ public class GeneratorTests(RmgFixture f)
         Assert.Equal(g.Zones.Sum(z => z.Tiles.Count / 4000 + 1), observatories);
     }
 
+    /// <summary>
+    /// Underground zones get their loose treasures and chests too, after the statics: 0x00907150 calls 0x00905e60
+    /// only for zones with floor +0xf4 == 0, and 0x00906380 ("additional objects set") calls it for the others.
+    /// </summary>
+    [StockFact]
+    public void UndergroundZonesGetTreasuresAfterTheStatics()
+    {
+        var o = new RmgOptions { Template = "S1-2P2-4Z4K1S", Size = 2, Underground = true, Seed = 77, Players = 2 };
+        var g = new RmgGenerator(f.Db, o);
+        var r = g.Generate();
+        var under = g.Zones.Where(z => z.Floor == 1 && z.Def.TreasureDensity > 0).ToList();
+        Assert.NotEmpty(under);
+        Assert.Contains(r.Objects, x => x.Floor == 1 && x.Note == "treasure");
+        // The underground treasures come after the statics in the object list.
+        int lastStatic = r.Objects.FindLastIndex(x => x.Note == "static");
+        Assert.All(r.Objects.Where(x => x.Floor == 1 && x.Note is "treasure" or "chest"), x => Assert.True(r.Objects.IndexOf(x) > lastStatic));
+    }
+
     [StockFact]
     public void MineAndPrisonCountsFollowTheTemplate()
     {
