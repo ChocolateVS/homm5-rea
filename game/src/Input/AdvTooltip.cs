@@ -2,6 +2,7 @@ using Godot;
 using H5.Adventure.Map;
 using H5.Adventure.State;
 using H5Reborn.Adventure;
+using H5Reborn.Town;
 using H5Reborn.Ui;
 
 namespace H5Reborn.Interaction;
@@ -15,7 +16,8 @@ namespace H5Reborn.Interaction;
 /// MONSTER_TOOLTIP_WND_ID (UI/Tooltips/MonsterTooltip/MainWnd) — their tiled background and text
 /// templates (name/object_info/owned/hero_level/army/courage/danger) are used as shipped; the gathering
 /// layout stacks the sections with the windows' own 13 px margins and 16 px line height.
-/// Monster amounts use GameMechanics/roughAmounts.xdb (Few … Legion).
+/// Monster amounts use GameMechanics/roughAmounts.xdb (Few … Legion; 004bc930: the first item whose MaxAmount ≥ count, else
+/// the last).
 /// </summary>
 public partial class AdvTooltip : Control
 {
@@ -53,10 +55,11 @@ public partial class AdvTooltip : Control
 
     public override void _Process(double delta)
     {
-        var mouse = GetViewport().GetMousePosition();
+        // The dev/test fake mouse (`--adventure-hover`) drives the tooltip like the cursor (AdventureScreen._Process).
+        var mouse = AdventureScreen.FakeMouse ?? GetViewport().GetMousePosition();
         string? key = null;
         Func<bool, Control?>? build = null;
-        if (_adv.DialogLayer.GetChildCount() == 0 && GetViewport().GuiGetHoveredControl() is not { MouseFilter: MouseFilterEnum.Stop }
+        if (_adv.DialogLayer.GetChildCount() == 0 && (AdventureScreen.FakeMouse != null || GetViewport().GuiGetHoveredControl() is not { MouseFilter: MouseFilterEnum.Stop })
             && _adv.World.TileAtRay(_adv.World.Camera.ProjectRayOrigin(mouse), _adv.World.Camera.ProjectRayNormal(mouse)) is { } tile
             && _adv.World.IsExplored(tile))
             (key, build) = Describe(tile, _adv.PickAt(mouse, tile));
@@ -211,24 +214,66 @@ public partial class AdvTooltip : Control
         return l;
     }
 
+    /// <summary>
+    /// The monster window (MONSTER_TOOLTIP_WND_ID; builder 005fc420 over SAdvMapMonsterTooltip from 004efc30), in the
+    /// order of MonsterTooltip/MainWnd: Info = Name (004eea30: the creature's name for one live stack, RPGRoot
+    /// MONSTERS_ARMY_NAME for several) and ObjectInfo (the PlayerColourSchemes text of colour 0, PCOLOR_NEUTRAL
+    /// "Neutral"); only in the full window: one stack → MonsterFace + MonstersAmount (roughAmounts.xdb word of the
+    /// largest stack, 004eed60; the exact count when a Scouting hero of the player is in reach, 004fcf90), several
+    /// stacks → the army (rough or exact per stack, 00b496d0); Courage (the monster's courage — Will join / Will fight
+    /// / Unpredictable) only when a Disguise and Reckon hero is in reach; Threat Level for the selected hero (004ea7a0).
+    /// There is no join / flee / fight prediction beyond the courage line.
+    /// </summary>
     Control MonsterContent(MapObject m, bool full)
     {
+        var g = _adv.Session.Game;
         var s = _adv.Session.S;
-        var guards = s.Objects.TryGetValue(m.Index, out var st) ? st.Guards : new List<Stack>();
-        int total = guards.Sum(g => g.Count);
-        var creature = guards.FirstOrDefault()?.Creature ?? m.Creature ?? "";
+        var guards = (s.Objects.TryGetValue(m.Index, out var st) ? st.Guards : new List<Stack>()).Where(x => x is { Count: > 0 }).ToList();
+        bool several = guards.Count > 1;
+        var main = guards.OrderByDescending(x => (long)(Game.Instance.Db.Creatures.GetValueOrDefault(x.Creature)?.Power ?? 0) * x.Count).FirstOrDefault();
+        var creature = main?.Creature ?? m.Creature ?? "";
+        string CreatureName(string id) => Game.Instance.Db.Creatures.GetValueOrDefault(id)?.Name ?? id;
+        var title = several ? AdvTexts.Rpg("MONSTERS_ARMY_NAME") : CreatureName(creature);
         var l = new Lines();
-        l.AddTitle(Fill(T(Common + "name.txt"), ("name", Esc(Game.Instance.Db.Creatures.GetValueOrDefault(creature)?.Name ?? creature))));
-        l.Add(Fill(T(Common + "object_info.txt"), ("object_info", Rough(total))));
+        l.AddTitle(Fill(T(Common + "name.txt"), ("name", Esc(title))));
+        l.Add(Fill(T(Common + "object_info.txt"), ("object_info", T("Text/Game/Player/Colors/neutral.txt").Trim())));
         if (full)
         {
-            var courage = m.Courage switch
+            var (exact, courageKnown) = g.MonsterInsight(_adv.Session.Human.Index, m.Pos);
+            if (!several)
             {
-                "MONSTER_COURAGE_ALWAYS_JOIN" => T(Monster + "always_join.txt"),
-                "MONSTER_COURAGE_ALWAYS_FIGHT" => T(Monster + "always_fight.txt"),
-                _ => T(Monster + "unknown.txt"),
-            };
-            l.Add(Fill(T(Monster + "courage.txt"), ("courage", courage)));
+                if (TownUi.CreatureIcon(creature) is { } icon)
+                {
+                    var holder = new Control { CustomMinimumSize = new Vector2(197, 63), MouseFilter = MouseFilterEnum.Ignore };
+                    holder.AddChild(new TextureRect
+                    {
+                        Texture = icon, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                        Position = new Vector2((197 - 65) / 2f, 0), Size = new Vector2(65, 63), MouseFilter = MouseFilterEnum.Ignore,
+                    });
+                    l.AddChild(holder);
+                }
+                int count = main?.Count ?? 0;
+                // The roughAmounts texts have two lines ("Horde" / "50-99").
+                l.AddChild(Text(Fill(T("UI/Tooltips/Monster_ShrineTooltip/monsters_amount.txt"), ("monsters_amount", exact ? count.ToString() : Rough(count))), 197));
+            }
+            else
+            {
+                l.Add(T(Common + "army.txt"));
+                foreach (var x in guards)
+                    l.AddChild(Text($"<tooltip_bright>{Esc(CreatureName(x.Creature))}: {(exact ? x.Count.ToString() : string.Join(" ", Rough(x.Count).Split(new[] { (char)13, (char)10 }, StringSplitOptions.RemoveEmptyEntries)))}", 197));
+            }
+            if (courageKnown)
+            {
+                var courage = m.Courage switch
+                {
+                    "MONSTER_COURAGE_ALWAYS_JOIN" => T(Monster + "always_join.txt"),
+                    "MONSTER_COURAGE_ALWAYS_FIGHT" => T(Monster + "always_fight.txt"),
+                    _ => T(Monster + "unknown.txt"),
+                };
+                l.Add(Fill(T(Monster + "courage.txt"), ("courage", courage.Trim())));
+            }
+            if (s.Hero(_adv.SelectedHeroId) is { } sel && sel.Owner == _adv.Session.Human.Index && g.MonsterDanger(sel, guards) is { } danger)
+                l.Add(Fill(T(Monster + "danger.txt"), ("danger", T(Monster + $"danger_level_{danger}.txt").Trim())));
         }
         l.Finish();
         return l;
