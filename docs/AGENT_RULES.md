@@ -10,6 +10,10 @@ Never invent behaviour: anything not traced is a GAP row in the relevant ledger 
 ## Git
 - Commit small and often, via a private index built from the CURRENT HEAD at commit time:
   `GIT_INDEX_FILE=<scratch>/idx git read-tree HEAD; GIT_INDEX_FILE=<scratch>/idx git add <paths>; GIT_INDEX_FILE=<scratch>/idx git commit`.
+- Move main ONLY with a compare-and-swap, never with plain `git commit` on a tree read earlier:
+  `OLD=$(git rev-parse main)`; build the tree from `$OLD` + your files (`GIT_INDEX_FILE=… git read-tree $OLD; … git add <paths>; T=$(… git write-tree)`);
+  `NEW=$(git commit-tree $T -p $OLD -F msg)`; `git update-ref refs/heads/main $NEW $OLD`. If update-ref fails (main moved),
+  redo from the new main. Then `git diff --stat $OLD $NEW` must list only your files — anything else means you reverted someone.
 - Explicit paths only; never `git add -A`; never stage in the main index; never rewrite or reset other commits.
 - If HEAD moved since your test run, re-apply your patch on the new HEAD (3-way) and re-check. Verify with
   `git show --stat` that the commit only touches your files. Other helpers' WIP may be in the tree — never commit it.
