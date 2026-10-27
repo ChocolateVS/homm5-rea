@@ -107,9 +107,14 @@ public sealed partial class Adventure
                 foreach (var d in defs)
                     if (!t.MaxLevel.ContainsKey(d.Type)) { t.MaxLevel[d.Type] = Db.MaxLevel(type, d.Type); t.Built.TryAdd(d.Type, 0); }
             foreach (var g in o.Guards) t.Garrison.TryAdd(g.Creature, g.Count);
-            // Initial creature pools: one week of growth for built dwellings.
+            // Initial creature pools: the start levels go through the build path (00cd6460 → vf 0x6c → 00cd4a40), whose
+            // new pool (FUN_00cd0710 at 00cd4e42) holds the base creature's WeeklyGrowth. No weekly update runs at map
+            // start: 00993bf0 (IAdvMapWeeklyUpdate vf 4 on every object) is reached only from the new-day function
+            // 009949d0 (GiveTurnToNextPlayers 00998060), so fort, horde and week bonuses come with the first new week.
             for (int tier = 1; tier <= 7; tier++)
-                t.Available[tier - 1] = t.Level($"TB_DWELLING_{tier}") > 0 ? WeeklyGrowth(t, tier) : 0;
+                t.Available[tier - 1] = t.Level($"TB_DWELLING_{tier}") > 0
+                    && Db.Building(t.Type, $"TB_DWELLING_{tier}", 1)?.Creature is { } dc && Core.Creatures.TryGetValue(dc, out var dcd)
+                    ? dcd.WeeklyGrowth : 0;
             // FUN_00cd79d0: the guild, runes and warcries are rolled after the initial buildings. The map's per-town
             // spellIDs (AdvMapTown +0xf4) are copied by FUN_00cd1650 into the init record but FUN_00cd5be0 never reads them.
             RollTownSpells(t);

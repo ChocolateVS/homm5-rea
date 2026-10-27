@@ -39,7 +39,7 @@ public sealed partial class Adventure
         // 009949d0: a week bought at a Tower of Astrologer that takes effect on days 2..7 runs the towns' weekly
         // update with full = false (00994a5c → 00993bf0(0) → IAdvMapWeeklyUpdate vf 4 = 00cd27b0): pool reduction and
         // the moon part only.
-        if (boughtMidWeek) TownWeeklyGrowth(full: false);
+        if (boughtMidWeek) { TownWeeklyGrowth(full: false); MapDwellingWeeklyGrowth(full: false); }
         if (newWeek)
         {
             WeeklyGrowthAll();
@@ -139,12 +139,10 @@ public sealed partial class Adventure
     void WeeklyGrowthAll()
     {
         TownWeeklyGrowth(full: true);
+        MapDwellingWeeklyGrowth(full: true);
         foreach (var (idx, os) in S.Objects)
         {
             var o = O(idx);
-            if (o.Kind == ObjectKind.Dwelling && !os.Removed)
-                for (int i = 0; i < os.Available.Length && i < o.Shared.DwellingCreatures.Count; i++)
-                    if (Core.Creatures.TryGetValue(o.Shared.DwellingCreatures[i], out var cd)) os.Available[i] += cd.WeeklyGrowth;
             // Neutral stacks grow weekly by the difficulty coefficient (DefaultStats WeeklyGrowCoefs, p.325).
             if (o.Kind == ObjectKind.Monster && !os.Removed && !o.DoesNotGrow)
             {
@@ -172,6 +170,33 @@ public sealed partial class Adventure
                 int n = OwnerAdjustedGrowth(t, full ? g.Total : g.MoonWeek);
                 if (n > 0) t.Available[tier - 1] += n;
             }
+    }
+
+    /// <summary>
+    /// Map dwellings (CAdvMapDwelling IAdvMapWeeklyUpdate vf 4 = 009a76d0 → 009a71f0(calendar, full), called by the
+    /// same 00993bf0(full) as the towns): the week's pool reduction (00bce0d0), then per creature a growth record whose
+    /// only filled part is weekly = creature +0xa8 (009a64c0) plus the moon part (00bce140, <see cref="MoonWeekGrowth"/>
+    /// of that weekly growth); full adds the record total, otherwise only the moon part; positive amounts are added.
+    /// No owner adjustment. TODO(exe): dwelling types 0x54 / 0x5e / 0x5f (SAdvMapDwellingShared +0xec, path 009a7080)
+    /// and the full update's other work (+0x110 list, 009a63a0 for an unowned dwelling) are not ported.
+    /// </summary>
+    void MapDwellingWeeklyGrowth(bool full)
+    {
+        int week = Db.MoonWeekIndex(S.MoonWeek);
+        foreach (var (idx, os) in S.Objects)
+        {
+            var o = O(idx);
+            if (o.Kind != ObjectKind.Dwelling || os.Removed) continue;
+            for (int i = 0; i < os.Available.Length && i < o.Shared.DwellingCreatures.Count; i++)
+            {
+                var creature = o.Shared.DwellingCreatures[i];
+                if (!Core.Creatures.TryGetValue(creature, out var cd)) continue;
+                os.Available[i] = MoonWeekPool(week, os.Available[i]);
+                int total = MoonWeekGrowth(week, cd.WeeklyGrowth, creature);
+                int n = full ? total : total - cd.WeeklyGrowth;
+                if (n > 0) os.Available[i] += n;
+            }
+        }
     }
 
     AI.AdventureAiStats? _aiStats;
