@@ -293,14 +293,35 @@ public sealed partial class Adventure
             state.Heroes[side].Attack += ga;
             state.Heroes[side].Luck += gl;
         }
-        // DenyAIHeroFlee & co. (exe FUN_00c972d0): the AI hero neither flees nor surrenders. Our combat AI has
-        // no flee decision of its own; the denial is enforced through the side's retreat gate (only the AI acts there).
+        // DenyAIHeroFlee & co. (exe FUN_00c972d0): the AI hero neither flees nor surrenders; the denial reaches the
+        // combat AI's flee decision (OriginalBattleAI.RetreatDecision) through the side's retreat gate.
         if (AiFleeDenied(att, defHero)) state.RetreatDenied[0] = true;
         if (defHero != null && AiFleeDenied(defHero, att)) state.RetreatDenied[1] = true;
         // CCombatArmy::CanRetreat (004d9e20) reason 8: the army's player owns no town with a tavern.
         for (int side = 0; side < 2; side++)
             if (BattleSideOwner(pb, side) is var owner && owner >= 0 && !OwnsTavernTown(owner)) state.NoTavernTown[side] = true;
+        // What the combat AI's flee decision (00c972d0) reads from the adventure hero and its player.
+        foreach (var (side, h) in new[] { (0, (HeroState?)att), (1, defHero) })
+            if (h != null) state.AiRetreat[side] = AiRetreatInfoFor(h);
         return state;
+    }
+
+    /// <summary>
+    /// The adventure part of the combat AI's flee decision (00c972d0): the hero's artifact value FUN_00c96ea0 = Σ over the
+    /// backpack (hero vf 0x74) and the worn slots (vf 0x78) of max(AI artifact value 004ea2f0, gold cost 00ca6410), its
+    /// experience (vf 0x1a4) and the owner's hire price without a town (00b4ced0 at 0x00c9758a).
+    /// GAP-detail: 00ca6410's week argument (combat vf 0x3c) is not applied.
+    /// </summary>
+    public H5.Combat.AiRetreatInfo AiRetreatInfoFor(HeroState h)
+    {
+        long value = 0;
+        foreach (var a in h.Backpack.Concat(h.Artifacts))
+        {
+            long cost = Core.Artifacts.TryGetValue(a, out var d) ? d.CostOfGold : 0;
+            value += Math.Max(AI.OriginalAdventureAI.ArtifactItemValue(this, AiStats, a), cost);
+        }
+        int hire = h.Owner >= 0 && h.Owner < S.Players.Count ? HireCost(S.Players[h.Owner]) : 0;
+        return new H5.Combat.AiRetreatInfo { ArtifactValue = value, Experience = h.Experience, HireCost = hire };
     }
 
     /// <summary>The player owning a side of the pending battle (0 attacking hero, 1 defending hero or town), -1 for none.</summary>

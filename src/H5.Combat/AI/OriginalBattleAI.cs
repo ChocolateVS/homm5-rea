@@ -17,7 +17,7 @@ namespace H5.Combat.AI;
 /// with the combat RNG before choosing, which only matters for exact ties; ours keep generation order).
 /// Ledger: docs/rules/AUDIT_AI.md, "Combat AI".
 /// </summary>
-public sealed class OriginalBattleAI : IBattleAI
+public sealed partial class OriginalBattleAI : IBattleAI
 {
     /// <summary>
     /// Game difficulty on the script scale (AdvState.Difficulty: 0 Easy, 1 Normal, 2 Hard, 3 Heroic). The exe reads
@@ -36,7 +36,7 @@ public sealed class OriginalBattleAI : IBattleAI
 
     /// <summary>A copy for one battle: game difficulty (script scale) and which sides are human.</summary>
     public OriginalBattleAI For(int gameDifficulty, bool[]? humanSides) =>
-        new() { GameDifficulty = gameDifficulty, HumanSides = humanSides, RowOverride = RowOverride, _stats = _stats };
+        new() { GameDifficulty = gameDifficulty, HumanSides = humanSides, RowOverride = RowOverride, Retreats = Retreats, _stats = _stats };
 
     public sealed class Candidate
     {
@@ -67,6 +67,10 @@ public sealed class OriginalBattleAI : IBattleAI
         if (s.Phase == BattlePhase.Tactics) return new EndTacticsCmd { Side = side };
         var la = b.GetLegalActions();
         if (la == null || b.SideToAct != side) return new WaitCmd(Actor.Hero(side)) { Side = side };
+
+        // FUN_00c97930 runs the flee decision (FUN_00c972d0) before every think; the flag becomes a retreat (0054b650).
+        LastRetreat = Retreats ? RetreatDecision(b, side) : null;
+        if (LastRetreat != null) return new SurrenderCmd { Side = side, PayRansom = false };
 
         var start = CombatValue.Of(b, side);
         var mode = SelectMode(start);

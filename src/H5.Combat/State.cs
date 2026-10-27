@@ -267,6 +267,11 @@ public sealed class BattleState
     public int IncorporealStreak;
     /// <summary>Which sides are controlled by the built-in AI (server sets this for vs-AI games).</summary>
     public bool[] AiControlled = { false, false };
+    /// <summary>
+    /// What the original AI's flee decision (exe FUN_00c972d0) reads from a side's adventure hero and player; set by the
+    /// adventure host for hero sides, null otherwise (duels, garrisons, neutrals: no decision).
+    /// </summary>
+    public AiRetreatInfo?[] AiRetreat = { null, null };
 
     public Unit? Unit(int id) => Units.Find(u => u.Id == id);
     public IEnumerable<Unit> Living => Units.Where(u => u.Alive);
@@ -301,4 +306,18 @@ public sealed class BattleState
 public sealed class SideBonus
 {
     public int Attack, Defence, Morale, Luck;
+}
+
+/// <summary>Adventure facts behind the combat AI's flee decision (exe FUN_00c972d0), see <see cref="BattleState.AiRetreat"/>.</summary>
+public sealed class AiRetreatInfo
+{
+    /// <summary>
+    /// FUN_00c96ea0: over the hero's artifacts (hero vf 0x74 backpack and vf 0x78 worn slots) Σ max(AI artifact value
+    /// FUN_004ea2f0, gold cost FUN_00ca6410).
+    /// </summary>
+    public long ArtifactValue;
+    /// <summary>The hero's experience (hero vf 0x1a4 = 00b5aa80, +0x60: the field vf 0x198 adds to).</summary>
+    public long Experience;
+    /// <summary>The player's hero hire price without a town (00b4ced0(hero, player, 0) at 0x00c9758a).</summary>
+    public int HireCost;
 }
