@@ -175,6 +175,36 @@ public class GeneratorTests(RmgFixture f)
         }
     }
 
+    /// <summary>
+    /// The water option (exe 0x0090bd80 → CGameWaterBorderedZone 0x00bae920, 0x00904770 → vf 0x24 0x00bae0f0): every
+    /// listed template at its smallest water size generates; each surface zone loses its tiles with border distance
+    /// below the width to the sea (zone −1, depth grid written by 0x00916790) and keeps border distance ≥ 0 on its land.
+    /// </summary>
+    [Fact]
+    public void WaterOptionBordersEverySurfaceZone()
+    {
+        int unreachable = 0;
+        foreach (var t in f.Db.Templates.Values.Where(t => !t.TestTemplate))
+        {
+            int? size = Enumerable.Range(0, 7).Cast<int?>().FirstOrDefault(s => t.ListedFor(s, false, true, t.MaxPlayers));
+            if (size == null) continue;
+            var o = new RmgOptions { Template = t.Name, Size = size.Value, Seed = 4711, Players = t.MaxPlayers, WaterAmount = 2 };
+            var r = new RmgGenerator(f.Db, o).Generate();
+            var g = r.Generator;
+            Assert.True(g.HasWater);
+            var fl = g.Floors[0];
+            Assert.All(fl.Zones.Values, z => Assert.Equal(RmgZoneClass.WaterBordered, z.Class));
+            Assert.Contains(fl.Zones.Values, z => z.WaterTiles.Count > 0);
+            Assert.All(fl.Zones.Values, z => Assert.All(z.Tiles, p => Assert.True(fl.BorderDist[fl.At(p.X, p.Y)] >= 0)));
+            Assert.Contains(fl.Depth, b => b == 0xff);
+            int starts = t.Zones.Count(z => z.CanBePlayerStart);
+            Assert.True(r.StartTowns.Count == Math.Min(g.Players, starts), $"{t.Name}: {r.StartTowns.Count} start towns");
+            unreachable += r.Warnings.Count(w => w.StartsWith("unreachable") && !w.Contains("floor 1"));
+            Assert.Contains(r.Objects, ob => ob.Note == "water treasure");
+        }
+        Assert.Equal(0, unreachable);
+    }
+
     [Fact]
     public void ScreenListsTemplatesLikeTheExe()
     {

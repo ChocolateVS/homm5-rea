@@ -13,14 +13,14 @@ public sealed partial class RmgGenerator
     {
         foreach (var f in Floors)
             foreach (var z in f.Zones.Values)
-                ZoneFinish(z);
+                if (z.Class == RmgZoneClass.WaterBordered) WaterZoneFinish(z); else ZoneFinish(z);
         PaintRoads(r);
         SurfaceHeights();
     }
 
     /// <summary>
-    /// exe 0x009198f0 (vf 0x38 of CGameZone and the underground classes; the water class has its own 0x00bac6b0, not
-    /// built): 0x009191a0(0x3c), then every zone tile with distance &gt; 2 or border distance 0 clears its vertex (x, y)
+    /// exe 0x009198f0 (vf 0x38 of CGameZone and the underground classes; the water class has its own 0x00bac6b0,
+    /// <see cref="WaterZoneFinish"/>): 0x009191a0(0x3c), then every zone tile with distance &gt; 2 or border distance 0 clears its vertex (x, y)
     /// of chunk 15 (0x00915d20).
     /// </summary>
     void ZoneFinish(RmgZone z)

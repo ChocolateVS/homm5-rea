@@ -20,7 +20,13 @@ public sealed partial class RmgGenerator
             }
         foreach (var f in Floors)
             foreach (var z in f.Zones.Values)
+            {
                 Teleports(r, z);
+                // CGameWaterBorderedZone's vf 0x2c (0x00bae0d0): the teleports, then 0x00bac930 when +0x164 (Shipyard).
+                // TODO(exe): 0x00bac930 (shipyard candidates at border distance 2..3 inside the water width + 3, the
+                // terrain water test 0x00c59e20, the shipyard guard) is not ported: no shipyard, none of its draws.
+                if (z.Class == RmgZoneClass.WaterBordered && z.Shipyard) Log.Add($"zone {z.Id}: shipyard (0x00bac930) not generated");
+            }
     }
 
     /// <summary>The first template connection between the two zones (destination checked first, as the exe does).</summary>

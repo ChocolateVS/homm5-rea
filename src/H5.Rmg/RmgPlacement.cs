@@ -312,7 +312,7 @@ public sealed partial class RmgGenerator
             // The underground classes' vf 0x20 (0x00bac3d0 / 0x0092abe0 / 0x00928a00) call 0x00923e50 and, when it returns
             // true, the town's point lights (0x00babbf0 / 0x0092a400 / 0x00928220): Next(3), then Next(10).
             // TODO(exe): the lights' values (pointLights) are not emitted.
-            if (z.Class != RmgZoneClass.Game)
+            if (z.Class is RmgZoneClass.SubInferno or RmgZoneClass.Subterra or RmgZoneClass.Dwarven)   // CGameWaterBorderedZone's vf 0x20 is 0x00923e50 itself
             {
                 Rng.Next(3);
                 Rng.Next(10);
@@ -764,7 +764,8 @@ public sealed partial class RmgGenerator
     /// <summary>
     /// Our check, not the exe's: every object with a visit tile should be reachable from its zone's town visit tile
     /// (or, without a town, the start of its road network, else its free tile nearest the zone centre) over tiles that no object's footprint blocks
-    /// (monsters are fought through, so they block nothing). Counts the ones that are not.
+    /// (monsters are fought through, so they block nothing). Counts the ones that are not; the water option's water
+    /// treasures lie on the sea and are not counted.
     /// </summary>
     void Finish(RmgResult r)
     {
@@ -808,7 +809,8 @@ public sealed partial class RmgGenerator
                         queue.Enqueue((nx, ny));
                     }
                 }
-                foreach (var kv in r.Access.Where(kv => kv.Key.Zone == z.Id && kv.Key.Floor == f.Index && kv.Key.Def.Tag != "AdvMapStaticShared"))
+                foreach (var kv in r.Access.Where(kv => kv.Key.Zone == z.Id && kv.Key.Floor == f.Index && kv.Key.Def.Tag != "AdvMapStaticShared"
+                                                      && kv.Key.Note != "water treasure"))   // on the sea (0x00bad280): reached by boat
                     if (!seen.Contains(kv.Value))
                     {
                         r.Unreachable++;

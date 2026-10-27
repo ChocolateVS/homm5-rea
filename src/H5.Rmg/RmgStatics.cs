@@ -20,6 +20,10 @@ public sealed partial class RmgGenerator
                     BigStatics(r, z, lakesAndMountains: z.Floor != 1);
                     OneTileStatics(r, z);
                     break;
+                case RmgZoneClass.WaterBordered:       // vf 0x34 is 0x009253b0 (its tests through vf 0x44 0x00bac810)
+                    BigStatics(r, z, lakesAndMountains: z.Floor != 1);
+                    OneTileStatics(r, z, water: true);
+                    break;
                 case RmgZoneClass.SubInferno:          // 0x00baa4a0: no lakes or mountains, vf 0x3c after each static
                     BigStatics(r, z, lakesAndMountains: false);
                     UndergroundOneTileStatics(r, z);
@@ -263,7 +267,12 @@ public sealed partial class RmgGenerator
     /// blocker. Distance &gt; 4: Float ≤ 0.5 a big object. "FireDot" statics take the builder's angle (0x009140f0).
     /// Objects are created by 0x009145b0 without footprint tests.
     /// </summary>
-    void OneTileStatics(RmgResult r, RmgZone z)
+    /// <remarks>
+    /// <paramref name="water"/>: exe 0x00bad6c0 (CGameWaterBorderedZone vf 0x30) is this function without the border
+    /// pass, its lists taking the zone tiles with flags 0 and border distance ≥ 3 (distance &gt; 4, 3..4, 2); the three
+    /// list loops are instruction for instruction the same (0.15 / 0.4 / 0.6, 0.3 / 0.5, ≤ 0.5; coordinates chopped).
+    /// </remarks>
+    void OneTileStatics(RmgResult r, RmgZone z, bool water = false)
     {
         var race = _db.Race(z.Preset);
         var f = Floors[z.Floor];
@@ -274,7 +283,7 @@ public sealed partial class RmgGenerator
         foreach (var (x, y) in z.Tiles)
         {
             int i = f.At(x, y);
-            if (f.Flags[i] != 0 || f.BorderDist[i] == 0) continue;
+            if (f.Flags[i] != 0 || (water ? f.BorderDist[i] < 3 : f.BorderDist[i] == 0)) continue;
             int d = f.Dist[i];
             if (d > 4) far.Add((x, y));
             else if (d > 2) mid.Add((x, y));
@@ -293,7 +302,7 @@ public sealed partial class RmgGenerator
             f.Flags[f.At(x, y)] = flag;
         }
 
-        foreach (var (x, y) in z.Tiles)
+        foreach (var (x, y) in water ? new List<(int X, int Y)>() : z.Tiles)
         {
             float a = QuarterAngle(Rng.Next(4));
             int i = f.At(x, y);

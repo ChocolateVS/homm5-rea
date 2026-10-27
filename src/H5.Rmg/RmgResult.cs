@@ -149,7 +149,7 @@ public sealed class RmgResult
 
     /// <summary>
     /// The floor's terrain as the exe saves it (0x0090a980 → 0x00a57ea0 writes the floor's terrain object): heights
-    /// (chunk 5), levels (chunk 7) and chunk 15 from the generator's vertex grids ([y][x], the file's row-major order);
+    /// (chunk 5), levels (chunk 7), the depth grid (chunk 10) and chunk 15 from the generator's vertex grids ([y][x], the file's row-major order);
     /// one blend layer per tile type, a vertex weight being the share of its four tiles using that type
     /// (TODO(exe): the exe paints corner strengths, 0x00916570 / 0x00916f80 / 0x00918270).
     /// </summary>
@@ -161,6 +161,7 @@ public sealed class RmgResult
             Heights = new Grid<float>(w + 1, h + 1, (float[])fl.Heights.Clone()),
             VertexFlags = new Grid<byte>(w + 1, h + 1, (byte[])fl.Level.Clone()),
             VertexMap15 = new Grid<byte>(w + 1, h + 1, (byte[])fl.Chunk15.Clone()),
+            HalfTileMap = new Grid<byte>(2 * w + 1, 2 * h + 1, (byte[])fl.Depth.Clone()),
         };
         var types = tiles.GroupBy(x => x).OrderByDescending(g => g.Count()).Select(g => g.Key).ToList();
         for (int li = 0; li < types.Count; li++)

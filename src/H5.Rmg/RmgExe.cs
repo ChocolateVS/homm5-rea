@@ -118,6 +118,7 @@ public sealed partial class RmgGenerator
     /// </summary>
     internal bool StaticFits(RmgZone z, int px, int py, float angle, SharedDef d)
     {
+        if (z.Class == RmgZoneClass.WaterBordered) return WaterStaticFits(z, px, py, angle, d);   // vf 0x44 = 0x00bac810
         var f = Floors[z.Floor];
         int q = ExeQuarter(angle);
         foreach (var b in d.Blocked)

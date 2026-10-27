@@ -40,15 +40,25 @@ public sealed class RmgOptions
     public bool RandomTowns;
 }
 
-/// <summary>The zone classes of 0x0090bd80 (vtables 0x00e58134, 0x00e827b4, 0x00e583cc, 0x00e58374).</summary>
-public enum RmgZoneClass { Game, SubInferno, Subterra, Dwarven }
+/// <summary>The zone classes of 0x0090bd80 (vtables 0x00e58134, 0x00e827b4, 0x00e583cc, 0x00e58374, 0x00e8280c).</summary>
+public enum RmgZoneClass { Game, SubInferno, Subterra, Dwarven, WaterBordered }
 
 /// <summary>A zone during generation (NRMG::CGameZone; offsets are the exe's).</summary>
 public sealed class RmgZone
 {
-    /// <summary>The class 0x0090bd80 created: surface zones CGameZone; underground zones CGameDwarvenZone when builder +0x8c
+    /// <summary>The class 0x0090bd80 created: surface zones CGameZone, or CGameWaterBorderedZone (0x00bae920, 0x168
+    /// bytes) when the water option (generator +0xa6) is set; underground zones CGameDwarvenZone when builder +0x8c
     /// is set, else CGameSubInfernoZone (Next(2) == 0) or CGameSubterraZone.</summary>
     public RmgZoneClass Class;
+    /// <summary>CGameWaterBorderedZone +0x164: the template zone's Shipyard (+0x1c), copied by 0x0090bd80 (the
+    /// constructor sets 1); vf 0x2c (0x00bae0d0) places a shipyard when set.</summary>
+    public bool Shipyard;
+    /// <summary>CGameWaterBorderedZone +0x160: the water border width vf 0x24 (0x00bae0f0) was called with.</summary>
+    public int WaterWidth;
+    /// <summary>CGameWaterBorderedZone +0x148: the zone tiles vf 0x24 turned into water (border distance below 0).</summary>
+    public List<(float X, float Y)> WaterTiles = new();
+    /// <summary>CGameWaterBorderedZone +0x154: the water treasures 0x00bad280 placed.</summary>
+    public List<(float X, float Y)> WaterObjects = new();
     /// <summary>
     /// +0x20, the race preset the zone's objects, statics and terrain come from (vf 0x1c): CGameZone 0x00918a50 the zone
     /// race (3 = Haven for a Dungeon zone on the surface), CGameSubInfernoZone 0x00baa380 preset 0, CGameDwarvenZone
@@ -112,6 +122,12 @@ public sealed class RmgFloor
     public readonly float[] Heights;
     /// <summary>+0x68: per-vertex byte grid (terrain chunk 15), 1 from 0x00912940; 0x009198f0 clears it (0x00915d20).</summary>
     public readonly byte[] Chunk15;
+    /// <summary>
+    /// +0x44: the depth grid of the floor's terrain, (2W + 1) x (2H + 1) bytes, [row][column] at twice the tile
+    /// resolution (terrain chunk 10); 0x00912940 clears it, the water border (0x00916790) and the lakes (0x00916f80)
+    /// write it.
+    /// </summary>
+    public readonly byte[] Depth;
     public int Lv(int y, int x) => y * (W + 1) + x;
     public readonly NivalHashMap<RmgZone> Zones = new();
 
@@ -125,6 +141,7 @@ public sealed class RmgFloor
         Level = new byte[(w + 1) * (h + 1)];
         Heights = new float[(w + 1) * (h + 1)];
         Chunk15 = Enumerable.Repeat((byte)1, (w + 1) * (h + 1)).ToArray();
+        Depth = new byte[(2 * w + 1) * (2 * h + 1)];
         InitTerrain(index != 0);
     }
 
@@ -219,6 +236,8 @@ public sealed partial class RmgGenerator
         PaintTerrain(result);
         Mark("PlaceTowns");
         PlaceTowns(result);
+        // 0x0090e7e0: with the water option (+0xa6) 0x00904770 gives every surface zone its water border (vf 0x24).
+        if (HasWater) WaterBorders(result);
         Mark("FillDistToTownsTable");
         Mark("ZoneConnections");
         CreateConnections(result);
@@ -374,13 +393,16 @@ public sealed partial class RmgGenerator
             }
             // Zone construction (base ctor 0x00925850) keeps one draw as the zone's own seed (+0x13c).
             int zoneSeed = (int)Rng.Advance();
-            var cls = rec.Floor == 0 ? RmgZoneClass.Game : dwarven ? RmgZoneClass.Dwarven : subterra ? RmgZoneClass.Subterra : RmgZoneClass.SubInferno;
+            // Surface zones: CGameZone (0x00925850, 0x148 bytes), or with the water option (+0xa6, which 0x0090e7e0 also
+            // copies to builder +0x8d) CGameWaterBorderedZone (0x00bae920) with +0x164 = the template zone's Shipyard.
+            var cls = rec.Floor == 0 ? (HasWater ? RmgZoneClass.WaterBordered : RmgZoneClass.Game) : dwarven ? RmgZoneClass.Dwarven : subterra ? RmgZoneClass.Subterra : RmgZoneClass.SubInferno;
             int preset = cls switch
             {
                 RmgZoneClass.SubInferno => 0, RmgZoneClass.Dwarven => 2, RmgZoneClass.Subterra => 6,
                 _ => race == 6 && rec.Floor == 0 ? 3 : race,
             };
-            var zone = new RmgZone { Def = rec.Zone, Floor = rec.Floor, Race = race, Player = player, ZoneSeed = zoneSeed, Class = cls, Preset = preset };
+            var zone = new RmgZone { Def = rec.Zone, Floor = rec.Floor, Race = race, Player = player, ZoneSeed = zoneSeed, Class = cls, Preset = preset,
+                Shipyard = cls == RmgZoneClass.WaterBordered && rec.Zone.Shipyard };
             Zones.Add(zone);
             Floors[rec.Floor].Zones.Add(zone.Id, zone);
         }
