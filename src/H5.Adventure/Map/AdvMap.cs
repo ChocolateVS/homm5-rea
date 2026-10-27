@@ -180,6 +180,11 @@ public sealed class MapObject
 
     /// <summary>Hill Fort &lt;CreaturesUpgradesFilter&gt; (null when the instance has none, i.e. nothing forbidden).</summary>
     public UpgradesFilter? HillFortFilter;
+    /// <summary>
+    /// A town's &lt;CreaturesUpgradesFilter&gt; (AdvMapTown +0x130, copied to CAdvMapTown +0x2e8 / +0x2f4 / +0x300 / +0x30c by
+    /// 00cd6bc0; used by the dwelling filter 00ccf130). TODO: not read by MapLoader yet (null = nothing forbidden).
+    /// </summary>
+    public UpgradesFilter? TownFilter;
 
     /// <summary>Scalar fields not modelled above (kept for scripts and later rules).</summary>
     public Dictionary<string, string> Props = new(StringComparer.Ordinal);

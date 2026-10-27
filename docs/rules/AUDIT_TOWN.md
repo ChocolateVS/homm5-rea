@@ -5,13 +5,13 @@ original UI layouts / data. Status: **MATCH** (already as the exe), **FIXED** (c
 difference or not built), **UNVERIFIED** (implemented from data, exe path not traced). Rows carrying two statuses
 count once for each.
 
-Rows at 2026-10-28: 117 FIXED, 48 MATCH, 30 GAP, 36 UNVERIFIED.
+Rows at 2026-10-28: 118 FIXED, 48 MATCH, 31 GAP, 35 UNVERIFIED.
 
 Commits: 9153b62 (dwelling growth incl. moon weeks), afe1e7b + 844ce53 (build check codes, town income),
 6690c81 (level-up offers, experience table, Enlightenment, perk effects, hero screen fixes),
 f65f434 + c6f0b5b (spell learning, blacksmith prices, zero-count transfers), 5d81148 (Town Portal, hover colour),
 51d3aa3 (map-start buildings), the user-report commit (hire screen, tavern + rumours, marketplace, town camera, army rows).
-Tests: `tests/H5.Adventure.Tests/TownGrowthTests.cs`, `SpellLearnTests.cs`, `LevelUpRulesTests.cs`, `TownBuildRulesTests.cs`, `TownInitialBuildingsTests.cs`, `TownHireTests.cs`, `TavernRumourTests.cs`, `WalkersHutTests.cs`, `MapDwellingGrowthTests.cs`, `MageGuildTests.cs`, `WalkersHutTests.cs`;
+Tests: `tests/H5.Adventure.Tests/TownGrowthTests.cs`, `SpellLearnTests.cs`, `LevelUpRulesTests.cs`, `TownBuildRulesTests.cs`, `TownInitialBuildingsTests.cs`, `TownHireTests.cs`, `TavernRumourTests.cs`, `WalkersHutTests.cs`, `MapDwellingGrowthTests.cs`, `TownDwellingFilterTests.cs`, `MageGuildTests.cs`, `WalkersHutTests.cs`;
 screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stock.
 
 # Town
@@ -145,7 +145,7 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Buy rumour | CRerollRumourCmd (RTTI; vtable 00e197b4, ctor 00639170), sent by 00635320; execute 004f4750: player vfunc 0xe0 pays, then the list's vfunc 0 rerolls; BUY_RUMORS_SOUND | pay, get a new rumour | `BuyRumourCmd` pays and appends one rumour to `TownState.Rumours` (`TavernRumourTests`) | FIXED |
 | Rumour text | 006372f3 case 2: FIRST_RUMOR / RUMORS_FORMAT (UI/Tavern/RumorsFormats), RumorsText in a ScrollContainer, pay enabled when price ≤ gold | every entry with a separator | same | FIXED / order UNVERIFIED (oldest first) |
 | Rumour list owner | 00635320: player vfunc 0x90 → town → vfunc 0x60 | per town | `TownState.Rumours` | UNVERIFIED (reset not traced) |
-| Rumour generation | CRumours (vtables 00e549ac/cc/f0), generator 008e85b0 (RUMOUR_FORMAT_PLAYER_* / _OBJECT_*, weight 100, duplicate test 008ea5d0); CommonGameRumours; MapRumours (00a0b4b0) | player / object rumours plus common and map rumours | weighted draw from CommonGameRumours only | GAP |
+| Rumour generation | CRumours (vtables 00e549ac/cc/f0), generator 008e85b0 (vtable slot 00e549e8): a candidate list where every entry has weight 100 (008ea760 / 008ea7c0 → 008eb460), duplicates tested by 008ea5d0 — player statistics (switch 7..0x17: BEST_ARMIES, BEST_ARMY, MOST_GOLD / WOOD / ORE / SULFUR / CRYSTAL / GEMS / MERCURY, MOST_OBELISKS, BEST_CREATURE, BEST_INCOME, MOST_MINES, MOST_ARTIFACTS, BEST_HERO, MOST_TOWNS, BEST_TOWN), last events (LAST_MONSTER, _ARTIFACT, _CAPTURE, _PURCHASE, _BUILD / _UPGRADE), objects (RUMOUR_FORMAT_OBJECT_FLOOR_SURFACE / _UNDERGROUND), plain text (RUMOUR_FORMAT_PLAINTEXT: CommonGameRumours and MapRumours, 00a0b4b0) | player / object rumours plus common and map rumours | weighted draw from CommonGameRumours only | GAP |
 | Thieves page in town | 006393e0 +0x2c = vcall 0x138; 00637b50 enables Thiefs when level > 0 | level from that call | bookmark disabled | GAP |
 | Hero info button | 006c44f0 | the offered hero's screen | disabled | GAP |
 
@@ -203,7 +203,7 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Recruit army | 0061af30 (town vf 0x2c; town hero slot 1 present → hero vf 0x48); CHireCreaturesCmd 004f4dd0 | garrison hero's army, else the town garrison; refused when it does not fit (FUN_0045b240) | `TownRecruitArmy` in `DoRecruit` (`TownHireTests`) | FIXED (was the visiting hero first) |
 | Hire all | 006e3050 case 4 → 006da5c0 → 006dcfe0 → buy_all_header / buy_all_text_format → 006da3d0 → CHireAllCreaturesCmd 0042b870 → FUN_009a52a0; columns from 006d9770 | dwellings highest tier first; each row's selected column (else every variant, sharing the pool); a new creature needs a free slot; count = min(pool, floor(purse/cost)) (FLDCW chop 009a5561); fails when nothing can be hired | `HireAllPlan` / `HireAllCmd` (`TownHireTests`); confirmation with the total cost | FIXED (was the selected tier only) / variant order UNVERIFIED |
 | Caravans | 006e23a0 hire_to_caravan_window, T_CARAVANS_* | caravan tabs | hidden | GAP |
-| Upgrade / alternative variants | 00cd46c0 builds the dwelling creature list (FUN_00ccf130) | base, upgrade, TotE alternative per built level | `DwellingCreature` variants 0/1/2 | UNVERIFIED |
+| Upgrade / alternative variants | 00cd46c0 builds the dwelling creature list from the +0x9c / +0xa0 creatures of every built level, each passing FUN_00ccf130: no base creature (creature +0x100) → offered; else the creature must be in its base's Upgrades (+0x104, position n), not in ForbiddenUpgrades (town +0x30c; FUN_00cd7d40 = list contains), and its CreatureTier (+0x8c) not in ForbiddenBasicUpgradeTiers (+0x2e8, n = 1) / ForbiddenAlterUpgradeTiers (+0x2f4, n = 2); the lists come from the map town's CreaturesUpgradesFilter (AdvMapTown +0x130, schema 00adc9a0, copied by 00cd6bc0 from init record +0x134 / +0x140 / +0x14c / +0x158; NotUpgradeable +0x300 unused here) | base, upgrade, TotE alternative per built level, minus the map's forbidden upgrades | `DwellingCreature` variants 0/1/2 through `TownOffersCreature` (`TownDwellingFilterTests`) | FIXED / the map town's filter is not loaded (MapObject.TownFilter stays null until MapLoader reads it) — GAP |
 | Upgrade creature command | CUpgradeCreatureCmd execute 004f47e0 | callback / FUN_004bb420 check, "can't upgrade creature %s" | `UpgradeCreaturesScreen` + engine | UNVERIFIED |
 | Growth tooltip on plates | 006dc57d T_GROWTH_* lines | hover tooltip with the parts | plate shows the total only | GAP |
 

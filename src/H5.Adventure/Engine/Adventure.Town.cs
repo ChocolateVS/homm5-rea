@@ -155,7 +155,29 @@ public sealed partial class Adventure
         int lvl = t.Level($"TB_DWELLING_{tier}");
         if (lvl <= 0 || (variant > 0 && lvl < 2)) return null;
         var def = Db.Building(t.Type, $"TB_DWELLING_{tier}", variant == 0 ? 1 : 2);
-        return variant switch { 0 => def?.Creature, 1 => def?.Creature, 2 => def?.Creature2, _ => null };
+        var creature = variant switch { 0 => def?.Creature, 1 => def?.Creature, 2 => def?.Creature2, _ => null };
+        return creature != null && TownOffersCreature(t, creature) ? creature : null;
+    }
+
+    /// <summary>
+    /// The dwelling filter FUN_00ccf130 (applied by 00cd46c0 to the +0x9c / +0xa0 creatures of every built dwelling
+    /// level): a creature without a base creature (creature +0x100) is always offered; an upgrade must be in its base's
+    /// Upgrades list (+0x104, position n = 1 or 2), must not be in the town's ForbiddenUpgrades (+0x30c, FUN_00cd7d40 =
+    /// list contains), and its CreatureTier (+0x8c) must not be in ForbiddenBasicUpgradeTiers (+0x2e8) for n = 1 or in
+    /// ForbiddenAlterUpgradeTiers (+0x2f4) for n = 2. NotUpgradeable (+0x300) is not read here.
+    /// </summary>
+    public bool TownOffersCreature(TownState t, string creature)
+    {
+        if (!Core.Creatures.TryGetValue(creature, out var cd)) return false;
+        if (cd.BaseCreature.Length == 0 || cd.BaseCreature == "CREATURE_UNKNOWN") return true;
+        if (!Core.Creatures.TryGetValue(cd.BaseCreature, out var baseDef)) return false;
+        int n = baseDef.Upgrades.IndexOf(creature) + 1;
+        if (n == 0) return false;
+        if (Map.Objects.ElementAtOrDefault(t.Object)?.TownFilter is not { } f) return true;
+        if (f.ForbiddenUpgrades.Contains(creature)) return false;
+        if (n == 1 && f.ForbiddenBasicUpgradeTiers.Contains(cd.Tier)) return false;
+        if (n == 2 && f.ForbiddenAlterUpgradeTiers.Contains(cd.Tier)) return false;
+        return true;
     }
 
     /// <summary>The garrison hero of a town (town hero slot 1), if any.</summary>
