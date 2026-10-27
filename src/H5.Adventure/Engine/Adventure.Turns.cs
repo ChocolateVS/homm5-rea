@@ -46,6 +46,8 @@ public sealed partial class Adventure
         }
         foreach (var t in S.Towns) t.BuiltToday = false;
         foreach (var p in S.Players.Where(p => p.Alive)) DailyIncome(p);
+        // FUN_00cd2b90 ends with FUN_00cce410 for every town: next day's Trade Guild resource.
+        foreach (var t in S.Towns) RollTradeGuild(t);
         foreach (var h in S.Heroes.Where(h => h.Alive)) ResetHeroDay(h, newWeek);
         CheckEliminations();
     }
@@ -66,6 +68,7 @@ public sealed partial class Adventure
     void DailyIncome(PlayerState p)
     {
         var inc = Income(p, display: false);
+        foreach (var t in S.Towns.Where(t => t.Owner == p.Index)) TownDailyExtras(t, inc);
         if (inc.R.Any(v => v != 0))
         {
             for (int i = 0; i < 7; i++) p.Purse[i] += inc[i];

@@ -88,6 +88,7 @@ public sealed partial class Adventure
             // FUN_00cd79d0: the guild, runes and warcries are rolled after the initial buildings. The map's per-town
             // spellIDs (AdvMapTown +0xf4) are copied by FUN_00cd1650 into the init record but FUN_00cd5be0 never reads them.
             RollTownSpells(t);
+            RollTradeGuild(t);   // the start levels go through 00cd4a40 (00cd6460), which draws for ability 0x1d
             S.Towns.Add(t);
         }
     }

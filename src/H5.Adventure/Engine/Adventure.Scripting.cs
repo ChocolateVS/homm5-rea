@@ -252,6 +252,7 @@ public sealed partial class Adventure
         int next = t.Level(building) + 1;
         TownSpellsOnBuild(t, building, next - 1);   // the free path of 00cd4a40 runs the same effects
         t.Built[building] = next;
+        if (HasTradeGuild(t) && building == "TB_SPECIAL_4") RollTradeGuild(t);
         if (building.StartsWith("TB_DWELLING_") && next == 1 && int.TryParse(building[^1..], out var tier))
             t.Available[tier - 1] += WeeklyGrowth(t, tier);
         if (t.MaxLevel.GetValueOrDefault(building) < next) t.MaxLevel[building] = next;

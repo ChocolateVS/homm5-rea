@@ -318,6 +318,9 @@ public sealed class TownState
     public int TrainingPoints;
     /// <summary>Dungeon Ritual Pit: hit points sacrificed so far (exe transformer +0x6c).</summary>
     public int SacrificedHitPoints;
+    /// <summary>Trade Guild extra resource (CTown +0x1dc, −1 = none) and amount (+0x1e0), drawn by FUN_00cce410.</summary>
+    public int TradeGuildResource = -1;
+    public int TradeGuildAmount;
     /// <summary>BlockTownGarrisonForAI: AI heroes do not exchange creatures with this garrison.</summary>
     public bool AiGarrisonBlocked;
     /// <summary>AllowHeroHiringByRaceInTown / AllowHiringOfHeroInTown (town +0x224), for every player.</summary>

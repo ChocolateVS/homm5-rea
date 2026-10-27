@@ -98,7 +98,7 @@ public sealed partial class Adventure
     /// +500, TOWN_BONUS_250_GOLD +250; with a Resource Silo (marketplace level ≥ 2) the TownTypesInfo silo income, and
     /// +1 ore / +1 wood for TOWN_BONUS_EXTRA_ORE / _EXTRA_WOOD; a built grail +5000; +1 gold per creature with
     /// ABILITY_TAXPAYER (0x46) in the town's garrison; town ability 0x18 (Academy Treasure Cave, TB_SPECIAL_4) +500.
-    /// TODO(exe): the per-town extra gold/resource fields (+0xe0 / +0xe4 / +0xe8, vcall +0x88 = 00cce3c0) are not traced.
+    /// The extra resource (vcall +0x88 = 00cce3c0, the Trade Guild) is paid in DailyIncome (see Adventure.TradeGuild).
     /// </summary>
     public Purse TownIncome(TownState t)
     {

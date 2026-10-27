@@ -152,4 +152,36 @@ public class TownBuildRulesTests(Fixture f)
         var silo = new Purse(f.Db.SiloIncome[t.Type]);
         for (int i = 0; i < 6; i++) Assert.True(two[i] - one[i] >= silo[i]);
     }
+    [Fact]
+    public void TradeGuildDrawsAWeeklyResourceAndRareSpecialisationsAddTwo()
+    {
+        // FUN_00cce410: ability 0x1d (Dungeon TB_SPECIAL_4) → resource = 008e7840(H(world seed, town id, week), 0, 5),
+        // amount 2 for wood / ore else 1; without it −1 / 0. FUN_00cd2b90 pays it (00cce3c0) and +2 for
+        // TOWN_BONUS_MERCURY / _SULFUR / _GEMS / _CRYSTALS, then draws again.
+        var (g, t) = Town();
+        t.Type = "TOWN_DUNGEON";
+        t.Built["TB_SPECIAL_4"] = 0;
+        g.RollTradeGuild(t);
+        Assert.Equal((-1, 0), (t.TradeGuildResource, t.TradeGuildAmount));
+        t.Built["TB_SPECIAL_4"] = 1;
+        g.RollTradeGuild(t);
+        int want = ExeHashRandom.Range(ExeHashRandom.Hash(g.S.WorldSeed, t.Object, g.Db.MoonWeekIndex(g.S.MoonWeek)), 0, 5);
+        Assert.Equal(want, t.TradeGuildResource);
+        Assert.Equal(want <= Purse.Ore ? 2 : 1, t.TradeGuildAmount);
+        t.Specialization = "GameMechanics/TownSpecialization/Dungeon/Random/Balvalak.xdb";
+        string bonus = g.SpecializationBonus(t)!;
+        int rare = bonus switch { "TOWN_BONUS_GEMS" => Purse.Gem, "TOWN_BONUS_MERCURY" => Purse.Mercury, _ => -1 };
+        Assert.True(rare >= 0);
+        var p = g.Current;
+        var before = (int[])p.Purse.R.Clone();
+        var expected = g.ExpectedIncome(p);
+        int res = t.TradeGuildResource, amt = t.TradeGuildAmount;
+        int day = g.S.Day;
+        while (g.S.Day == day) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
+        var extra = new int[7];
+        extra[rare] += 2;
+        extra[res] += amt;
+        for (int i = 0; i < 6; i++) Assert.Equal(before[i] + expected[i] + extra[i], p.Purse[i]);
+    }
 }
+

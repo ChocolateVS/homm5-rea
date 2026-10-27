@@ -69,6 +69,7 @@ public sealed partial class Adventure
         int trainingBefore = TrainingPointsMax(t);
         TownSpellsOnBuild(t, c.Building, next - 1);
         t.Built[c.Building] = next;
+        if (HasTradeGuild(t) && c.Building == "TB_SPECIAL_4") RollTradeGuild(t);   // 00cd4a40 at 00cd4d89: ability 0x1d
         TrainingPointsAfterBuild(t, trainingBefore);
         t.BuiltToday = true;
         // A new dwelling's pool starts with its base creature's WeeklyGrowth (00cd4a40 at 00cd4e2c: when
