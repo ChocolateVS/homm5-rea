@@ -188,7 +188,7 @@ public sealed partial class Battle
                 break;
             case "RETALIATION_STRIKE": h.Links[Sk.RetaliationStrike] = t!.Id; reset = 0.5; break;
             case "MARK_OF_DAMNED": h.Links[Sk.MarkOfDamned] = t!.Id; reset = 0.5; break;
-            case "MARK_OF_NECROMANCER": h.Links[Sk.MarkOfNecromancer] = t!.Id; reset = 0.5; break;
+            case "MARK_OF_NECROMANCER": SpiritLinkCast(h, t!); reset = 0.5; break;
             case "POWERFUL_BLOW": h.Links[Sk.PowerfulBlow] = t!.Id; reset = 0.5; break;
             case "BENEDICTION":
                 h.AbilityUses["BENEDICTION"] = 1;

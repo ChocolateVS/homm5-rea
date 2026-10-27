@@ -83,4 +83,57 @@ public class AuditSweep9Tests(GameDataFixture f)
         slow.Atb = 1 - 0.5 * rs;
         Assert.Equal(slow.Id, b.AdvanceTimeToNextActor());
     }
+
+    int HpForOneMana() => (int)f.Db.Stats.Get("combat/HeroSkills/Necromancer/SpiritLink_HPForOneMana", 75);
+
+    // exe FUN_008a6e20 @ 008a6f61..: the linked stack's damage gives vf 0x230(damage · 1000 / HPForOneMana, cap) —
+    // FUN_00bbfae0 keeps the thousandths, so two hits of 40 HP (at 75 HP per mana) give 1 mana, not 2 (ceil per hit).
+    [Fact]
+    public void SpiritLinkFeedAccumulatesThousandthsOfMana()
+    {
+        var (b, u, t) = Make("CREATURE_SKELETON", 50, "CREATURE_PEASANT", 100, new Cell(1, 1), new Cell(14, 10));
+        var h = b.State.Heroes[0];
+        h.Mana = 0; h.MaxMana = 100; h.ManaMilli = 0;
+        h.Links[Sk.MarkOfNecromancer] = u.Id;
+        int per = HpForOneMana();
+        int lost = per / 2 + 3;   // just over half a mana point
+        b.SpiritLinkFeed(u, lost);
+        b.SpiritLinkFeed(u, lost);
+        Assert.Equal(2 * lost * 1000 / per / 1000, h.Mana);
+        Assert.Equal(1, h.Mana);
+        Assert.Equal((lost * 1000 / per * 2) % 1000, h.ManaMilli);
+        h.Mana = 100;
+        Assert.False(b.AddManaMilli(h, 5000, cap: true));
+        Assert.Equal(100, h.Mana);
+    }
+
+    // exe FUN_00984a00 case 0x3a @ 00987ab4..00987b03: linking a stack while none was linked gives
+    // min(max mana, mana + total health / HPForOneMana + 1); re-linking (a stack was linked) gives nothing.
+    [Fact]
+    public void SpiritLinkFirstCastGivesManaForTheStacksHealth()
+    {
+        var (b, u, t) = Make("CREATURE_SKELETON", 50, "CREATURE_PEASANT", 100, new Cell(1, 1), new Cell(14, 10));
+        var h = b.State.Heroes[0];
+        h.Mana = 3; h.MaxMana = 10000;
+        b.SpiritLinkCast(h, u);
+        Assert.Equal(3 + u.TotalHealth / HpForOneMana() + 1, h.Mana);
+        int m = h.Mana;
+        b.SpiritLinkCast(h, t);
+        Assert.Equal(m, h.Mana);
+        Assert.Equal(t.Id, h.Links[Sk.MarkOfNecromancer]);
+    }
+
+    // exe 009789b0 case 0xf1: Guardian Angel resurrects round(Eval(SPELL_EFFECT_GUARDIAN_ANGEL damage, hero level)) hit
+    // points — Base 1 + PerPower 1 · level in the shipped GuardianAngel.xdb. The engine used 240 + 30 · level.
+    [Fact]
+    public void GuardianAngelResurrectsTheSpellTableAmount()
+    {
+        var (b, u, t) = Make("CREATURE_PEASANT", 10, "CREATURE_PEASANT", 10, new Cell(1, 1), new Cell(14, 10));
+        var sp = f.Db.Spell("SPELL_EFFECT_GUARDIAN_ANGEL");
+        Assert.NotNull(sp);
+        var h = b.State.Heroes[0];
+        h.Level = 12;
+        Assert.Equal((int)Math.Round(sp!.DamageAt(Mastery.None).Eval(12)), b.GuardianAngelAmount(h));
+        Assert.Equal(13, b.GuardianAngelAmount(h));
+    }
 }

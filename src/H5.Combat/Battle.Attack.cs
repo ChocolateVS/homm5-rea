@@ -927,6 +927,7 @@ public sealed partial class Battle
             if (armor.Value2 <= 0) RemoveEffect(t, "SPELL_CELESTIAL_SHIELD");
         }
         int before = t.Count;
+        int totalBefore = t.TotalHealth;
         int total = t.TotalHealth - amount;
         // Last Stand (exe FUN_00a59490, applied by the damage pipeline FUN_00a61600 → FUN_00a594f0): a stack of
         // 2+ creatures hit for at least its total HP keeps 1 HP. There is no once-per-combat flag — it triggers
@@ -951,14 +952,7 @@ public sealed partial class Battle
                     Remaining = Math.Round(Stats.Get("combat/Creatures/Fortress/BattleRage_EffectDuration", 2)), Positive = true, Dispellable = false });
         }
         CheckTreachery(t);
-        // Mark of the Necromancer feeds mana (p.142).
-        foreach (var h in S.Heroes)
-            if (h.Present && h.Links.TryGetValue(Sk.MarkOfNecromancer, out var linked) && linked == t.Id)
-            {
-                int gain = (int)Math.Ceiling(amount / Stats.Get("combat/HeroSkills/Necromancer/SpiritLink_HPForOneMana", 75));
-                h.Mana = Math.Min(h.MaxMana, h.Mana + gain);
-                Emit(new ManaChanged(Actor.Hero(h.Side), h.Mana));
-            }
+        SpiritLinkFeed(t, totalBefore - Math.Max(0, total));   // exe FUN_008a6e20 @ 008a6f61
         if (kind is AttackKind.Melee) RageEvent(t, "RecevieMeleeAttackRP");
         if (t.Count <= 0 && !TryRebirth(t)) OnDeath(t, source);
         return killed;
@@ -1041,7 +1035,7 @@ public sealed partial class Battle
             {
                 h2.AbilityUses["GUARDIAN_ANGEL"] = 1;
                 Emit(new AbilityTriggered(best.Id, "GUARDIAN_ANGEL"));
-                Resurrect(best, 240 + 30 * h2.Level);
+                Resurrect(best, GuardianAngelAmount(h2));   // exe 009789b0 case 0xf1
             }
         }
     }

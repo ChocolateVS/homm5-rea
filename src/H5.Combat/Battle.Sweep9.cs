@@ -1,3 +1,5 @@
+using H5.Core.Data;
+
 namespace H5.Combat;
 
 // Combat audit sweep 9 (docs/rules/audit/combat_sweep_9.md): rows traced against H5_Game.exe.
@@ -22,4 +24,63 @@ public sealed partial class Battle
     /// <summary>exe FUN_00a5fee0 @ 00a6005c: no retaliation against an attacker whose effect 0xf5 has count (+0x20) ≥ 2.</summary>
     internal static bool BerserkerRageBlocksRetaliation(Unit attacker) =>
         attacker.GetEffect(H5.Combat.Fx.BerserkerRage) is { Value2: >= 2 };
+
+    /// <summary>The hero's vf 0x230 (exe FUN_00bbfae0): adds mana given in thousandths. With <paramref name="cap"/> nothing
+    /// happens at full mana, and the result is capped at the maximum (fraction cleared). Returns whether mana rose.</summary>
+    internal bool AddManaMilli(HeroState h, int milli, bool cap)
+    {
+        int old = h.Mana;
+        if (cap && h.MaxMana <= old) return false;
+        int frac = h.ManaMilli + milli % 1000;
+        h.Mana += frac / 1000 + milli / 1000;
+        h.ManaMilli = frac % 1000;
+        if (cap && h.MaxMana <= h.Mana) { h.Mana = h.MaxMana; h.ManaMilli = 0; }
+        if (h.Mana != old) Emit(new ManaChanged(Actor.Hero(h.Side), h.Mana));
+        return old < h.Mana;
+    }
+
+    /// <summary>
+    /// Spirit Link mana feed (exe FUN_008a6e20 @ 008a6f61..008a7112, the creature's damage routine): a stack linked by a
+    /// hero's 0x3a (FUN_00a6e270) gives that hero, while below maximum mana, vf 0x230(lost · 1000 / SpiritLink_HPForOneMana,
+    /// cap) — integer division, the thousandths accumulate. <paramref name="lost"/> is the damage, or the stack's whole
+    /// health when it dies (or is a Phantom, 0x28). The engine added ceil(damage / HPForOneMana) per hit.
+    /// </summary>
+    internal void SpiritLinkFeed(Unit t, int lost)
+    {
+        if (lost <= 0) return;
+        foreach (var h in S.Heroes)
+            if (h.Present && h.Links.TryGetValue(Sk.MarkOfNecromancer, out var linked) && linked == t.Id && h.Mana < h.MaxMana)
+            {
+                int per = Math.Max(1, (int)Stats.Get("combat/HeroSkills/Necromancer/SpiritLink_HPForOneMana", 75));
+                AddManaMilli(h, lost * 1000 / per, cap: true);
+            }
+    }
+
+    /// <summary>
+    /// Spirit Link cast (exe FUN_00984a00 case 0x3a, 009879e1..00987b03): a stack linked before is released
+    /// (FUN_00a6e310, vf 0x270); the new link is set; when there was none, mana = min(max mana, mana + total health
+    /// (vf 0x1dc) / SpiritLink_HPForOneMana + 1), applied only when it rises.
+    /// </summary>
+    internal void SpiritLinkCast(HeroState h, Unit t)
+    {
+        bool hadLink = h.Links.TryGetValue(Sk.MarkOfNecromancer, out var old) && S.Unit(old) is { Alive: true };
+        h.Links[Sk.MarkOfNecromancer] = t.Id;
+        if (hadLink) return;
+        int per = Math.Max(1, (int)Stats.Get("combat/HeroSkills/Necromancer/SpiritLink_HPForOneMana", 75));
+        int mana = Math.Min(h.MaxMana, t.TotalHealth / per + h.Mana + 1);
+        if (mana > h.Mana) { h.Mana = mana; Emit(new ManaChanged(Actor.Hero(h.Side), h.Mana)); }
+    }
+
+    /// <summary>
+    /// Guardian Angel's resurrection (exe FUN_00988860 → FUN_00984a00 case 0xf1 → FUN_009789b0 case 0xf1): the hit points
+    /// are round(max(0, Eval of SPELL_EFFECT_GUARDIAN_ANGEL's damage table (FUN_00a34ca0) at the hero's level (vf 0x23c)))
+    /// — Base 1 + PerPower 1 · level in both shipped data sets (all four mastery items equal). The engine used the manual's
+    /// 240 + 30 · level.
+    /// </summary>
+    internal int GuardianAngelAmount(HeroState h)
+    {
+        var sp = Db.Spell("SPELL_EFFECT_GUARDIAN_ANGEL");
+        double v = sp != null && sp.Damage.Length > 0 ? sp.DamageAt(Mastery.None).Eval(h.Level) : 1 + h.Level;
+        return (int)Math.Round(Math.Max(0, v), MidpointRounding.ToEven);
+    }
 }

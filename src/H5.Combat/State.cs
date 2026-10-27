@@ -161,6 +161,8 @@ public sealed class HeroState
     public int Level = 1;
     public int Attack, Defence, SpellPower, Knowledge;
     public int Mana, MaxMana;
+    /// <summary>Mana fraction in thousandths (exe FUN_00bbfae0, the hero's vf 0x230 mana accumulator).</summary>
+    public int ManaMilli;
     public int Morale, Luck;
     public double Atb;
     public List<SkillEntry> Skills = new();
