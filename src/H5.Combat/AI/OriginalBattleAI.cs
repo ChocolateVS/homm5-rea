@@ -473,13 +473,14 @@ public sealed class OriginalBattleAI : IBattleAI
     /// Approach (FUN_008d5b90 → FUN_008d4330 with the whole-path map): for every enemy, the ring cells in whole-path cost
     /// order; each reachable one gives a move along the path as far as this turn allows, Turns = turns still needed
     /// (cost over the per-turn budget), MovePrice = whole-path cost; first only with ConsiderOnlyShortestPathToEnemy.
-    /// GAP-detail: the path planner FUN_00c53f60 / FUN_00c540c0 (turn count, where the move stops) is approximated by a
-    /// budget-free Dijkstra on our grid; the strategy gate (think +0x1ac, FUN_00a2fd40) and the siege branch
-    /// (FUN_008d4610) are not ported.
+    /// The whole-path costs are the exe's walker search without a budget (FUN_00c52cc0 whole-path mode → FUN_00b5f0d0:
+    /// steps 2 / 3 against 2 × speed per turn, as the move reach). GAP-detail: the planner FUN_00c53f60 / FUN_00c540c0
+    /// (turn count, where the move stops) is approximated by walking the path back to the last cell this turn reaches;
+    /// the strategy gate (think +0x1ac, FUN_00a2fd40) and the siege branch (FUN_008d4610) are not ported.
     /// </summary>
     IEnumerable<Candidate> ApproachMoves(Battle b, Unit u, int side, LegalActions la, List<Unit> enemies, CombatDifficulty diff)
     {
-        int budget = Math.Max(1, b.SpeedOf(u)) * 100;
+        int budget = Math.Max(1, b.SpeedOf(u)) * Battle.MoveBudgetPerSpeed;
         var (dist, prev) = WholePath(b, u);
         var moves = la.Moves.ToHashSet();
         int Cost(Cell c) => dist.TryGetValue(c, out var v) ? v : Unreachable;
@@ -491,7 +492,7 @@ public sealed class OriginalBattleAI : IBattleAI
                 // reachable cell nearest to the ring cell).
                 var stop = cell;
                 if (u.Flying)
-                    stop = moves.Count == 0 ? u.Pos : moves.OrderBy(m => Battle.Octile(m, cell)).ThenBy(m => Battle.Octile(u.Pos, m))
+                    stop = moves.Count == 0 ? u.Pos : moves.OrderBy(m => Battle.MoveDistance(m, cell)).ThenBy(m => Battle.MoveDistance(u.Pos, m))
                         .ThenBy(m => m.Y).ThenBy(m => m.X).First();
                 else
                     while (stop != u.Pos && (dist[stop] > budget || !moves.Contains(stop))) stop = prev[stop];
@@ -506,43 +507,24 @@ public sealed class OriginalBattleAI : IBattleAI
             }
     }
 
-    /// <summary>Whole-path costs over the field ignoring the move budget (flyers: straight octile distance).</summary>
-    static (Dictionary<Cell, int>, Dictionary<Cell, Cell>) WholePath(Battle b, Unit u)
+    /// <summary>
+    /// Whole-path costs over the field ignoring the move budget, on the scale of the move reach: walkers the exe's
+    /// search with no budget (<see cref="Battle.MoveSearch"/>, budget −1 = FUN_00c52cc0's whole-path mode), flyers the
+    /// empty-board distance 2·max + min (the flyer search runs on a board without obstacles).
+    /// </summary>
+    internal static (Dictionary<Cell, int>, Dictionary<Cell, Cell>) WholePath(Battle b, Unit u)
     {
         var s = b.State;
+        if (!u.Flying) return b.MoveSearch(u, -1);
         var dist = new Dictionary<Cell, int> { [u.Pos] = 0 };
         var prev = new Dictionary<Cell, Cell>();
-        if (u.Flying)
+        for (int x = 0; x <= s.Width - u.Size; x++)
+        for (int y = 0; y <= s.Height - u.Size; y++)
         {
-            for (int x = 0; x <= s.Width - u.Size; x++)
-            for (int y = 0; y <= s.Height - u.Size; y++)
-            {
-                var p = new Cell(x, y);
-                if (p == u.Pos || !b.Fits(u, p)) continue;
-                dist[p] = Battle.Octile(u.Pos, p);
-                prev[p] = u.Pos;
-            }
-            return (dist, prev);
-        }
-        var open = new SortedSet<(int Cost, int X, int Y)> { (0, u.Pos.X, u.Pos.Y) };
-        while (open.Count > 0)
-        {
-            var (cost, cx, cy) = open.Min;
-            open.Remove(open.Min);
-            var cur = new Cell(cx, cy);
-            if (cost > dist[cur]) continue;
-            foreach (var d in Cell.Neighbours8)
-            {
-                var n = cur + d;
-                bool diag = d.X != 0 && d.Y != 0;
-                int nc = cost + (diag ? Battle.DiagCost : Battle.OrthCost);
-                if (!b.Fits(u, n)) continue;
-                if (diag && !b.Fits(u, new Cell(cur.X + d.X, cur.Y)) && !b.Fits(u, new Cell(cur.X, cur.Y + d.Y))) continue;
-                if (dist.TryGetValue(n, out var old) && old <= nc) continue;
-                dist[n] = nc;
-                prev[n] = cur;
-                open.Add((nc, n.X, n.Y));
-            }
+            var p = new Cell(x, y);
+            if (p == u.Pos || !b.Fits(u, p)) continue;
+            dist[p] = Battle.MoveDistance(u.Pos, p);
+            prev[p] = u.Pos;
         }
         return (dist, prev);
     }

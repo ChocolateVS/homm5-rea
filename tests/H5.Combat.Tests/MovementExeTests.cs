@@ -19,6 +19,21 @@ public class MovementExeTests(GameDataFixture f)
         Assert.Equal(82, Battle.MoveDistance(new Cell(0, 0), new Cell(28, 26)));
     }
 
+    // The combat AI's whole-path planner (approach moves) uses the same search without a budget, so its path costs
+    // and the move reach are on one scale (was 100 / 141 octile with a corner rule).
+    [StockFact]
+    public void AiWholePathMatchesTheMoveSearch()
+    {
+        var b = f.Duel("CREATURE_FOOTMAN", 10, "CREATURE_FOOTMAN", 10, posA: new Cell(2, 2), posB: new Cell(11, 9));
+        b.State.Obstacles.Add(new Cell(3, 2));
+        b.State.Obstacles.Add(new Cell(2, 3));
+        var u = b.State.Units[0];
+        var (dist, _) = H5.Combat.AI.OriginalBattleAI.WholePath(b, u);
+        foreach (var (cell, cost) in b.Reachable(u)) Assert.Equal(cost, dist[cell]);
+        Assert.Equal(3, dist[new Cell(3, 3)]);
+        Assert.True(dist.Values.Max() > b.SpeedOf(u) * Battle.MoveBudgetPerSpeed);   // beyond this turn's reach
+    }
+
     [StockFact]
     public void DiagonalStepMayPassBetweenTwoBlockedCells()
     {

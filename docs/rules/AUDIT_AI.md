@@ -138,7 +138,7 @@ The combat AI (`OriginalBattleAI`, `CombatValue`) follows the exe structure docu
 | Item | Status | Exe | Notes |
 |---|---|---|---|
 | Candidate cap `MaxCandidates` (96; 24 for adventure quick combat) | GAP | 008d6940 | no cap known in the exe; ours truncates the generated list |
-| Approach moves (closest reachable cell per enemy, Turns = rounds to strike range) | GAP | 008d5b90 | reconstructed |
+| Approach moves (closest reachable cell per enemy, Turns = rounds to strike range) | GAP | 008d5b90, 00c52cc0 | reconstructed; the whole-path costs are now the exe's walker search without a budget (`Battle.MoveSearch(u, -1)`: steps 2 / 3, budget 2 × speed per turn, flyers 2·max + min), the same scale as the move reach (was 100 / 141 octile with a corner rule; test `MovementExeTests.AiWholePathMatchesTheMoveSearch`); the planner 00c53f60 / 00c540c0 (turn count, stop cell) stays reconstructed |
 | UseDefendShootersMoves / UseBlockEnemyMoves cell choice | GAP | 008d6940 generators | reconstructed (cell next to a threatened friendly shooter / an enemy shooter) |
 | Area-spell centres between enemy pairs | GAP | 008d61b0 | reconstructed (CenterAreaSpellsOnCreatureOnly honoured) |
 | Shooter penalty share, luck/morale bonus (10 %/point, ≤ 50 %), hero strike potential (mean over targets) | GAP | 00bfb950, 00bfba50 | approximations; value slots [0], [2], [16] are 0 |
