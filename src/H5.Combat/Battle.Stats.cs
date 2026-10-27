@@ -462,7 +462,7 @@ public sealed partial class Battle
         return v;
     }
 
-    internal sealed record RageBonusDef(string Type, int IntParam, List<string> Abilities);
+    internal sealed record RageBonusDef(string Type, int IntParam, List<string> Abilities, double FloatParam = 0);
     readonly Dictionary<string, List<RageBonusDef>[]?> _rageTables = new();
 
     List<RageBonusDef>[]? RageTable(string creature)
@@ -483,7 +483,7 @@ public sealed partial class Battle
                     // A bonus is either inline fields or a list of Items.
                     var entries = b.Elements("Item").Any() ? b.Elements("Item") : new[] { b };
                     foreach (var e in entries)
-                        t[i].Add(new RageBonusDef(e.Str("Type"), e.Int("IntParam"), e.StrItems("Abilities")));
+                        t[i].Add(new RageBonusDef(e.Str("Type"), e.Int("IntParam"), e.StrItems("Abilities"), e.Dbl("FloatParam")));
                 }
                 break;
             }
@@ -508,13 +508,14 @@ public sealed partial class Battle
         return false;
     }
 
-    /// <summary>Creature caster spell power (fan manual p.303).</summary>
+    /// <summary>Creature caster spell power (fan manual p.303; exe FUN_004bad20): max(1, trunc(21·log10(10 + (count·10) / growth)
+    /// − 22 + 0.01)) — FYL2X · log10(2), the float constants 21 / 22 / 0.01 (00e15a88 / 00e15a84 / 00e15a80), FISTP under chop.</summary>
     public static int CreatureSpellPower(int stackSize, int weeklyGrowth)
     {
         if (stackSize <= 0) return 1;
         int g = Math.Max(1, weeklyGrowth);
         double inner = 10 + Math.Floor(10.0 * stackSize / g);
-        return Math.Max(1, (int)Math.Floor(21 * Math.Log10(inner) - 22));
+        return Math.Max(1, (int)(21 * Math.Log10(inner) - 22 + (double)0.01f));
     }
 
     /// <summary>Ability trigger chance (fan manual p.315), scaled by the per-ability ProcFactor from DefaultStats.</summary>

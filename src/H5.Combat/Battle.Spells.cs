@@ -414,8 +414,7 @@ public sealed partial class Battle
         if (known == null) return "creature does not know this spell";
         int ucost = CreatureManaCost(u, sp);
         if (u.Mana < ucost) return "not enough mana";
-        int cp = CreatureSpellPower(u.Count, Math.Max(1, u.WeeklyGrowth));
-        if (Specials.Pieces(HeroOf(u), Specials.Magis) >= 2) cp *= (int)Stats.Get("ArtifactsSetsEffectsConsts/Magis_2_Casters_SpellpowerMultiplier", 2);
+        int cp = CreatureCasterPower(u, u.Count);   // exe FUN_008a3960: Magis, then the demon-rage multiplier
         if (ValidateSpellTarget(u.Id, Controller(u), sp, MoonWeek.SpellMastery(known.Mastery, sp.School, S.Week), c.TargetId, c.Cell) is { } te2) return te2;
         var castTarget = c.TargetId is int t2 ? S.Unit(t2) : null;
         var castCell = c.Cell;

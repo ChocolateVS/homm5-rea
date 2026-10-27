@@ -234,14 +234,11 @@ public sealed partial class Battle
                 h.Mana = Math.Min(h.MaxMana, h.Mana + mana);
                 corpse.Removed = true;
                 Emit(new ManaChanged(actor, h.Mana));
-                // Exploding Corpses: the consumed corpse always explodes (FUN_0085eaa0, effect 0x11f) — a fire area
-                // attack hitting every unit next to it, friend or foe, for the spell's Base + PerPower·SpellPower.
-                if (h.HasPerk("HERO_SKILL_EXPLODING_CORPSES") && Db.Spell("SPELL_EFFECT_EXPLODING_CORPSES") is { } boom)
+                // Exploding Corpses: the consumed corpse explodes as a hero Fireball at its cell (exe FUN_0097b690 →
+                // FUN_0085eaa0 / FUN_0085e7c0), power from the corpse — ExplodeCorpse (Battle.Sweep11.cs).
+                if (h.HasPerk("HERO_SKILL_EXPLODING_CORPSES"))
                 {
-                    var around = corpse.Cells().SelectMany(cc => Cell.Neighbours8.Select(d => cc + d)).Concat(corpse.Cells()).ToHashSet();
-                    double dmg = boom.DamageAt(Mastery.None).Eval(h.SpellPower);
-                    foreach (var v in S.Living.Where(v => v.Kind == UnitKind.Creature && v.Cells().Any(cell => around.Contains(cell))).ToList())
-                        DealSpellDamage(v, boom, dmg, c.Side, ignoreResist: false, hero: h);
+                    ExplodeCorpse(h, c.Side, corpse);
                     CheckEnd();
                 }
                 break;
