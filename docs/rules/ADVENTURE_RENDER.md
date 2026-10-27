@@ -31,10 +31,24 @@ at the loop: the horse left the rider, the staff, shield and reins behind (`h5to
 | Change animation | FUN_005b1260, t = clamp(elapsed_ms × 0.001, 0, 1) (DAT_00e155ac) | On an explored-array change: old grid → B, new grid → A, w = A·t + B·(1 − t), linear over 1000 ms. Changes during a fade wait for it to end. A floor switch snaps (A = B = new) | `AdvWorld._Process`: polls the human player's explored bits each frame, same crossfade and snap | FIXED (was instant) |
 | Objects and transparent geometry | FUN_00cf9a80 from the CTransparentRenderer slot 0087e370 | Same value applied to transparent objects and particles | All H5Lit materials (opaque, alpha, additive, self-illuminated), M_CLOUDS_H5 (sunbeam cards, lava), water, sea and sky dome sampled per vertex | FIXED. Particles (`game/src/Effects`) not darkened: GAP |
 | Hiding objects in the fog | — | The renderer only darkens. Whether game logic also hides objects or enemy heroes was not checked | Unchanged | GAP |
-| Outside the map | grid texels 0 | Black (lit geometry) | Black through the grid. The sky dome is now an unlit H5Lit backdrop, darkened like the rest. Whether the exe darkens it was not checked | MATCH / GAP (sky dome) |
+| Outside the map | grid texels 0 | Black (lit geometry) | Black through the grid; the sky dome is not darkened (see "Beyond the map edge, sky dome") | MATCH |
 | Underground | per-floor `CWarFogArray` (FUN_004fb7d0, FUN_004ffd30) | Separate array per floor, same pipeline | Per-floor explored bits; a floor switch snaps | MATCH |
 | Config | data.pak / a2p1-data.pak | No xdb parameters; 1000 ms, scale 0.5, 2 blur passes and the 4-corner rule are hard-coded | Constants as in the exe | MATCH |
 | Puzzle map | — | Separate view | `PuzzleMapScreen` sets `AdvWorld.SuppressWarFog` | MATCH (kept behaviour) |
+
+## Beyond the map edge, sky dome
+
+Beta report: the map looked like a square floating inside a lit sphere. Our dome was a fixed model at the map centre, so
+the camera (especially with Extended map zoom, distance 160) left it and saw its outside. Code: `AdvWorld.BuildSkyDome`,
+`FollowCameraWithSkyDome`. Captures: A2M1 corner at zoom 70 and 160 (`--adventure-look=2,2 --adventure-zoom=160`).
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Creation | scene light setup FUN_00b77910 → CSkyDome ctor FUN_00b24d50 | the light's SkyDome model, identity transform, no scale | same model | MATCH |
+| Position | each scene render FUN_00b74540 calls the dome's SetPosition (vtable +0x1c, FUN_00b24720) with the camera eye (FUN_00b790e0) | translation (eye.x, eye.y, 0): centred under the camera on the ground plane | same every frame | FIXED (was fixed at the map centre) |
+| Material | M_SIMPLE_SKY / M_VIRTUAL_SKY (FUN_00898e10 cases 7 and 9, FUN_0089ba60): vs_1_1 00f4c3e8 scales clip x/y by FloatParam (c30/c31 from FUN_00896c00; 1 when ≤ 1.19e-7), ps_1_1 00f61940 outputs the texture | unlit, no distance fog, no fog of war, back faces culled (Is2Sided false in all stock sky materials) | `SkyDomeShader` (unshaded, the clip scale, cull back); other effects in a dome keep the model material | FIXED (was a two-sided H5Lit material darkened by the fog of war) |
+| Draw order | own render pass FUN_008984d0 (pass 100/3; scene models pass 2), no depth write | behind the whole scene | on the far plane, no depth write | FIXED |
+| Geometry past the terrain edge | — | no border or skirt mesh found; off-map ground is black through the fog-of-war grid (row/column 0 and beyond = 0) | same | MATCH / UNVERIFIED (no border object searched for beyond the renderer paths above) |
 
 ## Distance fog
 

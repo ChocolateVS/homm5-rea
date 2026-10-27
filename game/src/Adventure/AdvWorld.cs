@@ -340,28 +340,92 @@ public partial class AdvWorld : Node3D
         var skyHref = (string?)light?.Element("SkyDome")?.Attribute("href");
         if (!string.IsNullOrEmpty(skyHref) && Mesh(XdbRef.Parse(skyHref, lightFile).Path) is { } sky)
         {
-            var mesh = (ArrayMesh)sky.Mesh.Duplicate();
-            for (int i = 0; i < mesh.GetSurfaceCount(); i++)
-            {
-                // Cloud layers use M_CLOUDS_H5, which ModelBuilder builds as a drifting ShaderMaterial
-                // (opaque, culled, depth-writing); as a dome it must be a plain unlit sky backdrop.
-                // An unlit two-sided H5Lit material, so the fog of war darkens it like the rest of the
-                // scene (the former overlay hid it wherever it stood over unexplored or off-map ground).
-                Texture2D? tex = mesh.SurfaceGetMaterial(i) switch
-                {
-                    StandardMaterial3D std => std.AlbedoTexture,
-                    ShaderMaterial sm => sm.GetShaderParameter("tex").As<Texture2D>(),
-                    _ => null,
-                };
-                if (mesh.SurfaceGetMaterial(i) == null) continue;
-                mesh.SurfaceSetMaterial(i, H5LitMaterials.Create(tex, H5LitMaterials.Blend.Opaque, twoSided: true, selfIllum: true,
-                    receiveShadow: false, affectedByFog: false));
-            }
-            var dome = new MeshInstance3D { Name = "SkyDome", Mesh = mesh, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, Layers = SkyLayer };
-            dome.Position = new Vector3(Map.TilesX * 0.5f * Unit, 0, -Map.TilesY * 0.5f * Unit);
-            _floors[f].AddChild(dome);
+            _skyDome[f] = BuildSkyDome(sky.Mesh, sky.Model);
+            _floors[f].AddChild(_skyDome[f]);
         }
     }
+
+    readonly MeshInstance3D?[] _skyDome = new MeshInstance3D?[2];
+
+    /// <summary>
+    /// The light's SkyDome model as the exe draws it. Created by the scene light setup FUN_00b77910
+    /// (CSkyDome, ctor FUN_00b24d50: identity transform, no scale). Its M_SIMPLE_SKY / M_VIRTUAL_SKY
+    /// materials (FUN_00898e10 cases 7 and 9, FUN_0089ba60) have their own shaders: vs_1_1 00f4c3e8
+    /// multiplies clip x and y by FloatParam (c30/c31 set by FUN_00896c00, 1.0 if FloatParam is
+    /// ≤ 1.19e-7) and ps_1_1 00f61940 outputs the texture alone (no lighting, distance fog or fog of
+    /// war). They are queued in their own render pass (FUN_008984d0: pass 100/3, scene models 2) with
+    /// no depth write, behind the scene. Other effects (M_GENERIC in the Fortress domes) keep the
+    /// regular model material.
+    /// </summary>
+    MeshInstance3D BuildSkyDome(ArrayMesh source, ModelAsset model)
+    {
+        var mesh = (ArrayMesh)source.Duplicate();
+        // Effect and FloatParam per material, in the model's Materials order (part.MaterialIndex).
+        var fx = new List<(string? Effect, float Param)>();
+        try
+        {
+            var xdb = Game.Instance.Xdb;
+            foreach (var item in xdb.Load(model.SourcePath).Root?.Element("Materials")?.Elements("Item") ?? Enumerable.Empty<XElement>())
+            {
+                var mat = xdb.Resolve(item, model.SourcePath);
+                fx.Add(((string?)mat?.Element("Effect"), F(mat?.Element("FloatParam"), 0)));
+            }
+        }
+        catch (Exception e) { GD.PushWarning($"[H5] sky dome materials {model.SourcePath}: {e.Message}"); }
+        // Same part → surface order as ModelBuilder.BuildMesh (empty parts are skipped).
+        var surfaceMaterial = model.Mesh.Parts.Where(p => p.Positions.Length > 0 && p.Indices.Length > 0).Select(p => p.MaterialIndex).ToList();
+        for (int i = 0; i < mesh.GetSurfaceCount() && i < surfaceMaterial.Count; i++)
+        {
+            int mi = surfaceMaterial[i];
+            if (mi < 0 || mi >= model.Materials.Count || mi >= fx.Count || fx[mi].Effect is not ("M_SIMPLE_SKY" or "M_VIRTUAL_SKY")) continue;
+            var texPath = model.Materials[mi].DiffuseTexture;
+            var mat = new ShaderMaterial { Shader = SkyDomeShader };
+            if (texPath != null && Game.Instance.LoadTexture(texPath) is { } tex) mat.SetShaderParameter("tex", tex);
+            mat.SetShaderParameter("clip_scale", fx[mi].Param > 1.1920929e-7f ? fx[mi].Param : 1f);
+            mesh.SurfaceSetMaterial(i, mat);
+        }
+        // The clip-space scale pulls geometry from outside the frustum into view: never cull the dome.
+        return new MeshInstance3D
+        {
+            Name = "SkyDome", Mesh = mesh, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            Layers = SkyLayer, ExtraCullMargin = 16384,
+        };
+    }
+
+    /// <summary>
+    /// Every scene render (FUN_00b74540) calls the dome's SetPosition (vtable slot 0x1c, FUN_00b24720)
+    /// with the camera eye (FUN_00b790e0: origin through the camera's inverse view matrix), which sets
+    /// the translation to (eye.x, eye.y, 0): the dome stays centred on the camera over the ground plane.
+    /// </summary>
+    void FollowCameraWithSkyDome()
+    {
+        if (GetViewport()?.GetCamera3D() is not { } cam) return;
+        var eye = cam.GlobalPosition;
+        foreach (var dome in _skyDome)
+            if (dome != null && dome.IsVisibleInTree())
+                dome.GlobalPosition = new Vector3(eye.X, 0, eye.Z);
+    }
+
+    static Shader? _skyDomeShader;
+    static Shader SkyDomeShader => _skyDomeShader ??= new Shader
+    {
+        // Is2Sided is false in every stock sky material: back faces culled as for other models.
+        // The exe's separate pass draws the dome behind the scene; here it sits on the far plane
+        // (reverse Z) and writes no depth, so every other surface covers it.
+        Code = """
+            shader_type spatial;
+            render_mode unshaded, cull_back, depth_draw_never, shadows_disabled, fog_disabled;
+            uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_enable;
+            uniform float clip_scale = 1.0;
+            void vertex() {
+                vec4 clip = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
+                clip.xy *= clip_scale;
+                clip.z = clip.w * 1e-6;
+                POSITION = clip;
+            }
+            void fragment() { ALBEDO = texture(tex, UV).rgb; }
+            """,
+    };
 
     static XDocument? TryLoad(string path) =>
         Game.Instance.Fs.Exists(path) ? Game.Instance.Xdb.Load(path) : null;
@@ -784,6 +848,7 @@ public partial class AdvWorld : Node3D
 
     public override void _Process(double delta)
     {
+        FollowCameraWithSkyDome();
         // Hidden behind the town screen: the town scene owns the shader globals.
         if (_fogA == null || !IsVisibleInTree()) return;
         // An overlay with its own 3D scene (dialog scene, hero screen stand) owns the shader globals:
