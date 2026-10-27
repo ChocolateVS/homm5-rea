@@ -18,9 +18,11 @@ public static class DevArgs
     /// <summary>
     /// Further synthetic mouse input for UI tests (repeatable, same `@seconds` timing): `--wheel=x,y,notches`
     /// (positive = down), `--press=x,y` / `--release=x,y` (left button held between them, e.g. scroll-bar arrow or
-    /// track repeat), `--move=x,y` (motion, with the left button down while pressed: lever drags).
+    /// track repeat), `--move=x,y` (motion, with the left button down while pressed: lever drags), `--key=NAME@s`
+    /// (a key press and release, Godot key name such as K or Escape).
     /// </summary>
     public static readonly List<(string Op, Vector2 Pos, float Arg, double At)> MouseOps = new();
+    public static readonly List<(string Key, double At)> Keys = new();
     static bool _parsed;
 
     public static void Parse()
@@ -51,6 +53,11 @@ public static class DevArgs
                     v.Length > 2 ? float.Parse(v[2], System.Globalization.CultureInfo.InvariantCulture) : 0,
                     parts.Length > 1 ? double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture) : 1));
             }
+            else if (a.StartsWith("--key="))
+            {
+                var parts = V("--key=").Split('@');
+                Keys.Add((parts[0], parts.Length > 1 ? double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture) : 1));
+            }
             else if (a.StartsWith("--master=")) Master = V("--master=");
             else if (a.StartsWith("--join-code=")) JoinCode = V("--join-code=");
             else if (a == "--host-online") { Host = true; HostOnline = true; }
@@ -78,6 +85,14 @@ public static class DevArgs
             tree.CreateTimer(at, processAlways: true, ignoreTimeScale: true).Timeout += () => MainMenu.Click(pos);
         foreach (var (op, pos, arg, at) in MouseOps)
             tree.CreateTimer(at, processAlways: true, ignoreTimeScale: true).Timeout += () => Mouse(op, pos, arg);
+        foreach (var (key, at) in Keys)
+            tree.CreateTimer(at, processAlways: true, ignoreTimeScale: true).Timeout += () =>
+            {
+                GD.Print($"[H5] dev input key {key}");
+                var code = OS.FindKeycodeFromString(key);
+                foreach (var pressed in new[] { true, false })
+                    Input.ParseInputEvent(new InputEventKey { Keycode = code, PhysicalKeycode = code, Pressed = pressed });
+            };
     }
 
     static void Mouse(string op, Vector2 pos, float arg)

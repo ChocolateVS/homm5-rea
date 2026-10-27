@@ -26,8 +26,11 @@ public sealed partial class MissionBoxScreen : Control
     string _tab = "TabKingdom";
     bool _heroes;
     readonly UiScrollableContainer? _area, _left, _right;
-    // 005ba510: the kingdom list keeps its scroll position per page (towns / heroes) across refills.
-    readonly float[] _kingdomPos = new float[2];
+    // 005ba510: the kingdom list's scroll position per page (towns +4, heroes +0xc) is stored in a 9-entry array of
+    // 0x1c-byte records indexed by the player (+0x48 ← +0x30), owned by the box's controller (005ba3a0, built by
+    // 005bb180 with the adventure screen's handlers), so it outlives the box: kept per adventure screen and player.
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AdventureScreen, Dictionary<int, float[]>> KingdomPos = new();
+    float[] _kingdomPos => KingdomPos.GetOrCreateValue(_adv).TryGetValue(Me.Index, out var p) ? p : KingdomPos.GetOrCreateValue(_adv)[Me.Index] = new float[2];
 
     public MissionBoxScreen(AdventureScreen adv, string tab = "TabKingdom")
     {
@@ -39,6 +42,8 @@ public sealed partial class MissionBoxScreen : Control
         MouseFilter = MouseFilterEnum.Stop;
         _ui = new UiScreen("UI/MissionObjectives/Main.(WindowSimple).xdb");
         AddChild(_ui);
+        // 005ba510 runs from 005baa00 (page rebuild) and 005bd890; ours stores the position when the box goes away too.
+        TreeExiting += () => { if (_tab == "TabKingdom" && _views.Count > 0) SaveKingdomPos(); };
         var bus = _ui.Bus;
         bus.On("objectives_close", Close);
         bus.On("tab_objectives", () => ShowTab("TabObjectives"));
