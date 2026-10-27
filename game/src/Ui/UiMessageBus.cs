@@ -50,4 +50,6 @@ public static class UiAudio
     public static Action<UiNode>? Hover;
     public static Action<UiNode>? Click;
     public static Action<string>? PlaySound;
+    /// <summary>The slider sound (uiconsts ScrollBarSound, played by 0048fd60).</summary>
+    public static Action? Slider;
 }

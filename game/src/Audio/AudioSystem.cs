@@ -74,6 +74,8 @@ public static class AudioSystem
             if (href != null) SoundLibrary.PlayUi(href);
         };
         Ui.UiAudio.PlaySound = href => { if (!string.IsNullOrEmpty(href)) SoundLibrary.PlayUi(href); };
+        var scroll = Data.UiConstSound("ScrollBarSound");
+        Ui.UiAudio.Slider = () => { if (scroll != null) SoundLibrary.PlayUi(scroll); };
 
         MusicManager.Create();
     }

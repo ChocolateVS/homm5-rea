@@ -161,6 +161,21 @@ public partial class UiScrollBar : UiNode
     {
         ValueChanged?.Invoke(Model.Pos);
         PositionChanged?.Invoke(Position);
+        SliderSound();
+    }
+
+    ulong _soundTick;
+
+    /// <summary>
+    /// 0048fd60, run after a notified move: at most every 400 ms (GetTickCount, slider +0x148) the slider sends the
+    /// UIGameConsts command at +0xa4 (ScrollBarSound, UI/Sounds/ScrollBar: scroll_click).
+    /// </summary>
+    void SliderSound()
+    {
+        ulong now = Time.GetTicksMsec();
+        if (_soundTick != 0 && now - _soundTick <= 400) return;
+        _soundTick = now;
+        UiAudio.Slider?.Invoke();
     }
 
     bool Usable => Model.Scrollable && Window.Enabled;

@@ -145,11 +145,11 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 | Arrows | press: special positions → index ±1, else ±ClickScrollDist (instance value when its flag is set, else shared 15; at least 1: 00c40ee0 / 00c40e80); Greater forward, Lower back (00c40780, 00c411e0); held: after 500 ms, every > 10 ms move elapsed ms × Speed (100) × 0.001 (00c40e20) | same | FIXED |
 | Track click | 00490310 / 00490460: one page (one special position) towards the mouse; held, repeats after 500 ms then every 10 ms until the lever reaches the mouse; paused while the mouse is over the lever | same (mouse value = lever centred on the mouse) | FIXED / mouse offset UNVERIFIED |
 | Lever drag | 004905e0 → 0048f9b0: value from the lever's offset on the free track (grab offset kept); special positions snap | same | FIXED |
-| Mouse wheel | mouse_wheel_scroll (MOUSE_AXIS_Z) read in 00490460: pos += Z × page; special positions ±1 | 0.75 × page per notch (the camera's untraced axis scale), down = forward; routed to the bar under the mouse or its container | FIXED / scale UNVERIFIED |
+| Mouse wheel | 00490460: the slider's accumulated mouse_wheel_scroll value Z (read-and-clear 00492a50) moves pos += Z × page (special positions ±1 by its sign); input_a2.cfg binds `-mouse_wheel_scroll 'MOUSE_AXIS_Z'` (inverted: wheel down = forward) with `bindconfigure MOUSE_AXIS_Z 160`, and 00492e20 scales the raw delta (WHEEL_DELTA 120) by fixed-point / 160 | 0.75 × page per notch (120 / 160), down = forward; routed to the bar under the mouse or its container | FIXED / the fixed-point → float step after 00492e20 untraced (0.75 assumes it normalises) |
 | Enabling | 00c40ab0: arrows and slider enabled = scrollable && bar enabled; HideDisabled also hides them | same | FIXED |
-| Special positions | slots 8–11: Set (n < 2 → 0), SetIndex pos = (max−min)·i/(N−1), GetIndex ceil((N−1)·pos/(max−min)) | same; code-driven discrete bars (`UiScrollBar.Setup(count, pos)` = range 0..count page 1, N = count) | FIXED / which range the exe's market and option screens pass is untraced (GAP) |
+| Special positions | slots 8–11: Set (n < 2 → 0), SetIndex pos = (max−min)·i/(N−1), GetIndex ceil((N−1)·pos/(max−min)). Market amount (006299a0): SetRange(0, max + step, step), Set(max / step + 1), SetIndex(current / step) (listener detached meanwhile); duel presets (00742230): SetRange(0, 100, 10), Set(rows − 1) | same; code-driven discrete bars (`UiScrollBar.Setup(count, pos)` = range 0..count page 1, N = count) — for the market (count = max / step + 1) this gives the same positions, lever and indices as the exe's range | FIXED / market MATCH (verified by clicks: arrows ±1 step, track one page); the option screens' ranges untraced (GAP) |
 | Code-driven bars | — | `UiScrollerView` added under a WindowScrollBar binds to it and only forwards (market amount, custom game / MP options, game options scrollers) | EXT (adapter) |
-| Slider sound | 0048fd60: at most every 400 ms the slider sends a message with UIGameConsts +0xa4 | — | GAP |
+| Slider sound | 0048fd60 (after a notified move, e.g. 00490460): at most every 400 ms (GetTickCount, +0x148) the slider sends the SUIGameConsts command at +0xa4 = ScrollBarSound (UI/Sounds/ScrollBar → scroll_click; field order Contexts, Console, DebugInfo, StatsWindow, ButtonClick, DisableButtonClick, Tooltip, ScrollBar) | `UiScrollBar.SliderSound` → `UiAudio.Slider` (uiconsts ScrollBarSound) | FIXED / the +0xa4 → ScrollBarSound mapping is by field order, not by the reader (UNVERIFIED) |
 
 ## Scrollable containers (CWindowScrollableContainer vt 00e94034, code 00886000..0088b000; `game/src/Ui/UiScrollableContainer.cs`)
 
@@ -160,8 +160,8 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 | Range | 00887ba0: content window takes the content size; bar SetRange(0, content size, Border height) (width when horizontal) | same | FIXED |
 | Scrolling | 00887c80: content at (0, −pos) / (−pos, 0) | same | FIXED |
 | Selection markers | 00887850: the marker takes the item's rect (content coordinates, flags 0xffff) and is shown; 008888e0 re-places them | `Select` / `Preselect` (rects from code) | FIXED |
-| Ensure visible | 00887ab0 / 00887b10 / 00887910 scroll a given item into view | — | GAP |
-| Initial offset | 008888e0 starts the offset at the first item's +0x1c | 0 | GAP |
+| Ensure visible | 00887910 (slots 7 / 8 → 00887ab0 / 00887b10): item above the visible part → pos = item start; item end below → pos = item end − Border size; else unchanged. Selecting an item (slot 4 → 00888da0 / 00887850) only moves the Selection marker, it does not scroll | not used (the save list no longer scrolls a selected row into view) | GAP (callers of slots 7 / 8 not found yet) |
+| Initial offset | 008888e0 starts the offset at the first item entry's +0x1c; slot 3 (00889590) zeroes it and relayouts; where it is set otherwise is untraced | 0 | GAP |
 
 ## Long texts in scroll containers
 
