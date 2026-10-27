@@ -11,14 +11,14 @@ public class SiegeTests(GameDataFixture f)
     };
 
     BattleState Siege(string town, int fort, int townLevel = 10, int maxLevel = 10, ulong seed = 3, bool stoneworks = false,
-        bool towersSpec = false, HeroInstance? attackerHero = null)
+        bool towersSpec = false, bool wallsSpec = false, HeroInstance? attackerHero = null)
     {
         var attacker = attackerHero != null ? ArmySetup.FromHero(attackerHero)
             : new ArmySetup { Army = { new ArmySlot("CREATURE_ARCHER", 30), new ArmySlot("CREATURE_FOOTMAN", 30) } };
         var defender = new ArmySetup { Army = { new ArmySlot("CREATURE_ARCHER", 30), new ArmySlot("CREATURE_FOOTMAN", 30) } };
         return BattleSetup.Create(f.Db, attacker, defender, seed, skipTactics: true, siege: new SiegeSetup
         {
-            Town = town, FortLevel = fort, TownLevel = townLevel, TownMaxLevel = maxLevel, Stoneworks = stoneworks, TowersSpecialization = towersSpec,
+            Town = town, FortLevel = fort, TownLevel = townLevel, TownMaxLevel = maxLevel, Stoneworks = stoneworks, TowersSpecialization = towersSpec, WallsSpecialization = wallsSpec,
         });
     }
 
@@ -99,6 +99,30 @@ public class SiegeTests(GameDataFixture f)
         var s = Siege("TOWN_FORTRESS", 3, stoneworks: true);
         Assert.Equal(450, s.Siege!.Buildings.First(b => b.Type == "WALL").MaxHealth);
         Assert.Equal(600, s.Siege.Buildings.Single(b => b.Type == "GATE").MaxHealth);
+    }
+
+    [Fact]
+    public void GuardPostPlacesTheCreatureHandedOver()
+    {
+        // exe 00853f90 places FUN_00cd0a30's creature (BaseCreatureToPlace or its first upgrade) and count.
+        string baseC = f.Db.Stats.Str("adventure/TownBuildingBonuses/Fortress_GuardPostStats/BaseCreatureToPlace", "");
+        string up = f.Db.Creatures[baseC].Upgrades[0];
+        var army = new ArmySetup { Army = { new ArmySlot("CREATURE_ARCHER", 30) } };
+        BattleState Make(string? creature) => BattleSetup.Create(f.Db, army, new ArmySetup { Army = { new ArmySlot("CREATURE_ARCHER", 30) } }, 3,
+            skipTactics: true, siege: new SiegeSetup { Town = "TOWN_FORTRESS", FortLevel = 3, GuardPostDefenders = 25, GuardPostCreature = creature });
+        Assert.Contains(Make(null).Units, u => u.Side == 1 && u.CreatureId == baseC && u.Count == 25);
+        var s = Make(up);
+        Assert.Contains(s.Units, u => u.Side == 1 && u.CreatureId == up && u.Count == 25);
+        Assert.DoesNotContain(s.Units, u => u.Side == 1 && u.CreatureId == baseC);
+    }
+
+    [Fact]
+    public void WallsSpecialisationIsAddedBeforeStoneworks()
+    {
+        // exe FUN_00bfe590: health + 50 (specialisation 0x23), then health / 2 + health (ability 0x25).
+        var s = Siege("TOWN_FORTRESS", 3, stoneworks: true, wallsSpec: true);
+        Assert.Equal((300 + 50) / 2 + 300 + 50, s.Siege!.Buildings.First(b => b.Type == "WALL").MaxHealth);
+        Assert.Equal((400 + 50) / 2 + 400 + 50, s.Siege.Buildings.Single(b => b.Type == "GATE").MaxHealth);
     }
 
     [Fact]

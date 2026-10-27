@@ -116,6 +116,26 @@ public class SiegeHandOffTests(Fixture f)
     }
 
     /// <summary>
+    /// FUN_00cd0a30: BaseCreatureToPlace becomes its first Upgrades entry (record +0x104) when a dwelling creature list of the
+    /// town (pool list +0x148, filled by 00cd46c0 from every built level) holds it; 00853f90 places that creature.
+    /// </summary>
+    [Fact]
+    public void GuardPostPlacesTheFirstUpgradeWhenTheTownOffersIt()
+    {
+        var g = f.NewGame();
+        var t = new TownState { Type = "TOWN_FORTRESS", Owner = 0 };
+        t.Built["TB_SPECIAL_3"] = 1;
+        string baseC = g.Core.Stats.Str("adventure/TownBuildingBonuses/Fortress_GuardPostStats/BaseCreatureToPlace", "");
+        var up = g.Core.Creatures[baseC].Upgrades[0];
+        int tier = Enumerable.Range(1, 7).First(i => g.Db.Building(t.Type, $"TB_DWELLING_{i}", 2)?.Creature == up);
+        t.Built[$"TB_DWELLING_{tier}"] = 1;
+        Assert.Equal(baseC, g.GuardPostCreature(t));
+        t.Built[$"TB_DWELLING_{tier}"] = 2;
+        Assert.Equal(up, g.GuardPostCreature(t));
+        Assert.Equal(up, g.SiegeFor(t).GuardPostCreature);
+    }
+
+    /// <summary>
     /// FUN_00cd0a30: town vf 0x78 (sum of building levels) × CreaturesPerTownLevelPerMonth (5) × (day counter / 28 + 1),
     /// the day counter being 0-based (day 28 is still month 1, day 29 month 2).
     /// </summary>

@@ -40,6 +40,7 @@ public sealed partial class Adventure
             WallsSpecialization = spec == "TOWN_BONUS_WALLS",
             TowersSpecialization = spec == "TOWN_BONUS_TOWERS",
             GuardPostDefenders = GuardPostCount(t),
+            GuardPostCreature = GuardPostCreature(t),
         };
     }
 
@@ -57,6 +58,24 @@ public sealed partial class Adventure
         string creature = Core.Stats.Str(k + "BaseCreatureToPlace", "CREATURE_DEFENDER");
         if (string.IsNullOrEmpty(creature) || !Core.Creatures.TryGetValue(creature, out var c) || c.Upgrade) return 0;   // c.Upgrade: <Upgrade> = record +0x90 (loader 00ad90c0)
         return t.DevLevel * (int)Core.Stats.Get(k + "CreaturesPerTownLevelPerMonth", 5) * ((S.Day - 1) / 28 + 1);
+    }
+
+    /// <summary>
+    /// Fortress Guard Post creature, exe FUN_00cd0a30 (its out pair is what the siege placement 00853f90 places):
+    /// BaseCreatureToPlace, or that creature's first <c>Upgrades</c> entry (record +0x104) when any of the town's dwelling
+    /// creature lists holds it. Those lists are the town's pool list +0x148 (town interface +0xc vf 0 = 00cd8e30, ECX − 0x20c),
+    /// filled by 00cd46c0 with the +0x9c / +0xa0 creatures of every built level of the dwelling (<see cref="DwellingCreature"/>).
+    /// The per-town creature bans 00ccf130 applies (town +0x30c, +0x2e8 / +0x2f4) are not modelled.
+    /// </summary>
+    public string GuardPostCreature(TownState t)
+    {
+        string creature = Core.Stats.Str("adventure/TownBuildingBonuses/Fortress_GuardPostStats/BaseCreatureToPlace", "CREATURE_DEFENDER");
+        if (!Core.Creatures.TryGetValue(creature, out var c) || c.Upgrades.Count == 0) return creature;
+        string up = c.Upgrades[0];
+        for (int tier = 1; tier <= 7; tier++)
+            for (int v = 0; v < 3; v++)
+                if (DwellingCreature(t, tier, v) == up) return up;
+        return creature;
     }
 
     /// <summary>The TOWN_BONUS_* of the town's specialisation, or null.</summary>

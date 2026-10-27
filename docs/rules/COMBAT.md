@@ -65,7 +65,7 @@ IBattleAI ai = new GreedyBattleAI(); BattleCommand cmd = ai.Decide(battle, side)
 ## Sieges (`Siege.cs`, `BattleSetup.Create(..., siege: new SiegeSetup { … })`)
 
 * Layout per town type from data (`GameDatabase.TownCombat`), hit points from `ArenaBuildingsStats`
-  (base + fortification bonus; Stoneworks ×1.5, defence specialisation +50), moats from `TownTypesInfo`.
+  (base + fortification bonus, then TOWN_BONUS_WALLS +50, then Stoneworks health / 2 + health — exe 00bfe590), moats from `TownTypesInfo`.
 * Fort = walls + gate, Citadel = + moat + central tower, Castle = + side towers; 14×14 field when fortified,
   plain field otherwise. The attacker's Catapult joins automatically.
 * Gate blocks attackers, opens for defenders; destroyed gate leaves only its end tiles blocked; destroyed walls
@@ -86,7 +86,8 @@ IBattleAI ai = new GreedyBattleAI(); BattleCommand cmd = ai.Decide(battle, side)
   landing in it.
 * Earthquake: each standing structure takes 50 × Range(duration/50, damage/50); Tremors also hits every creature
   inside the walls for round(10 + 5 × SP) and lowers its ATB by 0.1.
-* Fortress Guard Post: `SiegeSetup.GuardPostDefenders` Defenders at the DefaultStats cell.
+* Fortress Guard Post: `SiegeSetup.GuardPostDefenders` of `SiegeSetup.GuardPostCreature` (BaseCreatureToPlace, or its
+  first upgrade when the town's dwellings offer it — exe FUN_00cd0a30 / 00853f90) at the DefaultStats cell.
 
 ## Confirmed against the executable
 

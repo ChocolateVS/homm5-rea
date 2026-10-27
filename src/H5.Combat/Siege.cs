@@ -18,14 +18,16 @@ public sealed class SiegeSetup
     public int FortLevel;
     /// <summary>Town level (buildings built) and its maximum, scaling tower and moat damage.</summary>
     public int TownLevel = 1, TownMaxLevel = 1;
-    /// <summary>Fortress Stoneworks: walls, gate and towers get +50% hit points (fan manual p.308).</summary>
+    /// <summary>Fortress Stoneworks (town ability 0x25): health / 2 + health, after the walls specialisation (exe 00bfe590).</summary>
     public bool Stoneworks;
-    /// <summary>Town defence specialisation (SPELL_TOWN_WALLS): +50 hit points per structure (p.308).</summary>
+    /// <summary>Town specialisation TOWN_BONUS_WALLS (0x23): +50 hit points per structure, before Stoneworks (exe 00bfe590).</summary>
     public bool WallsSpecialization;
     /// <summary>Town towers specialisation (SPELL_TOWN_TOWERS): tower damage ×1.25 (exe 00bfdfb0).</summary>
     public bool TowersSpecialization;
     /// <summary>Fortress Guard Post: number of Defenders added to the garrison (5 × town level × month, p.308).</summary>
     public int GuardPostDefenders;
+    /// <summary>Guard Post creature (exe FUN_00cd0a30: BaseCreatureToPlace or its first upgrade offered by the town); null = BaseCreatureToPlace.</summary>
+    public string? GuardPostCreature;
 }
 
 /// <summary>One fortification piece on the battlefield.</summary>
@@ -118,8 +120,10 @@ public static class SiegeBuilder
                 continue;
             }
             int hp = db.ArenaBuildingStats.TryGetValue(def.Type, out var st) ? st.HealthAt(sg.FortLevel) : 200;
-            if (setup.Stoneworks) hp = (int)(hp * 1.5);
+            // exe FUN_00bfe590 (siege building constructor, caller 008543c0): data health (< 1 → 200), then the town
+            // specialisation 0x23 (TOWN_BONUS_WALLS) +50, then Stoneworks (town ability 0x25) health = health / 2 + health.
             if (setup.WallsSpecialization) hp += 50;
+            if (setup.Stoneworks) hp = hp / 2 + hp;
             var b = new SiegeBuilding
             {
                 Id = sg.NextBuildingId++, Type = def.Type, DefIndex = i,
@@ -196,7 +200,11 @@ public static class SiegeBuilder
     public static void AddGuardPost(GameDatabase db, BattleState s, SiegeSetup setup, Func<Unit, Cell, Cell?> nearestFree)
     {
         if (setup.GuardPostDefenders <= 0 || setup.Town != Towns.Fortress) return;
-        string creature = db.Stats.Str("adventure/TownBuildingBonuses/Fortress_GuardPostStats/BaseCreatureToPlace", "CREATURE_DEFENDER");
+        // exe 00853f90: nothing unless BaseCreatureToPlace is set and its record has no BaseCreature (+0x100); the creature
+        // and count come from FUN_00cd0a30 (the adventure side's GuardPostCreature / GuardPostCount).
+        string baseCreature = db.Stats.Str("adventure/TownBuildingBonuses/Fortress_GuardPostStats/BaseCreatureToPlace", "CREATURE_DEFENDER");
+        if (!db.Creatures.TryGetValue(baseCreature, out var bc) || bc.BaseCreature is { Length: > 0 } and not "CREATURE_UNKNOWN") return;   // CREATURE_UNKNOWN = 0
+        string creature = setup.GuardPostCreature ?? baseCreature;
         if (!db.Creatures.ContainsKey(creature)) return;
         string node = s.Siege != null ? "CellToPlaceWithFort" : "CellToPlaceNoFort";
         int ix = (int)db.Stats.Get($"adventure/TownBuildingBonuses/Fortress_GuardPostStats/{node}/x", s.Siege != null ? 12 : 8);
