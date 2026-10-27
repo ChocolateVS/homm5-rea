@@ -278,4 +278,32 @@ public class TownBuildRulesTests(Fixture f)
         while (g.S.Day == day) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
         Assert.Equal(g.MaxMana(h), h.Mana);
     }
+
+    [Theory]
+    [InlineData(false, false, 7)]
+    [InlineData(true, false, 14)]
+    [InlineData(false, true, 14)]
+    [InlineData(true, true, 28)]
+    public void DailyManaRegenerationFollowsTheExe(bool meditation, bool mysticism, int expected)
+    {
+        // 00b50470: mana += knowledge (vf 0x1c), ×2 for week 0x35 (00bcdc80, WEEK_OF_MEDITATION), ×2 with vf 0x174(0x28)
+        // (HERO_SKILL_MYSTICISM), only below the maximum and capped at it.
+        var (g, t) = Town();
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == g.Current.Index);
+        h.InTown = -1;
+        h.Knowledge = 7;
+        h.Skills.RemoveAll(s => s.SkillId == "HERO_SKILL_MYSTICISM");
+        h.Perks.RemoveAll(p => p is "HERO_SKILL_MYSTICISM" or "HERO_SKILL_BARBARIAN_MYSTICISM");
+        if (mysticism) h.Perks.Add("HERO_SKILL_MYSTICISM");
+        g.S.Day = 2;
+        g.S.MoonWeek = meditation ? "WEEK_OF_MEDITATION" : "WEEK_OF_NOTHING";
+        h.Mana = 0;
+        int day = g.S.Day;
+        while (g.S.Day == day) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
+        Assert.Equal(Math.Min(g.MaxMana(h), expected), h.Mana);
+        h.Mana = g.MaxMana(h) - 1;
+        day = g.S.Day;
+        while (g.S.Day == day) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
+        Assert.Equal(g.MaxMana(h), h.Mana);
+    }
 }

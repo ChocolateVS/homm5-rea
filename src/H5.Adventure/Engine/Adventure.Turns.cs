@@ -230,9 +230,13 @@ public sealed partial class Adventure
         h.DrankFromWellToday = false;
         h.MaxMovePoints = ComputeMaxMovePoints(h);
         h.MovePoints = h.MaxMovePoints + (h.StablesThisWeek && !h.InBoat ? Db.Stats.Root.Element("adventure").Int("ForWeekStablesMaxLandMovementBonus", 600) : 0);
-        // Mana regeneration. TODO(exe): exact daily regen (base + Mana Regeneration perk + Week of Meditation).
+        // Mana regeneration, 00b50470 (00b504a2..00b504e0): below the maximum (vf 0x12c = +0x140, set from vf 0x130 of the
+        // same knowledge) mana += knowledge (vf 0x1c = 00b4cd80, results below 2 read 1) ×2 when the hero's week (+0x1d0,
+        // set by the new-week handler 00b50880) is 0x35 WEEK_OF_MEDITATION (00bcdc80), ×2 more when hero vf 0x174(0x28)
+        // HERO_SKILL_MYSTICISM > 0; capped at the maximum.
         int max = MaxMana(h);
         int regen = Math.Max(1, h.Knowledge) * (S.MoonWeek == "WEEK_OF_MEDITATION" ? 2 : 1);
+        if (RawMastery(h, "HERO_SKILL_MYSTICISM") > Mastery.None) regen *= 2;
         // 00b50470 regenerates only below the maximum: mana above it (an Eldritch Spring's) stays.
         if (h.Mana < max) h.Mana = Math.Min(max, h.Mana + regen);
         // 00b50470: in a town (+0x17c) with a mage guild (building 6) or ability 0x27 (Stronghold TB_SPECIAL_1) the
