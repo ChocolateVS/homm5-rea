@@ -246,6 +246,6 @@ public partial class CustomGameWaitScreen : UiScreen
         var db = AdventureSession.SharedDb;
         var (game, opening) = H5.Adventure.Engine.Adventure.NewGame(db, _map, setup);
         GD.Print($"[H5] custom game {_map.Id}: humans {string.Join(",", setup.Players.Where(p => p.Human).Select(p => p.MapPlayer + 1))}, difficulty {setup.Difficulty}, time limit {_choice.TimeLimitMinutes}");
-        AdventureScreen.Open(AdventureSession.FromNewGame(_files ?? _generated?.Files ?? MapFiles.FromPak(Game.Instance.Fs, "Maps/Generated/map.xdb"), game, opening, setup.Seed, _choice.Map.Rmg));
+        AdventureScreen.Open(AdventureSession.FromNewGame(_files ?? _generated?.Files ?? MapFiles.FromPak(Game.Instance.Fs, "Maps/Generated/map.xdb"), game, opening, setup.Seed, _choice.Map.Rmg, _choice.TimeLimitMinutes));
     }
 }

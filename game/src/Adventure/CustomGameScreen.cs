@@ -402,6 +402,9 @@ public static partial class AdventureLauncher
             _shots = (spec[..c0], int.Parse(spec[(c0 + 1)..c1]), double.Parse(spec[(c1 + 1)..], System.Globalization.CultureInfo.InvariantCulture));
             return true;
         }
+        // `--adventure-time-limit=MINUTES`: the turn time limit of the custom game / hot-seat options (TurnTimerView).
+        if (arg == "--adventure-auto-close") { AdventureScreen.DevAutoCloseBoxes = true; return true; }
+        if (arg.StartsWith("--adventure-time-limit=")) { _timeLimit = int.Parse(arg["--adventure-time-limit=".Length..]); return true; }
         if (arg.StartsWith("--adventure-days=")) { AdventureScreen.AutoplayDays = int.Parse(arg["--adventure-days=".Length..]); return true; }
         if (arg == "--adventure-quit-when-done")
         {
@@ -422,6 +425,7 @@ public static partial class AdventureLauncher
     }
 
     static float? _zoom;
+    static int _timeLimit;
 
     static void ScheduleTests(AdventureScreen screen)
     {
@@ -487,6 +491,7 @@ public static partial class AdventureLauncher
         try
         {
             var session = AdventureSession.Start(map, seed);
+            session.TimeLimitMinutes = _timeLimit;
             var screen = AdventureScreen.Open(session);
             // The first frames after loading take seconds (GPU uploads); start test timers only
             // once rendering has settled so they fire in the intended order.

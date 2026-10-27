@@ -91,7 +91,18 @@ public partial class AdventureScreen : Control
         if (!Session.IsRemote) Campaign.ScriptUiBridge.Attach(this);
         // Quicksave/quickload, save/load keys and autosave (game/src/Save).
         Save.SaveHotkeys.Attach(this);
+        // 00598f90 → 0060ecf0: the turn timer view exists only when the world has a time limit (local games).
+        if (!Session.IsRemote && Session.TimeLimitMinutes > 0)
+        {
+            _turnTimer = new TurnTimerView(Session.TimeLimitMinutes);
+            AddChild(_turnTimer);
+            MoveChild(_turnTimer, _dialogLayer.GetIndex());
+            if (Session.IsHumanTurn) _turnTimer.NewTurn();
+        }
     }
+
+    TurnTimerView? _turnTimer;
+    ulong _battleStartMs;
 
     // ---------------------------------------------------------------- state helpers
 
@@ -480,6 +491,7 @@ public partial class AdventureScreen : Control
         DevHoverStep();
         UpdateHover();
         DrawFakeCursor();
+        _turnTimer?.Update(Session.IsHumanTurn);
         if (_playing || _modal > 0) return;
         if (Session.TryDequeue(out var ev, out var player))
         {
@@ -490,6 +502,8 @@ public partial class AdventureScreen : Control
         if (Session.S.Finished) return;
         if (Session.S.Battle != null && Session.Game.Current.Human && !Session.IsRemote) { StartBattle(); return; }
         if (!Session.IsHumanTurn) { if (!Session.IsRemote) RunComputerTurns(); return; }
+        // 00998520: a current human whose time left (0098e4e0) is 0 has the turn ended (CWorld slot 52).
+        if (_turnTimer is { Expired: true } && Session.PendingEvents == 0) { EndTurn(); return; }
         Hud.ShowEnemyTurn(-1);
         if (Autoplay) AutoplayStep();
     }
@@ -854,6 +868,7 @@ public partial class AdventureScreen : Control
                 await Dialog(done => Message("", msg.Text, null, done));
                 break;
             case H5.Adventure.Engine.TurnStarted ts:
+                if (s.Players.FirstOrDefault(p => p.Index == ts.Player) is { Human: true }) _turnTimer?.NewTurn();
                 if (Session.IsHotSeat)
                 {
                     // Hot-seat hand-over (AdvNet.HotSeatController): between two humans the stock
@@ -1107,6 +1122,7 @@ public partial class AdventureScreen : Control
             return;
         }
         var state = Session.CreatePendingBattle(out var seed);
+        _battleStartMs = Time.GetTicksMsec();
         // CCombatArenaScreen's ctor (FUN_0054c2f0, 0x0054ce2a) runs combat scripts only outside multiplayer and hotseat.
         var scriptHost = GetNodeOrNull<Campaign.ScriptUiBridge>("ScriptUiBridge")?.Host;
         Func<H5.Combat.Battle, H5.Scripting.Runtime.CombatScripting?>? scripts =
@@ -1142,6 +1158,8 @@ public partial class AdventureScreen : Control
         tree.CurrentScene = this;
         // Either side may have fled or surrendered; the engine reads the end reason (CFinishCombat 00af64b0).
         Session.ResolveBattle(finished.Battle.State);
+        // CCloseCombat (004e0f10): the combat's duration is credited to the player's turn timer.
+        _turnTimer?.AddCombat((long)(Time.GetTicksMsec() - _battleStartMs));
         foreach (var h in Session.S.Heroes) World.SyncHero(h);
         Hud.Refresh();
     }

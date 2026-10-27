@@ -112,7 +112,7 @@ public sealed class AdventureSession
     }
 
     /// <summary>A local game on a loaded map (stock, user or generated) with the given map players as humans (hot-seat).</summary>
-    public static AdventureSession StartLocal(H5.AdvNet.LoadedMap lm, IEnumerable<int> humanMapPlayers, ulong seed, int difficulty, H5.AdvNet.RmgSettings? generator = null)
+    public static AdventureSession StartLocal(H5.AdvNet.LoadedMap lm, IEnumerable<int> humanMapPlayers, ulong seed, int difficulty, H5.AdvNet.RmgSettings? generator = null, int timeLimitMinutes = 0)
     {
         var humans = humanMapPlayers.ToHashSet();
         var setup = new GameSetup { Seed = seed, Difficulty = difficulty };
@@ -124,12 +124,16 @@ public sealed class AdventureSession
         {
             Files = lm.Files ?? MapFiles.FromPak(H5Reborn.Game.Instance.Fs, "Maps/Generated/map.xdb"),
             Generator = generator,
+            TimeLimitMinutes = timeLimitMinutes,
         };
     }
 
     /// <summary>A local game the custom-game setup (UI/CustomGameWait) already created.</summary>
-    public static AdventureSession FromNewGame(MapFiles files, H5.Adventure.Engine.Adventure game, IEnumerable<AdvEvent> opening, ulong seed, H5.AdvNet.RmgSettings? generator) =>
-        new(game.Db, game.Map, game, opening, seed) { Files = files, Generator = generator };
+    public static AdventureSession FromNewGame(MapFiles files, H5.Adventure.Engine.Adventure game, IEnumerable<AdvEvent> opening, ulong seed, H5.AdvNet.RmgSettings? generator, int timeLimitMinutes = 0) =>
+        new(game.Db, game.Map, game, opening, seed) { Files = files, Generator = generator, TimeLimitMinutes = timeLimitMinutes };
+
+    /// <summary>Turn time limit in minutes, 0 = none (CWorld +0x94; custom game wait screen +0x270, hot-seat options).</summary>
+    public int TimeLimitMinutes { get; set; }
 
     /// <summary>The random map generator's options when the map was generated (saves regenerate it, MapSpec "rmg").</summary>
     public H5.AdvNet.RmgSettings? Generator { get; init; }
