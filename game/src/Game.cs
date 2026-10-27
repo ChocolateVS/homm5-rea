@@ -155,7 +155,7 @@ public partial class Game : Node
     /// texture stays GPU-compressed; fall back to the software decoder for
     /// anything Godot still can't read.
     /// </summary>
-    static Image? LoadDds(byte[] bytes, string path)
+    internal static Image? LoadDds(byte[] bytes, string path)
     {
         var image = new Image();
         if (bytes.Length >= 128 && PadMipChain(ref bytes) && image.LoadDdsFromBuffer(bytes) == Error.Ok)

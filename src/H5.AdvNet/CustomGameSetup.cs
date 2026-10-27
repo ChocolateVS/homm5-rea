@@ -173,12 +173,13 @@ public sealed class CustomGameSetup
         _map = map;
         LockOthers = lockOthers;
         BuildHeroPool(db);
+        var teams = H5.Adventure.Engine.Adventure.SlotTeams(map);
         foreach (var mp in map.Players.Where(p => p.Active))
         {
             bool hasHero = map.Objects.Any(o => o.Kind == ObjectKind.Hero && o.Owner == mp.Index) || mp.MainHeroUid != null || mp.HeroInTown;
             var s = new SetupSlot
             {
-                MapPlayer = mp.Index, Team = mp.Team, Colour = ColourOf(mp), CanBeHuman = mp.CanBeHuman, CanBeComputer = mp.CanBeComputer,
+                MapPlayer = mp.Index, Team = teams[mp.Index], Colour = ColourOf(mp), CanBeHuman = mp.CanBeHuman, CanBeComputer = mp.CanBeComputer,
                 CanClose = mp.CanBeDisabled, CanChangeBonus = mp.CanChangeBonus, ArtifactBonus = hasHero,
                 // 00ca0240: the start hero is chosen only for players whose hero is created in the main town.
                 HeroSelectable = mp.HeroInTown && !map.Objects.Any(o => o.Kind == ObjectKind.Hero && o.Owner == mp.Index),

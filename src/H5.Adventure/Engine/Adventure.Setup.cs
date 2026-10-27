@@ -40,15 +40,38 @@ public sealed partial class Adventure
 
     readonly Dictionary<int, string> _startHeroes = new();
 
+    /// <summary>
+    /// The players' teams as the game-setup model builds them (H5_Game.exe 00ca0240, used by every game start through
+    /// 00ca0c10 / 00ca0c70): per active player in map order the map's <c>Team</c> when the map has <c>CustomTeams</c>
+    /// (+0x100), else a new team of its own; the distinct teams are then renumbered 0.. in first-seen order.
+    /// Inactive players get -1.
+    /// </summary>
+    public static int[] SlotTeams(AdvMap map)
+    {
+        var result = new int[map.Players.Count];
+        var seen = new List<int>();
+        for (int i = 0; i < map.Players.Count; i++)
+        {
+            var mp = map.Players[i];
+            if (!mp.Active) { result[i] = -1; continue; }
+            int team = map.CustomTeams ? mp.Team : seen.Count;
+            int k = seen.IndexOf(team);
+            if (k < 0) { k = seen.Count; seen.Add(team); }
+            result[i] = k;
+        }
+        return result;
+    }
+
     void SetupPlayers(GameSetup setup)
     {
         foreach (var ps in setup.Players) if (ps.StartHero != null) _startHeroes[ps.MapPlayer] = ps.StartHero;
+        var teams = SlotTeams(Map);
         foreach (var ps in setup.Players.OrderBy(p => p.MapPlayer))
         {
             var mp = Map.Players[ps.MapPlayer];
             var race = ps.Race ?? mp.Race;
             if (!PlayableRaces.Contains(race)) race = PlayableRaces[S.Rng.Next(PlayableRaces.Length)];
-            var p = new PlayerState { Index = mp.Index, Team = mp.Team, Race = race, Colour = mp.Colour, Human = ps.Human && mp.CanBeHuman };
+            var p = new PlayerState { Index = mp.Index, Team = teams[mp.Index] >= 0 ? teams[mp.Index] : mp.Team, Race = race, Colour = mp.Colour, Human = ps.Human && mp.CanBeHuman };
             // Starting resources by difficulty (DefaultStats adventure/StartHuman|ComputerResources, fan manual p.325).
             var list = Db.Stats.Node(p.Human ? "adventure/StartHumanResources" : "adventure/StartComputerResources")?.Elements("Item").ToList();
             if (list is { Count: > 0 }) p.Purse = new Purse(Resources.Parse(list[Math.Min(S.Difficulty, list.Count - 1)]));

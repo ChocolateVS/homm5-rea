@@ -152,6 +152,69 @@ public class CustomGameSetupTests
     }
 }
 
+/// <summary>The custom game's options reach the started game (CustomGameSetup.ToGameSetup → Adventure.NewGame).</summary>
+public class CustomGameOptionPlumbingTests
+{
+    static H5.Adventure.Map.AdvMap Synthetic(bool customTeams, params (bool Active, int Team)[] players)
+    {
+        var m = new H5.Adventure.Map.AdvMap { CustomTeams = customTeams };
+        for (int i = 0; i < players.Length; i++)
+            m.Players.Add(new H5.Adventure.Map.MapPlayer { Index = i, Active = players[i].Active, Team = players[i].Team });
+        return m;
+    }
+
+    [Fact]
+    public void TeamsFollowCustomTeams()
+    {
+        // 00ca0240: without CustomTeams each active player is a team of its own; with it the map teams are renumbered
+        // 0.. in first-seen order; inactive players have none.
+        Assert.Equal(new[] { 0, 1, -1, 2 }, Adventure.Engine.Adventure.SlotTeams(Synthetic(false, (true, 0), (true, 0), (false, 0), (true, 0))));
+        Assert.Equal(new[] { 0, 0, 1, -1 }, Adventure.Engine.Adventure.SlotTeams(Synthetic(true, (true, 3), (true, 3), (true, 1), (false, 1))));
+        Assert.Equal(new[] { 0, 1, 0 }, Adventure.Engine.Adventure.SlotTeams(Synthetic(true, (true, -1), (true, 2), (true, -1))));
+    }
+
+    [Fact]
+    public void FreeForAllMapCanStartAndPlayersAreEnemies()
+    {
+        // A2M7 ("A Quest for a Beauty"): CustomTeams false, every player's Team 0 in the map data.
+        var lm = Env.Maps.Load(new AdvNetSettings { Map = "Maps/Multiplayer/A2M7" });
+        Assert.False(lm.Map.CustomTeams);
+        var s = new CustomGameSetup(lm.Map, lm.Db, "Me", false);
+        Assert.Equal(s.Slots.Count, s.Slots.Select(x => x.Team).Distinct().Count());
+        Assert.True(s.CanStart());
+        var (game, _) = Adventure.Engine.Adventure.NewGame(lm.Db, lm.Map, s.ToGameSetup(7, 1));
+        Assert.Equal(game.S.Players.Count, game.S.Players.Select(p => p.Team).Distinct().Count());
+    }
+
+    [Fact]
+    public void ChosenOptionsReachTheStartedGame()
+    {
+        var lm = Env.Maps.Load(new AdvNetSettings { Map = Env.TestMap });
+        var s = new CustomGameSetup(lm.Map, lm.Db, "Me", false);
+        // Human moves to the next colour, a closable computer row is closed, the human takes the gold bonus.
+        s.Apply(0, CustomGameSetup.Change.Colour, true, "Me");
+        int human = s.Slots.FindIndex(x => x.State == SetupSlot.SlotState.Human);
+        int closed = s.Slots.FindIndex(x => x.State == SetupSlot.SlotState.Computer && x.CanClose);
+        if (closed >= 0) s.Apply(closed, CustomGameSetup.Change.State, true, "Me");
+        var slot = s.Slots[human];
+        slot.CanChangeBonus = true;
+        while (slot.Bonus != 2) s.Apply(human, CustomGameSetup.Change.Bonus, true, "Me");
+        var setup = s.ToGameSetup(11, 3);
+        var (game, _) = Adventure.Engine.Adventure.NewGame(lm.Db, lm.Map, setup);
+        Assert.Equal(3, game.S.Difficulty);
+        var me = game.S.Players.Single(p => p.Human);
+        Assert.Equal(slot.MapPlayer, me.Index);
+        if (closed >= 0 && s.Slots[closed].State == SetupSlot.SlotState.Closed)
+            Assert.DoesNotContain(game.S.Players, p => p.Index == s.Slots[closed].MapPlayer);
+        // Gold bonus (004fd860): 500 + (rng % 6) · 100 on top of the difficulty's start gold.
+        setup.Players.Single(p => p.Human).Bonus = null;
+        var (plain, _) = Adventure.Engine.Adventure.NewGame(lm.Db, lm.Map, setup);
+        int extra = me.Purse[H5.Adventure.State.Purse.Gold] - plain.S.Players.Single(p => p.Human).Purse[H5.Adventure.State.Purse.Gold];
+        Assert.InRange(extra, 500, 1000);
+        Assert.Equal(0, extra % 100);
+    }
+}
+
 /// <summary>Saves of generated maps regenerate the map from the generator options (MapSpec "rmg").</summary>
 public class GeneratedMapReopenTests
 {

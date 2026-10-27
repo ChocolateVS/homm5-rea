@@ -51,7 +51,9 @@ public partial class CustomGameWaitScreen : UiScreen
         Bus.On("start", Start);
         Bus.On("switchtopref", () => { SetVisible("container", false); SetVisible("preferences_container", true); });
         Bus.On("switchtodesc", () => { SetVisible("container", true); SetVisible("preferences_container", false); });
-        foreach (var n in new[] { "screenshoot1", "screenshoot2" }) SetVisible(n, false);
+        // 007769d0 → 00722140: the map preview slideshow over screenshoot1 / screenshoot2 (3000 ms hold, 3000 ms fade).
+        var slides = new ThumbnailSlideshow(Find("screenshoot1"), Find("screenshoot2"));
+        AddChild(slides);
         if (_choice == null) return;
         try
         {
@@ -71,6 +73,7 @@ public partial class CustomGameWaitScreen : UiScreen
             _setup = new CustomGameSetup(_map, AdventureSession.SharedDb, Profile, lockOthers);
         }
         catch (Exception e) { GD.PushError($"[H5] custom game map: {e}"); return; }
+        slides.SetImages(_choice.Map.Rmg != null ? GeneratedMaps.Thumbnails(_choice.Map.Rmg) : MapThumbnails.FromMap(_files!));
         Find("container")?.AddChild(_desc);
         Find("preferences_container")?.AddChild(_prefs);
         SetVisible("preferences_container", false);

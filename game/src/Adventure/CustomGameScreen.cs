@@ -17,7 +17,7 @@ namespace H5Reborn.Adventure;
 public partial class CustomGameScreen : UiScreen
 {
     public sealed record MapEntry(MapCatalog.MapRef? Ref, RmgSettings? Rmg, string Name, string Description, int Size,
-        List<int> Teams, string GoalKey, string? CustomGoal, int Folder);
+        List<int> Teams, string GoalKey, string? CustomGoal, int Folder, bool Underground = false);
 
     /// <summary>What Create hands to the player setup screen.</summary>
     public sealed record Choice(MapEntry Map, int TimeLimitMinutes, int Difficulty);
@@ -29,6 +29,8 @@ public partial class CustomGameScreen : UiScreen
     readonly UiScrollerView _timeBar = new(), _diffBar = new();
     readonly BitmapText _desc = new() { AnchorRight = 1, AnchorBottom = 1, Wrap = true };
     List<MapEntry> _visible = new();
+    readonly ThumbnailSlideshow _slides;
+    MapEntry? _shownMap;
     int _selected, _scroll, _top;
     const int RowHeight = 21;
 
@@ -41,7 +43,9 @@ public partial class CustomGameScreen : UiScreen
     {
         _all = LoadEntries();
         _all.AddRange(GeneratedMaps.All().Select(Generated));
-        foreach (var n in new[] { "screenshoot1", "screenshoot2" }) SetVisible(n, false);
+        // The map preview: the stock slideshow over screenshoot1 / screenshoot2 (00707920).
+        _slides = new ThumbnailSlideshow(Find("mapinfo/screenshoot1"), Find("mapinfo/screenshoot2"));
+        AddChild(_slides);
         // The selected map's name and description go in the description panel's scroll area (as on UI/MPCreate).
         foreach (var n in new[] { "mapname", "mapdescheader", "mapdesc" }) SetVisible(n, false);
         if (Find("mapinfo/container") is { } descBox) descBox.AddChild(_desc);
@@ -77,13 +81,30 @@ public partial class CustomGameScreen : UiScreen
         // Dev/test hooks for screenshots: H5_CUSTOM_SORT=N clicks sort column N; H5_CUSTOM_CREATE=1 presses Create.
         if (System.Environment.GetEnvironmentVariable("H5_CUSTOM_SORT") is { } sort && int.TryParse(sort, out var col))
             Callable.From(() => SortBy(col)).CallDeferred();
+        // H5_CUSTOM_SELECT=N selects list row N (after the sort).
+        if (System.Environment.GetEnvironmentVariable("H5_CUSTOM_SELECT") is { } row && int.TryParse(row, out var r))
+            Callable.From(() => { _selected = r; Redraw(); }).CallDeferred();
         if (System.Environment.GetEnvironmentVariable("H5_CUSTOM_CREATE") == "1")
             ((SceneTree)Engine.GetMainLoop()).CreateTimer(2).Timeout += Create;
     }
 
     static MapEntry Generated(GeneratedMaps.Record r) =>
         new(null, r.Settings, r.Name, r.Settings.Template, RmgSizeTiles(r.Settings.Size), Enumerable.Range(0, r.Settings.Players).ToList(),
-            "goal3", null, CustomMapList.Generated);
+            "goal3", null, CustomMapList.Generated, r.Settings.Underground);
+
+    /// <summary>The preview images of a list entry (cached per entry).</summary>
+    readonly Dictionary<MapEntry, List<Texture2D>> _thumbs = new();
+
+    internal static List<Texture2D> Thumbnails(MapEntry m)
+    {
+        try
+        {
+            if (m.Rmg != null) return GeneratedMaps.Thumbnails(m.Rmg);
+            using var files = m.Ref!.Open(Game.Instance.Fs);
+            return MapThumbnails.FromMap(files);
+        }
+        catch (Exception e) { GD.PushWarning($"[H5] thumbnails {m.Name}: {e.Message}"); return new(); }
+    }
 
     static int RmgSizeTiles(int s) => new[] { 72, 96, 136, 176, 216, 256, 320 }[Math.Clamp(s, 0, 6)];
 
@@ -109,16 +130,18 @@ public partial class CustomGameScreen : UiScreen
                 string? Text(string element) =>
                     (string?)root.Element(element)?.Attribute("href") is { Length: > 0 } href ? files.ReadText(href, files.MapXdbPath)?.Trim() : null;
                 int size = (int?)root.Element("TileX") ?? 0;
+                // 00ca0240: without CustomTeams every active player is a team of its own.
+                bool customTeams = (string?)root.Element("CustomTeams") == "true";
                 var teams = new List<int>();
                 foreach (var p in root.Element("players")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
-                    if ((string?)p.Element("ActivePlayer") == "true") teams.Add((int?)p.Element("Team") ?? teams.Count);
+                    if ((string?)p.Element("ActivePlayer") == "true") teams.Add(customTeams ? (int?)p.Element("Team") ?? teams.Count : teams.Count);
                 var custom = Text("CustomGoal");
                 var kind = root.Element("Objectives")?.Element("Primary")?.Descendants("Kind").Select(k => k.Value.Trim()).FirstOrDefault();
                 var name = Text("NameFileRef");
                 // No name text: the map's folder name (the exe's fallback is not traced).
                 if (string.IsNullOrEmpty(name)) name = Path.GetFileName(Path.GetDirectoryName(files.MapXdbPath) ?? r.Id);
                 list.Add(new MapEntry(r, null, name, Text("DescriptionFileRef") ?? "", size, teams,
-                    CustomMapList.GoalKey(!string.IsNullOrEmpty(custom), kind), custom, folder));
+                    CustomMapList.GoalKey(!string.IsNullOrEmpty(custom), kind), custom, folder, (string?)root.Element("HasUnderground") == "true"));
             }
             catch (Exception e) { GD.PushWarning($"[H5] map list {r.Id}: {e.Message}"); }
         }
@@ -202,10 +225,24 @@ public partial class CustomGameScreen : UiScreen
             n.SetValue("players", sel != null ? PlayersText(sel) : "");
             n.SetValue("size", sel != null ? SizeName(sel.Size) : "");
             n.SetValue("goal", sel != null ? GoalText(sel) : "");
+            // 00707920: "underground" = the panel's related text underground_yes / underground_no (descriptor +0x48).
+            n.SetValue("underground", sel != null ? UndergroundText(sel.Underground) : "");
+        }
+        if (!ReferenceEquals(sel, _shownMap))
+        {
+            // 00707920: a new selection restarts the slideshow with the map's thumbnails (3000 ms hold, 3000 ms fade);
+            // no selection hides it.
+            _shownMap = sel;
+            if (sel != null && !_thumbs.ContainsKey(sel)) _thumbs[sel] = Thumbnails(sel);
+            _slides.SetImages(sel != null ? _thumbs[sel] : new List<Texture2D>());
         }
         // 007747a0: Create is enabled only with a map selected.
         if (Find("CreateBtn") is { } create) create.Enabled = sel != null;
     }
+
+    string UndergroundText(bool yes) =>
+        Find("mapinfo") is { } panel && panel.Window.RelatedTexts.TryGetValue(yes ? "underground_yes" : "underground_no", out var path)
+            ? UiResources.Instance.Text(path)?.Trim() ?? "" : "";
 
     int TimeLimit => CustomGameOptions.Minutes(_timeBar.Position + CustomGameOptions.TimeLimitMin);
 
@@ -319,6 +356,28 @@ public static class GeneratedMaps
         };
         File.WriteAllText(Path.Combine(dir, $"rmg_{s.Seed}.json"), j.ToJsonString());
         return new Record(name, s);
+    }
+
+    /// <summary>
+    /// The generated map's preview, one minimap per floor (the exe saves minimap_floor_NN with the map, 00c1dad0):
+    /// kept next to the options as rmg_&lt;seed&gt;_floorN.png, drawn from the regenerated map when missing.
+    /// </summary>
+    public static List<Texture2D> Thumbnails(RmgSettings s)
+    {
+        var dir = ProjectSettings.GlobalizePath(Dir);
+        string PathOf(int f) => Path.Combine(dir, $"rmg_{s.Seed}_floor{f}.png");
+        var list = new List<Texture2D>();
+        for (int f = 0; File.Exists(PathOf(f)); f++)
+        {
+            var img = Image.LoadFromFile(PathOf(f));
+            if (img != null) list.Add(ImageTexture.CreateFromImage(img));
+        }
+        if (list.Count > 0) return list;
+        var map = AdvNet.AdvNetGame.Maps.Load(new AdvNetSettings { Rmg = s }).Map;
+        list = MapThumbnails.FromGenerated(map);
+        Directory.CreateDirectory(dir);
+        for (int f = 0; f < list.Count; f++) list[f].GetImage().SavePng(PathOf(f));
+        return list;
     }
 }
 
