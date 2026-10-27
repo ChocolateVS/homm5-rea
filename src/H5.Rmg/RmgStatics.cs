@@ -77,7 +77,8 @@ public sealed partial class RmgGenerator
     /// static when it is below 1 / (blocked tiles + 1) (0x009145b0, 0x0091a420; a big one's tile joins +0xb4).
     /// The underground copies 0x00baa4a0 (CGameSubInfernoZone, vf 0x3c after each creation) and 0x00928cb0
     /// (CGameSubterraZone) are this loop without the lakes, the mountains and 0x00915e00.
-    /// TODO(exe): the terrain under "Mountain" statics with more than 15 tiles (0x00915e00) is not painted.
+    /// A placed static whose name holds "Mountain" (0x009143e0 → 0x00914150, name longer than 7) with more than 15
+    /// blocked tiles raises the ground under it (0x00915e00, <see cref="MountainHeights"/>).
     /// </summary>
     void BigStatics(RmgResult r, RmgZone z, bool lakesAndMountains)
     {
@@ -110,6 +111,7 @@ public sealed partial class RmgGenerator
                         if (z.Class == RmgZoneClass.SubInferno) StaticLight(z, s);   // 0x00baa4a0 only
                         if (big) z.BigStaticPoints.Add((x, y));
                         Stamp(z, x, y, a, d, null);
+                        if (s.Length > 7 && NameHas(s, "Mountain") && d.Blocked.Count > 15) MountainHeights(z, x, y, a, d);
                     }
                     break;
                 }
@@ -125,11 +127,7 @@ public sealed partial class RmgGenerator
     /// 0, distance and border distance &gt; 2 get level + 2, diagonal ones + 3, both flag 0x80; a pass that found fewer
     /// than its level (but some) tiles ends it. The lake's tiles are those with a level and distance &gt; 3; then
     /// 0x009225b0 per centre and 0x00922760 over the tiles.
-    /// The lake tiles go to 0x00916f80 (zone id, race) before the objects: each tile's four corners are painted with the
-    /// zone preset's WaterTile (Tiles +0x64) at strength 0x96, then WaterBottomTile (+0x70) with a strength from the
-    /// tile's distance (x 0x1e, or 0xf for Necropolis, capped at 200) and the depth grid (floor +0x44). Our one-entry-per-tile
-    /// layer takes the WaterTile (TT_SMALL_WATER: not walkable). TODO(exe): corner strengths, WaterBottomTile and the
-    /// depth grid are not modelled.
+    /// The lake tiles go to 0x00916f80 (<see cref="LakeTerrain"/>) before the objects.
     /// </summary>
     void Lakes(RmgResult r, RmgZone z, RmgRacePreset race)
     {
@@ -186,10 +184,68 @@ public sealed partial class RmgGenerator
         for (int x = 1; x < W - 1; x++)
             for (int y = 1; y < H - 1; y++)
                 if (level[f.At(x, y)] != 1000f && f.Dist[f.At(x, y)] > 3) lake.Add((x, y));
-        if (race.WaterTile.Length > 0)
-            foreach (var (x, y) in lake) r.TileLayers[z.Floor][y * W + x] = race.WaterTile;
+        LakeTerrain(r, z, race, lake);
         foreach (var c in centres) LakeCentreObjects(r, z, race, c.X, c.Y);
         LakeTileObjects(r, z, race, lake);
+    }
+
+    /// <summary>
+    /// exe 0x00916f80 (builder +0x60; the lake tiles, zone id, zone race +0x18), called by 0x00924940 before the lake
+    /// objects. Per lake tile (x, y) in order: n = its orthogonal neighbours (0x00f46718) in the list; the +0x20 preset's
+    /// WaterTile (+0x64) at 0x96 on its four vertices; with distance &gt; 3 and n &gt; 2 the depth grid's 4 x 4 cells (rows
+    /// 2y .. 2y + 3, columns 2x .. 2x + 3) get m·0x3c − 0x3c, or 0xff when that is not below 0xff, m = min(distance,
+    /// border distance); the WaterBottomTile (+0x70) on the four vertices with strength min((m − k)·s, 200), k = 4 and
+    /// s = 0xf for race 7 (Necropolis), else 2 and 0x1e. Then twice over the list (entry i % n, no bounds tests) the
+    /// /6 smoothing of 0x00916790 on those cells (±2, then ±1); then every tile of 1 .. size − 2 with more than two of
+    /// its 8 neighbours (0x00f466d8) flagged exactly 0x80 gets flags 0x82.
+    /// TODO(exe): the vertex strengths (0x00913510) and the WaterBottomTile are not modelled: the tile's one layer entry
+    /// is the WaterTile.
+    /// </summary>
+    void LakeTerrain(RmgResult r, RmgZone z, RmgRacePreset race, List<(int X, int Y)> lake)
+    {
+        var f = Floors[z.Floor];
+        var lakeSet = new HashSet<(int, int)>(lake);
+        int cols = 2 * f.H + 1;
+        var d = f.Depth;
+        foreach (var (x, y) in lake)
+        {
+            int n = 0;
+            foreach (var (dx, dy) in Ortho4) if (lakeSet.Contains((x + dx, y + dy))) n++;
+            if (race.WaterTile.Length > 0) r.TileLayers[z.Floor][y * W + x] = race.WaterTile;
+            int i = f.At(x, y);
+            if (f.Dist[i] > 3 && n > 2)
+            {
+                int m = Math.Min(f.Dist[i], f.BorderDist[i]);
+                byte c = m * 0x3c - 0x3c < 0xff ? (byte)(m * 0x3c - 0x3c) : (byte)0xff;
+                for (int k = 0; k < 4; k++)
+                    for (int j = 0; j < 4; j++) d[(2 * y + k) * cols + 2 * x + j] = c;
+            }
+        }
+        for (int k = 0; k < 2 * lake.Count; k++)
+        {
+            var (x, y) = lake[k % lake.Count];
+            for (int a = 0; a < 4; a++)
+                for (int j = 0; j < 4; j++)
+                {
+                    int at = (2 * y + a) * cols + 2 * x + j;
+                    d[at] = (byte)((d[at - 2 * cols] + d[at + 2 * cols] + d[at - 2] + d[at + 2] + d[at] * 2) / 6);
+                }
+            for (int a = 0; a < 4; a++)
+                for (int j = 0; j < 4; j++)
+                {
+                    int at = (2 * y + a) * cols + 2 * x + j;
+                    d[at] = (byte)((d[at - cols] + d[at + cols] + d[at - 1] + d[at + 1] + d[at] * 2) / 6);
+                }
+        }
+        var ring = new List<int>();
+        for (int x = 1; x < W - 1; x++)
+            for (int y = 1; y < H - 1; y++)
+            {
+                int n = 0;
+                foreach (var (dx, dy) in Around8) if (f.Flags[f.At(x + dx, y + dy)] == TileFlags.Lake) n++;
+                if (n > 2) ring.Add(f.At(x, y));
+            }
+        foreach (int i in ring) f.Flags[i] = TileFlags.Lake | TileFlags.Blocked;
     }
 
     /// <summary>exe 0x009225b0: Next(3) + 1 of the preset's OverLakeCenterObjects (+0xcc), each turned by Next(4) at (x − 2 + Next(5), y − 2 + Next(5)) (y offset drawn first).</summary>
@@ -225,8 +281,8 @@ public sealed partial class RmgGenerator
     /// <summary>
     /// exe 0x00922a10: the zone tiles whose current distance field value is &gt; 4; per tile without an earlier mountain
     /// closer than 4 (0x00e11c80): one of the preset's Mountains (+0xc0) by Next(n), a Next(4) turn, 0x00919a50, then
-    /// 0x009145b0; its rotated blocked tiles get flag 0x100 (2 once all mountains stand). No 0x0091a420.
-    /// TODO(exe): the terrain under the mountains (0x00915e00) is not painted.
+    /// 0x009145b0; its rotated blocked tiles get flag 0x100 (2 once all mountains stand), then 0x00915e00 raises the
+    /// ground under it (<see cref="MountainHeights"/>). No 0x0091a420.
     /// </summary>
     void Mountains(RmgResult r, RmgZone z, RmgRacePreset race)
     {
@@ -251,10 +307,30 @@ public sealed partial class RmgGenerator
                 if (f.In(tx, ty)) f.Flags[f.At(tx, ty)] = TileFlags.Mountain;
                 tiles.Add((tx, ty));
             }
+            MountainHeights(z, x, y, a, d);
             placed.Add((x, y));
         }
         foreach (var (tx, ty) in tiles)
             if (f.In(tx, ty)) f.Flags[f.At(tx, ty)] = TileFlags.Blocked;
+    }
+
+    /// <summary>
+    /// exe 0x00915e00 (position, angle, blocked tiles; disassembly, the decompile is pruned): for each rotated blocked
+    /// offset (dx, dy) (0x00b0be60) with r = √(dx² + dy²) and 3.5 − r &gt; 0 (0x00e57d10, 0x00e0be10), 0x009127b0 adds
+    /// 2·(3.5 − r) to the floor-0 height of vertex (row chop(y + dy), column chop(x + dx)). Returns false.
+    /// </summary>
+    void MountainHeights(RmgZone z, int px, int py, float angle, H5.Adventure.Map.SharedDef d)
+    {
+        var f = Floors[0];
+        int q = ExeQuarter(angle);
+        foreach (var b in d.Blocked)
+        {
+            var (ox, oy) = Rotate(b, q);
+            double r = Math.Sqrt((double)oy * oy + (double)ox * ox);
+            if (!(3.5 - r > 0.0)) continue;
+            float add = (float)((3.5 - r) * 2.0);
+            f.Heights[f.Lv(py + oy, px + ox)] += add;
+        }
     }
 
     /// <summary>

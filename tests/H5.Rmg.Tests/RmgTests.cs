@@ -205,6 +205,19 @@ public class GeneratorTests(RmgFixture f)
         Assert.Equal(0, unreachable);
     }
 
+    /// <summary>
+    /// Lakes (exe 0x00924940 → 0x00916f80): the depth grid is written under lake tiles and the tiles with more than
+    /// two 0x80 neighbours become 0x82; mountains raise the ground (0x00915e00) before the height pass.
+    /// </summary>
+    [StockFact]
+    public void LakesWriteTheDepthGridAndBlockTheirTiles()
+    {
+        var r = f.Generate("S3-4P2-4Z4K1M", 4, 1638846894, 4);
+        var fl = r.Generator.Floors[0];
+        Assert.Contains(fl.Flags, x => x == (TileFlags.Lake | TileFlags.Blocked));
+        Assert.Contains(fl.Depth, b => b > 0x8c);
+    }
+
     [Fact]
     public void ScreenListsTemplatesLikeTheExe()
     {
@@ -300,7 +313,7 @@ public class GeneratorTests(RmgFixture f)
         var u = g.Floors[1];
         Assert.Contains(Enumerable.Range(0, u.Level.Length), i => u.Level[i] == 0x20 && Math.Abs(u.Heights[i] - 36f) < 1e-3f && i / (u.W + 1) is > 4 and < 120);
         Assert.All(g.Floors[0].Level, l => Assert.Equal(0x10, l));
-        Assert.InRange(g.Floors[0].Heights.Max(), 6f, 9.5f);
+        Assert.InRange(g.Floors[0].Heights.Max(), 6f, 16f);   // mountains (0x00915e00) add up to 2·3.5 per offset; the stock T_I2 002 reaches 14.19
         var map = r.ToAdvMap(new SharedCatalog(f.Xdb));
         Assert.Equal(u.Heights, map.Floors[1]!.Data!.Heights.Data);
         Assert.Equal(u.Level, map.Floors[1]!.Data!.VertexFlags!.Data);
