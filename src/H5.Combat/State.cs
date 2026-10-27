@@ -254,6 +254,12 @@ public sealed class BattleState
     /// player's towns, player vf 0xc4, none with town vf 0x34(4) = TB_TAVERN); set by the adventure host, false in duels.
     /// </summary>
     public bool[] NoTavernTown = { false, false };
+    /// <summary>
+    /// Pile of Skulls: towns with town ability 0x2c (Stronghold TB_SPECIAL_4) the side's player owns — exe player +0x1c8
+    /// (recount 004fcd80, 004fce0c), read through player vf 0x20 (00500bf0, +0x198) +0x30 at the battle start 008ab4d0.
+    /// 0 for neutrals and duels. Filled by the adventure layer.
+    /// </summary>
+    public int[] PileOfSkulls = { 0, 0 };
     public int DeployColumns0 = 2, DeployColumns1 = 2;
     public double Time;
     /// <summary>Current actor (unit id, or Actor.Hero(side)); null while no one is acting.</summary>

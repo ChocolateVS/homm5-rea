@@ -300,6 +300,9 @@ public sealed partial class Adventure
         // CCombatArmy::CanRetreat (004d9e20) reason 8: the army's player owns no town with a tavern.
         for (int side = 0; side < 2; side++)
             if (BattleSideOwner(pb, side) is var owner && owner >= 0 && !OwnsTavernTown(owner)) state.NoTavernTown[side] = true;
+        // Pile of Skulls (player +0x1c8, read at the battle start 008ab4d0): the side player's towns with ability 0x2c.
+        for (int side = 0; side < 2; side++)
+            if (BattleSideOwner(pb, side) is var owner && owner >= 0) state.PileOfSkulls[side] = PileOfSkullsTowns(owner);
         // What the combat AI's flee decision (00c972d0) reads from the adventure hero and its player.
         foreach (var (side, h) in new[] { (0, (HeroState?)att), (1, defHero) })
             if (h != null) state.AiRetreat[side] = AiRetreatInfoFor(h);
@@ -333,6 +336,12 @@ public sealed partial class Adventure
     }
 
     /// <summary>CanRetreat's town loop (004d9e20): any town of the player (player vf 0xc4) with TB_TAVERN (town vf 0x34(4)) built.</summary>
+    /// <summary>
+    /// Player +0x1c8 (recount 004fcd80: +1 per town of the player's list, vf 0xc4, whose HasAbility(0x2c) holds — Stronghold
+    /// TB_SPECIAL_4, Pile of Skulls). The recount's call times are not traced; the count is taken at the battle start.
+    /// </summary>
+    public int PileOfSkullsTowns(int player) => S.Towns.Count(t => t.Owner == player && t.Type == Towns.Stronghold && t.Level("TB_SPECIAL_4") > 0);
+
     public bool OwnsTavernTown(int player) => S.Towns.Any(t => t.Owner == player && t.Level("TB_TAVERN") >= 1);
 
     /// <summary>

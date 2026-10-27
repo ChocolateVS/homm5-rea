@@ -135,6 +135,21 @@ public class SiegeHandOffTests(Fixture f)
         Assert.Equal(up, g.SiegeFor(t).GuardPostCreature);
     }
 
+    /// <summary>Player +0x1c8 (recount 004fcd80 / 004fce0c): +1 per owned town with ability 0x2c (Stronghold TB_SPECIAL_4).</summary>
+    [Fact]
+    public void PileOfSkullsCountsThePlayersTowns()
+    {
+        var g = f.NewGame();
+        g.S.Towns.RemoveAll(t => t.Owner == 0);
+        Assert.Equal(0, g.PileOfSkullsTowns(0));
+        g.S.Towns.Add(new TownState { Type = "TOWN_STRONGHOLD", Owner = 0, Built = { ["TB_SPECIAL_4"] = 1 } });
+        g.S.Towns.Add(new TownState { Type = "TOWN_STRONGHOLD", Owner = 0, Built = { ["TB_SPECIAL_4"] = 1 } });
+        g.S.Towns.Add(new TownState { Type = "TOWN_STRONGHOLD", Owner = 0, Built = { ["TB_SPECIAL_3"] = 1 } });
+        g.S.Towns.Add(new TownState { Type = "TOWN_FORTRESS", Owner = 0, Built = { ["TB_SPECIAL_4"] = 1 } });
+        g.S.Towns.Add(new TownState { Type = "TOWN_STRONGHOLD", Owner = 1, Built = { ["TB_SPECIAL_4"] = 1 } });
+        Assert.Equal(2, g.PileOfSkullsTowns(0));
+    }
+
     /// <summary>
     /// FUN_00cd0a30: town vf 0x78 (sum of building levels) × CreaturesPerTownLevelPerMonth (5) × (day counter / 28 + 1),
     /// the day counter being 0-based (day 28 is still month 1, day 29 month 2).

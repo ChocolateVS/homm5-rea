@@ -144,6 +144,25 @@ public class AuditSkillTests(GameDataFixture f)
         }
     }
 
+    // exe 008ab4a3..008ab51f: player +0x1c8 (towns with ability 0x2c, Pile of Skulls) · PileOfOurFoes_StartRPBonus
+    // (RPGStats +0x4a0) at the battle start, outside the hero block, through the rage gain.
+    [Fact]
+    public void PileOfSkullsGivesStartRagePerTown()
+    {
+        var (b, s) = Setup(new[] { ("CREATURE_GOBLIN", 20) }, new[] { ("CREATURE_PEASANT", 20) });
+        var gob = Of(s, "CREATURE_GOBLIN");
+        if (!gob.Abilities.Contains("ABILITY_DEMON_RAGED")) gob.Abilities.Add("ABILITY_DEMON_RAGED");
+        var h = s.Heroes[0];
+        h.Specialization = "";
+        h.Perks.RemoveAll(p => p is "HERO_SKILL_POWER_OF_BLOOD" or "HERO_SKILL_ABSOLUTE_RAGE" or "HERO_SKILL_MEMORY_OF_OUR_BLOOD");
+        s.PileOfSkulls[0] = 2;
+        gob.RagePoints = 0;
+        b.Begin();
+        int bonus = (int)f.Db.Stats.Get("combat/Creatures/Stronghold/DemonRage/PileOfOurFoes_StartRPBonus", -1);
+        Assert.True(bonus > 0);
+        Assert.Equal(2 * bonus, gob.RagePoints);
+    }
+
     // exe FUN_0097d740 (FPU chop, +0.5 at 0097d784): the perks' extra elemental damage rounds half up.
     [Fact]
     public void ChillingPerkDamageRoundsHalfUp()

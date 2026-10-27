@@ -245,6 +245,7 @@ MECH = [
     ('Siege: catapult, towers, walls, earthquake, moat', 'MATCH', '00b3b7d0, 00bfdfb0, 00a5c5a0, 0097d7b0', 'EXE_FINDINGS (moat field CArenaMoat: GAP, combat_sweep_2.md)'),
     ('Siege building health: data (< 1 → 200), TOWN_BONUS_WALLS (0x23) +50, then Stoneworks (ability 0x25) health / 2 + health', 'FIXED', '00bfe590', 'SiegeTests.WallsSpecialisationIsAddedBeforeStoneworks (was ×1.5 before the +50)'),
     ('Fortress Guard Post placement: FUN_00cd0a30 creature (BaseCreatureToPlace or its first upgrade the town offers) and count at CellToPlaceWithFort / NoFort', 'FIXED', '00853f90, 00cd0a30, 00cd46c0', 'SiegeTests.GuardPostPlacesTheCreatureHandedOver (was always BaseCreatureToPlace)'),
+    ('Pile of Skulls start rage: player +0x1c8 (towns with ability 0x2c) · PileOfOurFoes_StartRPBonus, for every Demon-Raged stack of a player army', 'FIXED', '008aaec0 (008ab4a3..008ab51f), 00500bf0, 004fcd80', 'AuditSkillTests.PileOfSkullsGivesStartRagePerTown (was not built)'),
     ('ATB continuous time (ATBMin/Max dead code)', 'MATCH', 'EXE_FINDINGS', 'EXE_FINDINGS'),
     ('Spell damage rounding / empowered ×1.5', 'MATCH', '00976b90', 'EXE_FINDINGS'),
     ('Surrender / retreat conditions and ransom', 'FIXED', '004d9e20, 004d9780, 004da8d0, 004da9a0', 'AuditRetreatTests (combat_heroes.md, combat_sweep_2.md)'),

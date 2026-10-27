@@ -1264,6 +1264,11 @@ public sealed partial class Battle
                 // nothing; otherwise Memory of our Blood gives Range(MinRP/Step, MaxRP/Step)·Step.
                 if (mine.HasPerk(Sk.AbsoluteRage)) AddRage(u, (int)Stats.Get("combat/Creatures/Stronghold/DemonRage/AbsoluteRageRP", 500));
                 else if (mine.HasPerk(Sk.MemoryOfBlood)) AddRage(u, MemoryOfBloodRage());
+                // 008ab4a3..008ab51f (outside the hero block): the army's player (army vf 0xc → vf 4, none for neutrals)
+                // with +0x1c8 > 0 gives +0x1c8 · PileOfOurFoes_StartRPBonus (RPGStats +0x4a0, DemonRage +0xa0) through
+                // the same rage gain (vf 0x7c).
+                int piles = S.PileOfSkulls[u.Side];
+                if (piles > 0) AddRage(u, piles * (int)Stats.Get("combat/Creatures/Stronghold/DemonRage/PileOfOurFoes_StartRPBonus", 0));
             }
         }
     }
