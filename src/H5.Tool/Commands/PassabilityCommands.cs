@@ -61,20 +61,41 @@ sealed class AdvPassCommand : ICommand
                     continue;
                 }
                 if (o.Kind is ObjectKind.Static or ObjectKind.Unknown || o.Shared.Active.Count == 0) continue;
-                if (o.ActiveTiles.All(t => !f.InBounds(t.X, t.Y) || f.TerrainBlocked(t.X, t.Y)))
+                // Action tiles are enterable over any terrain (009d1410 → 0045d690): an object is closed when every
+                // action tile is in the object map's blocked set or has no enterable neighbour.
+                if (o.ActionTiles.All(t => !f.InBounds(t.X, t.Y) || f.ObjectBlocked[t.Y * f.Width + t.X] ||
+                        !Neighbours(t).Any(n => f.InBounds(n.X, n.Y) && !f.Blocked[n.Y * f.Width + n.X])))
                 {
                     entr++;
-                    if (verbose) Console.WriteLine($"  entrance refused {o} {Probe(f, o.ActiveTiles.First())}");
+                    if (verbose) Console.WriteLine($"  entrance closed {o} {Probe(f, o.ActionTiles.First())}");
                 }
             }
-            int un = Unreachable(m, (f, x, y) => f.Blocked[y * f.Width + x], verbose ? "new" : null);
-            int uo = Unreachable(m, (f, x, y) => OldBlocked(m, f, x, y), null);
-            sb.Append($" | entrances refused {entr}, heroes refused {heroes}, unreachable {un} (old rule {uo})");
+            var newSet = Unreachable(m, (f, x, y) => f.Blocked[y * f.Width + x]);
+            var oldSet = Unreachable(m, (f, x, y) => OldBlocked(m, f, x, y));
+            int un = newSet.Count, uo = oldSet.Count;
+            if (verbose)
+                foreach (var o in m.Objects)
+                    if (o.Kind is not (ObjectKind.Static or ObjectKind.Unknown or ObjectKind.Hero) && o.Shared.Active.Count > 0 &&
+                        !newSet.Contains(o) && m.Floor(o.Pos.Floor) is { } rf &&
+                        o.ActionTiles.All(t => !rf.InBounds(t.X, t.Y) || rf.TerrainBlocked(t.X, t.Y)))
+                        Console.WriteLine($"  reached over refused terrain {o} {Probe(rf, o.ActionTiles.First())}");
+            if (verbose)
+                foreach (var o in newSet)
+                    if (m.Floor(o.Pos.Floor) is { } uf && uf.InBounds(o.ActionTiles.First().X, o.ActionTiles.First().Y))
+                        Console.WriteLine($"  unreachable{(oldSet.Contains(o) ? "" : " (terrain)")} {o} {Probe(uf, o.ActionTiles.First())}");
+            sb.Append($" | entrances closed {entr}, heroes refused {heroes}, unreachable {un} (old rule {uo})");
             Console.WriteLine(sb);
             totEntr += entr; totHero += heroes; totNew += un; totOld += uo;
         }
-        Console.WriteLine($"{maps} maps: entrances refused {totEntr}, heroes refused {totHero}, unreachable objects {totNew} (old rule {totOld})");
+        Console.WriteLine($"{maps} maps: entrances closed {totEntr}, heroes refused {totHero}, unreachable objects {totNew} (old rule {totOld})");
         return 0;
+    }
+
+    static IEnumerable<Tile> Neighbours(Tile t)
+    {
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+                if (dx != 0 || dy != 0) yield return t.Offset(dx, dy);
     }
 
     static readonly Dictionary<MapFloor, bool[]> OldCache = new();
@@ -109,18 +130,26 @@ sealed class AdvPassCommand : ICommand
     /// <summary>
     /// Objects none of whose entrances a flood from the players' heroes and town entrances reaches. The flood walks
     /// 8-connected over tiles the rule leaves open (sea included, guards and visits ignored); every teleporting object
-    /// links to all the others.
+    /// links to all the others; a shipyard or town with a ShipTile opens its slipway.
     /// </summary>
-    static int Unreachable(AdvMap m, Func<MapFloor, int, int, bool> blocked, string? tag)
+    static HashSet<MapObject> Unreachable(AdvMap m, Func<MapFloor, int, int, bool> blocked)
     {
-        var entrances = new HashSet<Tile>();
+        // Action tiles (009d1410 → 0045d690) are entered over any terrain, except the object map's blocked set; one
+        // entered over a refused tile ends the walk there.
+        var action = new HashSet<Tile>();
         foreach (var o in m.Objects)
             if (o.Kind is not (ObjectKind.Static or ObjectKind.Unknown or ObjectKind.Hero))
-                foreach (var t in o.ActiveTiles) entrances.Add(t);
+                foreach (var t in o.ActionTiles)
+                    if (m.Floor(t.Floor) is { } af && af.InBounds(t.X, t.Y) && !af.ObjectBlocked[t.Y * af.Width + t.X]) action.Add(t);
         // Every teleporting object (gates, monoliths, portals, whirlpools) is taken as linked to all the others.
         var portals = new HashSet<Tile>(m.Objects.Where(o => o.Shared.Type is var ty &&
                 (ty.Contains("GATE") || ty.Contains("MONOLITH") || ty.Contains("PORTAL") || ty.Contains("WHIRLPOOL") || ty.Contains("TELEPORT")))
             .SelectMany(o => o.ActiveTiles));
+        // Shipyards and towns with a slipway put a ship on their ShipTile.
+        var slipways = new Dictionary<Tile, Tile>();
+        foreach (var o in m.Objects)
+            if (o.ShipTile is { } st)
+                foreach (var t in o.ActiveTiles) slipways.TryAdd(t, o.Pos.Offset(st.X, st.Y));
         var seen = new HashSet<Tile>();
         var q = new Queue<Tile>();
         var seeds = new HashSet<Tile>();
@@ -139,21 +168,22 @@ sealed class AdvPassCommand : ICommand
             if (portals.Contains(c))
                 foreach (var t in portals)
                     if (seen.Add(t)) q.Enqueue(t);
+            if (slipways.TryGetValue(c, out var slip) && f.InBounds(slip.X, slip.Y) && seen.Add(slip)) q.Enqueue(slip);   // a ship built there
+            if (!seeds.Contains(c) && blocked(f, c.X, c.Y)) continue;          // entered as an action tile only
             for (int dy = -1; dy <= 1; dy++)
                 for (int dx = -1; dx <= 1; dx++)
                 {
                     var n = c.Offset(dx, dy);
-                    if ((dx == 0 && dy == 0) || !f.InBounds(n.X, n.Y) || blocked(f, n.X, n.Y) || !seen.Add(n)) continue;
+                    if ((dx == 0 && dy == 0) || !f.InBounds(n.X, n.Y) || (blocked(f, n.X, n.Y) && !action.Contains(n)) || !seen.Add(n)) continue;
                     q.Enqueue(n);
                 }
         }
-        int un = 0;
+        var un = new HashSet<MapObject>();
         foreach (var o in m.Objects)
         {
             if (o.Kind is ObjectKind.Static or ObjectKind.Unknown or ObjectKind.Hero || o.Shared.Active.Count == 0) continue;
-            if (o.ActiveTiles.Any(seen.Contains)) continue;
-            un++;
-            if (tag != null && m.Floor(o.Pos.Floor) is { } uf && uf.InBounds(o.ActiveTiles.First().X, o.ActiveTiles.First().Y)) Console.WriteLine($"  unreachable ({tag}) {o} {Probe(uf, o.ActiveTiles.First())}");
+            if (o.ActiveTiles.Concat(o.ActionTiles).Any(seen.Contains)) continue;
+            un.Add(o);
         }
         return un;
     }
@@ -184,6 +214,16 @@ sealed class AdvPassProbeCommand : ICommand
                 if (f.Ground[i] == TerrainPassability.TypeNone) c = "9";
                 return f.Blocked[i] && !f.TerrainBlocked(x, y) ? c.ToLowerInvariant() : c;
             })));
+        if (d.VertexMap15 is { } c15)
+        {
+            Console.WriteLine("chunk 15 (vertex rows y, columns x; 0 closes the tile 00c0e420):");
+            for (int y = cy - r; y <= cy + r; y++)
+                Console.WriteLine($"{y,4}: " + string.Join(" ", Enumerable.Range(cx - r, 2 * r + 1).Select(x =>
+                    x < 0 || y < 0 || x >= c15.Width || y >= c15.Height ? "." : c15[x, y].ToString())));
+        }
+        foreach (var o in m.Objects)
+            if (o.Pos.Floor == fl && Math.Abs(o.Pos.X - cx) <= r && Math.Abs(o.Pos.Y - cy) <= r && (o.Kind != ObjectKind.Static || args.Contains("-s")))
+                Console.WriteLine($"  {o} blocked [{string.Join(" ", o.BlockedTiles.Select(t => $"{t.X},{t.Y}"))}] action [{string.Join(" ", o.ActionTiles.Select(t => $"{t.X},{t.Y}"))}]");
         return 0;
     }
 }

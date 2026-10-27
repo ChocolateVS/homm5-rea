@@ -193,7 +193,10 @@ public sealed class MapLoader
     /// <summary>
     /// Static passability, as the exe sets up the world: the terrain kinds of every floor (<see cref="TerrainPassability"/>,
     /// 00990800, with the objects' passable tiles), sea from the terrain kind, then the objects' blocked tiles that are
-    /// not entrances (TODO(exe): the object pass 009952d0 → 00991650 / 00990bc0 / 00990d40 is not compared).
+    /// not entrances, and the blocked set of the pathfinder's object map (<see cref="MapFloor.ObjectBlocked"/>). The
+    /// object pass 009952d0 (00991650 / 00990bc0 / 00990d40) only writes the tile's object fields (+0x10 / +0x14), never
+    /// the kind; objects' action tiles stay enterable over any terrain (<see cref="MapObject.ActionTiles"/>, applied by
+    /// the pathfinder, not here).
     /// </summary>
     public static void ApplyStaticBlocking(AdvMap m)
     {
@@ -218,13 +221,20 @@ public sealed class MapLoader
                 f.Blocked[i] = f.TerrainBlocked(i % f.Width, i / f.Width);
             }
         }
+        foreach (var f in m.Floors)
+            if (f != null) f.ObjectBlocked = new bool[f.Width * f.Height];
         foreach (var o in m.Objects)
         {
             var f = m.Floor(o.Pos.Floor);
             if (f == null) continue;
             var active = new HashSet<Tile>(o.ActiveTiles);
+            bool multi = o.Kind != ObjectKind.Hero && o.MultiTile;
             foreach (var b in o.BlockedTiles)
-                if (f.InBounds(b.X, b.Y) && !active.Contains(b)) f.Blocked[b.Y * f.Width + b.X] = true;
+            {
+                if (!f.InBounds(b.X, b.Y)) continue;
+                if (!active.Contains(b)) f.Blocked[b.Y * f.Width + b.X] = true;
+                if (multi) f.ObjectBlocked[b.Y * f.Width + b.X] = true;
+            }
         }
     }
 

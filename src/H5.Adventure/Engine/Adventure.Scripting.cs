@@ -310,15 +310,16 @@ public sealed partial class Adventure
         {
             var f = Map.Floor(t.Floor);
             if (f == null || !f.InBounds(t.X, t.Y)) continue;
-            bool blocked = f.TerrainBlocked(t.X, t.Y);
-            if (!blocked)
-                foreach (var o in Map.Objects)
-                {
-                    if (S.Objects.TryGetValue(o.Index, out var os) && os.Removed) continue;
-                    if (o.Pos.Floor != t.Floor) continue;
-                    if (o.BlockedTiles.Contains(t) && !o.ActiveTiles.Contains(t)) { blocked = true; break; }
-                }
+            bool blocked = f.TerrainBlocked(t.X, t.Y), held = false;
+            foreach (var o in Map.Objects)
+            {
+                if (S.Objects.TryGetValue(o.Index, out var os) && os.Removed) continue;
+                if (o.Pos.Floor != t.Floor || !o.BlockedTiles.Contains(t)) continue;
+                if (!o.ActiveTiles.Contains(t)) blocked = true;
+                if (o.Kind != ObjectKind.Hero && o.MultiTile) held = true;
+            }
             f.Blocked[t.Y * f.Width + t.X] = blocked;
+            if (t.Y * f.Width + t.X < f.ObjectBlocked.Length) f.ObjectBlocked[t.Y * f.Width + t.X] = held;
         }
     }
 
@@ -330,6 +331,7 @@ public sealed partial class Adventure
         RemoveObject(index);
         RefreshBlocking(tiles);
         _activeIndex = null;
+        _actionIndex = null;
     }
 
     /// <summary>SetObjectPosition for non-hero objects: relocates footprint, blocking and entrance index.</summary>
@@ -341,6 +343,7 @@ public sealed partial class Adventure
         o.Pos = to;
         RefreshBlocking(oldTiles.Concat(o.BlockedTiles));
         _activeIndex = null;
+        _actionIndex = null;
         if (S.Towns.Find(t => t.Object == index) is { } town) town.Pos = to;
         Emit(new HeroMoved(-1 - index, new[] { from, to }, 0));
     }
@@ -354,6 +357,7 @@ public sealed partial class Adventure
         o.Rot = rot;
         RefreshBlocking(oldTiles.Concat(o.BlockedTiles));
         _activeIndex = null;
+        _actionIndex = null;
     }
 
     /// <summary>Re-applies blocking for objects removed in the saved state (loading a save).</summary>
@@ -363,6 +367,7 @@ public sealed partial class Adventure
             .SelectMany(kv => Map.Objects[kv.Key].BlockedTiles).ToList();
         RefreshBlocking(tiles);
         _activeIndex = null;
+        _actionIndex = null;
     }
 
     /// <summary>SetObjectRotation: changes the footprint orientation (quarter turns).</summary>
@@ -373,6 +378,7 @@ public sealed partial class Adventure
         o.Rot = rot;
         RefreshBlocking(oldTiles.Concat(o.BlockedTiles));
         _activeIndex = null;
+        _actionIndex = null;
     }
 
     /// <summary>Adds a script-created object (CreateMonster, CreateArtifact…) and rolls its state.</summary>
@@ -383,6 +389,7 @@ public sealed partial class Adventure
         if (setup) SetupObject(o);
         RefreshBlocking(o.BlockedTiles);
         _activeIndex = null;
+        _actionIndex = null;
         return o;
     }
 

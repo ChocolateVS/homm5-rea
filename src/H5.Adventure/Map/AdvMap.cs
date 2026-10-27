@@ -188,6 +188,20 @@ public sealed class MapObject
     public IEnumerable<Tile> BlockedTiles => Shared.Blocked.Select(o => Footprint.Place(Pos, o, Rot));
     /// <summary>Tiles from which the object is visited (absolute).</summary>
     public IEnumerable<Tile> ActiveTiles => Shared.Active.Select(o => Footprint.Place(Pos, o, Rot));
+    /// <summary>
+    /// The tiles the pathfinder's object map lets a hero enter whatever the terrain kind there (H5_Game.exe 0045d910,
+    /// built per path search by 00ceb670 → pathfinder +4, read by 009d1410 through vf 0 = 0045d690): an object with at
+    /// most one blocked and one active tile registers its position (vf 0xa4, 0045d8a0), any other its active tiles
+    /// (vf 0xb8, 0045d740).
+    /// </summary>
+    public IEnumerable<Tile> ActionTiles =>
+        Shared.Blocked.Count <= 1 && Shared.Active.Count <= 1 ? new[] { Pos } : ActiveTiles;
+    /// <summary>
+    /// Whether the object's blocked tiles go to the pathfinder object map's blocked set (0045d910 → 0045d6d0, map
+    /// +0x38, refused by 009d1410 through vf 0xc = 0045d670 before any other test): objects with two or more blocked or
+    /// active tiles.
+    /// </summary>
+    public bool MultiTile => Shared.Blocked.Count > 1 || Shared.Active.Count > 1;
 
     public override string ToString() => $"#{Index} {Kind} {Shared.Type} {Pos}";
 }
@@ -261,6 +275,11 @@ public sealed class MapFloor
     public TileKind[] Kind = Array.Empty<TileKind>();
     /// <summary>The exe's ground type id of each tile (passability map tile +0; 9 = TT_NONE refuses entry).</summary>
     public byte[] Ground = Array.Empty<byte>();
+    /// <summary>
+    /// The blocked tiles of multi-tile objects (<see cref="MapObject.MultiTile"/>): the pathfinder's object map refuses
+    /// them before its action tiles (exe 009d1410 → 0045d670).
+    /// </summary>
+    public bool[] ObjectBlocked = Array.Empty<bool>();
     /// <summary>The AdvMapTile type id of each terrain layer (<see cref="TerrainPassability.TypeId"/>).</summary>
     public int[] LayerTypes = Array.Empty<int>();
     public H5.Assets.Terrain.TerrainData? Data;

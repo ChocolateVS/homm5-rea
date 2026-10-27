@@ -209,7 +209,8 @@ sealed class RmgStatsCommand : ICommand
     /// The generator's own reachability check (RmgGenerator.Finish: per zone, from the town visit tile, else the road
     /// network's start, else the free tile nearest the zone centre) over the adventure map's static passability instead
     /// of the object footprints: terrain kinds (exe 00990800 — chunk 15 holes, cliffs, the underground rock, texture
-    /// lakes, the border) plus the blocked object tiles, sea excluded.
+    /// lakes, the border) plus the blocked object tiles, sea excluded; an access tile on refused terrain counts when a
+    /// neighbour is reached (the pathfinder's object map, 009d1410).
     /// </summary>
     static int PassUnreachable(RmgGenerator gen, RmgResult r, AdvMap map)
     {
@@ -243,8 +244,13 @@ sealed class RmgStatsCommand : ICommand
                             queue.Enqueue((nx, ny));
                         }
                 }
+                // An object's action tile is entered over any terrain (009d1410 → 0045d690) from a reached neighbour,
+                // unless a multi-tile object blocks it (0045d670).
+                bool Entered((int X, int Y) t) => seen.Contains(t) ||
+                    (mf.InBounds(t.X, t.Y) && !mf.ObjectBlocked[t.Y * mf.Width + t.X] &&
+                     Enumerable.Range(-1, 3).Any(dy => Enumerable.Range(-1, 3).Any(dx => (dx != 0 || dy != 0) && seen.Contains((t.X + dx, t.Y + dy)))));
                 foreach (var kv in r.Access.Where(kv => kv.Key.Zone == z.Id && kv.Key.Floor == f.Index && kv.Key.Def.Tag != "AdvMapStaticShared"))
-                    if (!seen.Contains(kv.Value)) n++;
+                    if (!Entered(kv.Value)) n++;
             }
         }
         return n;

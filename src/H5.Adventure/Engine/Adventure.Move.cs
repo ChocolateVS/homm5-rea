@@ -31,6 +31,41 @@ public sealed partial class Adventure
     IEnumerable<MapObject> ObjectsAt(Tile t) =>
         ActiveIndex.TryGetValue(t, out var l) ? l.Where(i => !(S.Objects.TryGetValue(i, out var os) && os.Removed)).Select(O) : Enumerable.Empty<MapObject>();
 
+    /// <summary>Objects indexed by the tiles the pathfinder's object map registers for them (<see cref="MapObject.ActionTiles"/>).</summary>
+    Dictionary<Tile, List<int>>? _actionIndex;
+    Dictionary<Tile, List<int>> ActionIndex
+    {
+        get
+        {
+            if (_actionIndex != null) return _actionIndex;
+            _actionIndex = new();
+            foreach (var o in Map.Objects)
+            {
+                // TODO(exe): which kinds the floor lists (vf 0x38) hold and what vf 0x100 / vf 0x28 exclude is not traced;
+                // statics and heroes (moving, met through HeroAt) are left out.
+                if (o.Kind is ObjectKind.Static or ObjectKind.Hero) continue;
+                foreach (var t in o.ActionTiles)
+                {
+                    if (!_actionIndex.TryGetValue(t, out var l)) _actionIndex[t] = l = new List<int>();
+                    l.Add(o.Index);
+                }
+            }
+            return _actionIndex;
+        }
+    }
+
+    /// <summary>
+    /// H5_Game.exe 009d1410: a tile in the object map's blocked set (0045d670) is refused; else a tile holding a live
+    /// object's action tile (0045d690) is enterable whatever the terrain kind or ground type; else the static rule.
+    /// </summary>
+    bool StaticallyEnterable(MapFloor f, Tile t)
+    {
+        int i = t.Y * f.Width + t.X;
+        if (i < f.ObjectBlocked.Length && f.ObjectBlocked[i]) return false;
+        if (ActionIndex.TryGetValue(t, out var l) && l.Any(o => !(S.Objects.TryGetValue(o, out var os) && os.Removed))) return true;
+        return !f.IsBlocked(t.X, t.Y);
+    }
+
     public TownState? TownAt(Tile t) => S.Towns.Find(tn => O(tn.Object).ActiveTiles.Contains(t) || tn.Pos == t);
 
     public Tile EntranceOf(TownState t) => O(t.Object).ActiveTiles.FirstOrDefault(t.Pos);
@@ -100,7 +135,7 @@ public sealed partial class Adventure
     {
         var f = Map.Floor(t.Floor);
         if (f == null || !f.InBounds(t.X, t.Y)) return false;
-        if (f.IsBlocked(t.X, t.Y)) return false;
+        if (!StaticallyEnterable(f, t)) return false;
         if (ScriptHooks != null && ScriptHooks.IsTileBlocked(h.Owner, t)) return false;
         bool water = f.IsWater(t.X, t.Y);
         if (water != h.InBoat && (t != target || !CanCrossShoreTo(h, t))) return false;
