@@ -29,6 +29,9 @@ public partial class CombatScreen : Control
 
     readonly Dictionary<int, UnitView> _units = new();
     readonly Dictionary<int, Node3D> _heroes = new();
+    /// <summary>Per hero side: town, HeroCharacterArenaMelee path, CombatVisual path (AdvMapHeroShared).</summary>
+    readonly Dictionary<int, (string Town, string? MeleePath, string? VisualPath)> _heroInfo = new();
+    readonly Dictionary<int, Character> _heroStrike = new();
     Control _plaqueLayer = null!;
     FlyingSigns _signs = null!;
     readonly Queue<BattleEvent> _queue = new();
@@ -260,6 +263,9 @@ public partial class CombatScreen : Control
             var root = Game.Instance.Xdb.Load(def.SourcePath).Root!;
             var r = H5.Core.Xdb.XdbRef.Parse((string?)root.Element("HeroCharacterArena")?.Attribute("href"), def.SourcePath);
             if (!r.IsEmpty) characterPath = r.Path;
+            string? Ref(string el) => H5.Core.Xdb.XdbRef.Parse((string?)root.Element(el)?.Attribute("href"), def.SourcePath) is var x
+                && !x.IsEmpty && Game.Instance.Fs.Exists(x.Path) ? x.Path : null;
+            _heroInfo[side] = (def.Town, Ref("HeroCharacterArenaMelee"), Ref("CombatVisual"));
         }
         if (characterPath == null || !Game.Instance.Fs.Exists(characterPath)) return;
         try
@@ -571,7 +577,7 @@ public partial class CombatScreen : Control
                 hv.Dead = false;
                 hv.Visible = true;
                 hv.UpdatePlaque();
-                if (h.Resurrected > 0) _signs.Casualty(hv, hv.SignAnchor, h.Resurrected);
+                if (h.Resurrected > 0) _signs.Casualty(hv, () => hv.GlobalPosition, h.Resurrected);
                 if (_tentHealer is int tent && CombatLogText.TentHeal(this, tent, h) is { } healLine) Hud.Log.AddLine(healLine);
                 else if (CombatLogText.Heal(this, h, _lastCast, _lastAbility) is { } spellHeal) Hud.Log.AddLine(spellHeal);
                 _tentHealer = null;
@@ -780,7 +786,11 @@ public partial class CombatScreen : Control
             return new CinematicCameras.Participant(u.IsWarMachine ? CinematicCameras.CharTypeKind.Machine : CinematicCameras.CharTypeKind.Creature,
                 visual, u.Size, new Vector2I(u.Cell.X + ArenaGrid.MarginX, u.Cell.Y + ArenaGrid.MarginY), pos, u.Rotation.Y);
         }
-        return new CinematicCameras.Participant(CinematicCameras.CharTypeKind.Hero, null, 1, new Vector2I(-1, -1), pos, node.Rotation.Y);
+        // A hero's SPECIFIC-visual filters name its CombatVisual (AdvMapHeroShared.CombatVisual).
+        string? heroVisual = null;
+        foreach (var (hs, hn) in _heroes)
+            if (hn == node || _heroStrike.GetValueOrDefault(hs) == node) heroVisual = _heroInfo.GetValueOrDefault(hs).VisualPath;
+        return new CinematicCameras.Participant(CinematicCameras.CharTypeKind.Hero, heroVisual, 1, new Vector2I(-1, -1), pos, node.Rotation.Y);
     }
 
     async Task AnimateAttack(AttackStarted a)
@@ -843,14 +853,101 @@ public partial class CombatScreen : Control
             }
             if (archer.Has("idle00")) archer.Play("idle00", loop: true);
         }
-        else if (attackerNode is Character hero)
-        {
-            var heroKind = hero.Has("cast") ? "cast" : "attack00";
-            hero.Play(heroKind);
-            await Delay(0.6);
-            _attackRemainderUntil = Now + 0.6;
-        }
+        else if (attackerNode is Character hero && Actor.IsHero(a.Attacker))
+            await AnimateHeroStrike(Actor.HeroSide(a.Attacker), hero, target);
         else await Delay(0.25);
+    }
+
+    /// <summary>
+    /// Hero strike (exe 008cf270 -> 008ced40, kind from 008ce820): towns Haven/Dungeon/Fortress/Stronghold strike in melee when
+    /// the hero has a "strike" clip, Preserve/Academy/Necropolis/Inferno when it has no "rangeattack"; otherwise it shoots.
+    /// Melee: the arena character is hidden and the HeroCharacterArenaMelee character plays "strike" (hero slot 0x128,
+    /// 00bc1070), the hit at its action moment. Ranged: "rangeattack" and the CombatVisual AnimShot missile through the
+    /// creature shooting routine (00a6fef0), the hit on arrival. Either way a track camera is requested with the hero as
+    /// actor (007da950: MELEE or RANGED; anti-repeat CAMERA_REPEAT_HERO_ABILITY).
+    /// </summary>
+    async Task AnimateHeroStrike(int side, Character hero, UnitView? target)
+    {
+        MaybeCapture(ref _heroStrikeCount, CombatLauncher.HeroStrikeScreenshot, 0.5);
+        var info = _heroInfo.GetValueOrDefault(side);
+        Character? strike = null;
+        if (info.MeleePath != null && !_heroStrike.TryGetValue(side, out strike))
+        {
+            try
+            {
+                strike = CharacterBuilder.Build(info.MeleePath);
+                strike.Name = $"HeroStrike{side}";
+                strike.Visible = false;
+                Arena.Units.AddChild(strike);
+                _heroStrike[side] = strike;
+            }
+            catch (Exception e) { GD.PushWarning($"[H5] hero strike model {info.MeleePath}: {e.Message}"); strike = null; }
+        }
+        bool hasStrike = hero.Has("strike") || strike?.Has("strike") == true;
+        bool melee = info.Town is "TOWN_HEAVEN" or "TOWN_DUNGEON" or "TOWN_FORTRESS" or "TOWN_STRONGHOLD" ? hasStrike : !hero.Has("rangeattack");
+        if (melee && !hasStrike) melee = false;
+        string? shot = null;
+        if (info.VisualPath is { } vis)
+        {
+            var sr = H5.Core.Xdb.XdbRef.Parse((string?)Game.Instance.Xdb.Load(vis).Root?.Element("AnimShot")?.Attribute("href"), vis);
+            if (!sr.IsEmpty && Game.Instance.Fs.Exists(sr.Path)) shot = sr.Path;
+        }
+        if (melee)
+        {
+            Character c = strike != null && strike.Has("strike") ? strike : hero;
+            if (c == strike)
+            {
+                // The strike character stands at a point from combat vf 0x24 (not decoded): placed at the target
+                // stack, facing it from the hero's side.
+                if (target != null)
+                {
+                    strike.GlobalPosition = target.GlobalPosition;
+                    var d = target.GlobalPosition - hero.GlobalPosition;
+                    strike.Rotation = new Vector3(0, Mathf.Atan2(d.X, d.Z), 0);
+                }
+                hero.Visible = false;
+                strike.Visible = true;
+            }
+            if (Participant(c) is { } actor) _cine.Begin(CinematicCameras.Action.Melee, actor, Participant(target), null);
+            c.Play("strike");
+            float length = (float)c.Player.GetAnimation(Character.Lib + "strike").Length / c.SpeedFactor("strike");
+            float hit = HeroActionTime(c, "strike", 0f);
+            await Delay(Math.Max(0.05f, hit));
+            _attackRemainderUntil = Now + Math.Max(0, length - hit);
+            if (c == strike)
+                GetTree().CreateTimer(Math.Max(0.05, length - hit)).Timeout += () =>
+                {
+                    if (!IsInstanceValid(strike) || !IsInstanceValid(hero)) return;
+                    strike.Visible = false;
+                    hero.Visible = true;
+                    if (hero.Has("idle00")) hero.Play("idle00", loop: true);
+                };
+            return;
+        }
+        if (Participant(hero) is { } shooter) _cine.Begin(CinematicCameras.Action.Ranged, shooter, Participant(target), null);
+        var kind = hero.Has("rangeattack") ? "rangeattack" : hero.Has("cast") ? "cast" : "attack00";
+        hero.Play(kind);
+        float clip = hero.Has(kind) ? (float)hero.Player.GetAnimation(Character.Lib + kind).Length / hero.SpeedFactor(kind) : 0.6f;
+        float action = HeroActionTime(hero, kind, clip * 0.55f);
+        await Delay(Math.Max(0.05f, action));
+        _attackRemainderUntil = Now + Math.Max(0, clip - action);
+        if (shot != null && target != null)
+        {
+            var arrived = false;
+            var p = Effects.ProjectilePlayer.Fire(shot, Arena, hero, (target.GlobalPosition + target.SignAnchor()) * 0.5f, () => arrived = true);
+            double deadline = Now + Math.Min(3.0, (p?.FlightTime ?? 0) + 0.2);
+            while (!arrived && Now < deadline) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        }
+    }
+
+    /// <summary>Real-time moment of a character clip's "action"/"hit" event, or the fallback.</summary>
+    static float HeroActionTime(Character c, string kind, float fallback)
+    {
+        if (c.Events.TryGetValue(kind, out var evs))
+            foreach (var (name, time) in evs)
+                if (name.Contains("action", StringComparison.OrdinalIgnoreCase) || name.Contains("hit", StringComparison.OrdinalIgnoreCase))
+                    return time / c.SpeedFactor(kind);
+        return fallback;
     }
 
     void OnDamaged(Damaged d)
@@ -859,7 +956,7 @@ public partial class CombatScreen : Control
         v.Count = d.CountLeft;
         if (d.CountLeft > 0) v.PlayAction("hit");
         v.UpdatePlaque();
-        if (d.Killed > 0) _signs.Casualty(v, v.SignAnchor, -d.Killed);
+        if (d.Killed > 0) _signs.Casualty(v, () => v.GlobalPosition, -d.Killed);   // exe: the stack's position (vf 0x3c)
         if (d.By == "TREMORS")
         {
             _tremors = (d.Source, (_tremors?.Damage ?? 0) + d.Damage, (_tremors?.Dead ?? 0) + d.Killed);
@@ -871,7 +968,7 @@ public partial class CombatScreen : Control
         _favoredHit = _criticalStrike = false;
     }
 
-    int _shotCount, _spellCount, _moveCount;
+    int _shotCount, _spellCount, _moveCount, _heroStrikeCount;
 
     /// <summary>The catapult hurls its boulder at the building hit next (the following BuildingDamaged event).</summary>
     async Task AnimateCatapult(UnitView cat)

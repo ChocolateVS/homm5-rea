@@ -214,6 +214,8 @@ public sealed class CinematicCameras
     /// <summary>The anti-repeat category of an event (CameraAntiRepeat.xdb EventType).</summary>
     static string RepeatType(Action a, Participant actor) => a switch
     {
+        // Hero attacks use anti-repeat category 6 (007d90d0 / 007d9266), whether they strike or shoot.
+        Action.Melee or Action.Ranged when actor.Kind == CharTypeKind.Hero => "CAMERA_REPEAT_HERO_ABILITY",
         Action.Melee => "CAMERA_REPEAT_MELEE",
         Action.Ranged => actor.Kind == CharTypeKind.Machine ? "CAMERA_REPEAT_BALLISTA_SHOOT" : "CAMERA_REPEAT_RANGED",
         Action.SpellCast => actor.Kind == CharTypeKind.Hero ? "CAMERA_REPEAT_HERO_ABILITY" : "CAMERA_REPEAT_CAST",

@@ -35,6 +35,8 @@ public partial class FlyingSigns : Control
         public Vector2 GlowOrigin;
         public bool GlowAdditive;
         public double Start, Duration;
+        /// <summary>Casualty sign (exe 0054a5c0 → 006702b0 motion): top-left on the anchor, √(1−k) fade, screen rise.</summary>
+        public bool Casualty;
     }
 
     readonly List<Sign> _signs = new();
@@ -76,8 +78,10 @@ public partial class FlyingSigns : Control
 
     public void Casualty(object key, Func<Vector3> anchor, int delta)
     {
+        int before = _signs.Count;
         Add(key, anchor, delta < 0 ? "T_CREATURE_KILLED" : "T_CREATURE_RESURRECTED",
             new Dictionary<string, string> { ["delta"] = Math.Abs(delta).ToString() }, GoldGlow, CasualtyDuration, fromWindowTexts: true);
+        if (_signs.Count > before) _signs[^1].Casualty = true;
         // Dev capture 0.4 s after the sign becomes visible (signs on one stack are spaced 500 ms apart).
         if (CombatLauncher.SignScreenshot is { } shot && ++_casualties == shot.N && _signs.Count > 0)
             GetTree().CreateTimer(0.4 + Math.Max(0, _signs[^1].Start - Now)).Timeout += () =>
@@ -220,12 +224,32 @@ public partial class FlyingSigns : Control
         {
             if (now < s.Start) continue;
             float k = (float)((now - s.Start) / s.Duration);
-            var world = s.Anchor() + new Vector3(0, RiseMetres * k, 0);
-            if (_camera.IsPositionBehind(world)) continue;
-            var screen = _camera.UnprojectPosition(world);
-            // Fade over the last third of the lifetime.
-            float alpha = k < 0.66f ? 1f : Math.Max(0f, 1f - (k - 0.66f) / 0.34f);
-            var offset = (screen - new Vector2(s.Layout.Size.X / 2, s.Layout.Size.Y)).Round();
+            float alpha;
+            Vector2 offset;
+            if (s.Casualty)
+            {
+                // Exe 0054a5c0 / 006702b0: anchored at the stack's position (creature vf 0x3c, zero offset), the text's
+                // top-left on the projected point (00670cb0 centring flags 0, 0); alpha = √(1 − k); every frame the
+                // position moves by (0, 0, −0.1)·ui_flying_signs_speed scaled by the viewport height × k × −0.005,
+                // read here as screen pixels (0.0005·H·k per frame), integrated at a 60 Hz frame rate.
+                var world = s.Anchor();
+                if (_camera.IsPositionBehind(world)) continue;
+                var screen = _camera.UnprojectPosition(world);
+                float t = (float)(now - s.Start);
+                float h = canvas.GetViewportRect().Size.Y;
+                float rise = 0.0005f * h * 60f * t * t / (2f * (float)s.Duration);
+                alpha = Mathf.Sqrt(Math.Clamp(1f - k, 0f, 1f));
+                offset = (screen - new Vector2(0, rise)).Round();
+            }
+            else
+            {
+                var world = s.Anchor() + new Vector3(0, RiseMetres * k, 0);
+                if (_camera.IsPositionBehind(world)) continue;
+                var screen = _camera.UnprojectPosition(world);
+                // Fade over the last third of the lifetime.
+                alpha = k < 0.66f ? 1f : Math.Max(0f, 1f - (k - 0.66f) / 0.34f);
+                offset = (screen - new Vector2(s.Layout.Size.X / 2, s.Layout.Size.Y)).Round();
+            }
             // Outline effect (BuildOutline): additive brushes (Light.xdb is CONVERT_TRANSPARENT_ADD) go
             // on the additive layer and fade by colour; alpha brushes (BlackGlow) are drawn under the
             // glyphs on the normal layer.
