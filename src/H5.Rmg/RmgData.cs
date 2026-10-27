@@ -128,7 +128,8 @@ public sealed class RmgRacePreset
 /// <summary>A creature in Table_Creature_CreatureType order (the exe iterates creatures by enum index).</summary>
 public sealed record RmgCreature(int Index, string Id, string Town, int Tier, int Power, string? MonsterShared);
 
-public sealed record RmgArtifact(string Id, string Shared, string Class, int Cost);
+/// <summary>An artifact the generator may place: CanBeGeneratedToSell with an ArtifactShared; <see cref="Index"/> is its ArtifactEffect value (table slot).</summary>
+public sealed record RmgArtifact(string Id, string Shared, string Class, int Cost, int Index = -1);
 
 /// <summary>
 /// One SRMGSimpleCustomArmyTemplate of the guard template group (exe 0x00ba71b0): used when its
@@ -339,7 +340,8 @@ public sealed class RmgDatabase
             var o = item.Element("obj");
             var shared = Ref(o?.Element("ArtifactShared"), table);
             if (shared.Length == 0 || !Xdb.FileSystem.Exists(shared) || !B(o, "CanBeGeneratedToSell")) continue;
-            Artifacts.Add(new RmgArtifact(S(item, "ID"), shared, S(o, "Type"), I(o, "CostOfGold")));
+            Artifacts.Add(new RmgArtifact(S(item, "ID"), shared, S(o, "Type"), I(o, "CostOfGold"),
+                StockTables.EnumValue(Xdb.FileSystem, "ArtifactEffect", S(item, "ID")) ?? -1));
         }
     }
 }

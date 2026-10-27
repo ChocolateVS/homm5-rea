@@ -29,7 +29,8 @@ Analysis: private Ghidra project `tools/ghidra-projects/rmg`, scripts in `tools/
 | Buildings, shrines, observatories | `0x0091bb10`, `0x00920000`, `0x009219a0`, `0x00920c50` | ported (AUDIT_RMG.md) |
 | Guards | `0x00ba7690`, `0x00ba6910`, `0x00ba71b0` | ported: two-stack army templates (p = 0.6) and the single-stack band search |
 | Roads | `0x0091aee0`, `0x0091bdb0`, `0x00904cf0` → `0x0091bf90`, paint `0x00916570` | ported (AUDIT_RMG.md); the node lists come from our own placers |
-| Connections, statics, treasure blocks | `0x00904920`, `0x00906130`, `0x009198a0` | reimplemented from the observed structure, not line by line |
+| Treasure blocks | `0x00905d00`, `0x009198a0`, `0x00ba82c0`, `0x00ba94c0` | ported; inputs partly ours |
+| Connections, statics | `0x00904920`, `0x00906130` | reimplemented from the observed structure, not line by line |
 
 ## RNG (0x00ba6650 …)
 
@@ -128,9 +129,8 @@ first pass nothing can be stolen (division by an empty list).
 
 ## Not yet line by line (see AUDIT_RMG.md)
 
-* Treasure blocks: the original `0x00ba8050` / `0x00ba82c0` / `0x00ba94c0` (CTreasureBlockDistributor) is traced
-  (AUDIT_RMG.md) but not ported; ours places blocks of 5 000–15 000 value (an artifact, two piles, a guard of the
-  block value) until the zone's `TreasureBlocksTotalValue` is spent.
+* Treasure blocks: `0x00ba82c0` / `0x00ba94c0` (CTreasureBlockDistributor) are ported (AUDIT_RMG.md), but the
+  flags they read come partly from our own guards and statics.
 * Statics: zone borders, unassigned tiles and the map edge are filled with the zone race's BigStatics /
   Mountains / OneTileBigObjects / OneTileSmallBlockers, plus interior clusters (one seed per 45 free
   tiles); walkable routes from the zone hub to every object and passage are reserved first.
@@ -139,8 +139,8 @@ first pass nothing can be stolen (division by an empty list).
   connections get a pair of two-way monoliths.
 
 Reference comparison (`h5tool rmg-ref`, same template/size/seed/players/races/levels): mines, prisons and towns
-match exactly on every map; buildings, dwellings and shrines are within a few objects; monsters are at ~65 % and
-treasures/artifacts at ~30 % of the reference (the missing share comes from the treasure blocks).
+match exactly on every map; buildings, dwellings and shrines are within a few objects; monsters, artifacts and
+treasures depend on the treasure blocks, whose inputs (statics, flags) are still ours.
 
 ## Gaps
 

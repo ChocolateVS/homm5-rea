@@ -16,7 +16,8 @@ public sealed class RmgObject
     public string? Note;             // what placed it (mine, guard, shop...)
     /// <summary>Further guard stacks of a two-stack army template (written as AdditionalStacks, exe 0x00914cc0).</summary>
     public List<(string Creature, int Count)> AdditionalStacks = new();
-    public float Rot => Quarter * MathF.PI / 2;
+    public float? Angle;             // rotation passed in radians (guards turned by their caller, treasure-block items)
+    public float Rot => Angle ?? Quarter * MathF.PI / 2;
 }
 
 public sealed partial class RmgGenerator
@@ -95,6 +96,7 @@ public sealed partial class RmgGenerator
 
     RmgObject Commit(RmgResult r, RmgZone z, string shared, SharedDef d, int x, int y, int quarter, (int X, int Y) access, string note)
     {
+        CreateObjectDraws();   // 0x009145b0 between the footprint test and 0x0091a420
         var f = Floors[z.Floor];
         var active = new HashSet<(int, int)>(d.Active.Count > 0 ? new[] { ActiveTile(d, x, y, quarter) } : Array.Empty<(int, int)>());
         foreach (var (tx, ty) in Footprint(d, x, y, quarter, includeActive: false))
@@ -289,7 +291,22 @@ public sealed partial class RmgGenerator
         return (pick, (int)((float)value / pick.Power));
     }
 
-    RmgObject? PlaceGuard(RmgResult r, RmgZone z, int x, int y, int power, string note)
+    /// <summary>
+    /// exe 0x009145b0, the map-object creator every placer calls once its footprint test passed (and the guard
+    /// creators 0x00914b40 / 0x00914cc0, the treasure blocks' 0x00915010): the object's name gets the number
+    /// (Next(0xffff) &lt;&lt; 16) + Next(0xffff), two draws.
+    /// </summary>
+    void CreateObjectDraws()
+    {
+        Rng.Next(0xffff);
+        Rng.Next(0xffff);
+    }
+
+    /// <summary>
+    /// A guard (0x00ba7690 → 0x00ba6f00 → 0x00914b40 / 0x00914cc0). The caller passes the facing in the exe; ours
+    /// is <paramref name="angle"/> when given, else none (TODO(exe): the mine, town and connection callers' angles).
+    /// </summary>
+    RmgObject? PlaceGuard(RmgResult r, RmgZone z, int x, int y, int power, string note, float? angle = null)
     {
         var f = Floors[z.Floor];
         if (!f.In(x, y)) return null;
@@ -297,10 +314,11 @@ public sealed partial class RmgGenerator
         if (g == null || g[0].Creature.MonsterShared == null) return null;
         var (c, count) = g[0];
         var d = Catalog.Get(c.MonsterShared!);
+        CreateObjectDraws();
         f.Occ[f.At(x, y)] = Occ.Guard;
         var o = new RmgObject
         {
-            Shared = c.MonsterShared!, Def = d, X = x, Y = y, Floor = z.Floor, Quarter = Rng.Next(4), Zone = z.Id,
+            Shared = c.MonsterShared!, Def = d, X = x, Y = y, Floor = z.Floor, Zone = z.Id, Angle = angle,
             Creature = c.Id, Amount = count, Note = note,
         };
         o.AdditionalStacks.AddRange(g.Skip(1).Select(st => (st.Creature.Id, st.Count)));
@@ -365,7 +383,7 @@ public sealed partial class RmgGenerator
                 town = Commit(r, z, race.TownProto, d, cx, cy, q, access, "town");
                 z.TownPos = (ax, ay);
                 z.TownPlaced = true;
-                // Post-placement (0x0092a400 / 0x00babbf0): the town's point light draws twice.
+                // After 0x009145b0's two draws (in Commit), the town's point light draws twice (0x0092a400 / 0x00babbf0).
                 Rng.Next(2);
                 Rng.Next(2);
             }
@@ -431,8 +449,8 @@ public sealed partial class RmgGenerator
         r.Passages.Add((a.Floor, a.Id, b.Id, pick.X, pick.Y));
         r.Passages.Add((a.Floor, b.Id, a.Id, pick.Bx, pick.By));
         // 0x00925a00: each side's connection point goes to the zone's connection list +0xc0 and its node list +0x68.
-        a.ConnectionPoints.Add((pick.X, pick.Y)); a.RoadNodes.Add((pick.X, pick.Y));
-        b.ConnectionPoints.Add((pick.Bx, pick.By)); b.RoadNodes.Add((pick.Bx, pick.By));
+        a.ConnectionPoints.Add((pick.X, pick.Y)); a.RoadNodes.Add((pick.X, pick.Y)); a.GuardPoints.Add((pick.X, pick.Y));
+        b.ConnectionPoints.Add((pick.Bx, pick.By)); b.RoadNodes.Add((pick.Bx, pick.By)); b.GuardPoints.Add((pick.Bx, pick.By));
         if (guard > 0) PlaceGuard(r, a, pick.X, pick.Y, guard, "connection guard");
         return true;
     }
@@ -774,63 +792,6 @@ public sealed partial class RmgGenerator
         }
     }
 
-    /// <summary>Tiles a hero can reach from the zone hub (fighting through guards).</summary>
-    HashSet<(int, int)> Reachable(RmgResult r, RmgZone z)
-    {
-        var f = Floors[z.Floor];
-        var hub = z.TownPos is { } && !z.AnchorOnly && r.StartTownAccess(z, out var acc) ? acc : HubOf(z);
-        var seen = new HashSet<(int, int)>();
-        if (hub == null) return seen;
-        var q = new Queue<(int X, int Y)>();
-        seen.Add(hub.Value);
-        q.Enqueue(hub.Value);
-        while (q.Count > 0)
-        {
-            var (x, y) = q.Dequeue();
-            foreach (var (dx, dy) in Neighbours8)
-            {
-                int nx = x + dx, ny = y + dy;
-                if (!f.In(nx, ny) || seen.Contains((nx, ny))) continue;
-                int i = f.At(nx, ny);
-                if (f.Zone[i] != z.Id || f.Occ[i] is Occ.Object or Occ.Obstacle) continue;
-                seen.Add((nx, ny));
-                if (f.Occ[i] != Occ.Entrance) q.Enqueue((nx, ny));
-            }
-        }
-        return seen;
-    }
-
-    // ------------------------------------------------------------------ treasure blocks (exe 0x009198a0 → 0x00ba8050)
-
-    void PlaceTreasureBlocks(RmgResult r)
-    {
-        var arts = _db.Artifacts.Where(a => a.Cost > 0 && a.Class is "ARTF_CLASS_MINOR" or "ARTF_CLASS_MAJOR" or "ARTF_CLASS_RELIC")
-            .OrderBy(a => a.Cost).ToList();
-        foreach (var z in Zones.OrderBy(z => z.Def.Index))
-        {
-            int remaining = z.Def.TreasureBlocksTotalValue;
-            var f = Floors[z.Floor];
-            for (int guardRail = 0; guardRail < 40 && remaining >= 3000 && arts.Count > 0; guardRail++)
-            {
-                int value = Math.Min(remaining, 5000 + Rng.Next(10001));
-                var fit = arts.Where(a => a.Cost <= value).ToList();
-                if (fit.Count == 0) break;
-                var art = fit[Rng.Next(fit.Count)];
-                var cands = SpreadCandidates(r, z, z.Tiles, 1, 2);
-                var reach = Reachable(r, z);
-                var o = PlaceRandom(r, z, art.Shared, cands, "treasure block artifact", reach);
-                if (o == null) break;
-                remaining -= value;
-                // A couple of resource piles next to the artifact, then a guard worth the block.
-                for (int k = 0; k < 2; k++)
-                {
-                    var near = z.Tiles.Where(t => Math.Abs(t.X - o.X) <= 2 && Math.Abs(t.Y - o.Y) <= 2).ToList();
-                    PlaceRandom(r, z, ResourcePiles[Rng.Next(ResourcePiles.Length - 1)], near, "treasure block pile", Reachable(r, z));
-                }
-                if (r.Access.TryGetValue(o, out var acc)) PlaceGuard(r, z, acc.X, acc.Y, value, "treasure block guard");
-            }
-        }
-    }
 
     (int X, int Y)? HubOf(RmgZone z)
     {
@@ -934,7 +895,8 @@ public sealed partial class RmgGenerator
                     var tiles = Footprint(d, x, y, q, includeActive: false).ToList();
                     if (tiles.Count == 0) tiles.Add((x, y));
                     if (!tiles.All(t => f.In(t.X, t.Y) && obstacle[f.At(t.X, t.Y)] && f.Occ[f.At(t.X, t.Y)] != Occ.Obstacle)) continue;
-                    foreach (var (tx, ty) in tiles) f.Occ[f.At(tx, ty)] = Occ.Obstacle;
+                    // The exe's statics write flag 2 too (0x00924940); our statics are not the exe's (GAP).
+                    foreach (var (tx, ty) in tiles) { f.Occ[f.At(tx, ty)] = Occ.Obstacle; f.Flags[f.At(tx, ty)] = TileFlags.Blocked; }
                     r.Objects.Add(new RmgObject { Shared = shared, Def = d, X = x, Y = y, Floor = f.Index, Quarter = q, Zone = f.Zone[i], Note = "static" });
                 }
 

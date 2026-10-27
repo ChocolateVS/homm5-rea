@@ -56,6 +56,7 @@ public sealed class RmgZone
     public List<(float X, float Y)> MineNetwork = new();      // +0x80: mine-road tiles (flag 0x10)
     public List<(float X, float Y)> ObjectPaths = new();      // +0x8c: object-path tiles (flag 0x20)
     public List<(float X, float Y)> ConnectionPoints = new(); // +0xc0
+    public List<(float X, float Y)> GuardPoints = new();      // +0x98: connection guard points (0x00925a00)
     public List<(float X, float Y)> MinePoints = new();       // +0x11c: visit tiles of the zone's mines
     public override string ToString() => $"zone {Id} floor {Floor} race {Race} player {Player} R={Radius} c=({CenterX},{CenterY})";
 }

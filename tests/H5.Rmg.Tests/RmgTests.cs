@@ -273,6 +273,42 @@ public class GeneratorTests(RmgFixture f)
         }
     }
 
+    /// <summary>
+    /// Treasure blocks (0x00905d00 → 0x009198a0 → 0x00ba94c0): each block is a guard on a tile at road distance 1
+    /// with its items on neighbouring tiles; items come from the block resource table 0x01040e10, the chest
+    /// 0x01040f10 or the generatable artifacts, and every artifact's value band holds (Cost/5 + 500 &lt; value &lt; Cost/5 x 7
+    /// is checked before Cost/5 is taken off, so the guard's power is at least 2.5 x (Cost/5 + 501)).
+    /// </summary>
+    [Fact]
+    public void TreasureBlocksFollowTheExe()
+    {
+        var t = f.Db.Templates.Values.First(t => !t.TestTemplate && t.Zones.Any(z => z.TreasureBlocksTotalValue > 0) && t.ListedFor(2, false, false, t.MinPlayers));
+        var r = new RmgGenerator(f.Db, new RmgOptions { Template = t.Name, Size = 2, Seed = 99, Players = t.MinPlayers }).Generate();
+        var items = r.Objects.Where(x => x.Note?.StartsWith("treasure block ") == true && x.Note != "treasure block guard").ToList();
+        Assert.NotEmpty(items);
+        Assert.All(items.Where(x => x.Note is "treasure block pile" or "treasure block chest"),
+            x => Assert.Matches(@"MapObjects/(Chest|Wood|Ore|Mercury|Crystal|Sulfur|Gems|Gold)\.", x.Shared));
+        Assert.All(items.Where(x => x.Note == "treasure block chest"), x => Assert.True(x.Amount >= 1));
+        foreach (var item in items)
+        {
+            var site = r.Access[item];
+            Assert.InRange(Math.Abs(item.X - site.X), 0, 1);
+            Assert.InRange(Math.Abs(item.Y - site.Y), 0, 1);
+        }
+    }
+
+    /// <summary>Every object the exe creates through 0x009145b0 costs two draws (Next(0xffff) twice, its name number).</summary>
+    [Fact]
+    public void ObjectCreationDrawsTwice()
+    {
+        var a = new RmgRandom(5);
+        var b = new RmgRandom(5);
+        a.Next(0xffff); a.Next(0xffff);
+        Assert.Equal(2, a.Counter);
+        b.Advance(); b.Advance();
+        Assert.Equal(a.Next(1000), b.Next(1000));
+    }
+
     [StockFact]
     public void MineAndPrisonCountsFollowTheTemplate()
     {
