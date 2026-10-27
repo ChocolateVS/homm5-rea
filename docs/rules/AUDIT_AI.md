@@ -14,9 +14,9 @@ occur in our setup.
 
 | Status | Count |
 |---|---|
-| FIXED | 38 |
+| FIXED | 39 |
 | MATCH | 12 |
-| GAP | 30 (11 of them combat AI) |
+| GAP | 29 (11 of them combat AI) |
 | UNVERIFIED | 3 |
 | N/A | 2 |
 
@@ -82,7 +82,7 @@ exe instead runs the real world in simulation mode (player vf 0x13c(1)) and roll
 | Threats | FIXED | 0086d750 ("CHeck threats"), 0086cd10, table 00c289a0 / 00c283d0, 00c02b20 multiplier, 00ce9b00 days | rebuilt daily: every map hero of a non-allied player floods up to ThreatsDistanceInDays × max(100, max MP); each town reached: defence test (the weaker town hero by 004eb050, or the garrison) unless the enemy is within a day or on the owner's team; threat = value · multiplier / max(1e-4, eff / MP), value = town value (own) or ValueOfTown, eff = trunc(cost − AccComing · ThreatsAccComingCoef), AccComing from yesterday (closer: + gain, else ÷ CalmingDivisor, ≤ Limit); player in danger 00866c30 counts towns over ThreatsTownInDangerThreshold | `CheckThreats`, `ThreatTable`, `DaysTo`, `PlayerInDanger` (was: not ported). S: `Days_and_state_merge_follow_the_exe_helpers`. GAP-details: the fight test is the army-sum comparison (the full 00bc3af0 with defender hero / town is not ported); the flood is our path costs without map spells |
 | CheckTownsInDanger | MATCH | row +0x30: no reader in the exe (GetterFieldUse over every row getter call) | dead tunable | not read |
 | Town protection / interception | FIXED | 00a78b60 (with 00a78830 important town, 00c28c30 reservation) | an own town under threat: the strongest threat our hero can answer (not beaten in the field, not late unless important) → state 2 and critical within a day, value += ThreatsTownProtectDistanceInDays · threat / (days² + 1); an enemy hero threatening towns that we beat: intercept on the first path cell we reach no later than it, state 2, value = its estimate + threat + value; the threat is reserved for the chosen hero | `Protect`, `ImportantTown`. GAP-details: the inside-the-town fight test uses the field estimate; the threat entry's "level" (+0x20) is taken as the development level |
-| ConsiderGarrisoningHeroToImportantTown | GAP | row +0x38, 009c3f20 (runs only when the flag is 0: hero ≥ the garrison hero by 004eb050, not a collector / supplier, town not blocked → into the garrison) | — | not ported |
+| ConsiderGarrisoningHeroToImportantTown | FIXED | row +0x38 (only reader 009c3f9c), 009c3f20 (only caller 009c4710 step 9), player vf 0xc8 = 004fc700, CPlayerAIInformation vf 0x64 = 00c28470 (threat records 00c283d0 / 00c282f0, last path value / 2666 < 1) | runs only while the flag is 0 (stock Easy / Normal 0, Hard / Heroic 1): town not blocked for the AI, hero no collector / supplier, ≥ 2 own heroes that are not a garrison hero, no near threat to the town, estimate (004eb050) not below the garrison hero's → the hero goes into the garrison (00435cc0 mode 3) | `GarrisonHeroInTown` after the purchase of a hero in an own town (then its turn ends). P4: `A_hero_in_an_own_town_goes_into_the_garrison_…`. GAP-details: the exe swaps with a garrison hero (ours refuses); the permission test 00c21580 is left to the command; the 2666 test uses our threat path cost |
 | Guards on the way | GAP | — | not traced | reconstructed power test |
 | AI flee / surrender decision | GAP | 00c972d0 (combat side: callers 00c1ff8f, 00c97930): deny lists, rules 00c96d40 / 00c97040 / 00c971b0 (not decoded), power 00c96ea0 < 1000 with < 2000 gold keeps fighting, gold ≥ surrender cost + hire cost 00b4ced0, threshold 0.16 / 0.2 / 0.21 / 0.22 by power − 004f6680 + min(0.3, gold · 5e-6) − 0.06 (side 1), clipped to ≤ 0.16, vs c / (1.1 · b + a) | the AI may retreat / surrender in combat | our combat AI never flees (combat side, outside the adventure AI); the deny gate (00c972d0 head, list test 00c97b10) is MATCH as `AiFleeDenied` → `BattleState.RetreatDenied` (D: `Flee_denial_checks_hero_then_player_list`) |
 

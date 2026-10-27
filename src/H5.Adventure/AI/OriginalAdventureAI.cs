@@ -110,7 +110,12 @@ public sealed partial class OriginalAdventureAI
                 // BlockTownGarrisonForAI: no creature exchange with that garrison (exe reader 0x008687a0).
                 if (h.InTown >= 0 && g.S.Town(h.InTown) is { } home && home.Owner == me && !home.AiGarrisonBlocked) TakeGarrison(g, h, home);
                 // A hero in an own town buys creatures (009c4710 step 6), at an own external dwelling too (004e6d30 case 5).
-                if (h.Alive && h.InTown >= 0 && g.S.Town(h.InTown) is { } shop && shop.Owner == me) Purchase(g, st, shop.Object, h, false);
+                if (h.Alive && h.InTown >= 0 && g.S.Town(h.InTown) is { } shop && shop.Owner == me)
+                {
+                    Purchase(g, st, shop.Object, h, false);
+                    GarrisonHeroInTown(g, st, diff, h, shop);
+                    if (h.Garrisoned) break;
+                }
                 else if (h.Alive && g.Map.Objects.FirstOrDefault(o => o.Kind == ObjectKind.Dwelling && o.ActiveTiles.Contains(h.Pos)) is { } dw
                          && g.S.Objects.TryGetValue(dw.Index, out var dws) && dws.Owner == me) Purchase(g, st, dw.Index, h, false);
                 if (h.MovePoints < 100) break;
@@ -150,6 +155,28 @@ public sealed partial class OriginalAdventureAI
     {
         if (role is HeroRole.Collector or HeroRole.Supplier) return;
         if (!h.AiEnabled || h.Garrisoned || h.InTown < 0 || g.S.Town(h.InTown) is not { } t || t.Owner != h.Owner || t.AiGarrisonBlocked) return;
+        Send(g, new GarrisonHeroCmd(t.Object, h.Id, true) { Player = h.Owner });
+    }
+
+    /// <summary>
+    /// FUN_009c3f20 (009c4710 step 9, a hero in an own town): only when ConsiderGarrisoningHeroToImportantTown (row
+    /// +0x38) is 0, the town not blocked for the AI (vf 0x114), the hero no collector / supplier, the owner has at
+    /// least two heroes that are not a town's garrison hero (player vf 0xc8 = 004fc700), no enemy threatens the town
+    /// with a path whose last value / 2666 &lt; 1 (CPlayerAIInformation vf 0x64(town, 1) = 00c28470) and the hero's
+    /// estimate is not below the garrison hero's: the hero goes into the garrison (FUN_00435cc0 mode 3).
+    /// GAP-details: the exe swaps with a garrison hero, ours refuses (GarrisonHeroCmd); the permission test FUN_00c21580
+    /// is left to the command; the threat path value is taken as our path cost.
+    /// </summary>
+    public void GarrisonHeroInTown(Engine.Adventure g, AdventureAiStats st, AdventureDifficulty diff, HeroState h, TownState t)
+    {
+        if (!h.Alive || diff.ConsiderGarrisoningHeroToImportantTown || t.AiGarrisonBlocked) return;
+        if (_role.GetValueOrDefault(h.Id, HeroRole.Freelancer) is HeroRole.Supplier or HeroRole.Collector) return;
+        if (g.Player(h.Owner) is not { Alive: true } p) return;
+        int free = g.S.Heroes.Count(x => x.Alive && x.Owner == p.Index && !(x.InTown >= 0 && x.Garrisoned));
+        if (free < 2) return;
+        int near = Threats(p.Index).H.Values.Count(ht => ht.Find(t.Object) is { } r && r.Path.Count > 0 && r.Path[^1].Cost / 2666 < 1);
+        if (near > 0) return;
+        if (TownHeroes(g, t).Garrison is { } gh && gh != h && HeroEstimate(g, st, h) < HeroEstimate(g, st, gh)) return;
         Send(g, new GarrisonHeroCmd(t.Object, h.Id, true) { Player = h.Owner });
     }
 

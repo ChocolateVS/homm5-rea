@@ -214,4 +214,27 @@ public class AiPart4Tests(Fixture f)
         Assert.False(ai.SupplierTest(g, st, sup, com, HeroRole.Collector, HeroRole.Commander));
         Assert.False(ai.SupplierTest(g, st, sup, com, HeroRole.Freelancer, HeroRole.Commander));
     }
+
+    [Fact]
+    public void A_hero_in_an_own_town_goes_into_the_garrison_only_while_the_flag_is_off()
+    {
+        // FUN_009c3f20: runs when ConsiderGarrisoningHeroToImportantTown == 0 (stock Easy / Normal), needs a second
+        // map hero and no garrison hero with a higher estimate.
+        var (g, h, other) = TwoHeroes(f);
+        var st = Stats(g);
+        var t = g.S.Towns.First(x => x.Owner == h.Owner);
+        Assert.True(g.Apply(new Engine.MoveHeroCmd(h.Id, g.EntranceOf(t)) { Player = h.Owner }).Ok || h.InTown == t.Object);
+        if (h.InTown != t.Object) { h.Pos = g.EntranceOf(t); h.InTown = t.Object; }
+        var ai = new OriginalAdventureAI();
+        Assert.True(st.Difficulty[2].ConsiderGarrisoningHeroToImportantTown);
+        ai.GarrisonHeroInTown(g, st, st.Difficulty[2], h, t);
+        Assert.False(h.Garrisoned);
+        ai.SetRole(h.Id, HeroRole.Collector, other.Id);
+        ai.GarrisonHeroInTown(g, st, st.Difficulty[1], h, t);
+        Assert.False(h.Garrisoned);
+        ai.SetRole(h.Id, HeroRole.Commander);
+        Assert.False(st.Difficulty[1].ConsiderGarrisoningHeroToImportantTown);
+        ai.GarrisonHeroInTown(g, st, st.Difficulty[1], h, t);
+        Assert.True(h.Garrisoned);
+    }
 }
