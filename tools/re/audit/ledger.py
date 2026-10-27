@@ -185,7 +185,7 @@ def alias_refs(ident):
 # Per-category audit fragments (docs/rules/audit/*.md, written by the parallel audit workstreams):
 # rows "| `ID` | STATUS | exe | note | test |" override the computed status for that ID.
 FRAG = {}
-for _f in sorted(glob.glob(f'{TREE}/docs/rules/audit/*.md')):
+for _f in sorted(glob.glob(f'{TREE}/docs/rules/audit/*.md'), key=lambda f: [int(t) if t.isdigit() else t for t in re.split(r'(\d+)', f)]):   # natural order: sweep_10 after sweep_9
     for _line in open(_f, encoding='utf-8'):
         _p = [x.strip() for x in _line.split('|')]
         if len(_p) >= 7 and _p[1].startswith('`') and _p[2] in ('FIXED', 'MATCH', 'GAP', 'UNVERIFIED', 'N/A'):

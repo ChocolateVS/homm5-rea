@@ -543,10 +543,19 @@ public sealed partial class Battle
                 int balorHp = Db.Creatures.TryGetValue("CREATURE_BALOR", out var bd) && bd.Health > 0 ? bd.Health : 120;
                 int n = Math.Min(2 * u.Count, hp / balorHp);
                 if (n <= 0) return "corpse too weak";
+                // exe FUN_008605a0 / FUN_00861d30: the Balors appear at the corpse (sweep 10, BalorPlacement).
+                if (BalorPlacement(t) is not { } at) return "no room to summon";
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
                 u.AbilityUses[c.Ability] = 1;
                 t.Removed = true;
-                SummonStack(u.Side, "CREATURE_BALOR", n, c.Ability, atb: 0);
+                var probe = new Unit { Id = -1, Size = Db.Creature("CREATURE_BALOR").CombatSize };
+                if (Fits(probe, at))
+                {
+                    var bal = BattleSetup.AddCreature(Db, S, u.Side, "CREATURE_BALOR", n, at, summoned: true);
+                    bal.Atb = 0;
+                    bal.HasMovedFromStart = true;
+                    Emit(new UnitSummoned(bal.Id, "CREATURE_BALOR", n, u.Side, bal.Pos, c.Ability));
+                }
                 break;
             }
             case Ab.Flamestrike:

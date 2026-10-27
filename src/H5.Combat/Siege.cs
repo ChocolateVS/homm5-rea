@@ -109,8 +109,12 @@ public static class SiegeBuilder
             if (def.Type == "MOAT")
             {
                 sg.Moat = def.BlockedTiles.Select(F).Where(s.InBounds).Distinct().ToList();
-                if (db.Moats.TryGetValue(setup.Town, out var moat))
-                    sg.MoatDamage = (int)(moat.MaxDamage * sg.TownLevelRatio);
+                // exe FUN_0085b6d0: 0 for TOWN_NO_TYPE (owner vf 0x58 = 2), else round(TownTypesInfo <Moat><MoatMaxDamage>
+                // (the record's +0xcc: Moat at obj +0xc8 per the loader FUN_00413e00, MaxDamage at +4 per FUN_00413b60) ·
+                // the town's vf 0x74 factor) — FPU rounding (half to even), not truncation; vf 0x74 is the factor the
+                // tower damage FUN_00bfdfb0 uses (the engine's TownLevelRatio).
+                if (db.Moats.TryGetValue(setup.Town, out var moat) && setup.Town != "TOWN_NO_TYPE")
+                    sg.MoatDamage = (int)Math.Round(moat.MaxDamage * (double)(float)sg.TownLevelRatio, MidpointRounding.ToEven);
                 continue;
             }
             int hp = db.ArenaBuildingStats.TryGetValue(def.Type, out var st) ? st.HealthAt(sg.FortLevel) : 200;

@@ -123,20 +123,6 @@ public class AuditSweep9Tests(GameDataFixture f)
         Assert.Equal(t.Id, h.Links[Sk.MarkOfNecromancer]);
     }
 
-    // exe 009789b0 case 0xf1: Guardian Angel resurrects round(Eval(SPELL_EFFECT_GUARDIAN_ANGEL damage, hero level)) hit
-    // points — Base 1 + PerPower 1 · level in the shipped GuardianAngel.xdb. The engine used 240 + 30 · level.
-    [Fact]
-    public void GuardianAngelResurrectsTheSpellTableAmount()
-    {
-        var (b, u, t) = Make("CREATURE_PEASANT", 10, "CREATURE_PEASANT", 10, new Cell(1, 1), new Cell(14, 10));
-        var sp = f.Db.Spell("SPELL_EFFECT_GUARDIAN_ANGEL");
-        Assert.NotNull(sp);
-        var h = b.State.Heroes[0];
-        h.Level = 12;
-        Assert.Equal((int)Math.Round(sp!.DamageAt(Mastery.None).Eval(12)), b.GuardianAngelAmount(h));
-        Assert.Equal(13, b.GuardianAngelAmount(h));
-    }
-
     // exe 00984a00 case 0x3e: choosing the imbued spell sets the hero's ATB to 1 − ImbueArrow_ATBDropOnCast (vf 0x18c) —
     // stock 0, so the hero acts again at once; +0x6ac has no other combat reader (the engine dropped the struck
     // target's ATB by it instead).

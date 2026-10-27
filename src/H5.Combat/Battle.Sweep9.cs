@@ -72,15 +72,15 @@ public sealed partial class Battle
     }
 
     /// <summary>
-    /// Guardian Angel's resurrection (exe FUN_00988860 → FUN_00984a00 case 0xf1 → FUN_009789b0 case 0xf1): the hit points
-    /// are round(max(0, Eval of SPELL_EFFECT_GUARDIAN_ANGEL's damage table (FUN_00a34ca0) at the hero's level (vf 0x23c)))
-    /// — Base 1 + PerPower 1 · level in both shipped data sets (all four mastery items equal). The engine used the manual's
-    /// 240 + 30 · level.
+    /// Guardian Angel's resurrection (exe FUN_00988860 → FUN_00984a00 case 0xf1 → FUN_009789b0 case 0xf1 @ 00978be8..00978bf2):
+    /// the hit points are round(max(0, FUN_00a34ca0(ECX = 0x30 SPELL_RESURRECT, EDX = 3 Expert, power = hero level vf 0x23c)))
+    /// — Resurrect's damage table at Expert (Base 240, PerPower 30 in the stock data, which MMH55 does not override), not
+    /// SPELL_EFFECT_GUARDIAN_ANGEL's own table. FUN_00a34c40 clamps the mastery index to the table length.
     /// </summary>
     internal int GuardianAngelAmount(HeroState h)
     {
-        var sp = Db.Spell("SPELL_EFFECT_GUARDIAN_ANGEL");
-        double v = sp != null && sp.Damage.Length > 0 ? sp.DamageAt(Mastery.None).Eval(h.Level) : 1 + h.Level;
+        var sp = Db.Spell("SPELL_RESURRECT");
+        double v = sp != null && sp.Damage.Length > 0 ? sp.DamageAt(Mastery.Expert).Eval(h.Level) : 0;
         return (int)Math.Round(Math.Max(0, v), MidpointRounding.ToEven);
     }
 }
