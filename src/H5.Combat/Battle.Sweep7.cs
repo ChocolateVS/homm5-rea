@@ -84,6 +84,7 @@ public sealed partial class Battle
     internal void Sweep7TurnStart(Unit u)
     {
         u.FrenzyMultiplier = 1;
+        RemoveEffect(u, H5.Combat.Fx.BerserkerRage);   // exe 00bbc951: vf 0x270(0xf5, time, force 1)
         if (HasAbilityNow(u, Ab.DefileMagic))
             foreach (var v in S.Units.Where(v => v.GetEffect(FxDefiled)?.SourceUnit == u.Id).ToList())
                 RemoveEffect(v, FxDefiled);

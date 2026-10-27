@@ -132,6 +132,7 @@ public sealed partial class Battle
         if (t.HasEffect("SPELL_ABILITY_GATING")) return (false, "COMBAT_NO_GATING_RETALIATE");
         if (ranged && !(HasAbilityNow(t, "ABILITY_RANGED_RETALIATE") && t.MaxShots > 0))
             return (false, "COMBAT_NO_SHOOTER_RETALIATE");
+        if (BerserkerRageBlocksRetaliation(a)) return (false, "COMBAT_NO_RETALIATE");   // exe 00a6005c
         if (t.GetEffect("SPELL_BLIND") is { Mastery: >= Mastery.Expert }) return (false, "COMBAT_NO_BLIND_RETALIATE");
         if (HasAbilityNow(a, Ab.NoEnemyRetaliation)) return (false, "COMBAT_NO_ENEMY_RETALIATE");
         if (a.HasEffect(H5.Combat.Fx.Invisible)) return (false, "COMBAT_NO_RETALIATE_TO_INVISIBLE");

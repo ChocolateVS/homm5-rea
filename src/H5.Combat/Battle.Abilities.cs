@@ -448,9 +448,10 @@ public sealed partial class Battle
             case Ab.BerserkerRage:
             {
                 Emit(new AbilityTriggered(u.Id, c.Ability));
-                // exe 00988051: the cast only adds 0xf5 (vf 0x25c count 2) and ends through the common ability tail
-                // 00984cb6 — no attack in the casting action (the engine attacked at once).
-                AddEffect(u, new Effect { Id = H5.Combat.Fx.BerserkerRage, Value = DefenceOf(u), Actions = 2, Positive = true, Dispellable = false });
+                // exe 00988051: the cast adds 0xf5 with count 2 (vf 0x25c) and runs FUN_00bbc1d0 — the berserk attack (or a
+                // Defend) inside the casting action, then the count drops to 1 (Battle.Sweep9.cs).
+                AddEffect(u, new Effect { Id = H5.Combat.Fx.BerserkerRage, Value = DefenceOf(u), Value2 = 2, Positive = true, Dispellable = false });
+                BerserkerRageCast(u);
                 break;
             }
             case Ab.OrderOfChief:

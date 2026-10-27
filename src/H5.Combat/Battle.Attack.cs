@@ -208,6 +208,7 @@ public sealed partial class Battle
         if (t.GetEffect("SPELL_BLIND") is { Mastery: >= Mastery.Expert }) return false;
         if (t.HasEffect(GatedEffect)) return false;   // exe FUN_00a5fee0: "COMBAT_NO_GATING_RETALIATE"
         if (attacker.HasEffect(H5.Combat.Fx.Invisible)) return false;
+        if (BerserkerRageBlocksRetaliation(attacker)) return false;   // exe 00a5fee0 @ 00a6005c
         if (HasAbilityNow(attacker, Ab.FastAttack) && t.HasEffect("SPELL_SLOW")) return false;    // Swift Attack (p.181)
         return true;
     }
@@ -1220,24 +1221,26 @@ public sealed partial class Battle
     }
 
     /// <summary>Frenzy / Berserker Rage: attack the nearest unit (any side when frenzied) without retaliation for berserker.</summary>
-    void AutoBerserkAttack(Unit u, bool anySide)
+    bool AutoBerserkAttack(Unit u, bool anySide, bool approach = true)
     {
         var candidates = S.Living.Where(o => o.Id != u.Id && !o.IsObject && (anySide || Controller(o) != Controller(u)) && !o.IsWarMachine).ToList();
-        if (candidates.Count == 0) return;
+        if (candidates.Count == 0) return false;
         var options = candidates.Select(t => (t, pos: AttackPositions(u, t))).Where(x => x.pos.Count > 0).ToList();
         if (options.Count == 0 && !anySide)
             options = S.Living.Where(o => o.Id != u.Id && o.Side == u.Side && !o.IsObject && !o.IsWarMachine)
                 .Select(t => (t, pos: AttackPositions(u, t))).Where(x => x.pos.Count > 0).ToList();
         if (options.Count == 0)
         {
+            if (!approach) return false;
             var nearest = candidates.OrderBy(t => Distance(u, t)).ThenBy(t => t.Id).First();
             var reach = Reachable(u);
             if (reach.Count > 0) MoveUnit(u, reach.Keys.OrderBy(c => Distance(u, c, nearest, nearest.Pos)).ThenBy(c => c.X).ThenBy(c => c.Y).First());
-            return;
+            return false;
         }
         var (target, positions) = options.OrderBy(x => x.pos.Min(p => Octile(u.Pos, p))).ThenBy(x => x.t.Id).First();
         var from = positions.OrderBy(p => Octile(u.Pos, p)).First();
         PerformMeleeAttack(u, target, from);
+        return true;
     }
 
     // ------------------------------------------------------------------ combat start

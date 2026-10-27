@@ -95,28 +95,11 @@ public class AuditSweep6Tests(GameDataFixture f)
     {
         var b = Make("CREATURE_FOOTMAN", 10, "CREATURE_PEASANT", 100);
         var u = b.State.Units.First(x => x.Side == 0);
-        u.Effects.Add(new Effect { Id = Fx.BerserkerRage, Value = 0, Actions = 2, Positive = true, Dispellable = false });
+        u.Effects.Add(new Effect { Id = Fx.BerserkerRage, Value = 0, Value2 = 2, Positive = true, Dispellable = false });
         int a0 = b.AttackOf(u);
         Assert.Equal(0, b.DefenceOf(u));
         u.Effects.Add(new Effect { Id = "SPELL_STONESKIN", Value = 7, Positive = true });
         Assert.Equal(a0 + 7, b.AttackOf(u));
         Assert.Equal(0, b.DefenceOf(u));
-    }
-
-    // exe FUN_00984a00 @ 00988051: the Berserker Rage cast adds effect 0xf5 (vf 0x25c, count 2), logs (FUN_00bbc1d0) and
-    // ends through the common ability tail 00984cb6 — it makes no attack. The engine attacked in the casting action.
-    [Fact]
-    public void BerserkerRageCastDoesNotAttack()
-    {
-        var b = Make("CREATURE_BERSERKER", 20, "CREATURE_PEASANT", 100, posA: new Cell(5, 5), posB: new Cell(6, 5));
-        var u = b.State.Units.First(x => x.Side == 0);
-        b.Begin();
-        b.State.Active = u.Id;
-        var r = b.Apply(new UseAbilityCmd(u.Id, Ab.BerserkerRage) { Side = 0 });
-        Assert.True(r.Ok, r.Error);
-        Assert.True(u.HasEffect(Fx.BerserkerRage));
-        int next = r.Events.FindIndex(e => e is TurnStarted);
-        var cast = next < 0 ? r.Events : r.Events.Take(next).ToList();
-        Assert.DoesNotContain(cast, e => e is AttackStarted);
     }
 }

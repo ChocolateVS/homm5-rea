@@ -194,20 +194,25 @@ public sealed partial class Battle
         EndBattle(null, "turn limit");
     }
 
-    int? AdvanceTimeToNextActor()
+    internal int? AdvanceTimeToNextActor()
     {
         for (int guard = 0; guard < 1000; guard++)
         {
-            int? best = null; double bestT = double.PositiveInfinity, bestRate = 0;
+            int? best = null; double bestT = double.PositiveInfinity, bestRate = 0, bestAtb = 0;
             foreach (var a in Actors())
             {
                 double r = Rate(a);
                 if (r <= 0) continue;
-                double t = Math.Max(0, (1 - GetAtb(a)) / r);
+                double atb = GetAtb(a);
+                double t = Math.Max(0, (1 - atb) / r);
+                // Equal turn times: the larger current ATB first (exe comparator FUN_00a2d800: time ascending, then
+                // ATB +0x1c descending). Equal ATB as well: the exe's stable sort keeps the queue order (not traced) —
+                // the engine's higher rate / hero / side / id order stands in.
                 bool better = t < bestT - Eps
-                              || (Math.Abs(t - bestT) <= Eps && (r > bestRate + Eps
-                                  || (Math.Abs(r - bestRate) <= Eps && best != null && TieBreak(a, best.Value))));
-                if (best == null || better) { best = a; bestT = t; bestRate = r; }
+                              || (Math.Abs(t - bestT) <= Eps && (atb > bestAtb + Eps
+                                  || (Math.Abs(atb - bestAtb) <= Eps && (r > bestRate + Eps
+                                      || (Math.Abs(r - bestRate) <= Eps && best != null && TieBreak(a, best.Value))))));
+                if (best == null || better) { best = a; bestT = t; bestRate = r; bestAtb = atb; }
             }
             if (best == null) return null;
             double expiry = NextExpiry();
@@ -364,12 +369,6 @@ public sealed partial class Battle
             else AdvanceUntilDecisionTail();
             return false;
         }
-        if (u.HasEffect(H5.Combat.Fx.BerserkerRage))
-        {
-            AutoBerserkAttack(u, anySide: false);
-            if (u.Alive) FinishTurn(u, 0); else AdvanceUntilDecisionTail();
-            return false;
-        }
         if (u.HasEffect(H5.Combat.Fx.Feared))
         {
             RemoveEffect(u, H5.Combat.Fx.Feared);
@@ -487,6 +486,16 @@ public sealed partial class Battle
         return null;
     }
 
+    /// <summary>The unit side of the Defend handler (exe FUN_008a6be0): posture, Preparation, Blood Rage, Take Roots.</summary>
+    void DefendEffects(Unit u)
+    {
+        u.Defending = true;
+        if (HeroOf(u).HasPerk(Sk.Preparation)) AddEffect(u, new Effect { Id = PreparationEffect, Positive = true, Dispellable = false });   // exe 008a65e0
+        Emit(new Defended(u.Id));
+        RageEvent(u, "DefendRP");
+        if (u.Has(Ab.TakeRoots)) AddEffect(u, new Effect { Id = H5.Combat.Fx.TakeRoots, Positive = true, Dispellable = false });
+    }
+
     string? DoDefend(DefendCmd c)
     {
         if (Actor.IsHero(c.ActorId))
@@ -497,11 +506,7 @@ public sealed partial class Battle
             return null;
         }
         if (CheckActive(c, c.ActorId, out var u) is { } err) return err;
-        u.Defending = true;
-        if (HeroOf(u).HasPerk(Sk.Preparation)) AddEffect(u, new Effect { Id = PreparationEffect, Positive = true, Dispellable = false });   // exe 008a65e0
-        Emit(new Defended(u.Id));
-        RageEvent(u, "DefendRP");
-        if (u.Has(Ab.TakeRoots)) AddEffect(u, new Effect { Id = H5.Combat.Fx.TakeRoots, Positive = true, Dispellable = false });
+        DefendEffects(u);
         EndAction(u.Id, 0);
         return null;
     }
