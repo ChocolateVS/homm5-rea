@@ -31,7 +31,7 @@ public class ArtifactGeneratorTests(Fixture f)
         var drawn = new HashSet<string>();
         for (int i = 0; i < relics.Count; i++) Assert.True(drawn.Add(g.GenerateArtifact(2, 2)!));   // no repeat until all are out
         Assert.True(drawn.SetEquals(relics));
-        Assert.Contains(g.GenerateArtifact(2, 2), relics);   // second pass: any of them again
+        Assert.Contains(g.GenerateArtifact(2, 2)!, relics);   // second pass: any of them again
         Assert.Equal(relics.Count + 1, g.S.ArtifactsGenerated.Where(kv => relics.Contains(kv.Key)).Sum(kv => kv.Value));
     }
 

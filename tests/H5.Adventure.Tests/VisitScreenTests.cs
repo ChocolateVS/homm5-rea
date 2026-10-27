@@ -47,6 +47,37 @@ public class VisitScreenTests(Fixture f)
     }
 
     [Fact]
+    public void DwellingHireAllTakesEveryRowLastFirstWithMoneyAndFreeSlots()
+    {
+        // CHireAllCreaturesCmd 0042b870 → FUN_009a52a0 over the dwelling's rows.
+        var g = f.NewGame("A2M1");
+        var h = MyHero(g);
+        var d = g.Map.Objects.First(o => o.Kind == ObjectKind.Dwelling && o.ActiveTiles.Any() && g.S.Obj(o.Index).Guards.Count == 0
+            && o.Shared.DwellingCreatures.Distinct().Count() >= 2);
+        VisitFromEntrance(g, h, d);
+        var os = g.S.Obj(d.Index);
+        var list = d.Shared.DwellingCreatures;
+        for (int i = 0; i < list.Count; i++) os.Available[i] = 5;
+        for (int i = 0; i < Army.Slots; i++) h.Army[i] = null;
+        g.Current.Purse = new Purse(new H5.Core.Data.Resources(999, 999, 999, 999, 999, 999, 9999999));
+        var plan = g.DwellingHireAllPlan(d.Index, g.Current.Purse, h.Army);
+        Assert.Equal(Enumerable.Range(0, list.Count).Reverse(), plan.Select(x => x.Row));
+        Assert.True(g.Apply(new HireAllCmd(d.Index) { Player = h.Owner }).Ok);
+        Assert.All(Enumerable.Range(0, list.Count), i => Assert.Equal(0, os.Available[i]));
+        Assert.False(g.Apply(new HireAllCmd(d.Index) { Player = h.Owner }).Ok);   // nothing left
+        // Money: count = min(pool, purse / cost); full army: a creature not held yet is skipped.
+        for (int i = 0; i < list.Count; i++) os.Available[i] = 5;
+        var last = list[^1];
+        var cost = g.Core.Creatures[last].Cost;
+        g.Current.Purse = new Purse(H5.Adventure.State.Purse.Scale(cost, 2));
+        for (int i = 0; i < Army.Slots; i++) h.Army[i] = null;
+        Assert.Equal((list.Count - 1, last, 2), g.DwellingHireAllPlan(d.Index, g.Current.Purse, h.Army)[0]);
+        for (int i = 0; i < Army.Slots; i++) h.Army[i] = new Stack("CREATURE_PEASANT", 1);
+        Assert.Empty(g.DwellingHireAllPlan(d.Index, new Purse(new H5.Core.Data.Resources(999, 999, 999, 999, 999, 999, 9999999)), h.Army)
+            .Where(x => x.Creature != "CREATURE_PEASANT"));
+    }
+
+    [Fact]
     public void OwnGarrisonTakesTroopsAndDefendsWithThem()
     {
         var g = f.NewGame("A2M11");

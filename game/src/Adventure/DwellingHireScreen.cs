@@ -14,6 +14,12 @@ namespace H5Reborn.Adventure;
 /// creature tab shows creature_info. The jog dial (00782b70 → 007826c0 → 007824a0) is UI/Common/JogDial/EditJogDial with
 /// jd_editbox: button_0 Exit, button_1 Minus, button_2 Buy, button_3 Plus, button_4 HireAll, tooltips from
 /// UI/Common/JogDial/TownJogDial (Plus/Minus/Buy/BuyAllCreatures). Recruits go into the visiting hero (RecruitCmd on the dwelling).
+/// The rows are the same CHireItem as the town's hire screen (<see cref="H5Reborn.Town.TownHireScreen"/>):
+///   • clicking a creature (006def90 → 006dd9d0) selects the row and sets the count to min(pool, affordable);
+///   • double-clicking (006d8a40, row flag +0x3c from 006ddb60) presses Buy with that count;
+///   • HireAll (006e3050 case 4 → 006da5c0 → CHireAllCreaturesCmd 0042b870 → FUN_009a52a0) hires every row, last row
+///     first, with the free-slot rule (<see cref="H5.Adventure.Engine.Adventure.DwellingHireAllPlan"/>), after the
+///     buy_all_header / buy_all_text_format box with the total cost.
 /// </summary>
 public sealed partial class DwellingHireScreen : MapBuildingScreen
 {
@@ -32,7 +38,16 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
         for (int i = 0; i < 7; i++)
         {
             int row = i;
-            if (Ui.Find($"hire_window/item_{i}/creature") is { } b) b.Clicked += _ => { _row = row; SetCount(Math.Min(1, Available(row))); };
+            if (Ui.Find($"hire_window/item_{i}/creature") is not { } b) continue;
+            b.Clicked += _ => Select(row);
+            b.GuiInput += e =>
+            {
+                if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true, DoubleClick: true })
+                {
+                    Select(row);
+                    Recruit(_count);
+                }
+            };
         }
 
         _jog = new UiScreen("UI/Common/JogDial/EditJogDial.(WindowSimple).xdb", Ui.Bus);
@@ -47,6 +62,10 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
         Ui.Bus.On("jd_button_2_reaction", () => Recruit(_count));
         Ui.Bus.On("jd_button_3_reaction", () => SetCount(_count + 1));
         Ui.Bus.On("jd_button_4_reaction", AskHireAll);
+        // input_a2.cfg hire_screen: jd_button_0 R, jd_button_2 Space, jd_button_4 A; add_creatures / remove_creatures ± 1.
+        Ui.Bus.On("jd_button_0", Close);
+        Ui.Bus.On("jd_button_2", () => Recruit(_count));
+        Ui.Bus.On("jd_button_4", AskHireAll);
         if (_jog.Find("jd_editbox") is UiEditLine edit) edit.Changed += v => { if (int.TryParse(v, out var n)) SetCount(n, updateEdit: false); };
     }
 
@@ -58,7 +77,27 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
     {
         _row = Enumerable.Range(0, Creatures.Count).FirstOrDefault(r => Available(r) > 0);
         base._Ready();
-        SetCount(Math.Min(1, Available(_row)));
+        Select(_row);
+    }
+
+    public override void _UnhandledInput(InputEvent e)
+    {
+        if (e is InputEventKey { Pressed: true, Echo: false } k)
+            foreach (var a in H5Reborn.Interaction.KeyBindings.Actions("hire_screen", k))
+                if (a is "add_creatures" or "remove_creatures")
+                {
+                    SetCount(_count + (a == "add_creatures" ? 1 : -1));
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
+        base._UnhandledInput(e);
+    }
+
+    void Select(int row)
+    {
+        if (row >= Creatures.Count) return;
+        _row = row;
+        SetCount(MaxAffordable());
     }
 
     void SetJogButton(string name, string preset, string tooltip)
@@ -69,13 +108,11 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
         btn.TooltipText = UiResources.StripMarkup(TownUi.Text(tooltip, preset));
     }
 
+    /// <summary>006dd9d0: min(pool, purse / cost).</summary>
     int MaxAffordable()
     {
         if (_row >= Creatures.Count || !Game.Instance.Db.Creatures.TryGetValue(Creatures[_row], out var def)) return 0;
-        int[] cost = { def.Cost.Wood, def.Cost.Ore, def.Cost.Mercury, def.Cost.Crystal, def.Cost.Sulfur, def.Cost.Gem, def.Cost.Gold };
-        int n = Available(_row);
-        for (int i = 0; i < 7; i++) if (cost[i] > 0) n = Math.Min(n, Me.Purse[i] / cost[i]);
-        return Math.Max(0, n);
+        return Math.Max(0, Math.Min(Available(_row), H5.Adventure.Engine.Adventure.Affordable(Me.Purse, def.Cost)));
     }
 
     void SetCount(int n, bool updateEdit = true)
@@ -88,15 +125,24 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
     void Recruit(int n)
     {
         if (n <= 0 || _row >= Creatures.Count) return;
-        if (Apply(new RecruitCmd(Object, _row + 1, n))) SetCount(Math.Min(1, Available(_row)));
+        if (Apply(new RecruitCmd(Object, _row + 1, n))) SetCount(MaxAffordable());
     }
+
+    List<(int Row, string Creature, int Count)> HireAllPlan() =>
+        Adv.Session.Game.DwellingVisitor(Object, Me.Index) is { } h ? Adv.Session.Game.DwellingHireAllPlan(Object, Me.Purse, h.Army) : new();
 
     void AskHireAll()
     {
-        int n = MaxAffordable();
-        if (n <= 0 || !Game.Instance.Db.Creatures.TryGetValue(Creatures[_row], out var def)) return;
-        var text = TownUi.Text("UI/HireCreatures/buy_all_text_format.txt", "") + " " + CostText(H5.Adventure.State.Purse.Scale(def.Cost, n));
-        AdvDialogs.YesNo(this, TownUi.Text("UI/HireCreatures/buy_all_header.txt", ""), text, null, yes => { if (yes) Recruit(n); });
+        var plan = HireAllPlan();
+        if (plan.Count == 0) return;
+        var total = new H5.Adventure.State.Purse();
+        foreach (var (_, creature, n) in plan) total.Add(Game.Instance.Db.Creatures[creature].Cost, n);
+        var cost = new H5.Core.Data.Resources(total[0], total[1], total[2], total[3], total[4], total[5], total[6]);
+        var text = TownUi.Text("UI/HireCreatures/buy_all_text_format.txt", "") + " " + CostText(cost);
+        AdvDialogs.YesNo(this, TownUi.Text("UI/HireCreatures/buy_all_header.txt", ""), text, null, yes =>
+        {
+            if (yes && Apply(new HireAllCmd(Object))) SetCount(MaxAffordable());
+        });
     }
 
     public override void Refresh()
@@ -134,7 +180,7 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
             TownUi.SetCostStrip(Ui.Find("CreatureCountHolder"), unit.Select(u => u * Math.Max(1, _count)).ToArray(), Me);
         }
         if (_jog.Find("button_2") is { } buy) buy.Enabled = _count > 0;
-        if (_jog.Find("button_4") is { } all) all.Enabled = MaxAffordable() > 0;
+        if (_jog.Find("button_4") is { } all) all.Enabled = HireAllPlan().Count > 0;
         if (_jog.Find("button_1") is { } minus) minus.Enabled = _count > 0;
         if (_jog.Find("button_3") is { } plus) plus.Enabled = _count < MaxAffordable();
     }

@@ -72,7 +72,8 @@ public sealed record BuildCmd(int TownObject, string Building) : AdvCommand;
 /// <summary>Recruit from a town dwelling tier (1..7); Upgraded picks the upgraded creature.</summary>
 public sealed record RecruitCmd(int TownObject, int Tier, int Count, int Variant = 0) : AdvCommand;
 /// <summary>
-/// CHireAllCreaturesCmd: hire every town dwelling's creatures (<see cref="Adventure.HireAllPlan"/>); Variants = the hire
+/// CHireAllCreaturesCmd: hire every town dwelling's creatures (<see cref="Adventure.HireAllPlan"/>), or at a map dwelling
+/// every row into the visiting hero (<see cref="Adventure.DwellingHireAllPlan"/>); Variants = the hire
 /// screen's selected column per tier (index tier − 1, −1 = every variant), or null.
 /// </summary>
 public sealed record HireAllCmd(int TownObject, int[]? Variants = null) : AdvCommand;

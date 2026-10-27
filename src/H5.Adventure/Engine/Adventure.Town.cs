@@ -159,6 +159,38 @@ public sealed partial class Adventure
         return plan;
     }
 
+    /// <summary>
+    /// Hire all at a map dwelling: CHireAllCreaturesCmd (0042b870) over the screen's source list (source vfunc 0 — for a
+    /// map dwelling its creature rows, one creature each), planned by the same FUN_009a52a0: rows from the last down, a
+    /// creature the army does not hold takes a free slot (none left → skipped), count = min(pool, floor(purse / cost)),
+    /// paid from a copy of the purse.
+    /// </summary>
+    public List<(int Row, string Creature, int Count)> DwellingHireAllPlan(int dwelling, Purse purse, Stack?[] army)
+    {
+        var plan = new List<(int, string, int)>();
+        if (!S.Objects.TryGetValue(dwelling, out var os)) return plan;
+        var list = O(dwelling).Shared.DwellingCreatures;
+        var money = new Purse { R = (int[])purse.R.Clone() };
+        int free = army.Count(s => s is not { Count: > 0 });
+        for (int row = Math.Min(list.Count, os.Available.Length) - 1; row >= 0; row--)
+        {
+            var creature = list[row];
+            if (os.Available[row] <= 0 || !Core.Creatures.TryGetValue(creature, out var cd)) continue;
+            bool newStack = !army.Any(s => s is { Count: > 0 } && s.Creature == creature) && !plan.Any(x => x.Item2 == creature);
+            if (newStack && free <= 0) continue;
+            int n = Math.Min(os.Available[row], Affordable(money, cd.Cost));
+            if (n <= 0) continue;
+            plan.Add((row, creature, n));
+            money.Add(cd.Cost, -n);
+            if (newStack) free--;
+        }
+        return plan;
+    }
+
+    /// <summary>The visiting hero of a map dwelling (the hire screen's recruit army), or null.</summary>
+    public HeroState? DwellingVisitor(int dwelling, int player) =>
+        S.Heroes.Find(h => h.Alive && h.Owner == player && O(dwelling).ActiveTiles.Contains(h.Pos));
+
     /// <summary>How many of a cost the purse pays for (FUN_009d0500: the smallest resource ratio, truncated).</summary>
     public static int Affordable(Purse purse, Resources cost)
     {
@@ -172,7 +204,7 @@ public sealed partial class Adventure
     string? DoHireAll(HireAllCmd c)
     {
         var p = Current;
-        if (S.Town(c.TownObject) is not { } t) return "no such town";
+        if (S.Town(c.TownObject) is not { } t) return HireAllAtDwelling(c);
         if (t.Owner != p.Index) return "not your town";
         var army = TownRecruitArmy(t);
         var plan = HireAllPlan(t, p.Purse, army, c.Variants);
@@ -187,6 +219,27 @@ public sealed partial class Adventure
         }
         var gh = GarrisonHeroOf(t);
         Emit(new ArmyChanged(gh?.Id ?? -1, gh == null ? c.TownObject : -1));
+        return null;
+    }
+
+    /// <summary>CHireAllCreaturesCmd at a map dwelling: the <see cref="DwellingHireAllPlan"/> into the visiting hero.</summary>
+    string? HireAllAtDwelling(HireAllCmd c)
+    {
+        var p = Current;
+        if (!S.Objects.TryGetValue(c.TownObject, out var os) || O(c.TownObject).Kind != ObjectKind.Dwelling) return "no such town or dwelling";
+        if (os.Owner != p.Index) return "not your dwelling";
+        if (DwellingVisitor(c.TownObject, p.Index) is not { } h) return "a hero must visit the dwelling";
+        var plan = DwellingHireAllPlan(c.TownObject, p.Purse, h.Army);
+        if (plan.Count == 0) return "nothing to hire";
+        foreach (var (row, creature, n) in plan)
+        {
+            var cost = Purse.Scale(Core.Creatures[creature].Cost, n);
+            if (!p.Purse.CanAfford(cost) || os.Available[row] < n || !h.Army.TryAdd(creature, n)) continue;
+            os.Available[row] -= n;
+            Give(p, Purse.Scale(cost, -1));
+            Emit(new CreaturesRecruited(c.TownObject, creature, n));
+        }
+        Emit(new ArmyChanged(h.Id, -1));
         return null;
     }
 
