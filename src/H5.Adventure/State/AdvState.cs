@@ -335,8 +335,11 @@ public sealed class TownState
     public bool AiGarrisonBlocked;
     /// <summary>AllowHeroHiringByRaceInTown / AllowHiringOfHeroInTown (town +0x224), for every player.</summary>
     public HeroFilter HireFilter = new();
-    /// <summary>Rumours heard in this town's tavern, oldest first (text file paths; the town's rumour list, see Adventure.Rumours).</summary>
-    public List<string> Rumours = new();
+    /// <summary>
+    /// The town tavern's rumour list (CAdvMapTown +0xcc, 0x1c-byte entries), oldest first: cleared and given one fresh
+    /// rumour every week (00cd2720), one more per bought rumour (see Adventure.Rumours).
+    /// </summary>
+    public List<RumourEntry> Rumours = new();
 
     public int Level(string type) => Built.TryGetValue(type, out var l) ? l : 0;
     /// <summary>Town level = number of buildings built, counting each upgrade (fan manual p.224 "Town Level").</summary>
@@ -382,6 +385,48 @@ public sealed class ObjState
     public PendingRiddle? Riddle;
     /// <summary>Skill a Witch Hut teaches (rolled on first visit).</summary>
     public string? SkillId;
+    /// <summary>A map tavern's rumour list (CAdvMapTavern +0x10, serialized; never cleared, one entry per bought rumour).</summary>
+    public List<RumourEntry> Rumours = new();
+}
+
+/// <summary>
+/// One told rumour (the generator's 0x1c-byte output entry, 008e85b0): the format text file (an RPGRoot
+/// RUMOUR_FORMAT_* TextFileRef, narrow string +0), its &lt;value=text&gt; (wide string +0xc: an object, creature,
+/// artifact or building name, or the plain rumour's text) and its &lt;value=player&gt; (+0x18: the player id, 0 = none).
+/// Formatted by 008e7d90.
+/// </summary>
+public sealed class RumourEntry
+{
+    public string Format = "";
+    public string Text = "";
+    public int Player;
+
+    /// <summary>Exe 008ea5d0: same format, text and player.</summary>
+    public bool SameAs(RumourEntry? o) => o != null && o.Format == Format && o.Text == Text && o.Player == Player;
+}
+
+/// <summary>A plain rumour of CRumours (+0x8, 0x18-byte entries): text +0, weight +0xc, town type +0x10, times told +0x14.</summary>
+public sealed class PlainRumour
+{
+    public string Text = "";
+    public int Weight;
+    public string TownType = "";
+    public int Told;
+}
+
+/// <summary>A player's last events (CRumours +0x14: 0x40 bytes per player 1..8, written by IRumours slots 2..6).</summary>
+public sealed class RumourEvents
+{
+    public string Monster = "", Artifact = "", Capture = "", Purchase = "", Build = "";
+    /// <summary>+0x3c: the level of the last building (above 1 → RUMOUR_FORMAT_PLAYER_LAST_UPGRADE).</summary>
+    public int BuildLevel;
+}
+
+/// <summary>The world's CRumours (CWorld +0x134, created by 008ea540; fields 2 and 3 serialized by 008eb7a0).</summary>
+public sealed class RumoursState
+{
+    public List<PlainRumour> Plain = new();
+    public RumourEvents[] Last = Enumerable.Range(0, 8).Select(_ => new RumourEvents()).ToArray();
 }
 
 /// <summary>A battle the engine is waiting for (run by H5.Combat, reported back with ResolveBattleCmd).</summary>
@@ -465,6 +510,8 @@ public sealed class AdvState
     public HashSet<Tile> Holes = new();
     /// <summary>Hero definition ids not yet in play (tavern pool).</summary>
     public List<string> HeroPool = new();
+    /// <summary>The rumours' plain list and the players' last events (CRumours, see Adventure.Rumours).</summary>
+    public RumoursState Rumours = new();
     public PendingBattle? Battle;
     public PendingChoice? Choice;
     /// <summary>Random Sphinx riddles not drawn yet (indices into RandomGroup; CRiddlesPool).</summary>

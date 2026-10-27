@@ -133,6 +133,7 @@ public sealed partial class Adventure
     {
         if (os.Owner == p.Index) return;
         os.Owner = p.Index;
+        RumourCaptured(o, p.Index);
         Emit(new ObjectCaptured(o.Index, p.Index));
     }
 
@@ -704,6 +705,7 @@ public sealed partial class Adventure
     {
         h.Artifacts.Add(id);
         Emit(new ArtifactGained(h.Id, id));
+        RumourArtifactGained(h, id);
     }
 
     /// <summary>

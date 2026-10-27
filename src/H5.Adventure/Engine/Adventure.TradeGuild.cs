@@ -49,6 +49,7 @@ public sealed partial class Adventure
     /// </summary>
     void TownWeeklyUpdate(TownState t)
     {
+        TownWeeklyRumour(t);   // town vf 0xf0 = 00cd2720, the first call of 00cd2b90
         if (Player(t.Owner) is { } p)
         {
             var inc = new Purse();

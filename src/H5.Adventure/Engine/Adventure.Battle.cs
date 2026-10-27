@@ -509,7 +509,10 @@ public sealed partial class Adventure
                 Array.Fill(os.Army, null);
                 switch (o.Kind)
                 {
-                    case ObjectKind.Monster: RemoveObject(o.Index); break;
+                    case ObjectKind.Monster:
+                        RumourMonsterBeaten(att, pb.DefenderArmy);
+                        RemoveObject(o.Index);
+                        break;
                     case ObjectKind.Town when S.Town(o.Index) is { } t:
                         t.Garrison = State.Army.Empty();
                         CaptureTown(att, t);

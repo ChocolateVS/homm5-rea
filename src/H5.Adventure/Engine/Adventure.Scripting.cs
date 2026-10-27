@@ -97,6 +97,7 @@ public sealed partial class Adventure
         {
             h.Backpack.Add(artifact);
             Emit(new ArtifactGained(h.Id, artifact));
+            RumourArtifactGained(h, artifact);
         }
     }
 
@@ -135,6 +136,7 @@ public sealed partial class Adventure
     public void ScriptCaptureTown(HeroState? h, TownState t, int player)
     {
         if (h != null && h.Owner == player) { CaptureTown(h, t); return; }
+        if (t.Owner != player && PlayerByIndex(player) != null) RumourCaptured(O(t.Object), player);
         t.Owner = player;
         t.OwnedSinceDay = S.Day;
         S.Obj(t.Object).Owner = player;

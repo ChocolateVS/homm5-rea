@@ -51,6 +51,8 @@ public sealed class AdvMap
     public List<MapObjective> Objectives = new();
     /// <summary>Floor index → terrain (null if the floor does not exist).</summary>
     public MapFloor?[] Floors = new MapFloor?[2];
+    /// <summary>map.xdb MapRumours (AdvMapDesc +0x210, 0x18-byte items: Text resolved at load, Weight, TownType).</summary>
+    public List<H5.Adventure.Data.RumourDef> Rumours = new();
     public string? ScriptPath;
     public string? ScriptSource;
     /// <summary>Spells/artifacts banned or enabled at map level (raw ids from map.xdb).</summary>

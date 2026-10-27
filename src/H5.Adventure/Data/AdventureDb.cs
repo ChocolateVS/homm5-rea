@@ -25,7 +25,10 @@ public sealed class SphinxRiddle
 }
 
 /// <summary>A town building level as defined by TownBuildingSharedStats.</summary>
-/// <summary>One SGameRumoursSet entry: the rumour's text file, its weight and the town type it is told in (TOWN_NO_TYPE = any).</summary>
+/// <summary>
+/// One SGameRumoursSet / MapRumours entry: the rumour's text (resolved at load, as 004c7430 does), its weight and the
+/// town type it is told in (TOWN_NO_TYPE = every tavern).
+/// </summary>
 public sealed record RumourDef(string Text, int Weight, string TownType);
 
 public sealed class BuildingDef
@@ -293,10 +296,25 @@ public sealed partial class AdventureDb
         if (!x.FileSystem.Exists(set)) return;
         foreach (var item in x.Load(set).Root!.Items("rumours"))
         {
-            var text = H5.Core.Xdb.XdbRef.Parse((string?)item.Element("Text")?.Attribute("href"), set).Path;
+            var text = x.ReadText((string?)item.Element("Text")?.Attribute("href"), set)?.Trim() ?? "";
             if (text.Length > 0) CommonRumours.Add(new RumourDef(text, item.Int("Weight"), item.Str("TownType")));
         }
+        // SRPGRoot +0x74 (0x1c-byte items ID / TextFileRef, searched by name in 00bcb7b0): the rumour formats.
+        const string root = "GameMechanics/RPGStats/RPGRoot.xdb";
+        if (!x.FileSystem.Exists(root)) return;
+        foreach (var item in x.Load(root).Root?.Element("Texts")?.Elements("Item") ?? Enumerable.Empty<XElement>())
+            if ((string?)item.Element("ID") is { } id && id.StartsWith("RUMOUR_FORMAT_", StringComparison.Ordinal))
+                RumourFormats[id] = H5.Core.Xdb.XdbRef.Parse((string?)item.Element("TextFileRef")?.Attribute("href"), root).Path;
     }
+
+    /// <summary>A text file referenced from xdb (resolved like 004c7430), null without archives or file.</summary>
+    public string? ReadText(string? href, string? currentFile = null) => _xdb?.ReadText(href, currentFile)?.Trim();
+
+    /// <summary>RPGRoot RUMOUR_FORMAT_* text ids → their text file (00bcb7b0; an unknown id gives "").</summary>
+    public Dictionary<string, string> RumourFormats { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>The format file of an RPGRoot rumour format id, "" when the table has none (00bcb7b0).</summary>
+    public string RumourFormat(string id) => RumourFormats.TryGetValue(id, out var p) ? p : "";
 
     void LoadTownTypes(XdbLoader x)
     {

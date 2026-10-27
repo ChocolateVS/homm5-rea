@@ -32,6 +32,7 @@ public sealed partial class Adventure
         g.StockSpellShops();
         g.ResetTrainingPoints();
         g.PlaceGrail();
+        g.SetupRumours();
         foreach (var h in s.Heroes) g.ResetHeroDay(h, newWeek: true);
         foreach (var p in s.Players) g.RevealOwned(p);
         s.CurrentPlayer = 0;

@@ -162,32 +162,8 @@ public sealed partial class TavernScreen : TownSubScreen
         if (b.Window.ButtonStates.Count > 1) b.SetState(i == _tab ? 1 : 0);
     }
 
-    /// <summary>
-    /// The rumours text (006372f3): FIRST_RUMOR with cur_rumor = entry 0, then for each further entry RUMORS_FORMAT
-    /// with prev_rumors = the text so far and cur_rumor = the entry.
-    /// </summary>
-    void FillRumours()
-    {
-        if (Ui.Find("tavern-rumors-window/RumorsText") is not { } template || Ui.Find("tavern-rumors-window/ScrollContainer") is not { } box) return;
-        string first = UiGameRoot.RelatedTextAt(RumourTexts, "FIRST_RUMOR") ?? "<value=cur_rumor>";
-        string next = UiGameRoot.RelatedTextAt(RumourTexts, "RUMORS_FORMAT") ?? "<value=prev_rumors><br><value=cur_rumor>";
-        string text = "";
-        var list = Owner.Town.Rumours;
-        for (int i = 0; i < list.Count; i++)
-        {
-            var rumour = TownUi.Text(list[i]);
-            text = i == 0 ? first.Replace("<value=cur_rumor>", rumour)
-                : next.Replace("<value=prev_rumors>", text).Replace("<value=cur_rumor>", rumour);
-        }
-        // The screen puts RumorsText into ScrollContainer (vfunc 8, 00637b50); the container scrolls it.
-        template.Visible = false;
-        var sc = box as UiScrollableContainer;
-        sc?.ClearItems();
-        if (_text != null) Ui.RemoveInstance(_text);
-        _text = Ui.Instantiate(template.Window, box.Window, new H5.Core.Ui.Int2(0, 0), "RumorsTextShown");
-        _text.SetText(text);
-        sc?.AddItem(_text);
-    }
+    /// <summary>The rumours text (006372f3 case 2, <see cref="RumourText"/>) of the town's list.</summary>
+    void FillRumours() => _text = RumourText.Fill(Ui, _text, Owner.Town.Rumours, Owner.Session.S);
 
     UiNode? _text;
 }

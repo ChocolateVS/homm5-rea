@@ -30,6 +30,7 @@ public sealed partial class MapTavernScreen : MapBuildingScreen
     readonly ThievesInfo? _thieves;
     readonly UiScreen _jog;
     readonly List<UiNode> _lines = new();
+    UiNode? _text;
     int _tab;
 
     public MapTavernScreen(AdventureScreen adv, int heroId, int obj, bool den) : base(adv, "UI/TavernScreen.(WindowScreen).xdb", heroId, obj)
@@ -53,6 +54,12 @@ public sealed partial class MapTavernScreen : MapBuildingScreen
 
         // 00637b50: the den starts on the thieves page; the tavern on the first hero, else on rumours.
         _tab = den ? 3 : Offers()[0] != null ? 0 : 2;
+        // Dev (screenshots): `--tavern-dev-rumours=N` buys N rumours here and shows the rumours page.
+        if (!den && OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--tavern-dev-rumours=")) is { } dev && int.TryParse(dev.Split('=')[1], out var n))
+        {
+            for (int i = 0; i < n; i++) adv.Session.Apply(new BuyRumourCmd(obj) { Player = Me.Index });
+            _tab = 2;
+        }
     }
 
     static string T(string key) => UiGameRoot.RelatedTextAt(Texts, key) ?? "";
@@ -100,6 +107,12 @@ public sealed partial class MapTavernScreen : MapBuildingScreen
                     if (Offers()[_tab] == null && Offers()[0] == null) _tab = 2;
                 }
                 break;
+            case 2 when !_den:
+                // 00635320: the tavern's list (+0x254), CRerollRumourCmd with the price, BUY_RUMORS_SOUND.
+                if (Me.Purse[Purse.Gold] < game.RumourCost) return;
+                if (Apply(new BuyRumourCmd(Object)))
+                    Audio.AudioSystem.PlayNamed("BUY_RUMORS_SOUND");
+                break;
             case 3 when _thieves is { CanBuy: true }:
                 // 00635440: gold − 250 ≥ 0 → the set-resource command, then one more line (vfunc 0x34).
                 if (Apply(new PayThievesGuildCmd()))
@@ -139,13 +152,19 @@ public sealed partial class MapTavernScreen : MapBuildingScreen
             blocked = status switch { 3 => T("hire_result_no_money"), 5 => T("hire_result_max_heroes"), _ => place ? null : T("hire_result_no_place") };
             can = offers[_tab] != null && blocked == null;
         }
+        else if (_tab == 2 && !_den)
+        {
+            // 006372f3 case 2: the price, the action enabled when price ≤ gold, the list as FIRST_RUMOR + RUMORS_FORMAT.
+            price = game.RumourCost;
+            can = Me.Purse[Purse.Gold] >= price;
+            _text = RumourText.Fill(Ui, _text, Adv.Session.S.Objects.TryGetValue(Object, out var tos) ? tos.Rumours : new(), Adv.Session.S);
+        }
         else if (_tab == 3 && _thieves != null)
         {
             price = ThievesInfo.Cost;
             can = _thieves.CanBuy && Me.Purse[Purse.Gold] >= price;
             FillThieves();
         }
-        // GAP: rumours (CBuyRumorCmd 00639170, price RPGStats +0x54 via 00b4c260) are not modelled; the page shows its texts only.
         foreach (var w in new[] { "tavern-hire-window", "tavern-rumors-window", "tavern-thieves-window" })
             Ui.Find($"{w}/HirePrice/price")?.SetValue("price", price.ToString());
         foreach (var w in new[] { "tavern-rumors-window", "tavern-thieves-window" })

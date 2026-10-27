@@ -39,6 +39,7 @@ public sealed partial class Adventure
     void CaptureTown(HeroState h, TownState t)
     {
         var prev = t.Owner;
+        if (prev != h.Owner) RumourCaptured(O(t.Object), h.Owner);
         t.Owner = h.Owner;
         t.OwnedSinceDay = S.Day;
         h.InTown = t.Object;
@@ -87,6 +88,7 @@ public sealed partial class Adventure
             && Db.Building(t.Type, c.Building, 1)?.Creature is { } dc && Core.Creatures.TryGetValue(dc, out var dcd))
             t.Available[tier - 1] += dcd.WeeklyGrowth;
         Emit(new BuildingBuilt(t.Object, c.Building, next));
+        RumourBuilt(t, c.Building, next);
         StockArtifactMerchants();   // 00cd4a40 at 00cd4db7: a merchant town without a CBlackMarket gets one stocked
         BuildingEffectsOnHeroes(t, c.Building);
         return null;
@@ -284,6 +286,7 @@ public sealed partial class Adventure
             t.Available[tier - 1] -= n;
             Give(p, Purse.Scale(cost, -1));
             Emit(new CreaturesRecruited(c.TownObject, creature, n));
+            RumourCreaturesBought(p.Index, creature);
         }
         var gh = GarrisonHeroOf(t);
         Emit(new ArmyChanged(gh?.Id ?? -1, gh == null ? c.TownObject : -1));
@@ -306,6 +309,7 @@ public sealed partial class Adventure
             os.Available[row] -= n;
             Give(p, Purse.Scale(cost, -1));
             Emit(new CreaturesRecruited(c.TownObject, creature, n));
+            RumourCreaturesBought(p.Index, creature);
         }
         Emit(new ArmyChanged(h.Id, -1));
         return null;
@@ -355,6 +359,7 @@ public sealed partial class Adventure
         pool[slot] -= c.Count;
         Give(p, Purse.Scale(cost, -1));
         Emit(new CreaturesRecruited(c.TownObject, creature, c.Count));
+        RumourCreaturesBought(p.Index, creature);
         Emit(new ArmyChanged(visitor?.Id ?? -1, visitor == null ? c.TownObject : -1));
         return null;
     }

@@ -54,6 +54,9 @@ public sealed class MapLoader
             Description = files.ReadText(root.Href("DescriptionFileRef"))?.Trim() ?? "",
             SpellIds = root.StrItems("spellIDs"), ArtifactIds = root.StrItems("artifactIDs"),
             AvailableHeroes = root.Items("AvailableHeroes").Select(i => i.Value.Trim()).Where(s => s.Length > 0).ToList(),
+            Rumours = root.Items("MapRumours")
+                .Select(i => new H5.Adventure.Data.RumourDef(files.ReadText(i.Href("Text"))?.Trim() ?? "", i.Int("Weight"), i.Str("TownType")))
+                .Where(r => r.Text.Length > 0).ToList(),
         };
 
         ReadPlayers(root, m);
