@@ -293,4 +293,24 @@ public class SpellAvailabilityTests(Fixture f)
         Assert.DoesNotContain(h2.Spells, s => f.Db.Core.Spell(s)!.School == "MAGIC_SCHOOL_RUNIC");
     }
 
+    [Fact]
+    public void BankSpellsComeFromTheHighestCircleWithAnUnknownPoolSpell()
+    {
+        // 009cd2a0 (009cd6df..): per spell circles hi..lo of slot 0x10(circle, 8), unknown (vf 0xdc) only, vf 0xe8(spell, 0).
+        var g = Game("SPELL_MAGIC_ARROW", "SPELL_FIREBALL", "SPELL_SUMMON_BOAT");
+        var h = Hero(g);
+        h.Class = "HERO_CLASS_WIZARD";
+        g.BankSpells(h, 3, 3, 1, 3);
+        Assert.Equal(new[] { "SPELL_FIREBALL", "SPELL_MAGIC_ARROW" }, h.Spells);
+        Assert.True(Engine.Adventure.KnowsSpell(h, "SPELL_FIREBALL"));
+        // Class 8 (vf 0x258): hi · n · 1000 experience instead (vf 0x19c → 0x198).
+        var g2 = Game("SPELL_MAGIC_ARROW");
+        var b = Hero(g2);
+        b.Class = "HERO_CLASS_BARBARIAN";
+        long xp = b.Experience;
+        g2.BankSpells(b, 2, 2, 1, 7);
+        Assert.Empty(b.Spells);
+        Assert.True(b.Experience > xp);
+    }
+
 }

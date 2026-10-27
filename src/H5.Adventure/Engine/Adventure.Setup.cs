@@ -389,14 +389,6 @@ public sealed partial class Adventure
     /// <summary>A random artifact of the class (null = any) from the map's generator (<see cref="GenerateArtifact(int, int)"/>).</summary>
     string? RandomArtifact(string? cls) => GenerateArtifact(cls);
 
-    string? RandomSpell(string? school, int level)
-    {
-        var pool = Core.Spells.Values.Where(s => s.Stock && s.Level == level && s.ManaCost > 0 &&
-                (school == null ? s.School is "MAGIC_SCHOOL_DESTRUCTIVE" or "MAGIC_SCHOOL_DARK" or "MAGIC_SCHOOL_LIGHT" or "MAGIC_SCHOOL_SUMMONING" : s.School == school))
-            .Select(s => s.Id).OrderBy(id => id, StringComparer.Ordinal).ToList();
-        return pool.Count == 0 ? null : pool[S.Rng.Next(pool.Count)];
-    }
-
     /// <summary>
     /// Treasure contents as the exe's reward roller FUN_00a82720 reads them: the amount is the object's own
     /// (IsCustom / Amount, object +0xc8 / +0xcc) or a roll in the shared MinResource..MaxResource (+0xf0 / +0xf4);

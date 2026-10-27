@@ -679,12 +679,39 @@ public sealed partial class Adventure
         Arts(v.Min.Minor, v.Max.Minor, "ARTF_CLASS_MINOR");
         Arts(v.Min.Major, v.Max.Major, "ARTF_CLASS_MAJOR");
         Arts(v.Min.Relic, v.Max.Relic, "ARTF_CLASS_RELIC");
-        int spells = S.Rng.Range(v.Min.Spells, Math.Max(v.Min.Spells, v.Max.Spells));
-        for (int i = 0; i < spells; i++)
-            if (RandomSpell(null, S.Rng.Range(Math.Max(1, v.Min.SpellLevel), Math.Max(v.Min.SpellLevel, v.Max.SpellLevel))) is { } sp)
-                LearnSpell(h, sp, force: true);
+        BankSpells(h, v.Min.Spells, v.Max.Spells, v.Min.SpellLevel, v.Max.SpellLevel);
         os.TimesLooted++;
         os.RechargeDay = bank.DaysForRecharge > 0 && bank.RechargesCount != 0 ? S.Day + bank.DaysForRecharge : int.MaxValue;
+    }
+
+    /// <summary>
+    /// The bank's spells in its victory reward FUN_009cd2a0 (009cd6df..009cda2e), after the artifacts: count n = roll
+    /// (max(RandomSpellsCount min, 0) .. max of both) (variant +0x44 / +0x7c), circles lo = min RandomSpellsLevel and
+    /// hi = max (+0x48 / +0x80), each clamped to 1..5. A class-8 hero (vf 0x258, HERO_CLASS_BARBARIAN) gets hi · n · 1000
+    /// experience instead (vf 0x19c → 0x198, through the modifiers). Otherwise per spell: from circle hi down to lo, the
+    /// first circle whose pool spells (manager slot 0x10(circle, 8): every non-adventure school) hold some the hero does
+    /// not know (vf 0xdc) gives one of them at random (roll 0..count − 1), learned through vf 0xe8(spell, 0) (no source;
+    /// 00b545a0's FUN_00b4b810 refusal applies) with TT_SPELL_LEARNED; none in lo..hi → that spell is lost.
+    /// </summary>
+    public void BankSpells(HeroState h, int minCount, int maxCount, int minLevel, int maxLevel)
+    {
+        int lo0 = Math.Max(minCount, 0);
+        int n = S.Rng.Range(lo0, Math.Max(maxCount, lo0));
+        int lo = Math.Clamp(minLevel, 1, 5), hi = Math.Clamp(maxLevel, 1, 5);
+        if (h.Class == "HERO_CLASS_BARBARIAN")
+        {
+            GainExperience(h, (long)hi * n * 1000);
+            return;
+        }
+        for (int i = 0; i < n; i++)
+            for (int c = hi; c >= lo; c--)
+            {
+                var cand = SpellsOf(c, SchoolNone).Where(sp => !KnowsSpell(h, sp)).ToList();
+                if (cand.Count == 0) continue;
+                var sp = cand[S.Rng.Range(0, cand.Count - 1)];
+                if (SpellFitsRage(h, sp)) LearnSpell(h, sp, force: true);
+                break;
+            }
     }
 
     // ------------------------------------------------------------------ hero gains
