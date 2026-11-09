@@ -425,7 +425,7 @@ public sealed partial class AdventureScripting
             if (mode < -1 || mode > 1) throw c.Error($"Invalid hero custom ability mode {mode}!");
             if (ability < 1 || ability > 4) throw c.Error($"Invalid her custom ability index {ability}!");
             var h = HeroArg(c, 0, HeroIsNotExists);
-            World.Settings[$"custom_ability:{h.Id}:{ability}"] = mode.ToString();
+            Change(() => Game.ScriptControlCustomAbility(h, ability, mode));
         });
         // 0x005d2220: CMakeHeroInteractWithObjectCmd → adventure hero vf 0x74 (visit without moving);
         // nothing happens for a hero that is not on the map.

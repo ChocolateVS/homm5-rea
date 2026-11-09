@@ -142,6 +142,7 @@ public sealed record SwapWarMachinesCmd(int HeroId, int OtherHero, string Machin
 [JsonDerivedType(typeof(GameEnded), "ended")]
 [JsonDerivedType(typeof(Message), "message")]
 [JsonDerivedType(typeof(AdventureSpellCast), "adventure_spell")]
+[JsonDerivedType(typeof(CustomAbilityUsed), "custom_ability")]
 [JsonDerivedType(typeof(BoatCreated), "boat_created")]
 [JsonDerivedType(typeof(HeroEmbarked), "embarked")]
 [JsonDerivedType(typeof(HeroDisembarked), "disembarked")]

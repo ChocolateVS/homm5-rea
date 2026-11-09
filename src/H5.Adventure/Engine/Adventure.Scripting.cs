@@ -276,6 +276,25 @@ public sealed partial class Adventure
         Emit(new BuildingBuilt(t.Object, building, level));
     }
 
+    /// <summary>
+    /// TransformTown (0x005c9ee0): the town object is removed (CRemoveObjectCmd) and a new town of the given type created
+    /// in its place (CCreateTownCmd, Execute 0x0042e8a0 → CAdvMapTown ctor 0x00cd7340 → init FUN_00cd5be0) from the
+    /// record the old town fills with vf 0xf4 (FUN_00cd3ce0): name, owner, capture / hero-deploy triggers, ship tile,
+    /// specialization, editable name/biography, script, CanCaptureOnlyNotVisit, AllowQuickCombat and
+    /// GarrisonBlockedForAI. The record's buildings, army slots and spells stay empty (FUN_004369e0), so the new town
+    /// starts like a map town with no buildings list: town hall 1, every building allowed to the type's maximum,
+    /// empty garrison and creature pools, newly rolled guild, runes, warcries and trade guild.
+    /// </summary>
+    public void ScriptTransformTown(TownState t, string type)
+    {
+        var o = Map.Objects[t.Object];
+        var n = InitTown(o, type, t.Owner, t.Specialization, Array.Empty<TownBuildingInit>(), Array.Empty<ArmySlot>());
+        n.Name = t.Name;
+        n.AiGarrisonBlocked = t.AiGarrisonBlocked;
+        int i = S.Towns.IndexOf(t);
+        if (i >= 0) S.Towns[i] = n; else S.Towns.Add(n);
+    }
+
     /// <summary>RazeTown: the town disappears from play (its razed static replaces it visually).</summary>
     public void ScriptRazeTown(TownState t)
     {
@@ -283,6 +302,27 @@ public sealed partial class Adventure
         foreach (var h in S.Heroes.Where(h => h.InTown == t.Object)) { h.InTown = -1; h.Garrisoned = false; }
         RemoveObject(t.Object);
         CheckEliminations();
+    }
+
+    /// <summary>
+    /// ControlHeroCustomAbility (CControlHeroCustomAbilityCmd, Execute 0x0042a5b0 → hero vf 0x380 = FUN_00b56970): ability
+    /// 1..4 is the book spell SPELL_ABILITY_CUSTOM1..4 (0x15c..0x15f). Mode 1 adds it to the known list and the book and
+    /// takes it off the disabled list; 0 adds it the same way and puts it on the disabled list; -1 removes it from all.
+    /// GAP: the hero's further int list +0x310 that the same calls fill is not identified.
+    /// </summary>
+    public void ScriptControlCustomAbility(HeroState h, int ability, int mode)
+    {
+        var spell = "SPELL_ABILITY_CUSTOM" + ability;
+        if (mode == -1)
+        {
+            h.Spells.Remove(spell);
+            h.SpellSources.Remove(spell);
+            h.DisabledSpells.Remove(spell);
+            return;
+        }
+        if (!h.Spells.Contains(spell)) h.Spells.Add(spell);
+        if (mode == 0) { if (!h.DisabledSpells.Contains(spell)) h.DisabledSpells.Add(spell); }
+        else h.DisabledSpells.Remove(spell);
     }
 
     public int ScriptHeroMorale(HeroState h) => HeroMorale(h);

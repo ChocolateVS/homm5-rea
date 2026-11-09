@@ -348,6 +348,9 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
                 case HeroMoved hm:
                     OnHeroMoved(hm);
                     break;
+                case CustomAbilityUsed cu when S.Hero(cu.HeroId) is { } ch:
+                    Fire(TriggerTypes.CustomAbility, "", null, ch.DefId, cu.Ability);
+                    break;
                 case BattleResolved br:
                     RecordCombat(br);
                     if (World.PendingCombat is { } pc)

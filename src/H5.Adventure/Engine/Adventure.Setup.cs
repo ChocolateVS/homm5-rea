@@ -93,36 +93,46 @@ public sealed partial class Adventure
             // A random town owned by a player becomes that player's race.
             if (!PlayableRaces.Contains(type))
                 type = owner >= 0 ? PlayerByIndex(owner)!.Race : PlayableRaces[S.Rng.Next(PlayableRaces.Length)];
-            var t = new TownState { Object = o.Index, Type = type, Owner = owner, Pos = o.Pos, Specialization = o.Specialization };
-            // Town init 00cd6460 over the map's buildings list (AdvMapTown +0x1a4: Type, InitialUpgrade, MaxUpgrade):
-            // limit (record +0x28) = min(MaxUpgrade, data maximum) — BLD_UPG_NONE forbids the building — and the
-            // start level = min(InitialUpgrade, limit); the town hall is raised to level 1 when lower (any town type).
-            foreach (var b in o.Buildings)
-            {
-                int limit = Math.Min(b.Max, Db.MaxLevel(type, b.Type));
-                t.MaxLevel[b.Type] = limit;
-                t.Built[b.Type] = Math.Min(b.Initial, limit);
-            }
-            if (t.Level("TB_TOWN_HALL") < 1) t.Built["TB_TOWN_HALL"] = 1;
-            // Buildings the map doesn't mention are allowed up to the town type's maximum.
-            if (Db.Buildings.TryGetValue(type, out var defs))
-                foreach (var d in defs)
-                    if (!t.MaxLevel.ContainsKey(d.Type)) { t.MaxLevel[d.Type] = Db.MaxLevel(type, d.Type); t.Built.TryAdd(d.Type, 0); }
-            foreach (var g in o.Guards) t.Garrison.TryAdd(g.Creature, g.Count);
-            // Initial creature pools: the start levels go through the build path (00cd6460 → vf 0x6c → 00cd4a40), whose
-            // new pool (FUN_00cd0710 at 00cd4e42) holds the base creature's WeeklyGrowth. No weekly update runs at map
-            // start: 00993bf0 (IAdvMapWeeklyUpdate vf 4 on every object) is reached only from the new-day function
-            // 009949d0 (GiveTurnToNextPlayers 00998060), so fort, horde and week bonuses come with the first new week.
-            for (int tier = 1; tier <= 7; tier++)
-                t.Available[tier - 1] = t.Level($"TB_DWELLING_{tier}") > 0
-                    && Db.Building(t.Type, $"TB_DWELLING_{tier}", 1)?.Creature is { } dc && Core.Creatures.TryGetValue(dc, out var dcd)
-                    ? dcd.WeeklyGrowth : 0;
-            // FUN_00cd79d0: the guild, runes and warcries are rolled after the initial buildings. The map's per-town
-            // spellIDs (AdvMapTown +0xf4) are copied by FUN_00cd1650 into the init record but FUN_00cd5be0 never reads them.
-            RollTownSpells(t);
-            RollTradeGuild(t);   // the start levels go through 00cd4a40 (00cd6460), which draws for ability 0x1d
+            var t = InitTown(o, type, owner, o.Specialization, o.Buildings, o.Guards);
             S.Towns.Add(t);
         }
+    }
+
+    /// <summary>
+    /// Town init FUN_00cd5be0 from its init record: the map load fills the record from the AdvMapTown (FUN_00cd1650),
+    /// TransformTown from the old town (vf 0xf4 = FUN_00cd3ce0, no buildings, army or spells).
+    /// </summary>
+    TownState InitTown(MapObject o, string type, int owner, string? specialization, IEnumerable<TownBuildingInit> buildings, IEnumerable<ArmySlot> garrison)
+    {
+        var t = new TownState { Object = o.Index, Type = type, Owner = owner, Pos = o.Pos, Specialization = specialization };
+        // Town init 00cd6460 over the map's buildings list (AdvMapTown +0x1a4: Type, InitialUpgrade, MaxUpgrade):
+        // limit (record +0x28) = min(MaxUpgrade, data maximum) — BLD_UPG_NONE forbids the building — and the
+        // start level = min(InitialUpgrade, limit); the town hall is raised to level 1 when lower (any town type).
+        foreach (var b in buildings)
+        {
+            int limit = Math.Min(b.Max, Db.MaxLevel(type, b.Type));
+            t.MaxLevel[b.Type] = limit;
+            t.Built[b.Type] = Math.Min(b.Initial, limit);
+        }
+        if (t.Level("TB_TOWN_HALL") < 1) t.Built["TB_TOWN_HALL"] = 1;
+        // Buildings the map doesn't mention are allowed up to the town type's maximum.
+        if (Db.Buildings.TryGetValue(type, out var defs))
+            foreach (var d in defs)
+                if (!t.MaxLevel.ContainsKey(d.Type)) { t.MaxLevel[d.Type] = Db.MaxLevel(type, d.Type); t.Built.TryAdd(d.Type, 0); }
+        foreach (var g in garrison) t.Garrison.TryAdd(g.Creature, g.Count);
+        // Initial creature pools: the start levels go through the build path (00cd6460 → vf 0x6c → 00cd4a40), whose
+        // new pool (FUN_00cd0710 at 00cd4e42) holds the base creature's WeeklyGrowth. No weekly update runs at map
+        // start: 00993bf0 (IAdvMapWeeklyUpdate vf 4 on every object) is reached only from the new-day function
+        // 009949d0 (GiveTurnToNextPlayers 00998060), so fort, horde and week bonuses come with the first new week.
+        for (int tier = 1; tier <= 7; tier++)
+            t.Available[tier - 1] = t.Level($"TB_DWELLING_{tier}") > 0
+                && Db.Building(t.Type, $"TB_DWELLING_{tier}", 1)?.Creature is { } dc && Core.Creatures.TryGetValue(dc, out var dcd)
+                ? dcd.WeeklyGrowth : 0;
+        // FUN_00cd79d0: the guild, runes and warcries are rolled after the initial buildings. The map's per-town
+        // spellIDs (AdvMapTown +0xf4) are copied by FUN_00cd1650 into the init record but FUN_00cd5be0 never reads them.
+        RollTownSpells(t);
+        RollTradeGuild(t);   // the start levels go through 00cd4a40 (00cd6460), which draws for ability 0x1d
+        return t;
     }
 
     void SetupObjects()

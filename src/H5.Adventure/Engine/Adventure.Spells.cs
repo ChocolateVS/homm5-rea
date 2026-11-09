@@ -22,6 +22,9 @@ public sealed record CastAdventureSpellCmd(int HeroId, string Spell, Tile? Targe
 
 public sealed record AdventureSpellCast(int HeroId, string Spell, Tile From, Tile To) : AdvEvent;
 
+/// <summary>A hero cast the script custom ability SPELL_ABILITY_CUSTOM&lt;Ability&gt; (fires CUSTOM_ABILITY_TRIGGER).</summary>
+public sealed record CustomAbilityUsed(int HeroId, int Ability) : AdvEvent;
+
 public sealed partial class Adventure
 {
     public const string SpellDimensionDoor = "SPELL_DIMENSION_DOOR";
@@ -81,6 +84,19 @@ public sealed partial class Adventure
         int mana = AdventureSpellCost(c.Spell);
         switch (c.Spell)
         {
+            case "SPELL_ABILITY_CUSTOM1": case "SPELL_ABILITY_CUSTOM2": case "SPELL_ABILITY_CUSTOM3": case "SPELL_ABILITY_CUSTOM4":
+            {
+                // Can-cast FUN_00b4c430: a custom ability in the hero's disabled list (+0x2d8) cannot be cast; the cast check
+                // 008652f0 has no further condition for 0x15c..0x15f. The cast 008656e0 takes the spell's mana (hero vf
+                // 0x160) and posts the script event (world vf 0x134) with the hero and the ability 1..4 (FUN_00866130),
+                // which runs the CUSTOM_ABILITY_TRIGGER handler.
+                if (h.DisabledSpells.Contains(c.Spell)) return "the ability is disabled";
+                if (h.Mana < mana) return "not enough mana";
+                h.Mana -= mana;
+                Emit(new AdventureSpellCast(h.Id, c.Spell, h.Pos, h.Pos));
+                Emit(new CustomAbilityUsed(h.Id, c.Spell[^1] - '0'));
+                return null;
+            }
             case SpellDimensionDoor:
             {
                 if (c.Target is not { } to) return "no target";

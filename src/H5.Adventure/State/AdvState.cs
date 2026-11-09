@@ -204,6 +204,11 @@ public sealed class HeroState
     /// from here (its sources are then not kept).
     /// </summary>
     public Dictionary<string, List<string>> SpellSources = new();
+    /// <summary>
+    /// Book spells the hero may not cast (hero +0x2d8 list, checked by the can-cast test FUN_00b4c430): the script custom
+    /// abilities SPELL_ABILITY_CUSTOM1..4 set to CUSTOM_ABILITY_DISABLED by ControlHeroCustomAbility (FUN_00b56970).
+    /// </summary>
+    public List<string> DisabledSpells = new();
     /// <summary>Talisman of Adventure level (hero +0x230; vf 0x300 / setter 0x304 = FUN_00b4ce30), Walker's Hut.</summary>
     public int TalismanLevel;
     public List<string> Artifacts = new();

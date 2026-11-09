@@ -81,14 +81,14 @@ public sealed partial class AdventureScripting
             if (t.Level(b) >= BuildingMaxLevel(t, b)) return;
             Change(() => Game.ScriptUpgradeBuilding(t, b));
         });
-        // 0x005c9ee0: the exe replaces the town object (CRemoveObjectCmd + CCreateTownCmd) keeping
-        // only name and owner; the engine only changes the type.
+        // 0x005c9ee0: the exe replaces the town object (CRemoveObjectCmd + CCreateTownCmd from the old
+        // town's vf 0xf4 record, see Adventure.ScriptTransformTown), then plays TOWN_TRANSFORM.
         Reg("TransformTown", c =>
         {
             var t = TownArg(c, 0, "Town \"{0}\" is not exists", checkEmpty: false);
             int id = c.Int(1);
             var type = EnumTables.Town(id) ?? throw c.Error($"Invalid town type #{id}");
-            t.Type = type;
+            Change(() => Game.ScriptTransformTown(t, type));
             Emit("town_transformed", ("town", c.Str(0)), ("type", type));
         });
         // 0x005ca3f0: the town is removed and its (RazedStatic) placed with the town's name.
