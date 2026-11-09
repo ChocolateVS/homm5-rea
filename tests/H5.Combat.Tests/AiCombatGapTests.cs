@@ -174,4 +174,39 @@ public class AiCombatGapTests(GameDataFixture f)
         Assert.True(ghost.Has(Ab.Incorporeal));
         Assert.Equal((int)(long)((int)ghost.TotalHealth * 1.4), (int)CombatValue.Of(b, 0).My.Health);
     }
+    [Fact]
+    public void GuardAndBlockMovesNeedUsToOutShoot()   // FUN_008d64e0: FUN_00bf9eb0 = own FUN_00bf9d30 > the enemy's
+    {
+        var st = CombatAiStats.Load(f.Db);
+        var row = Enum.GetValues<AiDifficulty>().First(r => st.Difficulty[(int)r].UseBlockEnemyMoves && st.Difficulty[(int)r].UseDefendShootersMoves);
+        IReadOnlyList<OriginalBattleAI.Candidate> Candidates(int ownArchers, int enemyArchers)
+        {
+            var s = BattleSetup.Create(f.Db,
+                new ArmySetup { Army = { new ArmySlot("CREATURE_FOOTMAN", 10), new ArmySlot("CREATURE_ARCHER", ownArchers) } },
+                new ArmySetup { Army = { new ArmySlot("CREATURE_ARCHER", enemyArchers), new ArmySlot("CREATURE_PEASANT", 10) } },
+                1, obstacles: Array.Empty<Cell>(), skipTactics: true);
+            var b = new Battle(f.Db, s);
+            var footman = s.Units.First(u => u.CreatureId == "CREATURE_FOOTMAN");
+            footman.Pos = new Cell(3, 5);
+            s.Units.First(u => u.Side == 0 && u.CreatureId == "CREATURE_ARCHER").Pos = new Cell(1, 5);
+            s.Units.First(u => u.Side == 1 && u.CreatureId == "CREATURE_ARCHER").Pos = new Cell(7, 5);
+            s.Units.First(u => u.Side == 1 && u.CreatureId == "CREATURE_PEASANT").Pos = new Cell(11, 1);
+            b.Begin();
+            for (int i = 0; i < 50 && b.State.Active != footman.Id; i++)
+            {
+                var la = b.GetLegalActions();
+                if (la == null) break;
+                b.Apply(la.IsHero ? new WaitCmd(la.Actor) { Side = b.SideToAct!.Value } : new DefendCmd(la.Actor) { Side = b.SideToAct!.Value });
+            }
+            Assert.Equal(footman.Id, b.State.Active);
+            var ai = new OriginalBattleAI { RowOverride = row, HumanSides = new[] { false, false } };
+            ai.Decide(b, 0);
+            return ai.LastCandidates;
+        }
+        var strong = Candidates(60, 2);
+        Assert.Contains(strong, c => c.Label.StartsWith("guard shooter"));
+        Assert.Contains(strong, c => c.Label.StartsWith("block shooter"));
+        var weak = Candidates(2, 60);
+        Assert.DoesNotContain(weak, c => c.Label.StartsWith("guard shooter") || c.Label.StartsWith("block shooter"));
+    }
 }

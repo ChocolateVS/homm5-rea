@@ -348,8 +348,10 @@ public sealed partial class OriginalBattleAI : IBattleAI
         // Melee (FUN_008d68c0 → FUN_008d64e0; FUN_008d5b90 when that adds nothing).
         var reach = b.Reachable(u);
         int before = list.Count;
-        // Guard / block moves (FUN_008d64e0 head): only while the enemy out-shoots us (FUN_00bf9eb0 on the start value).
-        if (start.My.ShooterPower(start.Enemy) < start.Enemy.ShooterPower(start.My))
+        // Guard / block moves (FUN_008d64e0 head): only while WE out-shoot the enemy (FUN_00bf9eb0 on the start value:
+        // our FUN_00bf9d30 above the enemy's). GAP-details: the gates think +0x1b7 (settings +0xa3 = FUN_00b393a0's count
+        // ≤ 2) and actor vf 0x6c → vf 0x58 are not applied.
+        if (SideValue.OutShoots(start.My, start.Enemy))
         {
             if (diff.UseDefendShootersMoves) list.AddRange(DefendShooterMoves(b, u, side, reach));
             if (diff.UseBlockEnemyMoves) list.AddRange(BlockEnemyMoves(b, u, side, reach, enemies, diff));
