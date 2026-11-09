@@ -258,6 +258,22 @@ public sealed partial class Adventure
         return plan;
     }
 
+    /// <summary>
+    /// The hire screen rows of a map dwelling: the shared's creature slots the dwelling offers, in the shared's order.
+    /// H5_Game.exe: the dwelling's list (+0x11c, filled by 009a6040 → 009a5fd0 with the offered creatures only) gives
+    /// one row descriptor per entry (006df9a0 → 006de820); 006ddb60 hides every item_N and 006db6b0 shows the filled ones,
+    /// so creatures left out of the list have no row.
+    /// </summary>
+    public List<int> DwellingRows(int dwelling)
+    {
+        var rows = new List<int>();
+        var list = O(dwelling).Shared.DwellingCreatures;
+        var off = S.Objects.TryGetValue(dwelling, out var os) ? os.DwellingOff : null;
+        for (int i = 0; i < list.Count; i++)
+            if (off == null || i >= off.Length || !off[i]) rows.Add(i);
+        return rows;
+    }
+
     /// <summary>The visiting hero of a map dwelling (the hire screen's recruit army), or null.</summary>
     public HeroState? DwellingVisitor(int dwelling, int player) =>
         S.Heroes.Find(h => h.Alive && h.Owner == player && O(dwelling).ActiveTiles.Contains(h.Pos));

@@ -14,6 +14,9 @@ namespace H5Reborn.Adventure;
 /// creature tab shows creature_info. The jog dial (00782b70 → 007826c0 → 007824a0) is UI/Common/JogDial/EditJogDial with
 /// jd_editbox: button_0 Exit, button_1 Minus, button_2 Buy, button_3 Plus, button_4 HireAll, tooltips from
 /// UI/Common/JogDial/TownJogDial (Plus/Minus/Buy/BuyAllCreatures). Recruits go into the visiting hero (RecruitCmd on the dwelling).
+/// Rows: one per creature the dwelling offers, in the shared's order (<see cref="H5.Adventure.Engine.Adventure.DwellingRows"/>:
+/// 006df9a0 / 006de820 over the dwelling's +0x11c list; 006ddb60 hides every item, 006db6b0 shows the filled ones); with no
+/// selection the first row is selected (006df9a0 tail: items[0]'s creature).
 /// The rows are the same CHireItem as the town's hire screen (<see cref="H5Reborn.Town.TownHireScreen"/>):
 ///   • clicking a creature (006def90 → 006dd9d0) selects the row and sets the count to min(pool, affordable);
 ///   • double-clicking (006d8a40, row flag +0x3c from 006ddb60) presses Buy with that count;
@@ -70,12 +73,16 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
     }
 
     MapObject Dwelling => Adv.Session.Map.Objects[Object];
-    List<string> Creatures => Dwelling.Shared.DwellingCreatures;
-    int Available(int row) => Adv.Session.S.Objects.TryGetValue(Object, out var os) && row < os.Available.Length ? os.Available[row] : 0;
+    List<int>? _rows;
+    /// <summary>The dwelling's creature slot shown in each row (only the offered creatures, 009a6040).</summary>
+    List<int> Rows => _rows ??= Adv.Session.Game.DwellingRows(Object);
+    int RowCount => Rows.Count;
+    string RowCreature(int row) => Dwelling.Shared.DwellingCreatures[Rows[row]];
+    int Available(int row) => row < RowCount && Adv.Session.S.Objects.TryGetValue(Object, out var os) && Rows[row] < os.Available.Length ? os.Available[Rows[row]] : 0;
 
     public override void _Ready()
     {
-        _row = Enumerable.Range(0, Creatures.Count).FirstOrDefault(r => Available(r) > 0);
+        _row = 0;
         base._Ready();
         Select(_row);
     }
@@ -95,7 +102,7 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
 
     void Select(int row)
     {
-        if (row >= Creatures.Count) return;
+        if (row >= RowCount) return;
         _row = row;
         SetCount(MaxAffordable());
     }
@@ -111,7 +118,7 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
     /// <summary>006dd9d0: min(pool, purse / cost).</summary>
     int MaxAffordable()
     {
-        if (_row >= Creatures.Count || !Game.Instance.Db.Creatures.TryGetValue(Creatures[_row], out var def)) return 0;
+        if (_row >= RowCount || !Game.Instance.Db.Creatures.TryGetValue(RowCreature(_row), out var def)) return 0;
         return Math.Max(0, Math.Min(Available(_row), H5.Adventure.Engine.Adventure.Affordable(Me.Purse, def.Cost)));
     }
 
@@ -124,8 +131,8 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
 
     void Recruit(int n)
     {
-        if (n <= 0 || _row >= Creatures.Count) return;
-        if (Apply(new RecruitCmd(Object, _row + 1, n))) SetCount(MaxAffordable());
+        if (n <= 0 || _row >= RowCount) return;
+        if (Apply(new RecruitCmd(Object, Rows[_row] + 1, n))) SetCount(MaxAffordable());
     }
 
     List<(int Row, string Creature, int Count)> HireAllPlan() =>
@@ -154,7 +161,7 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
         for (int i = 0; i < 7; i++)
         {
             var item = $"hire_window/item_{i}";
-            bool used = i < Creatures.Count && db.Creatures.ContainsKey(Creatures[i]);
+            bool used = i < RowCount && db.Creatures.ContainsKey(RowCreature(i));
             Ui.SetVisible(item, used);
             if (!used) continue;
             // Map dwellings hold one creature per row: no upgrade columns.
@@ -163,16 +170,16 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
             Ui.SetVisible($"{item}/creature_upgrade_selection", i == _row);
             TownUi.SetPicture(Ui.Find($"{item}/dwelling"), icon);
             var cr = Ui.Find($"{item}/creature");
-            TownUi.SetPicture(cr, TownUi.CreatureIcon(Creatures[i]));
+            TownUi.SetPicture(cr, TownUi.CreatureIcon(RowCreature(i)));
             (cr?.FindChild("text", false, false) as UiNode)?.SetValue("value", Available(i).ToString());
             var def = Ui.Find($"{item}/definition");
             def?.SetText(UiResources.Instance.Text(Item + "definition.txt"));
             def?.SetValue("count", Available(i).ToString());
-            def?.SetValue("growth", db.Creatures[Creatures[i]].WeeklyGrowth.ToString());
+            def?.SetValue("growth", db.Creatures[RowCreature(i)].WeeklyGrowth.ToString());
         }
-        if (_row < Creatures.Count && db.Creatures.TryGetValue(Creatures[_row], out var cd))
+        if (_row < RowCount && db.Creatures.TryGetValue(RowCreature(_row), out var cd))
         {
-            TownUi.SetPicture(Ui.Find("creature_info/icon"), TownUi.CreatureIcon(Creatures[_row], large: true));
+            TownUi.SetPicture(Ui.Find("creature_info/icon"), TownUi.CreatureIcon(RowCreature(_row), large: true));
             if (Ui.Find("creature_info/icon_definition") is { } idef) { idef.SetValue("name", cd.Name); idef.SetValue("tier", cd.Tier.ToString()); }
             Ui.Find("creature_info/quantity")?.SetValue("value", Available(_row).ToString());
             // Cost of the selected count (CreatureCountHolder: wood … gold, red when not affordable).

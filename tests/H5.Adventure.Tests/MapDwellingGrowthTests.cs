@@ -91,6 +91,26 @@ public class MapDwellingGrowthTests(Fixture f)
     }
 
     [Fact]
+    public void DwellingHireRowsAreTheOfferedCreaturesInOrder()
+    {
+        // 006df9a0 / 006de820: one hire row per entry of the dwelling's list (009a6040 → 009a5fd0, offered creatures only),
+        // in the shared's order; creatures left out get no row (006ddb60 hides every item, 006db6b0 shows the filled ones).
+        bool sawGap = false;
+        foreach (var map in new[] { "A1M4", "A2M1", "A2M7", "A2M11", "A2M13" })
+        {
+            var g = f.NewGame(map, seed: 11);
+            foreach (var o in g.Map.Objects.Where(x => x.Kind == ObjectKind.Dwelling && g.S.Objects.ContainsKey(x.Index)))
+            {
+                var off = g.S.Obj(o.Index).DwellingOff!;
+                var rows = g.DwellingRows(o.Index);
+                Assert.Equal(Enumerable.Range(0, off.Length).Where(i => !off[i]).ToList(), rows);
+                if (rows.Count < o.Shared.DwellingCreatures.Count) sawGap = true;
+            }
+        }
+        Assert.True(sawGap);
+    }
+
+    [Fact]
     public void BoughtWeekMidWeekAddsOnlyTheMoonPartToDwellings()
     {
         var g = f.NewGame("A2M1", seed: 3);
