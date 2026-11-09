@@ -154,7 +154,7 @@ public partial class TownScreen : Control
         // The dndicon template is only used by the original drag code.
         _hud.SetVisible("dndicon", false);
 
-        _army = new ArmySlots(_dialogLayer, () => Apply);
+        _army = new ArmySlots(_dialogLayer, () => ApplyArmyMove);
         _army.Changed += Refresh;
         for (int k = 1; k <= 7; k++)
         {
@@ -167,6 +167,29 @@ public partial class TownScreen : Control
 
     internal HeroState? VisitingHero() => Session.S.Heroes.FirstOrDefault(h => h.Alive && h.InTown == Town.Object && !h.Garrisoned);
     internal HeroState? GarrisonHero() => Session.S.Heroes.FirstOrDefault(h => h.Alive && h.InTown == Town.Object && h.Garrisoned);
+
+    /// <summary>
+    /// The town army rows' drop handler (the code at 0061591b..006159ff): moving a stack from a hero's army into the other
+    /// army when the hero holds fewer than two stacks (FUN_0045a320 &lt; 2) shows T_LEFT_LAST_CREATURE / T_MSGBOX_TITLE
+    /// (00679150) and sends nothing. The guard's flag ([esp+0x13]) is read here as "the stack would leave the hero"
+    /// (empty or same-creature destination) — UNVERIFIED.
+    /// </summary>
+    bool ApplyArmyMove(AdvCommand cmd)
+    {
+        if (cmd is SwapStacksCmd m && m.FromHero >= 0 && m.FromHero != m.ToHero && Session.S.Hero(m.FromHero) is { } h
+            && h.Army.StackCount() < 2)
+        {
+            Stack?[]? to = m.ToHero >= 0 ? Session.S.Hero(m.ToHero)?.Army : m.ToTown >= 0 ? Session.S.Town(m.ToTown)?.Garrison : null;
+            var dest = to?[m.ToSlot];
+            if (dest is not { Count: > 0 } || dest.Creature == h.Army[m.FromSlot]?.Creature)
+            {
+                var texts = "UI/TownScreen/texts.(WindowRelatedTexts).xdb";
+                Notice(UiGameRoot.RelatedTextAt(texts, "T_MSGBOX_TITLE") ?? "", UiGameRoot.RelatedTextAt(texts, "T_LEFT_LAST_CREATURE") ?? "");
+                return false;
+            }
+        }
+        return Apply(cmd);
+    }
 
     bool Apply(AdvCommand cmd)
     {
@@ -221,19 +244,127 @@ public partial class TownScreen : Control
     /// </summary>
     void UpdateBuildingButtons()
     {
-        var notBuilt = TownUi.Text("UI/TownScreen/building_not_present.txt", "");
         foreach (var (window, building) in new[]
                  {
                      ("EnterMarket", "TB_MARKETPLACE"), ("EnterTavern", "TB_TAVERN"), ("EnterShipyard", "TB_SHIPYARD"),
-                     ("EnterBlacksmith", "TB_BLACKSMITH"), ("MagicGuild", H5.Adventure.Engine.Adventure.GuildScreenBuilding(Town)),
+                     ("EnterBlacksmith", "TB_BLACKSMITH"),
                  })
+            BuildingButton(window, building, null);
+        // 00614d00: MagicGuild's tooltip is TT_HALL_OF_TRIAL when 006145a0 gives TB_SPECIAL_1 (a Stronghold), else TT_MAGE_GUILD.
+        var guild = H5.Adventure.Engine.Adventure.GuildScreenBuilding(Town);
+        BuildingButton("MagicGuild", guild, HudText(guild == "TB_MAGIC_GUILD" ? "TT_MAGE_GUILD" : "TT_HALL_OF_TRIAL"));
+        UpdateArtifactsButton();
+        // 0061b1c0 (BL = the owner check 00613c00): EnterFort enabled with 0061a390 — a dwelling (buildings 7..0xd) of
+        // level > 0 (its caravan part, other dwellings of the player, is not modelled); the upgrade button (+0x38c, vf
+        // 0x3c) with 00613090 — a dwelling of level > 1; EnterHall enabled for the owner, its button state (vf 0xc) = town
+        // vf 0x9c (00cce4e0: a build is still possible today).
+        bool Dwellings(int min) => Enumerable.Range(1, 7).Any(k => Town.Level($"TB_DWELLING_{k}") >= min);
+        if (_hud.Find("EnterFort") is { } fort) fort.Enabled = Dwellings(1);
+        if (_hud.Find("UpgradeCreatures") is { } upgrade) upgrade.Enabled = Dwellings(2);
+        if (_hud.Find("EnterHall") is { } hall)
         {
-            if (_hud.Find(window) is not { } button) continue;
-            bool built = Town.Level(building) > 0;
-            button.Enabled = built;
-            if (UiResources.Instance.Text(button.Window.TooltipPath) is { Length: > 0 } tip)
-                button.SetTooltip(tip.Replace("<value=deny>", built ? "" : notBuilt.Trim(), StringComparison.OrdinalIgnoreCase));
+            hall.Enabled = true;
+            hall.SetState(Town.BuiltToday ? 0 : 1);
         }
+        UpdateSpecialButton();
+    }
+
+    static string HudText(string key) => UiGameRoot.RelatedTextAt("UI/TownScreen/texts.(WindowRelatedTexts).xdb", key) ?? "";
+
+    /// <summary>
+    /// 00614440(window, building): enabled (007c5b60) when FUN_00614290 holds — the owner check 00613c00 and town
+    /// vf 0x34(building) &gt; 0; vf 0x80 sets the tooltip's deny value to "" or "building_not_present".
+    /// <paramref name="tooltip"/> replaces the window's own tooltip text (vf 0x68) when given.
+    /// </summary>
+    bool BuildingButton(string window, string building, string? tooltip)
+    {
+        bool built = Town.Level(building) > 0;
+        if (_hud.Find(window) is not { } button) return built;
+        button.Enabled = built;
+        SetDeny(button, tooltip, built ? "" : HudText("building_not_present"));
+        return built;
+    }
+
+    static void SetDeny(UiNode button, string? tooltip, string deny)
+    {
+        var tip = tooltip ?? UiResources.Instance.Text(button.Window.TooltipPath) ?? "";
+        if (tip.Length == 0) return;
+        button.SetTooltip(tip.Replace("<value=deny>", deny.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// buy_artifacts (00614960): tooltip TT_TRAVELLER_SHELTER_TOOLTIP in a Stronghold (town type 10), else
+    /// TT_BUY_ARTIFACTS_TOOLTIP. Building 00614600: Academy and Stronghold TB_SPECIAL_3, Dungeon TB_SPECIAL_4, else none
+    /// (0x1a) → disabled with "unavailable_in_this_town". A Stronghold whose building is built (00614290) but has no
+    /// Barbarian hero (00613c60) → disabled with "traveller_shelter_anavaliable". Otherwise 00614440.
+    /// </summary>
+    void UpdateArtifactsButton()
+    {
+        bool stronghold = Town.Type == "TOWN_STRONGHOLD";
+        var tip = HudText(stronghold ? "TT_TRAVELLER_SHELTER_TOOLTIP" : "TT_BUY_ARTIFACTS_TOOLTIP");
+        string? building = Town.Type switch
+        {
+            "TOWN_ACADEMY" or "TOWN_STRONGHOLD" => "TB_SPECIAL_3", "TOWN_DUNGEON" => "TB_SPECIAL_4", _ => null,
+        };
+        if (_hud.Find("buy_artifacts") is not { } button) return;
+        if (building == null)
+        {
+            button.Enabled = false;
+            SetDeny(button, tip, HudText("unavailable_in_this_town"));
+            return;
+        }
+        if (stronghold && Town.Level(building) > 0 && !BarbarianInTown())
+        {
+            button.Enabled = false;
+            SetDeny(button, tip, HudText("traveller_shelter_anavaliable"));
+            return;
+        }
+        BuildingButton("buy_artifacts", building, tip);
+    }
+
+    /// <summary>00613c60: the visiting hero's race (hero vf 0x258) is 8 (Stronghold), else the garrison hero's is.</summary>
+    bool BarbarianInTown() => VisitingHero() is { Town: "TOWN_STRONGHOLD" } || GarrisonHero() is { Town: "TOWN_STRONGHOLD" };
+
+    /// <summary>
+    /// EnterSpecial (00614e60, jump table 006151c8 on the town type 3..10): building and required skill — Haven
+    /// TB_SPECIAL_1 / Training (0xd), Preserve TB_SPECIAL_0 / Avenger (0x10), Academy TB_SPECIAL_2 / Artificer (0x11,
+    /// the visiting hero only), Dungeon TB_SPECIAL_3, Necropolis TB_SPECIAL_2, Inferno and Stronghold TB_SPECIAL_5,
+    /// Fortress town vf 0x4c(0x20) (ability 0x20's building, TB_SPECIAL_1). The tooltip's special value is the
+    /// building's name (00cd3fc0(1)); 00614440 enables it when built; then, with a skill, the visiting hero (vf 0x18(0))
+    /// or the garrison hero (vf 0x18(1), not for the Academy) must have it (hero vf 0x174 &gt; 0), else 0061f750
+    /// disables it with "skill_not_present" (its skill value = the skill's name).
+    /// </summary>
+    void UpdateSpecialButton()
+    {
+        (string Building, string? Skill, bool Both) spec = Town.Type switch
+        {
+            "TOWN_HEAVEN" => ("TB_SPECIAL_1", "HERO_SKILL_TRAINING", true),
+            "TOWN_PRESERVE" => ("TB_SPECIAL_0", "HERO_SKILL_AVENGER", true),
+            "TOWN_ACADEMY" => ("TB_SPECIAL_2", "HERO_SKILL_ARTIFICIER", false),
+            "TOWN_DUNGEON" => ("TB_SPECIAL_3", null, true),
+            "TOWN_NECROMANCY" => ("TB_SPECIAL_2", null, true),
+            "TOWN_INFERNO" or "TOWN_STRONGHOLD" => ("TB_SPECIAL_5", null, true),
+            "TOWN_FORTRESS" => ("TB_SPECIAL_1", null, true),
+            _ => ("", null, false),
+        };
+        if (spec.Building.Length == 0 || _hud.Find("EnterSpecial") is not { } button) return;
+        var name = Session.Db.Building(Town.Type, spec.Building, 1)?.Name ?? "";
+        var tip = (UiResources.Instance.Text(button.Window.TooltipPath) ?? "").Replace("<value=special>", name, StringComparison.OrdinalIgnoreCase);
+        if (!BuildingButton("EnterSpecial", spec.Building, tip) || spec.Skill is not { } skillId) return;
+        bool Has(HeroState? h) => h != null && h.MasteryOf(skillId) != H5.Core.Data.Mastery.None;
+        if (Has(VisitingHero()) || (spec.Both && Has(GarrisonHero()))) return;
+        button.Enabled = false;
+        var skill = UiResources.StripMarkup(SkillCommonName(skillId) ?? skillId).Trim();
+        SetDeny(button, tip, HudText("skill_not_present").Replace("<value=skill>", skill, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The skill's CommonNameFileRef text (Skills.xdb); the record field the exe reads (008481f0 → +0x18) is taken to be it.</summary>
+    static string? SkillCommonName(string skill)
+    {
+        const string table = "GameMechanics/RefTables/Skills.xdb";
+        var item = Game.Instance.Xdb.Load(table).Root?.Element("objects")?.Elements("Item").FirstOrDefault(i => (string?)i.Element("ID") == skill);
+        var href = (string?)item?.Element("obj")?.Element("CommonNameFileRef")?.Attribute("href");
+        return string.IsNullOrEmpty(href) ? null : UiResources.Instance.Text(H5.Core.Xdb.XdbRef.Parse(href, table).Path);
     }
 
     void Bind(UiNode node, int hero, int town, int slot, bool visible)
@@ -319,8 +450,9 @@ public partial class TownScreen : Control
         // when town vf 0x34(building) = 0; buy_artifacts 0061a260 → 00618920 (no Barbarian) / 00618a90 (no
         // CBlackMarket); enter_special 0061b570; the hero screen 00619320 returns without a town hero.
         if (sub == null) return;
-        // The hero screen, the marketplace, the hire screen and the tavern (own resource bar and jog dial) replace the town HUD.
-        _hud.Visible = sub is not HeroScreen and not MarketScreen and not TownHireScreen and not TavernScreen;
+        // The hero screen, the marketplace, the hire screen, the tavern and the build screen (own resource bar and jog
+        // dial, 006590a0) replace the town HUD.
+        _hud.Visible = sub is not HeroScreen and not MarketScreen and not TownHireScreen and not TavernScreen and not TownBuildScreen;
         _subLayer.AddChild(sub);
     }
 

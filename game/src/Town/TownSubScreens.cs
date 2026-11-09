@@ -59,7 +59,10 @@ public abstract partial class TownSubScreen : Control
 /// <summary>
 /// The TotE build screen (UI/TownBuildNew, exe 0065a830/0065aae0): a 5×6 grid of building cells laid out by
 /// the faction's (TownBuildDefinition) (slot position per building level, prerequisite arrows), with hover
-/// highlight, selection, the price strip and the town level. Clicking a selected buildable cell builds it.
+/// highlight, selection, the price strip and the town level. A click only selects (the cell interface at screen +0x17c,
+/// 0065a4c0); building is the jog dial's button 2 ("Build", BuyBuilding tooltip, 00783a60 / 00783df0), whose result
+/// handler 0065c530 (screen +0x174 interface, vtable 00e2d9c8) sends the build command (005e91f0) for case 2, closes
+/// for case 0 (00659400) and refreshes for case 4.
 /// </summary>
 public sealed partial class TownBuildScreen : TownSubScreen
 {
@@ -72,9 +75,32 @@ public sealed partial class TownBuildScreen : TownSubScreen
     readonly Dictionary<(int X, int Y), List<(string Type, int Level)>> _cells = new();
     readonly List<(int X, int Y, int Length)> _arrows = new();
     (int X, int Y)? _hover, _selected;
+    readonly UiScreen _jog;
 
     public TownBuildScreen(TownScreen owner) : base(owner, "UI/TownBuildNew.(WindowScreen).xdb")
     {
+        // 006590a0: the jog dial (00783fa0), button 2 disabled until a buildable cell is selected. Button 1
+        // (EnterDwellings / ToLeft), 3 (BuildPlan / BuildPlanDone, ToRight) and 4 (town_build_to_full / _half) are
+        // not built here (GAP); button 0's preset (00783710) is taken to be Exit.
+        _jog = new UiScreen("UI/Common/JogDial/JogDial.xdb", Ui.Bus);
+        AddChild(_jog);
+        SetJogButton("button_0", "Exit", null);
+        SetJogButton("button_2", "Build", "UI/Common/JogDial/TownJogDial/BuyBuilding.txt");
+        foreach (var unused in new[] { "button_1", "button_3", "button_4" }) _jog.SetVisible(unused, false);
+        Ui.Bus.On("jd_button_0_reaction", Close);
+        Ui.Bus.On("jd_button_2_reaction", Build);
+        Ui.Bus.On("jd_button_2", Build);
+        // Dev (screenshots): `--town-build-dev=select` selects the first buildable cell, `=build` also presses Build.
+        if (OS.GetCmdlineUserArgs().FirstOrDefault(x => x.StartsWith("--town-build-dev=")) is { } dev)
+            Callable.From(() =>
+            {
+                for (int x = 1; x <= 5 && _selected == null; x++)
+                    for (int y = 1; y <= 6 && _selected == null; y++)
+                        if (CellDef((x, y)) is { } d && Owner.Town.Level(d.Type) < d.Level
+                            && TownData.Check(Owner.Session, Owner.Town, d) == BuildDenial.CanBuild) ClickCell((x, y));
+                GD.Print($"[H5] --town-build-dev: selected {_selected}, build enabled {_jog.Find("button_2")?.Enabled}");
+                if (dev.EndsWith("=build")) { var before = Owner.Town.Built.Values.Sum(); Build(); GD.Print($"[H5] --town-build-dev: built, levels {before} -> {Owner.Town.Built.Values.Sum()}"); }
+            }).CallDeferred();
         LoadDefinition();
         for (int x = 1; x <= 5; x++)
             for (int y = 1; y <= 6; y++)
@@ -168,6 +194,7 @@ public sealed partial class TownBuildScreen : TownSubScreen
         var sel = show is { } s ? CellDef(s) : null;
         TownUi.SetCostStrip(Ui.Find("CreatureCountHolder"),
             sel != null && t.Level(sel.Type) < sel.Level ? CostArray(sel) : null, Me);
+        if (_jog?.Find("button_2") is { } build) build.Enabled = SelectedBuildable() != null;
         UpdateFrames();
     }
 
@@ -231,17 +258,39 @@ public sealed partial class TownBuildScreen : TownSubScreen
         f.GlobalPosition = node.GlobalPosition + (node.Size - f.Size) / 2;
     }
 
+    void SetJogButton(string name, string preset, string? tooltip)
+    {
+        if (_jog.Find(name) is not { } btn) return;
+        var path = $"UI/Common/JogDial/Buttons/{preset}.(JogDialButton).xdb";
+        if (Game.Instance.Fs.Exists(path)) UiDrawableHelper.Apply(btn, Game.Instance.Xdb.Load(path).Root!, path);
+        if (tooltip != null) btn.SetTooltip(TownUi.Text(tooltip, ""));
+    }
+
+    /// <summary>
+    /// 0065a4c0: the selection keeps the cell's building only when town vf 0xac gives code 0 for it (buildable),
+    /// else it is cleared; jog button 2 is enabled when 00658da0 holds (the player owns the town and player vf 0x44,
+    /// +0x634, is 0 — that field is not identified and taken as 0) and the selection is not empty.
+    /// </summary>
+    BuildingDef? SelectedBuildable() =>
+        _selected is { } c && CellDef(c) is { } def && Owner.Town.Level(def.Type) < def.Level
+        && TownData.Check(Owner.Session, Owner.Town, def) == BuildDenial.CanBuild ? def : null;
+
     void ClickCell((int X, int Y) cell)
     {
-        var def = CellDef(cell);
-        if (def == null) return;
-        if (_selected == cell && TownData.Check(Owner.Session, Owner.Town, def) == BuildDenial.CanBuild)
-        {
-            if (Apply(new BuildCmd(Owner.Town.Object, def.Type))) _selected = null;
-            return;
-        }
+        if (CellDef(cell) == null) return;
         _selected = cell;
         Refresh();
+    }
+
+    /// <summary>
+    /// 0065c530 case 2: the build command (005e91f0) for the selection, then the selection is cleared, jog button 2
+    /// disabled and the town refreshed (town vf 0xd4). The screen stays open here: the flag the handler sets after the
+    /// build (+0x1ac object, +0x3c = 1) is not identified.
+    /// </summary>
+    void Build()
+    {
+        if (SelectedBuildable() is not { } def) return;
+        if (Apply(new BuildCmd(Owner.Town.Object, def.Type))) { _selected = null; Refresh(); }
     }
 }
 
@@ -330,7 +379,9 @@ public sealed partial class MageGuildScreen : TownSubScreen
 public sealed partial class BlacksmithScreen : TownSubScreen
 {
     static readonly string[] Machines = { "WAR_MACHINE_BALLISTA", "WAR_MACHINE_FIRST_AID_TENT", "WAR_MACHINE_AMMO_CART" };
-    int _choice;
+    const string Texts = "UI/BuyWarMachine/Texts.(WindowRelatedTexts).xdb";
+    /// <summary>No choice on opening: 006ed200 fills the description with the Blacksmith's own texts (initial selection UNVERIFIED).</summary>
+    int _choice = -1;
 
     public BlacksmithScreen(TownScreen owner) : base(owner, "UI/BuyWarMachine.(WindowScreen).xdb")
     {
@@ -364,7 +415,7 @@ public sealed partial class BlacksmithScreen : TownSubScreen
 
     void Buy()
     {
-        if (Hero() is not { } h || !Buyable(_choice, out _)) return;
+        if (_choice < 0 || Hero() is not { } h || !Buyable(_choice, out _)) return;
         Apply(new BuyWarMachineCmd(Owner.Town.Object, h.Id, Machines[_choice]));
     }
 
@@ -373,6 +424,7 @@ public sealed partial class BlacksmithScreen : TownSubScreen
         base.Refresh();
         // 006ed200, screen +0x1a8 = 1 (town): MainHeader_Blacksmith (0 = the map's War Machine Factory).
         Ui.Find("MainHeaderText")?.SetValue("Value", TownUi.Text("UI/BuyWarMachine/Texts/MainHeader_Blacksmith.txt", "Blacksmith").Trim());
+        bool anyBuyable = false;
         for (int i = 0; i < Machines.Length; i++)
         {
             TownUi.SetPicture(Ui.Find($"Choice_{i}/Icon"), TownUi.CreatureIcon(Machines[i]));
@@ -387,11 +439,47 @@ public sealed partial class BlacksmithScreen : TownSubScreen
             {
                 choice.SetState(buyable && i == _choice && choice.Window.ButtonStates.Count > 1 ? 1 : 0);
                 choice.Enabled = buyable;
+                choice.SetTooltip(ChoiceTooltip(i, buyable, enoughGold));
             }
+            anyBuyable |= buyable;
+        }
+        // 006ee270: ButtonBuy is enabled when the selection is a valid choice and any choice is buyable.
+        if (Ui.Find("ButtonBuy") is { } buy) buy.Enabled = _choice >= 0 && _choice < Machines.Length && anyBuyable;
+        if (_choice < 0)
+        {
+            // 006ed200, screen +0x1a8 = 1: DescriptionHeader_Blacksmith / DescriptionText_Blacksmith.
+            Ui.Find("DescriptionHeader")?.SetValue("Value", TownUi.Text("UI/BuyWarMachine/Texts/DescriptionHeader_Blacksmith.txt", "").Trim());
+            Ui.Find("DescriptionText")?.SetValue("Value", TownUi.Text("UI/BuyWarMachine/Texts/DescriptionText_Blacksmith.txt", "").Trim());
+            return;
         }
         var (name, desc) = MachineTexts(Machines[_choice]);
         Ui.Find("DescriptionHeader")?.SetValue("Value", name);
         Ui.Find("DescriptionText")?.SetValue("Value", UiResources.StripMarkup(desc));
+    }
+
+    /// <summary>
+    /// 006ee270: each choice's tooltip (object 00585cb0, vtable 00e1564c) holds the machine's name, description and,
+    /// for a disabled choice, one denial reason — assigned in turn (0040e960), so the last applying one stays:
+    /// ID_DENIAL_REASON_NOT_ENOUGH_GOLD (gold short and a hero, gold ≥ 0), _ALREDY_HAVE, _ONLY_VISITING_HERO_CAN_BUY.
+    /// The tooltip window's layout is not traced; the three parts are stacked here.
+    /// </summary>
+    string ChoiceTooltip(int i, bool buyable, bool enoughGold)
+    {
+        var (name, desc) = MachineTexts(Machines[i]);
+        string reason = "";
+        if (!buyable)
+        {
+            var h = Hero();
+            bool has = h != null && Machines[i] switch
+            {
+                "WAR_MACHINE_BALLISTA" => h.Ballista, "WAR_MACHINE_FIRST_AID_TENT" => h.FirstAidTent, _ => h.AmmoCart,
+            };
+            if (!enoughGold && h != null) reason = UiGameRoot.RelatedTextAt(Texts, "ID_DENIAL_REASON_NOT_ENOUGH_GOLD") ?? "";
+            if (has) reason = UiGameRoot.RelatedTextAt(Texts, "ID_DENIAL_REASON_ALREDY_HAVE") ?? "";
+            if (!(Owner.Town.Level("TB_BLACKSMITH") > 0 && Owner.VisitingHero() != null))
+                reason = UiGameRoot.RelatedTextAt(Texts, "ID_DENIAL_REASON_ONLY_VISITING_HERO_CAN_BUY") ?? "";
+        }
+        return string.Join("<br>", new[] { name, desc, reason }.Where(x => x.Trim().Length > 0).Select(x => x.Trim()));
     }
 
     /// <summary>Name and description from the machine's CreatureVisual (GameMechanics/CreatureVisual/WarMachines).</summary>

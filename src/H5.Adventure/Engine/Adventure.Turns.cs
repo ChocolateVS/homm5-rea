@@ -104,7 +104,12 @@ public sealed partial class Adventure
                     break;
             }
         }
-        // Moon weeks affecting income (p.271).
+        // Moon weeks: the town income 00cd43f0 passes every part (hall, capital, building 0xe, taxpayers, ability 0x18,
+        // silo / extra resources via 00cd31b0 and 00bcdaa0) and the mine income 00457940 its yield through the helpers
+        // 00bcda40 (gold: 0x3a WEEK_OF_GOLD ×2), 00bcda60 / 00bcda80 (wood / ore: 0x3c WEEK_OF_HARVEST ×2) and
+        // 00bcdaa0 (crystal / gems 0x38 WEEK_OF_JEWELS, mercury / sulfur 0x39 WEEK_OF_ALCHEMY ×2), all ×3 for 0x37
+        // WEEK_OF_CONJUNCTION; integer products, so the sum can be scaled. None of them has a case for 0x3b
+        // WEEK_OF_FESTIVALS (our former halving came from the fan manual).
         switch (S.MoonWeek)
         {
             case "WEEK_OF_GOLD": inc[Purse.Gold] *= 2; break;
@@ -112,10 +117,6 @@ public sealed partial class Adventure
             case "WEEK_OF_JEWELS": inc[Purse.Gem] *= 2; inc[Purse.Crystal] *= 2; break;
             case "WEEK_OF_ALCHEMY": inc[Purse.Mercury] *= 2; inc[Purse.Sulfur] *= 2; break;
             case "WEEK_OF_CONJUNCTION": for (int i = 0; i < 7; i++) inc[i] *= 3; break;
-            case "WEEK_OF_FESTIVALS":
-                inc[Purse.Gold] /= 2; inc[Purse.Wood] /= 2; inc[Purse.Ore] /= 2;
-                inc[Purse.Mercury] = inc[Purse.Crystal] = inc[Purse.Sulfur] = inc[Purse.Gem] = 0;
-                break;
         }
         return inc;
     }
