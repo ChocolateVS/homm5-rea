@@ -185,4 +185,93 @@ public class Mmh55FeatureTests(Mmh55Install m) : IClassFixture<Mmh55Install>
         Assert.Equal(1, n.Level("TB_TAVERN"));
         Assert.Equal(100000 - (2 * 3000 - 2000), p.Purse[6]);
     }
+
+    static (int Creatures, int Stacks, int Monsters) Neutrals(Adventure.Engine.Adventure g)
+    {
+        int creatures = 0, stacks = 0, monsters = 0;
+        foreach (var o in g.Map.OfKind(ObjectKind.Monster))
+        {
+            if (g.S.Objects.TryGetValue(o.Index, out var os) && os.Removed) continue;
+            var guards = g.S.Obj(o.Index).Guards;
+            monsters++;
+            stacks += guards.Count(x => x.Count > 0);
+            creatures += guards.Sum(x => x.Count);
+        }
+        return (creatures, stacks, monsters);
+    }
+
+    /// <summary>
+    /// NeutralStackSize (H55_ModifyStackSize: AddObjectCreatures round(count·k − count) per stack) and ForceMixedStacks
+    /// (H55_MixStacks: each stack is split into several creature types) run once the start-up has processed the map.
+    /// </summary>
+    [Fact]
+    public void NeutralStackSizeAndMixedStacksChangeTheNeutrals()
+    {
+        if (!m.Present) return;
+        const string mp = "Maps/Multiplayer/A2M1";
+        var (g1, h1) = m.Start(mp, new() { ["H55_GenerateMixedStacks"] = "0" }, segments: 300, noMapScriptCheck: true);
+        var (g2, h2) = m.Start(mp, new() { ["H55_GenerateMixedStacks"] = "0", ["H55_NeutralStackSize"] = "2" }, segments: 300, noMapScriptCheck: true);
+        var (g3, h3) = m.Start(mp, new() { ["H55_ForceMixedStacks"] = "1" }, segments: 300, noMapScriptCheck: true);
+        var (g4, h4) = m.Start(mp, new() { ["H55_MixStacksThreshold"] = "1000" }, segments: 300, noMapScriptCheck: true);
+        foreach (var h in new[] { h1, h2, h3, h4 }) Assert.Empty(Mmh55Install.OwnErrors(h));
+        var a = Neutrals(g1); var b = Neutrals(g2); var c = Neutrals(g3); var d = Neutrals(g4);
+        Assert.True(a.Monsters > 0);
+        Assert.Equal(a.Monsters, b.Monsters);
+        Assert.InRange(b.Creatures, a.Creatures * 2 - a.Stacks, a.Creatures * 2 + a.Stacks);
+        Assert.True(c.Stacks > c.Monsters, $"no mixed stacks: {c.Stacks} stacks on {c.Monsters} monsters");
+        // Without ForceMixedStacks the start-up decides before H55_UpdateMapType has run (H55-Core's chunk sleeps once and
+        // is resumed first, as by the exe's scheduler FUN_004c0720 / FUN_00d0c8a0 append order): H55_MapType is still
+        // "" there, so the multiplayer-only mix is skipped (H55_MixDecisionDelay = 1).
+        Assert.Equal(1, h4.L.GetGlobal("H55_MixDecisionDelay").N);
+        Assert.Equal(d.Monsters, d.Stacks);
+    }
+
+    /// <summary>
+    /// Town Gate (H55_TeleportNow from the Town Management dialog): the hero is put on the target town's active tile
+    /// (H55_GetTownActiveTile: position + rotated entrance offset) with SetObjectPosition, paying move points and 25 mana.
+    /// </summary>
+    [Fact]
+    public void TownGateTeleportsTheHeroToTheTownEntrance()
+    {
+        if (!m.Present) return;
+        var (g, host) = m.Start("Maps/Multiplayer/A2M1", noMapScriptCheck: true);
+        var h = HumanHero(g);
+        var t = g.S.Towns.OrderByDescending(x => Math.Abs(x.Pos.X - h.Pos.X) + Math.Abs(x.Pos.Y - h.Pos.Y)).First();
+        t.Owner = h.Owner;
+        h.Mana = 50;
+        var name = g.Map.Objects[t.Object].Name;
+        var before = h.Pos;
+        host.L.DoString($"startThread(H55_TeleportNow, \"{h.DefId}\", \"{name}\");", "test");
+        host.Tick(30);
+        Assert.Empty(Mmh55Install.OwnErrors(host));
+        Assert.NotEqual(before, h.Pos);
+        Assert.Equal(g.EntranceOf(t), h.Pos);
+        Assert.Equal(Math.Min(g.ScriptMaxMana(h), 25), h.Mana);   // ChangeHeroStat clamps mana to [0, max] (0x005c3620)
+    }
+
+    /// <summary>LowResGame: every human player loses 10 wood, 10 ore, 5 of each rare resource and 10000 gold at the start.</summary>
+    [Fact]
+    public void LowResGameTakesTheHumansResources()
+    {
+        if (!m.Present) return;
+        const string mp = "Maps/Multiplayer/A2M1";
+        var (g0, _) = m.Start(mp, segments: 60, noMapScriptCheck: true);
+        var (g1, h1) = m.Start(mp, new() { ["H55_LowResGame"] = "1" }, segments: 60, noMapScriptCheck: true);
+        Assert.Empty(Mmh55Install.OwnErrors(h1));
+        var p0 = g0.S.Players.First(p => p.Human); var p1 = g1.S.Players.First(p => p.Human);
+        int[] taken = { 10, 10, 5, 5, 5, 5, 10000 };
+        for (int r = 0; r < 7; r++) Assert.Equal(Math.Max(0, p0.Purse[r] - taken[r]), p1.Purse[r]);
+    }
+
+    /// <summary>NoArtifactMerchantsInTowns: DestroyTownBuildingToLevel(…, 0, 0) on Academy TB_SPECIAL_3 / Dungeon TB_SPECIAL_4 caps them at 0.</summary>
+    [Fact]
+    public void NoArtifactMerchantsInTownsForbidsTheMerchants()
+    {
+        if (!m.Present) return;
+        var (g, host) = m.Start("Maps/Multiplayer/A2M1", new() { ["H55_NoArtifactMerchantsInTowns"] = "1" }, segments: 60, noMapScriptCheck: true);
+        Assert.Empty(Mmh55Install.OwnErrors(host));
+        var towns = g.S.Towns.Where(t => t.Type is "TOWN_ACADEMY" or "TOWN_DUNGEON").ToList();
+        foreach (var t in towns)
+            Assert.Equal(0, t.MaxLevel[t.Type == "TOWN_ACADEMY" ? "TB_SPECIAL_3" : "TB_SPECIAL_4"]);
+    }
 }

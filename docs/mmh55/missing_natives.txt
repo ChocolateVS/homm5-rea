@@ -1,31 +1,43 @@
-== ADVENTURE system scripts: natives 120, missing 11
-EnableHeroAI	10	stock-native	H55-Core.lua:10
-DenyAIHeroesFlee	2	stock-native	H55-AdvMap.lua:2
-H55_SPMap_WeeklyEvent	1	MMH55-only	H55-Core.lua:1
-H55_SPMap_DailyEvent	1	MMH55-only	H55-Core.lua:1
-H55_SPMap_ContinuesEvent	1	MMH55-only	H55-Core.lua:1
-H55_TriggerDaily	1	MMH55-only	H55-Core.lua:1
-H55_SecTriggerDaily	1	MMH55-only	H55-Core.lua:1
-H55_ThrTriggerDaily	1	MMH55-only	H55-Core.lua:1
-H55_FrtTriggerDaily	1	MMH55-only	H55-Core.lua:1
-H55_FifTriggerDaily	1	MMH55-only	H55-Core.lua:1
-SetAIPlayerAttractor	1	stock-native	H55-AdvMap.lua:1
-== COMBAT system scripts: natives 26, missing 0
-== MAP scripts (h5u), excluding funcs defined in stock/system scripts: natives 178, missing 16
-EnableHeroAI	187	stock-native	MapScript.lua:82, mapscript.lua:39, script.lua:29, A1C2M4_MapScript.lua:7, C3M3.lua:7
-SetAIHeroAttractor	74	stock-native	mapscript.lua:31, MapScript.lua:19, A2S4.(Script).lua:16, A1C3M4_MapScript.lua:3, MapScript.1.lua:3
-SetAIPlayerAttractor	44	stock-native	MapScript.lua:16, script.lua:10, A2S4.(Script).lua:8, mapscript.lua:7, MapScript.1.lua:3
-AllowHeroHiringByRaceForAI	28	stock-native	A2C2M5.lua:12, MapScript.lua:8, a2c2m3.lua:8
-DenyAIHeroFlee	27	stock-native	MapScript.lua:9, A2S4.(Script).lua:6, MapScript.1.lua:3, A2C1M3_script.lua:2, A2C2M5.lua:2
-EnableCinematicCamera	25	stock-native	biara_godric.lua:2, biara_heam.lua:2, biara_raelag.lua:2, biara_zehir.lua:2, sovereign_godric.lua:2
-AllowPlayerTavernHero	21	stock-native	MapScript.lua:15, a2c2m3.lua:6
-BlockTownGarrisonForAI	16	stock-native	MapScript.lua:8, script.lua:6, mapscript.lua:2
-AllowPlayerTavernRace	16	stock-native	A2C2M5.lua:7, A2S1_MapScript.lua:7, A2C1M3_script.lua:2
-EnableAIHeroHiring	15	stock-native	MapScript.lua:6, script.lua:5, A1C2M4_MapScript.lua:1, mapscript.lua:1, A1C3M4_MapScript.lua:1
-DoNotGiveTurnToPlayerAIIfNoTownsAndActiveHeroes	9	stock-native	MapScript.lua:8, script.lua:1
-AllowHeroHiringByRaceInTown	8	stock-native	A2C3M2_script.lua:7, MapScript.lua:1
-SetPlayerHeroesCountNotForHire	6	stock-native	MapScript.lua:2, A2C3M2_script.lua:1, mapscript.lua:1, C6M3_Script.lua:1, A2S1_MapScript.lua:1
-DenyAIHeroesFlee	4	stock-native	MapScript.lua:4
-AllowHiringOfHeroInTown	2	stock-native	MapScript.lua:2
-DeployEnemy	1	MMH55-only	script.lua:1
-== Status (W2): all of the above are implemented per the exe; EnableCinematicCamera lives in the combat table 0x00f33080 (not adventure). Ledger: docs/mmh55/SCRIPTS.md
+== Regenerated 2026-11-09 (tools/scriptre/mmh55_natives.py over MMH55-Index.pak + MMH55-Frame.pak system scripts,
+== creature_N.lua skipped; tools/scriptre/mmh55_native_deps.py for the ranking).
+
+== 1. Natives called by name that H5.Scripting does not register: none.
+== ADVENTURE system scripts: 128 called names, 115 registered natives; the rest are Lua-defined or not natives:
+dofile	alias of doFile (advmap-startup.lua: dofile = doFile)
+H55_SPMap_WeeklyEvent / H55_SPMap_DailyEvent / H55_SPMap_ContinuesEvent / H55_TriggerDaily / H55_SecTriggerDaily /
+H55_ThrTriggerDaily / H55_FrtTriggerDaily / H55_FifTriggerDaily	map-script hooks MMH55 calls when a map defines them
+before / command / func / length	locals and parameters called as functions (H55-Library, createAdvmapAliases)
+== COMBAT system scripts: 32 called names, 27 registered natives; the rest:
+UseCombatAbility	not a native in the exe either (no registration in the combat table 0x00f33080): calling it fails there too
+dofile / length / before / func	as above
+
+== 2. Natives MMH55 calls whose port still has a residual GAP (SCRIPTS.md section 6), ranked by the number of H55
+== functions calling them directly; "settings" = H55-Settings globals whose script path reaches the native
+== (transitive closure, an upper bound: H55_ContinuesEvent reaches most natives).
+native	H55 callers	settings	status / what is missing
+ShowFlyingSign	69	27	FIXED; FUN_0054dfa0 text transform not traced (presentation only)
+random	52	32	FIXED; the exe's synchronised RNG (IAdventureMap vf 0xc) not traced: same ranges, other numbers
+MarkObjectAsVisited	46	27	FIXED; object-specific visited state (each class's vf behind CMarkObjectAsVisitedCmd) approximated by HeroState.VisitedOnce
+GetObjectNamesByType	41	30	FIXED; auto-name world object id = map index
+SetObjectEnabled	39	25	FIXED; hero interaction flag only for map-placed heroes
+GetHeroStat	35	25	FIXED; set bonuses, curse (+0x228), Fortress SP bonus in the getters not reproduced
+GiveArtefact	26	30	FIXED; bound flag stored only
+GetHeroSkillMastery	12	25	FIXED (DLL-only Pendant patch is out of scope)
+EnableHeroAI	9	9	FIXED; AI gate world vf 0x100 detail
+OverrideObjectTooltipNameAndDescription	9	7	FIXED; the UI does not show the override (UI engine, not in this workstream)
+StartCombat	9	7	FIXED; see SCRIPTS.md row
+UpgradeTownBuilding	8	21	FIXED 2026-11-09: one level past the map limit, limit unchanged (0x0042fd40 / 0x00cd4a40 / 0x00cd0de0)
+consoleCmd	6	17	FIXED; ai_time_limit not consumed by our AI
+ReplaceDwelling	5	9	FIXED; see SCRIPTS.md row
+AddObjectCreatures / RemoveObjectCreatures	3 / 3	8	FIXED; RemoveObjectCreatures return value
+SetObjectPosition	3	18	FIXED; 5th argument and failure reasons not traced
+GiveHeroSkill	3	23	FIXED; learnable-perk list approximated
+CalcHeroMoveCost / MoveHero	2 / 2	9	FIXED; MoveHero moves at once instead of setting an AI target
+TransformTown	2	10	FIXED 2026-11-09: the town is recreated from the vf 0xf4 record (0x005c9ee0 / 0x00cd3ce0 / 0x00cd5be0)
+ControlHeroCustomAbility	1	17	FIXED 2026-11-09: SPELL_ABILITY_CUSTOM1..4 in the book / disabled list, cast fires CUSTOM_ABILITY_TRIGGER (0x00b56970 / 0x008656e0); hero list +0x310 not identified
+GenerateMonsters / OpenCircleFog / SetObjectRotation / PlayVisualEffect / SetHeroLootable / SetObjectFlashlight	1 each	see SCRIPTS.md rows
+IsPlayerInGhostMode	1	-	GAP: ghost mode (player state 2) only from a networked host (PlayerInGhostMode)
+GetUnitPosition / UnitCastAimedSpell / GetBuildingType	1 each (H55-Combat / combat-startup)	-	see SCRIPTS.md combat rows
+
+== 3. Older list (W2, 2026-10): the 16 AI / hiring natives then missing are implemented per the exe
+== (EnableCinematicCamera lives in the combat table 0x00f33080). Ledger: docs/mmh55/SCRIPTS.md section 6.

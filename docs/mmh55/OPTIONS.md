@@ -68,6 +68,56 @@ off on campaign and scenario maps).
 ## 3. Gaps
 
 - How far each feature works depends on the script engine's coverage of what H55-Core / H55-AdvMap call
-  (SCRIPTS.md, missing_natives.txt); the options only set the globals.
+  (SCRIPTS.md, missing_natives.txt); the options only set the globals. Per-setting status: §4.
 - EE_* lobby options, casual/aggressive/defensive AI modes and MMH55Stats.xml: DLL-only, not available.
 - MMH55_Utility's own screen (inside `55u.dll`) is not reproduced; the H5Reborn options screen edits the same globals.
+
+## 4. Does each setting's script path run in our engine? (2026-11-09)
+
+Where MMH55 runs at all: the stock engine runs no script on a map without a map script (SCRIPTS.md §1), and on this
+install only the 50 campaign and single-mission maps have one. Their map type (H55_GetMapType: path contains "Scenario"
+→ Campaign, "SingleMissions" → Scenario) makes H55-Core switch off Town Conversion, Governance and Mine Control and force
+PrisonersAdjustToHeroRace = 1; the multiplayer / RMG-only features (mixed stacks, competitive ARMG towns, hill forts,
+moon disc on ARMG, Dimension Doors on RMG, duel) never run in game, exactly as on the user's stock exe. MMH55's DLL
+behaviour (RemoveMapScriptCheck) is `AdventureScripting.RunWithoutMapScript` / `script-run --no-map-script-check`
+(harness only, not offered in the client); the multiplayer/RMG rows below were run that way.
+
+Evidence: **T** = a test runs the feature's script in our engine and checks its effect (tests/H5.Scripting.Tests/
+Mmh55FeatureTests.cs, 5.5 install); **S** = settings sweep: the setting at a non-default value, 7 days of bot play on
+A1SM1, A2S1 (scripted single missions), Maps/Multiplayer/A2M1 and the RMG map user:L_I4_RMG_Map_001 (both
+--no-map-script-check), `script-run … --h55-set=H55_X=v`: no script error of ours (only the stock ones of SCRIPTS.md §5).
+The sweep proves the path runs without errors where the bots trigger it, not that every branch was reached.
+
+| Setting | Runs in our engine | Notes |
+|---|---|---|
+| TownGateEnabled | yes — T, S | needs the hero custom ability: ControlHeroCustomAbility / SPELL_ABILITY_CUSTOM4 cast → CUSTOM_ABILITY_TRIGGER → H55_TownManagement (was dead before 2026-11-09: the ability was stored only). Teleport H55_TeleportNow tested (entrance tile, move points, mana) |
+| TownConvEnabled | yes on MP/RMG — T, S; off on scripted maps (MMH55's own rule) | H55_ConvertNow tested: TransformTown recreates the town (new 2026-11-09), resources paid, buildings rebuilt with UpgradeTownBuilding |
+| AmountExtraTownsDwellings | yes — S | script arithmetic (H55_UpdateTownQtyDifficulty) feeding the conversion limits |
+| GovernanceEnabled / GovernorExpCoef | S; off on scripted maps | reached through the same Town Management ability (T for the ability); the appointment (H55_StartGovernor) and the governor bonuses (H55_WeeklyEvents / H55_DailyEvents) were not exercised: the bots appoint no governor |
+| MineControl | S; off on scripted maps | H55_MineVisit via SetObjectEnabled + OBJECT_TOUCH_TRIGGER |
+| DimensionDoors | S (RMG) | sets H55_DimensionDoorsOnThisMap; magi huts become scripted |
+| IgnoreExpAdjustment | S | H55_SetEasyExperience (script tables) |
+| NoMentoring | S | H55_MemoryMentorRefuse on visit |
+| NoHillFortsOnARMG | S (RMG) | H55_HillFortVisit |
+| BuildNeutralTowns / BuildPlayerTowns | yes — S | UpgradeTownBuilding now as the exe (one level past the map limit, limit unchanged: T) |
+| CompetitiveARMGTowns | yes — S (RMG: "Towns prepared for Competitive ARMG Map!") | |
+| NoAutoTeamHumans | path runs (S) but effectively off | H55_PrepareAdvMap only teams players when H55_GameMode ≠ 0; H55_UpdateGameMode stops with the stock error "Player %d doesn't taking part" on maps with fewer than 8 players before setting the mode, so the mode stays 0 ("casual") there — same in the exe |
+| AICheatMode | path runs (S) but effectively off on < 8-player maps | same H55_GameMode condition (H55_WeeklyEvents line 5614); also needs the AI start gold in H55_AIStartResources |
+| LowResGame | yes — T, S | 10/10/5/5/5/5/10000 taken from every human |
+| GenerateMixedStacks / MixStacksThreshold / AskForMixedStacks | path runs (S); the start-up mix is skipped | the decision in H55-Core's chunk runs after one sleep(1), before the H55_UpdateMapType thread (later in the scheduler list, FUN_004c0720 / FUN_00d0c8a0 append order), so H55_MapType is still "" and the multiplayer-only branch is not taken (H55_MixDecisionDelay = 1; T). Follows the traced scheduler; not observed on the exe |
+| ForceMixedStacks | yes — T, S | the delayed branch mixes (H55_MixStacks) |
+| BanksDifficulty | S | bank guard multipliers (H55_GetBankDifMultiplier) used when a bank is visited |
+| NeutralStackSize | yes — T, S | H55_ModifyStackSize: counts × k |
+| PrisonersAdjustToHeroRace | S | prisoner / temple rewards |
+| ManaObservatories | S | observatories become scripted (SetObjectEnabled, OBJECT_TOUCH_TRIGGER); the overridden tooltip is not shown (UI) |
+| NoArtifactMerchantsInTowns | yes — T, S | DestroyTownBuildingToLevel(…, 0, 0) on Academy / Dungeon merchants |
+| ForcedObelisk / ForcedShantiri | S | reward choice when the scripted obelisk / Shantiri is won |
+| NegativeArtifacts | S | H55_DocumentAward |
+| MoonDiscQuest / MoonDiscOnARMGMaps | S | wagons / skeletons scripted in H55_PrepareAdvMap |
+| RPGPotions | S | potions in H55_IndexArtifacts / trading posts |
+| Duel_* | not run | only on ARMG duel templates (H55_DetectDuel → H55_ARMG_Duel = 1); no such map on this install |
+
+Engine findings outside the script engine (not fixed here): the random start-hero roll can pick a dialog-scene hero
+(`MapObjects/DialogScenes/Godrik_ds`, InternalName Godric_ds) that MMH55's phonebooks do not know, after which
+H55_GetUnusualSchools crashes every day ("The H55 script engine has crashed, reloading..."); whether the exe's hero
+list excludes those descriptors is not traced (GameDatabase.Heroes takes every AdvMapHeroShared under MapObjects/).
