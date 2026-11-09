@@ -291,7 +291,9 @@ public sealed partial class Adventure
             if (!mp.HeroInTown) continue;
             var town = S.Towns.FirstOrDefault(t => Map.Objects[t.Object].Uid == mp.MainTownUid) ?? S.Towns.FirstOrDefault(t => t.Owner == p.Index);
             if (town == null) continue;
-            var def = Core.Heroes.Values.Where(d => d.Town == town.Type && IsHireable(d, mp)).OrderBy(d => d.Id, StringComparer.Ordinal).ToList();
+            // Candidates as the exe's hero lists (00c9f330): HEROES_ANY members of the race that are not ScenarioHero.
+            var def = Core.Heroes.Values.Where(d => d.Town == town.Type && IsHireable(d, mp) && Db.InHeroesAny(d) && !Db.IsScenarioHero(d))
+                .OrderBy(d => d.Id, StringComparer.Ordinal).ToList();
             if (def.Count == 0) continue;
             // Custom game: the starting hero chosen on UI/CustomGameWait (00c9e1e0) replaces the random pick.
             var chosen = _startHeroes.GetValueOrDefault(p.Index) is { } sh ? def.FirstOrDefault(d => d.Id == sh) : null;

@@ -172,6 +172,27 @@ public sealed partial class AdventureDb
 
     readonly Dictionary<string, bool> _scenarioHero = new(StringComparer.OrdinalIgnoreCase);
 
+    HashSet<string>? _heroesAny;
+
+    /// <summary>
+    /// Whether the hero is in RPGRoot's HEROES_ANY group (MapObjects/_(AdvMapSharedGroup)/Heroes/Any.xdb), the exe's
+    /// "List of all heroes" (00837590). Every hero list the exe draws from iterates that group — the custom-game
+    /// candidates 00c9f330 / 00c9f4a0 (both also skip ScenarioHero, shared +0x1fc) and 00ce83c8 — so shared heroes
+    /// outside it, such as the cut-scene actor MapObjects/DialogScenes/Godrik_ds (Godric_ds), are never picked.
+    /// True for every hero when the group is missing (no archives).
+    /// </summary>
+    public bool InHeroesAny(HeroDef def)
+    {
+        if (_heroesAny == null)
+        {
+            var set = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var path in SharedGroup("HEROES_ANY"))
+                if (Core.HeroByPath(path) is { } h) set.Add(h.Id);
+            _heroesAny = set;
+        }
+        return _heroesAny.Count == 0 || _heroesAny.Contains(def.Id);
+    }
+
     /// <summary>
     /// AdvMapHeroShared ScenarioHero flag: campaign-only heroes (e.g. GhostFSLord) that taverns never offer
     /// unless a map lists them as available.

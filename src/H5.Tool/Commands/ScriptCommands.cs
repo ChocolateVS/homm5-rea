@@ -65,7 +65,7 @@ sealed class ScriptRunCommand : ICommand
     static bool IsStockError(string e) => StockErrors.Any(e.Contains);
 
     public string Name => "script-run";
-    public string Help => "script-run <map|all|campaign> [days=14] [seed=1] [-v] [--no-map-script-check] [--include-user] [--h55-set=H55_Name=value]  - play maps with their Lua scripts (bots for every player) and report script errors";
+    public string Help => "script-run <map|all|campaign> [days=14] [seed=1] [-v] [--multiplayer|--hotseat] [--no-map-script-check] [--include-user] [--h55-set=H55_Name=value]  - play maps with their Lua scripts (bots for every player) and report script errors";
 
     public int Run(ToolContext ctx, string[] args)
     {
@@ -100,6 +100,10 @@ sealed class ScriptRunCommand : ICommand
             var host = AdventureScripting.Create(g, files, ids, loader.Catalog);
             host.AutoAnswerUi = true;
             host.RunWithoutMapScript = args.Contains("--no-map-script-check");
+            // Game mode flags (CWorld +0x88/+0x89): single player by default; --multiplayer / --hotseat select the
+            // world host, which needs a MapScript resource (AdventureScripting.StartupRuns).
+            host.Multiplayer = args.Contains("--multiplayer");
+            host.Hotseat = args.Contains("--hotseat");
             // MMH55 player settings (the options screen's overrides of scripts/H55-Settings.lua).
             var sets = args.Where(x => x.StartsWith("--h55-set=")).Select(x => x["--h55-set=".Length..].Split('=', 2)).Where(p => p.Length == 2).ToDictionary(p => p[0], p => p[1]);
             if (sets.Count > 0) host.SettingOverrides = sets;
@@ -112,7 +116,7 @@ sealed class ScriptRunCommand : ICommand
                     var pb = g.S.Battle;
                     if (pb == null) return null;
                     bool human = g.S.Heroes.Any(h => (h.Id == pb.AttackerHero || h.Id == pb.DefenderHero) && g.Player(h.Owner) is { Human: true });
-                    if (!human || !CombatScripting.ScriptsAllowed(false, false)) return null;
+                    if (!human || !CombatScripting.ScriptsAllowed(host.Multiplayer, host.Hotseat)) return null;
                     var cs = host.CreateCombatScripts(battle);
                     cs.SegmentsPerCommand = 1;
                     combatHosts.Add(cs);
@@ -143,7 +147,7 @@ sealed class ScriptRunCommand : ICommand
             totalErrors += host.Errors.Count - expected;
             totalExpected += expected;
             if (host.Errors.Count == expected) clean++;
-            Console.WriteLine($"{mref.Id,-40} script={(src != null ? "yes" : "no "),-3} day {g.S.Day,3} threads {host.L.Threads.Count,3} ui {host.World.PendingUi.Count} combats {combatHosts.Count} events {host.Events.Count,5} errors {host.Errors.Count - expected} stock-too {expected} ({sw.ElapsedMilliseconds} ms){(g.S.Finished ? " finished" : "")}");
+            Console.WriteLine($"{mref.Id,-40} script={(src != null ? "yes" : "no "),-3} startup={(AdventureScripting.StartupRuns(map.ScriptPath != null, host.Multiplayer, host.Hotseat, host.RunWithoutMapScript) ? "yes" : "no "),-3} day {g.S.Day,3} threads {host.L.Threads.Count,3} ui {host.World.PendingUi.Count} combats {combatHosts.Count} events {host.Events.Count,5} errors {host.Errors.Count - expected} stock-too {expected} ({sw.ElapsedMilliseconds} ms){(g.S.Finished ? " finished" : "")}");
             foreach (var e in host.Errors.Distinct().Take(verbose ? 50 : 5)) Console.WriteLine("    " + e);
             if (verbose) foreach (var l in host.Log.Take(40)) Console.WriteLine("    | " + l);
           }

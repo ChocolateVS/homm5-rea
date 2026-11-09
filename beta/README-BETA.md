@@ -36,7 +36,8 @@ Earlier in this beta:
   Mentor, map dwellings, garrisons, spell shop, Seer Huts, Sphinx, grail digging, shipyards.
 - Campaigns: carry-over between missions; MMH 5.5 campaign menu. MMH 5.5 maps can be saved.
 - **MMH 5.5 is the default target.** An install with MMH 5.5 is played with 5.5 rules and data;
-  MMH 5.5 map scripts run (only on maps that have a map script, as on the original engine).
+  MMH 5.5 scripts run on every map in single player (as on the original engine); in network and
+  hot-seat games, as on the original engine without the MMH 5.5 DLL, only on maps that have a map script.
   To play plain 3.1 instead, point H5Reborn at a 3.1 install (see below) or set `H5_TARGET=stock`.
 - Network games: simultaneous turns (PEST, as in MMH 5.5); several battles can run at the same time.
 

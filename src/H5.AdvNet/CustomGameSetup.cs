@@ -252,7 +252,7 @@ public sealed class CustomGameSetup
         foreach (var d in db.Core.Heroes.Values.OrderBy(d => d.Id, StringComparer.Ordinal))
         {
             if (used.Contains(d.Id) || d.Class.Length == 0 || !AllRaces.Contains(d.Town)) continue;
-            if (d.Id.StartsWith("TEST", StringComparison.OrdinalIgnoreCase)) continue;
+            if (d.Id.StartsWith("TEST", StringComparison.OrdinalIgnoreCase) || !db.InHeroesAny(d)) continue;
             if (_map.AvailableHeroes.Count > 0 ? !_map.AvailableHeroes.Contains(d.Id) : db.IsScenarioHero(d)) continue;
             if (!_heroesByRace.TryGetValue(d.Town, out var l)) _heroesByRace[d.Town] = l = new();
             l.Add(d.Id);

@@ -107,10 +107,38 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
     public IReadOnlyDictionary<string, string>? SettingOverrides { get; set; }
 
     /// <summary>
-    /// MMH55's DLL group RemoveMapScriptCheck (nop at 0x00992d2a) makes the engine run the startup
-    /// script on maps without a map script. The stock engine (the default) runs no scripts there.
+    /// MMH55's DLL group RemoveMapScriptCheck (nop at 0x00992d2a) makes the world's script host run the
+    /// startup script in multiplayer/hotseat games on maps without a map script. Not active on the stock
+    /// engine (the default); single-player games run the startup on every map anyway (<see cref="StartupRuns"/>).
     /// </summary>
     public bool RunWithoutMapScript { get; set; }
+
+    /// <summary>
+    /// The game's multiplayer / hotseat flags (CWorld +0x88 / +0x89, read through world vf 0x14 = 0x0098c470;
+    /// FUN_006b9de0 = "neither" is the single-player test, the one behind "Flyby`s are not allowed in
+    /// multiplayer or hotseat" at 0x00549cd4). They decide which object hosts the adventure scripts.
+    /// </summary>
+    public bool Multiplayer { get; set; }
+    /// <inheritdoc cref="Multiplayer"/>
+    public bool Hotseat { get; set; }
+
+    /// <summary>
+    /// Whether advmap-startup.lua (and so MMH55, whose advmap-startup → advmap-common loads H55-Core) runs:
+    /// <list type="bullet">
+    /// <item>Single player (neither flag): the adventure controller hosts the scripts. CAdventureController's
+    /// constructor FUN_006089a0 (0x00608ec9: FUN_006b9de0 true) creates the context, takes the MapScript
+    /// resource's text when the map has one (map desc +0x1a0 via FUN_00441d00, 0x00608f95..0x00608fc1) and calls
+    /// FUN_00603b20 (startup, aliases, one scheduler pass, the text if not empty) — on every map, with or
+    /// without a map script. Triggers go to the same context (FUN_00607c20).</item>
+    /// <item>Multiplayer or hotseat: the world hosts them. FUN_00992d00 (CWorld vf 0x200 = 0x009941a0, called
+    /// from FUN_00c9fa80 with the resolved MapScript, 0x00ca01ba) returns when neither flag is set
+    /// (0x00992d20) and when the map has no MapScript resource (0x00992d2a, the jump MMH55's DLL NOPs).</item>
+    /// </list>
+    /// A map has a MapScript resource when map.xdb's MapScript href names a Script that exists, even an empty
+    /// one (MMH55's ARMG maps ship an empty MapScript.(Script).xdb); the stock RMG writes &lt;MapScript/&gt;.
+    /// </summary>
+    public static bool StartupRuns(bool hasMapScript, bool multiplayer, bool hotseat, bool noMapScriptCheck = false) =>
+        !(multiplayer || hotseat) || hasMapScript || noMapScriptCheck;
 
     /// <summary>
     /// Player turn state 2 ("ghost", CPlayer +0x634, vf 0x44 = 0x00500c10) for IsPlayerInGhostMode, supplied by a
@@ -120,16 +148,18 @@ public sealed partial class AdventureScripting : IAdventureScriptHooks
     public Func<int, bool>? PlayerInGhostMode { get; set; }
 
     /// <summary>
-    /// Registers the API, then starts the scripts like FUN_00992d00: only when the map has a script
-    /// (else nothing runs at all); DoString(scripts/advmap-startup.lua), DoString("createAdvmapAliases();"),
-    /// one scheduler pass (engine vf8 = FUN_004c0720), then the map script text if it is not empty.
+    /// Registers the API, then starts the scripts like FUN_00603b20 (single player) / FUN_00992d00
+    /// (multiplayer, hotseat): when <see cref="StartupRuns"/> says so, DoString(scripts/advmap-startup.lua),
+    /// DoString("createAdvmapAliases();"), one scheduler pass (engine vf8 = FUN_004c0720), then the map
+    /// script text if it is not empty. <paramref name="mapScriptPath"/> is non-null when the map has a
+    /// MapScript resource (<see cref="H5.Adventure.Map.AdvMap.ScriptPath"/>), whatever its text.
     /// </summary>
     public void Start(string? mapScriptPath, string? mapScriptSource)
     {
         BaseLibrary.Register(L, LoadScript, () => (uint)S.Rng.NextU64());
         RegisterAdventureApi();
         InitObjectives();
-        if (mapScriptSource == null && !RunWithoutMapScript) return;
+        if (!StartupRuns(mapScriptPath != null || mapScriptSource != null, Multiplayer, Hotseat, RunWithoutMapScript)) return;
 
         RunFile("scripts/advmap-startup.lua");
         L.DoString("createAdvmapAliases();", "DoString script");

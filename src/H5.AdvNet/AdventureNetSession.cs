@@ -291,7 +291,9 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
 
     void StartScripts()
     {
-        if (_lm.Files == null || string.IsNullOrEmpty(_lm.Map.ScriptSource)) return;
+        // Multiplayer: the world hosts the scripts only on maps with a MapScript resource, even an empty one
+        // (FUN_00992d00, 0x00992d2a; AdventureScripting.StartupRuns).
+        if (_lm.Files == null || !AdventureScripting.StartupRuns(_lm.Map.ScriptPath != null, multiplayer: true, hotseat: false)) return;
         try
         {
             var fs = _src.Fs;
@@ -299,6 +301,7 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
             // Map-script dialogs cannot block a shared game: they are answered on the host and
             // their texts are passed on as messages.
             _scripts.AutoAnswerUi = true;
+            _scripts.Multiplayer = true;
             _scripts.PlayerInGhostMode = InGhostMode;
             _scripts.SettingOverrides = _set.ScriptSettings;
             _scripts.Start(_lm.Map.ScriptPath, _lm.Map.ScriptSource);

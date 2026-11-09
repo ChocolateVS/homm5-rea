@@ -74,18 +74,24 @@ off on campaign and scenario maps).
 
 ## 4. Does each setting's script path run in our engine? (2026-11-09)
 
-Where MMH55 runs at all: the stock engine runs no script on a map without a map script (SCRIPTS.md §1), and on this
-install only the 50 campaign and single-mission maps have one. Their map type (H55_GetMapType: path contains "Scenario"
-→ Campaign, "SingleMissions" → Scenario) makes H55-Core switch off Town Conversion, Governance and Mine Control and force
-PrisonersAdjustToHeroRace = 1; the multiplayer / RMG-only features (mixed stacks, competitive ARMG towns, hill forts,
-moon disc on ARMG, Dimension Doors on RMG, duel) never run in game, exactly as on the user's stock exe. MMH55's DLL
-behaviour (RemoveMapScriptCheck) is `AdventureScripting.RunWithoutMapScript` / `script-run --no-map-script-check`
-(harness only, not offered in the client); the multiplayer/RMG rows below were run that way.
+Where MMH55 runs at all (SCRIPTS.md §1, corrected 2026-11-09): on the stock exe **single-player games run
+advmap-startup.lua — and so H55-Core / H55-AdvMap — on every map**, multiplayer, custom and RMG maps included (the
+adventure controller's script host, FUN_006089a0 → FUN_00603b20, has no MapScript check). Only **networked and hotseat**
+games need a MapScript resource (the world host FUN_00992d00, `JZ` 0x00992d2a, the jump MMH55's DLL removes): stock
+multiplayer maps and stock-RMG maps have none, so there MMH55 does not run without the DLL; MMH55's ARMG demo maps ship
+an empty one, so it runs on them. (The earlier text here — "the stock engine runs no script on a map without a map
+script" — read only the world path and was wrong for single player.) On the campaign / single-mission maps the map type
+(H55_GetMapType: path contains "Scenario" → Campaign, "SingleMissions" → Scenario) makes H55-Core switch off Town
+Conversion, Governance and Mine Control and force PrisonersAdjustToHeroRace = 1; on multiplayer / RMG maps played single
+player the multiplayer / RMG-only features run. `AdventureScripting.RunWithoutMapScript` / `--no-map-script-check` is the
+DLL behaviour for networked / hotseat games (harness only).
 
 Evidence: **T** = a test runs the feature's script in our engine and checks its effect (tests/H5.Scripting.Tests/
 Mmh55FeatureTests.cs, 5.5 install); **S** = settings sweep: the setting at a non-default value, 7 days of bot play on
-A1SM1, A2S1 (scripted single missions), Maps/Multiplayer/A2M1 and the RMG map user:L_I4_RMG_Map_001 (both
---no-map-script-check), `script-run … --h55-set=H55_X=v`: no script error of ours (only the stock ones of SCRIPTS.md §5).
+A1SM1, A2S1 (scripted single missions), Maps/Multiplayer/A2M1 and the RMG map user:L_I4_RMG_Map_001 (single player,
+which runs MMH55 there on the stock exe; re-run 2026-11-09 without --no-map-script-check, 32 settings x 2 maps),
+`script-run … --h55-set=H55_X=v`: no script error of ours (only the stock ones of SCRIPTS.md §5; on A2M1 every run also
+shows H55_MakeStartArmyNeutral's RemoveHeroCreatures(…, 0) "Quantity cannot be negative", the exe's own count check).
 The sweep proves the path runs without errors where the bots trigger it, not that every branch was reached.
 
 | Setting | Runs in our engine | Notes |
@@ -117,7 +123,10 @@ The sweep proves the path runs without errors where the bots trigger it, not tha
 | RPGPotions | S | potions in H55_IndexArtifacts / trading posts |
 | Duel_* | not run | only on ARMG duel templates (H55_DetectDuel → H55_ARMG_Duel = 1); no such map on this install |
 
-Engine findings outside the script engine (not fixed here): the random start-hero roll can pick a dialog-scene hero
-(`MapObjects/DialogScenes/Godrik_ds`, InternalName Godric_ds) that MMH55's phonebooks do not know, after which
-H55_GetUnusualSchools crashes every day ("The H55 script engine has crashed, reloading..."); whether the exe's hero
-list excludes those descriptors is not traced (GameDatabase.Heroes takes every AdvMapHeroShared under MapObjects/).
+Start-hero roll (fixed 2026-11-09): the random start hero could be the cut-scene actor `MapObjects/DialogScenes/Godrik_ds`
+(InternalName Godric_ds), unknown to MMH55's phonebooks, after which H55_GetUnusualSchools crashed every day. The exe's
+hero lists all iterate RPGRoot HEROES_ANY (MapObjects/_(AdvMapSharedGroup)/Heroes/Any.xdb, the "List of all heroes" of
+00837590; custom-game candidates 00c9f330 / 00c9f4a0, which also skip ScenarioHero at shared +0x1fc; 00ce83c8), and
+Godric_ds is neither in it nor a non-scenario hero. Our start roll now takes only HEROES_ANY non-ScenarioHero heroes
+(AdventureDb.InHeroesAny); GameDatabase.Heroes still holds every AdvMapHeroShared for map lookups. GAP: the world-side
+draw of the start hero itself (vs. the custom-game list) is not traced.

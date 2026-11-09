@@ -57,20 +57,23 @@ public partial class ScriptUiBridge : Node
     {
         var session = Screen.Session;
         var map = session.Map;
-        if (map.ScriptPath == null) return;
+        // Every map gets a host: single player runs advmap-startup.lua (MMH55) with or without a map script
+        // (CAdventureController FUN_006089a0 → FUN_00603b20); hotseat needs one (FUN_00992d00), see
+        // AdventureScripting.StartupRuns.
         try
         {
             var fs = Game.Instance.Fs;
             var host = AdventureScripting.Create(session.Game, session.Files, new EnumTables(fs), new SharedCatalog(new XdbLoader(fs)));
             // MMH 5.5 player settings changed in the options screen (appended to scripts/H55-Settings.lua).
             host.SettingOverrides = Options.Mmh55Options.Overrides();
+            host.Hotseat = session.IsHotSeat;
             if (CampaignFlow.Active is { } a && a.Session == session)
                 host.World.GameVars["__campaign_bonus"] = Math.Max(0, a.BonusIndex).ToString();
             // Loading a save restores the Lua heap and threads instead of starting the script (game/src/Save).
             if (Save.SaveManager.TakePendingScripts(session) is { } saved) host.Load(saved);
             else
             {
-                string? src = session.Files.TryReadAllBytes(map.ScriptPath, out var b) ? ScriptText.FromBytes(b) : null;
+                string? src = map.ScriptPath != null && session.Files.TryReadAllBytes(map.ScriptPath, out var b) ? ScriptText.FromBytes(b) : null;
                 host.Start(map.ScriptPath, src);
             }
             Host = host;

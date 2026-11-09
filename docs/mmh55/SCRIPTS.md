@@ -8,15 +8,31 @@ host, with the stock engine's quirks — including the checks the DLL would have
 
 ## 1. What runs, and when
 
-### Adventure map (FUN_00992d00, called from 0x009941aa)
-1. **No map script → no scripts at all.** `JZ` at 0x00992d2a returns when the map has no script resource. This is
-   exactly the instruction MMH55's DLL group `RemoveMapScriptCheck` NOPs; without the DLL, MMH55's system scripts
-   (`advmap-startup.lua` → H55-Core/H55-AdvMap) do **not** run on the 65 maps without a map script (all stock multiplayer
-   maps, RMG maps). `AdventureScripting.RunWithoutMapScript` (off by default, `script-run --no-map-script-check`)
-   reproduces the DLL behaviour. **FIXED** (we used to run the startup on every map).
-2. Also skipped when both world flag bytes +0x88/+0x89 (CWorld vf5 → `this+0x88`) are 0; the same pair gates other
-   host-side code (FUN_009902b0) — treated as "this machine runs the world" (our host/server runs the scripts). GAP: the
-   exact meaning of the two bytes.
+### Adventure map (FUN_00603b20 single player, FUN_00992d00 multiplayer/hotseat)
+Two objects can host the adventure-map scripts; the game's multiplayer / hotseat flags (CWorld +0x88 / +0x89, world
+vf 0x14 = 0x0098c470; FUN_006b9de0 = "both 0" is the single-player test — the same call refuses flybys with "Flyby`s are
+not allowed in multiplayer or hotseat" at 0x00549cd4) pick one. `AdventureScripting.StartupRuns` /
+`.Multiplayer` / `.Hotseat`; `script-run --multiplayer|--hotseat` (default single player).
+1. **Single player (neither flag): the adventure controller, on every map.** CAdventureController's constructor
+   FUN_006089a0 (RTTI `.?AVCAdventureController@NUI@@`, created by FUN_00609300 from FUN_00598f90) tests
+   FUN_006b9de0 at 0x00608ec9; when true it creates the script context (this+0x40, 0x00608f27), copies the MapScript
+   resource's text if the map has one (map desc +0x1a0 resolved by FUN_00441d00, 0x00608f95–0x00608fc1; an argument
+   string overrides it when not empty — GAP: its source, FUN_00598f90 param+0x4c), and calls FUN_00603b20: startup,
+   aliases, one pass, the text if not empty (item 3). **There is no MapScript check on this path**, so on the stock exe
+   MMH55's `advmap-startup.lua` → H55-Core/H55-AdvMap runs on multiplayer, custom and RMG maps played against the AI.
+   Triggers go to the same context (FUN_00607c20, same FUN_006b9de0 test). When false it logs "Warning: console script
+   commands are not allowed". **FIXED** (2026-11-09: we ran nothing on maps without a map script; that claim, made from
+   the world path alone, was wrong for single player).
+2. **Multiplayer or hotseat: the world, only with a MapScript.** FUN_00992d00 (CWorld vtable 0x00e6260c slot 0x200 =
+   0x009941a0 → `JMP` 0x009941aa, called from the game start FUN_00c9fa80 at 0x00ca01c8 with the resolved MapScript,
+   0x00ca01ba) returns when neither flag is set (0x00992d20) and when the MapScript is null (`JZ` 0x00992d2a — the
+   instruction MMH55's DLL group `RemoveMapScriptCheck` NOPs, with hooks at 0x00992db1/0x00992e43/0x00992e6f for the
+   null text). So without the DLL, networked and hotseat games on maps without a MapScript resource run no script
+   (all stock multiplayer maps; the stock RMG writes `<MapScript/>`, data/RMGTemp/CurrentMap/map.xdb). A MapScript
+   resource with no text counts: MMH55's ARMG demo maps (UserMODs/MMH55-ARMGMaps-Demo.h5u) each ship an empty
+   `MapScript.(Script).xdb` (`<FileName href=""/>`, empty `<ScriptText/>`) referenced from map.xdb, so MMH55 runs on
+   them in multiplayer too. `AdventureScripting.RunWithoutMapScript` (`script-run --no-map-script-check`) = the DLL.
+   **FIXED** (network sessions used to require a non-empty script text).
 3. `DoString(scripts/advmap-startup.lua)`, `DoString("createAdvmapAliases();")` (unconditional), **one scheduler pass**
    (engine vf8 = FUN_004c0720), then the map script text if it is not empty. **FIXED** (the pass and the order).
    MMH55's `advmap-startup.lua` → `advmap-common` → `common.lua` (H55-Library + 750 `creature_N.lua` via `doFile`) →
