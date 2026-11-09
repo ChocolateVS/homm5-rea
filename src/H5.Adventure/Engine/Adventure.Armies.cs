@@ -67,9 +67,14 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// Garrisoning merges the town's garrison troops into the hero's army (the garrison row then shows the
-    /// hero's army); it fails when the merged army needs more than seven slots. Leaving the garrison needs
-    /// a free visiting row (no other visiting hero).
+    /// The town hero command (constructor 00435cc0, execute 004f58e0; the town screen's input_swap_heroes 00619790 sends
+    /// it with the force flag +0x14 clear): the visiting hero (town vf 0x18(0)) goes into the garrison through 004f4200,
+    /// which merges the town's garrison army (town vf 0x2c) into the hero's (hero vf 0x48): fit test 0045add0 (a stack
+    /// whose creature the hero has needs nothing, any other a free slot), on failure the hero's own duplicate stacks are
+    /// combined (0045a900, kept even when the second test fails) and the test repeated; still failing → refused (the
+    /// screen shows T_NOT_ENOUGH_ROOM); else 0045a2c0 moves every garrison stack into the hero. A hero already holding
+    /// the garrison (vf 0x18(1)) comes out as the visitor (town vf 0x14(hero, 0)). Leaving the garrison with no
+    /// visiting hero is the same command with an empty visiting slot.
     /// </summary>
     string? DoGarrison(GarrisonHeroCmd c)
     {
@@ -79,25 +84,20 @@ public sealed partial class Adventure
         if (c.Garrison == h.Garrisoned) return null;
         if (c.Garrison)
         {
-            // The town hero command (constructor 00435cc0, execute 004f58e0): the visiting hero goes into the garrison
-            // (004f4200) and a hero already holding it comes out as the visitor (town vf 0x14). Only the AI
-            // (FUN_009c3f20) sends it with a garrison hero present; our town screen does not.
             var holder = S.Heroes.FirstOrDefault(x => x.Alive && x != h && x.InTown == t.Object && x.Garrisoned);
-            if (holder != null)
+            if (!GarrisonFits(h.Army, t.Garrison))
             {
-                if (t.Garrison.Live().Any()) return "another hero holds the garrison";
-                h.Garrisoned = true;
-                holder.Garrisoned = false;
-                Emit(new ArmyChanged(h.Id, t.Object));
-                Emit(new ArmyChanged(holder.Id, t.Object));
-                return null;
+                CombineDuplicateStacks(h.Army);
+                if (!GarrisonFits(h.Army, t.Garrison)) return "not enough room";
             }
-            var merged = h.Army.Select(s => s == null ? null : new Stack(s.Creature, s.Count)).ToArray();
-            foreach (var s in t.Garrison.Live())
-                if (!merged.TryAdd(s.Creature, s.Count)) return "not enough army slots to merge the garrison";
-            h.Army = merged;
+            foreach (var s in t.Garrison.Live()) h.Army.TryAdd(s.Creature, s.Count);
             Array.Fill(t.Garrison, null);
             h.Garrisoned = true;
+            if (holder != null)
+            {
+                holder.Garrisoned = false;
+                Emit(new ArmyChanged(holder.Id, t.Object));
+            }
         }
         else
         {
@@ -106,6 +106,32 @@ public sealed partial class Adventure
         }
         Emit(new ArmyChanged(h.Id, t.Object));
         return null;
+    }
+
+    /// <summary>0045add0: every stack of <paramref name="incoming"/> joins a stack of its creature or takes a free slot.</summary>
+    internal static bool GarrisonFits(Stack?[] army, Stack?[] incoming)
+    {
+        var have = new HashSet<string>(army.Live().Select(s => s.Creature));
+        int free = army.Count(s => s is not { Count: > 0 });
+        foreach (var s in incoming.Live())
+        {
+            if (have.Contains(s.Creature)) continue;
+            if (free < 1) return false;
+            free--;
+            have.Add(s.Creature);
+        }
+        return true;
+    }
+
+    /// <summary>0045a900: for each stack (first to last), later stacks of the same creature are merged into it, last first.</summary>
+    internal static void CombineDuplicateStacks(Stack?[] army)
+    {
+        for (int i = 0; i < army.Length; i++)
+        {
+            if (army[i] is not { Count: > 0 } a) continue;
+            for (int j = army.Length - 1; j > i; j--)
+                if (army[j] is { Count: > 0 } b && b.Creature == a.Creature) { a.Count += b.Count; army[j] = null; }
+        }
     }
 
     /// <summary>

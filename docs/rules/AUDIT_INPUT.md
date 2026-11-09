@@ -80,7 +80,7 @@ Status: **MATCH** (already right), **FIXED** (changed in this audit), **GAP** (n
 | Double click hero portrait | Hero screen (@00619a30 → @00619320; manual p.10 "heroes exchange screen … double-clicking") | FIXED |
 | Double click a stack | Creature info (manual p.10) | FIXED (`CreatureInfoWindow`, stock UI/CreatureInfo) |
 | Drag / Shift-drag stacks | Move/merge / Split Army | MATCH |
-| Keys B R G T M Q X Y Z F, N/P, U, Space, A/I/S/V/H, Esc/Enter/E | town_screen section | FIXED (were missing) — Space swaps only when one hero is present (engine has no two-hero swap: GAP) |
+| Keys B R G T M Q X Y Z F, N/P, U, Space, A/I/S/V/H, Esc/Enter/E | town_screen section | FIXED (were missing) — Space: the town hero command 004f58e0 also swaps two heroes (AUDIT_TOWN "Garrison ↔ visiting") |
 | Right click building | Building tooltip while held (UIGameRoot ID_TOWN_HALL_TOOLTIP = Tooltips/TownHall/BuildingToolTip, nameDesc.txt) | FIXED (name + description; the cost/prerequisite rows of that window are a GAP) |
 | Sub-screens (fort, guild, tavern, market, blacksmith, hall) | Close with their section keys / Esc (jd_button_0); right click does **not** close | FIXED (right click used to close them) |
 

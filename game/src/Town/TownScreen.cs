@@ -205,6 +205,30 @@ public partial class TownScreen : Control
         _hud.Find("BuildingDesc")?.SetValue("name", _hoverBuilding ?? Town.Name);
         if (_hud.Find("BuildingDesc") is { } bd && _hoverBuilding == null) bd.SetText($"<h0><color_header><outline><center>{Town.Name}");
         SyncBuildings();
+        UpdateBuildingButtons();
+    }
+
+    /// <summary>
+    /// 0061b1c0 → 00614440 per HUD button: enabled (007c5b60 → window vf 0x3c) when FUN_00614290 holds — the town's
+    /// owner check 00613c00 and town vf 0x34(building) &gt; 0 — EnterMarket (2), EnterTavern (4), EnterShipyard (3),
+    /// EnterBlacksmith (5), MagicGuild (006145a0); the window's "deny" value (vf 0x80, `&lt;value=deny&gt;` in each
+    /// tooltip) is empty, else UI/TownScreen texts "building_not_present".
+    /// </summary>
+    void UpdateBuildingButtons()
+    {
+        var notBuilt = TownUi.Text("UI/TownScreen/building_not_present.txt", "");
+        foreach (var (window, building) in new[]
+                 {
+                     ("EnterMarket", "TB_MARKETPLACE"), ("EnterTavern", "TB_TAVERN"), ("EnterShipyard", "TB_SHIPYARD"),
+                     ("EnterBlacksmith", "TB_BLACKSMITH"), ("MagicGuild", H5.Adventure.Engine.Adventure.GuildScreenBuilding(Town)),
+                 })
+        {
+            if (_hud.Find(window) is not { } button) continue;
+            bool built = Town.Level(building) > 0;
+            button.Enabled = built;
+            if (UiResources.Instance.Text(button.Window.TooltipPath) is { Length: > 0 } tip)
+                button.SetTooltip(tip.Replace("<value=deny>", built ? "" : notBuilt.Trim(), StringComparison.OrdinalIgnoreCase));
+        }
     }
 
     void Bind(UiNode node, int hero, int town, int slot, bool visible)

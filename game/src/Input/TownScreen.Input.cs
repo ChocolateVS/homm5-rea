@@ -96,14 +96,19 @@ public partial class TownScreen
             Callable.From(() => hs.ShowPageByName(page)).CallDeferred();
     }
 
-    /// <summary>Space (input_swap_heroes): moves the visiting hero into the garrison or the garrison hero out.</summary>
+    /// <summary>
+    /// Space (input_swap_heroes 00619790): one town hero command (00435cc0 / 004f58e0) — the visiting hero into the
+    /// garrison, a garrison hero out as the visitor; when it fails, a message box with the town screen texts
+    /// T_NOT_ENOUGH_ROOM and T_MSGBOX_TITLE.
+    /// </summary>
     void SwapHeroes()
     {
         var visiting = VisitingHero();
         var garrison = GarrisonHero();
-        if (visiting != null && garrison == null) Apply(new GarrisonHeroCmd(Town.Object, visiting.Id, true) { Player = Town.Owner });
-        else if (garrison != null && visiting == null) Apply(new GarrisonHeroCmd(Town.Object, garrison.Id, false) { Player = Town.Owner });
-        // Both present: the engine has no single swap command yet (AUDIT_INPUT.md GAP).
+        bool ok = visiting != null ? Apply(new GarrisonHeroCmd(Town.Object, visiting.Id, true) { Player = Town.Owner })
+            : garrison == null || Apply(new GarrisonHeroCmd(Town.Object, garrison.Id, false) { Player = Town.Owner });
+        if (!ok)
+            Notice(TownUi.Text("UI/TownScreen/townmsgboxtitle.txt", "Town"), TownUi.Text("UI/TownScreen/nonenoughroom.txt", ""));
         Refresh();
     }
 }
