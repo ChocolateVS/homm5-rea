@@ -30,6 +30,12 @@ public static class H5Lighting
 
     static bool _registered;
 
+    /// <summary>
+    /// Registers the global shader parameters (once). Materials built before them would be updated against missing
+    /// globals (a warning per material and parameter every rendering update) until the first <see cref="Apply"/>.
+    /// </summary>
+    public static void EnsureRegistered() => Register();
+
     static void Register()
     {
         if (_registered) return;

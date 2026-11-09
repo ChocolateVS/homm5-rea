@@ -60,11 +60,15 @@ public sealed class AdventureSession
     {
         var fs = H5Reborn.Game.Instance.Fs;
         var core = H5Reborn.Game.Instance.Db;
+        H5Reborn.Dev.LoadTrace.Begin($"adventure {mapQuery}");
         _db ??= AdventureDb.Load(core, fs);
+        H5Reborn.Dev.LoadTrace.Mark("adventure db");
         var mapRef = MapCatalog.Find(fs, H5Reborn.Game.Instance.Install, mapQuery)
                      ?? throw new FileNotFoundException($"No adventure map matches '{mapQuery}'");
         var files = mapRef.Open(fs);
+        H5Reborn.Dev.LoadTrace.Mark("map catalog + open");
         var map = new MapLoader(core, fs).Load(files);
+        H5Reborn.Dev.LoadTrace.Mark("map parse");
 
         var setup = new GameSetup { Seed = seed, Difficulty = difficulty, Campaign = campaign };
         var active = map.Players.Where(p => p.Active).ToList();
@@ -72,6 +76,7 @@ public sealed class AdventureSession
         foreach (var p in active)
             setup.Players.Add(new PlayerSetup { MapPlayer = p.Index, Human = p.Index == human });
         var (game, opening) = H5.Adventure.Engine.Adventure.NewGame(_db, map, setup);
+        H5Reborn.Dev.LoadTrace.Mark("new game");
         GD.Print($"[H5] adventure {map.Id} \"{map.Name}\" {map.TilesX}x{map.TilesY}, human player {human + 1}, seed {seed}");
         return new AdventureSession(_db, map, game, opening, seed) { Files = files };
     }

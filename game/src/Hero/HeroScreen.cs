@@ -366,7 +366,7 @@ public partial class HeroScreen : Control
     static Control SlotPicture(UiNode slot) => slot.FindChild("Pic", false, false) as Control ?? slot;
 
     /// <summary>WindowProgressBar: its Forward texture (BackgroundSimpleScallingTexture) cropped to the fraction.</summary>
-    static void SetProgress(UiNode bar, float fraction)
+    internal static void SetProgress(UiNode bar, float fraction)
     {
         bar.SetMeta("progress", Math.Clamp(fraction, 0f, 1f));
         if (bar.GetNodeOrNull<Control>("_Fill") is not { } clip)

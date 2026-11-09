@@ -69,12 +69,118 @@ public partial class AdventureScreen : Control
         H5Reborn.Settings.VideoSettings.ApplyScaling();
         if (_built) return;
         _built = true;
-        Audio.AdventureAudio.Attach(this);
 
-        World = new AdvWorld(Session);
+        // The map is built over several frames behind the stock loading picture (00595565 → 0066c070: UIGameRoot
+        // CDBID_TEXTURE_PWL drawn over the whole screen), so the window (the page, in the browser) keeps drawing.
+        Dev.LoadTrace.Mark("screen start");
+        ShowLoadingPicture();
+        World = new AdvWorld(Session) { Staged = true, Visible = false };
         AddChild(World);
+        _buildSteps = World.BuildSteps;
+        _build = World.Build().GetEnumerator();
+    }
+
+    IEnumerator<int>? _build;
+    int _buildSteps, _builtSteps, _buildFrames;
+    Control? _loadingPicture;
+    int _loadingFrames;
+    readonly List<Action> _whenLoaded = new();
+
+    /// <summary>The map is built and the HUD is up (see <see cref="WhenLoaded"/>).</summary>
+    public bool IsLoaded { get; private set; }
+
+    /// <summary>Share of the map built so far (0..1).</summary>
+    public float LoadProgress => IsLoaded ? 1f
+        : _warmUp != null ? 0.85f + 0.15f * _warmUpShown / Math.Max(1, _warmUp.Count)
+        : _buildSteps > 0 ? 0.85f * Math.Min(1f, _builtSteps / (float)_buildSteps) : 0f;
+
+    /// <summary>Runs an action once the map is built (at once if it is).</summary>
+    public void WhenLoaded(Action action)
+    {
+        if (IsLoaded) action();
+        else _whenLoaded.Add(action);
+    }
+
+    /// <summary>Time per frame given to building the map (the rest of the frame draws the loading picture).</summary>
+    static readonly double BuildBudgetMs = OperatingSystem.IsBrowser() ? 40 : 50;
+
+    /// <summary>Advances the map build; true while it is still running.</summary>
+    bool StepBuild()
+    {
+        if (_warmUp != null) return StepWarmUp();
+        if (_build == null) return false;
+        if (_buildFrames == 0)
+        {
+            // The previous screen is freed by now: let go of what only it used before this map loads its own.
+            int released = Game.Instance.ReleaseUnused();
+            Dev.LoadTrace.Mark($"released {released} unused textures");
+        }
+        var start = System.Diagnostics.Stopwatch.GetTimestamp();
+        _buildFrames++;
+        while (System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds < BuildBudgetMs)
+        {
+            if (!_build.MoveNext())
+            {
+                _build.Dispose();
+                _build = null;
+                Dev.LoadTrace.Mark($"world ({_builtSteps} steps over {_buildFrames} frames)");
+                World.Visible = true;
+                _warmUp = World.WarmUpPieces();
+                _warmUpLastMs = Time.GetTicksMsec();
+                foreach (var n in _warmUp) n.Visible = false;
+                return true;
+            }
+            _builtSteps++;
+        }
+        return true;
+    }
+
+    List<Node3D>? _warmUp;
+    int _warmUpShown, _warmUpBatch = 1;
+    ulong _warmUpLastMs;
+
+    /// <summary>
+    /// After the build: the map's pieces come back into view a few per frame behind the loading picture (see
+    /// <see cref="AdvWorld.WarmUpPieces"/>); the batch grows while frames stay short and shrinks after a long one.
+    /// </summary>
+    bool StepWarmUp()
+    {
+        ulong now = Time.GetTicksMsec();
+        if (_warmUpLastMs > 0 && now - _warmUpLastMs > 1000 && Dev.LoadTrace.Enabled)
+            GD.Print($"[H5] load: warm-up frame {now - _warmUpLastMs} ms after showing {(_warmUpShown == 0 ? "the empty map" : string.Join(", ", _warmUp!.Skip(_warmUpShown - _warmUpBatch).Take(_warmUpBatch).Select(n => n.Name.ToString()).Take(8)))}");
+        if (_warmUpShown > 0) _warmUpBatch = now - _warmUpLastMs > 250 ? Math.Max(1, _warmUpBatch / 2) : Math.Min(256, _warmUpBatch * 2);
+        _warmUpLastMs = now;
+        if (_warmUpShown >= _warmUp!.Count)
+        {
+            Dev.LoadTrace.Mark($"warm-up ({_warmUp.Count} pieces)");
+            _warmUp = null;
+            FinishBuild();
+            return false;
+        }
+        for (int i = 0; i < _warmUpBatch && _warmUpShown < _warmUp.Count; i++) _warmUp[_warmUpShown++].Visible = true;
+        return true;
+    }
+
+    void ShowLoadingPicture()
+    {
+        var picture = new Control { Name = "LoadingPicture", AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Stop, ZIndex = 100 };
+        picture.AddChild(new ColorRect { Color = Colors.Black, AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore });
+        if (Ui.UiGameRoot.Texture("CDBID_TEXTURE_PWL") is { } path && Game.Instance.LoadTexture(path) is { } tex)
+            picture.AddChild(new TextureRect
+            {
+                Texture = tex, AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore,
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale,
+            });
+        AddChild(picture);
+        _loadingPicture = picture;
+    }
+
+    void FinishBuild()
+    {
+        Audio.AdventureAudio.Attach(this);
         Hud = new AdvHud(this);
         AddChild(Hud);
+        Dev.LoadTrace.Mark("hud");
         _flyLayer = new Control { Name = "FlyTexts", AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore };
         AddChild(_flyLayer);
         _dialogLayer = new Control { Name = "Dialogs", AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore };
@@ -98,6 +204,34 @@ public partial class AdventureScreen : Control
             AddChild(_turnTimer);
             MoveChild(_turnTimer, _dialogLayer.GetIndex());
             if (Session.IsHumanTurn) _turnTimer.NewTurn();
+        }
+        // Registered in _EnterTree once the HUD exists (deferred); the HUD is made only now.
+        RegisterAdvInput();
+        // The loading picture stays over the first frame of the map (its shaders and uploads).
+        if (_loadingPicture != null) MoveChild(_loadingPicture, GetChildCount() - 1);
+        IsLoaded = true;
+        Dev.LoadTrace.Mark("screen ready");
+        Dev.LoadTrace.Summary("adventure");
+        if (Dev.LoadTrace.Enabled) TraceFirstFrames();
+        var pending = _whenLoaded.ToArray();
+        _whenLoaded.Clear();
+        foreach (var a in pending) a();
+    }
+
+    /// <summary>Removes the loading picture once the map has been drawn.</summary>
+    void StepLoadingPicture()
+    {
+        if (_loadingPicture == null || ++_loadingFrames < 3) return;
+        _loadingPicture.QueueFree();
+        _loadingPicture = null;
+    }
+
+    async void TraceFirstFrames()
+    {
+        for (int i = 1; i <= 3; i++)
+        {
+            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            Dev.LoadTrace.Mark($"frame {i}");
         }
     }
 
@@ -123,7 +257,7 @@ public partial class AdventureScreen : Control
 
     HeroState? Selected => SelectedHeroId >= 0 ? Session.S.Hero(SelectedHeroId) : null;
 
-    bool InputLocked => _playing || _modal > 0 || !Session.IsHumanTurn || Session.PendingEvents > 0 || Autoplay || _webComputerTurns > 0;
+    bool InputLocked => !IsLoaded || _playing || _modal > 0 || !Session.IsHumanTurn || Session.PendingEvents > 0 || Autoplay || _webComputerTurns > 0;
 
     void Select(HeroState h)
     {
@@ -277,6 +411,7 @@ public partial class AdventureScreen : Control
 
     public override void _UnhandledInput(InputEvent e)
     {
+        if (!IsLoaded) return;
         // Audited input (game/src/Input/AdventureScreen.Input.cs): input_a2.cfg keys, manual click table.
         if (HandleAdvInput(e)) return;
         if (e is InputEventKey { Pressed: true, Echo: false } k)
@@ -517,6 +652,8 @@ public partial class AdventureScreen : Control
 
     public override void _Process(double delta)
     {
+        if (!IsLoaded) { StepBuild(); return; }
+        StepLoadingPicture();
         DevHoverStep();
         UpdateHover();
         DrawFakeCursor();

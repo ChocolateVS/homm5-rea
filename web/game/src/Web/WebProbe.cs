@@ -28,6 +28,8 @@ public partial class WebProbe : Node
             _framesInScene = 0;
             GD.Print($"[H5] web: scene {name}");
         }
+        // The adventure screen builds its map over several frames: count from when it is loaded.
+        if (cur is H5Reborn.Adventure.AdventureScreen { IsLoaded: false }) _framesInScene = 0;
         _framesInScene++;
         // A few frames after a screen became current it has been built and drawn at least once.
         if (_framesInScene == 5)
@@ -63,7 +65,11 @@ public partial class WebProbe : Node
             _sinceStats = 0;
             GD.Print($"[H5] web: stats scene={name} fps={Engine.GetFramesPerSecond()} gcMB={GC.GetTotalMemory(false) / 1048576.0:F0} gcCommitMB={GC.GetGCMemoryInfo().TotalCommittedBytes / 1048576.0:F0} " +
                      $"staticMB={OS.GetStaticMemoryUsage() / 1048576.0:F0} vramMB={Performance.GetMonitor(Performance.Monitor.RenderVideoMemUsed) / 1048576.0:F0} " +
-                     $"reads={BrowserFileSource.Requests} readMB={BrowserFileSource.BytesRequested / 1048576.0:F0}");
+                     $"reads={BrowserFileSource.Requests} readMB={BrowserFileSource.BytesRequested / 1048576.0:F0} " +
+                     // Per-frame cost: script _process / _physics_process (ms), what the renderer drew.
+                     $"procMs={Performance.GetMonitor(Performance.Monitor.TimeProcess) * 1000:F1} physMs={Performance.GetMonitor(Performance.Monitor.TimePhysicsProcess) * 1000:F1} " +
+                     $"objs={Performance.GetMonitor(Performance.Monitor.RenderTotalObjectsInFrame)} draws={Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame)} " +
+                     $"prims={Performance.GetMonitor(Performance.Monitor.RenderTotalPrimitivesInFrame)} nodes={Performance.GetMonitor(Performance.Monitor.ObjectNodeCount)}");
         }
     }
 }

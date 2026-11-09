@@ -200,8 +200,44 @@ later) gesture anywhere on the page, so the game is never left silent. The web b
 through Godot's own mixer, like the desktop (`audio/general/default_playback_type.web=0`, "Stream", set by
 `build.sh`): Godot's web default "Sample" (Web Audio buffer sources) left the music silent (smoke test: menu music
 peak level 0 with Sample, 0.16 with Stream). Intro movies (Theora `video/logo-*.ogg`) play with picture and sound.
-Without threads the mixer runs on the page's main thread, so a long synchronous step (loading a map) makes the
-sound drop out until it ends.
+Without threads the mixer is fed from the page's main thread once per frame, so a frame longer than the audio buffer
+makes the sound drop out. `build.sh` sets `audio/driver/output_latency.web=100` (a 128 ms buffer at 32 kHz; Godot's
+web default gives 64 ms), and map loading is spread over frames (next section).
+
+### Loading an adventure map
+
+The map is no longer built in one synchronous step (which held the page for 35–50 s, sound off, no frame):
+
+* `AdventureScreen` shows the stock loading picture (0066c070: UIGameRoot `CDBID_TEXTURE_PWL` over the screen) and
+  builds the map with `AdvWorld.Build()`, an enumerator over terrain, sea / light per floor, each scenery batch, each
+  object, each hero, ships and the camera, run for 40 ms per frame in the browser (50 ms on the desktop). The floors
+  join the scene tree only when complete. Then the pieces of the shown floor become visible a few per frame behind the
+  picture (the batch doubles while frames stay under 250 ms), so the renderer prepares their shaders over several
+  frames; then the HUD, map scripts and save keys attach and `WhenLoaded` callbacks run. Campaign maps fill the PWL
+  screen's `Progress` bar from `AdventureScreen.LoadProgress`. The built map, the order of nodes and the game state are
+  the same as before (desktop screenshots of A2M1 after load differ by 0.03 / 255 on average, animation phase only).
+* Characters of the same model and animation set share their decoded skeleton, mesh, skin and converted clips while the
+  map is built (`CharacterBuilder.ShareScope`; each instance still has its own nodes and library; looping and one-shot
+  copies of a clip are shared, never changed). A2M1 has 318 animated objects from 150 model / set pairs: the object
+  pass went from 10.3 s to 3.7 s on the desktop.
+* The global shader parameters (`H5Lighting`) are registered before the first material: materials updated while they
+  were missing printed 14 000 warnings and made every rendering update of a staged load take seconds.
+* `--load-trace` (always on in the browser) logs each stage (`[H5] load: …`) and per-kind totals (template building,
+  model load, mesh build, texture read / decode / upload).
+
+Measured on the same busy machine (headless Chromium with the GPU, A2M1, `smoke.mjs --only adventure`):
+
+| | before (1782e22) | now |
+|---|---|---|
+| engine started → adventure on screen | 101 s | 62 s |
+| longest time without a frame | 108 s | ~20 s (WebGL shader compiles of the first map frames) |
+| wasm heap after load | 916 MB | 822 MB |
+| frame rate on the map | 9.1 fps | 9–11 fps |
+
+What the load still spends (browser, A2M1, `[H5] load:` buckets): converting ~150 characters (Granny decode, Oodle1 in
+C#, clip baking) ~30 s on this busy machine, models / meshes ~9 s, texture reads ~4 s, WebGL shader compiles ~20 s
+(Chrome keeps compiled shaders in its GPU cache, so later visits compile less). Next: keep decoded Granny clips in
+IndexedDB between visits.
 
 ### Multiplayer (joining from the browser)
 
@@ -272,6 +308,7 @@ so every dev flag works:
 | `/?args=--combat-vs-ai=1,2` | duel against the AI (duel presets 1 vs 2) |
 | `/?args=--adventure=A2M1` | adventure map (any `--adventure=<map>` query) |
 | `/?args=--adventure=A2M1%20--adventure-reveal` | several args: space separated (`%20`) |
+| `/?args=--adventure=A2M1%20--adventure-shadow-splits=1` | the sun's shadow with 0 (off), 1, 2 or 4 (default) splits, to compare frame rates |
 | `/?fresh` | ignore the stored copy and ask for the folder |
 | `/?nocache` | do not copy the picked files to browser storage |
 
@@ -322,25 +359,33 @@ is virtual.
 
 ## Not working yet in the browser (ranked)
 
-1. **Performance (CPU).** AOT made the C# about twice as fast (table under *Build*), but the adventure map still
-   takes ~50 s to load and runs at ~11 fps headless. Next steps: profile the load (Granny/terrain/objects; the
-   synchronous Range reads decode bytes in a JS loop), time-slice long loads behind a loading screen, cache
-   decoded assets in IndexedDB between visits.
+1. **Performance (CPU).** Map loading is spread over frames behind the loading picture and ~40 % shorter (see
+   *Loading an adventure map*); the hover pick no longer walks every object's nodes twice per frame (cached mesh lists
+   with their world bounds, one pick per frame shared by cursor and tooltip: 25 → 5 ms per frame on the desktop, same
+   picks over 10 000 test rays). The adventure map still runs at ~10 fps headless: a browser CPU profile
+   (`H5_WEB_PUBLISH_ARGS=-p:WasmNativeStrip=false tools/web/build.sh` keeps function names) spends about half of the
+   frame waiting in `getParameter` inside Emscripten's frame commit (`blitOffscreenFramebuffer`), i.e. on the GPU
+   process; fewer shadow splits (`--adventure-shadow-splits=1`, 885 → 608 draw calls) did not change the frame rate.
+   Next: find what the GPU process spends the frame on; persistent decoded-asset cache.
 2. ~~Adventure AI turns (threads)~~ — fixed: computer turns run one per frame (see *Computer players' turns*).
 3. ~~Saves, profiles and settings do not persist~~ — fixed: `user://` persists in IndexedDB, with export / import
    (see *Saves, profiles and settings*).
 4. **Multiplayer** — joining works (see *Multiplayer*): a browser joined a desktop `h5server` over `ws://` with the
    data check passing (`smoke.mjs --only lobby`). Open: hosting and LAN discovery (impossible in a browser),
-   `https` pages need a `wss://` proxy to LAN hosts, online lobby *listing* needs the master same-origin or with
+   online lobby *listing* needs the master same-origin or with
    CORS, WebRTC peers are not implemented, and a browser cannot host network games (so computer turns of a
    network game never run in a browser).
 5. ~~Audio~~ — fixed: unlock on any gesture, music/sounds through Godot's mixer, intro movies verified (see *Audio*).
-   Sound drops out during long synchronous loads (single thread).
+   Map loads now run in short steps with a 128 ms audio buffer; single steps (one character's decode) can still exceed it
+   on a slow machine.
 6. **Memory ceiling.** wasm32 heap max 2 GB. Decoded texture images were kept alive until the GC finalized their
    wrappers; `Game.LoadTexture` and the adventure terrain now free them after upload: the A2M1 (136×136) heap peak
    went from **1346 MB to 820 MB** (GC heap ~210 MB, VRAM ~390 MB). The page logs every heap growth
-   (`[H5] web: wasm heap grew to N MB`, h5data.js) next to the game's lines. Still open: model/texture eviction
-   for XL two-floor maps and long sessions; mobile browsers without S3TC would need RGBA8 textures (4× VRAM).
+   (`[H5] web: wasm heap grew to N MB`, h5data.js) next to the game's lines. Shared character data cut A2M1 to 822 MB;
+   the largest maps fit: 176×176 two floors 819 MB, 216×216 917 MB. Opening an adventure map now first lets go of what
+   the previous screens loaded and nothing uses (`Game.ReleaseUnused`: textures no material holds, the decoded Granny
+   cache; a reload of A2M1 released 94 textures). Still open: the XDocument cache (`XdbLoader`) grows for the whole
+   session; mobile browsers without S3TC would need RGBA8 textures (4× VRAM).
 7. ~~Data fingerprint~~ — fixed: `RandomAccessSources.Length` gives the picked files' real sizes.
 8. **First visit download/copy.** The OPFS copy of ~2 GB takes ~2 minutes in the background; the picked originals
    are used meanwhile. Browser storage quotas may refuse it on small disks (then the folder is asked for each visit).

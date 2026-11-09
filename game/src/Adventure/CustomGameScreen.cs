@@ -457,6 +457,7 @@ public static partial class AdventureLauncher
         }
         if (arg.StartsWith("--adventure-cast=")) { _cast = arg["--adventure-cast=".Length..]; return true; }
         if (arg == "--adventure-reveal") { AdvWorld.RevealAll = true; return true; }
+        if (arg.StartsWith("--adventure-shadow-splits=")) { AdvWorld.ShadowSplits = int.Parse(arg["--adventure-shadow-splits=".Length..]); return true; }
         if (arg == "--adventure-go") { _go = true; return true; }
         if (arg == "--adventure-verbose") { AdventureScreen.Verbose = true; return true; }
         if (arg.StartsWith("--adventure-hover=")) { AdventureScreen.DevHover = arg["--adventure-hover=".Length..]; return true; }
@@ -579,7 +580,7 @@ public static partial class AdventureLauncher
             var screen = AdventureScreen.Open(session);
             // The first frames after loading take seconds (GPU uploads); start test timers only
             // once rendering has settled so they fire in the intended order.
-            screen.AddChild(new AfterFrames(10, () => ScheduleTests(screen)) { Name = "TestScheduler" });
+            screen.WhenLoaded(() => screen.AddChild(new AfterFrames(10, () => ScheduleTests(screen)) { Name = "TestScheduler" }));
         }
         catch (Exception e)
         {

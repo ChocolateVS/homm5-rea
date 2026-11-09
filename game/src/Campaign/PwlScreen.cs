@@ -188,7 +188,7 @@ public partial class PwlScreen : UiScreen
         GetTree().ProcessFrame -= LoadNextFrame;
         try
         {
-            CampaignFlow.StartMission(_campaign, _mission, _selected);
+            _loading = CampaignFlow.StartMission(_campaign, _mission, _selected);
         }
         catch (Exception e)
         {
@@ -197,6 +197,16 @@ public partial class PwlScreen : UiScreen
             _phase = Phase.Choose;
             return;
         }
+        // The adventure screen builds the map over the next frames: the progress bar follows it (_Process).
+        _loading.WhenLoaded(MapLoaded);
+    }
+
+    Adventure.AdventureScreen? _loading;
+
+    void MapLoaded()
+    {
+        if (Find("Progress") is { } bar) Hero.HeroScreen.SetProgress(bar, 1f);
+        _loading = null;
         _phase = Phase.PressKey;
         Find("ProgressBarText")?.SetValue("val", UiResources.StripMarkup(Text("UI/pwlscreen/PressAnyKey.txt")));
         if (_autostart) GetTree().CreateTimer(1.0).Timeout += () => (GetParent() is CanvasLayer layer ? (Node)layer : this).QueueFree();
@@ -204,6 +214,8 @@ public partial class PwlScreen : UiScreen
 
     public override void _Process(double delta)
     {
+        if (_phase == Phase.Loading && _loading != null && IsInstanceValid(_loading) && Find("Progress") is { } bar)
+            Hero.HeroScreen.SetProgress(bar, _loading.LoadProgress);
         if (_phase != Phase.PressKey || Find("ProgressBarText") is not { } t) return;
         _blink = (_blink + delta) % (PressAnyKeyPeriod + PressAnyKeyFade);
         double a = _blink < PressAnyKeyPeriod ? 1 : 1 - (_blink - PressAnyKeyPeriod) / PressAnyKeyFade;

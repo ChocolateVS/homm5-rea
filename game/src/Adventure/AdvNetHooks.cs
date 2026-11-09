@@ -21,14 +21,17 @@ static class AdvNetHooks
             void StartBattle(H5.AdvNet.BattleReplica b) => Callable.From(() => NetBattleLauncher.Start(net, b, node =>
             {
                 if (node is not AdventureScreen screen) return;
-                foreach (var h in screen.Session.S.Heroes) screen.World.SyncHero(h);
-                screen.World.RefreshShroud();
-                screen.Hud.Refresh();
+                screen.WhenLoaded(() =>
+                {
+                    foreach (var h in screen.Session.S.Heroes) screen.World.SyncHero(h);
+                    screen.World.RefreshShroud();
+                    screen.Hud.Refresh();
+                });
             })).CallDeferred();
             net.BattleStarted += StartBattle;
             var screen = AdventureScreen.Open(session);
-            net.SaveNotice += n => Callable.From(() => Save.SaveManager.ShowNetSaveNotice(screen, n)).CallDeferred();
-            if (net.Replica.Settings.GhostMode) screen.AddChild(new GhostController(net, screen));
+            net.SaveNotice += n => Callable.From(() => screen.WhenLoaded(() => Save.SaveManager.ShowNetSaveNotice(screen, n))).CallDeferred();
+            if (net.Replica.Settings.GhostMode) screen.WhenLoaded(() => screen.AddChild(new GhostController(net, screen)));
             // A battle already running when the game opens (e.g. after a reconnect) starts at once.
             if (net.Replica.Battle is { } running) StartBattle(running);
             return true;

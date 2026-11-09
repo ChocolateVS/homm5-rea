@@ -36,6 +36,8 @@ public partial class AdvWorld : Node3D
     public Water.BoatLayer? Boats { get; private set; }
     /// <summary>Dev (`--adventure-reveal`): no fog of war.</summary>
     public static bool RevealAll;
+    /// <summary>Dev (`--adventure-shadow-splits=0|1|2|4`): the sun's shadow (0 off, 1 orthogonal, 2 / 4 PSSM splits; default 4).</summary>
+    public static int? ShadowSplits;
     public int Floor { get; private set; }
     public AdvMap Map => _session.Map;
 
@@ -45,26 +47,71 @@ public partial class AdvWorld : Node3D
         Name = "AdvWorld";
     }
 
+    /// <summary>Set before the world enters the tree when its owner drives <see cref="Build"/> over several frames.</summary>
+    public bool Staged { get; init; }
+
     public override void _Ready()
     {
+        if (Staged) return;
+        using var steps = Build().GetEnumerator();
+        while (steps.MoveNext()) { }
+    }
+
+    /// <summary>Number of steps <see cref="Build"/> yields (for a progress bar).</summary>
+    public int BuildSteps => 2 * 2 + Map.OfKind(ObjectKind.Static).Select(o => (o.Shared.ModelPath, o.Pos.Floor)).Distinct().Count()
+                             + Map.Objects.Count(o => o.Kind != ObjectKind.Static && o.Kind != ObjectKind.Hero) + _session.S.Heroes.Count + 2;
+
+    /// <summary>
+    /// Builds the map's nodes in order (terrain, sea and lighting per floor, scenery, objects, heroes, ships, camera),
+    /// yielding after each piece so the owner can spread the work over frames (the page keeps drawing in the browser).
+    /// The result is the same as building it at once.
+    /// </summary>
+    public IEnumerable<int> Build()
+    {
+        // Objects of the same model and animation set share their decoded data while the map is built.
+        using var share = CharacterBuilder.ShareScope();
+        H5Lighting.EnsureRegistered();
+        var floorIndex = new int[2];
         for (int f = 0; f < 2; f++)
         {
             var floor = Map.Floor(f);
             _floors[f] = new Node3D { Name = $"Floor{f}", Visible = false };
-            AddChild(_floors[f]);
-            if (floor?.Data == null) continue;
-            _terrain[f] = AdvTerrain.Build(floor.Data);
-            _floors[f].AddChild(_terrain[f]);
-            if (Water.SeaPlane.Build(floor, Unit) is { } sea) { _floors[f].AddChild(sea); _seaLevel[f] = Water.SeaPlane.Level; }
-            BuildLighting(f);
+            // The floors (terrain, scenery, objects, heroes) join the tree at once when they are complete: nodes added to
+            // the tree piece by piece over many frames made every frame's rendering update take seconds.
+            floorIndex[f] = GetChildCount() + f;
+            if (floor?.Data != null)
+            {
+                _terrain[f] = AdvTerrain.Build(floor.Data);
+                _floors[f].AddChild(_terrain[f]);
+                H5Reborn.Dev.LoadTrace.Mark($"terrain {f}");
+            }
+            yield return 1;
+            if (floor?.Data != null)
+            {
+                if (Water.SeaPlane.Build(floor, Unit) is { } sea) { _floors[f].AddChild(sea); _seaLevel[f] = Water.SeaPlane.Level; }
+                BuildLighting(f);
+                H5Reborn.Dev.LoadTrace.Mark($"sea + light {f}");
+            }
+            yield return 1;
         }
-        BuildStatics();
+        foreach (var _ in BuildStatics()) yield return 1;
+        H5Reborn.Dev.LoadTrace.Mark("statics");
         foreach (var o in Map.Objects)
-            if (o.Kind != ObjectKind.Static && o.Kind != ObjectKind.Hero) SyncObject(o.Index);
-        foreach (var h in _session.S.Heroes) SyncHero(h);
+            if (o.Kind != ObjectKind.Static && o.Kind != ObjectKind.Hero) { SyncObject(o.Index); yield return 1; }
+        H5Reborn.Dev.LoadTrace.Mark("objects");
+        foreach (var h in _session.S.Heroes.ToList()) { SyncHero(h); yield return 1; }
+        H5Reborn.Dev.LoadTrace.Mark("heroes");
+        for (int f = 0; f < 2; f++)
+        {
+            AddChild(_floors[f]);
+            MoveChild(_floors[f], floorIndex[f]);
+        }
+        H5Reborn.Dev.LoadTrace.Mark("floors in tree");
         Boats = new Water.BoatLayer(this, _session);
         AddChild(Boats);
         Boats.Sync();
+        H5Reborn.Dev.LoadTrace.Mark("boats");
+        yield return 1;
 
         _pathRoot = new Node3D { Name = "Path" };
         AddChild(_pathRoot);
@@ -74,7 +121,16 @@ public partial class AdvWorld : Node3D
         Camera.MakeCurrent();
         SetFloor(Map.InitialFloor);
         PlaceHeroesWhenPhysicsReady();
+        yield return 1;
     }
+
+    /// <summary>
+    /// The shown floor's top-level pieces (terrain, sea, scenery, objects, heroes) that are visible now. The screen hides them
+    /// and shows them again a few at a time while the loading picture is up, so the renderer prepares their shaders over
+    /// several frames (the browser's WebGL compiled all of them in the map's first frame: about 20 s without a frame).
+    /// </summary>
+    public List<Node3D> WarmUpPieces() =>
+        _floors[Floor].GetChildren().OfType<Node3D>().Where(n => n.Visible).ToList();
 
     /// <summary>Colliders only answer queries after a physics step; re-place heroes then.</summary>
     async void PlaceHeroesWhenPhysicsReady()
@@ -214,18 +270,25 @@ public partial class AdvWorld : Node3D
     /// </summary>
     public int PickObject(Vector3 origin, Vector3 dir)
     {
+        // The screen (cursor) and the tooltip ask with the same ray every frame: answer the second from the first.
+        ulong frame = Engine.GetProcessFrames();
+        if (_lastPick is { } last && last.Frame == frame && last.Origin == origin && last.Dir == dir) return last.Result;
         int best = -1;
         float bestDist = float.MaxValue;
         foreach (var (index, node) in _objects)
         {
-            if (!node.IsInsideTree() || !node.IsVisibleInTree() || Map.Objects[index].Pos.Floor != Floor) continue;
-            foreach (var mi in node.FindChildren("*", nameof(MeshInstance3D), true, false).OfType<MeshInstance3D>())
+            if (Map.Objects[index].Pos.Floor != Floor) continue;
+            // Objects never move once placed: their mesh bounds in world space (taken when the list was made) rule out
+            // most of them without asking the engine anything; the exact test below decides for the rest.
+            if (_pickLists.TryGetValue(node, out var known) && !known.Any(e => e.World.IntersectsSegment(origin, origin + dir * 100000f) != null)) continue;
+            if (!node.IsInsideTree() || !node.IsVisibleInTree()) continue;
+            foreach (var (mi, mesh, aabb, _) in PickMeshInstances(node))
             {
-                if (mi.Mesh is not { } mesh) continue;
+                if (mesh == null) continue;
                 var inv = mi.GlobalTransform.AffineInverse();
                 var lo = inv * origin;
                 var ld = inv.Basis * dir;
-                if (mesh.GetAabb().IntersectsSegment(lo, lo + ld * 100000f) == null) continue;
+                if (aabb.IntersectsSegment(lo, lo + ld * 100000f) == null) continue;
                 if (!_pickMeshes.TryGetValue(mesh, out var tri)) _pickMeshes[mesh] = tri = mesh.GenerateTriangleMesh();
                 if (tri == null) continue;
                 var hit = tri.IntersectRay(lo, ld);
@@ -234,7 +297,36 @@ public partial class AdvWorld : Node3D
                 if (d < bestDist) { bestDist = d; best = index; }
             }
         }
+        _lastPick = (frame, origin, dir, best);
         return best;
+    }
+
+    (ulong Frame, Vector3 Origin, Vector3 Dir, int Result)? _lastPick;
+    /// <summary>
+    /// The mesh instances under each object node with their mesh and its bounds (searched once; any mesh instance entering
+    /// or leaving the tree clears the lists; the adventure map never swaps the mesh of an existing instance).
+    /// </summary>
+    readonly Dictionary<Node3D, (MeshInstance3D Mi, Mesh? Mesh, Aabb Aabb, Aabb World)[]> _pickLists = new();
+
+    (MeshInstance3D Mi, Mesh? Mesh, Aabb Aabb, Aabb World)[] PickMeshInstances(Node3D node)
+    {
+        if (!_pickListsHooked)
+        {
+            _pickListsHooked = true;
+            GetTree().NodeAdded += OnTreeNodeChanged;
+            GetTree().NodeRemoved += OnTreeNodeChanged;
+        }
+        if (!_pickLists.TryGetValue(node, out var list))
+            _pickLists[node] = list = node.FindChildren("*", nameof(MeshInstance3D), true, false).OfType<MeshInstance3D>()
+                .Select(mi => { var aabb = mi.Mesh?.GetAabb() ?? default; return (mi, mi.Mesh, aabb, mi.GlobalTransform * aabb); }).ToArray();
+        return list;
+    }
+
+    bool _pickListsHooked;
+
+    void OnTreeNodeChanged(Node node)
+    {
+        if (node is MeshInstance3D && _pickLists.Count > 0) { _pickLists.Clear(); _lastPick = null; }
     }
 
     public void SetFloor(int floor)
@@ -333,6 +425,16 @@ public partial class AdvWorld : Node3D
         float p = Mathf.DegToRad(F(light?.Element("Pitch"), 45)), y = Mathf.DegToRad(F(light?.Element("Yaw"), 45));
         var toSunMap = new Vector3(Mathf.Cos(p) * Mathf.Cos(y), Mathf.Cos(p) * Mathf.Sin(y), Mathf.Sin(p));
         var toSun = new Vector3(toSunMap.X, toSunMap.Z, -toSunMap.Y);
+        if (ShadowSplits is int splits)
+        {
+            sun.ShadowEnabled = splits > 0;
+            sun.DirectionalShadowMode = splits switch
+            {
+                1 => DirectionalLight3D.ShadowMode.Orthogonal,
+                2 => DirectionalLight3D.ShadowMode.Parallel2Splits,
+                _ => DirectionalLight3D.ShadowMode.Parallel4Splits,
+            };
+        }
         AddChild(sun);
         sun.LookAtFromPosition(Vector3.Zero, -toSun, Mathf.Abs(toSun.Y) > 0.99f ? Vector3.Forward : Vector3.Up);
         _sun[f] = sun;
@@ -449,8 +551,9 @@ public partial class AdvWorld : Node3D
         {
             if (Game.Instance.Fs.Exists(modelPath))
             {
-                var model = _loader.Load(modelPath);
-                result = (ModelBuilder.BuildMesh(model, skinned: false), model);
+                ModelAsset model;
+                using (H5Reborn.Dev.LoadTrace.Time("model load")) model = _loader.Load(modelPath);
+                using (H5Reborn.Dev.LoadTrace.Time("mesh build")) result = (ModelBuilder.BuildMesh(model, skinned: false), model);
             }
         }
         catch (Exception e) { GD.PushWarning($"[H5] adventure model failed {modelPath}: {e.Message}"); }
@@ -465,10 +568,11 @@ public partial class AdvWorld : Node3D
     }
 
     /// <summary>Scenery (AdvMapStatic) batched into one MultiMesh per model and floor.</summary>
-    void BuildStatics()
+    IEnumerable<int> BuildStatics()
     {
         foreach (var group in Map.OfKind(ObjectKind.Static).GroupBy(o => (o.Shared.ModelPath, o.Pos.Floor)))
         {
+            yield return 1;
             if (group.Key.Floor is < 0 or > 1 || Mesh(group.Key.ModelPath) is not { } entry) continue;
             var list = group.ToList();
             var mm = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, Mesh = entry.Mesh, InstanceCount = list.Count };
@@ -502,7 +606,8 @@ public partial class AdvWorld : Node3D
         {
             try
             {
-                var c = CharacterBuilder.BuildFromModel(model, animSet);
+                Character c;
+                using (H5Reborn.Dev.LoadTrace.Time("character")) c = CharacterBuilder.BuildFromModel(model, animSet);
                 // Buildings without idle00 (a few use idle01/page01…) loop their first clip.
                 if (!c.Has("idle00") && c.Player.GetAnimationList() is { Length: > 0 } clips)
                     c.Play(clips[0].Replace(Character.Lib, ""), loop: true);
@@ -814,6 +919,16 @@ public partial class AdvWorld : Node3D
     /// <summary>Set while a view that shows the map without fog of war is open (puzzle map).</summary>
     public bool SuppressWarFog { get; set; }
 
+    ReadOnlySpan<bool> ExploredSpan(int f)
+    {
+        int n = Map.TilesX * Map.TilesY;
+        var player = _session.Human;
+        if (f < player.Explored.Count && player.Explored[f] is { } bits && bits.Length >= n) return bits.AsSpan(0, n);
+        return _noBits.Length == n ? _noBits : _noBits = new bool[n];
+    }
+
+    bool[] _noBits = Array.Empty<bool>();
+
     bool[] ExploredBits(int f)
     {
         int n = Map.TilesX * Map.TilesY;
@@ -871,9 +986,10 @@ public partial class AdvWorld : Node3D
         }
         else
         {
-            var bits = ExploredBits(Floor);
-            if (!bits.AsSpan().SequenceEqual(_fogBits))
+            // Compared in place: copying the explored bits every frame only made garbage.
+            if (!ExploredSpan(Floor).SequenceEqual(_fogBits))
             {
+                var bits = ExploredBits(Floor);
                 _fogBits = bits;
                 var grid = WarFogGrid.Build(bits, Map.TilesX, Map.TilesY, out _, out _);
                 _fogB!.Update(Image.CreateFromData(_fogW, _fogH, false, Image.Format.R8, _fogGridA!));

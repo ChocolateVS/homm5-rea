@@ -78,8 +78,8 @@ public static class CampaignFlow
         Active = new ActiveMission(c, m, bonusIndex, session);
         var screen = AdventureScreen.Open(session);
         // Campaign maps are scripted: host their scripts even before AdventureScreen does it itself.
-        // AdventureScreen.Open already added (and readied) the screen; attach on the next frame.
-        Callable.From(() => ScriptUiBridge.Attach(screen)).CallDeferred();
+        // AdventureScreen.Open already added the screen; attach once its map is built.
+        screen.WhenLoaded(() => ScriptUiBridge.Attach(screen));
         return screen;
     }
 

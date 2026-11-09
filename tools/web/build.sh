@@ -4,6 +4,8 @@
 #   The C# is AOT-compiled to wasm (about twice as fast as the Mono interpreter; the build takes ~12 minutes on a desktop and
 #   godot.wasm grows to ~86 MB / 20 MB brotli). --interp: interpreter only (a 4-6 minute build, for quick checks).
 # Toolchain: tools/web/setup.sh (or setup.ps1) installs the pinned .NET 10 SDK + wasm-tools workload.
+# H5_WEB_PUBLISH_ARGS: extra `dotnet publish` arguments, e.g. -p:WasmNativeStrip=false keeps function names in godot.wasm
+# for browser CPU profiles (docs/WEB_BUILD.md, Performance).
 # Never puts game assets in the output: the page asks the player for their own install.
 set -euo pipefail
 
@@ -46,7 +48,9 @@ sed -i.bak -e 's/^renderer\/rendering_method=.*/renderer\/rendering_method="gl_c
 printf '\n[autoload]\n\nWebProbe="*res://src/Web/WebProbe.cs"\nWebStorage="*res://src/Web/WebStorage.cs"\n' >> "$STAGE/project.godot"
 # Audio: mix every player in Godot's own mixer ("Stream", as on the desktop) instead of the web default "Sample"
 # (Web Audio buffer sources), which stayed silent for the game's music players (docs/WEB_BUILD.md, Audio).
-printf '\n[audio]\n\ngeneral/default_playback_type.web=0\n' >> "$STAGE/project.godot"
+# Without threads the mixer is fed from the page's main thread once per frame: a 128 ms buffer (output_latency 100 ms at
+# 32 kHz; Godot's web default 50 ms = 64 ms) rides out longer frames (a map load) instead of dropping out.
+printf '\n[audio]\n\ngeneral/default_playback_type.web=0\ndriver/output_latency.web=100\n' >> "$STAGE/project.godot"
 rm -f "$STAGE/project.godot.bak"
 grep -q 'gl_compatibility' "$STAGE/project.godot" || { echo "error: could not switch project.godot to gl_compatibility" >&2; exit 1; }
 
@@ -61,7 +65,7 @@ if [ "$AOT" = true ]; then
   AOT_ARGS=(-p:RunAOTCompilation=true "-p:IntermediateOutputPath=$(native "$AOT_OBJ")/")
 fi
 "$DOTNET" publish "$(native "$STAGE/H5Reborn.web/H5Reborn.web.csproj")" -c Release \
-  "-p:H5RepoRoot=$(native "$REPO")/" "${AOT_ARGS[@]}" -nologo -clp:NoSummary
+  "-p:H5RepoRoot=$(native "$REPO")/" "${AOT_ARGS[@]}" ${H5_WEB_PUBLISH_ARGS:-} -nologo -clp:NoSummary
 BUNDLE="$STAGE/H5Reborn.web/AppBundle"
 [ -f "$BUNDLE/index.html" ] && [ -f "$BUNDLE/godot.wasm" ] && [ -f "$BUNDLE/godot.pck" ] \
   || { echo "error: publish did not produce $BUNDLE/{index.html,godot.wasm,godot.pck}" >&2; exit 1; }

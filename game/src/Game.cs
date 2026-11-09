@@ -134,16 +134,44 @@ public partial class Game : Node
         GetTree().Quit();
     }
 
+    /// <summary>
+    /// Drops what the previous screens loaded and nothing uses any more (called when a new adventure map is opened, after
+    /// the old screen is gone): textures no material or node uses any more (forgotten here, freed with their last C#
+    /// holder; a later request loads them again)
+    /// and the decoded skeleton / animation cache of the character builder. A long session (maps, battles, towns) would
+    /// otherwise keep everything it ever showed. Returns the number of textures released.
+    /// </summary>
+    public int ReleaseUnused()
+    {
+        // Wrappers of freed materials / nodes still hold their textures until the GC collects them.
+        GC.Collect();
+        if (!OperatingSystem.IsBrowser()) GC.WaitForPendingFinalizers();
+        GC.Collect();
+        int released = 0;
+        foreach (var (path, tex) in _textures.ToList())
+        {
+            if (!GodotObject.IsInstanceValid(tex) || tex.GetReferenceCount() > 1) continue;
+            // Not disposed: a C# holder elsewhere (a UI cache) may share this wrapper; the texture goes with the last one.
+            _textures.Remove(path);
+            released++;
+        }
+        Render.CharacterBuilder.ReleaseDecoded();
+        return released;
+    }
+
     /// <summary>Loads a texture from the paks. Accepts a .dds path or a (Texture) .xdb path/href.</summary>
     public Texture2D? LoadTexture(string pathOrHref)
     {
         var path = ResolveTexturePath(pathOrHref);
         if (path == null) return null;
         if (_textures.TryGetValue(path, out var cached)) return cached;
-        if (!Fs.TryReadAllBytes(path, out var bytes)) return null;
-        var image = LoadDds(bytes, path);
+        byte[] bytes;
+        using (Dev.LoadTrace.Time("texture read")) if (!Fs.TryReadAllBytes(path, out bytes)) return null;
+        Image? image;
+        using (Dev.LoadTrace.Time("texture decode")) image = LoadDds(bytes, path);
         if (image == null) return null;
-        var tex = ImageTexture.CreateFromImage(image);
+        ImageTexture tex;
+        using (Dev.LoadTrace.Time("texture upload")) tex = ImageTexture.CreateFromImage(image);
         // The texture holds its own copy (on the GPU); free the decoded image now instead of whenever the GC
         // finalizes its small wrapper (the browser build's 2 GB wasm heap filled up with them).
         image.Dispose();

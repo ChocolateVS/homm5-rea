@@ -35,8 +35,15 @@ public partial class Character : Node3D
     public void Play(string kind, bool loop, float blendSeconds)
     {
         if (!Has(kind)) return;
+        var mode = loop ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
         var anim = Player.GetAnimation(Lib + kind);
-        anim.LoopMode = loop ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
+        // Clips shared with other characters (CharacterBuilder.ShareScope) are never changed: the variant with the wanted
+        // loop mode takes the clip's place in this character's library.
+        if (SharedClips != null && SharedClips.TryGetValue(kind, out var variants))
+        {
+            if (anim.LoopMode != mode) Library!.AddAnimation(kind, variants.Get(mode));
+        }
+        else anim.LoopMode = mode;
         Player.SpeedScale = SpeedFactor(kind);
         Player.Play(Lib + kind, blendSeconds > 0 ? blendSeconds : 0);
         CurrentKind = kind;
@@ -49,12 +56,20 @@ public partial class Character : Node3D
     public string? AnimSetPath { get; internal set; }
 
     internal const string Lib = "h5/";
+
+    /// <summary>This character's own animation library (its clips may be shared, see <see cref="SharedClips"/>).</summary>
+    internal AnimationLibrary? Library;
+    /// <summary>Per kind, the shared clip in its two loop modes (characters built inside a CharacterBuilder.ShareScope).</summary>
+    internal Dictionary<string, CharacterBuilder.ClipVariants>? SharedClips;
 }
 
 public static class CharacterBuilder
 {
     static AnimSetLoader? _anims;
     static AnimSetLoader Anims => _anims ??= new AnimSetLoader(Game.Instance.Xdb);
+
+    /// <summary>Forgets the decoded skeletons and animations (decoded again on next use); see <see cref="Game.ReleaseUnused"/>.</summary>
+    public static void ReleaseDecoded() { if (_shareDepth == 0) _anims = null; }
 
     public static Character Build(string characterXdbPath, bool adventureMap = false)
     {
@@ -71,15 +86,108 @@ public static class CharacterBuilder
     /// </summary>
     public static Character BuildFromModel(string modelPath, string? setPath, string? name = null)
     {
+        Template t;
+        if (_shareDepth > 0)
+        {
+            var key = modelPath + "|" + setPath;
+            if (!_templates.TryGetValue(key, out t!)) using (Dev.LoadTrace.Time("ch template")) _templates[key] = t = BuildTemplate(modelPath, setPath);
+        }
+        else t = BuildTemplate(modelPath, setPath);
+        using var _ = Dev.LoadTrace.Time("ch instance");
+        return Instantiate(t, name ?? System.IO.Path.GetFileNameWithoutExtension(modelPath), shared: _shareDepth > 0);
+    }
+
+    /// <summary>
+    /// Everything a character of one model + animation set is built from: the decoded skeleton, the mesh, the skin and
+    /// the converted clips. Inside a <see cref="ShareScope"/> one template serves every instance (a map with 300
+    /// animated objects decoded and baked each set once per object before); each instance still gets its own nodes and
+    /// its own animation library; the clips are shared and never changed (<see cref="ClipVariants"/>).
+    /// </summary>
+    sealed class Template
+    {
+        public required string? SetPath;
+        public SkeletonData? Skeleton;
+        public required ArrayMesh Mesh;
+        public Skin? Skin;
+        public readonly List<(string Kind, ClipVariants Anim, float SpeedFactor, float? GroundSpeed, List<(string Name, float Time)> Events)> Clips = new();
+        public readonly Dictionary<string, ClipVariants> ByKind = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>A converted clip as built (loop mode None) and, made on first use, its looping copy. Neither is changed afterwards.</summary>
+    internal sealed class ClipVariants(Animation once)
+    {
+        public readonly Animation Once = once;
+        Animation? _loop;
+        public Animation Get(Animation.LoopModeEnum mode)
+        {
+            if (mode == Animation.LoopModeEnum.None) return Once;
+            if (_loop == null) { _loop = (Animation)Once.Duplicate(); _loop.LoopMode = Animation.LoopModeEnum.Linear; }
+            return _loop;
+        }
+    }
+
+    static readonly Dictionary<string, Template> _templates = new();
+    static int _shareDepth;
+
+    /// <summary>
+    /// While open, characters of the same model + animation set share their decoded data, mesh and skin (each still has its
+    /// own nodes and clips); the shared data is dropped when the last scope closes. The result is the same as without.
+    /// </summary>
+    public static ShareToken ShareScope() { _shareDepth++; return new ShareToken(true); }
+
+    public readonly struct ShareToken(bool open) : IDisposable
+    {
+        public void Dispose()
+        {
+            if (!open) return;
+            if (--_shareDepth == 0) { _templates.Clear(); _animSets.Clear(); }
+        }
+    }
+
+    static readonly Dictionary<string, Dictionary<string, LoadedAnimation>> _animSets = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>An animation set's decoded clips, once per <see cref="ShareScope"/> (read only by the builder).</summary>
+    static Dictionary<string, LoadedAnimation> SharedAnimSet(string setPath)
+    {
+        if (!_animSets.TryGetValue(setPath, out var set)) _animSets[setPath] = set = Anims.LoadAnimSet(setPath);
+        return set;
+    }
+
+    static Template BuildTemplate(string modelPath, string? setPath)
+    {
         var asset = new ModelLoader(Game.Instance.Xdb).Load(modelPath);
         var skeleton = Anims.LoadSkeletonForModel(modelPath);
-        var animations = setPath != null ? Anims.LoadAnimSet(setPath) : new();
-
-        var node = new Character { Name = name ?? System.IO.Path.GetFileNameWithoutExtension(modelPath), AnimSetPath = setPath };
+        var animations = setPath == null ? new() : _shareDepth > 0 ? SharedAnimSet(setPath) : Anims.LoadAnimSet(setPath);
         if (skeleton == null || skeleton.Bones.Count == 0)
+            return new Template { SetPath = setPath, Mesh = ModelBuilder.BuildMesh(asset, skinned: false) };
+
+        var t = new Template { SetPath = setPath, Skeleton = skeleton, Mesh = ModelBuilder.BuildMesh(asset, skinned: true) };
+        // Skinning uses Granny's stored inverse bind matrices (not the inverse of the rest
+        // pose, which differs for some skeletons — see docs/formats/granny.md).
+        t.Skin = new Skin();
+        for (int i = 0; i < skeleton.Bones.Count; i++)
+            t.Skin.AddNamedBind(SafeBoneName(skeleton.Bones[i].Name, i), ModelBuilder.ToGodot(skeleton.Bones[i].InverseBind));
+        foreach (var (kind, loaded) in animations)
+        {
+            float speed = loaded.Entry.MovementSpeed;
+            float factor = loaded.Entry.SpeedFactor > 0 ? loaded.Entry.SpeedFactor : 1f;
+            var travel = speed > 0 ? H5.Assets.Granny.GrannyPose.LocomotionTravel(skeleton, loaded.Clip, speed) : null;
+            var anim = ToGodot(loaded.Clip, skeleton);
+            AddInPlaceTrack(anim, travel, loaded.Clip.Duration);
+            var v = new ClipVariants(anim);
+            t.Clips.Add((kind, v, factor, speed > 0 ? speed * factor : null, loaded.Events.Select(e => (e.Text, e.Time)).ToList()));
+            t.ByKind[kind] = v;
+        }
+        return t;
+    }
+
+    static Character Instantiate(Template t, string name, bool shared)
+    {
+        var node = new Character { Name = name, AnimSetPath = t.SetPath };
+        if (t.Skeleton is not { } skeleton)
         {
             // Rigid model with no skeleton: static mesh, empty player so callers needn't special-case.
-            node.AddChild(new MeshInstance3D { Name = "Mesh", Mesh = ModelBuilder.BuildMesh(asset, skinned: false) });
+            node.AddChild(new MeshInstance3D { Name = "Mesh", Mesh = t.Mesh });
             node.Skeleton = new Skeleton3D { Name = "Skeleton3D" };
             node.AddChild(node.Skeleton);
             node.Player = new AnimationPlayer { Name = "AnimationPlayer" };
@@ -99,13 +207,7 @@ public static class CharacterBuilder
         node.AddChild(skel);
         node.Skeleton = skel;
 
-        // Skinning uses Granny's stored inverse bind matrices (not the inverse of the rest
-        // pose, which differs for some skeletons — see docs/formats/granny.md).
-        var skin = new Skin();
-        for (int i = 0; i < skeleton.Bones.Count; i++)
-            skin.AddNamedBind(skel.GetBoneName(i), ModelBuilder.ToGodot(skeleton.Bones[i].InverseBind));
-
-        var mesh = new MeshInstance3D { Name = "Mesh", Mesh = ModelBuilder.BuildMesh(asset, skinned: true), Skin = skin };
+        var mesh = new MeshInstance3D { Name = "Mesh", Mesh = t.Mesh, Skin = t.Skin };
         skel.AddChild(mesh);
         mesh.Skeleton = new NodePath("..");
 
@@ -113,18 +215,16 @@ public static class CharacterBuilder
         node.AddChild(player);
         player.RootNode = new NodePath("..");
         var lib = new AnimationLibrary();
-        foreach (var (kind, loaded) in animations)
+        foreach (var (kind, anim, factor, ground, events) in t.Clips)
         {
-            float speed = loaded.Entry.MovementSpeed;
-            node.SpeedFactors[kind] = loaded.Entry.SpeedFactor > 0 ? loaded.Entry.SpeedFactor : 1f;
-            var travel = speed > 0 ? H5.Assets.Granny.GrannyPose.LocomotionTravel(skeleton, loaded.Clip, speed) : null;
-            if (speed > 0) node.GroundSpeeds[kind] = speed * node.SpeedFactors[kind];
-            var anim = ToGodot(loaded.Clip, skeleton);
-            AddInPlaceTrack(anim, travel, loaded.Clip.Duration);
-            lib.AddAnimation(kind, anim);
-            node.Events[kind] = loaded.Events.Select(e => (e.Text, e.Time)).ToList();
+            node.SpeedFactors[kind] = factor;
+            if (ground is { } g) node.GroundSpeeds[kind] = g;
+            lib.AddAnimation(kind, anim.Once);
+            node.Events[kind] = shared ? new List<(string, float)>(events) : events;
         }
         player.AddAnimationLibrary(Character.Lib.TrimEnd('/'), lib);
+        node.Library = lib;
+        if (shared) node.SharedClips = t.ByKind;
         node.Player = player;
         if (node.Has("idle00")) node.Play("idle00", loop: true);
         return node;
