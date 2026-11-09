@@ -231,6 +231,16 @@ public static class TownLauncher
                 if (BuildAll) TownData.GrantAllBuildings(adv.Session, town);
                 if (DevHero != null) DevSetupHero(adv, town, DevHero);
                 if (CaravanTab != null) DevSetupCaravans(adv, town);
+                if (CaravanTab == "map" && adv.Session.S.Caravans.FirstOrDefault() is { } car)
+                {
+                    // `--town-caravans=map`: stay on the adventure map, looking at the new caravan.
+                    adv.World.Caravans?.Sync();
+                    adv.World.Camera.CenterOn(car.Pos.Offset(0, 3));
+                    if (adv.World.GetViewport().GetCamera3D() is { } cam3 && adv.World.Caravans?.FindChild($"Caravan_{car.Id}", true, false) is Node3D cn)
+                        GD.Print($"[H5] --town-caravans: caravan node on screen at {cam3.UnprojectPosition(cn.GlobalPosition)}");
+                    GD.Print($"[H5] --town-caravans: caravan {car.Id} at {car.Pos}, days {car.DaysLeft}");
+                    return;
+                }
                 var screen = TownScreen.Open(adv, town);
                 if (Goto != null) screen.OpenSub(Goto);
                 return;

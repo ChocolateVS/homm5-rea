@@ -34,6 +34,7 @@ public partial class AdvWorld : Node3D
     public AdvCamera Camera { get; private set; } = null!;
     /// <summary>Ships (see <see cref="Water.BoatLayer"/>).</summary>
     public Water.BoatLayer? Boats { get; private set; }
+    public CaravanLayer? Caravans { get; private set; }
     /// <summary>Dev (`--adventure-reveal`): no fog of war.</summary>
     public static bool RevealAll;
     /// <summary>Dev (`--adventure-shadow-splits=0|1|2|4`): the sun's shadow (0 off, 1 orthogonal, 2 / 4 PSSM splits; default 4).</summary>
@@ -110,6 +111,9 @@ public partial class AdvWorld : Node3D
         Boats = new Water.BoatLayer(this, _session);
         AddChild(Boats);
         Boats.Sync();
+        Caravans = new CaravanLayer(this, _session);
+        AddChild(Caravans);
+        Caravans.Sync();
         H5Reborn.Dev.LoadTrace.Mark("boats");
         yield return 1;
 
@@ -138,6 +142,7 @@ public partial class AdvWorld : Node3D
         for (int i = 0; i < 2; i++) await ToSignal(GetTree(), SceneTree.SignalName.PhysicsFrame);
         foreach (var h in _session.S.Heroes) SyncHero(h);
         Boats?.Sync();
+        Caravans?.Sync();
     }
 
     // ---------------------------------------------------------------- coordinates
@@ -341,6 +346,7 @@ public partial class AdvWorld : Node3D
         }
         ApplyLight();
         Boats?.OnFloorChanged();
+        Caravans?.OnFloorChanged();
     }
 
     /// <summary>Original-renderer lighting and fog for the visible floor (H5Lit materials/terrain), then the fog of war.</summary>

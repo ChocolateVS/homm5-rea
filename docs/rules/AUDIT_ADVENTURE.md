@@ -4,7 +4,7 @@ Every adventure mechanic / screen element checked against `H5_Game.exe` (Ghidra 
 the original data. Status: **MATCH** (already as the exe), **FIXED** (changed to match), **GAP** (known difference or
 not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not traced).
 
-Rows at 2026-11-10: 205 FIXED, 30 MATCH, 74 GAP, 78 UNVERIFIED, 1 N/A (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
+Rows at 2026-11-10: 206 FIXED, 30 MATCH, 75 GAP, 78 UNVERIFIED, 1 N/A (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
 
 ## Seer Huts
 
@@ -235,6 +235,7 @@ Treasure, WarMachineFactory, WitchHut; dispatcher 005a5d90).
 | Caravans: route costs (path modes 8 / 9) | — | 00c076d0: mode 8 (sources, 00ce6110) sets +0x43 +0x45 +0x47 +0x48 +0x64 and clears +0x44 +0x46 +0x49 +0x63 +0x65; mode 9 (the walk, 00ce49b0) sets +0x43 +0x47 +0x48 and clears +0x44 +0x45 +0x46 +0x49 +0x63 +0x65; what the flags change in the step costs (00ca9a70) is not traced | caravan route cost | our hero path and `StepCost` with a skill-less hero | GAP (the flags' effect on step costs and on what blocks the route) |
 | Caravans: map overview | — | 005acd80: for each caravan (world vf 0x90) of the viewing player on the shown floor an icon `Caravan_%d` (player colour, vf 0x30), `Caravan_stopped_%d` when stopped (vf 0x38 = days −1) | caravan marks on the overview map | none | GAP |
 | Caravans: AI | — | 0086a350 calls 00ce6110 for the AI's towns | AI hires by caravan | none | GAP (not traced) |
+| Caravans: on the map | — | CAdvMapCaravan with MapObjects/Caravans/Caravan.xdb (Model /Characters/Heroes/CARAVAN.xdb, AnimSet CARAVAN-adv, Icon128 / IconTexture, Caravan_Name / Caravan_Description texts); the walk 00ce4de0 animates each step (vf 0x98 / 0x9c / 0xa0 positions, `caravan_image`, 00ce3cc0) | the caravan model on its tile | `CaravanLayer` (synced on the caravan events); checked off-screen (`--town-caravans=map`) | FIXED (was missing) / GAP (the step animation and the owner's marker; the hover name / description tooltip 00ce5d80) |
 | Caravans: network views | — | — | other players' caravans are hidden in the shroud like heroes | `ViewFilter`: allied caravans exact; others only on explored tiles, stacks banded, destination / days hidden; caravan events filtered by visibility; test `ViewFilterTests.ViewsHideOtherPlayersCaravansInTheShroud` | FIXED |
 | Dwarven Warren: income | — | 00457940 (CAdvMapDwarvenWarren, vtable 00e118fc, flagged slot 0x18): one unit of the resource at +0x60 of the flagged part (1..5 = ore, mercury, crystal, sulfur, gems; 7 none), moon factors 00bcdaa0; 00457830 sets it: no owner → 7, else 008e7840 over [1, 5] on a world stream | one of ore … gems per day | `Income`: one of ore … gems (S.Rng) | FIXED (was mercury … gold) / UNVERIFIED (when 00457830 runs — taken as daily; the exe stream not reproduced) |
 | Abandoned mine: income | — | 008b54a0 (CAdvMapAbanMine, vtable 00e50df4, slot 0x18): resource +0x50 of the flagged part (= object +0x118, −1 at creation by 008b5d60): 2 mercury 1, 3 crystal 1, 4 sulfur 1, 5 gems 1, 6 gold 1000 (jump table 008b55e4), moon factors per resource | income of the mine's resource | none | GAP (the writer of +0x118 / the map's AvailableResources choice not found, so no resource is known) |

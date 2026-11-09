@@ -978,6 +978,9 @@ public partial class AdventureScreen : Control
                 World.Boats?.Sync();
                 Hud.UpdateMinimap();
                 break;
+            case CaravanCreated or CaravanMoved or CaravanRemoved or CaravanChanged:
+                World.Caravans?.Sync();
+                break;
             case TilesRevealed tr when tr.Player == Session.Human.Index:
                 World.RefreshShroud();
                 Hud.UpdateMinimap();
