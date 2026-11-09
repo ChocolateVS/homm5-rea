@@ -45,6 +45,7 @@ public class MapDwellingGrowthTests(Fixture f)
         for (int i = 0; i < want.Length && i < o.Shared.DwellingCreatures.Count; i++)
         {
             var c = o.Shared.DwellingCreatures[i];
+            if (g.S.Obj(index).DwellingOff is { } off && i < off.Length && off[i]) continue;   // not offered (009a6040)
             if (!g.Core.Creatures.TryGetValue(c, out var cd)) continue;
             want[i] = Engine.Adventure.MoonWeekPool(week, want[i]);
             int total = g.MoonWeekGrowth(week, cd.WeeklyGrowth, c);
@@ -65,6 +66,28 @@ public class MapDwellingGrowthTests(Fixture f)
         Assert.Equal(1, g.S.DayOfWeek);
         foreach (var (idx, pools) in before)
             Assert.Equal(Expected(g, idx, pools, full: true), g.S.Obj(idx).Available);
+    }
+
+    [Fact]
+    public void DwellingsOfferTheirLevelsCreaturesOrTheEnabledOnes()
+    {
+        // 009a6040: a creature level offers the creatures of that tier; otherwise creaturesEnabled (or a random draw
+        // when it is empty / RandomCreatures); never an empty list.
+        var g = f.NewGame("A1M4", seed: 11);
+        int seen = 0;
+        foreach (var o in g.Map.Objects.Where(x => x.Kind == ObjectKind.Dwelling && g.S.Objects.ContainsKey(x.Index)))
+        {
+            var os = g.S.Obj(o.Index);
+            var off = os.DwellingOff!;
+            Assert.Contains(false, off);
+            for (int i = 0; i < off.Length; i++)
+            {
+                if (o.DwellingTier >= 1) Assert.Equal(g.Core.Creatures[o.Shared.DwellingCreatures[i]].Tier == o.DwellingTier, !off[i]);
+                if (off[i]) Assert.Equal(0, os.Available[i]);
+            }
+            seen++;
+        }
+        Assert.True(seen > 0);
     }
 
     [Fact]

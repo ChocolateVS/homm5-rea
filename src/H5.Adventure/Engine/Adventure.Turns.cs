@@ -190,6 +190,7 @@ public sealed partial class Adventure
             for (int i = 0; i < os.Available.Length && i < o.Shared.DwellingCreatures.Count; i++)
             {
                 var creature = o.Shared.DwellingCreatures[i];
+                if (os.DwellingOff is { } off && i < off.Length && off[i]) continue;   // not in the dwelling's list (009a6040)
                 if (!Core.Creatures.TryGetValue(creature, out var cd)) continue;
                 os.Available[i] = MoonWeekPool(week, os.Available[i]);
                 int total = MoonWeekGrowth(week, cd.WeeklyGrowth, creature);

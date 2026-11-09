@@ -203,8 +203,10 @@ public sealed partial class Adventure
                     os.Owner = PlayerByIndex(o.Owner) != null ? o.Owner : -1;
                     var creatures = o.Shared.DwellingCreatures;
                     os.Available = new int[creatures.Count];
+                    var on = DwellingOffer(o);
+                    os.DwellingOff = on.Select(x => !x).ToArray();
                     for (int i = 0; i < creatures.Count; i++)
-                        if (i >= o.CreaturesEnabled.Length || o.CreaturesEnabled[i])
+                        if (on[i])
                             os.Available[i] = Core.Creatures.TryGetValue(creatures[i], out var cd) ? cd.WeeklyGrowth : 0;
                     break;
                 }
@@ -219,6 +221,32 @@ public sealed partial class Adventure
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// The creatures a map dwelling offers, H5_Game.exe 009a6040 (from the constructor's 009a6950; dwelling types 0x54,
+    /// 0x5e, 0x5f take another path, not ported) over the shared's creature list: with a creature level (+0x128, the
+    /// random dwelling's 4..7) the creatures of that tier (creature +0x8c); otherwise, when the instance's
+    /// RandomCreatures (+0x9c) is set or its creaturesEnabled is empty, each creature with a chance that starts at 20
+    /// and rises by 10 per creature (rand % 100 + 1 ≤ chance, the dwelling's generator — here the game RNG), else the
+    /// creaturesEnabled flags. A list left empty takes the first creature.
+    /// </summary>
+    bool[] DwellingOffer(MapObject o)
+    {
+        var creatures = o.Shared.DwellingCreatures;
+        var on = new bool[creatures.Count];
+        int level = o.DwellingTier >= 1 ? o.DwellingTier : 0;
+        bool random = o.RandomCreatures || o.CreaturesEnabled.Length == 0;
+        int chance = 10;
+        for (int i = 0; i < creatures.Count; i++)
+        {
+            if (!Core.Creatures.TryGetValue(creatures[i], out var cd)) continue;
+            if (level >= 1) on[i] = cd.Tier == level;
+            else if (random) { chance += 10; on[i] = S.Rng.Range(0, 99) + 1 <= chance; }
+            else on[i] = i < o.CreaturesEnabled.Length && o.CreaturesEnabled[i];
+        }
+        if (creatures.Count > 0 && !on.Any(x => x)) on[0] = true;
+        return on;
     }
 
     void SetupHeroes()

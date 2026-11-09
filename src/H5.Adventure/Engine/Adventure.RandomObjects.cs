@@ -66,13 +66,8 @@ public sealed partial class Adventure
             o.Shared = Db.Catalog.Get(path);
             // The object is created with the resolved shared, so its footprint blocks (00990bc0).
             RefreshBlocking(before.Concat(o.BlockedTiles).Concat(o.ActiveTiles));
+            // The creature level (009a6a00 argument 6 → +0x128) picks the creatures of that tier (DwellingOffer, 009a6040).
             o.DwellingTier = tier;
-            // The creature level picks one creature of the post (as the scripts' CreateDwelling does); the map's
-            // creaturesEnabled belonged to the random shared's list. TODO(exe): how the dwelling (009a6a00, +0x128)
-            // uses the level, and the RandomCreatures flag, are not traced.
-            o.CreaturesEnabled = tier >= 4
-                ? Enumerable.Range(0, o.Shared.DwellingCreatures.Count).Select(i => i == tier - 4).ToArray()
-                : Array.Empty<bool>();
         }
     }
 

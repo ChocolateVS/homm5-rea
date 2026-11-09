@@ -400,6 +400,11 @@ public sealed class ObjState
     public int LastVisitWeek;
     /// <summary>Creatures available in an external dwelling.</summary>
     public int[] Available = Array.Empty<int>();
+    /// <summary>
+    /// External dwelling: the shared's creatures the dwelling does not offer (not chosen into its list by 009a6040);
+    /// null = all offered.
+    /// </summary>
+    public bool[]? DwellingOff;
     public string? ArtifactId;
     public string? SpellId;
     public string? Creature;
