@@ -47,6 +47,7 @@ or `tools/web/setup.sh` from Git Bash. Both are idempotent. Override the SDK loc
 ```sh
 tools/web/build.sh                 # -> web/dist/
 tools/web/build.sh --out /srv/h5   # -> any folder
+tools/web/build.sh --interp        # Mono interpreter only: quick build for checks (about half the speed)
 ```
 
 What it does:
@@ -54,13 +55,29 @@ What it does:
    (a .NET 10 `H5Reborn.csproj` that compiles the `src/H5.*` library sources in, the `H5Reborn.web` 2dog host,
    `src/Web/*.cs`, the page). `project.godot` is switched to `gl_compatibility` and gets the `WebProbe` autoload.
    The desktop projects and their `obj/` folders are never touched.
-2. **Publish** the host (`dotnet publish -c Release`): C# → .NET assemblies (Mono interpreter), libgodot + .NET
+2. **Publish** the host (`dotnet publish -c Release`): C# → .NET assemblies, **AOT-compiled to wasm** (Mono AOT, `RunAOTCompilation`; `--interp`: interpreter only), libgodot + .NET
    runtime linked by Emscripten into `godot.wasm`, the Godot project exported to `godot.pck` (scenes and
    shaders only, ~40 KB), `.br`/`.gz` siblings of every file.
 3. **Copy** the app bundle to the output folder and add `build-info.json` (commit, dirty flag, versions).
 
-A build takes 4–6 minutes (most of it the Emscripten link and `wasm-opt`); later builds reuse `web/.build`.
-`web/.build`, `web/dist` and `web/smoke*` are git-ignored.
+An AOT build takes ~12 minutes on a desktop, longer on a busy machine (the AOT compile of the game and GodotSharp assemblies, then the Emscripten link
+and `wasm-opt`); `--interp` 4–6 minutes. Later builds reuse `web/.build` (and `web/.aot`). On Windows the AOT
+compiler cannot open paths over 260 characters, so its intermediates go to `web/.aot/` (override with
+`H5_WEB_AOT_OBJ=<short folder>` when the repository itself sits in a deep folder).
+`web/.build`, `web/.aot`, `web/dist` and `web/smoke*` are git-ignored.
+
+**AOT vs interpreter** (same commit, headless Chromium with the GPU, stock A2M1):
+
+| | interpreter | AOT |
+|---|---|---|
+| main menu on screen | 37.7 s | 26.7 s |
+| adventure map on screen | 90 s | 53 s |
+| end turn, 5 computer players | 3.8 s | 3.4 s |
+| frame rate: menu / adventure | 6 / 4.5 fps | 19 / 11.5 fps |
+| `godot.wasm` (brotli) | 46 MB (9.5 MB) | 86 MB (20 MB) |
+
+The jiterpreter (the interpreter's built-in JIT of hot traces) is on in both. Trimming is already on (the game
+assembly is kept whole, Godot finds scripts by reflection).
 
 ### Output (a self-contained static folder)
 
@@ -71,7 +88,7 @@ twodog.sizes.json  build-info.json  H5Reborn.web.runtimeconfig.json  package.jso
 every file also as .br and .gz
 ```
 
-Transfer size with Brotli: `godot.wasm.br` ≈ 9.5 MB + managed assemblies ≈ 4 MB.
+Transfer size with Brotli: `godot.wasm.br` ≈ 20 MB (AOT; 9.5 MB with `--interp`) + managed assemblies ≈ 4 MB.
 
 ## Serving it
 
@@ -282,9 +299,10 @@ is virtual.
 
 ## Not working yet in the browser (ranked)
 
-1. **Performance (CPU).** The game's C# runs on the Mono *interpreter*: the adventure map takes ~40 s to load and
-   the 3D main menu runs at well under 60 fps even on a desktop GPU. Next steps: measure `RunAOTCompilation` (AOT for the
-   hot libraries: Granny/Oodle, terrain, AI), time-slice long loads behind a loading screen, prefetch/merge reads.
+1. **Performance (CPU).** AOT made the C# about twice as fast (table under *Build*), but the adventure map still
+   takes ~50 s to load and runs at ~11 fps headless. Next steps: profile the load (Granny/terrain/objects; the
+   synchronous Range reads decode bytes in a JS loop), time-slice long loads behind a loading screen, cache
+   decoded assets in IndexedDB between visits.
 2. ~~Adventure AI turns (threads)~~ — fixed: computer turns run one per frame (see *Computer players' turns*).
 3. ~~Saves, profiles and settings do not persist~~ — fixed: `user://` persists in IndexedDB, with export / import
    (see *Saves, profiles and settings*).
