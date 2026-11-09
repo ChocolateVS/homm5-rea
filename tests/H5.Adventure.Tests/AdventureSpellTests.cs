@@ -29,6 +29,52 @@ public class AdventureSpellTests(Fixture f)
         Assert.Equal(DataFixture.Pick(4, 5), g.AdventureSpellCost(Engine.Adventure.SpellSummonBoat));
     }
 
+    /// <summary>
+    /// The adventure cast pays 00b4c430 → 008647d0 → 00a34740: the week (00bcddf0), a worn Ring of Magi / 2, then
+    /// Arcane Training chop(min(cost · 0.8f, cost − 1)).
+    /// </summary>
+    [Fact]
+    public void AdventureCastCostFollowsTheExeChain()
+    {
+        var g = f.NewGame();
+        var h = new HeroState { Town = "TOWN_ACADEMY" };
+        const string dd = Engine.Adventure.SpellDimensionDoor;
+        int b = DataFixture.Pick(15, 25);
+        g.S.MoonWeek = "WEEK_OF_NOTHING";
+        Assert.Equal(b, g.AdventureSpellCost(h, dd));
+        h.Perks.Add("HERO_SKILL_ARCANE_TRAINING");
+        Assert.Equal((int)Math.Min(b * (double)0.8f, b - 1), g.AdventureSpellCost(h, dd));    // 12 / 20
+        h.Artifacts.Add("RING_OF_MAGI");
+        Assert.Equal((int)Math.Min(b / 2 * (double)0.8f, b / 2 - 1), g.AdventureSpellCost(h, dd));   // 7 → 5 / 12 → 9
+        h.Perks.Clear();
+        g.S.MoonWeek = "WEEK_OF_MAGIC";
+        Assert.Equal(b / 2 / 2, g.AdventureSpellCost(h, dd));
+        Assert.Equal(b, g.AdventureSpellCost(dd));   // the record's cost
+    }
+
+    /// <summary>The cast takes that cost from the hero's mana (008656e0 via 008647d0).</summary>
+    [Fact]
+    public void InstantTravelChargesTheModifiedCost()
+    {
+        var (g, h) = Setup(f, Engine.Adventure.SpellDimensionDoor);
+        g.S.MoonWeek = "WEEK_OF_NOTHING";
+        h.Artifacts.Add("RING_OF_MAGI");
+        var floor = g.Map.Floor(h.Pos.Floor)!;
+        Tile? target = null;
+        for (int dy = -8; dy <= 8 && target == null; dy++)
+            for (int dx = -8; dx <= 8 && target == null; dx++)
+            {
+                var t = new Tile(h.Pos.X + dx, h.Pos.Y + dy, h.Pos.Floor);
+                if (Math.Max(Math.Abs(dx), Math.Abs(dy)) >= 2 && g.CanDimensionDoorTo(h, t)) target = t;
+            }
+        Assert.NotNull(target);
+        int mana = h.Mana, cost = g.AdventureSpellCost(h, Engine.Adventure.SpellDimensionDoor);
+        Assert.True(cost < g.AdventureSpellCost(Engine.Adventure.SpellDimensionDoor));
+        var r = g.Apply(new CastAdventureSpellCmd(h.Id, Engine.Adventure.SpellDimensionDoor, target) { Player = g.Current.Index });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(mana - cost, h.Mana);
+    }
+
     [Fact]
     public void FlatCostMatchesSideAndDiagonalSteps()
     {

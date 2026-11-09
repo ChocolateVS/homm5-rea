@@ -151,49 +151,7 @@ public sealed partial class Adventure
         return null;
     }
 
-    // ------------------------------------------------------------------ movement costs
-
-    static readonly Dictionary<string, TerrainClass[]> Native = new()
-    {
-        ["TOWN_HEAVEN"] = new[] { TerrainClass.Grass },
-        ["TOWN_PRESERVE"] = new[] { TerrainClass.Grass },
-        ["TOWN_NECROMANCY"] = new[] { TerrainClass.Dirt },
-        ["TOWN_INFERNO"] = new[] { TerrainClass.Lava },
-        ["TOWN_ACADEMY"] = new[] { TerrainClass.Sand },
-        ["TOWN_FORTRESS"] = new[] { TerrainClass.Snow, TerrainClass.DwarvenSubterranean },
-        ["TOWN_STRONGHOLD"] = new[] { TerrainClass.Taiga },
-        ["TOWN_DUNGEON"] = new[] { TerrainClass.Subterranean },
-    };
-
-    /// <summary>Terrain penalty (fan manual p.299): 0, 25% or 50%; roads are a 25% bonus.</summary>
-    static double Penalty(TerrainClass c) => c switch
-    {
-        TerrainClass.Dirt or TerrainClass.Lava or TerrainClass.Taiga or TerrainClass.Subterranean => 0.25,
-        TerrainClass.Sand or TerrainClass.Snow => 0.5,
-        _ => 0,
-    };
-
-    /// <summary>
-    /// Cost of stepping onto <paramref name="to"/>: 100 orthogonal / 141 diagonal, times the destination
-    /// terrain factor; no penalty on the hero faction's native terrain, half penalty with Pathfinding,
-    /// none with Boots of the Open Road; roads cost 75/105 (p.299-300). At sea it is always 100/141.
-    /// TODO(exe): confirm the destination tile (not the source) sets the cost.
-    /// </summary>
-    public int StepCost(HeroState h, Tile from, Tile to)
-    {
-        bool diag = from.X != to.X && from.Y != to.Y;
-        int baseCost = diag ? 141 : 100;
-        if (h.InBoat) return baseCost;
-        var f = Map.Floor(to.Floor);
-        if (f == null) return int.MaxValue;
-        var c = f.At(to.X, to.Y);
-        if (c == TerrainClass.Road) return (int)(baseCost * 0.75);
-        double pen = Penalty(c);
-        if (Native.TryGetValue(h.Town, out var nat) && nat.Contains(c)) pen = 0;
-        if (h.HasArtifact("WAYFARER_BOOTS")) pen = 0;
-        else if (h.HasPerk("HERO_SKILL_PATHFINDING")) pen *= 0.5;
-        return (int)(baseCost * (1 + pen));
-    }
+    // ------------------------------------------------------------------ movement costs (Adventure.StepCost.cs)
 
     bool Passable(HeroState h, Tile t, Tile target)
     {
@@ -248,7 +206,7 @@ public sealed partial class Adventure
                     if (!f.InBounds(nx.X, nx.Y)) continue;
                     int ni = nx.Y * w + nx.X;
                     if (!fs.Enter(ni, this, h, nx, target)) continue;
-                    int nd = pri.Item1 + cost.Cost(cur, nx);
+                    int nd = pri.Item1 + cost.Cost(cur, nx, h.MovePoints - pri.Item1);
                     if (fs.Has(ni) && fs.Dist[ni] <= nd) continue;
                     fs.Set(ni, nd);
                     fs.Prev[ni] = ci;
@@ -272,6 +230,7 @@ public sealed partial class Adventure
         if (f == null || !f.InBounds(target.X, target.Y)) return null;
         int w = f.Width;
         var dist = new Dictionary<Tile, int> { [h.Pos] = 0 };
+        var cost = new StepCoster(this, h);
         var prev = new Dictionary<Tile, Tile>();
         var pq = new PriorityQueue<Tile, (int, int)>();
         int seq = 0;
@@ -288,7 +247,7 @@ public sealed partial class Adventure
                 var nx = cur.Offset(dx, dy);
                 if (guarded && nx != target) continue;
                 if (!Passable(h, nx, target)) continue;
-                int nd = pri.Item1 + StepCost(h, cur, nx);
+                int nd = pri.Item1 + cost.Cost(cur, nx, h.MovePoints - pri.Item1);
                 if (dist.TryGetValue(nx, out var od) && od <= nd) continue;
                 dist[nx] = nd;
                 prev[nx] = cur;
@@ -303,38 +262,29 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// <see cref="StepCost"/> with the hero's constant parts (boat, native terrain, Boots of the Open Road, Pathfinding)
-    /// taken once; the same expression, so the same result.
+    /// <see cref="StepCost"/> with the hero's constant parts (settings 00b4ffe0, ship mode) taken once. The floods pass
+    /// as the movement left the start's movement points minus the node's cost (00c08890 → 00c07f80 param 5 = pf +0x50 −
+    /// node w2, pf +0x50 = settings +0x30 = hero vf 0xf4), so the diagonal rule of 00ca9a70 only acts within today.
     /// </summary>
     readonly struct StepCoster
     {
-        readonly bool _boat, _noPenalty, _halfPenalty;
-        readonly TerrainClass[]? _native;
+        readonly MoveCostSettings _s;
+        readonly int _mode;
         readonly AdvMap _map;
 
         public StepCoster(Adventure g, HeroState h)
         {
             _map = g.Map;
-            _boat = h.InBoat;
-            _native = Native.TryGetValue(h.Town, out var nat) ? nat : null;
-            _noPenalty = h.HasArtifact("WAYFARER_BOOTS");
-            _halfPenalty = !_noPenalty && h.HasPerk("HERO_SKILL_PATHFINDING");
+            _s = g.MoveCostSettingsFor(h);
+            _mode = h.InBoat ? 1 : 0;
         }
 
-        public int Cost(Tile from, Tile to)
+        public int Cost(Tile from, Tile to, int left)
         {
-            bool diag = from.X != to.X && from.Y != to.Y;
-            int baseCost = diag ? 141 : 100;
-            if (_boat) return baseCost;
             var f = _map.Floor(to.Floor);
             if (f == null) return int.MaxValue;
-            var c = f.At(to.X, to.Y);
-            if (c == TerrainClass.Road) return (int)(baseCost * 0.75);
-            double pen = Penalty(c);
-            if (_native != null && _native.Contains(c)) pen = 0;
-            if (_noPenalty) pen = 0;
-            else if (_halfPenalty) pen *= 0.5;
-            return (int)(baseCost * (1 + pen));
+            var (ground, road) = GroundAndRoad(f, to.X, to.Y);
+            return ExeStepCost(ground, road, from.X != to.X && from.Y != to.Y, left, _s, _mode);
         }
     }
 
@@ -423,7 +373,7 @@ public sealed partial class Adventure
         for (int i = 1; i < path.Count; i++)
         {
             var next = path[i];
-            int cost = StepCost(h, h.Pos, next);
+            int cost = StepCost(h, h.Pos, next, h.MovePoints);
             if (h.MovePoints < cost) break;
             bool isTarget = i == path.Count - 1;
 

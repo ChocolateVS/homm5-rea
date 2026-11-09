@@ -17,19 +17,19 @@ public sealed partial class OriginalAdventureAI
     /// Instant Travel settings of a computer hero (exe FUN_00ceb190 with flag 1): enabled when the hero knows the spell
     /// (vf 0xdc(0x32)) and can cast it (vf 0x154); movement cost vf 0xfc / 2; count (mana − 20) / cost (≥ 0);
     /// DimDoorStartCostLimit from the AI block (+0x228).
-    /// GAP-details: vf 0x154 is taken as "mana ≥ cost"; the cost is the spell data's (FUN_00a34740 modifiers not
-    /// applied); vf 0xfc is taken as MaxMovePoints.
+    /// GAP-details: vf 0x154 is taken as "mana ≥ cost" with the cost of 00a34740 (<see cref="Engine.Adventure.AdventureSpellCost(HeroState, string)"/>);
+    /// vf 0xfc is taken as MaxMovePoints. The exe divides by the cost unguarded; a cost of 0 gives count 0 here.
     /// Town Portal (+0x34): the hero knows spell 0x33, can cast it (vf 0x154, taken as mana ≥ cost) and is not at sea
     /// (vf 0x24 of the hero's map object, taken as <c>InBoat</c>, as in the cast check 008652f0 case 0x33); land day
     /// move +0x28 = vf 0xf8(vf 0x108()) taken as MaxMovePoints. Vessel of Shalassa (+0x35): spell 0x31, the same tests.
     /// </summary>
     public static DimensionDoorSettings DimensionDoorSettingsFor(Engine.Adventure g, HeroState h, AdventureAiStats st)
     {
-        int cost = g.AdventureSpellCost(Engine.Adventure.SpellDimensionDoor);
+        int cost = g.AdventureSpellCost(h, Engine.Adventure.SpellDimensionDoor);
         bool can = h.Spells.Contains(Engine.Adventure.SpellDimensionDoor) && h.Mana >= cost;
         int count = cost > 0 ? Math.Max(0, (h.Mana - 20) / cost) : 0;
-        bool tp = !h.InBoat && h.Spells.Contains(Engine.Adventure.SpellTownPortal) && h.Mana >= g.AdventureSpellCost(Engine.Adventure.SpellTownPortal);
-        bool sb = !h.InBoat && h.Spells.Contains(Engine.Adventure.SpellSummonBoat) && h.Mana >= g.AdventureSpellCost(Engine.Adventure.SpellSummonBoat);
+        bool tp = !h.InBoat && h.Spells.Contains(Engine.Adventure.SpellTownPortal) && h.Mana >= g.AdventureSpellCost(h, Engine.Adventure.SpellTownPortal);
+        bool sb = !h.InBoat && h.Spells.Contains(Engine.Adventure.SpellSummonBoat) && h.Mana >= g.AdventureSpellCost(h, Engine.Adventure.SpellSummonBoat);
         return new DimensionDoorSettings(can, h.MaxMovePoints / 2, count, st.DimDoorStartCostLimit, tp, h.MaxMovePoints, sb);
     }
 

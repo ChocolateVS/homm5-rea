@@ -99,7 +99,7 @@ public sealed partial class Adventure
     /// +0x10 skips the cost, taken as Snatch). A sea node stepping onto land that may end a move lands: cost w4
     /// (or sea day + w4), w4 = land day, land state.
     /// GAP-details: the blocked test is our <c>Passable</c> (not the exe's cell types 009d1410 / 009d1700);
-    /// step costs are ours (<see cref="StepCost"/>, not ca9a70 with its diagonal rule); no shipyard edge (provider
+    /// step costs are <see cref="StepCost"/> (00ca9a70, left = vf 0xf4 − w2; mode 2 for node flag 8 not modelled); no shipyard edge (provider
     /// vf 0, 0x1000002 +250); queue ties are taken in insertion order; the town's tile (town vf 0xc4) is taken as its
     /// entrance (<see cref="EntranceOf"/>); the main-grid replacement compares w3 only (00c09d90 also weighs the
     /// danger values of pf +0xc).
@@ -201,7 +201,7 @@ public sealed partial class Adventure
                 // 00c07f80: Vessel of Shalassa onto free water from a land node that may end a move.
                 if (!boat && water && freeShip && cur.CanStop && !action && !f.IsBlocked(nx.X, nx.Y) && GuardingMonster(nx) == null)
                 {
-                    int c = StepCost(h, cur.T, nx);
+                    int c = StepCost(h, cur.T, nx, h.MovePoints - w2);
                     c = w4 < c ? landDay + w4 : w4;
                     Relax(new FNode { T = nx, Origin = nx, W2 = w2 + c, W3 = cur.W3 + c + 500, W4 = seaDay, Casts = cur.Casts, Portal = cur.Portal,
                                       Boat = true, Summon = true, Parent = cur.T });
@@ -217,7 +217,7 @@ public sealed partial class Adventure
                     }
                     continue;
                 }
-                int step = StepCost(h, cur.T, nx);
+                int step = StepCost(h, cur.T, nx, h.MovePoints - w2);
                 bool canStop = !action && GuardingMonster(nx) == null;
                 // 00c07f80: from a ship only cell type 1 is a shore; another kind is blocked.
                 if (boat && !water && f.Kind.Length == f.Width * f.Height && f.Kind[nx.Y * f.Width + nx.X] != TileKind.Land)

@@ -32,7 +32,60 @@ public sealed partial class Adventure
     public const string SpellSummonCreatures = "SPELL_SUMMON_CREATURES";
     public const string SpellSummonBoat = "SPELL_SUMMON_BOAT";
 
+    /// <summary>The spell record's mana cost (+0x90) without the hero's modifiers (see the hero overload).</summary>
     public int AdventureSpellCost(string spell) => Db.Core.Spell(spell)?.ManaCost ?? 0;
+
+    /// <summary>
+    /// The adventure cast's mana cost: can-cast 00b4c430 → 008647d0 → FUN_00a34740(spell, hero, week = hero vf 0x22c), the
+    /// chain the combat cost (009781e0) starts with. 00a34740: the record is the base of a mass (00a33e20) or empowered
+    /// (00a33f70) version, else the spell; cost = record +0x90, × 2 for a mass / empowered version; the week (00bcddf0:
+    /// Magic / Might and Magic cost / 2, Ether × 2). Warcries (record +0x88 = 6): Voice Training (vf 0x174(0xbc) &gt; 0)
+    /// chop(min((1.001f − discount) · cost, cost − 1)), War Leader (speciality 0x4b) − ((level + 1 − 1) / div · per + base),
+    /// and a result ≤ 0 gives 0 (0x00a34886 SETLE). Other spells: Teleport (0x20) with HERO_SPEC_BEATER (0xd) / 2, a worn
+    /// RING_OF_MAGI (0x2f) / 2, HERO_SPEC_POWER_BARGAIN (0x31) on an empowered spell chop(clamp(1 − reduce − level ·
+    /// perLevel, 0.5, 1) · cost), Arcane Training (vf 0x174(0x2a) ≠ 0) chop(min(cost · 0.8f, cost − 1)); never below 0.
+    /// Integer halvings truncate toward zero, every float conversion chops (00a34836, 00a34968, 00a349b9).
+    /// GAP-details: Avatar of Death (spell 0xc8: level · RPGStats +0x888 as the base, 0x00a34785) is a combat ability and
+    /// not modelled here; 008647d0's free entry (00a34470: the book entry's artifact +0x1c set, a wand → cost 0 and
+    /// 00b4c430 tests its charges, 00ca62e0) is not separated from the mana entry in the adventure cast.
+    /// </summary>
+    public int AdventureSpellCost(HeroState h, string spell)
+    {
+        string baseId = BaseSpell(spell);
+        var rec = Db.Core.Spell(baseId) ?? Db.Core.Spell(spell);
+        if (rec == null) return 0;                                                   // 008496a0 null → 0
+        int c = rec.ManaCost;
+        if (baseId != spell) c += c;                                                 // 0x00a347b1
+        c = H5.Combat.MoonWeek.SpellCost(c, S.MoonWeek);
+        double Stat(string path, double def) => Core.Stats.Get(path, def);
+        if (Db.Core.Spell(spell)?.School == "MAGIC_SCHOOL_WARCRIES")
+        {
+            if (h.HasPerk("HERO_SKILL_VOICE_TRAINING") || EffectiveMastery(h, "HERO_SKILL_VOICE_TRAINING") > 0)
+            {
+                float d = (float)Stat("combat/HeroSkills/Barbarian/VoiceTraining_WarcryCostDiscount", 0.2);
+                c = (int)Math.Truncate(Math.Min((double)(float)((1.001f - (double)d) * c), (double)(float)(c - 1.0)));
+            }
+            if (h.Specialization == "HERO_SPEC_WAR_LEADER")
+            {
+                const string w = "combat/HeroSpecializations/Barbarian/WarLeader_WarcryCostReducePerHeroLevel/";
+                int div = (int)Stat(w + "LevelDivisor", 1);
+                c -= (div == 0 ? 0 : h.Level / div) * (int)Stat(w + "PerDividedLevel", 0) + (int)Stat(w + "Base", 0);
+            }
+            return c < 1 ? 0 : c;
+        }
+        if (spell == "SPELL_TELEPORT" && h.Specialization == "HERO_SPEC_BEATER") c /= 2;
+        if (h.Artifacts.Contains("RING_OF_MAGI")) c /= 2;
+        if (h.Specialization == "HERO_SPEC_POWER_BARGAIN" && spell.StartsWith("SPELL_EMPOWERED_", StringComparison.Ordinal))
+        {
+            float r = (float)Stat("combat/HeroSpecializations/Warlock/PowerBargain_CostReduce", 0);
+            float per = (float)Stat("combat/HeroSpecializations/Warlock/PowerBargain_CostReducePerLevel", 0);
+            float f = (float)(1.0f - (double)r - h.Level * (double)per);
+            c = (int)Math.Truncate(Math.Clamp((double)f, 0.5, 1.0) * c);
+        }
+        if (h.HasPerk("HERO_SKILL_ARCANE_TRAINING") || EffectiveMastery(h, "HERO_SKILL_ARCANE_TRAINING") != 0)
+            c = (int)Math.Truncate(Math.Min((double)(float)(c * (double)0.8f), (double)(float)(c - 1.0)));
+        return Math.Max(0, c);
+    }
 
     /// <summary>Straight movement cost between two tiles ignoring terrain: 100 per side step, 141 per diagonal.</summary>
     public static int FlatMoveCost(Tile a, Tile b)
@@ -81,7 +134,7 @@ public sealed partial class Adventure
         if (S.Hero(c.HeroId) is not { Alive: true } h || h.Owner != Current.Index) return "not your hero";
         if (h.Garrisoned) return "the hero is in a garrison";
         if (!BookSpells(h).Contains(c.Spell)) return "the hero does not know this spell";
-        int mana = AdventureSpellCost(c.Spell);
+        int mana = AdventureSpellCost(h, c.Spell);
         switch (c.Spell)
         {
             case "SPELL_ABILITY_CUSTOM1": case "SPELL_ABILITY_CUSTOM2": case "SPELL_ABILITY_CUSTOM3": case "SPELL_ABILITY_CUSTOM4":

@@ -161,7 +161,7 @@ public sealed partial class Adventure
         foreach (var t in path)
         {
             if (t == hero.Pos) continue;
-            int cost = StepCost(hero, from, t);
+            int cost = StepCost(hero, from, t, mp);
             if (cost > mp)
             {
                 days++;
@@ -192,7 +192,7 @@ public sealed partial class Adventure
         var from = hero.Pos;
         for (int i = 0; i < steps.Count; i++)
         {
-            int cost = StepCost(hero, from, steps[i]);
+            int cost = StepCost(hero, from, steps[i], mp);
             if (today == steps.Count && cost > mp) today = i;
             if (today == steps.Count) mp -= cost;
             if (guard == int.MaxValue && GuardingMonster(steps[i]) != null) guard = i;

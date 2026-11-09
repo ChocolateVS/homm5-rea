@@ -95,7 +95,7 @@ public sealed partial class Adventure
                     if (!f.InBounds(nx.X, nx.Y)) continue;
                     int ni = nx.Y * w + nx.X;
                     if (!fs.Enter(ni, this, h, nx, nx)) continue;
-                    int nd = pri.Item1 + cost.Cost(cur, nx);
+                    int nd = pri.Item1 + cost.Cost(cur, nx, h.MovePoints - pri.Item1);
                     if (nd > limit) continue;
                     if (fs.Has(ni)) { if (fs.Dist[ni] <= nd) continue; }
                     else order.Add(ni);
@@ -116,6 +116,7 @@ public sealed partial class Adventure
         var dist = new Dictionary<Tile, int> { [h.Pos] = 0 };
         var f = Map.Floor(h.Pos.Floor);
         if (f == null) return dist;
+        var cost = new StepCoster(this, h);
         var pq = new PriorityQueue<Tile, (int, int)>();
         int seq = 0;
         pq.Enqueue(h.Pos, (0, seq++));
@@ -127,7 +128,7 @@ public sealed partial class Adventure
             {
                 var nx = cur.Offset(dx, dy);
                 if (!Passable(h, nx, nx)) continue;
-                int nd = pri.Item1 + StepCost(h, cur, nx);
+                int nd = pri.Item1 + cost.Cost(cur, nx, h.MovePoints - pri.Item1);
                 if (nd > limit) continue;
                 if (dist.TryGetValue(nx, out var od) && od <= nd) continue;
                 dist[nx] = nd;

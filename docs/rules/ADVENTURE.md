@@ -26,7 +26,7 @@ Pure .NET rules for the adventure map, towns, heroes and the turn cycle. Same co
 |---|---|---|
 | Start | resources per difficulty (`StartHuman/ComputerResources`), towns from map (initial/max building levels, garrison, mage guild), map heroes, auto starting hero for `HeroInTown` players, tavern pool | DefaultStats, manual p.325 |
 | Turns | day/week/month, daily town-hall gold (500/1000/2000/4000), silo income (`TownTypesInfo`), mine yields, moon-week income/growth effects, weekly town growth (+50% Citadel, +100% Castle), external dwelling growth, neutral weekly growth coefs, elimination (no town & no hero; 7 days without towns when the map says so), last-team-standing victory | manual p.224, 269-272, 325 |
-| Movement | Dijkstra over 8-connected tiles; 100/141, terrain +25%/+50%, native terrain free, Pathfinding halves, Boots of the Open Road removes, roads 75/105; sea 100/141 | manual p.299-300 |
+| Movement | Dijkstra over 8-connected tiles; step cost H5_Game.exe 00ca9a70 on the destination tile: road (tile +4) 75, else 100 + 25 (dirt, lava, subterranean, taiga, wasteland) / 50 (sand, snow) unless native; Pathfinding chop(× 0.5), Boots of the Open Road 0, Rash − 2 %/level; diagonal chop(× 1.4142135) = 141 / 176 / 212 / 106, but the straight cost when the movement left is between the two; sea 100 / 141 likewise (AUDIT_ADVENTURE.md "Step cost") | exe |
 | Movement points | H5_Game.exe 00b4dd40: BaseHeroMovement (specialities Wanderer / Beater / Rash scale it), Week of Flame (land and sea) / Winds (sea) + half, then Logistics chop((m · 0.1 + 1.0001) · L) and Boots ×1.25 (2750 / 3000 / 3250 with stock data, not the manual's 2749 …); sea: Navigation ×1.5, Sextant ×1.25, + Lighthouses | exe, DefaultStats |
 | Vision | look range 12 (+4 Scouting), circular reveal | DefaultStats |
 | Visits | resources & treasures (chest gold/exp choice, 4% minor artifact, campfire, flotsam), artifacts & scrolls, mines/dwellings/lighthouses capture, shrines, keymaster/border guards, prisons, +stat buildings (once per hero), morale/luck/movement locations (until next battle), stables (week), mana wells/springs, weekly windmill/water wheel/garden, one-off loot, sirens, observatory, hut of magi, teleports (gates, monoliths, whirlpools by GroupID), creature banks (DefaultStats `Banks`: guard variants, reward ranges, recharge) | manual p.260-270 |
@@ -48,7 +48,7 @@ Marked `TODO(exe)` in code where behaviour is approximated pending disassembly:
   Lead: `RMG/Params/Default.xdb` `CreatureStackParams` (BasicAmount 25, MinAmount 6, MaxAmount 100) and the
   exe readers at `0049ed10`/`0049edb0`; the adventure-map generator itself is not yet located.
 - Neutral join threshold: resolved — `FUN_008e1ad0` draws rand(40..100)·0.1·MoodCoef (inclusive); see AUDIT_ADVENTURE.md, Monsters.
-- Guard zones (8 neighbours) and whether destination or source tile sets step cost.
+- Guard zones (8 neighbours). (The destination tile sets the step cost: 00b500f0.)
 - Tavern offer rules; hero hire cost (2500) and cap (8).
 - Map hero `OverrideMask` bit meanings (only bit 1 = name observed); empty editable sections fall back to the shared hero.
 - Mana regeneration, Estates, town specialisations, hero specialisations on the adventure map, external dwelling

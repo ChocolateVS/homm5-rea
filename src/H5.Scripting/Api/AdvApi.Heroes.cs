@@ -467,7 +467,7 @@ public sealed partial class AdventureScripting
             var path = Game.FindPath(h, new Tile(x, y, floor));
             if (path == null) { c.Return(-1); return; }
             int cost = 0;
-            for (int i = 1; i < path.Count; i++) cost += Game.StepCost(h, path[i - 1], path[i]);
+            for (int i = 1; i < path.Count; i++) cost += Game.StepCost(h, path[i - 1], path[i], h.MovePoints - cost);   // left as the flood (00c08890)
             c.Return(cost);
         });
         Reg("GetObjectsFromPath", c =>

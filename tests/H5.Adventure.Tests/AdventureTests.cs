@@ -139,30 +139,80 @@ public class MovementTests(Fixture f)
         Assert.Equal(DataFixture.Pick(2575, 2884), g.ComputeMaxMovePoints(h));
     }
 
-    /// <summary>Fan manual p.299-300 step costs (orthogonal / diagonal) per terrain.</summary>
+    /// <summary>
+    /// 00b500f0 → 00ca9a70 on the destination tile record of a real map (ground +0, road +4): penalties 25 / 50 / 0,
+    /// none on the native ground (00b4c2a0), Pathfinding chop(× 0.5), road 75, diagonal chop(× 1.4142135f).
+    /// </summary>
     [Fact]
-    public void StepCostsMatchManual()
+    public void StepCostsFollowTheExe()
     {
         var g = f.NewGame();
-        var map = g.Map;
-        var floor = map.Floor(0)!;
-        Tile Find(TerrainClass c) =>
+        var floor = g.Map.Floor(0)!;
+        Tile Find(Func<int, int, bool> pick) =>
             Enumerable.Range(1, floor.Height - 2).SelectMany(y => Enumerable.Range(1, floor.Width - 2).Select(x => new Tile(x, y)))
-                .First(t => floor.At(t.X, t.Y) == c);
-        void Check(TerrainClass c, string town, int ortho, int diag, bool pathfinding = false)
+                .First(t => pick(floor.Ground[t.Y * floor.Width + t.X], floor.Road[t.Y * floor.Width + t.X]));
+        void Check(int ground, string town, int ortho, int diag, bool pathfinding = false)
         {
-            var to = Find(c);
+            var to = ground < 0 ? Find((_, r) => r is >= 6 and <= 8) : Find((gr, r) => gr == ground && r == 9);
             var h = Hero(town);
             if (pathfinding) h.Perks.Add("HERO_SKILL_PATHFINDING");
             Assert.Equal(ortho, g.StepCost(h, to.Offset(-1, 0), to));
             Assert.Equal(diag, g.StepCost(h, to.Offset(-1, -1), to));
         }
-        Check(TerrainClass.Grass, "TOWN_INFERNO", 100, 141);
-        Check(TerrainClass.Dirt, "TOWN_HEAVEN", 125, 176);
-        Check(TerrainClass.Dirt, "TOWN_NECROMANCY", 100, 141);          // native terrain
-        Check(TerrainClass.Dirt, "TOWN_HEAVEN", 112, 158, pathfinding: true);
-        Check(TerrainClass.Lava, "TOWN_HEAVEN", 125, 176);
-        Check(TerrainClass.Road, "TOWN_HEAVEN", 75, 105);
+        Check(1, "TOWN_INFERNO", 100, 141);                     // grass
+        Check(0, "TOWN_HEAVEN", 125, 176);                      // dirt (the manual's 176 / ours was 176)
+        Check(0, "TOWN_NECROMANCY", 100, 141);                  // native ground
+        Check(0, "TOWN_HEAVEN", 112, 158, pathfinding: true);   // chop(25 · 0.5) = 12
+        Check(-1, "TOWN_HEAVEN", 75, 106);                      // road: chop(75 · 1.4142135) = 106 (was 105)
+    }
+
+    /// <summary>00ca9a70 directly: ground table, settings order, the diagonal rule on the movement left.</summary>
+    [Fact]
+    public void ExeStepCostTableAndDiagonalRule()
+    {
+        var none = new MoveCostSettings(false, false, 9, 0);
+        foreach (var (gr, c) in new[] { (0, 125), (1, 100), (2, 150), (3, 150), (4, 125), (5, 125), (9, 100), (10, 100), (11, 100), (12, 100), (13, 125), (14, 125) })
+            Assert.Equal(c, Engine.Adventure.ExeStepCost(gr, 9, false, 0, none, 0));
+        Assert.Equal(212, Engine.Adventure.ExeStepCost(2, 9, true, int.MaxValue, none, 0));         // sand diagonal
+        Assert.Equal(75, Engine.Adventure.ExeStepCost(2, 7, false, 0, none, 0));                    // road wins over the ground
+        Assert.Equal(100, Engine.Adventure.ExeStepCost(2, 9, false, 0, none, 1));                   // ship mode
+        Assert.Equal(100, Engine.Adventure.ExeStepCost(2, 9, false, 0, none, 2));
+        // Diagonal: cost ≤ left < chop(cost · √2) pays the straight cost; less than cost or enough pays the diagonal.
+        Assert.Equal(176, Engine.Adventure.ExeStepCost(0, 9, true, 124, none, 0));
+        Assert.Equal(125, Engine.Adventure.ExeStepCost(0, 9, true, 125, none, 0));
+        Assert.Equal(125, Engine.Adventure.ExeStepCost(0, 9, true, 175, none, 0));
+        Assert.Equal(176, Engine.Adventure.ExeStepCost(0, 9, true, 176, none, 0));
+        Assert.Equal(100, Engine.Adventure.ExeStepCost(0, 9, true, 120, none, 1));                  // at sea too
+        // Boots zero the penalty after Pathfinding; Rash's percent then chops (1 − 0.01f · p) · penalty.
+        Assert.Equal(100, Engine.Adventure.ExeStepCost(2, 9, false, 0, new MoveCostSettings(true, true, 9, 0), 0));
+        Assert.Equal(122, Engine.Adventure.ExeStepCost(0, 9, false, 0, new MoveCostSettings(false, false, 9, 9), 0));   // chop(0.91 · 25)
+        Assert.Equal(118, Engine.Adventure.ExeStepCost(2, 9, false, 0, new MoveCostSettings(true, false, 9, 25), 0));   // chop(0.75 · 25)
+    }
+
+    /// <summary>
+    /// 00b4ffe0: HERO_SPEC_RASH's percent is chop(level · Rash_MovementPenaltyReducePerLevel · 100) — 0.02f · 5 · 100
+    /// chops to 9 (MMH 5.5 0.05: 25) — clamped to 100; the native ground follows the race table 00b4c2a0 (Fortress: snow only).
+    /// </summary>
+    [Fact]
+    public void MoveCostSettingsFollowTheHero()
+    {
+        var g = f.NewGame();
+        var h = Hero("TOWN_STRONGHOLD");
+        h.Specialization = "HERO_SPEC_RASH";
+        h.Level = 5;
+        var s = g.MoveCostSettingsFor(h);
+        Assert.Equal(13, s.NativeGround);
+        Assert.Equal(DataFixture.Pick(9, 25), s.PenaltyReducePercent);   // MMH 5.5: 0.05
+        h.Level = 60;
+        Assert.Equal(100, g.MoveCostSettingsFor(h).PenaltyReducePercent);
+        h.Artifacts.Add("WAYFARER_BOOTS");
+        h.Perks.Add("HERO_SKILL_PATHFINDING");
+        s = g.MoveCostSettingsFor(h);
+        Assert.True(s.NoPenalty && s.HalfPenalty);
+        Assert.Equal(3, Engine.Adventure.NativeGround("TOWN_FORTRESS"));
+        Assert.Equal(5, Engine.Adventure.NativeGround("TOWN_DUNGEON"));
+        Assert.Equal(4, Engine.Adventure.NativeGround("TOWN_INFERNO"));
+        Assert.Equal(9, Engine.Adventure.NativeGround(""));
     }
 
     [Fact]

@@ -14,7 +14,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 |---|---|
 | FIXED | 401 |
 | MATCH | 216 |
-| GAP | 6 |
+| GAP | 7 |
 | UNVERIFIED | 0 |
 | N/A | 65 |
 
@@ -33,6 +33,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | Strikes per action (Double Attack, Berserking, Double Shot) | FIXED | 008a0f90 | AuditStrikeTests |
 | War machine shots per action | FIXED | 00a75bf0 | WarMachineAuditTests |
 | Spell mana cost chain | FIXED | 00a34740, 009781e0 | AuditSpecTests |
+| Spell mana cost chain: base record and warcry floor (found by the adventure port, `Adventure.AdventureSpellCost(hero, spell)`) | GAP | 00a3474a..00a347b1, 00a34785, 00a34886 | 00a34740 takes +0x90 of the mass (00a33e20) / empowered (00a33f70) version's BASE spell × 2 (`HeroBaseManaCost` takes the version record's own cost: equal in the stock data, e.g. Haste 4 / Mass Haste 8; MMH 5.5 not compared); Avatar of Death (0xc8) base = level · RPGStats +0x888 (not in `HeroBaseManaCost`); a warcry cost ≤ 0 gives 0 (SETLE), `HeroBaseManaCost` clamps to 1. H5.Combat not changed |
 | Creature dynamic abilities (HasAbility override) | FIXED | 008a34c0 | AuditSpecTests |
 | Stack death summons (Master of Elements, Soulhunter) | FIXED | 00a61310 | AuditSpecTests2 |
 | Terrain elementals | FIXED | 00861120 | AuditSpecTests2 |
