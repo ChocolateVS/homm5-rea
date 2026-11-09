@@ -16,7 +16,7 @@ public static class TownLauncher
     public static bool OpenTown;
     public static string? Goto;
     public static bool BuildAll;
-    /// <summary>Dev only (`--town-caravans=castles|dwellings|info`): own every dwelling and one more town on the floor,
+    /// <summary>Dev only (`--town-caravans=castles|dwellings|info|map|meet`): own every dwelling and one more town on the floor,
     /// send a caravan here, then open that caravan tab of the hire screen (with `--town-goto=fort`).</summary>
     public static string? CaravanTab;
     public static Vector2? OrbitBy;
@@ -231,6 +231,25 @@ public static class TownLauncher
                 if (BuildAll) TownData.GrantAllBuildings(adv.Session, town);
                 if (DevHero != null) DevSetupHero(adv, town, DevHero);
                 if (CaravanTab != null) DevSetupCaravans(adv, town);
+                if (CaravanTab == "meet" && adv.Session.S.Caravans.FirstOrDefault() is { } mc
+                    && adv.Session.S.Heroes.FirstOrDefault(h => h.Alive && h.Owner == mc.Owner) is { } mh)
+                {
+                    // `--town-caravans=meet`: the owner's hero next to the caravan, one swap of different stacks,
+                    // then the caravan meet screen (0043cdb0).
+                    mh.InTown = -1; mh.Garrisoned = false;
+                    mh.Pos = mc.Pos.Offset(1, 0);
+                    int cs = Array.FindIndex(mc.Army, x => x is { Count: > 0 });
+                    int hs = Array.FindIndex(mh.Army, x => x is { Count: > 0 } && x.Creature != mc.Army[cs]!.Creature);
+                    if (cs >= 0 && hs >= 0 && mh.Army.Count(x => x is { Count: > 0 }) > 1)
+                    {
+                        var sr = adv.Session.Apply(new H5.Adventure.Engine.SwapStacksCmd(mh.Id, -1, hs, -1, -1, cs) { Player = mh.Owner, ToCaravan = mc.Id });
+                        GD.Print($"[H5] --town-caravans: swap {(sr.Ok ? "done" : sr.Error)}");
+                    }
+                    adv.World.SyncHero(mh);
+                    adv.World.Camera.CenterOn(mc.Pos.Offset(0, 3));
+                    adv.AddChild(new CaravanMeetScreen(adv, mh.Id, mc.Id));
+                    return;
+                }
                 if (CaravanTab == "map" && adv.Session.S.Caravans.FirstOrDefault() is { } car)
                 {
                     // `--town-caravans=map`: stay on the adventure map, looking at the new caravan.

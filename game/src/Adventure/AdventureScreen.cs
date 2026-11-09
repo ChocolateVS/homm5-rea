@@ -978,9 +978,32 @@ public partial class AdventureScreen : Control
                 World.Boats?.Sync();
                 Hud.UpdateMinimap();
                 break;
+            case CaravanMoved cm when World.Caravans != null && cm.Path.Any(World.IsExplored) && !Autoplay:
+            {
+                // 00ce4de0: the day's walk is played on the caravan's view.
+                bool own = Session.S.Caravans.Find(c => c.Id == cm.CaravanId)?.Owner == Session.Human.Index;
+                float mult = Math.Max(H5Reborn.Options.OptionsStore.GetFloat(own ? "adventure_speed_human" : "adventure_speed_ai", own ? 1 : 2), 0.25f);
+                await World.Caravans.Walk(cm, mult);
+                Hud.UpdateMinimap();
+                break;
+            }
             case CaravanCreated or CaravanMoved or CaravanRemoved or CaravanChanged:
                 World.Caravans?.Sync();
+                Hud.UpdateMinimap();
                 break;
+            case ObjectVisited cv when cv.What.StartsWith("caravan:") && int.TryParse(cv.What["caravan:".Length..], out int carId)
+                                       && HumanCaused(player) && !Autoplay && s.Hero(cv.HeroId) is { } meeter:
+            {
+                // CMeetCaravanCmd 0042f870 → CCreateCaravanMeetScreen 0043cdb0: the caravan exchange screen.
+                Hud.Visible = false;
+                var meet = new CaravanMeetScreen(this, meeter.Id, carId);
+                AddChild(meet);
+                await ToSignal(meet, Node.SignalName.TreeExited);
+                Hud.Visible = true;
+                World.Caravans?.Sync();
+                Hud.Refresh();
+                break;
+            }
             case TilesRevealed tr when tr.Player == Session.Human.Index:
                 World.RefreshShroud();
                 Hud.UpdateMinimap();

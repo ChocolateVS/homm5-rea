@@ -416,9 +416,56 @@ public partial class AdvHud : Control
             // The view footprint is a trapezoid that can reach past the map edge; only the part
             // over the minimap is drawn, so the frame never spills onto the HUD around it.
             var clipped = ClipToRect(pts, new Rect2(Vector2.Zero, Size));
-            if (clipped.Count < 2) return;
-            clipped.Add(clipped[0]);
-            DrawPolyline(clipped.ToArray(), new Color(1, 1, 1, 0.9f), 1f);
+            if (clipped.Count >= 2)
+            {
+                clipped.Add(clipped[0]);
+                DrawPolyline(clipped.ToArray(), new Color(1, 1, 1, 0.9f), 1f);
+            }
+            DrawCaravans(map);
+        }
+
+        /// <summary>
+        /// 005acd80: every caravan of the world's list (vf 0x90) owned by the viewing player (vf 0x24 = player vf 0x2c)
+        /// on the shown floor (vf 0xac = +0x118) gets the minimap icon "Caravan_%d" — "Caravan_stopped_%d" when stopped
+        /// (vf 0x38: days −1) — with the viewing player's colour number (vf 0x30, taken as the ColourModels order),
+        /// from UI/AdventureScreen-FPP-2/MinimapTextures, drawn centred on the caravan's tile (00c1cae0).
+        /// </summary>
+        void DrawCaravans(H5.Adventure.Map.AdvMap map)
+        {
+            var session = hud._screen.Session;
+            int me = session.Human.Index, floor = hud._screen.World.Floor;
+            int colour = AdvColors.ColourModelIndex(session.Human.Colour);
+            foreach (var c in session.S.Caravans)
+            {
+                if (c.Owner != me || c.Pos.Floor != floor) continue;
+                if (MinimapIcon((c.Stopped ? "Caravan_stopped_" : "Caravan_") + colour) is not { } tex) continue;
+                var at = new Vector2((c.Pos.X + 0.5f) / map.TilesX * Size.X, (1 - (c.Pos.Y + 0.5f) / map.TilesY) * Size.Y);
+                DrawTexture(tex, (at - tex.GetSize() / 2).Round());
+            }
+        }
+
+        static Dictionary<string, string>? _iconPaths;
+        static readonly Dictionary<string, Texture2D?> _icons = new();
+
+        static Texture2D? MinimapIcon(string name)
+        {
+            if (_icons.TryGetValue(name, out var t)) return t;
+            if (_iconPaths == null)
+            {
+                _iconPaths = new();
+                const string list = "UI/AdventureScreen-FPP-2/MinimapTextures.(WindowRelatedTextures).xdb";
+                try
+                {
+                    if (Game.Instance.Fs.Exists(list))
+                        foreach (var item in Game.Instance.Xdb.Load(list).Root?.Element("textures")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+                            if ((string?)item.Element("TextureName") is { } n && (string?)item.Element("Texture")?.Attribute("href") is { Length: > 0 } h)
+                                _iconPaths[n] = H5.Core.Xdb.XdbRef.Parse(h, list).Path;
+                }
+                catch { /* no data: no icons */ }
+            }
+            t = _iconPaths.TryGetValue(name, out var path) ? Ui.UiResources.Instance.Texture(path) : null;
+            _icons[name] = t;
+            return t;
         }
 
         /// <summary>Sutherland–Hodgman clip of a convex polygon to an axis-aligned rectangle.</summary>
