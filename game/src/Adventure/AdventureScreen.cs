@@ -344,8 +344,8 @@ public partial class AdventureScreen : Control
         var g = Session.Game;
         var spells = g.BookSpells(h);
         var options = spells
-            .Where(sp => Game.Instance.Db.Spell(sp)?.School == "MAGIC_SCHOOL_ADVENTURE" && h.Mana >= g.AdventureSpellCost(sp))
-            .Select(sp => new H5.Combat.SpellOption { Spell = sp, ManaCost = g.AdventureSpellCost(sp) }).ToList();
+            .Where(sp => Game.Instance.Db.Spell(sp)?.School == "MAGIC_SCHOOL_ADVENTURE" && h.Mana >= g.AdventureSpellCost(h, sp))
+            .Select(sp => new H5.Combat.SpellOption { Spell = sp, ManaCost = g.AdventureSpellCost(h, sp) }).ToList();
         var book = new Combat.SpellBook3D(spells, options, h.Mana, g.MaxMana(h), warcries: false, adventure: true);
         book.Chosen += opt =>
         {
