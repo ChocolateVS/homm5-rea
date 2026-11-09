@@ -411,7 +411,8 @@ public partial class AdvWorld : Node3D
     {
         // Is2Sided is false in every stock sky material: back faces culled as for other models.
         // The exe's separate pass draws the dome behind the scene; here it sits on the far plane
-        // (reverse Z) and writes no depth, so every other surface covers it.
+        // and writes no depth, so every other surface covers it. Reverse Z everywhere, but the Compatibility
+        // renderer (web build) has OpenGL's -w..w clip depth, so its far plane is -w, not 0 (0 is mid-depth there).
         Code = """
             shader_type spatial;
             render_mode unshaded, cull_back, depth_draw_never, shadows_disabled, fog_disabled;
@@ -420,7 +421,11 @@ public partial class AdvWorld : Node3D
             void vertex() {
                 vec4 clip = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
                 clip.xy *= clip_scale;
+            #if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+                clip.z = -clip.w * (1.0 - 1e-6);
+            #else
                 clip.z = clip.w * 1e-6;
+            #endif
                 POSITION = clip;
             }
             void fragment() { ALBEDO = texture(tex, UV).rgb; }

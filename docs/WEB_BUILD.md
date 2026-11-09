@@ -1,0 +1,225 @@
+# Web build (browser version)
+
+The browser build is a routine output of the repository: one script turns the current sources into a static
+folder that any web server can host. The page asks each player for **their own** game install (nothing of the
+original game is in the repository or the build output) and runs the real game: the same Boot scene, `Game`
+autoload, main menu, combat and adventure code as the desktop build.
+
+Background: [WEB_PORT.md](WEB_PORT.md) (rules every workstream follows) and [WEB_SPIKE.md](WEB_SPIKE.md) (the
+October 2026 feasibility spike). Godot 4.7 has no official C# web export; we use the third-party **2dog**
+toolchain, which links Godot as a library into a .NET 10 `browser-wasm` app.
+
+## Pinned toolchain
+
+| piece | version | where it is pinned |
+|---|---|---|
+| .NET SDK | **10.0.402** (per user, does not touch the system dotnet; the desktop build stays on .NET 8) | `tools/web/setup.*`, `web/game/global.json` |
+| wasm-tools workload | manifests **10.0.113** (feature band 10.0.100), brings **Emscripten 3.1.56** | `tools/web/workload-rollback.json` |
+| 2dog | `2dog.godotsharp` / `2dog.engine` **4.7.2.124**, natives `2dog.browser-wasm` **4.7.2.28** | `web/game/Directory.Build.props` |
+| Godot | **4.7.2** (`Godot.NET.Sdk/4.7.2`, 2dog's `v4.7.2.stable.mono.2dog`) | `web/game/H5Reborn.csproj` |
+| renderer | Compatibility (WebGL 2), set on the staged copy of `project.godot` | `tools/web/build.sh` |
+| threads | none (single-threaded wasm): **no SharedArrayBuffer, no COOP/COEP needed** | `TwoDogWebThreads=false` |
+| test harness | Node ≥ 20, `playwright-core` **1.56.0**, its Chromium (headless) | `tools/web/harness/package.json` |
+
+Packages come from nuget.org only (`web/game/nuget.config`), so a machine-level private feed cannot break restores.
+
+## Setup from a clean machine
+
+**Linux (e.g. Ubuntu 22.04 build server)**
+
+```sh
+sudo apt-get install -y git curl python3 libicu70   # python3: Emscripten; ICU: the .NET SDK itself
+git clone <repo> h5reborn && cd h5reborn
+tools/web/setup.sh            # .NET 10.0.402 -> ~/.local/share/h5web/dotnet10 + wasm-tools (≈ 1.5 GB)
+tools/web/setup.sh --harness  # optional: also npm install + headless Chromium for the smoke test (needs Node ≥ 20)
+```
+
+**Windows** (Git for Windows provides the bash used by the build script)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\web\setup.ps1 [-Harness]   # .NET 10.0.402 -> %LOCALAPPDATA%\h5web\dotnet10
+```
+
+or `tools/web/setup.sh` from Git Bash. Both are idempotent. Override the SDK location with `H5_WEB_DOTNET_ROOT`.
+
+## Build
+
+```sh
+tools/web/build.sh                 # -> web/dist/
+tools/web/build.sh --out /srv/h5   # -> any folder
+```
+
+What it does:
+1. **Stage** `web/.build/game/` = `game/project.godot`, `game/scenes`, `game/src` + the web overlay `web/game/`
+   (a .NET 10 `H5Reborn.csproj` that compiles the `src/H5.*` library sources in, the `H5Reborn.web` 2dog host,
+   `src/Web/*.cs`, the page). `project.godot` is switched to `gl_compatibility` and gets the `WebProbe` autoload.
+   The desktop projects and their `obj/` folders are never touched.
+2. **Publish** the host (`dotnet publish -c Release`): C# → .NET assemblies (Mono interpreter), libgodot + .NET
+   runtime linked by Emscripten into `godot.wasm`, the Godot project exported to `godot.pck` (scenes and
+   shaders only, ~40 KB), `.br`/`.gz` siblings of every file.
+3. **Copy** the app bundle to the output folder and add `build-info.json` (commit, dirty flag, versions).
+
+A build takes 4–6 minutes (most of it the Emscripten link and `wasm-opt`); later builds reuse `web/.build`.
+`web/.build`, `web/dist` and `web/smoke*` are git-ignored.
+
+### Output (a self-contained static folder)
+
+```
+index.html  h5data.js  godot.js  godot.wasm  godot.pck  godot.audio*.worklet.js
+_framework/  (dotnet.js, dotnet.native.js, dotnet.runtime.js, *.wasm = .NET assemblies)
+twodog.sizes.json  build-info.json  H5Reborn.web.runtimeconfig.json  package.json
+every file also as .br and .gz
+```
+
+Transfer size with Brotli: `godot.wasm.br` ≈ 9.5 MB + managed assemblies ≈ 4 MB.
+
+## Serving it
+
+Any static server. Requirements:
+
+| response header | value | needed? |
+|---|---|---|
+| `Content-Type` for `.wasm` | `application/wasm` | **required** (streaming compilation) |
+| `Content-Type` for `.js` / `.mjs` | `text/javascript` | required |
+| `Content-Type` for `.pck`, `.dat` | `application/octet-stream` | recommended |
+| `Content-Encoding: br` (or `gzip`) | serving the precompressed sibling (`file.br`) when `Accept-Encoding` allows | recommended (≈ 13 MB instead of 60 MB) |
+| `Cache-Control` | `no-cache` (revalidate) for everything; the file names are not content-hashed | recommended |
+| `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` | | **optional**: the build is single-threaded and does not use SharedArrayBuffer. It works with them (tested, `smoke.mjs --coi`) and without |
+
+**Secure context.** Serve over **HTTPS** (or open it as `http://localhost`). On plain `http://<LAN-IP>` the browser
+withholds OPFS (`navigator.storage.getDirectory`) and the File System Access folder button, so the "remember"
+copy is unavailable and the folder must be picked on every visit (`<input webkitdirectory>` still works).
+A self-signed / internal-CA certificate (Caddy `tls internal`) is fine once the browser trusts or accepts it.
+
+Caddy (as on the LAN server):
+
+```
+:8160 {
+    tls internal
+    root * /srv/h5reborn/dist
+    file_server {
+        precompressed br gzip
+    }
+    header {
+        Cache-Control "no-cache"
+        Cross-Origin-Opener-Policy "same-origin"
+        Cross-Origin-Embedder-Policy "require-corp"
+    }
+    @wasm path *.wasm
+    header @wasm Content-Type application/wasm
+}
+```
+
+nginx:
+
+```
+location /h5/ {
+    alias /srv/h5reborn/dist/;
+    brotli_static on;   # ngx_brotli; else: gzip_static on;
+    types { application/wasm wasm; text/javascript js mjs; text/html html; application/json json; }
+    default_type application/octet-stream;
+    add_header Cache-Control "no-cache";
+}
+```
+
+Locally: `node tools/web/harness/serve.mjs web/dist 8080 [--host 0.0.0.0] [--coi]` (dependency-free; serves the
+`.br` siblings), then open `http://localhost:8080/`.
+
+Deploying = `rsync -a --delete web/dist/ server:/srv/h5reborn/dist/`.
+
+## Using it
+
+1. Open the page. A panel asks for the game: **Choose game folder…** (Chromium's File System Access picker), or the
+   **Game folder** input (every browser, including Firefox/Safari; `webkitdirectory`), or the `.pak` files from the
+   install's `data` folder. Pick the Tribes of the East install folder (stock 3.1 or MMH 5.5).
+2. With **Remember** ticked (default) the page copies the picked files into the browser's private storage (OPFS)
+   in the background (≈ 2 GB, about two minutes). The next visit starts without asking. **Forget the stored copy**
+   removes it; `?fresh` ignores it once.
+3. The game boots (intro, main menu …) exactly like the desktop build.
+
+How the files are read: archives (`data/*.pak`, `UserMODs/*`) and music stay in the browser; the game sees an
+install at `/h5install` in the wasm file system with empty placeholders for them, and
+`H5.Core.IO.RandomAccessSources.Opener` routes `PakArchive` (and map archives, music) to
+`H5Reborn.Web.BrowserFileSource`. Each read is a **synchronous `Range` request on the file's `blob:` URL** (the
+only synchronous file read a browser main thread has), so all of the game's synchronous loaders run unchanged
+and `data.pak` (1.4 GB) is never read whole; reads go through a 16 MB cache of 256 KB blocks. Small loose files
+(Maps, profiles, hwcursors, DuelPresets, video descriptors; ~12 MB) are copied into the wasm file system at start.
+
+## Test page / flags (check future commits in the browser)
+
+The page passes `?args=` to the game exactly like `godot -- <args>` on the desktop (`OS.GetCmdlineUserArgs`),
+so every dev flag works:
+
+| URL | opens |
+|---|---|
+| `/?args=--skip-intro` | main menu |
+| `/?args=--combat-vs-ai=1,2` | duel against the AI (duel presets 1 vs 2) |
+| `/?args=--adventure=A2M1` | adventure map (any `--adventure=<map>` query) |
+| `/?args=--adventure=A2M1%20--adventure-reveal` | several args: space separated (`%20`) |
+| `/?fresh` | ignore the stored copy and ask for the folder |
+| `/?nocache` | do not copy the picked files to browser storage |
+
+The web-only autoload `WebProbe` logs `[H5] web: scene <name>`, `[H5] web: main menu on screen`,
+`[H5] web: adventure on screen` and every 10 s a stats line (fps, GC heap, video memory, number and MB of file
+reads) to the browser console.
+
+**Headless smoke test** (never opens a window; uses the local install):
+
+```sh
+cd tools/web/harness && npm install
+node smoke.mjs ../../../web/dist --install "/path/to/Tribes of the East" [--gpu] [--coi] \
+     [--only menu,duel,adventure,remember] [--map-arg --adventure=A2M1] [--out DIR]
+```
+
+It serves the folder, picks the install through the page's folder input, waits for each screen's log marker and
+saves `DIR/<scenario>.png`, `<scenario>.log` and `results.json` (time, fps, wasm heap). `--gpu` renders with the
+machine's GPU (still headless); the default SwiftShader software renderer works anywhere but is slow for 3D.
+`remember` checks the OPFS flow (first visit picks and copies, second visit starts without picking).
+Exit code 0 = every scenario reached its marker without a page error. Screenshots contain original game art:
+they stay local (git-ignored).
+
+## Verified (November 2026, headless Chromium, stock 3.1 install)
+
+| scenario | result |
+|---|---|
+| boot → main menu (`?args=--skip-intro`) | 3D menu background, profile prompt, menu. Engine start ~2 s after the page; mount of 103 036 pak entries 1.5 s; menu on screen ~15 s (first-time shader compiles) |
+| duel (`--combat-vs-ai=1,2`) | arena, both armies, hero, UI; ~9 s from start to the combat screen |
+| adventure (`--adventure=A2M1`, 136×136) | terrain, castle, objects, HUD, start-of-week dialog (same picture as the desktop build); ~60 s to load (Mono interpreter) |
+| COOP/COEP headers on/off | both work (final run with them, as on the LAN server) |
+| remember (OPFS) | first visit picks + copies 350 files / 1.9 GB; second visit starts from browser storage without picking |
+| frame rate | headless with the GPU (busy machine): menu 7–28 fps, duel ~50 fps, adventure 13–16 fps; SwiftShader: menu < 1 fps |
+| memory | wasm heap 256 MB at start, ~370 MB menu, ~440 MB duel, **~1.3 GB adventure** (GC heap ~200 MB, VRAM ~390 MB) |
+| file reads | menu 232 reads / 81 MB, duel 469 / 130 MB, adventure ~2 200 / 580 MB (of a 1.9 GB install) |
+
+Web-platform fixes made for this: the adventure sky dome assumed Forward+'s `[0, w]` reverse-Z clip depth and
+covered the map on the Compatibility renderer (desktop `--rendering-method gl_compatibility` showed the same; fixed for both);
+`TargetPrompt` also reads `H5_GAME_DIR` from the managed environment; music loads from a buffer when its file
+is virtual.
+
+## Not working yet in the browser (ranked)
+
+1. **Performance (CPU).** The game's C# runs on the Mono *interpreter*: the adventure map takes ~40 s to load and
+   the 3D main menu runs at well under 60 fps even on a desktop GPU. Next steps: measure `RunAOTCompilation` (AOT for the
+   hot libraries: Granny/Oodle, terrain, AI), time-slice long loads behind a loading screen, prefetch/merge reads.
+2. **Adventure AI turns (threads).** `AdventureNetSession.AiRunner` uses a `Thread` + `SemaphoreSlim.Wait`
+   (WEB_SPIKE.md). The browser throws `PlatformNotSupportedException` there, so **ending the turn on an adventure
+   map with AI players will fail** until the AI turn becomes resumable (async/continuation). Combat AI (the duel)
+   is unaffected.
+3. **Saves, profiles and settings do not persist.** `user://` is Godot's IndexedDB-backed folder, but the game
+   also writes into the install's `profiles/` and to System.IO paths, which live in the wasm memory file system
+   and vanish on reload. Needs: install-writes redirected to `user://`, plus save export/import.
+4. **Multiplayer.** No LAN discovery / direct IP / hosting in a browser. Joining via the master server needs a
+   WebSocket transport selection in the lobby UI, source-generated JSON contexts and CORS or same-origin
+   deployment of the master; WebRTC peers are not implemented (WEB_SPIKE.md, Networking).
+5. **Audio.** Godot web audio needs a user gesture before it starts (the first click/key unlocks it); not yet
+   verified by ear. Music is read whole per track from the picked file (fine), sound effects come from the paks.
+   Intro movies (Theora) untested in the browser.
+6. **Memory ceiling.** wasm32 heap max 2 GB and a 136×136 map already takes ~1.3 GB. Larger maps (XL, two floors)
+   and long sessions need texture/model eviction and transient read buffers;
+   textures stay DXT-compressed on desktop GPUs, but mobile browsers (no S3TC) would fall back to RGBA8 (4× VRAM).
+7. **Data fingerprint.** `GameInstall.DataFingerprint` sizes the placeholder files (0 bytes), so the multiplayer
+   data check differs from a desktop peer with the same install.
+8. **First visit download/copy.** The OPFS copy of ~2 GB takes ~2 minutes in the background; the picked originals
+   are used meanwhile. Browser storage quotas may refuse it on small disks (then the folder is asked for each visit).
+9. **Toolchain risk.** 2dog is a single-maintainer project; versions must match Godot exactly. Keep this build
+   (and its smoke test) running on every bump, and switch to Godot's official C# web export when it ships.

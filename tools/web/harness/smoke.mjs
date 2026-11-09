@@ -1,7 +1,7 @@
 // Headless smoke test of the web build: serves <dist>, opens it in a headless Chromium (never a visible window),
 // feeds it the local game install through the page's folder picker, and screenshots each scenario.
 //   node smoke.mjs <dist> --install "<game folder>" [--out DIR] [--only menu,duel,adventure,remember] [--timeout s]
-//                         [--map-arg --adventure=<map>] [--duel-arg --combat-vs-ai=1,2] [--gpu]
+//                         [--map-arg --adventure=<map>] [--duel-arg --combat-vs-ai=1,2] [--gpu] [--coi]
 // Chromium: $CHROMIUM, else the playwright cache (npx playwright-core install chromium).
 // Exit code 0 only if every scenario reached its marker without a page error.
 import { chromium } from 'playwright-core';
@@ -48,7 +48,8 @@ const LAUNCH = { executablePath: findChromium(), headless: true,
     '--enable-precise-memory-info', '--autoplay-policy=no-user-gesture-required'] };
 
 fs.mkdirSync(outDir, { recursive: true });
-const server = await serve(dist, 0);
+// --coi: serve with COOP/COEP like the deployment (Caddy on the LAN server); the build must work with and without.
+const server = await serve(dist, 0, { coi: argv.includes('--coi') });
 const base = `http://127.0.0.1:${server.address().port}/`;
 const results = {};
 
@@ -58,7 +59,12 @@ async function run(name, page, { pick = true, query, marker, settle }) {
   const stamp = () => ((Date.now() - t0) / 1000).toFixed(1).padStart(6);
   let hit; const reached = new Promise((r) => (hit = r));
   const errors = [];
-  page.on('console', (m) => { const t = m.text(); log.push(`[${stamp()}] ${t}`); if (marker.test(t)) hit(t); });
+  page.on('console', (m) => {
+    const t = m.text(); log.push(`[${stamp()}] ${t}`); if (marker.test(t)) hit(t);
+    // A headless page's pointer sits at (0,0) - the screen corner, where the adventure map edge-scrolls. Park it in
+    // the middle of the canvas as soon as the engine runs (a real player's mouse is wherever they put it).
+    if (/\[H5\] web: engine started/.test(t)) page.mouse.move(640, 360).catch(() => {});
+  });
   page.on('pageerror', (e) => { errors.push(e.message); log.push(`[${stamp()}] PAGEERROR ${e.message}`); });
   await page.goto(base + query);
   if (pick) {
