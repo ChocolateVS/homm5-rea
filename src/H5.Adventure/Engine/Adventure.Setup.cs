@@ -4,6 +4,7 @@ using H5.Adventure.State;
 using H5.Combat;
 using HeroState = H5.Adventure.State.HeroState;
 using H5.Core.Data;
+using H5.Core.Numerics;
 
 namespace H5.Adventure.Engine;
 
@@ -457,13 +458,17 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// One start-army roll, FUN_00b513e0: lo = (float)(growth · min), hi = (float)(growth · max) (FSTP float),
-    /// count = trunc(lo + (hi − lo) · rand32 · 2^-32) (x87, 53-bit precision, control word | 0xc00 = chop).
+    /// One start-army roll, FUN_00b513e0, under the game's x87 control word (_PC_24 | _RC_CHOP, see <see cref="X87"/>):
+    /// hi = growth · max and lo = growth · min (FILD growth, FMUL, FSTP float); u = FILD rand32, which loads it signed,
+    /// so a value ≥ 2^31 gets FADD 2^32 (00e0d2e0) and is chopped to 24 bits; then ((hi − lo) · u) · 2^-32 (00e0d2d8),
+    /// + lo, every step chopped, and FISTP with the control word | 0xc00 (chop) truncates.
     /// </summary>
     public static int StartArmyCount(int weeklyGrowth, float min, float max, uint rand32)
     {
-        double lo = (float)(weeklyGrowth * (double)min), hi = (float)(weeklyGrowth * (double)max);
-        return (int)(lo + (hi - lo) * rand32 * (1.0 / 4294967296.0));
+        float hi = X87.Mul(max, weeklyGrowth), lo = X87.Mul(weeklyGrowth, min);
+        double u = rand32 < 0x80000000u ? rand32 : X87.Chop(rand32);
+        float r = X87.Mul(X87.Mul(X87.Sub(hi, lo), u), 1.0 / 4294967296.0);
+        return (int)X87.Add(lo, r);
     }
 
     /// <summary>
