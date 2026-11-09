@@ -226,7 +226,8 @@ public class AuditAbilityTestsC(GameDataFixture f)
         var r = Use(b, u, Ab.CallLightning, t);
         Assert.True(r.Ok, r.Error);
         int dealt = before - t.TotalHealth;
-        Assert.True(dealt > 0 && dealt < 30 * u.Count, $"dealt {dealt}");   // the golems' magic proof applies
+        int full = b.CallLightningDamage(u, f.Db.Spell("SPELL_ABILITY_CALL_LIGHTNING")!);   // sweep 17: power, mastery
+        Assert.True(dealt > 0 && dealt < full, $"dealt {dealt} of {full}");   // the golems' magic proof applies
     }
 
     [Fact]

@@ -447,10 +447,10 @@ public sealed partial class Battle
             }
             case Ab.CallLightning:
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
-                // exe 00987ecb: the spell damage (FUN_00976b90, CallLightning.xdb 0 + 30·p) goes through the protection
-                // path FUN_0097d600 (ratio 1) like any air spell. p is kept as the stack size (not traced).
+                // exe 00987ecb: the spell damage (FUN_00976b90) goes through the protection path FUN_0097d600 (ratio 1)
+                // like any air spell, with the caster's vf 0x244 power and vf 0x240 mastery (Battle.Sweep17.cs).
                 if (Db.Spell("SPELL_ABILITY_CALL_LIGHTNING") is { } cl)
-                    DealSpellDamage(t, cl, 30 * u.Count, Controller(u), ignoreResist: false);
+                    DealSpellDamage(t, cl, CallLightningDamage(u, cl), Controller(u), ignoreResist: false);
                 break;
             case Ab.RageOfForest:
             {

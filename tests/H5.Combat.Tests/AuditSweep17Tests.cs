@@ -139,4 +139,18 @@ public class AuditSweep17Tests(GameDataFixture f)
         Assert.False(a.HasEffect("SPELL_SLOW"));
         Assert.Equal((double)(float)(100f / slowed), a.Atb);
     }
+
+    // exe FUN_00984a00 case 0xde (00987f05..00987f13): FUN_00976b90 gets the caster's vf 0x244 power and vf 0x240
+    // mastery (combat vf 0x3c takes no argument, so the stack is 4 below the frame base there).
+    [Fact]
+    public void CallLightningUsesTheCastersPowerAndMastery()
+    {
+        var b = f.Duel("CREATURE_TITAN", 4, "CREATURE_PEASANT", 50, 1, new Cell(2, 5), new Cell(10, 5));
+        b.Begin();
+        var u = b.State.Units[0];
+        var cl = f.Db.Spell("SPELL_ABILITY_CALL_LIGHTNING")!;
+        var m = b.CreatureCastMastery(u, cl);
+        double p = b.CreatureCastPower(u, cl);
+        Assert.Equal((int)Math.Max(1, cl.DamageAt(m).Eval(p)), b.CallLightningDamage(u, cl));
+    }
 }

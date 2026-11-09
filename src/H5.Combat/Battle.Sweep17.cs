@@ -118,4 +118,15 @@ public sealed partial class Battle
             if (u.Effects[i].Remaining <= Eps || u.Effects[i].Actions == 0)
                 RemoveEffectAt(u, i);
     }
+
+    /// <summary>
+    /// Call Lightning's amount (FUN_00984a00 case 0xde, 00987ecb..00987f13): at 00987f05 ESP is 4 below the frame base —
+    /// the PUSH 0 at 00987efe is FUN_00976b90's last argument, because combat vf 0x3c (00620240: MOV EAX,[ECX+0xa0]; RET)
+    /// takes none — so EDX = [base + 0x14] = the caster's vf 0x244 (FUN_00a6a7e0, power; stored at 00984af0), ECX =
+    /// [base + 0x70] (the cast record's spell, 0xde), the arguments [base + 0x28] = vf 0x240 (FUN_00a6a700, mastery;
+    /// 00984b15), the week (vf 0x3c) and 0. FUN_00976b90 then gives the spell's damage at that mastery and power (the
+    /// common path: FUN_00a34ca0, at least 1, chop; the week 00bcde80). The engine used 30 · stack size.
+    /// </summary>
+    internal int CallLightningDamage(Unit u, SpellDef cl) =>
+        (int)SpellBaseDamage(cl, cl, CreatureCastMastery(u, cl), CreatureCastPower(u, cl));
 }
