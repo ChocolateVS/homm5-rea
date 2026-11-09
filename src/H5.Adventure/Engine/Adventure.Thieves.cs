@@ -138,12 +138,23 @@ public sealed partial class Adventure
     public static int ThievesCountWord(int v) =>
         v < 5 ? 0 : v < 10 ? 1 : v < 20 ? 2 : v < 50 ? 3 : v < 100 ? 4 : v < 250 ? 5 : v < 500 ? 6 : v < 1000 ? 7 : 8;
 
-    /// <summary>
-    /// Player vfunc 0x138 (004fb790, player +0x234): dens of thieves owned; the den's owner change
-    /// (00bca3c0 via vfunc 0x134) adds ±1. The den visit (00b04c72) opens the guild at index this + 1.
-    /// </summary>
+    /// <summary>Dens of thieves the player owns (the den's owner change 00bca3c0 adds ±1 to <see cref="ThievesLevel"/>).</summary>
     public int ThievesDensOwned(PlayerState p) =>
         Map.Objects.Count(o => o.Shared.Type == "BUILDING_DEN_OF_THIEVES" && S.Objects.TryGetValue(o.Index, out var os) && !os.Removed && os.Owner == p.Index);
+
+    /// <summary>
+    /// Player vfunc 0x138 (004fb790, player +0x234), the thieves' guild level. Only vfunc 0x134 (004fb760: += n,
+    /// clamped at 0) changes it after the constructors: the den's owner change (00bca3c0, ±1); a town joining the player
+    /// (vf 0xcc = 004feea0) +1 when it has a tavern (town vf 0x34(4) &gt; 0) and +1 more when its specialisation (town
+    /// vf 0xdc = 00cd3640) is 5, TOWN_BONUS_THIEVES_GUILD; a town leaving (vf 0xd0 = 004fdea0) the same −1s; building
+    /// the tavern (00cd4a40, building 4) +1 for the owner; losing it (00cd4f30) −1. So: dens owned + owned towns with a
+    /// tavern + owned towns with TOWN_BONUS_THIEVES_GUILD. The den visit (00b04c72) opens the guild at this + 1, the
+    /// town tavern (006393e0 +0x2c) at this.
+    /// </summary>
+    public int ThievesLevel(PlayerState p) =>
+        ThievesDensOwned(p)
+        + S.Towns.Count(t => t.Owner == p.Index && t.Level("TB_TAVERN") > 0)
+        + S.Towns.Count(t => t.Owner == p.Index && SpecializationBonus(t) == "TOWN_BONUS_THIEVES_GUILD");
 
     /// <summary>
     /// CPlayersThievesInfo ctor (00504380) for the initial reveal index <paramref name="initial"/> (den of thieves:

@@ -36,8 +36,8 @@ public sealed partial class MapTavernScreen : MapBuildingScreen
     public MapTavernScreen(AdventureScreen adv, int heroId, int obj, bool den) : base(adv, "UI/TavernScreen.(WindowScreen).xdb", heroId, obj)
     {
         _den = den;
-        // 00b04c72: the den passes the player's dens owned + 1 (player vfunc 0x138 + 1); taverns pass 0.
-        if (den) _thieves = adv.Session.Game.BuildThievesInfo(adv.Session.Game.ThievesDensOwned(Me) + 1);
+        // 00b04c72: the den passes player vfunc 0x138 + 1 (ThievesLevel); taverns pass 0.
+        if (den) _thieves = adv.Session.Game.BuildThievesInfo(adv.Session.Game.ThievesLevel(Me) + 1);
         Ui.Bus.On("click_hero1", () => SetTab(0));
         Ui.Bus.On("click_hero2", () => SetTab(1));
         Ui.Bus.On("rumors", () => SetTab(2));
@@ -194,7 +194,9 @@ public sealed partial class MapTavernScreen : MapBuildingScreen
     /// icon in pic), tooltip TooltipFormat "&lt;name&gt;: &lt;number&gt;" with number = CountType%d / CrCountType%d, the exact
     /// value or CountTypeUnknown (00635540).
     /// </summary>
-    void FillThieves()
+    void FillThieves() => FillThieves(Ui, _lines, _thieves);
+
+    internal static void FillThieves(UiScreen Ui, List<UiNode> _lines, ThievesInfo? _thieves)
     {
         // 00635a60: clear the container (slot 0x2c), then per category clone InfoLine (vfunc 0x28), set its caption,
         // clone InfoBox0 once per further entry into the Boxes gathering (00634580: InfoBox1.., relayout), fill the

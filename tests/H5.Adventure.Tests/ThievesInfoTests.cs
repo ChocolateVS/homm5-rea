@@ -58,4 +58,23 @@ public class ThievesInfoTests(Fixture f)
         Assert.Equal(info.Thresholds[Math.Min(1, info.Thresholds.Count - 1)] - 1, info.Level);
         Assert.Equal(250, ThievesInfo.Cost);
     }
+
+    [Fact]
+    public void ThievesLevelCountsDensTaverns()
+    {
+        // Player vf 0x138 (004fb790) changes only through vf 0x134 (004fb760): a town joining (004feea0) / leaving
+        // (004fdea0) ±1 with a tavern (town vf 0x34(4)) and ±1 with TOWN_BONUS_THIEVES_GUILD (vf 0xdc = 5), the tavern
+        // built (00cd4a40) +1 / lost (00cd4f30) −1, a den's owner change ±1.
+        var g = f.NewGame("A2M1");
+        var p = g.Current;
+        var mine = g.S.Towns.Where(t => t.Owner == p.Index).ToList();
+        Assert.NotEmpty(mine);
+        foreach (var t in mine) t.Built["TB_TAVERN"] = 0;
+        int baseLevel = g.ThievesLevel(p);
+        Assert.Equal(g.ThievesDensOwned(p) + mine.Count(t => g.SpecializationBonus(t) == "TOWN_BONUS_THIEVES_GUILD"), baseLevel);
+        mine[0].Built["TB_TAVERN"] = 1;
+        Assert.Equal(baseLevel + 1, g.ThievesLevel(p));
+        mine[0].Owner = -1;
+        Assert.Equal(baseLevel - (g.SpecializationBonus(mine[0]) == "TOWN_BONUS_THIEVES_GUILD" ? 1 : 0), g.ThievesLevel(p));
+    }
 }

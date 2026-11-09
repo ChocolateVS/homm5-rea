@@ -20,6 +20,8 @@ public sealed partial class TavernScreen : TownSubScreen
     static readonly string[] Tabs = { "Hero1Bookmark", "Hero2Bookmark", "RumorsBookmark", "ThiefsBookmark" };
 
     readonly UiScreen _jog;
+    readonly ThievesInfo? _thieves;
+    readonly List<UiNode> _lines = new();
     int _tab;
 
     public TavernScreen(TownScreen owner) : base(owner, "UI/TavernScreen.(WindowScreen).xdb")
@@ -32,6 +34,8 @@ public sealed partial class TavernScreen : TownSubScreen
         Ui.Bus.On("input_page_up", () => Step(-1));
         Ui.Bus.On("input_page_down", () => Step(+1));
 
+        // 006393e0: the guild level is player vf 0x138 (ThievesLevel) at opening; 00637b50 enables Thiefs when it is > 0.
+        if (owner.Session.Game.ThievesLevel(Me) is > 0 and var level) _thieves = owner.Session.Game.BuildThievesInfo(level);
         _jog = new UiScreen("UI/Common/JogDial/JogDial.xdb", Ui.Bus);
         AddChild(_jog);
         SetJogButton("button_0", "Exit", T("exit_tavern"));
@@ -48,6 +52,8 @@ public sealed partial class TavernScreen : TownSubScreen
             for (int i = 0; i < n; i++) owner.Session.Apply(new BuyRumourCmd(owner.Town.Object) { Player = owner.Town.Owner });
             _tab = 2;
         }
+        // `--tavern-dev-thieves`: opens on the thieves page.
+        if (OS.GetCmdlineUserArgs().Contains("--tavern-dev-thieves")) _tab = 3;
         // `--tavern-dev-heroinfo`: presses HeroInfo (jog button 4) on the first hero page.
         if (OS.GetCmdlineUserArgs().Contains("--tavern-dev-heroinfo")) Callable.From(HeroInfo).CallDeferred();
     }
@@ -104,6 +110,14 @@ public sealed partial class TavernScreen : TownSubScreen
                 if (Apply(new BuyRumourCmd(Owner.Town.Object) { Player = Me.Index }))
                     Audio.AudioSystem.PlayNamed("BUY_RUMORS_SOUND");
                 break;
+            case 3 when _thieves is { CanBuy: true }:
+                // 00635440: gold − 250 ≥ 0 → the set-resource command, then one more line (vfunc 0x34).
+                if (Apply(new PayThievesGuildCmd { Player = Me.Index }))
+                {
+                    _thieves.Buy();
+                    Audio.AudioSystem.PlayNamed("BUY_THIEVES_SOUND");
+                }
+                break;
         }
         Refresh();
     }
@@ -117,11 +131,11 @@ public sealed partial class TavernScreen : TownSubScreen
         // 006372f3: an empty hero page moves on (page 0 → 1 if the second offer exists, else 2; page 1 → 0, else 2).
         if (_tab == 0 && offers[0] == null) _tab = offers[1] != null ? 1 : 2;
         else if (_tab == 1 && offers[1] == null) _tab = offers[0] != null ? 0 : 2;
-        // 00637b50: heroes need the tavern flag and an offer, rumours the flag; the thieves level stays 0 here (GAP).
+        // 00637b50: heroes need the tavern flag and an offer, rumours the flag, thieves a level > 0.
         SetBookmark(0, offers[0] != null, offers[0]);
         SetBookmark(1, offers[1] != null, offers[1]);
         SetBookmark(2, true, null);
-        SetBookmark(3, false, null);
+        SetBookmark(3, _thieves != null, null);
         Ui.SetVisible("tavern-hire-window", _tab <= 1);
         Ui.SetVisible("tavern-rumors-window", _tab == 2);
         Ui.SetVisible("tavern-thieves-window", _tab == 3);
@@ -144,6 +158,13 @@ public sealed partial class TavernScreen : TownSubScreen
             price = game.RumourCost;
             can = price <= Me.Purse[Purse.Gold];
             FillRumours();
+        }
+        else if (_tab == 3 && _thieves != null)
+        {
+            // 006372f3 case 3 → 00635a60 (the map den's page, MapTavernScreen.FillThieves).
+            price = ThievesInfo.Cost;
+            can = _thieves.CanBuy && Me.Purse[Purse.Gold] >= price;
+            H5Reborn.Adventure.MapTavernScreen.FillThieves(Ui, _lines, _thieves);
         }
         foreach (var w in new[] { "tavern-hire-window", "tavern-rumors-window", "tavern-thieves-window" })
             if (Ui.Find(w) is { } win && win.FindChild("price", true, false) is UiNode pr) pr.SetValue("price", price.ToString());

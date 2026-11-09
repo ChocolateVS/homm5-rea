@@ -350,7 +350,10 @@ public partial class TownScreen : Control
     /// Fortress town vf 0x4c(0x20) (ability 0x20's building, TB_SPECIAL_1). The tooltip's special value is the
     /// building's name (00cd3fc0(1)); 00614440 enables it when built; then, with a skill, the visiting hero (vf 0x18(0))
     /// or the garrison hero (vf 0x18(1), not for the Academy) must have it (hero vf 0x174 &gt; 0), else 0061f750
-    /// disables it with "skill_not_present" (its skill value = the skill's name).
+    /// disables it with "skill_not_present"; its skill value (00615142..0061514f) is 004c7430 on the first element of the
+    /// vector at 008481f0(skill) + 0x18 — the Skills.xdb record's NameFileRef (+0 Texture, +0xc CommonTexture, +0x18
+    /// NameFileRef, +0x24 CommonNameFileRef, +0x30 DescriptionFileRef, +0x3c CommonDescriptionFileRef, +0x48 SkillType,
+    /// +0x4c HeroClass; 008755e0 reads the same vector by mastery), i.e. the name at the first mastery.
     /// </summary>
     void UpdateSpecialButton()
     {
@@ -372,16 +375,16 @@ public partial class TownScreen : Control
         bool Has(HeroState? h) => h != null && h.MasteryOf(skillId) != H5.Core.Data.Mastery.None;
         if (Has(VisitingHero()) || (spec.Both && Has(GarrisonHero()))) return;
         button.Enabled = false;
-        var skill = UiResources.StripMarkup(SkillCommonName(skillId) ?? skillId).Trim();
+        var skill = UiResources.StripMarkup(SkillFirstName(skillId) ?? skillId).Trim();
         SetDeny(button, tip, HudText("skill_not_present").Replace("<value=skill>", skill, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>The skill's CommonNameFileRef text (Skills.xdb); the record field the exe reads (008481f0 → +0x18) is taken to be it.</summary>
-    static string? SkillCommonName(string skill)
+    /// <summary>The text of the skill's first NameFileRef item (Skills.xdb), the field 00614e60 reads (008481f0 + 0x18).</summary>
+    static string? SkillFirstName(string skill)
     {
         const string table = "GameMechanics/RefTables/Skills.xdb";
         var item = Game.Instance.Xdb.Load(table).Root?.Element("objects")?.Elements("Item").FirstOrDefault(i => (string?)i.Element("ID") == skill);
-        var href = (string?)item?.Element("obj")?.Element("CommonNameFileRef")?.Attribute("href");
+        var href = (string?)item?.Element("obj")?.Element("NameFileRef")?.Elements("Item").FirstOrDefault()?.Attribute("href");
         return string.IsNullOrEmpty(href) ? null : UiResources.Instance.Text(H5.Core.Xdb.XdbRef.Parse(href, table).Path);
     }
 
