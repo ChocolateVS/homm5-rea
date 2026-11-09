@@ -271,7 +271,7 @@ public sealed partial class Battle
 
     /// <summary>
     /// Hero spell cost: base cost (exe FUN_00a34740) then combat modifiers (FUN_009781e0).
-    /// Base: warcries — Voice Training min(cost×(1.001−discount), cost−1), War Leader −(lvl/div·per+base), ≥1;
+    /// Base: warcries — Voice Training min(cost×(1.001−discount), cost−1), War Leader −(lvl/div·per+base), ≤ 0 → 0 (base record and ×2 for versions: ExeSpellBaseCost);
     /// other spells — Rusher (HERO_SPEC_BEATER) halves Teleport, Ring of Magi halves, Power Bargain
     /// ×clamp(1−reduce−lvl·perLevel, 0.5, 1), Arcane Training round(min(cost×0.8, cost−1)), ≥0.
     /// Then: Energy Channel ×0.75 (at least −1), enemy Suppress Dark/Light ×2, White Knight −1 on Light,
@@ -303,32 +303,7 @@ public sealed partial class Battle
 
     /// <summary>The base part of the hero's spell cost (exe FUN_00a34740): week, warcry or school discounts — no combat
     /// modifiers. A Summon Hive hive pays its spell with this (FUN_008b07f0 / FUN_008b08a0).</summary>
-    internal int HeroBaseManaCost(HeroState h, SpellDef sp)
-    {
-        int c = MoonWeek.SpellCost(sp.ManaCost, S.Week);   // exe 00a347b9 → 00bcddf0, before every discount
-        if (sp.School == "MAGIC_SCHOOL_WARCRIES")
-        {
-            if (h.HasPerk(Sk.ShoutTraining))
-                c = ExeChop(Math.Min((1.001 - Stats.Get("combat/HeroSkills/Barbarian/VoiceTraining_WarcryCostDiscount", 0.2)) * c, c - 1.0));
-            if (h.Specialization == "HERO_SPEC_WAR_LEADER")
-            {
-                int div = Math.Max(1, (int)Stats.Get("combat/HeroSpecializations/Barbarian/WarLeader_WarcryCostReducePerHeroLevel/LevelDivisor", 1));
-                c -= h.Level / div * (int)Stats.Get("combat/HeroSpecializations/Barbarian/WarLeader_WarcryCostReducePerHeroLevel/PerDividedLevel", 0)
-                     + (int)Stats.Get("combat/HeroSpecializations/Barbarian/WarLeader_WarcryCostReducePerHeroLevel/Base", 0);
-            }
-            return Math.Max(1, c);
-        }
-        if (sp.Id == "SPELL_TELEPORT" && h.Specialization == "HERO_SPEC_BEATER") c /= 2;
-        if (h.Artifacts.Contains("RING_OF_MAGI")) c /= 2;
-        if (h.Specialization == "HERO_SPEC_POWER_BARGAIN" && sp.Id.StartsWith("SPELL_EMPOWERED_"))   // empowered spells only
-        {
-            double f = 1 - Stats.Get("combat/HeroSpecializations/Warlock/PowerBargain_CostReduce", 0)
-                         - h.Level * Stats.Get("combat/HeroSpecializations/Warlock/PowerBargain_CostReducePerLevel", 0);
-            c = ExeChop(Math.Clamp(f, 0.5, 1.0) * c);
-        }
-        if (h.HasPerk(Sk.ArcaneTraining)) c = ExeChop(Math.Min(c * (double)0.8f, c - 1.0));
-        return Math.Max(0, c);
-    }
+    internal int HeroBaseManaCost(HeroState h, SpellDef sp) => ExeSpellBaseCost(h, sp);   // Battle.Sweep17.cs
 
     static string CorruptPerk(string school) => school switch
     {
@@ -340,7 +315,7 @@ public sealed partial class Battle
     /// division; enemy Suppress/Corrupt apply as for heroes.</summary>
     int CreatureManaCost(Unit u, SpellDef sp)
     {
-        int c = MoonWeek.SpellCost(sp.ManaCost, S.Week), adjust = 0;   // exe 009781e0 → 00a34740 → 00bcddf0
+        int c = ExeSpellBaseCost(null, sp), adjust = 0;   // exe 009781e0 → 00a34740 (EDX = vf 0x78 = no hero)
         var e = Enemy(u.Side);
         if (e.Present && (sp.School == "MAGIC_SCHOOL_DARK" && e.HasPerk(Sk.SealOfDarkness) || sp.School == "MAGIC_SCHOOL_LIGHT" && e.HasPerk(Sk.SuppressLight)))
         {
