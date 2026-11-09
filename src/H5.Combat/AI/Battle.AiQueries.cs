@@ -58,7 +58,8 @@ public sealed partial class Battle
     /// then FUN_00b5f0d0 from the actor's cell): the obstacle grid without stacks (FUN_00b3fac0 with its unit flag set), plus
     /// the stacks of the actor's own army (FUN_00b3cf00(actor vf 0xc)) when <paramref name="own"/> and of the other army
     /// (vf 0x10) when <paramref name="enemy"/>, minus the actor (FUN_00b3cf30); no budget. A flyer (vf 0x190) searches an
-    /// empty board (FUN_00b3fac0's flyer flag) unless <paramref name="flyerAsWalker"/>. The search is the walker search of
+    /// empty board (FUN_00b3fac0's flyer flag) unless <paramref name="flyerAsWalker"/>, then the obstacles only: FUN_00c52e20
+    /// adds the stacks (FUN_00b3cf00, 0x00c52eae..0x00c52eeb) only for an actor that does not fly. The search is the walker search of
     /// <see cref="MoveSearch"/> (steps 2 / 3, FIFO cost buckets, MoveDirs order, strictly cheaper parents).
     /// Whole-path map think +0xfc: (own false, enemy true, flyerAsWalker false); think +0xe4: (true, true, true).
     /// </summary>
@@ -70,6 +71,7 @@ public sealed partial class Battle
             if (!S.InBounds(c)) return true;
             if (flyer) return false;
             if (S.Obstacles.Contains(c) || GateBlocks(c, u)) return true;
+            if (u.Flying) return false;
             foreach (var o in S.Units)
                 if (o.Id != u.Id && o.Alive && !o.IsWarMachine && (o.Side == u.Side ? own : enemy) && o.Occupies(c)) return true;
             return false;

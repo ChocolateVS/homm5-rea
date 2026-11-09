@@ -359,9 +359,10 @@ public sealed partial class OriginalBattleAI : IBattleAI
             if (diff.UseBlockEnemyMoves) list.AddRange(BlockEnemyMoves(b, u, side, reach, enemies, diff));
         }
         if (!shortCombat) GuardAndBlock();
-        list.AddRange(Attacks(b, u, side, la, reach, enemies, diff));
+        bool defensive = Defensive(b, side, start);
+        list.AddRange(Attacks(b, u, side, la, enemies, diff, tooWeak, defensive));
         // FUN_008d5b90: approach records only while the strategy is not defensive (think +0x1ac).
-        if (list.Count == before && la.Moves.Count > 0 && !Defensive(b, side, start))
+        if (list.Count == before && la.Moves.Count > 0 && !defensive)
             list.AddRange(ApproachMoves(b, u, side, la, enemies, diff));
         // FUN_008d68c0: a short combat that added nothing after the spells clears think +0x1b7 and runs FUN_008d64e0 again.
         if (shortCombat && list.Count == before) GuardAndBlock();
@@ -546,29 +547,70 @@ public sealed partial class OriginalBattleAI : IBattleAI
         Ring(t, u.Size).Select(c => (c, cost(c))).OrderBy(p => p.Item2).ToList();
 
     /// <summary>
-    /// Attacks (FUN_008d4330 "Attack" → FUN_008d3c40): for every enemy, the ring cells in cost order; each cell the unit
-    /// may strike from this turn is a candidate (Turns 0, MovePrice = path cost). With ConsiderOnlyShortestPathToEnemy
-    /// only the first valid cell per enemy.
+    /// Attack records (FUN_008d64e0 → FUN_008d4330(map think +0xcc, think +0x1bc, 1) → FUN_008d3c40 per enemy, "Attack"). The map
+    /// +0xcc is FUN_008d0720(map, 1, 1, 0): every stack blocks (own and enemy), no budget (<see cref="Battle.AiPathMap"/>). Per enemy
+    /// stack that FUN_00a6af50 lets through (its visibility vf 0x4c: 1 = hidden is skipped; ours: the Invisible effect), the ring
+    /// cells (FUN_00b3f2f0) in map cost order (FUN_008d6dd0); per cell FUN_00c540c0 with the target plans the move twice in
+    /// mode 2 (kinds 3 and 1, both must succeed), then in mode 1 (a flyer whose plan fails tries again on map think +0xe4 =
+    /// FUN_008d0720(map, 1, 1, 1)). The mode-1 plan within this turn (Turns 0) is the strike from that cell; a plan with Turns ≥ 1
+    /// is a move without target to the plan's stop cell (FUN_00c540c0: Turns &gt; 0 in mode 1 → command without target), so every
+    /// ring cell the map reaches gives a record, and the comparator FUN_008d0030 (fewer Turns first) prefers any strike now over
+    /// moving toward a later one. Record: Turns = the mode-1 count, MovePrice = the map cost of the ring cell (FUN_00b5eb90),
+    /// Priority FUN_008d00d0(target, actor, 1), compare type 1 when the target's vf 0x8c ≠ 0 — 00c98940 (returns 0) on the creature
+    /// (00e4fba4), hero (00e8499c) and war machine (00e70594) unit vtables, so it stays 0. Under the defensive strategy (think
+    /// +0x1ac) a record with Turns &gt; 0 of a stack its owner controls (actor vf 0xc == vf 0x18) is dropped when the stack has Strike
+    /// and Return and No Enemy Retaliation (FUN_00a2f130) and the record is not "Move-no-attack", or when think +0x1bd is set.
+    /// With Strike and Return and not too weak (think +0x1b4) a second pass over the ring makes the "Move-no-attack" records
+    /// (FUN_008d3c40 arg 4 = 1). ConsiderOnlyShortestPathToEnemy (row +0xb) or think level 2 ends a pass at its first record.
+    /// GAP-details: think +0x1bd (settings +0xa9 = FUN_00a2fa20(actor, 1): a unit next to the actor (FUN_00b3e620 → list of actor
+    /// vf 0xc's vf 0x60 filtered by FUN_00a6d4d0, adjacency FUN_00b3d4e0) that shoots, or with the actor inside that object's vf
+    /// 0xb0 rectangle a neighbour's neighbour (recursion, flag 0); the object behind actor vf 0xc is not identified) is not applied;
+    /// a "Move-no-attack" record with Turns 0 (a strike without the return) has no command here and is left out; the enemy gates
+    /// FUN_00b3e1c0 (think +0x1bc), the vf 0x80 record +0x1c == 2 skip (think +0x1b6) and the adjacency / think +0x1b7 /
+    /// FUN_008d0440 skip are not applied; the map's moat stop (map +0x10 = 2 when think +0x1c8 is clear: FUN_00b5f0d0 does not expand
+    /// a non-start cell whose flag bit 0x1000000 (+7 bit 0, the second grid FUN_00b3cf30(combat, actor) of FUN_00b5ebd0) is set) and
+    /// the siege attacker's second pass on FUN_00c52e20(0, 1, 1, 0) (think +0x1c8) are not modelled (the same map here).
     /// </summary>
-    IEnumerable<Candidate> Attacks(Battle b, Unit u, int side, LegalActions la, Dictionary<Cell, int> reach, List<Unit> enemies, CombatDifficulty diff)
+    IEnumerable<Candidate> Attacks(Battle b, Unit u, int side, LegalActions la, List<Unit> enemies, CombatDifficulty diff, bool tooWeak, bool defensive)
     {
-        int Cost(Cell c) => c == u.Pos ? 0 : reach.TryGetValue(c, out var v) ? v : Unreachable;
+        var map = b.AiPathMap(u, true, true, false);
+        (Dictionary<Cell, int>, Dictionary<Cell, Cell>)? mapE4 = null;
+        int Cost(Cell c) => map.Dist.TryGetValue(c, out var v) ? v : Unreachable;
+        bool strikeAndReturn = u.Has(Ab.StrikeAndReturn);
+        bool harpy = strikeAndReturn && u.Has(Ab.NoEnemyRetaliation);       // FUN_00a2f130
+        bool owned = b.Controller(u) == u.Side;
         foreach (var t in enemies)
         {
-            if (!la.Melee.TryGetValue(t.Id, out var cells)) continue;
-            var order = SortedRing(t, u, Cost).Where(p => cells.Contains(p.Cell)).Select(p => p.Cell).ToList();
-            // Strike cells our engine allows outside the ring (none for square footprints) come after it.
-            order.AddRange(cells.Where(c => !order.Contains(c)).OrderBy(Cost));
-            foreach (var from in order)
+            if (t.HasEffect(Fx.Invisible)) continue;                            // FUN_00a6af50
+            for (int pass = 0; pass < (strikeAndReturn && !tooWeak ? 2 : 1); pass++)
             {
-                int price = Cost(from);
-                yield return new Candidate
+                bool moveNoAttack = pass == 1;
+                foreach (var (cell, cost) in SortedRing(t, u, Cost))
                 {
-                    Command = new AttackCmd(u.Id, t.Id, from == u.Pos ? null : from) { Side = side },
-                    MovePrice = price, Priority = TargetPriority(b, t, u, true, 0, price),
-                    Label = $"attack->{t.Id} from {from.X},{from.Y}",
-                };
-                if (diff.ConsiderOnlyShortestPathToEnemy) break;
+                    if (PlanMove(b, u, cell, 2, map, true) == null) continue;
+                    var plan = PlanMove(b, u, cell, 1, map, true);
+                    if (plan == null && u.Flying) plan = PlanMove(b, u, cell, 1, mapE4 ??= b.AiPathMap(u, true, true, true), true);
+                    if (plan is not { } p) continue;
+                    BattleCommand cmd;
+                    if (p.Turns == 0)
+                    {
+                        // The strike from the ring cell; our engine's legality decides (a cell it refuses gives no record).
+                        if (moveNoAttack || !la.Melee.TryGetValue(t.Id, out var cells) || !cells.Contains(cell)) continue;
+                        cmd = new AttackCmd(u.Id, t.Id, cell == u.Pos ? null : cell) { Side = side };
+                    }
+                    else
+                    {
+                        if (p.Stop == u.Pos) continue;
+                        if (defensive && owned && (harpy && !moveNoAttack)) continue;
+                        cmd = new MoveCmd(u.Id, p.Stop) { Side = side };
+                    }
+                    yield return new Candidate
+                    {
+                        Command = cmd, Turns = p.Turns, MovePrice = cost, Priority = TargetPriority(b, t, u, true, p.Turns, cost),
+                        Label = (moveNoAttack ? "move-no-attack->" : "attack->") + $"{t.Id} via {cell.X},{cell.Y}",
+                    };
+                    if (diff.ConsiderOnlyShortestPathToEnemy) break;
+                }
             }
         }
     }

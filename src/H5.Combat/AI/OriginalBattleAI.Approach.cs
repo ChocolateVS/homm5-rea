@@ -68,16 +68,18 @@ public sealed partial class OriginalBattleAI
     /// Combat vf 0xb8 (FUN_00af1b70: an army vf 0xbc, the tactics phase) takes another branch; the AI ends its tactics at
     /// once (<see cref="Decide"/>), so it is not ported.
     /// </summary>
-    internal static MovePlan? PlanMove(Battle b, Unit u, Cell cell, int mode, (Dictionary<Cell, int> Dist, Dictionary<Cell, Cell> Prev) map)
+    internal static MovePlan? PlanMove(Battle b, Unit u, Cell cell, int mode, (Dictionary<Cell, int> Dist, Dictionary<Cell, Cell> Prev) map, bool target = false)
     {
-        if (cell == u.Pos) return null;
+        // FUN_00c536f0 with a target (the attack generator): the start as goal succeeds at once (a strike from here) and
+        // a path shorter than 2 cells does not fail.
+        if (cell == u.Pos) return target ? new MovePlan(u.Pos, 0) : null;
         bool flyer = u.Flying;
         if (flyer && !b.Fits(u, cell)) return null;
         if (!map.Dist.ContainsKey(cell)) return null;
         var path = new List<Cell> { cell };
         for (var c = cell; c != u.Pos; ) { c = map.Prev[c]; path.Add(c); }
         path.Reverse();
-        if (path.Count < 2) return null;
+        if (path.Count < 2 && !target) return null;
         int cost = 0;
         for (int i = 0; i + 1 < path.Count; i++) cost += Step(path[i], path[i + 1]);
         int turns = 0;

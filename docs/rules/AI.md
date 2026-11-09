@@ -43,8 +43,10 @@ Per-decision ledger with addresses and status: `docs/rules/AUDIT_AI.md`, section
 * **Generators** (FUN_008d6940): hero strikes FUN_008d2e90 + spells FUN_008d6670 (summon 0x9f → FUN_008d28e0, untargeted →
   FUN_008d30e0, area → FUN_008d61b0 / FUN_008d12a0 undominated centres, single → FUN_008d3380); a creature that can shoot:
   spells + shots (FUN_008d6850 → FUN_008d3950) only; otherwise FUN_008d68c0: spells, guard friendly shooters (FUN_008d58c0) and
-  block enemy shooters (FUN_008d4500) while the enemy out-shoots us, attacks from the ring cells FUN_00b3d010 sorted by path
-  cost (FUN_008d4330 → FUN_008d3c40; ConsiderOnlyShortestPathToEnemy keeps the first per enemy), and the approach (FUN_008d5b90,
+  block enemy shooters (FUN_008d4500) while WE out-shoot the enemy, attack records for every ring cell FUN_00b3d010 of every
+  enemy on the map +0xcc (every stack blocks) in cost order (FUN_008d64e0 → FUN_008d4330 → FUN_008d3c40 → FUN_00c540c0 with the
+  target: a strike now when the plan needs no turn, else a move toward the cell with Turns ≥ 1; ConsiderOnlyShortestPathToEnemy
+  keeps the first per enemy), and the approach (FUN_008d5b90,
   same on the whole-path map, planned by FUN_00c540c0 → FUN_00c536f0: Turns, stop cell by danger FUN_00c53310) only when nothing else was added; then invisible enemies (FUN_008d4f70) and FUN_008d4ce0.
   "Too weak" (FUN_00a2f430) restricts spells to damage spells and a list (FUN_008d0bd0); empty → switches cleared, rerun.
 * **Exclusions** (FUN_008d1cb0): type 1 dropped when the start is better, type 2 also when own HP drops ("…by start health

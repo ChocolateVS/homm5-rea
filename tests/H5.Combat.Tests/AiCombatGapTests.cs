@@ -240,14 +240,103 @@ public class AiCombatGapTests(GameDataFixture f)
             ai.Decide(b, 0);
             return (ai, ai.Defensive(b, 0, CombatValue.Of(b, 0)));
         }
-        // Our archers carry the damage and the enemy has no shooting: "Strategy: defensive" → no approach records.
+        // Our archers carry the damage and the enemy has no shooting: "Strategy: defensive". The attack generator still makes
+        // its move records (a footman has no Strike and Return, FUN_00a2f130), so the approach generator does not run.
         var (def, isDef) = Run(60, 2, 0);
         Assert.True(isDef);
-        Assert.Empty(def.LastCandidates);   // nothing generated → "Chose defend"
-        // The enemy out-shoots us: attacking strategy (and no guard / block records), the footmen approach.
+        Assert.DoesNotContain(def.LastCandidates, c => c.Label.StartsWith("approach"));
+        Assert.Contains(def.LastCandidates, c => c.Turns > 0 && c.Command is MoveCmd);
+        // The enemy out-shoots us: attacking strategy (and no guard / block records).
         var (att, isAtt) = Run(1, 60, 20);
         Assert.False(isAtt);
-        Assert.Contains(att.LastCandidates, c => c.Label.StartsWith("approach"));
+        Assert.Contains(att.LastCandidates, c => c.Label.StartsWith("attack->") && c.Turns > 0);
+    }
+
+    Battle ActiveFootman(ArmySetup mine, ArmySetup theirs, Action<BattleState> place, out Unit footman)
+    {
+        var s = BattleSetup.Create(f.Db, mine, theirs, 1, obstacles: Array.Empty<Cell>(), skipTactics: true);
+        var b = new Battle(f.Db, s);
+        var fm = s.Units.First(u => u.CreatureId == "CREATURE_FOOTMAN");
+        place(s);
+        b.Begin();
+        for (int i = 0; i < 50 && b.State.Active != fm.Id; i++)
+        {
+            var la = b.GetLegalActions();
+            if (la == null) break;
+            b.Apply(la.IsHero ? new WaitCmd(la.Actor) { Side = b.SideToAct!.Value } : new DefendCmd(la.Actor) { Side = b.SideToAct!.Value });
+        }
+        Assert.Equal(fm.Id, b.State.Active);
+        footman = fm;
+        return b;
+    }
+
+    [Fact]
+    public void AttackRecordsReachBeyondThisTurnAndAStrikeNowWins()   // FUN_008d64e0 → FUN_008d4330(+0xcc, ·, 1) → FUN_008d3c40, FUN_00c540c0, FUN_008d0030
+    {
+        var mine = new ArmySetup { Army = { new ArmySlot("CREATURE_FOOTMAN", 20) } };
+        var theirs = new ArmySetup { Army = { new ArmySlot("CREATURE_PEASANT", 20) } };
+        // Far away: every ring cell of the enemy the map +0xcc reaches is a move record (Turns ≥ 1) toward a later strike, the
+        // MovePrice is the map cost of the ring cell; no approach record (FUN_008d5b90 runs only when FUN_008d64e0 adds nothing).
+        var b = ActiveFootman(mine, theirs, s =>
+        {
+            s.Units.First(u => u.Side == 0).Pos = new Cell(0, 5);
+            s.Units.First(u => u.Side == 1).Pos = new Cell(s.Width - 1, 5);
+        }, out var fm);
+        var ai = new OriginalBattleAI { HumanSides = new[] { false, false } };
+        var cmd = ai.Decide(b, 0);
+        var map = b.AiPathMap(fm, true, true, false);
+        var moves = ai.LastCandidates.Where(c => c.Label.StartsWith("attack->")).ToList();
+        Assert.NotEmpty(moves);
+        Assert.All(moves, c => { Assert.True(c.Turns >= 1); Assert.IsType<MoveCmd>(c.Command); });
+        Assert.DoesNotContain(ai.LastCandidates, c => c.Label.StartsWith("approach"));
+        var ring = OriginalBattleAI.Ring(b.State.Units.First(u => u.Side == 1), fm.Size).Where(map.Dist.ContainsKey).ToList();
+        var costs = ring.Select(c => map.Dist[c]).OrderBy(x => x).ToList();
+        if (CombatAiStats.Load(f.Db).Difficulty[(int)ai.LastRow].ConsiderOnlyShortestPathToEnemy) costs = costs.Take(1).ToList();
+        Assert.Equal(costs, moves.Select(c => c.MovePrice).OrderBy(x => x));
+        Assert.IsType<MoveCmd>(cmd);
+        // Within reach: the strikes (Turns 0) come first in FUN_008d0030 whatever the moves' values.
+        b = ActiveFootman(mine, theirs, s =>
+        {
+            s.Units.First(u => u.Side == 0).Pos = new Cell(4, 5);
+            s.Units.First(u => u.Side == 1).Pos = new Cell(7, 5);
+        }, out _);
+        ai = new OriginalBattleAI { HumanSides = new[] { false, false } };
+        Assert.IsType<AttackCmd>(ai.Decide(b, 0));
+        Assert.Contains(ai.LastCandidates, c => c.Turns == 0 && c.Command is AttackCmd);
+    }
+
+    [Fact]
+    public void TheApproachRunsWhenTheAttackMapReachesNoRingCell()   // FUN_008d68c0 (FUN_008d5b90 only when FUN_008d64e0 added nothing)
+    {
+        // The enemy in the corner with our own stacks on its ring cells: the attack map (+0xcc, every stack blocks) reaches no
+        // ring cell, the whole-path map (+0xfc, own stacks do not block) does → approach records.
+        var mine = new ArmySetup { Army = { new ArmySlot("CREATURE_FOOTMAN", 20), new ArmySlot("CREATURE_PEASANT", 1), new ArmySlot("CREATURE_PEASANT", 1), new ArmySlot("CREATURE_PEASANT", 1) } };
+        var theirs = new ArmySetup { Army = { new ArmySlot("CREATURE_PEASANT", 20) } };
+        var b = ActiveFootman(mine, theirs, s =>
+        {
+            int w = s.Width, h = s.Height;
+            s.Units.First(u => u.CreatureId == "CREATURE_FOOTMAN").Pos = new Cell(0, 0);
+            var guards = s.Units.Where(u => u.Side == 0 && u.CreatureId == "CREATURE_PEASANT").ToList();
+            guards[0].Pos = new Cell(w - 2, h - 1); guards[1].Pos = new Cell(w - 2, h - 2); guards[2].Pos = new Cell(w - 1, h - 2);
+            s.Units.First(u => u.Side == 1).Pos = new Cell(w - 1, h - 1);
+        }, out _);
+        var ai = new OriginalBattleAI { HumanSides = new[] { false, false } };
+        ai.Decide(b, 0);
+        Assert.DoesNotContain(ai.LastCandidates, c => c.Label.StartsWith("attack->"));
+        Assert.Contains(ai.LastCandidates, c => c.Label.StartsWith("approach"));
+    }
+
+    [Fact]
+    public void AFlyersWalkerMapHoldsOnlyTheObstacles()   // FUN_00c52e20: stacks (FUN_00b3cf00) only for an actor that does not fly
+    {
+        var b = f.Duel("CREATURE_GRIFFIN", 5, "CREATURE_PEASANT", 10, 1, new Cell(0, 5), new Cell(1, 5));
+        var g = b.State.Units[0];
+        Assert.True(g.Flying);
+        b.State.Obstacles.Add(new Cell(0, 7));
+        var e4 = b.AiPathMap(g, true, true, true);
+        Assert.Contains(new Cell(1, 5), e4.Dist.Keys);           // the enemy stack does not block
+        Assert.DoesNotContain(new Cell(0, 7), e4.Dist.Keys);     // the obstacle does
+        Assert.Contains(new Cell(0, 7), b.AiPathMap(g, true, true, false).Dist.Keys);   // the flyer's own map: an empty board
     }
 
     [Fact]
