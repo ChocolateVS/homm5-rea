@@ -42,11 +42,19 @@ public sealed partial class OriginalBattleAI : IBattleAI
     /// </summary>
     public double[]?[]? RuneMoneyValues { get; init; }
 
+    /// <summary>
+    /// The option `combat_ai_use_magic_for_human` (stock default 0), copied into each army's auto-combat options by
+    /// CSetArmyAutocombatOptions (00580600 → army vf 0x148; read back as army vf 0x144 = army +0xb0). Off: the mana limit
+    /// FUN_00a2f280 keeps a human side's hero from spending mana (<see cref="ExeManaLimit"/>).
+    /// </summary>
+    public bool UseMagicForHuman { get; init; }
+
     /// <summary>A copy for one battle: game difficulty (script scale) and which sides are human.</summary>
     public OriginalBattleAI For(int gameDifficulty, bool[]? humanSides, double[]?[]? runeMoneyValues = null) =>
         new()
         {
             GameDifficulty = gameDifficulty, HumanSides = humanSides, RowOverride = RowOverride, Retreats = Retreats, _stats = _stats,
+            UseMagicForHuman = UseMagicForHuman,
             RuneMoneyValues = runeMoneyValues ?? RuneMoneyValues,
         };
 
@@ -62,6 +70,8 @@ public sealed partial class OriginalBattleAI : IBattleAI
         /// <summary>Record +0xb0: 1 = must not be worse than the start position, 2 = also keep own HP, 0 = always kept.</summary>
         public int CompareType;
         public CombatValue? Value;
+        /// <summary>Record +0xa8: the actor's mana after the simulated command (actor vf 0x234, FUN_008d5eb0).</summary>
+        public int ManaAfter;
         public string Label = "";
     }
 
@@ -101,19 +111,20 @@ public sealed partial class OriginalBattleAI : IBattleAI
         // FUN_008d6940: nothing generated with the restricting switches on → clear them and generate again.
         if (candidates.Count == 0 && tooWeak) candidates = Generate(b, la, side, diff, false, start);
 
-        var cache = new Dictionary<BattleCommand, CombatValue?>();
+        int manaLimit = ManaLimit(b, side, la, start, human);
+        var cache = new Dictionary<BattleCommand, (CombatValue?, int)>();
         var survivors = new List<Candidate>();
         foreach (var c in candidates)
         {
-            if (!cache.TryGetValue(c.Command, out var v))
+            if (!cache.TryGetValue(c.Command, out var r))
             {
                 var sim = new Battle(b.Db, s.Clone());
-                v = sim.Apply(c.Command).Ok ? CombatValue.Of(sim, side) : null;
-                cache[c.Command] = v;
+                r = sim.Apply(c.Command).Ok ? (CombatValue.Of(sim, side), la.IsHero ? sim.State.Heroes[side].Mana : 0) : (null, 0);
+                cache[c.Command] = r;
             }
-            if (v == null) continue;
-            c.Value = v;
-            if (Excluded(c, start, coefs, mode)) continue;
+            if (r.Item1 == null) continue;
+            (c.Value, c.ManaAfter) = r;
+            if (Excluded(c, start, coefs, mode, manaLimit)) continue;
             survivors.Add(c);
         }
         LastCandidates = candidates;
@@ -175,13 +186,41 @@ public sealed partial class OriginalBattleAI : IBattleAI
     /// <summary>
     /// FUN_008d1cb0 exclusions. Compare type 1: dropped when the start position is better (FUN_00bfae20(candidate, start));
     /// type 2: also dropped when own HP (value [6] of the own half, record +0x74 vs think +0x98) falls below the start's.
-    /// The mana-limit rule (spell flag and record +0xa8 &lt; think +0x1b0) is a GAP (limit FUN_00a2f280 not ported: 0).
+    /// Otherwise (also a type 1 the start does not beat) a spell (record +0xb4) is "Excluded by mana limit" when the
+    /// actor's mana after it (record +0xa8) is below the think's limit (think +0x1b0 = settings +0x9c, <see cref="ExeManaLimit"/>).
     /// </summary>
-    public static bool Excluded(Candidate c, CombatValue start, CombatModeCoefs coefs, CombatMode mode)
+    public static bool Excluded(Candidate c, CombatValue start, CombatModeCoefs coefs, CombatMode mode, int manaLimit = 0)
     {
-        if (c.CompareType == 1) return CombatValue.IsBetter(start, c.Value!, coefs, mode);
-        if (c.CompareType == 2) return CombatValue.IsBetter(start, c.Value!, coefs, mode) || c.Value!.My.Health < start.My.Health;
-        return false;
+        if (c.CompareType == 1 && CombatValue.IsBetter(start, c.Value!, coefs, mode)) return true;
+        if (c.CompareType == 2 && (CombatValue.IsBetter(start, c.Value!, coefs, mode) || c.Value!.My.Health < start.My.Health)) return true;
+        return c.IsSpell && c.ManaAfter < manaLimit;
+    }
+
+    /// <summary>
+    /// The think's mana limit (FUN_00a30460 → FUN_00a2f280(actor), once per think). A creature has no caster (actor
+    /// vf 0x74 = 0: limit 0). For a hero: a computer player (vf 0x18c) → 0; a human player (vf 0x190) whose army's
+    /// auto-combat option is off (<see cref="UseMagicForHuman"/>) → the caster's mana M, so every spell that spends mana is
+    /// dropped; otherwise the damage rule <see cref="ExeManaLimit"/> on the start value. GAP-detail: M is read as caster
+    /// vf 0 → vf 4, not identified; the hero's current mana is used (any M ≥ it gives the same exclusions when the option is off).
+    /// </summary>
+    int ManaLimit(Battle b, int side, LegalActions la, CombatValue start, bool human)
+    {
+        if (!la.IsHero || !human) return 0;
+        int m = b.State.Heroes[side].Mana;
+        if (!UseMagicForHuman) return m;
+        return ExeManaLimit(start.My.DamageVs(start.Enemy), (int)start.Enemy.Health, m);
+    }
+
+    /// <summary>
+    /// FUN_00a2f280's damage rule: d = our damage (FUN_00bfa1b0 of our half vs the enemy's), h = the enemy health
+    /// (value [6]), both as floats. d &lt; h → 0; d ≤ 10·h (00e22820) → trunc((1 − h/d) · mana) in single precision; else the whole mana.
+    /// </summary>
+    public static int ExeManaLimit(int ourDamage, int enemyHealth, int mana)
+    {
+        float d = ourDamage, h = enemyHealth;
+        if (d < h) return 0;
+        if (d <= h * 10f) return (int)((1f - h / d) * mana);
+        return mana;
     }
 
     /// <summary>True when <paramref name="cand"/> should replace <paramref name="cur"/> (exe FUN_008d0030(cur, cand)).</summary>

@@ -1,3 +1,4 @@
+using H5.Core.Data;
 using H5.Combat.AI;
 
 namespace H5.Combat.Tests;
@@ -43,5 +44,61 @@ public class AiCombatGapTests(GameDataFixture f)
         b.State.Phase = BattlePhase.Tactics;
         Assert.IsType<EndTacticsCmd>(new OriginalBattleAI().Decide(b, 0));
         Assert.IsType<EndTacticsCmd>(new OriginalBattleAI().Decide(b, 1));
+    }
+    [Fact]
+    public void ManaLimitFollowsTheDamageRule()   // FUN_00a2f280 (00e22820 = 10.0, 00e0a7e4 = 1.0, x87 truncation, single precision)
+    {
+        Assert.Equal(0, OriginalBattleAI.ExeManaLimit(99, 100, 50));      // our damage below the enemy health: no limit
+        Assert.Equal(0, OriginalBattleAI.ExeManaLimit(100, 100, 50));     // d = h: (1 − 1) · mana
+        Assert.Equal(25, OriginalBattleAI.ExeManaLimit(200, 100, 50));    // keep (1 − h/d) of the mana
+        Assert.Equal(45, OriginalBattleAI.ExeManaLimit(1000, 100, 50));   // d = 10h: still the formula (0.9f · 50 = 45 in single precision)
+        Assert.Equal(33, OriginalBattleAI.ExeManaLimit(300, 100, 50));    // (1 − 1/3) · 50 = 33.3 truncated
+        Assert.Equal(50, OriginalBattleAI.ExeManaLimit(1001, 100, 50));   // above 10h: the whole mana
+    }
+
+    [Fact]
+    public void ManaLimitExcludesSpellsThatSpendBelowIt()   // FUN_008d1cb0: spell flag +0xb4 and record +0xa8 < think +0x1b0
+    {
+        var st = CombatAiStats.Load(f.Db);
+        var v = new CombatValue { My = new SideValue { TroopsHealth = 100, Health = 100, Damage = 10 }, Enemy = new SideValue { TroopsHealth = 100, Health = 100, Damage = 10 } };
+        OriginalBattleAI.Candidate C(bool spell, int mana, int type = 0) => new() { Command = new WaitCmd(0), IsSpell = spell, ManaAfter = mana, CompareType = type, Value = v };
+        Assert.True(OriginalBattleAI.Excluded(C(true, 9), v, st.CompareCoefs, CombatMode.Normal, 10));
+        Assert.False(OriginalBattleAI.Excluded(C(true, 10), v, st.CompareCoefs, CombatMode.Normal, 10));
+        Assert.False(OriginalBattleAI.Excluded(C(false, 0), v, st.CompareCoefs, CombatMode.Normal, 10));   // not a spell
+        Assert.True(OriginalBattleAI.Excluded(C(true, 9, 1), v, st.CompareCoefs, CombatMode.Normal, 10)); // type 1 kept by the start, then the limit
+    }
+
+    [Fact]
+    public void AHumanHeroInAutoCombatSpendsNoManaByDefault()   // FUN_00a30460 → FUN_00a2f280; combat_ai_use_magic_for_human = 0
+    {
+        (Battle, HeroState) Setup()
+        {
+            var s = BattleSetup.Create(f.Db,
+                new ArmySetup { Hero = f.Db.DuelPresets[0].Hero, Army = new() { new ArmySlot("CREATURE_FOOTMAN", 10) } },
+                new ArmySetup { Hero = f.Db.DuelPresets[3].Hero, Army = new() { new ArmySlot("CREATURE_IMP", 50) } },
+                7, skipTactics: true, arena: "Grass_Big_01");
+            var b = new Battle(f.Db, s);
+            var h = s.Heroes[0];
+            if (!h.Spells.Contains("SPELL_MAGIC_ARROW")) h.Spells.Add("SPELL_MAGIC_ARROW");
+            h.Mana = 500;
+            b.Begin();
+            for (int i = 0; i < 50 && b.State.Active != Actor.Hero(0); i++)
+            {
+                var la = b.GetLegalActions();
+                if (la == null) break;
+                b.Apply(la.IsHero ? new WaitCmd(la.Actor) { Side = b.SideToAct!.Value } : new DefendCmd(la.Actor) { Side = b.SideToAct!.Value });
+            }
+            Assert.Equal(Actor.Hero(0), b.State.Active);
+            return (b, h);
+        }
+        var (b1, _) = Setup();
+        var human = new OriginalBattleAI { HumanSides = new[] { true, false } };
+        Assert.IsNotType<CastSpellCmd>(human.Decide(b1, 0));
+        Assert.Contains(human.LastCandidates, c => c.IsSpell);   // generated, then "Excluded by mana limit"
+        // A computer player's hero has no limit (vf 0x18c → 0).
+        var (b2, _) = Setup();
+        var computer = new OriginalBattleAI { HumanSides = new[] { false, false } };
+        computer.Decide(b2, 0);
+        Assert.Contains(computer.LastCandidates, c => c.IsSpell && c.Value != null);
     }
 }

@@ -544,7 +544,9 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
         if (_ghosts != null && pb.DefenderHero < 0 && pb.DefenderObject >= 0 && pb.DefenderArmy.Count > 0
             && _ghosts.RollPossession(pb.DefenderObject, pb.DefenderArmy[0].Creature, _g.Core, _g.S.Rng) >= 0)
             GhostMode.ApplyPossession(state, 1);
-        var net = new NetBattle(_g.Core, state, new[] { SideOf(atk), SideOf(def) }, atk, _battleAi, now);
+        // The combat AI's row follows the game difficulty and which sides are human (as QuickCombat.Resolve does).
+        var ai = _battleAi is OriginalBattleAI o ? o.For(_g.S.Difficulty, new[] { IsHuman(atk), IsHuman(def) }, QuickCombat.RuneMoneyValues(_g)) : _battleAi;
+        var net = new NetBattle(_g.Core, state, new[] { SideOf(atk), SideOf(def) }, atk, ai, now);
         var rb = new RunningBattle(net, pb, atk, def, _turnStamp, forAi);
         _battles.Add(rb);
         _g.S.Battle = null;

@@ -58,6 +58,19 @@ public sealed class SideValue
         return (int)(Additive + sum);
     }
 
+    /// <summary>
+    /// Damage vs the other side (exe FUN_00bfa1b0, the mana limit's "Our Damage"): trunc(factor(AttackLevel,
+    /// trunc(other TroopsDefence)) · Damage · Bonus) + the hero share when we out-shoot (no 0.1 floor) + [0] + [16].
+    /// </summary>
+    public int DamageVs(SideValue other)
+    {
+        int dmg = (int)(Factor(AttackLevel, (int)other.TroopsDefence) * Damage * Bonus);
+        int hero = 0;
+        if (other.ShooterPower(this) < ShooterPower(other))
+            hero = (int)(other.WalkerDamage / (other.FlyerDamage + other.ShooterDamage + other.WalkerDamage) * HeroPotential);
+        return (int)Additive + (int)Extra + hero + dmg;
+    }
+
     /// <summary>Effective creature HP (exe FUN_00bf9a50): TroopsHealth · max(0.1, 1/factor(1, TroopsDefence)).</summary>
     public int TroopsMeasure() => Round(TroopsHealth * Math.Max(0.1, 1 / Factor(1.0, TroopsDefence)));
 

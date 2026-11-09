@@ -48,7 +48,7 @@ Per-decision ledger with addresses and status: `docs/rules/AUDIT_AI.md`, section
   same on the whole-path map) only when nothing else was added; then invisible enemies (FUN_008d4f70) and FUN_008d4ce0.
   "Too weak" (FUN_00a2f430) restricts spells to damage spells and a list (FUN_008d0bd0); empty → switches cleared, rerun.
 * **Exclusions** (FUN_008d1cb0): type 1 dropped when the start is better, type 2 also when own HP drops ("…by start health
-  value"), spells under the mana limit FUN_00a2f280 (not ported); the survivors are shuffled with the combat RNG (not ported)
+  value"), spells leaving the actor less mana than the limit FUN_00a2f280 (`ExeManaLimit`); the survivors are shuffled with the combat RNG (not ported)
   and scanned with the comparator; nothing left → "End of choose. Chose defend.".
 * **Comparator** FUN_008d0030(cur, cand) — true = cand better: fewer Turns (when both ≥ 0 and different) → lower Priority →
   better combat value (FUN_00bfae20(cur, cand)) → non-spell over spell → lower MovePrice. **exact**
@@ -72,7 +72,7 @@ Per-decision ledger with addresses and status: `docs/rules/AUDIT_AI.md`, section
   the in-combat resources (army +0x84); bought when every paid resource is > 49 in the player's purse, else when
   priceScale · Σ cost · money value (army vf 0x140 = FUN_004db230, 0.0 without a player) < MaxRuneMoneyEstimate,
   priceScale piecewise in the power ratio (0.5 below 0.8; 7.5r−5.5 below 2; 6r−4 below 4; else 20). **exact**
-  (`BuysRune`; the money values are not passed in yet: 0.0)
+  (`BuysRune`; the money values: the owner's `MoneyValues` at the battle start, `QuickCombat.RuneMoneyValues`)
 * **Tactics**: an AI army is auto-placed (FUN_0085a190) and its tactics phase ended at once (army vf 0x44 = FUN_004d95b0
   from FUN_004d9520); the AI itself places nothing. **exact**
 * **Strategy flags** FUN_00a2fd40 ("Ranged advantage", "Our: Shooters part = %f", "Strategy: %s %s"): the defensive flag
