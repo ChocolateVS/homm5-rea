@@ -89,6 +89,20 @@ public sealed partial class Adventure
                 o.PlacedTownType ??= o.TownType;
                 o.TownType = value;
                 o.Specialization = S.RandomTownSpecs.GetValueOrDefault(index);   // 0041b5e0 passes the drawn one
+                // 0041b5e0 creates the town (00cd6bc0) from the race's shared of RPGRoot SharedGroups TOWN_ANY (00cd3e90,
+                // shared +0xfc = the race), at the position plus the random shared's FitRandomTownMaskPositionShift
+                // doubled and turned by the rotation (0041b200 → 00b0be60 / 00b0bbd0, _ftol); the stock RandomTown.xdb
+                // shift is (0, 0), so the position stays.
+                var townShared = Db.SharedGroup("TOWN_ANY").FirstOrDefault(pth => Db.Catalog.Get(pth).TownType == value);
+                if (townShared != null && o.SharedPath != townShared)
+                {
+                    o.PlacedShared ??= o.Shared;
+                    o.PlacedSharedPath ??= o.SharedPath;
+                    var oldTiles = o.BlockedTiles.ToList();
+                    o.SharedPath = townShared;
+                    o.Shared = Db.Catalog.Get(townShared);
+                    RefreshBlocking(oldTiles.Concat(o.BlockedTiles).Concat(o.ActiveTiles));
+                }
                 continue;
             }
             if (o.Kind == ObjectKind.Treasure)

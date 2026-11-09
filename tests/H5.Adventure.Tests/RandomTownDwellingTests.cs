@@ -60,6 +60,9 @@ public class RandomTownDwellingTests(Fixture f)
             Assert.Equal("TOWN_RANDOM", rec.RandomTown);
             Assert.Equal(t.Type, rec.TownType);
             if (o.ShipTile is not { } st || (st.X == 0 && st.Y == 0)) Assert.NotEqual("TOWN_BONUS_SHIPS", rec.Bonus);
+            // 0041b5e0 / 00cd3e90: the town is built from its race's TOWN_ANY shared.
+            Assert.Contains(o.SharedPath, g.Db.SharedGroup("TOWN_ANY"));
+            Assert.Equal(t.Type, o.Shared.TownType);
             seen[spec!] = seen.GetValueOrDefault(spec!) + 1;
         }
         // Each race has about 20 random specializations, more than A1M4's random towns of one race: no repeats.
