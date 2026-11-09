@@ -604,11 +604,10 @@ public sealed partial class Battle
             }
             if (HasAbilityNow(a, Ab.RainbowBreath))
             {
-                // Prismatic Breath: 1..5 cells behind the target (p.179).
-                // radius = clamp((luck + Range(1,10)) / 2 + 1, 1, 5) — exe FUN_00a62030 (the area itself, FUN_00b3ea30, is a
-                // random walk of cells, not yet ported: the engine keeps the straight line behind the target).
+                // Prismatic Breath: radius = clamp((luck + Range(1,10)) / 2 + 1, 1, 5) — exe FUN_00a62030; the area is the
+                // random walk FUN_00b3ea30 and the victims the target's army on it (RainbowVictims, Battle.Sweep12.cs).
                 int n = Math.Clamp(1 + (S.Rng.Range(1, 10) + LuckOf(a)) / 2, 1, 5);
-                for (int i = 1; i <= n; i++) Add(BehindTarget(t, dx, dy, i), 1, enemiesOnly: false);
+                foreach (var u in RainbowVictims(a, t, n)) Add(u, 1, enemiesOnly: false);
             }
             if (HasAbilityNow(a, Ab.LightningBreath))
             {
@@ -630,8 +629,10 @@ public sealed partial class Battle
                     Add(o, Covers(o) ? 1 : 0.5, enemiesOnly: false);
             }
             if (HasAbilityNow(a, Ab.MagicAttack))
-                foreach (var c in LineCells(a.Pos, t.Pos))
-                    if (S.At(c) is { } lu && !EldritchFlag(lu)) Add(lu, 1, enemiesOnly: false);   // exe FUN_00a62030: flag 0x1000 skipped
+                // exe FUN_00a62030 → FUN_00a5c420 (width 0, unbounded): every unit on the line (OnMagicLine, Battle.Sweep12.cs);
+                // flag 0x1000 (Eldritch) skipped.
+                foreach (var lu in S.Living.ToList())
+                    if (lu.Id != a.Id && !EldritchFlag(lu) && OnMagicLine(a, t, lu)) Add(lu, 1, enemiesOnly: false);
             // Chain Shot is resolved in Strike (exe FUN_00a64ad0), not as a pattern.
         }
         return list;
@@ -644,32 +645,6 @@ public sealed partial class Battle
         ? new[] { new Cell(p.X + dx, p.Y + dy), new Cell(p.X + dx, p.Y), new Cell(p.X, p.Y + dy) }
         : new[] { new Cell(p.X + dx, p.Y + dy), new Cell(p.X + dx + (dy != 0 ? 1 : 0), p.Y + dy + (dx != 0 ? 1 : 0)),
                   new Cell(p.X + dx - (dy != 0 ? 1 : 0), p.Y + dy - (dx != 0 ? 1 : 0)) };
-
-    Unit? BehindTarget(Unit t, int dx, int dy, int depth)
-    {
-        if (dx == 0 && dy == 0) return null;
-        foreach (var c in t.Cells())
-        {
-            var p = new Cell(c.X + dx * depth, c.Y + dy * depth);
-            var u = S.At(p);
-            if (u != null && u.Id != t.Id) return u;
-        }
-        return null;
-    }
-
-    static IEnumerable<Cell> LineCells(Cell a, Cell b)
-    {
-        int x0 = a.X, y0 = a.Y, x1 = b.X, y1 = b.Y;
-        int dx = Math.Abs(x1 - x0), dy = -Math.Abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, err = dx + dy;
-        while (true)
-        {
-            yield return new Cell(x0, y0);
-            if (x0 == x1 && y0 == y1) yield break;
-            int e2 = 2 * err;
-            if (e2 >= dy) { err += dy; x0 += sx; }
-            if (e2 <= dx) { err += dx; y0 += sy; }
-        }
-    }
 
     /// <summary>On-hit ability effects of the attacker on a struck target, and the target's reactive abilities.</summary>
     void AfterHitOnTarget(Unit a, Unit t, Hit hit, bool ranged, int dmg, int killed, bool primary, int hpBefore, int primaryHpBefore, ref bool stunned)
