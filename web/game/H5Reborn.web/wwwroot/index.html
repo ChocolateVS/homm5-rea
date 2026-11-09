@@ -157,7 +157,9 @@
         <div id="status-notice" role="alert"></div>
     </div>
 
+    <script src="h5audio.js"></script>
     <script src="h5data.js"></script>
+    <script src="h5saves.js"></script>
     <script src="godot.js"></script>
     <script>
         // Test flag: ?args=<the game's command-line dev args, space separated>, e.g.
@@ -309,7 +311,10 @@
             // Exact sizes written by the publish make the bar determinate;
             // without the manifest it stays indeterminate (Content-Length is
             // the compressed size on hosts that gzip, so headers lie).
-            fetch('twodog.sizes.json')
+            // Saves imported on the previous visit go into user:// (IndexedDB) before the engine mounts it (h5saves.js).
+            Promise.resolve(globalThis.h5saves && globalThis.h5saves.applyPendingImport())
+                .catch((e) => console.warn('h5saves: import failed', e))
+                .then(() => fetch('twodog.sizes.json'))
                 .then((response) => (response.ok ? response.json() : {}))
                 .catch(() => ({}))
                 .then((fileSizes) => {

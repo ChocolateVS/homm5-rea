@@ -145,6 +145,36 @@ only synchronous file read a browser main thread has), so all of the game's sync
 and `data.pak` (1.4 GB) is never read whole; reads go through a 16 MB cache of 256 KB blocks. Small loose files
 (Maps, profiles, hwcursors, DuelPresets, video descriptors; ~12 MB) are copied into the wasm file system at start.
 
+### Saves, profiles and settings
+
+Everything the game keeps (`user://`: profiles, saves, campaign progress, options, `video.cfg`, network
+settings) is Godot's `user://` = `/userfs/godot/app_userdata/H5Reborn` in the wasm file system, which Godot's web
+platform mounts as Emscripten **IDBFS** (IndexedDB database `/userfs`, store `FILE_DATA`): loaded when the engine
+starts, written back after the game writes. Godot writes back after its own `FileAccess` writes; the web-only
+autoload `WebStorage` (`web/game/src/Web/WebStorage.cs`) watches the folder every 2 s and triggers the same
+write-back after System.IO writes, new folders and deletions too. It logs `[H5] web: user data <dir>: N files: …`
+at start and `[H5] web: user data changed …` after each write-back. The data is per browser and per site (origin).
+
+**Export / import** (`wwwroot/h5saves.js`): the small **Saves** button in the bottom-left corner (or `?saves`)
+opens a panel. *Export* downloads `H5Reborn-saves-<date>.zip` with every file of `user://` (paths relative to it,
+e.g. `profiles/Player/saves/save_0.sav`; the same layout as the desktop's
+`%APPDATA%\Godot\app_userdata\H5Reborn`, so saves move between desktop and browser). *Import* takes such a zip
+(adds / replaces those files) or loose `.sav` files (go to the current profile's `saves/`), stages them in a
+separate IndexedDB database and reloads; the page merges them into `/userfs` *before* the engine mounts it, so the
+running game's write-back can never undo an import. Clearing the site's data in the browser deletes the saves.
+
+### Computer players' turns
+
+The desktop computes all consecutive computer turns at once when the human ends the turn
+(`AdventureScreen.RunComputerTurns` → `AdventureSession.RunComputerTurns(16)`), then plays their events back.
+The browser has a single thread, so that would freeze the page for the whole batch: there the same batch runs
+**one computer player's turn per frame** (`StepWebComputerTurns`); nothing else happens in between (no event
+playback, no map input), the turn order, seeds and results are identical. A 6-player A2M1 first turn took ~3 s
+with frames at most ~0.8 s apart. The network host's `AdventureNetSession.AiRunner` (a worker thread that can
+pause a computer turn while a human fights its battle) runs inline in a browser; a browser cannot host network
+games, so that path is unused there (if it ever were: a computer player's battle against a human would be
+quick-resolved instead of fought — GAP).
+
 ## Test page / flags (check future commits in the browser)
 
 The page passes `?args=` to the game exactly like `godot -- <args>` on the desktop (`OS.GetCmdlineUserArgs`),
@@ -168,13 +198,21 @@ reads) to the browser console.
 ```sh
 cd tools/web/harness && npm install
 node smoke.mjs ../../../web/dist --install "/path/to/Tribes of the East" [--gpu] [--coi] \
-     [--only menu,duel,adventure,remember] [--map-arg --adventure=A2M1] [--out DIR]
+     [--only menu,duel,adventure,endturn,persist,audio,lobby,remember] [--map-arg --adventure=A2M1]      [--server src/H5.Server/bin/.../H5.Server.dll] [--out DIR]
 ```
 
 It serves the folder, picks the install through the page's folder input, waits for each screen's log marker and
 saves `DIR/<scenario>.png`, `<scenario>.log` and `results.json` (time, fps, wasm heap). `--gpu` renders with the
 machine's GPU (still headless); the default SwiftShader software renderer works anywhere but is slow for 3D.
 `remember` checks the OPFS flow (first visit picks and copies, second visit starts without picking).
+`endturn` ends the first turn on the map (`--save-dev=endturn`) and waits for every computer player and the human's
+day 2 (`[H5] web: adventure day … human turn`); `maxFrameGapMs` is the longest the page went without a frame after
+the map was up. `persist` quicksaves (visit 1), reloads in the same browser profile and checks the save is listed
+from IndexedDB (visit 2), round-trips it through the export zip and import, and checks the imported copy (visit 3).
+`audio` loads the main menu in a browser with the normal autoplay policy and samples what reaches the speakers
+before / after a key press (`?audiotest` taps the Web Audio output); `intro` plays the intro movies.
+`lobby` starts the desktop dedicated server (`--server <H5.Server.dll>`) on a random local port and joins it from
+the page over WebSocket (`--goto=create --connect=ws://127.0.0.1:<port>/`).
 Exit code 0 = every scenario reached its marker without a page error. Screenshots contain original game art:
 they stay local (git-ignored).
 
@@ -201,13 +239,9 @@ is virtual.
 1. **Performance (CPU).** The game's C# runs on the Mono *interpreter*: the adventure map takes ~40 s to load and
    the 3D main menu runs at well under 60 fps even on a desktop GPU. Next steps: measure `RunAOTCompilation` (AOT for the
    hot libraries: Granny/Oodle, terrain, AI), time-slice long loads behind a loading screen, prefetch/merge reads.
-2. **Adventure AI turns (threads).** `AdventureNetSession.AiRunner` uses a `Thread` + `SemaphoreSlim.Wait`
-   (WEB_SPIKE.md). The browser throws `PlatformNotSupportedException` there, so **ending the turn on an adventure
-   map with AI players will fail** until the AI turn becomes resumable (async/continuation). Combat AI (the duel)
-   is unaffected.
-3. **Saves, profiles and settings do not persist.** `user://` is Godot's IndexedDB-backed folder, but the game
-   also writes into the install's `profiles/` and to System.IO paths, which live in the wasm memory file system
-   and vanish on reload. Needs: install-writes redirected to `user://`, plus save export/import.
+2. ~~Adventure AI turns (threads)~~ — fixed: computer turns run one per frame (see *Computer players' turns*).
+3. ~~Saves, profiles and settings do not persist~~ — fixed: `user://` persists in IndexedDB, with export / import
+   (see *Saves, profiles and settings*).
 4. **Multiplayer.** No LAN discovery / direct IP / hosting in a browser. Joining via the master server needs a
    WebSocket transport selection in the lobby UI, source-generated JSON contexts and CORS or same-origin
    deployment of the master; WebRTC peers are not implemented (WEB_SPIKE.md, Networking).

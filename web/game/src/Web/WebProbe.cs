@@ -13,6 +13,8 @@ public partial class WebProbe : Node
     int _framesInScene;
     double _sinceStats;
     readonly HashSet<string> _announced = new();
+    (int Day, int Player, bool Human)? _turn;
+    bool _lobbyHooked;
 
     public override void _Ready() => ProcessMode = ProcessModeEnum.Always;
 
@@ -34,6 +36,27 @@ public partial class WebProbe : Node
             if (name.StartsWith("Adventure", StringComparison.Ordinal) && name.EndsWith("Screen", StringComparison.Ordinal) && _announced.Add("adv"))
                 GD.Print("[H5] web: adventure on screen");
         }
+        // Turn changes on the adventure map (the smoke test's end-turn scenario waits for "human turn" on day 2).
+        if (cur is H5Reborn.Adventure.AdventureScreen adv && adv.Session is { } ses)
+        {
+            var t = (ses.S.Day, ses.S.CurrentPlayer, ses.IsHumanTurn);
+            if (_turn != t)
+            {
+                _turn = t;
+                GD.Print($"[H5] web: adventure day {t.Day} player {t.CurrentPlayer} {(t.IsHumanTurn ? "human turn" : "computer turn")}");
+            }
+        }
+        // Multiplayer lobby: its status lines (connected, errors), once the game made the service.
+        if (!_lobbyHooked && GetTree().Root.GetNodeOrNull("LobbyService") is H5Reborn.Ui.Net.LobbyService lobby)
+        {
+            _lobbyHooked = true;
+            lobby.StatusChanged += st => GD.Print($"[H5] web: lobby: {st}");
+        }
+        // Movies (intro logos, campaign cinematics): announce each one once it has really advanced.
+        if (_framesInScene % 15 == 0)
+            foreach (var n in GetTree().Root.FindChildren("*", "VideoStreamPlayer", true, false))
+                if (n is VideoStreamPlayer { } v && v.IsPlaying() && v.StreamPosition > 0.5 && v.Stream is VideoStreamTheora th && _announced.Add("video:" + th.File))
+                    GD.Print($"[H5] web: video playing {th.File} at {v.StreamPosition:F1}s, frame {v.GetVideoTexture()?.GetSize()}");
         _sinceStats += delta;
         if (_sinceStats >= 10)
         {

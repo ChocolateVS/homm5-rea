@@ -1,6 +1,6 @@
 // Headless smoke test of the web build: serves <dist>, opens it in a headless Chromium (never a visible window),
 // feeds it the local game install through the page's folder picker, and screenshots each scenario.
-//   node smoke.mjs <dist> --install "<game folder>" [--out DIR] [--only menu,duel,adventure,remember] [--timeout s]
+//   node smoke.mjs <dist> --install "<game folder>" [--out DIR] [--only menu,duel,adventure,endturn,remember,persist,audio,lobby] [--server H5.Server.dll] [--timeout s]
 //                         [--map-arg --adventure=<map>] [--duel-arg --combat-vs-ai=1,2] [--gpu] [--coi]
 // Chromium: $CHROMIUM, else the playwright cache (npx playwright-core install chromium).
 // Exit code 0 only if every scenario reached its marker without a page error.
@@ -23,6 +23,9 @@ const SCENARIOS = {
   menu: { query: '?args=--skip-intro', marker: /\[H5\] web: main menu/, settle: 8 },
   duel: { query: '?args=' + encodeURIComponent(opt('--duel-arg', '--combat-vs-ai=1,2')), marker: /\[H5\] combat arena:/, settle: 30 },
   adventure: { query: '?args=' + encodeURIComponent(opt('--map-arg', '--adventure=A2M1')), marker: /\[H5\] web: adventure on screen/, settle: 15 },
+  // End the first turn on a map with computer players: every computer turn must run and the human get the next day.
+  endturn: { query: '?args=' + encodeURIComponent(opt('--map-arg', '--adventure=A2M1') + ' --adventure-close-boxes --save-dev=endturn,endturn,endturn'),
+    marker: /\[H5\] web: adventure on screen/, then: [/computer turn/, /adventure day [2-9]\d* player \d+ human turn/], settle: 5 },
 };
 const only = opt('--only', 'menu,duel,adventure').split(',');
 
@@ -53,19 +56,26 @@ const server = await serve(dist, 0, { coi: argv.includes('--coi') });
 const base = `http://127.0.0.1:${server.address().port}/`;
 const results = {};
 
-async function run(name, page, { pick = true, query, marker, settle }) {
+async function run(name, page, { pick = true, query, marker, then = [], settle, after }) {
   const t0 = Date.now();
   const log = [];
   const stamp = () => ((Date.now() - t0) / 1000).toFixed(1).padStart(6);
-  let hit; const reached = new Promise((r) => (hit = r));
+  // marker, then each `then` pattern in order (a log line after the previous one).
+  const seq = [marker, ...then];
+  let step = 0, hit; const reached = new Promise((r) => (hit = r));
   const errors = [];
   page.on('console', (m) => {
-    const t = m.text(); log.push(`[${stamp()}] ${t}`); if (marker.test(t)) hit(t);
+    const t = m.text(); log.push(`[${stamp()}] ${t}`);
+    if (step < seq.length && seq[step].test(t)) { log.push(`[${stamp()}] -- step ${step + 1}/${seq.length} reached`); if (step === 0 && seq.length > 1) page.evaluate(() => globalThis.h5ResetFrameGap?.()).catch(() => {}); if (++step === seq.length) hit(t); }
     // A headless page's pointer sits at (0,0) - the screen corner, where the adventure map edge-scrolls. Park it in
     // the middle of the canvas as soon as the engine runs (a real player's mouse is wherever they put it).
     if (/\[H5\] web: engine started/.test(t)) page.mouse.move(640, 360).catch(() => {});
   });
   page.on('pageerror', (e) => { errors.push(e.message); log.push(`[${stamp()}] PAGEERROR ${e.message}`); });
+  // Longest gap between two animation frames: how long the page was frozen by one synchronous piece of work.
+  await page.addInitScript(() => { let last = 0; globalThis.h5MaxFrameGapMs = 0;
+    const f = (t) => { if (last) globalThis.h5MaxFrameGapMs = Math.max(globalThis.h5MaxFrameGapMs, t - last); last = t; requestAnimationFrame(f); };
+    requestAnimationFrame(f); globalThis.h5ResetFrameGap = () => { globalThis.h5MaxFrameGapMs = 0; }; });
   await page.goto(base + query);
   if (pick) {
     await page.waitForSelector('#h5-dir', { state: 'attached', timeout: 60000 });
@@ -74,16 +84,18 @@ async function run(name, page, { pick = true, query, marker, settle }) {
   }
   const res = await Promise.race([reached.then(() => 'ok'), new Promise((r) => setTimeout(() => r('timeout'), timeoutS * 1000))]);
   if (res === 'ok') await page.waitForTimeout(settle * 1000);
+  const extra = res === 'ok' && after ? await after(page, log, stamp) : undefined;
   const shot = path.join(outDir, `${name}.png`);
   await page.screenshot({ path: shot });
   const fps = await page.evaluate(() => new Promise((r) => { let n = 0; const s = performance.now();
     const f = () => { n++; if (performance.now() - s < 3000) requestAnimationFrame(f); else r(n / ((performance.now() - s) / 1000)); };
     requestAnimationFrame(f); }));
-  const mem = await page.evaluate(() => ({ js: performance.memory?.usedJSHeapSize, wasm: globalThis.h5WasmHeapBytes?.() }));
+  const mem = await page.evaluate(() => ({ js: performance.memory?.usedJSHeapSize, wasm: globalThis.h5WasmHeapBytes?.(), gap: globalThis.h5MaxFrameGapMs }));
   results[name] = { result: res, seconds: +((Date.now() - t0) / 1000).toFixed(1), screenshot: shot, pageErrors: errors.length,
-    rafFps: Math.round(fps * 10) / 10, wasmHeapMB: mem.wasm && Math.round(mem.wasm / 2 ** 20), jsHeapMB: mem.js && Math.round(mem.js / 2 ** 20) };
+    rafFps: Math.round(fps * 10) / 10, maxFrameGapMs: Math.round(mem.gap), ...(extra || {}), wasmHeapMB: mem.wasm && Math.round(mem.wasm / 2 ** 20), jsHeapMB: mem.js && Math.round(mem.js / 2 ** 20) };
   fs.writeFileSync(path.join(outDir, `${name}.log`), log.join('\n') + '\n');
-  console.log(`${name}: ${res} in ${results[name].seconds}s -> ${shot}`);
+  if (extra?.result && extra.result !== 'ok') results[name].result = extra.result;
+  console.log(`${name}: ${results[name].result} in ${results[name].seconds}s -> ${shot}`);
 }
 
 const browser = await chromium.launch(LAUNCH);
@@ -109,6 +121,86 @@ if (only.includes('remember')) {
     ctx = await chromium.launchPersistentContext(profile, { ...LAUNCH, viewport: { width: 1280, height: 720 } });
     page = ctx.pages()[0] || await ctx.newPage();
     await run('remember-second', page, { ...SCENARIOS.menu, pick: false });
+    await ctx.close();
+  } finally { fs.rmSync(profile, { recursive: true, force: true }); }
+}
+if (only.includes('audio')) {
+  // Sound: a browser with the normal autoplay policy (sound only after a user gesture). The menu music must be
+  // silent before the first key press and audible after it; the intro movies (played without --skip-intro) must run.
+  const b = await chromium.launch({ ...LAUNCH, args: LAUNCH.args.filter((a) => !a.startsWith('--autoplay-policy')) });
+  const sample = (pg) => pg.evaluate(async () => { let peak = 0;
+    for (let i = 0; i < 30; i++) { peak = Math.max(peak, globalThis.h5audio?.level() ?? 0); await new Promise((r) => setTimeout(r, 100)); }
+    return { peak, states: globalThis.h5audio?.states() }; });
+  try {
+    let ctx = await b.newContext({ viewport: { width: 1280, height: 720 } });
+    let page = await ctx.newPage();
+    await run('audio', page, { query: '?nocache&audiotest&args=--skip-intro', marker: /\[H5\] web: main menu on screen/, settle: 4,
+      after: async (pg, log, stamp) => {
+        const before = await sample(pg);
+        await pg.keyboard.press('Shift');
+        log.push(`[${stamp()}] pressed Shift`);
+        await pg.waitForTimeout(1500);
+        const after = await sample(pg);
+        const ok = after.states?.includes('running') && after.peak > 0.001;
+        return { result: ok ? 'ok' : 'silent', beforeGesture: before, afterGesture: after };
+      } });
+    await ctx.close();
+    ctx = await b.newContext({ viewport: { width: 1280, height: 720 } });
+    page = await ctx.newPage();
+    await run('intro', page, { query: '?nocache&audiotest', marker: /\[H5\] web: video playing .*logo/, settle: 1,
+      after: async (pg) => { await pg.keyboard.press('Shift'); await pg.waitForTimeout(1500); return { afterGesture: await sample(pg) }; } });
+    await ctx.close();
+  } finally { await b.close(); }
+}
+if (only.includes('lobby')) {
+  // Multiplayer: a desktop dedicated server (H5.Server, --server <H5.Server.dll>) on this machine; the browser joins
+  // its WebSocket port with the game's own --connect (same as typing the address in the lobby). "Connected to" means
+  // the server accepted the browser's hello, including the game-data fingerprint check.
+  const dll = opt('--server');
+  if (!dll) { results.lobby = { result: 'error', error: '--server <path to H5.Server.dll> is required for the lobby scenario' }; }
+  else {
+    const { spawn } = await import('node:child_process');
+    const port = 20000 + Math.floor(Math.random() * 20000);
+    const srv = spawn('dotnet', [dll, '--port', String(port), '--bind', '127.0.0.1', '--no-lan', '--game-dir', install, '--name', 'smoke server']);
+    const srvLog = [];
+    const ready = new Promise((r) => { const on = (d) => { srvLog.push(String(d)); if (/fingerprint/.test(String(d))) r(); }; srv.stdout.on('data', on); srv.stderr.on('data', on); });
+    try {
+      await Promise.race([ready, new Promise((r) => setTimeout(r, 60000))]);
+      const b = await chromium.launch(LAUNCH);
+      const ctx = await b.newContext({ viewport: { width: 1280, height: 720 } });
+      const page = await ctx.newPage();
+      await run('lobby', page, { query: '?nocache&args=' + encodeURIComponent(`--goto=create --connect=ws://127.0.0.1:${port}/`), marker: /\[H5\] web: lobby: Connected to smoke server/, settle: 3 });
+      await ctx.close(); await b.close();
+    } finally { srv.kill(); fs.writeFileSync(path.join(outDir, 'lobby-server.log'), srvLog.join('')); }
+  }
+}
+if (only.includes('persist')) {
+  // user:// in IndexedDB: visit 1 quicksaves on an adventure map; visit 2 (same browser profile) must list the save,
+  // export it as a zip and import it back under a new name (applied on the reload of visit 3).
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'h5web-'));
+  try {
+    let ctx = await chromium.launchPersistentContext(profile, { ...LAUNCH, viewport: { width: 1280, height: 720 } });
+    let page = ctx.pages()[0] || await ctx.newPage();
+    await run('persist-save', page, { query: '?nocache&args=' + encodeURIComponent(opt('--map-arg', '--adventure=A2M1') + ' --save-dev=quicksave'),
+      marker: /\[H5\] web: adventure on screen/, then: [/\[H5\] saved "/, /user data changed/], settle: 2 });
+    await ctx.close();
+    ctx = await chromium.launchPersistentContext(profile, { ...LAUNCH, viewport: { width: 1280, height: 720 } });
+    page = ctx.pages()[0] || await ctx.newPage();
+    await run('persist-reload', page, { query: '?nocache&args=--skip-intro', marker: /\[H5\] web: user data .*saves\/[^,]+\.sav/, then: [/\[H5\] web: main menu on screen/], settle: 2,
+      after: async (pg) => {
+        const r = await pg.evaluate(async () => {
+          const files = await h5saves.listUserFiles();
+          const sav = files.find((f) => /saves\/[^/]+\.sav$/.test(f.name));
+          if (!sav) return { result: 'no-save-in-idb', files: files.map((f) => f.name) };
+          const zipped = h5saves.zip([{ name: sav.name.replace(/[^/]+\.sav$/, 'imported-copy.sav'), data: sav.data }]);
+          const back = await h5saves.unzip(await zipped.arrayBuffer());
+          await h5saves.stageImport([new File([zipped], 'export.zip')]);
+          return { result: back.length === 1 && back[0].data.length === sav.data.length ? 'ok' : 'zip-roundtrip-failed', idbFiles: files.length, saveBytes: sav.data.length };
+        });
+        return r;
+      } });
+    page = ctx.pages()[0];
+    await run('persist-import', page, { pick: true, query: '?nocache&args=--skip-intro', marker: /H5SAVES_IMPORTED 1/, then: [/\[H5\] web: user data .*imported-copy\.sav/], settle: 1 });
     await ctx.close();
   } finally { fs.rmSync(profile, { recursive: true, force: true }); }
 }

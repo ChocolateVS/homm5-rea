@@ -37,8 +37,9 @@ cp -R "$REPO/web/game/." "$STAGE/"
 # Web renders with the Compatibility renderer (WebGL 2); the desktop project uses Forward+.
 sed -i.bak -e 's/^renderer\/rendering_method=.*/renderer\/rendering_method="gl_compatibility"\nrenderer\/rendering_method.mobile="gl_compatibility"/' \
            -e 's/"Forward Plus"/"GL Compatibility"/' "$STAGE/project.godot"
-# Web-only observer autoload (screen markers for the smoke test, periodic stats); see web/game/src/Web/WebProbe.cs.
-printf '\n[autoload]\n\nWebProbe="*res://src/Web/WebProbe.cs"\n' >> "$STAGE/project.godot"
+# Web-only autoloads (web/game/src/Web/): WebProbe observes (screen markers for the smoke test, periodic stats);
+# WebStorage keeps user:// in the browser's IndexedDB after System.IO writes too.
+printf '\n[autoload]\n\nWebProbe="*res://src/Web/WebProbe.cs"\nWebStorage="*res://src/Web/WebStorage.cs"\n' >> "$STAGE/project.godot"
 rm -f "$STAGE/project.godot.bak"
 grep -q 'gl_compatibility' "$STAGE/project.godot" || { echo "error: could not switch project.godot to gl_compatibility" >&2; exit 1; }
 

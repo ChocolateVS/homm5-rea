@@ -123,7 +123,7 @@ public partial class AdventureScreen : Control
 
     HeroState? Selected => SelectedHeroId >= 0 ? Session.S.Hero(SelectedHeroId) : null;
 
-    bool InputLocked => _playing || _modal > 0 || !Session.IsHumanTurn || Session.PendingEvents > 0 || Autoplay;
+    bool InputLocked => _playing || _modal > 0 || !Session.IsHumanTurn || Session.PendingEvents > 0 || Autoplay || _webComputerTurns > 0;
 
     void Select(HeroState h)
     {
@@ -196,8 +196,27 @@ public partial class AdventureScreen : Control
     {
         if (Session.S.Finished || Session.IsHumanTurn) return;
         Hud.ShowEnemyTurn(Session.Game.Current.Index);
+        // Browser (single-threaded wasm): the same computer turns in the same order, one per frame (_Process), so the
+        // page keeps drawing between them. Nothing else runs in between (no event playback, no map input), as on
+        // the desktop, where they are all computed at once here.
+        if (OperatingSystem.IsBrowser()) { _webComputerTurns = MaxComputerTurnsAtOnce; return; }
         // Computer turns are computed at once; their events then play back in order.
-        Session.RunComputerTurns();
+        Session.RunComputerTurns(MaxComputerTurnsAtOnce);
+    }
+
+    const int MaxComputerTurnsAtOnce = 16;
+    /// <summary>Browser only: computer turns still to compute in the current batch (<see cref="RunComputerTurns"/>).</summary>
+    int _webComputerTurns;
+
+    /// <summary>Browser only: computes the next computer turn of the batch; true while the batch is running.</summary>
+    bool StepWebComputerTurns()
+    {
+        if (_webComputerTurns <= 0) return false;
+        if (Session.S.Finished || Session.IsHumanTurn) { _webComputerTurns = 0; return false; }
+        _webComputerTurns--;
+        Session.RunComputerTurns(1);
+        if (!Session.S.Finished && !Session.IsHumanTurn && _webComputerTurns > 0) Hud.ShowEnemyTurn(Session.Game.Current.Index);
+        return true;
     }
 
     public void ShowEscMenu()
@@ -502,6 +521,7 @@ public partial class AdventureScreen : Control
         UpdateHover();
         DrawFakeCursor();
         _turnTimer?.Update(Session.IsHumanTurn);
+        if (StepWebComputerTurns()) return;
         if (_playing || _modal > 0) return;
         if (Session.TryDequeue(out var ev, out var player))
         {

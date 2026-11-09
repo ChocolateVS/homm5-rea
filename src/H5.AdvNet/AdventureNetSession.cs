@@ -904,6 +904,14 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
 
         public void RunUntilHumanOrBattle()
         {
+            if (OperatingSystem.IsBrowser())
+            {
+                // Single-threaded browser build: no worker can pause mid-turn, so the turns run here, on the host
+                // thread (OnWorker stays false: a computer player's battle against a human is resolved the way the
+                // AI's own command resolves it instead of being fought interactively; GAP in docs/WEB_BUILD.md).
+                Work();
+                return;
+            }
             _thread = new Thread(Work) { IsBackground = true, Name = "H5 adventure AI" };
             _thread.Start();
             _toMain.Wait();
@@ -928,7 +936,7 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
             }
             catch (Exception e) { Error = e; }
             WaitingBattle = false;
-            _toMain.Release();
+            if (_thread != null) _toMain.Release();
         }
 
         /// <summary>Called on the worker from the command sink: blocks until the host finishes the battle.</summary>
