@@ -99,19 +99,19 @@ public class MovementTests(Fixture f)
     HeroState Hero(string town = "TOWN_HEAVEN") => new() { Town = town, Pos = new Tile(10, 10) };
 
     /// <summary>
-    /// Fan manual p.300: starting movement points with Logistics and Boots of the Swift Journey (stock 3.1).
-    /// MMH55: same formula, DefaultStats adventure/BaseHeroMovement 2500 → 2800 (the stock engine reads it).
+    /// 00b4dd40: chop((Logistics · 0.1f + 1.0001f) · B), then chop((boots · 0.25f + 1) · L) — 2750 / 3000 / 3250 with
+    /// stock B = 2500 (the fan manual lists 2749 / 2999 / 3249), MMH 5.5 B = 2800.
     /// </summary>
     [Theory]
     [InlineData(0, false, 2500, 2800)]
-    [InlineData(1, false, 2749, 3080)]
-    [InlineData(2, false, 2999, 3359)]
-    [InlineData(3, false, 3249, 3639)]
+    [InlineData(1, false, 2750, 3080)]
+    [InlineData(2, false, 3000, 3360)]
+    [InlineData(3, false, 3250, 3640)]
     [InlineData(0, true, 3125, 3500)]
-    [InlineData(1, true, 3436, 3850)]
-    [InlineData(2, true, 3748, 4198)]
-    [InlineData(3, true, 4061, 4548)]
-    public void MovementPointsMatchManualTable(int logistics, bool boots, int expected, int expectedMmh55)
+    [InlineData(1, true, 3437, 3850)]
+    [InlineData(2, true, 3750, 4200)]
+    [InlineData(3, true, 4062, 4550)]
+    public void MovementPointsFollowTheExe(int logistics, bool boots, int expected, int expectedMmh55)
     {
         var g = f.NewGame();
         var h = Hero();
@@ -119,6 +119,24 @@ public class MovementTests(Fixture f)
         if (boots) h.Artifacts.Add("BOOTS_OF_SPEED");
         g.S.MoonWeek = "WEEK_OF_NOTHING";
         Assert.Equal(DataFixture.Pick(expected, expectedMmh55), g.ComputeMaxMovePoints(h));
+    }
+
+    /// <summary>00b4dd40 / 00bcdc30: the week adds B / 2 before the skills; HERO_SPEC_LOGISTICS (Wanderer) scales B.</summary>
+    [Fact]
+    public void MovementWeekAndWandererSpecialityApplyToTheBase()
+    {
+        var g = f.NewGame();
+        var h = Hero();
+        h.Skills.Add(new SkillEntry("HERO_SKILL_LOGISTICS", Mastery.Basic));
+        g.S.MoonWeek = "WEEK_OF_FLAME";
+        Assert.Equal(DataFixture.Pick(4125, 4620), g.ComputeMaxMovePoints(h));   // chop(1.1001 · (B + B / 2))
+        g.S.MoonWeek = "WEEK_OF_WINDS";                                         // sea only
+        Assert.Equal(DataFixture.Pick(2750, 3080), g.ComputeMaxMovePoints(h));
+        g.S.MoonWeek = "WEEK_OF_NOTHING";
+        h.Skills.Clear();
+        h.Specialization = "HERO_SPEC_LOGISTICS";
+        h.Level = 5;                                                            // ⌈5 / 2⌉ · 0.01 + 0 = 0.03
+        Assert.Equal(DataFixture.Pick(2575, 2884), g.ComputeMaxMovePoints(h));
     }
 
     /// <summary>Fan manual p.299-300 step costs (orthogonal / diagonal) per terrain.</summary>

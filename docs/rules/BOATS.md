@@ -35,9 +35,9 @@ make a tile impassable whatever lies under it. (Before: levels 0 or the mask ≥
   costs nothing and landing a standard step (100/141).
 * Land heroes may only step onto water to board an empty ship or attack a sailing hero; ships block
   paths like heroes. The ship follows its hero (moves, whirlpools, Instant Travel).
-* Sea movement points (exe `FUN_00b4dd40`): base → ×1.5 Navigation (rounded) → ×(1 + 0.25 per Sextant)
-  → + `LighthouseMaxSeaMovementBonus` (500) per owned Lighthouse. Week of Winds ×1.5 stays per the manual
-  (not in that function; no data fields).
+* Sea movement points (exe `FUN_00b4dd40`): base (after a movement speciality) → Week of Flame or Winds
+  + base / 2 (`FUN_00bcdc30`) → ×1.5 Navigation (truncated) → ×(1 + 0.25 per Sextant) → +
+  `LighthouseMaxSeaMovementBonus` (500) per owned Lighthouse (player +0x13c, ±1 on capture in `FUN_00bca4f0`).
 
 ## Spells and objects
 

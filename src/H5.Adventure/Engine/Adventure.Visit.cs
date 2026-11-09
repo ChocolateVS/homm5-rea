@@ -417,8 +417,14 @@ public sealed partial class Adventure
                 HutOfMagi(h, p, o);
                 break;
             case "BUILDING_LIGHTHOUSE":
+            {
+                // 00bca4f0 (type 0x1a): not yet the visitor's → owners' counts ∓1 (player vf 0x12c), the capture, and
+                // messagesFileRef[2] flies (00ce14d0(2) → 009c90e0); an own lighthouse shows nothing.
+                bool lighthouseCaptured = os.Owner != p.Index;
                 Capture(o, os, p);
+                if (lighthouseCaptured) Emit(new ObjectVisited(h.Id, o.Index, "fly:2"));
                 break;
+            }
             case DenOfThieves:
             {
                 // 00bca4f0: a den not yet the visitor's changes owner (dens owned, player vfunc 0x134 ∓1) and shows

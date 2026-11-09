@@ -254,7 +254,7 @@ public sealed partial class Adventure
         h.VisitedDay.Clear();
         h.DrankFromWellToday = false;
         h.MaxMovePoints = ComputeMaxMovePoints(h);
-        h.MovePoints = h.MaxMovePoints + (h.StablesThisWeek && !h.InBoat ? Db.Stats.Root.Element("adventure").Int("ForWeekStablesMaxLandMovementBonus", 600) : 0);
+        h.MovePoints = h.MaxMovePoints;
         // Mana regeneration, 00b50470 (00b504a2..00b504e0): below the maximum (vf 0x12c = +0x140, set from vf 0x130 of the
         // same knowledge) mana += knowledge (vf 0x1c = 00b4cd80, results below 2 read 1) ×2 when the hero's week (+0x1d0,
         // set by the new-week handler 00b50880) is 0x35 WEEK_OF_MEDITATION (00bcdc80), ×2 more when hero vf 0x174(0x28)
@@ -282,29 +282,57 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// Starting movement points (fan manual p.300): 2500, Logistics +10/20/30% with Nival rounding,
-    /// then Boots of the Swift Journey +25% (floored); Week of Flame +50%.
-    /// Reproduces the manual's table: 2500/2749/2999/3249 and 3125/3436/3748/4061.
+    /// Maximum movement, H5_Game.exe 00b4dd40 (x87 products truncated, FISTP with the chop control word). B =
+    /// BaseHeroMovement (RPGStats +0x5c); a specialization (hero vf 0x190 = 00b4b5a0, +0x8c) replaces it first:
+    /// HERO_SPEC_LOGISTICS (9) and HERO_SPEC_BEATER (0xd) take p = (float)(⌈level / max(div, 1)⌉ · PerLevel + Base),
+    /// clamped to 0..100 (00465610 / 00465640), and B = chop((p + 1.0001f) · B) / chop((p + 1.0f) · B) with
+    /// HeroSpecializations Knight/Wanderer_* (+0x818..+0x820) / Demonlord/Beater_* (+0x838..+0x840);
+    /// HERO_SPEC_RASH (0x48): B = chop((level · Barbarian/Rash_MovePointsIncreasePerPevel (+0x95c) + 1.0001f) · B).
+    /// The week (00bcdc30): WEEK_OF_FLAME adds B / 2 to land and sea, WEEK_OF_WINDS only to sea. Land (+0x14c):
+    /// chop((Logistics mastery (vf 0x174(1)) · 0.1f + 1.0001f) · L), then chop((worn BOOTS_OF_SPEED (artifact 0x18,
+    /// 00ca6680) · 0.25f + 1.0f) · L), + ForWeekStablesMaxLandMovementBonus (+0x80) while the stables flag is set
+    /// (vf 0x210). Sea (+0x150): Navigation (vf 0x174(0x15) ≠ 0) chop(S · 1.5f), chop((worn GOLDEN_SEXTANT (10) ·
+    /// 0.25f + 1.0f) · S), + LighthouseMaxSeaMovementBonus (+0x84) × the player's lighthouses (player vf 0x130 =
+    /// 004fb750, +0x13c; 00bca4f0 counts captures ±1). The third value (+0x154, movement type 2) is not used here.
     /// </summary>
     public int ComputeMaxMovePoints(HeroState h)
     {
-        int baseMp = Db.Stats.Root.Element("adventure").Int("BaseHeroMovement", 2500);
-        double mp = baseMp;
+        var adv = Db.Stats.Root.Element("adventure");
+        int b = adv.Int("BaseHeroMovement", 2500);
+        const float Eps = 1.0001f;   // 00e4f9c0
+        float Spec(string path, double def) => (float)Core.Stats.Get("combat/HeroSpecializations/" + path, def);
+        int SpecBase(string race, string name, float add)
+        {
+            int div = Math.Max((int)Spec($"{race}/{name}_LevelDivisor", 1), 1);
+            int q = (h.Level + div - 1) / div;
+            float p = (float)(q * (double)Spec($"{race}/{name}_MPBonusPerLevel", 0) + Spec($"{race}/{name}_MPBonusBase", 0));
+            p = Math.Max(0f, Math.Min(p, 100f));
+            return Chop(((double)p + add) * b);
+        }
+        int start = h.Specialization switch
+        {
+            "HERO_SPEC_LOGISTICS" => SpecBase("Knight", "Wanderer", Eps),
+            "HERO_SPEC_BEATER" => SpecBase("Demonlord", "Beater", 1.0f),
+            "HERO_SPEC_RASH" => Chop((h.Level * (double)Spec("Barbarian/Rash_MovePointsIncreasePerPevel", 0.01) + Eps) * b),
+            _ => b,
+        };
+        int Week(int mp, bool sea) => S.MoonWeek == "WEEK_OF_FLAME" || (sea && S.MoonWeek == "WEEK_OF_WINDS") ? mp + mp / 2 : mp;
         if (h.InBoat)
         {
-            if (h.HasPerk("HERO_SKILL_NAVIGATION")) mp *= 1.5;
-            if (h.HasArtifact("GOLDEN_SEXTANT")) mp *= 1.25;
-            int lighthouses = S.Objects.Count(kv => kv.Value.Owner == h.Owner && O(kv.Key).Shared.Type == "BUILDING_LIGHTHOUSE");
-            mp += lighthouses * Db.Stats.Root.Element("adventure").Int("LighthouseMaxSeaMovementBonus", 500);
-            if (S.MoonWeek == "WEEK_OF_WINDS") mp *= 1.5;
-            return (int)mp;
+            int sea = Week(start, true);
+            if (h.HasPerk("HERO_SKILL_NAVIGATION") || EffectiveMastery(h, "HERO_SKILL_NAVIGATION") != 0) sea = Chop(sea * (double)1.5f);
+            sea = Chop((h.Artifacts.Count(a => a == "GOLDEN_SEXTANT") * (double)0.25f + 1.0f) * sea);
+            int lighthouses = S.Objects.Count(kv => kv.Value.Owner == h.Owner && h.Owner >= 0 && !kv.Value.Removed && O(kv.Key).Shared.Type == "BUILDING_LIGHTHOUSE");
+            return sea + lighthouses * adv.Int("LighthouseMaxSeaMovementBonus", 500);
         }
-        int log = (int)h.MasteryOf("HERO_SKILL_LOGISTICS");
-        if (log > 0) mp = NivalFloor(baseMp * (1 + 0.1 * Math.Min(log, 3)));
-        if (h.HasArtifact("BOOTS_OF_SPEED")) mp = Math.Floor(mp * 1.25);
-        if (S.MoonWeek == "WEEK_OF_FLAME") mp = Math.Floor(mp * 1.5);
-        return (int)mp;
+        int land = Week(start, false);
+        land = Chop((EffectiveMastery(h, "HERO_SKILL_LOGISTICS") * (double)0.1f + Eps) * land);
+        land = Chop((h.Artifacts.Count(a => a == "BOOTS_OF_SPEED") * (double)0.25f + 1.0f) * land);
+        if (h.StablesThisWeek) land += adv.Int("ForWeekStablesMaxLandMovementBonus", 600);
+        return land;
     }
+
+    static int Chop(double x) => (int)Math.Truncate(x);
 
     void RollTavern(PlayerState p)
     {

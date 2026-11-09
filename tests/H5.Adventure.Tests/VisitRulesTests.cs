@@ -98,6 +98,17 @@ public class VisitRulesTests(Fixture f)
     }
 
     [Fact]
+    public void LighthouseCaptureFliesItsTextOnce()
+    {
+        // 00bca4f0: a lighthouse not yet the visitor's is captured and [2] flies; an own one shows nothing.
+        var (g, h, l) = Setup(f, "BUILDING_LIGHTHOUSE");
+        var ev = Visit(g, h, l[0]);
+        Assert.True(Says(ev, "fly:2"));
+        Assert.Equal(h.Owner, g.S.Obj(l[0].Index).Owner);
+        Assert.False(Says(Visit(g, h, l[0]), "fly:2"));
+    }
+
+    [Fact]
     public void SirensTakeThirtyPercentRoundedFromStacksOfTwoOrMore()
     {
         var (g, h, s) = Setup(f, "BUILDING_SIRENS");
