@@ -121,10 +121,11 @@ public sealed partial class RmgGenerator
     (List<(RmgCreature Creature, int Count)> Stacks, bool Template)? PickGuard(int power)
     {
         if (power < 100) return null;
-        int value = (int)Math.Round((double)power * MonsterCoef[Math.Clamp(MonsterLevel, 0, 4)], MidpointRounding.ToEven);
+        // FISTP under RC = chop (0x00ba77ce …): truncated; the int x float product is exact in double.
+        int value = (int)((double)power * MonsterCoef[Math.Clamp(MonsterLevel, 0, 4)]);
         if (Rng.Float(0, 1) < 0.6f)
         {
-            var two = PickArmyTemplate((int)Math.Round((double)value * 0.9f, MidpointRounding.ToEven));
+            var two = PickArmyTemplate((int)((double)value * 0.9f));   // 0x00ba78db, chop
             if (two != null) return (two, true);
         }
         var one = PickSingleStack(value);
@@ -147,6 +148,7 @@ public sealed partial class RmgGenerator
             if (value >= _db.ArmyTemplates[i].MinPower && value <= _db.ArmyTemplates[i].MaxPower) fits.Add(i);
         if (fits.Count == 0) return null;
         var t = _db.ArmyTemplates[fits[Rng.Next(fits.Count)]];
+        Trace?.Invoke($"template value {value} fits {fits.Count} -> {t.Path}");
         var stacks = new List<(RmgCreature? C, int Count)>();
         int sum = 0;
         foreach (var (cr, coef) in t.Stacks)
@@ -216,6 +218,7 @@ public sealed partial class RmgGenerator
         var f = Floors[z.Floor];
         if (!f.In(x, y)) return null;
         var g = PickGuard(power);
+        Trace?.Invoke($"guard ({x},{y}) power {power} -> {(g == null ? "-" : string.Join("+", g.Value.Stacks.Select(st => st.Creature.Id + "x" + st.Count)))} counter {Rng.Counter}");
         if (g == null || g.Value.Stacks[0].Creature.MonsterShared == null) return null;
         var (c, count) = g.Value.Stacks[0];
         var d = Catalog.Get(c.MonsterShared!);
@@ -267,9 +270,17 @@ public sealed partial class RmgGenerator
             var f = Floors[z.Floor];
             if (!z.Def.Town)
             {
-                // exe 0x00919810: zones without a town anchor their objects at the tile centroid.
+                // exe 0x00919810: zones without a town anchor their objects at the tile centroid: the x87 sums times the
+                // unrounded 1 / n, stored as floats in +0x0c / +0x10 (TownPos holds them rounded for the integer users).
+                // TODO(exe): the sums start from two uninitialised stack slots ([ESP-8], [ESP-4] at entry); ours 0.
                 if (z.Tiles.Count > 0)
-                    z.TownPos = ((int)MathF.Round(z.Tiles.Sum(t => (float)t.X) / z.Tiles.Count), (int)MathF.Round(z.Tiles.Sum(t => (float)t.Y) / z.Tiles.Count));
+                {
+                    double sx = 0, sy = 0;
+                    foreach (var t in z.Tiles) { sx += t.X; sy += t.Y; }
+                    double inv = 1.0 / z.Tiles.Count;
+                    z.Point = ((float)(sx * inv), (float)(inv * sy));
+                    z.TownPos = ((int)MathF.Round(z.Point.X), (int)MathF.Round(z.Point.Y));
+                }
                 z.AnchorOnly = true;
                 continue;
             }
@@ -291,6 +302,8 @@ public sealed partial class RmgGenerator
                 var (cx, cy) = cands[i];
                 float a = QuarterAngle(Rng.Next(4));
                 var (ax, ay) = VisitTile(d, cx, cy, a);
+                z.Point = (ax, ay);   // 0x00923e50 writes +0x0c / +0x10 before its tests
+                Trace?.Invoke($"town try zone {z.Id} counter {Rng.Counter} n {cands.Count} pick {i} ({cx},{cy}) q {ExeQuarter(a)} anchor ({ax},{ay})");
                 if (ay < 1 || ay >= H - 1 || ax < 1 || ax >= W - 1) continue;
                 if (f.BorderDist[f.At(ax, ay)] < z.Radius * 2 / 3 && tries < 100) continue;
                 if (!FootprintFits(z, cx, cy, a, d)) { cands.RemoveAt(i); continue; }
@@ -309,12 +322,14 @@ public sealed partial class RmgGenerator
             else
                 // 0x00918b60 → 0x00ba6b10: a neutral town's guard is its garrison (TownGuardStrenght x BasicLevelGuardPower).
                 TownGarrison(town, GuardPower(z.Def.TownGuardStrength), z.Race is >= 3 and <= 10 ? z.Race : 1);
-            // 0x009228e0 (no random towns): one of the preset's OverTownCenterObjects at the town's position.
+            // 0x009228e0 (no random towns): one of the preset's OverTownCenterObjects at the town's centre, the point
+            // (1, −1) turned with the town (0x00923e50's second 0x00b0be60 call) added to its position.
             if (objects.OverTownCenterObjects.Count > 0)
             {
                 float a = QuarterAngle(Rng.Next(4));
                 var shared = objects.OverTownCenterObjects[Rng.Next(objects.OverTownCenterObjects.Count)];
-                CreateObject(r, z, shared, px, py, a, "over town centre");
+                var (ox, oy) = Rotate((1, -1), town.Quarter);
+                CreateObject(r, z, shared, px + ox, py + oy, a, "over town centre");
             }
             // 0x00923e50 after 0x009228e0: the specializations of RMG/TownRandomSpecGroup (0x00926510, link +0x44) whose
             // TownType (+0x6c) is the town's (+0xfc) and RandomTown (+0x70) TOWN_RANDOM; Next(n) picks the town's
@@ -384,17 +399,17 @@ public sealed partial class RmgGenerator
             if (z == null) continue;
             // The placers read the zone's +0x20 preset (abandoned mines 0x00920630, upgrades 0x0091f140, 0x00920ec0 …
             // 0x009221d0); the dwellings 0x0091e910 the +0x1c preset (the zone race). The mines 0x0091c4a0 read no
-            // preset (TODO(exe): their table is not traced; ours: the zone race's Mines, the same objects in every preset).
+            // preset: their objects are the fixed table 0x00ff9c48 (MineShareds).
             var race = _db.Race(z.Preset);
             var own = _db.Race(z.Race);
-            PlaceMines(r, z, own);
+            PlaceMines(r, z);
             PlaceAbandonedMines(r, z, race, z.Def.AbandonedMines);
             // 0x0091c3a0 (hero): the player record's StartHero (PlayersInfo +8) is never set by our screen, so no hero is created.
             PlaceDwellings(r, z, own);
             if (_o.Grail) PlaceGrailAndObelisks(r, z, zi == grailZone);
-            // Upgrade buildings: density x the +0xb0 factor, rounded to nearest (0x00907150 -> 0x0091f140).
+            // Upgrade buildings: density x the +0xb0 factor, truncated (FISTP under RC = chop at 0x00907676) -> 0x0091f140.
             PlaceUpgrades(r, z, race.Upgrades,
-                z.Tiles.Count * (int)MathF.Round(z.Def.UpgBuildingsDensity * Multiplier(_o.ExpLevel), MidpointRounding.ToEven) / 10000);
+                z.Tiles.Count * (int)((double)z.Def.UpgBuildingsDensity * Multiplier(_o.ExpLevel)) / 10000);
             // 0x00920370: Prisons; each with the far candidates (0x0091bb10).
             for (int i = 0; i < z.Def.Prisons; i++)
                 PlaceRandom(r, z, "MapObjects/Prison.(AdvMapPrisonShared).xdb", FarCandidates(z), "prison");
@@ -533,7 +548,16 @@ public sealed partial class RmgGenerator
     /// neighbours k+2 … k+9 (&amp; 7) of the 8-table with such flags, closer than 2 to the guard tile, Float(0,1) &lt; 0.8,
     /// get the type's resource pile (no footprint test) and flag 2.
     /// </summary>
-    void PlaceMines(RmgResult r, RmgZone z, RmgRacePreset race)
+    /// <summary>exe 0x00ff9c48 (init 0x00dc8950): the mine of each type, the same in every zone.</summary>
+    static readonly string[] MineShareds =
+    {
+        "MapObjects/Sawmill.(AdvMapMineShared).xdb", "MapObjects/Ore_Pit.(AdvMapMineShared).xdb",
+        "MapObjects/Alchemist_Lab.(AdvMapMineShared).xdb", "MapObjects/Crystal_Cavern.(AdvMapMineShared).xdb",
+        "MapObjects/Sulfur_Dune.(AdvMapMineShared).xdb", "MapObjects/Gem_Pond.(AdvMapMineShared).xdb",
+        "MapObjects/Gold_Mine.(AdvMapMineShared).xdb",
+    };
+
+    void PlaceMines(RmgResult r, RmgZone z)
     {
         var f = Floors[z.Floor];
         var p = _db.Params;
@@ -548,12 +572,12 @@ public sealed partial class RmgGenerator
             if (d < p.Mine2LevelMaxRadius && d > p.Mine2LevelMinRadius) far.Add((x, y));
             if (d < p.Mine1LevelMaxRadius && d > p.Mine1LevelMinRadius) near.Add((x, y));
         }
-        for (int type = 0; type < 7 && type < race.Mines.Count; type++)
+        for (int type = 0; type < 7; type++)
         {
             for (int n = 0; n < z.Def.Mines[type]; n++)
             {
                 var cands = SpreadCandidates(z, type < 2 ? near : far, 2, 5);
-                var d = Catalog.Get(race.Mines[type]);
+                var d = Catalog.Get(MineShareds[type]);
                 RmgObject? mine = null;
                 float angle = 0;
                 int mx = 0, my = 0;
@@ -561,13 +585,14 @@ public sealed partial class RmgGenerator
                 {
                     int i = Rng.Next(cands.Count);
                     (mx, my) = cands[i];
+                    Trace?.Invoke($"mine try zone {z.Id} type {type} counter {Rng.Counter} n {cands.Count} pick {i} ({mx},{my})");
                     angle = QuarterAngle(Rng.Next(4));
-                    if (FootprintFits(z, mx, my, angle, d)) { mine = CreateObject(r, z, race.Mines[type], mx, my, angle, "mine"); break; }
+                    if (FootprintFits(z, mx, my, angle, d)) { mine = CreateObject(r, z, MineShareds[type], mx, my, angle, "mine"); break; }
                     cands.RemoveAt(i);
                 }
                 if (mine == null)
                 {
-                    if (type >= 2) r.Warnings.Add($"cant place mine {race.Mines[type]} at zone {z.Id}");
+                    if (type >= 2) r.Warnings.Add($"cant place mine {MineShareds[type]} at zone {z.Id}");
                     continue;
                 }
                 Stamp(z, mx, my, angle, d, z.MinePoints);

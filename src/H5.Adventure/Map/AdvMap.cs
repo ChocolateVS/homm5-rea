@@ -98,6 +98,9 @@ public sealed class MapObjective
     public string? Caption;
 }
 
+/// <summary>One "pointLights" entry of a map object: Pos relative to the object, Radius, Color.</summary>
+public readonly record struct MapPointLight(float X, float Y, float Z, float Radius, (float R, float G, float B)? Color);
+
 /// <summary>One placed object. Typed fields are filled according to <see cref="Kind"/>.</summary>
 public sealed class MapObject
 {
@@ -172,6 +175,12 @@ public sealed class MapObject
     /// as an offset from <see cref="Pos"/>. Null when the object defines none.
     /// </summary>
     public (int X, int Y)? ShipTile;
+
+    /// <summary>
+    /// The object's "pointLights" (written by the random map generator's underground zones: one per lit static, four
+    /// per town): position relative to <see cref="Pos"/>, radius and colour (null: the light's default).
+    /// </summary>
+    public List<MapPointLight> PointLights = new();
 
     /// <summary>Seer Hut quest (&lt;Quest&gt;): objective, description and award.</summary>
     public SeerQuest? Quest;

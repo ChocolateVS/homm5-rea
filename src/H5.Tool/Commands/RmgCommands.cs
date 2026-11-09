@@ -304,8 +304,10 @@ sealed class RmgRefCommand : ICommand
     {
         var db = RmgDatabase.Load(new H5.Core.Xdb.XdbLoader(ctx.Fs));
         var mapsDir = Path.Combine(ctx.Install.Root, "Maps");
+        var only = args.FirstOrDefault(a => a.StartsWith("--only="))?.Substring(7);
         foreach (var file in Directory.EnumerateFiles(mapsDir, "*RMG*.h5m").Order())
         {
+            if (only != null && !Path.GetFileName(file).Contains(only, StringComparison.OrdinalIgnoreCase)) continue;
             using var z = ZipFile.OpenRead(file);
             string Read(string suffix)
             {
@@ -345,6 +347,7 @@ sealed class RmgRefCommand : ICommand
             };
             opts.PlayerRaces.AddRange(refTowns.Select(t => t.Race));
             var gen = new RmgGenerator(db, opts);
+            if (args.Contains("--trace")) gen.Trace = s => Console.WriteLine("    trace " + s);
             var r = gen.Generate();
             var ours = RmgShared.Counts(r);
             foreach (var t in refTowns)
@@ -352,6 +355,31 @@ sealed class RmgRefCommand : ICommand
                 var tz = gen.Zones.FirstOrDefault(zz => zz.Player == t.Player);
                 var mine = r.StartTowns.TryGetValue(t.Player - 1, out var o) ? $"({o.X},{o.Y}) q{o.Quarter} anchor {tz?.TownPos} zone {tz?.Id} c=({tz?.CenterX},{tz?.CenterY}) R={tz?.Radius}" : "-";
                 Console.WriteLine($"    town P{t.Player} race {t.Race}: ref ({t.X},{t.Y})  ours {mine}");
+            }
+            {
+                // Positions: every object of the stock map (map.xdb order is the exe's creation order) against ours, as
+                // (shared, x, y, floor); "same" counts the multiset intersection, "prefix" the leading run in creation order.
+                static string Norm(string sh) => sh.Split('#')[0].TrimStart('/').ToLowerInvariant();
+                var refObjs = Regex.Matches(xml, @"<Item href=""#n:inline\((\w+)\)[^>]*>(.*?)(?=<Item href=""#n:inline\(|</objects>)", RegexOptions.Singleline)
+                    .Select(m => (Kind: m.Groups[1].Value, Body: m.Groups[2].Value))
+                    .Select(m => (Shared: Norm(Regex.Match(m.Body, @"<Shared href=""([^""]*)""").Groups[1].Value),
+                                  X: int.Parse(Regex.Match(m.Body, @"<x>(-?\d+)</x>").Groups[1].Value),
+                                  Y: int.Parse(Regex.Match(m.Body, @"<y>(-?\d+)</y>").Groups[1].Value),
+                                  Floor: int.TryParse(Regex.Match(m.Body, @"<Floor>(\d+)</Floor>").Groups[1].Value, out var fl) ? fl : 0))
+                    .ToList();
+                var ourObjs = r.Objects.Select(o => (Shared: Norm(o.Shared), o.X, o.Y, o.Floor)).ToList();
+                var bag = refObjs.GroupBy(o => o).ToDictionary(g => g.Key, g => g.Count());
+                int same = 0;
+                foreach (var o in ourObjs) if (bag.TryGetValue(o, out var c) && c > 0) { bag[o] = c - 1; same++; }
+                int prefix = 0;
+                while (prefix < refObjs.Count && prefix < ourObjs.Count && refObjs[prefix] == ourObjs[prefix]) prefix++;
+                var refRots = Regex.Matches(xml, @"<Item href=""#n:inline\((\w+)\)[^>]*>(.*?)(?=<Item href=""#n:inline\(|</objects>)", RegexOptions.Singleline)
+                    .Select(m => float.Parse(Regex.Match(m.Groups[2].Value, @"<Rot>([^<]*)</Rot>").Groups[1].Value is { Length: > 0 } rs ? rs : "0", System.Globalization.CultureInfo.InvariantCulture)).ToList();
+                var turned = Enumerable.Range(0, prefix).Where(i => RmgGenerator.ExeQuarter(refRots[i]) != r.Objects[i].Quarter && r.Objects[i].Angle is float an && MathF.Abs(an - an * 0 - (float)Math.Round(an / 1.5707964f) * 1.5707964f) < 1e-3f).ToList();
+                Console.WriteLine($"    positions: same {same} of ref {refObjs.Count} / ours {ourObjs.Count}; creation-order prefix {prefix}; quarter turn differs in the prefix: {turned.Count}{(turned.Count > 0 ? " (first #" + turned[0] + " " + r.Objects[turned[0]].Note + ")" : "")}");
+                if (args.Contains("--diverge") && prefix < Math.Min(refObjs.Count, ourObjs.Count))
+                    for (int i = Math.Max(0, prefix - 8); i < Math.Min(prefix + 6, Math.Min(refObjs.Count, ourObjs.Count)); i++)
+                        Console.WriteLine($"      #{i}: ref {refObjs[i]}  ours {ourObjs[i]} ({r.Objects[i].Note} zone {r.Objects[i].Zone} q{r.Objects[i].Quarter})");
             }
             foreach (var key in refCounts.Keys.Union(ours.Keys).Order())
                 Console.WriteLine($"    {key,-16} ref {refCounts.GetValueOrDefault(key),6}   ours {ours.GetValueOrDefault(key),6}");
@@ -385,6 +413,41 @@ sealed class RmgRefCommand : ICommand
                     }
                     Dump("ref", rt.Layers.Select(l => (l.TilePath, l.Weights.Data)));
                     Dump("ours", gen.Floors[0].Layers.Select(l => (l.Tile, l.Weights)));
+                    // Per layer present on both: vertices painted (> 0) on one side only.
+                    foreach (var rl in rt.Layers)
+                    {
+                        var ol = gen.Floors[0].Layers.FirstOrDefault(l => string.Equals(l.Tile, rl.TilePath, StringComparison.OrdinalIgnoreCase));
+                        if (ol == null) continue;
+                        int diff = 0;
+                        for (int i = 0; i < Math.Min(ol.Weights.Length, rl.Weights.Data.Length); i++) if ((ol.Weights[i] != 0) != (rl.Weights.Data[i] != 0)) diff++;
+                        // Per zone of the vertex's tile (min(x, W-1), min(y, H-1)), as the painters attribute it.
+                        var perZone = new SortedDictionary<int, int>();
+                        var fl0 = gen.Floors[0];
+                        for (int i = 0; i < Math.Min(ol.Weights.Length, rl.Weights.Data.Length); i++)
+                            if ((ol.Weights[i] != 0) != (rl.Weights.Data[i] != 0))
+                            {
+                                int vy = i / (size + 1), vx = i % (size + 1);
+                                int zid = fl0.Zone[fl0.At(Math.Min(vx, size - 1), Math.Min(vy, size - 1))];
+                                perZone[zid] = perZone.GetValueOrDefault(zid) + 1;
+                                if (diff < 40) Console.WriteLine($"        vertex ({vx},{vy}) zone {zid}: ref {rl.Weights.Data[i]} ours {ol.Weights[i]}");
+                            }
+                        Console.WriteLine($"      vertices painted on one side only: {diff,6}  {rl.TilePath}  by zone {string.Join(" ", perZone.Select(kv => kv.Key + ":" + kv.Value))}");
+                    }
+                    if (args.FirstOrDefault(a => a.StartsWith("--window=")) is string win)
+                    {
+                        // ASCII view of the road layers (priority >= 240) around a window x0,y0,x1,y1: R both, r ref only, o ours only.
+                        var wv = win.Substring(9).Split(',').Select(int.Parse).ToArray();
+                        bool Road(string t) => (db.Tile(t)?.Priority ?? 0) >= 240;
+                        var rr = rt.Layers.Where(l => Road(l.TilePath)).Select(l => l.Weights.Data).ToList();
+                        var oo = gen.Floors[0].Layers.Where(l => Road(l.Tile)).Select(l => l.Weights).ToList();
+                        for (int vy = wv[1]; vy <= wv[3]; vy++)
+                            Console.WriteLine($"      {vy,3} " + string.Concat(Enumerable.Range(wv[0], wv[2] - wv[0] + 1).Select(vx =>
+                            {
+                                int i = vy * (size + 1) + vx;
+                                bool a = rr.Any(w => w[i] != 0), b = oo.Any(w => w[i] != 0);
+                                return a && b ? 'R' : a ? 'r' : b ? 'o' : '.';
+                            })));
+                    }
                     static string Hs(float[] h) => $"heights min {h.Min():0.00} max {h.Max():0.00} mean {h.Average():0.000}, distinct {h.Distinct().Count()}";
                     Console.WriteLine($"    ref  {Hs(rt.Heights!.Data)}");
                     Console.WriteLine($"    ours {Hs(gen.Floors[0].Heights)}");

@@ -128,7 +128,7 @@ public sealed partial class RmgGenerator
     /// <summary>exe 0x00918a90: a teleport faces away from the zone's point +0x0c: |dx| ≤ |dy| → π (dy &lt; 0) or 0, else 3π/2 (dx &gt; 0) or π/2.</summary>
     float TeleportFacing(RmgZone z, int x, int y)
     {
-        var (tx, ty) = z.TownPos ?? (0, 0);
+        var (tx, ty) = z.Point;
         float dx = x - tx, dy = y - ty;
         if (MathF.Abs(dx) <= MathF.Abs(dy)) return dy < 0f ? 3.1415927f : 0f;
         return dx > 0f ? 4.712389f : 1.5707964f;

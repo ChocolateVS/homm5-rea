@@ -7,8 +7,11 @@ stock archives (`RMG/Templates/*.xdb`, `RMG/Params/Default.xdb`, `GameMechanics/
 
 Tools: `h5tool rmg <template> <size> <seed> [--players=N] [--underground] [--monsters=0..4] [--png=out.png]`,
 `h5tool rmg-stats [seeds] [--threads=N] [--filter=s]` (every template at every size / underground / player count the
-screen lists it for, exe 0x0090c880), `h5tool rmg-ref [--detail] [--terrain] [--reach]` (the user's RMG maps in `Maps/*RMG*.h5m` regenerated
-from the template/seed/levels recorded in them, counts side by side). Audit ledger: `docs/rules/AUDIT_RMG.md`.
+screen lists it for, exe 0x0090c880), `h5tool rmg-ref [--detail] [--terrain] [--reach] [--diverge] [--trace] [--only=name]` (the user's RMG maps in
+`Maps/*RMG*.h5m` regenerated from the template/seed/levels recorded in them, counts side by side; every map also prints
+"positions": objects at the same (shared, x, y, floor) as the saved map, and the leading run in creation order — map.xdb
+keeps the exe's creation order —, `--diverge` the objects around the first difference, `--trace` the draws behind the
+town, mine, guard and object-path placements). Audit ledger: `docs/rules/AUDIT_RMG.md`.
 Analysis: private Ghidra project `tools/ghidra-projects/rmg`, scripts in `tools/rmgre/` (`ghidra.sh`).
 
 ## Status at a glance
@@ -19,10 +22,10 @@ Analysis: private Ghidra project `tools/ghidra-projects/rmg`, scripts in `tools/
 | Option resolution | `0x0090e7e0` prologue | exact, incl. the one-draw-per-option rule |
 | CreateMap draws | `0x0090cb00`, `0x00911500` | draw sequence ported |
 | Zones, floors, races, players | `0x0090bd80`, base ctor `0x00925850` | exact: **player races of all reference maps are reproduced** (tests) |
-| Zone centres | `0x00905070` | ported line by line (point cloud, shuffle, radius, k·0.97 retries) |
+| Zone centres | `0x00905070` | ported line by line (point cloud, shuffle, truncated radius, k·0.97 retries); equal on the nine stock maps |
 | Tile → zone fill | `0x00907d90` | ported line by line (seed circles, √3·W growth passes, steal test) |
 | Border distance | `0x00904240` | ported |
-| Town placement | `0x00923e50`, `0x00919810` | algorithm ported; positions approximate (within a few tiles of the reference on some maps, elsewhere different) |
+| Town placement | `0x00923e50`, `0x00919810` | ported; all 37 start towns of the nine stock maps at the saved position and turn |
 | Mines | `0x0091c4a0` | ported (radius bands, 2/5 spread filter, guard levels, decoration ring) |
 | Buildings by points / density | `0x009221d0`, `0x00921d70` | ported budget algorithm |
 | Treasures / chests | `0x0091f8a0`, `0x00905e60` | ported (table, count, candidates, surface zones only) |
@@ -85,10 +88,10 @@ order matters for centres and fill, `NivalHashMap` reproduces it.
 ## Zone centres (0x00905070)
 
 `W·H/100` points `(x = rand(W), y = rand(H))` (the draws are `rand(H)` then `rand(W)`). Per attempt:
-shuffle; radius `R = round(√(size/Σsize · W·H · k) / 3)` (×√2 with underground), k starts at 0.9;
-per floor: shuffle again, then each zone takes the first point at least R from the edges and
-`R + R_other` from every other zone of the floor — unplaced zones keep their previous (initially 0,0)
-centre and still reject points. Any failure: `k ·= 0.97` and retry.
+shuffle; radius `R = trunc(√(size/Σsize · W·H · k) / 3)` (then trunc(R·√2) with underground), k starts at 0.9;
+per floor: shuffle again, then each zone (hash order) takes the first point at least R from the edges and
+`R + R_other` from the zones of the floor placed before it in this attempt (the exe's inner walk stops at the zone
+itself). Any failure: `k ·= 0.97` and retry.
 
 ## Fill (0x00907d90)
 
@@ -105,12 +108,14 @@ first pass nothing can be stolen (division by an empty list).
 ## Objects
 
 * Border distance (`0x00904240`): border tiles = a 4-neighbour outside the map or in another zone;
-  others get the Euclidean distance to the nearest border tile of their zone.
+  others get the truncated Euclidean distance to the nearest border tile of their zone.
+* Float-to-int conversions: every FISTP preceded by `FNSTCW / OR AH,0xc / FLDCW` is a C cast (truncation); Ghidra
+  prints it as ROUND. The quarter of an angle (`0x00b0bbd0`) is a plain FISTP (round to nearest).
 * Towns (`0x00923e50`): candidates with border distance > R/2; each try draws a candidate and a
   quarter turn; the anchor (first active tile) must be ≥ 2R/3 from the border (relaxed after 100
   tries); footprint failures drop the candidate; an underground town gets four point lights (z 5 + Next(3), radius 12 + Next(10))
   (`0x0092a400`). Zones without a town anchor at their tile centroid (`0x00919810`).
-* Mines (`0x0091c4a0`): wood/ore between Mine1 radii of the town, others between Mine2 radii; tiles in
+* Mines (`0x0091c4a0`, objects from the fixed table `0x00ff9c48`: Sawmill … Gold_Mine in every zone): wood/ore between Mine1 radii of the town, others between Mine2 radii; tiles in
   the outer 2/5 of the zone's distance range are skipped; guard = `BasicLeverGuardPower × level`
   (Mine1 / Mine2 / Gold levels); up to two decoration tiles nearby (p = 0.8).
 * Budgets (`0x00920ec0`, `0x00921d70`, `0x00921360`, `0x009221d0`, `0x0091f140`): while the preset's first entry
@@ -148,16 +153,17 @@ blocked + active tiles to their mean and drops them from the smoothing mask), th
 ## Not yet line by line (see AUDIT_RMG.md)
 
 * Underground zones (CGameSubInfernoZone / CGameSubterraZone / CGameDwarvenZone, `0x0090bd80`) place their statics,
-  rock fill and point lights as the exe does (`RmgObject.PointLights`; the adventure `MapObject` has no field for them).
+  rock fill and point lights as the exe does (`RmgObject.PointLights`, copied to the adventure `MapObject.PointLights`; the renderer does not draw them yet).
 
 Reference comparison (`h5tool rmg-ref`, same template/size/seed/players/races/levels): mines, prisons and towns
 match exactly on every map; the other object counts are within a few percent (AUDIT_RMG.md).
 
 ## Gaps
 
-* Bit-exact reproduction stops after zone creation: centre/fill/town stages are ported but the
-  resulting positions differ from the reference maps (likely footprint-test and anchor-rotation
-  details in `0x00919be0` / `0x00b0be60`, and the water/terrain stages `0x00915dc0` / `0x00918270`).
+* Bit-exact reproduction: zone centres, fill and every start town match the nine stock maps; the objects match the
+  saved creation order up to a first difference per map (AUDIT_RMG.md "Reference maps"): T_I2 in the object paths of
+  its first zone (the exe draws 3 more Next(2) there, located by re-seeding but not explained), the others in the
+  statics (lakes / mountains).
 * No `.h5m` writer yet (the original writes `Maps/RMG/<guid>/` with map.xdb, GroundTerrain.bin, texts,
   minimap); maps exist in memory as `AdvMap`.
 * Grail/obelisks follow the screen's EP_GRAAL_ON_MAP option (0x00907150 / 0x00921a50 / 0x00921a10, see

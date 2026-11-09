@@ -76,7 +76,7 @@ public sealed class RmgTemplate
         if (sizeIndex is int s)
         {
             int units = RmgSizes.Units(s);
-            if (water) units = (int)MathF.Round(units * 0.7f);
+            if (water) units = (int)(units * (double)0.7f);   // 0x0090c949: FISTP under RC = chop
             int u = fixedUg ? units * 2 : units;
             if (u < MinMapSize || u > MaxMapSize) return false;
         }

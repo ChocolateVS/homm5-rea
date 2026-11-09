@@ -79,6 +79,8 @@ public sealed class RmgZone
     public bool HasTown => Def.Town || Player != 0;
     public (int X, int Y)? TownPos;      // +0x0c/+0x10 once placed (town anchor, or tile centroid)
     public bool AnchorOnly;              // TownPos is the centroid of a zone without a town
+    /// <summary>+0x0c/+0x10 as floats: each town try's anchor (kept after a failed placement), or the tile centroid (0x00919810).</summary>
+    public (float X, float Y) Point;
     public bool TownPlaced;              // +0xf8: set by 0x00923e50 once the town is committed
     // Point lists of the road stages (0x0091bdb0, 0x0091bf90), positions as floats like the exe's.
     public List<(float X, float Y)> RoadNodes = new();        // +0x68: visit tiles of committed objects, connection points
@@ -199,6 +201,8 @@ public sealed partial class RmgGenerator
     public List<string> Log { get; } = new();
     /// <summary>Draw counter at the end of each stage, as the original logs it.</summary>
     public List<(string Stage, int Counter)> Counters { get; } = new();
+    /// <summary>Optional trace of the draws behind each placement (h5tool rmg-ref --trace).</summary>
+    public Action<string>? Trace { get; set; }
 
     public RmgGenerator(RmgDatabase db, RmgOptions options)
     {
@@ -463,8 +467,8 @@ public sealed partial class RmgGenerator
             int rx = Rng.Next(W);
             points.Add((rx, ry));
         }
-        // Zone centres start at (0,0) and are NOT reset between attempts: unplaced zones keep
-        // their previous centre and still reject nearby points, exactly like the original.
+        // A point is tested against the zones of the same floor that precede the zone in hash order (0x00905070's inner
+        // walk stops at the zone itself), i.e. the ones placed earlier in this attempt.
         double inv = 1.0 / total;
         for (int attempt = 0; attempt < 400; attempt++)
         {
@@ -472,8 +476,9 @@ public sealed partial class RmgGenerator
             foreach (var f in Floors)
                 foreach (var z in f.Zones.Values)
                 {
-                    z.Radius = (int)Math.Round(Math.Sqrt(z.Def.Size * inv * area * k) * 0.3333333432674408, MidpointRounding.ToEven);
-                    if (HasUnderground) z.Radius = (int)Math.Round(z.Radius * 1.4142135381698608, MidpointRounding.ToEven);
+                    // FISTP with RC = chop (0x00905345, 0x00905378): truncated.
+                    z.Radius = (int)(Math.Sqrt(z.Def.Size * inv * area * k) * 0.3333333432674408);
+                    if (HasUnderground) z.Radius = (int)(z.Radius * 1.4142135381698608);
                 }
             bool ok = true;
             foreach (var f in Floors)
@@ -487,13 +492,12 @@ public sealed partial class RmgGenerator
                     {
                         if (p.X < z.Radius || p.X > W - z.Radius || p.Y < z.Radius || p.Y > H - z.Radius) continue;
                         bool fits = true;
-                        foreach (var g in Floors)
-                            foreach (var other in g.Zones.Values)
-                            {
-                                if (other == z) continue;
-                                float dx = other.CenterX - p.X, dy = other.CenterY - p.Y;
-                                if (MathF.Sqrt(dy * dy + dx * dx) < other.Radius + z.Radius && other.Floor == z.Floor) { fits = false; break; }
-                            }
+                        foreach (var other in f.Zones.Values)
+                        {
+                            if (other == z) break;
+                            float dx = other.CenterX - p.X, dy = other.CenterY - p.Y;
+                            if (MathF.Sqrt(dy * dy + dx * dx) < other.Radius + z.Radius) { fits = false; break; }
+                        }
                         if (!fits) continue;
                         z.CenterX = p.X; z.CenterY = p.Y;
                         Log.Add($"Zone #{z.Id}, started at {(int)p.X}:{(int)p.Y}, k == {k:0.00}, R = {z.Radius}");
@@ -644,7 +648,8 @@ public sealed partial class RmgGenerator
                             float d = MathF.Sqrt(dy * dy + dx * dx);
                             if (d < best) best = d;
                         }
-                    f.BorderDist[i] = (int)MathF.Round(best, MidpointRounding.ToEven);
+                    // FISTP under a control word with RC = chop (0x00904622 .. 0x00904638): truncated.
+                    f.BorderDist[i] = (int)best;
                 }
         }
     }

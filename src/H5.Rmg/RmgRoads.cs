@@ -212,7 +212,9 @@ public sealed partial class RmgGenerator
                 double d = Dist(nodes[i].X, nodes[i].Y, nodes[j]);
                 if (d < best) { best = d; target = j; }
             }
+            int c0 = Rng.Counter;
             BuildRoad(z, nodes[i], nodes[target], TileFlags.ObjectPath, z.ObjectPaths);
+            Trace?.Invoke($"object path zone {z.Id} node {i}/{nodes.Count} {nodes[i]} -> {nodes[target]} draws {Rng.Counter - c0}");
         }
     }
 

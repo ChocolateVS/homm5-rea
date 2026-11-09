@@ -75,6 +75,7 @@ public sealed class RmgResult
                 Pos = new Tile(o.X, o.Y, o.Floor), Rot = o.Rot, SharedPath = o.Shared, Shared = o.Def, Owner = o.Owner,
             };
             mo.ShipTile = o.ShipTile;
+            mo.PointLights.AddRange(o.PointLights.Select(l => new MapPointLight(l.X, l.Y, l.Z, l.Radius, l.Color)));
             if (o.GroupId is int gid) mo.Props["GroupID"] = gid.ToString(System.Globalization.CultureInfo.InvariantCulture);
             switch (kind)
             {

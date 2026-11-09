@@ -149,6 +149,26 @@ public class GeneratorTests(RmgFixture f) : IClassFixture<RmgFixture>
         Assert.Equal(expected, races);
     }
 
+    [StockTheory]
+    // Start towns of the nine stock RMG maps (Maps/*_RMG_Map_*.h5m), position and race as saved: the zone radius
+    // (0x00905070) and border distance (0x00904240) are truncated, a centre is tested against the zones placed before
+    // it only; the races are passed as on the map (fixed and random races take the same draws).
+    [InlineData("S3-4P2-4Z4K1M", 3, 1638846894, new[] { 3, 4, 4, 8 }, new[] { 150, 89, 60, 143, 47, 66, 91, 68 })]          // L_I4_RMG_Map_001
+    [InlineData("S3-4P2-4Z4K1M", 3, 1735349587, new[] { 6, 3, 9, 4 }, new[] { 133, 154, 33, 48, 38, 132, 116, 51 })]        // L_S4_RMG_Map_006
+    [InlineData("S1-2P2-4Z4K1S", 2, 1736932596, new[] { 6, 10, 6, 8 }, new[] { 14, 99, 103, 34, 47, 59, 108, 90 })]         // M_S4_RMG_Map_011
+    [InlineData("S1-2P2-4Z4K1S", 2, 1735525453, new[] { 7, 8, 7, 3 }, new[] { 124, 115, 36, 99, 98, 15, 16, 43 })]          // M_VS4_RMG_Map_008
+    [InlineData("S1-2P2-4Z4K1S", 1, 1736315553, new[] { 6, 8, 3, 10 }, new[] { 86, 48, 18, 56, 31, 8, 54, 70 })]            // S_S4_RMG_Map_009
+    [InlineData("S1-2P2-4Z4K1S", 1, 1736402108, new[] { 6, 3, 5, 4 }, new[] { 26, 22, 72, 27, 71, 73, 12, 62 })]            // S_S4_RMG_Map_010
+    [InlineData("S1-2P2-8Z8K2S", 1, 1659441912, new[] { 5, 4, 8, 6, 8, 8, 8, 8 }, new[] { 55, 52, 6, 66, 54, 89, 47, 23, 7, 9, 25, 54, 85, 61, 77, 14 })]   // S_W8_RMG_Map_003
+    [InlineData("S0-1P2Z2K3T", 0, 1658912490, new[] { 4, 9 }, new[] { 16, 51, 58, 44 })]                                    // T_I2_RMG_Map_002
+    [InlineData("S3-5P2-8Z8K2M", 4, 1749350260, new[] { 6, 8, 4, 5, 6 }, new[] { 182, 94, 42, 173, 44, 109, 125, 156, 124, 66 })]   // XL_S5_RMG_Map_012
+    public void ReproducesReferenceTownPositions(string template, int size, int seed, int[] races, int[] expected)
+    {
+        var r = f.Generate(template, size, seed, races.Length, races);
+        var towns = Enumerable.Range(0, races.Length).SelectMany(p => new[] { r.StartTowns[p].X, r.StartTowns[p].Y }).ToArray();
+        Assert.Equal(expected, towns);
+    }
+
     [StockFact]
     public void SameSeedSameMap()
     {
@@ -316,6 +336,11 @@ public class GeneratorTerrainTests(RmgFixture f) : IClassFixture<RmgFixture>
                     lit++;
                 }
             }
+            // The adventure map carries them (MapObject.PointLights), position relative to the object.
+            var map = r.ToAdvMap(new SharedCatalog(f.Xdb));
+            for (int i = 0; i < r.Objects.Count; i++)
+                Assert.Equal(r.Objects[i].PointLights.Select(l => ((float)l.X, (float)l.Y, (float)l.Z, (float)l.Radius)),
+                    map.Objects[i].PointLights.Select(l => (l.X, l.Y, l.Z, l.Radius)));
         }
         Assert.True(lit > 0);
     }
