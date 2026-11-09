@@ -5,8 +5,15 @@ namespace H5Reborn.Ui;
 
 /// <summary>
 /// The exe's CWindowScrollableContainer (vtable 00e94034, code 00886000..0088b000): a Border window (the
-/// visible area, clipping), an internal content window inside it and a ScrollBar, both parts appended from the
-/// Shared references (UiLoader.LoadParts).
+/// visible area the range is measured on), an internal content window inside it and a ScrollBar, both parts appended
+/// from the Shared references (UiLoader.LoadParts).
+/// <list type="bullet">
+/// <item>Clipping (draw override 008877d0): the container pushes its own window rect (vfunc 0xd0, converted by 00b29360)
+/// as the UI visitor's clip (NUI::CUIVisitor 00e49980 slot 0 = 00838230: intersected with the current clip), draws as
+/// any window (00a4e9d0: background, children, foreground) and pops it (slot 1 = 008381e0). Quads are clamped to the clip
+/// with their UVs cut in proportion and dropped when empty (00b0fbb0), text rects intersected with it (00838160). So the
+/// clip is the container's rect, not the Border's; no other window clips its children.</item>
+/// </list>
 /// <list type="bullet">
 /// <item>Items (008888e0): only windows added by code (the item vector) are stacked in order along the scroll bar's axis with the
 /// shared Interval between them; their total is the content size.</item>
@@ -31,6 +38,7 @@ public partial class UiScrollableContainer : UiNode
     {
         _interval = (int?)window.RawShared?.Element("Interval") ?? 0;
         MouseFilter = MouseFilterEnum.Pass;
+        ClipContents = true;
         Content.TextureFilter = TextureFilterEnum.ParentNode;
     }
 
@@ -42,7 +50,6 @@ public partial class UiScrollableContainer : UiNode
             if (u.Window.Part == "Border")
             {
                 Border = u;
-                u.ClipContents = true;
                 u.AddChild(Content);
                 var pending = _pending.ToList();
                 _pending.Clear();

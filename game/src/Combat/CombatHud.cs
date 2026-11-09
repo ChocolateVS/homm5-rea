@@ -580,9 +580,12 @@ public partial class CombatHud : Control
         IReadOnlyCollection<string> known;
         int mana, maxMana;
         bool warcries;
+        string? casterKey = null;
         if (la.IsHero)
         {
             var h = b.State.Heroes[Actor.HeroSide(la.Actor)];
+            // The book state is kept per hero (SpellBook3D.SavedState).
+            casterKey = h.HeroId is { Length: > 0 } hid ? "hero:" + hid : null;
             known = h.Spells;
             (mana, maxMana) = (h.Mana, h.MaxMana);
             warcries = h.Spells.Count > 0 && h.Spells.All(s => Game.Instance.Db.Spell(s)?.School == "MAGIC_SCHOOL_WARCRIES");
@@ -595,7 +598,7 @@ public partial class CombatHud : Control
         }
         else return;
         if (known.Count == 0) { Log.AddLine("<body>No spells can be cast now."); return; }
-        var book = new SpellBook3D(known, la.Spells, mana, maxMana, warcries);
+        var book = new SpellBook3D(known, la.Spells, mana, maxMana, warcries, casterKey: casterKey, heroCaster: la.IsHero);
         book.Chosen += _screen.ChooseSpell;
         book.Closed += () => _spellPanel = null;
         _spellPanel = book;

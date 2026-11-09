@@ -58,8 +58,19 @@ public partial class SpellBook3D : Control
     readonly Dictionary<int, (Entry? E, StandardMaterial3D Mat)> _slots = new();
     int? _hoverPart;
 
-    public SpellBook3D(IReadOnlyCollection<string> knownSpells, IReadOnlyList<SpellOption> castable, int mana, int maxMana, bool warcries, bool adventure = false)
+    /// <summary>
+    /// The book state a hero keeps between openings (006867c0 restores the bookmark +0x19c and the per-bookmark first-spell
+    /// indices +0x190 from the hero, vfunc 0x238; on close 00683040 stores them back through a command, 0067fc80, when
+    /// +0x244 is set; every caller sets it). Ours keeps it for the session, keyed by the caster.
+    /// </summary>
+    static readonly Dictionary<string, (int Bookmark, int First)> SavedState = new();
+    readonly string? _casterKey;
+    /// <summary>+0x246: the reversed level order, toggled by clicking the current bookmark again (00685f60).</summary>
+    bool _reverse;
+
+    public SpellBook3D(IReadOnlyCollection<string> knownSpells, IReadOnlyList<SpellOption> castable, int mana, int maxMana, bool warcries, bool adventure = false, string? casterKey = null, bool heroCaster = true)
     {
+        _casterKey = casterKey;
         Name = "SpellBook3D";
         AnchorRight = 1;
         AnchorBottom = 1;
@@ -70,17 +81,133 @@ public partial class SpellBook3D : Control
         _mana = mana;
         _maxMana = maxMana;
         var byId = castable.ToDictionary(o => o.Spell);
+        // The caster's whole spell list (hero vfunc 0xcc / creature vfunc 0x248); each bookmark filters it (00684830,
+        // orc book 0067cd10) and sorts it (00689140).
         _all = knownSpells.Distinct()
             .Select(id => (id, def: Game.Instance.Db.Spell(id)))
-            .Where(x => x.def != null && (adventure ? x.def.School == "MAGIC_SCHOOL_ADVENTURE"
-                        : x.def.School is not ("MAGIC_SCHOOL_ADVENTURE" or "MAGIC_SCHOOL_NONE" or "MAGIC_SCHOOL_SPECIAL")
-                          && (warcries ? x.def.School == "MAGIC_SCHOOL_WARCRIES" : x.def.School != "MAGIC_SCHOOL_WARCRIES")))
-            .OrderBy(x => x.def!.Level).ThenBy(x => x.def!.Name, StringComparer.Ordinal)
+            .Where(x => x.def != null)
             .Select(x => new Entry { Spell = x.id, Option = byId.GetValueOrDefault(x.id), Cost = byId.GetValueOrDefault(x.id)?.ManaCost ?? x.def!.ManaCost })
             .ToList();
-        // The opening bookmark (+0x19c when the book opens) is not traced: the adventure tab on the map, else the
-        // first school bookmark holding a spell.
-        _bookmark = adventure ? 1 : 2 + Math.Max(0, Array.FindIndex(SchoolOrder, sc => _all.Any(e => SchoolOf(e) == sc)));
+        if (_orcs)
+        {
+            // Orc book ctor 0067e940: bookmark +0x190 = (adventure flag == 0), i.e. warcries (1) in combat, adventure
+            // spells (0) on the map; not restored from the hero.
+            _bookmark = adventure ? 0 : 1;
+        }
+        else if (!heroCaster)
+        {
+            // 006867c0: for the non-hero casters (the fourth and fifth caster casts, 0067f5b0 / 006878e0) the bookmark
+            // is 0 (Combat tab) and every first-spell index 0.
+            _bookmark = 0;
+        }
+        else if (casterKey != null && SavedState.TryGetValue(casterKey, out var saved))
+        {
+            // 006867c0: the hero's saved bookmark; the adventure flag forces the Adventure tab (1), otherwise a saved
+            // Adventure tab becomes the Combat tab (0).
+            _bookmark = adventure ? 1 : saved.Bookmark == 1 ? 0 : saved.Bookmark;
+            _page = _bookmark == saved.Bookmark ? saved.First / 6 : 0;
+            if (_page * 6 >= SchoolSpells().Count) _page = 0;
+        }
+        else
+        {
+            // GAP: the value a hero holds before its first opening is not traced: the adventure tab on the map, else the
+            // first school bookmark holding a spell.
+            _bookmark = adventure ? 1 : 2 + Math.Max(0, Array.FindIndex(SchoolOrder, sc => _all.Any(e => SchoolOf(e) == sc)));
+        }
+    }
+
+    /// <summary>
+    /// The spell sort (00689280 with comparator 00688d50): a merge over residue classes (strided sorted runs, the stride
+    /// halved from the largest power of two below n down to 1, 00688e50), reproduced as is because the comparator is not a
+    /// strict order. a before b: different schools by the table 00f38a94 (destructive 0, light 2, dark 1, summoning 3,
+    /// adventure 4, special 7, runic 5, warcries 6, none 8); same school: by the level of the base spell (mass spells
+    /// 00a33e20 and empowered spells 00a33f70 map to their base), lower first, higher first when <paramref name="reverse"/>
+    /// (+0x246), then by the base's SpellID; same base: the base spell before its variant.
+    /// </summary>
+    static List<Entry> ExeSort(List<Entry> list, bool reverse)
+    {
+        int n = list.Count;
+        if (n < 2) return list;
+        var src = list.ToArray();
+        var dst = new Entry[n];
+        int w = 0x40000000;
+        while (n <= w) w >>= 1;
+        for (; w != 0; w >>= 1)
+        {
+            if (n < w * 2) Array.Copy(src, n - w, dst, n - w, w);
+            int pairs = Math.Min(w, n - w);
+            for (int k = 0; k < pairs; k++)
+            {
+                int l = k, r = k + w, o = k;
+                while (true)
+                {
+                    if (!Before(src[l], src[r], reverse))
+                    {
+                        dst[o] = src[r]; o += w; r += 2 * w;
+                        if (r >= n) { for (; l < n; l += 2 * w, o += w) dst[o] = src[l]; break; }
+                    }
+                    else
+                    {
+                        dst[o] = src[l]; o += w; l += 2 * w;
+                        if (l >= n) { for (; r < n; r += 2 * w, o += w) dst[o] = src[r]; break; }
+                    }
+                }
+            }
+            (src, dst) = (dst, src);
+        }
+        return src.ToList();
+    }
+
+    static readonly int[] SchoolSortOrder = { 0, 2, 1, 3, 4, 7, 5, 6, 8 };
+
+    static int SchoolNumber(string? school) => school switch
+    {
+        "MAGIC_SCHOOL_DESTRUCTIVE" => 0, "MAGIC_SCHOOL_DARK" => 1, "MAGIC_SCHOOL_LIGHT" => 2, "MAGIC_SCHOOL_SUMMONING" => 3,
+        "MAGIC_SCHOOL_ADVENTURE" => 4, "MAGIC_SCHOOL_RUNIC" => 5, "MAGIC_SCHOOL_WARCRIES" => 6, "MAGIC_SCHOOL_SPECIAL" => 7,
+        _ => 8,
+    };
+
+    /// <summary>00a33e20 (mass to base) / 00a33f70 (empowered to base), by SpellID name.</summary>
+    static string? BaseOf(string spell) => spell switch
+    {
+        "SPELL_MASS_CURSE" => "SPELL_CURSE", "SPELL_MASS_DISRUPTING_RAY" => "SPELL_DISRUPTING_RAY", "SPELL_MASS_SLOW" => "SPELL_SLOW",
+        "SPELL_MASS_FORGETFULNESS" => "SPELL_FORGETFULNESS", "SPELL_MASS_PLAGUE" => "SPELL_PLAGUE", "SPELL_MASS_WEAKNESS" => "SPELL_WEAKNESS",
+        "SPELL_MASS_BLESS" => "SPELL_BLESS", "SPELL_MASS_DISPEL" => "SPELL_DISPEL", "SPELL_MASS_STONESKIN" => "SPELL_STONESKIN",
+        "SPELL_MASS_DEFLECT_ARROWS" => "SPELL_DEFLECT_ARROWS", "SPELL_MASS_BLOODLUST" => "SPELL_BLOODLUST", "SPELL_MASS_HASTE" => "SPELL_HASTE",
+        "SPELL_EMPOWERED_MAGIC_ARROW" => "SPELL_MAGIC_ARROW", "SPELL_EMPOWERED_MAGIC_FIST" => "SPELL_MAGIC_FIST",
+        "SPELL_EMPOWERED_LIGHTNING_BOLT" => "SPELL_LIGHTNING_BOLT", "SPELL_EMPOWERED_ICE_BOLT" => "SPELL_ICE_BOLT",
+        "SPELL_EMPOWERED_FIREBALL" => "SPELL_FIREBALL", "SPELL_EMPOWERED_FROST_RING" => "SPELL_FROST_RING",
+        "SPELL_EMPOWERED_CHAIN_LIGHTNING" => "SPELL_CHAIN_LIGHTNING", "SPELL_EMPOWERED_METEOR_SHOWER" => "SPELL_METEOR_SHOWER",
+        "SPELL_EMPOWERED_IMPLOSION" => "SPELL_IMPLOSION", "SPELL_EMPOWERED_ARMAGEDDON" => "SPELL_ARMAGEDDON",
+        "SPELL_EMPOWERED_STONE_SPIKES" => "SPELL_STONE_SPIKES", "SPELL_EMPOWERED_DEEP_FREEZE" => "SPELL_DEEP_FREEZE",
+        _ => null,
+    };
+
+    static bool Before(Entry a, Entry b, bool reverse)
+    {
+        var db = Game.Instance.Db;
+        int sa = SchoolNumber(db.Spell(a.Spell)?.School), sb = SchoolNumber(db.Spell(b.Spell)?.School);
+        if (sa != sb)
+        {
+            foreach (var s in SchoolSortOrder)
+            {
+                if (s == sa) return true;
+                if (s == sb) return false;
+            }
+            return true;
+        }
+        string xa = BaseOf(a.Spell) ?? a.Spell, xb = BaseOf(b.Spell) ?? b.Spell;
+        if (xa != xb)
+        {
+            int la = db.Spell(xa)?.Level ?? 0, lb = db.Spell(xb)?.Level ?? 0;
+            if (la < lb) return !reverse;
+            if (la > lb) return reverse;
+            return (db.Spell(xa)?.Index ?? -1) < (db.Spell(xb)?.Index ?? -1);
+        }
+        if (BaseOf(a.Spell) != null) return false;
+        // The last test reads the list entry's first field (a reference, 00688df1); it is only reached for a spell listed
+        // twice, which our distinct list never holds.
+        return true;
     }
 
     /// <summary>
@@ -89,9 +216,16 @@ public partial class SpellBook3D : Control
     /// spells (school 4, 00a34580) and to the Adventure tab (1) if they are; bookmark 2 = destructive (0), 3 = light (2),
     /// 4 = dark (1), 5 = summoning (3), 6 = special (7), warcries (6) and runic (5).
     /// </summary>
-    static bool OnBookmark(int bm, string spell)
+    bool OnBookmark(int bm, string spell)
     {
         if (spell is "SPELL_DEBUG_TELEPORT" or "SPELL_TIME_SHIFT") return false;
+        if (_orcs)
+        {
+            // 0067cd10: abilities (00a34610, not decoded; none in our lists) and warcries go to bookmark 1, adventure
+            // spells (00a34580) to bookmark 0.
+            var sc = Game.Instance.Db.Spell(spell)?.School;
+            return bm == 1 ? sc == "MAGIC_SCHOOL_WARCRIES" : sc == "MAGIC_SCHOOL_ADVENTURE";
+        }
         var school = Game.Instance.Db.Spell(spell)?.School ?? "MAGIC_SCHOOL_NONE";
         if (school is not ("MAGIC_SCHOOL_RUNIC" or "MAGIC_SCHOOL_WARCRIES"))
         {
@@ -109,8 +243,9 @@ public partial class SpellBook3D : Control
         };
     }
 
-    /// <summary>The book part of bookmark <paramref name="bm"/> (006867c0: Combat, Adventure, PartSpellSchools).</summary>
-    int BookmarkPart(int bm) => bm switch { 0 => _d.Combat, 1 => _d.Adventure, _ => bm - 2 < _d.Schools.Length ? _d.Schools[bm - 2] : -1 };
+    /// <summary>The book part of bookmark <paramref name="bm"/> (006867c0: Combat, Adventure, PartSpellSchools; orc book
+    /// 0067e940: PartSpellsCombat carries 1, PartSpellsAdventure 0).</summary>
+    int BookmarkPart(int bm) => _orcs ? bm switch { 0 => _d.Adventure, 1 => _d.Combat, _ => -1 } : bm switch { 0 => _d.Combat, 1 => _d.Adventure, _ => bm - 2 < _d.Schools.Length ? _d.Schools[bm - 2] : -1 };
 
     static string SchoolOf(Entry e) => Game.Instance.Db.Spell(e.Spell)?.School ?? "";
 
@@ -174,7 +309,7 @@ public partial class SpellBook3D : Control
         finally { ModelBuilder.UseOriginalLighting = original; }
         _vp.AddChild(_book);
         _mesh = _book.FindChild("Mesh", recursive: true, owned: false) as MeshInstance3D;
-        if (_book.Has("idle00")) _book.Play("idle00", loop: true);
+        if (_book.Has(IdleKind)) _book.Play(IdleKind, loop: true);
 
         // Top-down camera framing the book (model Z-up → Godot Y-up; page top is model +Y = Godot −Z).
         var (min, max) = Bounds(Enumerable.Range(0, _asset.Mesh.Parts.Count));
@@ -246,7 +381,8 @@ public partial class SpellBook3D : Control
         return vp.GetTexture();
     }
 
-    List<Entry> SchoolSpells() => _all.Where(e => _orcs || OnBookmark(_bookmark, e.Spell)).ToList();
+    /// <summary>The current bookmark's list, sorted (00689140; the orc book always in the normal order, 0067cede).</summary>
+    List<Entry> SchoolSpells() => ExeSort(_all.Where(e => OnBookmark(_bookmark, e.Spell)).ToList(), !_orcs && _reverse);
 
     // H5_Game.exe 00686020 / 00686080: the index of the first shown spell (+0x190[school], reset to 0 when the school is
     // picked, 00685f60);
@@ -287,9 +423,44 @@ public partial class SpellBook3D : Control
     {
         // 00685270 without a turn: the static pages (PartSpellsFirstPage) show the spread, the turning page
         // (PartSpellsSecondPage) is empty.
+        if (_orcs)
+        {
+            // Orc book 0067d950: PartSpellsFirstPage takes the list from 0, PartSpellsSecondPage from 4 (0067d4a0);
+            // no spreads.
+            var list = SchoolSpells();
+            FillSet(_d.First, list.Cast<Entry?>().ToList());
+            FillSet(_d.Second, list.Skip(_d.First.Length).Cast<Entry?>().ToList());
+            RefreshMarks();
+            return;
+        }
         FillSet(_d.First, Spread(_page));
         FillSet(_d.Second, Array.Empty<Entry?>());
         RefreshMarks();
+    }
+
+    /// <summary>The resting animation: idle00 (book); the orc book loops idle01 on bookmark 0 and idle02 on bookmark 1
+    /// (0067d950: animation index +0x1b8 = 0 / 1, looped; set order idle01, idle02, page01, page02).</summary>
+    string IdleKind => _orcs ? (_bookmark == 0 ? "idle01" : "idle02") : "idle00";
+
+    /// <summary>
+    /// Orc book bookmark change (0067e2a0 input_tab: to the other bookmark; 0067e2e0 input_next_page: 0 → 1;
+    /// 0067e320 input_previous_page: 1 → 0; 0067e3a0 MB_Button_School: to the part's bookmark unless current): the turn
+    /// animation +0x1b8 is page01 going to bookmark 1 and page02 going to 0, then the lists are refilled (0067d950).
+    /// </summary>
+    async Task OrcTurn(int bm)
+    {
+        if (bm == _bookmark) return;
+        _turning = true;
+        _bookmark = bm;
+        var kind = bm == 1 ? "page01" : "page02";
+        if (_book.Has(kind))
+        {
+            _book.Play(kind);
+            await ToSignal(_book.Player, AnimationMixer.SignalName.AnimationFinished);
+        }
+        RefreshPage();
+        if (_book.Has(IdleKind)) _book.Play(IdleKind, loop: true);
+        _turning = false;
     }
 
     void RefreshMarks()
@@ -358,12 +529,26 @@ public partial class SpellBook3D : Control
 
     /// <summary>input_a2.cfg spellbook_screen: input_previous_page / input_next_page run the Prev / Next handlers
     /// (H5_Game.exe 00686080 / 00686020); input_bookmark_up / _down (00686160) step the bookmark index to (index + 6) mod 7 /
-    /// (index + 1) mod 7 (006860c0 / 006860e0) through 00685f60. GAP: input_tab (TAB) — handler not traced.</summary>
+    /// (index + 1) mod 7 (006860c0 / 006860e0) through 00685f60. input_tab (TAB) is not registered by this book (00686160
+    /// binds MB_Button_School, Next / Prev, close, mouse buttons, MB_CastSpell, confirm_action, the page and bookmark
+    /// keys only), so it does nothing; the orc book (0067e3e0) binds it and the page keys to its two bookmarks.</summary>
     public override void _UnhandledKeyInput(InputEvent e)
     {
         if (_turning || e is not InputEventKey { Pressed: true, Echo: false } k) return;
         foreach (var a in Interaction.KeyBindings.Actions("spellbook_screen", k))
         {
+            if (_orcs)
+            {
+                int? to = a switch
+                {
+                    "input_tab" => _bookmark == 0 ? 1 : 0,
+                    "input_next_page" when _bookmark == 0 => 1,
+                    "input_previous_page" when _bookmark == 1 => 0,
+                    _ => null,
+                };
+                if (to is int bm) { _ = OrcTurn(bm); AcceptEvent(); return; }
+                continue;
+            }
             if (a == "input_next_page" && _page + 1 < PageCount) { _ = Turn(+1); AcceptEvent(); return; }
             if (a == "input_previous_page" && _page > 0) { _ = Turn(-1); AcceptEvent(); return; }
             if (!_orcs && a is "input_bookmark_up" or "input_bookmark_down")
@@ -377,12 +562,18 @@ public partial class SpellBook3D : Control
 
     /// <summary>
     /// 00685f60: another bookmark starts at its first spread and the page turns forward when it lies after the current
-    /// one, backward otherwise. The same bookmark toggles +0x246, the sort order passed to the list sort (00689140); that
-    /// comparator is not decoded, so ours keeps the order (GAP).
+    /// one, backward otherwise, and the order flag +0x246 is cleared. The same bookmark toggles +0x246 (the reversed level
+    /// order of the sort, 00689140) and rebuilds the list without a turn (+0x1c4 = 0), keeping the first-spell index.
     /// </summary>
     void SelectBookmark(int bm)
     {
-        if (bm == _bookmark) return;
+        if (bm == _bookmark)
+        {
+            _reverse = !_reverse;
+            RefreshPage();
+            return;
+        }
+        _reverse = false;
         int from = _bookmark;
         var old = Spread(_page);
         _bookmark = bm;
@@ -394,7 +585,7 @@ public partial class SpellBook3D : Control
         if (_turning) return;
         if (e is InputEventMouseMotion mm)
         {
-            var hover = PartAt(mm.Position, _d.First);
+            var hover = PartAt(mm.Position, SpellParts);
             if (hover != _hoverPart)
             {
                 if (_hoverPart is int old && _slots.TryGetValue(old, out var o)) o.Mat.EmissionEnabled = false;
@@ -416,18 +607,22 @@ public partial class SpellBook3D : Control
         if (PartAt(pos, new[] { _d.Close }) != null) { Close(); return; }
         if (PartAt(pos, new[] { _d.Next }) != null && _page + 1 < PageCount) { _ = Turn(+1); return; }
         if (PartAt(pos, new[] { _d.Prev }) != null && _page > 0) { _ = Turn(-1); return; }
-        if (!_orcs && PartAt(pos, Enumerable.Range(0, 7).Select(BookmarkPart)) is int tab)
+        if (PartAt(pos, Enumerable.Range(0, 7).Select(BookmarkPart)) is int tab)
         {
-            // The MB_Button_School parts (006867c0) carry their bookmark index.
-            SelectBookmark(Enumerable.Range(0, 7).First(bm => BookmarkPart(bm) == tab));
+            // The MB_Button_School parts (006867c0 / orc 0067e940) carry their bookmark index.
+            int bm = Enumerable.Range(0, 7).First(b => BookmarkPart(b) == tab);
+            if (_orcs) _ = OrcTurn(bm); else SelectBookmark(bm);
             return;
         }
-        if (PartAt(pos, _d.First) is int slotPart && _slots.TryGetValue(slotPart, out var slot) && slot.E?.Option is { } option)
+        if (PartAt(pos, SpellParts) is int slotPart && _slots.TryGetValue(slotPart, out var slot) && slot.E?.Option is { } option)
         {
             Chosen?.Invoke(option);
             Close();
         }
     }
+
+    /// <summary>The parts showing spells at rest: the static pages, and for the orc book both page part lists.</summary>
+    int[] SpellParts => _orcs ? _d.First.Concat(_d.Second).ToArray() : _d.First;
 
     async Task Turn(int dir, int? toPage = null, Entry?[]? oldSpread = null)
     {
@@ -460,12 +655,14 @@ public partial class SpellBook3D : Control
                 }
         // The sheet keeps its faces: idle00 blends in from the turn's last pose, where they are still visible.
         RefreshMarks();
-        if (_book.Has("idle00")) _book.Play("idle00", loop: true);
+        if (_book.Has(IdleKind)) _book.Play(IdleKind, loop: true);
         _turning = false;
     }
 
     public void Close()
     {
+        // 00683040 (+0x244 set): the bookmark and its first-spell index go back to the hero.
+        if (_casterKey != null && !_orcs) SavedState[_casterKey] = (_bookmark, _page * 6);
         Closed?.Invoke();
         QueueFree();
     }
