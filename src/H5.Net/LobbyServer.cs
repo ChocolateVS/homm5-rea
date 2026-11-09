@@ -30,7 +30,9 @@ public sealed class LobbyServer : IAsyncDisposable
         public bool Ready;
         public JsonObject? Options;
         public DateTime? DroppedAt;
-        public long LastSeenTicks = Environment.TickCount64;
+        // Idle detection (SweepLoop): the connection and receive time last seen, and silent server-available time since.
+        public Connection? SeenConn;
+        public long SeenReceived, IdleMs;
         public void Send(Message m) => Conn?.Send(m);
     }
 
@@ -148,7 +150,6 @@ public sealed class LobbyServer : IAsyncDisposable
         lock (_lock)
         {
             if (p.Conn != from) return; // stale connection after a resume
-            p.LastSeenTicks = Environment.TickCount64;
             try { Handle(p, m); }
             catch (Exception e)
             {
@@ -237,7 +238,7 @@ public sealed class LobbyServer : IAsyncDisposable
         var old = seat.Conn;
         seat.Conn = fresh.Conn;
         seat.DroppedAt = null;
-        seat.LastSeenTicks = Environment.TickCount64;
+        seat.IdleMs = 0;
         _players.Remove(fresh.Id);
         // Rewire the fresh connection's events to the resumed identity.
         var conn = fresh.Conn!;
@@ -463,14 +464,28 @@ public sealed class LobbyServer : IAsyncDisposable
         _byToken.Remove(p.Token);
     }
 
+    /// <summary>Most silent time one sweep may count, however long the server was busy (lock held, threads starved) before it.</summary>
+    const long MaxSweepCreditMs = 1000;
+
+    /// <summary>
+    /// Releases expired seats, ticks sessions and drops idle connections. A connection is idle after
+    /// <see cref="IdleTimeout"/> of server-available time with no frame received: a frame counts when it
+    /// arrives (or is still waiting for the lock), and time the server spent busy counts at most
+    /// <see cref="MaxSweepCreditMs"/> per sweep, so a live client is never dropped because the server
+    /// could not read its pings (a long AI turn under the lock, a starved thread pool).
+    /// </summary>
     async Task SweepLoop(CancellationToken ct)
     {
+        long lastSweep = Environment.TickCount64;
         while (!ct.IsCancellationRequested)
         {
             try { await Task.Delay(500, ct); } catch (OperationCanceledException) { break; }
             List<Connection> idle = new();
             lock (_lock)
             {
+                long nowMs = Environment.TickCount64;
+                long credit = Math.Clamp(nowMs - lastSweep, 0, MaxSweepCreditMs);
+                lastSweep = nowMs;
                 TickSessions();
                 var now = DateTime.UtcNow;
                 foreach (var p in _players.Values.ToList())
@@ -481,8 +496,12 @@ public sealed class LobbyServer : IAsyncDisposable
                         p.DroppedAt = null;
                         Forget(p);
                     }
-                    else if (p.Conn != null && Environment.TickCount64 - p.LastSeenTicks > IdleTimeout.TotalMilliseconds)
-                        idle.Add(p.Conn);
+                    else if (p.Conn is { } c)
+                    {
+                        long rx = c.LastReceivedTicks;
+                        if (c != p.SeenConn || rx != p.SeenReceived || c.Dispatching) { p.SeenConn = c; p.SeenReceived = rx; p.IdleMs = 0; }
+                        else if ((p.IdleMs += credit) > IdleTimeout.TotalMilliseconds) idle.Add(c);
+                    }
                 }
             }
             foreach (var c in idle) await c.DisposeAsync();

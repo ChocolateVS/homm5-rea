@@ -11,10 +11,20 @@ public sealed class Connection : IAsyncDisposable
 {
     readonly IFrameChannel _channel;
     int _closed;
+    long _lastReceived = Environment.TickCount64;
+    int _dispatching;
 
     public string RemoteEndPoint => _channel.RemoteName;
     public IFrameChannel Channel => _channel;
     public event Action<Connection, Message>? Received;
+
+    /// <summary>
+    /// When a frame last arrived or finished being handled (Environment.TickCount64), recorded on the transport
+    /// thread before any handler runs, so a frame that waits for a busy server still counts as a sign of life.
+    /// </summary>
+    public long LastReceivedTicks => Volatile.Read(ref _lastReceived);
+    /// <summary>A received frame is being handled (possibly waiting for the server lock) right now.</summary>
+    public bool Dispatching => Volatile.Read(ref _dispatching) > 0;
     public event Action<Connection, Exception?>? Closed;
 
     public Connection(IFrameChannel channel)
@@ -32,14 +42,25 @@ public sealed class Connection : IAsyncDisposable
 
     void OnFrame(byte[] frame)
     {
-        Message m;
-        try { m = MessageCodec.Decode(frame); }
-        catch (Exception e)
+        Volatile.Write(ref _lastReceived, Environment.TickCount64);
+        Interlocked.Increment(ref _dispatching);
+        try
         {
-            _ = DisposeWithError(e);
-            return;
+            Message m;
+            try { m = MessageCodec.Decode(frame); }
+            catch (Exception e)
+            {
+                _ = DisposeWithError(e);
+                return;
+            }
+            Received?.Invoke(this, m);
         }
-        Received?.Invoke(this, m);
+        finally
+        {
+            // Frames that queued up behind a slow handler were not read yet: the connection was alive meanwhile.
+            Volatile.Write(ref _lastReceived, Environment.TickCount64);
+            Interlocked.Decrement(ref _dispatching);
+        }
     }
 
     async Task DisposeWithError(Exception e)

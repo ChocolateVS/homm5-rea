@@ -100,6 +100,59 @@ public class LobbyServerTests
         Assert.Equal(1, (await WaitFor<GameEnded>(a, aLog)).WinnerSide);
     }
 
+    /// <summary>A game whose every command takes <see cref="DelayMs"/> of server time (a long computer turn).</summary>
+    sealed class SlowFactory : IGameSessionFactory
+    {
+        public const int DelayMs = 8000;
+        public string Mode => "slow";
+        public int MinPlayers => 2;
+        public int MaxPlayers => 2;
+        public string? ValidatePlayerOptions(JsonObject? options) => null;
+        public IGameSession Create() => new SlowSession();
+        sealed class SlowSession : IGameSession
+        {
+            public IReadOnlyList<JsonNode> Start(IReadOnlyList<RoomPlayer> players, JsonObject? settings, ulong seed) =>
+                players.Select((_, i) => (JsonNode)new JsonObject { ["side"] = i }).ToList();
+            public SessionResult Apply(int side, JsonNode command)
+            {
+                Thread.Sleep(DelayMs);
+                return new SessionResult.Accepted(new JsonObject(), "h");
+            }
+            public GameEnded? OnSideLeft(int side) => new(1 - side, "left");
+        }
+    }
+
+    [Fact]
+    public async Task BusyServerDoesNotDropLiveClientsAsIdle()
+    {
+        // The command holds the server lock longer than the idle timeout: the pings queued meanwhile, and the
+        // commanding client's own silence while its command runs, are not idleness.
+        var log = new List<string>();
+        await using var server = new LobbyServer(new[] { new SlowFactory() }, log: l => { lock (log) log.Add(l); })
+        { IdleTimeout = TimeSpan.FromSeconds(5) };
+        server.Start(0, IPAddress.Loopback);
+        var (a, aLog) = await Join(server.Port, "Alice", "");
+        var (b, bLog) = await Join(server.Port, "Bob", "");
+        await using var _a = a; await using var _b = b;
+        a.Send(new CreateRoom("", "slow", 2, null, null));
+        var room = await WaitFor<RoomState>(a, aLog);
+        b.Send(new JoinRoom(room.RoomId, null));
+        b.Send(new SetReady(true));
+        await WaitFor<RoomState>(a, aLog, r => r.Players.Count == 2 && r.Players[1].Ready);
+        a.Send(new StartGame());
+        await WaitFor<GameStarted>(a, aLog);
+        await WaitFor<GameStarted>(b, bLog);
+
+        a.SendCommand(new JsonObject());
+        var deadline = DateTime.UtcNow.AddMilliseconds(SlowFactory.DelayMs + 10000);
+        while (!bLog.OfType<GameUpdate>().Any() && DateTime.UtcNow < deadline) { b.Poll(); await Task.Delay(20); }
+        Assert.Contains(bLog, m => m is GameUpdate);
+        // A few sweeps after the busy stretch (Alice keeps quiet; Bob keeps polling and pinging).
+        var until = DateTime.UtcNow.AddSeconds(2);
+        while (DateTime.UtcNow < until) { b.Poll(); await Task.Delay(20); }
+        lock (log) Assert.DoesNotContain(log, l => l.Contains(" closed"));
+    }
+
     [Fact]
     public async Task RejectsMismatchedGameData()
     {
