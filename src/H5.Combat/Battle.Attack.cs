@@ -1069,18 +1069,7 @@ public sealed partial class Battle
 
     void StartOfTurnDamage(Unit u)
     {
-        if (u.GetEffect(H5.Combat.Fx.Poison) is { } poison)
-            DealDamage(u, (int)poison.Value, -1, AttackKind.Other, "POISON");
-        // Venom ticks on its own (exe FUN_00bbb900 handles 0xb4 and 0x128 as separate damage-over-time effects).
-        if (u.Alive && u.GetEffect(FxVenom) is { } venom)
-            DealDamage(u, (int)venom.Value, -1, AttackKind.Other, "VENOM");
-        if (u.Alive && u.GetEffect("SPELL_PLAGUE") is { } decay)
-            DealSpellDamageRaw(u, (int)decay.Value, "SPELL_PLAGUE");
-        if (u.Alive && u.GetEffect(H5.Combat.Fx.Ignite) is { } ign)
-            DealElementalDamage(u, (int)ign.Value, Elements.Fire, -1, "IGNITE");
-        if (u.Alive)
-            foreach (var o in Adjacent(u).Where(o => Controller(o) != Controller(u) && HasAbilityNow(o, Ab.SearingAura)).ToList())
-                DealElementalDamage(u, (int)Stats.Get("combat/Creatures/Inferno/SearingAuraDamageHits", 10) * o.Count, Elements.Fire, o.Id, Ab.SearingAura);
+        // Searing Aura, poison, venom, Plague and Set Afire: FUN_00bbb900 in the turn start tail (Battle.Sweep18.cs).
         if (u.Alive && HasAbilityNow(u, Ab.Regeneration))
             Heal(u, S.Rng.Range((int)Stats.Get("combat/Creatures/Dungeon/HydraRegenerationMin", 30), (int)Stats.Get("combat/Creatures/Dungeon/HydraRegenerationMax", 50)), false, Ab.Regeneration);
         if (u.Alive && u.GetEffect("SPELL_REGENERATION") is { } regen)

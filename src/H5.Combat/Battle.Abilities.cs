@@ -397,7 +397,7 @@ public sealed partial class Battle
             }
             case Ab.Dash:
                 Emit(new AbilityTriggered(u.Id, c.Ability));
-                AddEffect(u, new Effect { Id = H5.Combat.Fx.Dash, Actions = (int)Stats.Get("combat/Creatures/Academy/Dash_Duration", 3) + 1, Positive = true, Dispellable = false });
+                AddEffect(u, new Effect { Id = H5.Combat.Fx.Dash, Actions = (int)Stats.Get("combat/Creatures/Academy/Dash_Duration", 3), Positive = true, Dispellable = false });
                 allowMorale = false;
                 break;
             case Ab.Explosion:

@@ -73,6 +73,7 @@ public sealed partial class Battle
                 if (!ExeCaster(t!)) return "target is not a caster";   // exe FUN_0097f610 case 0x146: HasAbility(CASTER)
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
                 AddEffect(t, new Effect { Id = FxDefiled, SourceUnit = u.Id, SourceSide = Controller(u), Value = u.Count, Positive = false, Dispellable = false });
+                u.AbilityUses[DefileLink + t.Id] = 1;   // the defiler's 0x146 link (vf 0x298), Battle.Sweep18.cs
                 return null;
             }
             case Ab.TreeantUnion:
@@ -216,13 +217,15 @@ public sealed partial class Battle
     {
         var e = caster.GetEffect(FxDefiled);
         if (e == null) return 0;
+        var defilers = DefilersOf(caster);   // exe FUN_00c50a30 → FUN_00c50920 (Battle.Sweep15.cs, Sweep18.cs)
         RemoveEffect(caster, FxDefiled);
-        var goblins = S.Unit(e.SourceUnit);
-        if (goblins is not { Alive: true }) return 0;
-        int outcome = DefileRoll(caster, new[] { goblins });   // exe FUN_00c50a30 (Battle.Sweep15.cs)
+        if (defilers.Count == 0) return 0;
+        // The log's defiler with several linked: the last one to defile, else the first linked (the log is not traced).
+        var goblins = S.Unit(e.SourceUnit) is { Alive: true } last && defilers.Contains(last) ? last : defilers[0];
+        int outcome = DefileRoll(caster, defilers);
         if (outcome == 0) return 0;
         Emit(new AbilityTriggered(goblins.Id, Ab.DefileMagic, caster.Id));
-        if (outcome == 4) SetAtb(goblins.Id, 0);
+        if (outcome == 4) foreach (var d in defilers) SetAtb(d.Id, 0);   // 0097efd0: every linked defiler (vf 0x18c(0))
         return outcome;
     }
 

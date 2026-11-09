@@ -135,7 +135,7 @@ public sealed partial class Battle
             total += d.Count;
         }
         if (total <= 0) return 0;
-        int nt = 1 + Math.Max(1, caster.Count / Math.Max(1, caster.WeeklyGrowth));
+        int nt = DefileCasterTerm(caster) + Math.Max(1, caster.Count / Math.Max(1, caster.WeeklyGrowth));
         var p = new[] { 10, 40, 40, 10 };
         int diff = Math.Abs(nt - ng);
         for (int k = 0; k < diff; k++)

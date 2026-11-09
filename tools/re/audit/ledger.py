@@ -239,6 +239,7 @@ MECH = [
     ('War machine shots per action', 'FIXED', '00a75bf0', 'WarMachineAuditTests'),
     ('Spell mana cost chain (00a34740: a version costs its base spell × 2, Avatar of Death level · AvatarOfDeath_ManaCostPerLevel, warcry ≤ 0 → 0; the adventure cast shares it)', 'FIXED', '00a34740, 00a33e20, 00a33f70, 009781e0', 'AuditSpecTests, AuditSweep17Tests (combat_sweep_17.md)'),
     ('Spell summons: position FUN_00860f20 (the first column from the edge of the caster army with a free anchor, a random row) and the arrival ATB (battle RNG [0, 0.25), base ctor 00a73e70)', 'FIXED', '00860f20, 00b3fac0, 00c56820, 00a73e70', 'AuditSweep18Tests (combat_sweep_18.md)'),
+    ('Turn start tail FUN_00bbc8e0 (Dash count, Frenzy / Berserker / Preparation end, Defile release, damage over time FUN_00bbb900 in effect order with rage, gated arrival FUN_00bbb390), also on bad morale; bad-morale rage before the hook; a ready actor behind a not-ready head rebuilds the sequence (00af3320)', 'FIXED', '00bbcb40, 00bbc8e0, 00a72c80, 00bbb900, 00bbb650, 00bbb390, 004d90d0, 00af3320', 'AuditSweep18Tests (combat_sweep_18.md)'),
     ('Creature dynamic abilities (HasAbility override)', 'FIXED', '008a34c0', 'AuditSpecTests'),
     ('Stack death summons (Master of Elements, Soulhunter)', 'FIXED', '00a61310', 'AuditSpecTests2'),
     ('Terrain elementals', 'FIXED', '00861120', 'AuditSpecTests2'),

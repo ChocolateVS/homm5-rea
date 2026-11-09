@@ -90,4 +90,74 @@ public class AuditSweep18Tests(GameDataFixture f)
         Assert.Equal(new Cell(0, 0), b.ExeSummonPosition(0, 2, null));        // anchor (1, 1): column 0 has no 2×2 anchor
         Assert.Equal(new Cell(s.Width - 2, 0), b.ExeSummonPosition(1, 2, null));
     }
+    // exe FUN_00bbc8e0 (00bbc90b..00bbc923): SPELL_ABILITY_DASH counts down at the turn start (vf 0x268 = FUN_00a72c80),
+    // expiring below 1; the turn end leaves it alone.
+    [Fact]
+    public void DashCountsDownAtTheTurnStart()
+    {
+        var b = Necro(1, 1, 1);
+        var u = b.State.Units.First(x => x.Side == 1 && x.Kind == UnitKind.Creature);
+        u.Effects.Add(new Effect { Id = Fx.Dash, Actions = 2, Positive = true, Dispellable = false });
+        Assert.False(b.ExeTurnStartTail(u));
+        Assert.Equal(1, u.GetEffect(Fx.Dash)!.Actions);
+        b.ExeTurnStartTail(u);
+        Assert.False(u.HasEffect(Fx.Dash));
+    }
+
+    // exe FUN_00bbb900: poison counts down first (expiring below 1) and still hits; Set Afire on a Mark of Fire carrier
+    // × clamp(MarkOfFire_FireDamageMultiplier, 0, 1000), chop; straight through the damage path (no fire immunity).
+    [Fact]
+    public void DamageOverTimeTicksInTheTurnStartTail()
+    {
+        var b = Necro(1, 1, 1);
+        var u = b.State.Units.First(x => x.Side == 1 && x.Kind == UnitKind.Creature);
+        u.Count = 50;
+        int hp = u.TotalHealth;
+        u.Effects.Add(new Effect { Id = Fx.Poison, Value = 3, Actions = 1 });
+        u.Effects.Add(new Effect { Id = Fx.MarkOfFire, Remaining = 100 });
+        u.Effects.Add(new Effect { Id = Fx.Ignite, Value = 5, Remaining = 100 });
+        b.ExeTurnStartTail(u);
+        float mof = Math.Clamp((float)f.Db.Stats.Get("combat/Creatures/Fortress/MarkOfFire_FireDamageMultiplier", 2), 0f, 1000f);
+        Assert.Equal(hp - 3 - (int)(mof * 5.0), u.TotalHealth);
+        Assert.False(u.HasEffect(Fx.Poison));
+        Assert.True(u.HasEffect(Fx.Ignite));
+    }
+
+    // exe FUN_00bbb390: a gated stack's first turn ends the gating effect, sets its ATB to clamp(GatedStartATB, 0, 1)
+    // and it does not act (FUN_00bbcb40 acts only while ATB ≥ 1).
+    [Fact]
+    public void AGatedStackArrivesWithoutActing()
+    {
+        var b = Necro(1, 1, 1);
+        var u = b.State.Units.First(x => x.Side == 1 && x.Kind == UnitKind.Creature);
+        u.Effects.Add(new Effect { Id = Battle.GatedEffect, Positive = true, Dispellable = false });
+        u.Atb = 1;
+        Assert.True(b.ExeTurnStartTail(u));
+        Assert.False(u.HasEffect(Battle.GatedEffect));
+        Assert.Equal(Math.Clamp(f.Db.Stats.Get("combat/HeroSkills/DemonLord/Gating/GatedStartATB", 0), 0, 1), u.Atb, 6);
+    }
+    // exe FUN_00c50920: every defiler whose 0x146 links hold the caster counts in N(g); a defiler's turn start
+    // (FUN_00bbc8e0) removes the shared effect and clears its links. 00c50b38..00c50b74: the caster term is 1 for a
+    // creature with a tier (record +0x8c) or a base creature (+0x100).
+    [Fact]
+    public void EveryLinkedDefilerCounts()
+    {
+        var b = f.Duel("CREATURE_GOBLIN_DEFILER", 50, "CREATURE_DRUID", 20, 1, new Cell(2, 5), new Cell(9, 5));
+        var g2 = BattleSetup.AddCreature(f.Db, b.State, 0, "CREATURE_GOBLIN_DEFILER", 30, new Cell(2, 8), summoned: false);
+        b.Begin();
+        var g1 = b.State.Units[0];
+        var dr = b.State.Units.First(u => u.CreatureId == "CREATURE_DRUID");
+        foreach (var g in new[] { g1, g2 })
+        {
+            b.State.Active = g.Id;
+            var r = b.Apply(new UseAbilityCmd(g.Id, "ABILITY_DEFILE_MAGIC", dr.Id) { Side = 0 });
+            Assert.True(r.Ok, r.Error);
+        }
+        Assert.Equal(2, b.DefilersOf(dr).Count);
+        Assert.Equal(1, b.DefileCasterTerm(dr));
+        b.ExeTurnStartTail(g1);
+        Assert.False(dr.HasEffect("FX_DEFILED"));
+    }
 }
+
+

@@ -116,4 +116,119 @@ public sealed partial class Battle
         h.Mana = 0;
         Emit(new ManaChanged(Actor.Hero(h.Side), 0));
     }
+    /// <summary>Action-counted effects whose count the turn start takes (vf 0x268 = FUN_00a72c80 at 00bbc923 and
+    /// 00bbb9df), not the turn end.</summary>
+    static bool TurnStartCounted(string id) => id is H5.Combat.Fx.Dash or H5.Combat.Fx.Poison or FxVenom;
+
+    /// <summary>
+    /// vf 0x268(id, now) = FUN_00a72c80: every effect of that id whose duration is not a marker (0x7fffffff / 0x7ffffffd;
+    /// an action-counted effect has 0x7ffffffe, 004e4d30) loses one count (+0x20, FUN_004e3dd0) and, below 1, expires at
+    /// once (FUN_00a72650).
+    /// </summary>
+    void CountDown(Unit u, string id)
+    {
+        if (u.GetEffect(id) is not { } e || e.Actions < 0) return;
+        if (--e.Actions < 1) RemoveEffect(u, id);
+    }
+
+    /// <summary>
+    /// FUN_00bbc8e0, the turn start tail: run by the turn start FUN_00bbcb40 after the unit's vf 0xd8 and by the bad
+    /// morale FUN_00a6cd80 (→ 00bbcaa0). In order: SPELL_ABILITY_DASH (0xb0) counts down when present (vf 0x28 → vf 0x268;
+    /// the cast 00987e8a gives Dash_Duration, RPGStats +0x2f4); Battle Frenzy (0x112), Berserker Rage (0xf5) and
+    /// Preparation (0x11e) end (vf 0x270); the Defile Magic release; the Battle Dive finish FUN_00bbc510 (kept in the
+    /// turn start, <see cref="BattleDiveTurnStart"/>); FUN_00bbb900 unless the unit is in placement state 1 (vf 0x4c, the
+    /// diving griffins); FUN_00bbb390 when it carries SPELL_ABILITY_GATING (0x9f). True when a gated stack arrived (its
+    /// ATB is then below 1, so it does not act: FUN_00bbcb40 acts only while ATB ≥ 1).
+    /// </summary>
+    internal bool ExeTurnStartTail(Unit u)
+    {
+        CountDown(u, H5.Combat.Fx.Dash);
+        Sweep7TurnStart(u);
+        RemoveEffect(u, PreparationEffect);
+        if (!u.HasEffect(FxDiving)) DamageOverTimeTick(u);
+        if (u.Alive && u.HasEffect(GatedEffect)) { GatedArrival(u); return true; }
+        return false;
+    }
+
+    /// <summary>
+    /// FUN_00bbb900: first Searing Aura (FUN_00bbb650: the enemy aura stacks next to the unit, fire through FUN_0097d600,
+    /// "SEARING_AURA_HIT"), then the unit's effect list (vf 0x24c) in order — SPELL_PLAGUE (0xe), poison (0xb4), Set Afire
+    /// (0x10e) and venom (0x128): damage = the effect's +0x28; poison and venom first count down (vf 0x268, expiring at
+    /// once below 1, the damage still dealt); Set Afire on a Mark of Fire carrier (0xf6) × clamp(MarkOfFire_FireDamage-
+    /// Multiplier, RPGStats +0x374, 0, 1000), chop (00bbbab1..00bbbaf6); each hit first gives the stack ReceiveDDSpellRP
+    /// (vf 0x7c with DemonRage +0x3c, 00bbb9ea) and is dealt by the stack damage path FUN_00a616e0 (no fire immunity);
+    /// the walk stops when the stack is dead (vf 0x5c). The engine dealt poison, venom, Plague, Set Afire (with fire
+    /// immunity) and the aura in a fixed order with no rage, and also to diving griffins.
+    /// </summary>
+    void DamageOverTimeTick(Unit u)
+    {
+        foreach (var o in Adjacent(u).Where(o => Controller(o) != Controller(u) && HasAbilityNow(o, Ab.SearingAura)).ToList())
+            if (u.Alive) DealElementalDamage(u, (int)Stats.Get("combat/Creatures/Inferno/SearingAuraDamageHits", 10) * o.Count, Elements.Fire, o.Id, Ab.SearingAura);
+        foreach (var e in u.Effects.ToList())
+        {
+            if (!u.Alive) break;
+            if (e.Id is not ("SPELL_PLAGUE" or H5.Combat.Fx.Poison or H5.Combat.Fx.Ignite or FxVenom)) continue;
+            int dmg = (int)e.Value;
+            if (e.Id is H5.Combat.Fx.Poison or FxVenom) CountDown(u, e.Id);
+            else if (e.Id == H5.Combat.Fx.Ignite && u.HasEffect(H5.Combat.Fx.MarkOfFire))
+                dmg = (int)(Math.Clamp((float)Stats.Get("combat/Creatures/Fortress/MarkOfFire_FireDamageMultiplier", 2), 0f, 1000f) * (double)dmg);
+            RageEvent(u, "ReceiveDDSpellRP");
+            string by = e.Id switch { H5.Combat.Fx.Poison => "POISON", FxVenom => "VENOM", H5.Combat.Fx.Ignite => "IGNITE", _ => "SPELL_PLAGUE" };
+            DealDamage(u, dmg, -1, AttackKind.Other, by);
+        }
+    }
+
+    /// <summary>
+    /// FUN_00bbb390, a gated stack's first turn: when it can be placed (FUN_00c558b0: its anchor or the nearest free one,
+    /// FUN_00b3fac0 / FUN_00b3e1e0 — the stack stands on its own cell here, so always) the gating effect 0x9f ends
+    /// (vf 0x270), the arrival plays and its ATB becomes clamp(GatedStartATB, RPGStats +0x5c8, 0, 1) without the ready
+    /// hooks (vf 0x184 / FUN_00a2d6a0); otherwise its ATB is set to 0.5 (vf 0x18c). Either way it does not act. The
+    /// engine kept the effect for the whole combat (gated initiative and no retaliation for ever) and let it act.
+    /// </summary>
+    void GatedArrival(Unit u)
+    {
+        RemoveEffect(u, GatedEffect);
+        Emit(new AbilityTriggered(u.Id, GatedEffect));
+        SetAtb(u.Id, Math.Clamp((float)Stats.Get("combat/HeroSkills/DemonLord/Gating/GatedStartATB", 0), 0f, 1f));
+    }
+    const string DefileLink = "DEFILE_LINK:";
+
+    /// <summary>
+    /// FUN_00c50920: the defilers of a caster — the units with Defile Magic (0x6d) whose SPELL_ABILITY_DEFILE_MAGIC
+    /// (0x146) links (vf 0x30, written by the cast 00984a00 case 0x146 → vf 0x298) hold it. Every defiler that defiled
+    /// the stack since its own last turn start counts, not only the last one (the effect itself is one: a second cast
+    /// refreshes it, 00a73ab0).
+    /// </summary>
+    internal List<Unit> DefilersOf(Unit caster)
+    {
+        int last = caster.GetEffect(FxDefiled)?.SourceUnit ?? -1;   // the last cast's defiler is linked too
+        return S.Units.Where(d => d.Alive && (d.Id == last || d.AbilityUses.ContainsKey(DefileLink + caster.Id)) && HasAbilityNow(d, Ab.DefileMagic)).ToList();
+    }
+
+    /// <summary>
+    /// The defiler's turn start (FUN_00bbc8e0, vf 0x28c(0x6d)): each stack in its 0x146 links loses the effect
+    /// (vf 0x270(0x146, …, 1) — the shared effect, whoever else defiled it) and its links are cleared (vf 0x2a4(0x146)).
+    /// </summary>
+    void ReleaseDefiled(Unit u)
+    {
+        foreach (var v in S.Units.Where(v => v.GetEffect(FxDefiled)?.SourceUnit == u.Id).ToList()) RemoveEffect(v, FxDefiled);
+        foreach (var key in u.AbilityUses.Keys.Where(k => k.StartsWith(DefileLink, StringComparison.Ordinal)).ToList())
+        {
+            if (S.Unit(int.Parse(key[DefileLink.Length..])) is { } v) RemoveEffect(v, FxDefiled);
+            u.AbilityUses.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// The creature caster's first N(t) term of the Defile Magic roll (00c50b38..00c50b74): with the caster's vf 0x6c
+    /// creature interface (vtable 00e4fe9c), [record +0x100 BaseCreature ≠ 0 (FUN_004babd0)] + its vf 0x1c (FUN_008a2110:
+    /// 8 for a unique summon (+0x88 summon info), else the record's +0x8c CreatureTier, FUN_004ba900), then NEG / SBB / NEG:
+    /// 1 when either is non-zero, else 0 — so 1 for every creature with a tier.
+    /// </summary>
+    internal int DefileCasterTerm(Unit caster)
+    {
+        bool hasBase = Db.Creatures.TryGetValue(caster.CreatureId, out var d) && d.BaseCreature is { Length: > 0 } b && b != "CREATURE_UNKNOWN";
+        int tier = caster.AbilityUses.ContainsKey(AvatarOfDeathMark) ? 8 : d?.Tier ?? caster.Tier;
+        return hasBase || tier != 0 ? 1 : 0;
+    }
 }

@@ -77,12 +77,13 @@ public sealed partial class Battle
         if (!u.Alive || u.HasEffect(FxDiving)) return;
         int morale = MoraleOf(u);
         if (morale >= 0 || !MoraleRoll(morale)) return;
+        RageEvent(u, "BadMoraleRP");                                                // 004d9239..004d9271: vf 0x6c → vf 0x7c(DemonRage +0x54)
         if (u.Kind == UnitKind.Creature && Specials.Pieces(Enemy(u.Side), Specials.Necromancers) > 3)   // 008a8140
             AddEffect(u, new Effect { Id = NecromancersDebuff, SourceSide = 1 - u.Side, Dispellable = false });
         Emit(new MoraleProc(u.Id, false));
         SetAtb(u.Id, (float)Stats.Get("combat/LuckAndMorale/BadMorale_ATBValue", 0.5));   // vf 0x18c(RPGStats +0xad8)
         TurnStartPartA(u);                                                          // vf 0xd8 → FUN_00bbcaa0 → FUN_00bbc8e0
-        RageEvent(u, "BadMoraleRP");                                                // the engine's rage (exe site not traced)
+        if (!u.Alive) { CheckEnd(); seqDirty = true; return; }                      // a damage-over-time kill (00bbb900)
         EmpathyOnMorale(u, good: false);                                            // hero vf 0x2c(0)
         seqDirty = true;                                                            // 00a6ce7f FUN_00a2db60: turn counter +0x38
     }
@@ -94,14 +95,10 @@ public sealed partial class Battle
     /// FUN_00bbc8e0, the part of a creature's turn start the bad morale path also runs (FUN_00bbcaa0 when vf 0xd8 holds):
     /// SPELL_EFFECT_BATTLE_FRENZY (0x112), SPELL_ABILITY_BERSERKER_RAGE (0xf5) and SPELL_EFFECT_PREPARATION (0x11e)
     /// removed (vf 0x270), the Defile Magic release (vf 0x28c(0x6d)), then FUN_00bbc510 (Battle Dive finish; a diving
-    /// stack does not reach here). Not ported: vf 0x268(SPELL_ABILITY_DASH 0xb0) when vf 0x28 ≠ 0, FUN_00bbb900 (vf 0x4c ≠ 1)
-    /// and FUN_00bbb390 (SPELL_ABILITY_GATING 0x9f).
+    /// stack does not reach here), the Dash count, the damage over time and the gated arrival: <see cref="ExeTurnStartTail"/>
+    /// (combat_sweep_18.md).
     /// </summary>
-    void TurnStartPartA(Unit u)
-    {
-        Sweep7TurnStart(u);
-        RemoveEffect(u, PreparationEffect);
-    }
+    void TurnStartPartA(Unit u) => ExeTurnStartTail(u);
 
     /// <summary>
     /// FUN_00a72ae0(dt, now) over the unit's effect list (+0x4c): FUN_004e3d50 leaves the markers 0x7ffffffd..0x7fffffff

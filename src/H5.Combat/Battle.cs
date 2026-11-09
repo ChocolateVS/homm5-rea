@@ -253,8 +253,6 @@ public sealed partial class Battle
 
         u.RetaliationsLeft = HasAbilityNow(u, Ab.UnlimitedRetaliation) ? int.MaxValue : 1;
         u.Defending = false;
-        RemoveEffect(u, PreparationEffect);   // exe 008a65e0: duration 1, i.e. until the stack's next turn
-        Sweep7TurnStart(u);   // exe FUN_00bbc8e0: Battle Frenzy removed, Defile Magic released
         u.AgilityCells = 0;   // exe FUN_008a6c40: SPELL_ABILITY_AGILITY is removed when the creature's turn begins
         u.AbilityUses.Remove(RuneTurnKey);   // exe FUN_008a6c40 → FUN_00a6e400 → FUN_00989130(1) (sweep 13)
         RemoveEffect(u, H5.Combat.Fx.TakeRoots);
@@ -264,9 +262,13 @@ public sealed partial class Battle
         if (u.Kind == UnitKind.Creature && HeroOf(u) is { Present: true, Specialization: "HERO_SPEC_MOUNTAIN_KING" })
             Rune(Stats.Str("combat/HeroSpecializations/Runemage/MountainKing_ActiveRune", "SPELL_RUNE_OF_STUNNING"), u);
 
+        // exe FUN_00bbcb40: the unit's vf 0xd8 turn start (above), then FUN_00bbc8e0 (Battle.Sweep18.cs), then the action
+        // only while the ATB is still ≥ 1 (a gated stack arriving has it reset).
+        bool gated = ExeTurnStartTail(u);
         StartOfTurnDamage(u);
         if (!u.Alive) { CheckEnd(); return false; }
         if (BattleDiveTurnStart(u)) return false;   // exe FUN_00bbc8e0 → FUN_00bbc510: a pending Battle Dive finishes
+        if (gated) { Emit(new TurnSkipped(u.Id, "gating")); FinishTurn(u, GetAtb(u.Id), allowMorale: false); return false; }
 
         if (u.HasEffect("SPELL_BLIND") || u.HasEffect(H5.Combat.Fx.Sleep) || u.HasEffect(H5.Combat.Fx.Stunned) || u.HasEffect(H5.Combat.Fx.Sabotaged) || u.HasEffect(FxDiving))
         {
@@ -306,6 +308,7 @@ public sealed partial class Battle
         for (int i = u.Effects.Count - 1; i >= 0; i--)
         {
             var e = u.Effects[i];
+            if (TurnStartCounted(e.Id)) continue;   // counted at the turn start (FUN_00bbc8e0 / 00bbb900, sweep 18)
             if (e.Actions > 0) e.Actions--;
             if (e.Actions == 0) RemoveEffectAt(u, i);
         }
