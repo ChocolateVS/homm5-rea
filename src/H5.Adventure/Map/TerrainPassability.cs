@@ -29,6 +29,8 @@ public enum TileKind : byte
 /// clamped to 1..20, then to 1..min(TilesX, TilesY)) to the map edge → <see cref="TileKind.Edge"/>;</item>
 /// <item>a tile listed by an object's passable tiles (floor list +0x6c, object vf 0xbc, offsets from the object
 /// position vf 0xa4) → <see cref="TileKind.ObjectPassable"/>, ground type 00c0f040, road type 7;</item>
+/// <item>(the tile record, 00bcc5d0 defaults: +0 ground type 1, +4 road type 9, +8 kind 1; the map edge keeps them;
+/// other tiles get ground type 00c0f070 and road type 00c0f0a0, <see cref="RoadType"/>)</item>
 /// <item>otherwise ground type 00c0f070, then: 00c0e3f0 (underground and the vertex level (x, y) &gt; 0x1f) →
 /// Edge; 00c0f340 (a TT_BIG_WATER layer with weight at a corner) or 00c0e420 (chunk 15 at vertex (x, y) is 0) →
 /// Impassable; 00c0f400 (the four levels 0, or the half-tile water mask at the centre &gt; 0x8c) → Water;
@@ -65,6 +67,7 @@ public static class TerrainPassability
         int w = t.TilesX, h = t.TilesY;
         f.Kind = new TileKind[f.Width * f.Height];
         f.Ground = new byte[f.Width * f.Height];
+        f.Road = new byte[f.Width * f.Height];
         int b = Math.Max(1, Math.Min(Math.Clamp(borderSize, 1, 20), Math.Min(w, h)));     // 00a0ed80 / 00999a60
         bool ug = f.Index != 0;
         for (int x = 0; x < w; x++)
@@ -73,14 +76,17 @@ public static class TerrainPassability
                 if (x >= f.Width || y >= f.Height) continue;
                 int i = y * f.Width + x;
                 f.Ground[i] = 1;                                                           // 00bcc5d0 default
+                f.Road[i] = TypeNone;
                 if (x < b || y < b || w - b <= x || h - b <= y) { f.Kind[i] = TileKind.Edge; continue; }
                 if (objectPassable.Contains((x, y)))
                 {
                     f.Ground[i] = (byte)DominantType(t, layerTypes, x, y, excludeWater: true);   // 00c0f040 → 00c107d0
                     f.Kind[i] = TileKind.ObjectPassable;
+                    f.Road[i] = TypeGravelRoad;
                     continue;
                 }
                 f.Ground[i] = (byte)DominantType(t, layerTypes, x, y, excludeWater: false);      // 00c0f070 → 00c10900
+                f.Road[i] = (byte)RoadType(t, layerTypes, x, y);                                 // 00c0f0a0
                 if (RaisedFlagged(t, ug, x, y)) f.Kind[i] = TileKind.Edge;                            // 00c0e3f0
                 else if (BigWaterLayer(t, layerTypes, x, y) || Closed(t, x, y)) f.Kind[i] = TileKind.Impassable;
                 else if (IsWater(t, ug, layerTypes, x, y)) { f.Kind[i] = TileKind.Water; f.Ground[i] = TypeBigWater; }
@@ -110,6 +116,29 @@ public static class TerrainPassability
             if (best < vis) { best = vis; type = ty; }
         }
         return type;
+    }
+
+    /// <summary>
+    /// The road type of a tile (passability tile +4, H5_Game.exe 00c0f0a0): when the water layers cover the tile centre
+    /// (00c10450, <see cref="WaterCovered"/>) the water layer wins; else 00c10580 weighs the other layers from the top
+    /// (skipping layers without a type and TT_SMALL_WATER / TT_BIG_WATER) as <see cref="DominantType"/> does, the largest
+    /// count winning (strict &gt;). The winner's type when it is a road (6..8), else TT_NONE (9).
+    /// </summary>
+    public static int RoadType(TerrainData t, IReadOnlyList<int> layerTypes, int x, int y)
+    {
+        if (x < 0 || x >= t.TilesX || y < 0 || y >= t.TilesY || WaterCovered(t, layerTypes, x, y)) return TypeNone;
+        float best = 0f, rem = 1f;
+        int type = TypeNone;
+        for (int li = t.Layers.Count - 1; li >= 0; li--)
+        {
+            int ty = li < layerTypes.Count ? layerTypes[li] : -1;
+            if (ty < 0 || ty == TypeSmallWater || ty == TypeBigWater) continue;
+            byte wgt = li == 0 ? (byte)0xff : CentreWeight(t.Layers[li].Weights, x, y);
+            float vis = wgt * rem;
+            rem = (1f - wgt * (1f / 255f)) * rem;
+            if (best < vis) { best = vis; type = ty; }
+        }
+        return type is >= 6 and <= 8 ? type : TypeNone;
     }
 
     /// <summary>

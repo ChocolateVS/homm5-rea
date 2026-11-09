@@ -45,6 +45,7 @@ public sealed partial class OriginalAdventureAI
         var towns = g.S.Towns.Where(t => t.Owner == me).ToList();
         // Phase 0 (FUN_0086d750): the AI money values (00868bb0, before the puzzle map and threats), then the threat table.
         SetMoneyValues(g, st, me);
+        SolvePuzzleMap(g, st, diff, me);
         CheckThreats(g, st, diff, me);
 
         // Phase order of the exe's state machine (CPlayerAI +0x128, dispatcher at 0x0086dea0): day start and
@@ -93,7 +94,10 @@ public sealed partial class OriginalAdventureAI
                 var target = ChooseDestination(g, h, roles, diff, st, claimed);
                 if (target == null) break;
                 var mate = g.S.Heroes.FirstOrDefault(x => x.Alive && x.Owner == me && x.Id != h.Id && !x.Garrisoned && x.Pos == target.Value.Tile);
-                var (r, whole) = StepTowards(g, h, target.Value, me);
+                // 0086c760: a one-cell route to a destination without an object (the grail guess) digs.
+                var (r, whole) = target.Value.Object == GrailSpot.Index && target.Value.Tile == h.Pos
+                    ? (Send(g, new DigCmd(h.Id) { Player = me }), true)
+                    : StepTowards(g, h, target.Value, me);
                 actions++;
                 if (r is not { Ok: true }) break;
                 if (whole) claimed.Add(target.Value.Object);

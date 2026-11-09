@@ -283,6 +283,11 @@ public sealed class MapFloor
     /// <summary>The exe's ground type id of each tile (passability map tile +0; 9 = TT_NONE refuses entry).</summary>
     public byte[] Ground = Array.Empty<byte>();
     /// <summary>
+    /// The exe's road type id of each tile (passability map tile +4: TT_DIRT_ROAD … TT_COBBLESTONE_ROAD, else 9 = TT_NONE;
+    /// <see cref="TerrainPassability.RoadType"/>).
+    /// </summary>
+    public byte[] Road = Array.Empty<byte>();
+    /// <summary>
     /// The blocked tiles of multi-tile objects (<see cref="MapObject.MultiTile"/>): the pathfinder's object map refuses
     /// them before its action tiles (exe 009d1410 → 0045d670).
     /// </summary>

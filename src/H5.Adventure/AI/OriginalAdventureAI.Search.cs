@@ -95,6 +95,8 @@ public sealed partial class OriginalAdventureAI
             Protect(g, st, diff, h, roles, d, costs);
             dests.Add(d);
         }
+        if (GrailDestination(h, costs) is { } gd && gd.Cost <= maxCost)
+            dests.Add(new Candidate { O = GrailSpot, Tile = gd.Tile, Cost = gd.Cost, Value = gd.Value });
         StrategicPropagation(g, h, st, diff, dests);
 
         // The choice (FUN_00a7b630).
