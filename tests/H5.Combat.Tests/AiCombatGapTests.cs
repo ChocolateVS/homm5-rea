@@ -360,6 +360,27 @@ public class AiCombatGapTests(GameDataFixture f)
     }
 
     [Fact]
+    public void ArmyListsSkipHiddenStacksAndTheRangedTestSkipsWarMachines()   // army vf 0x6c = 004da670 (creatures), vf 0x64 = 004da560, 00a6d490
+    {
+        var src = f.Db.DuelPresets[0].Hero!;
+        var h = new HeroInstance { Shared = src.Shared, Level = src.Level, DisplayName = src.DisplayName, AmmoCart = true };
+        var s = BattleSetup.Create(f.Db,
+            new ArmySetup { Hero = h, Army = { new ArmySlot("CREATURE_ARCHER", 10), new ArmySlot("CREATURE_FOOTMAN", 10) } },
+            new ArmySetup { Army = { new ArmySlot("CREATURE_PEASANT", 10) } },
+            7, skipTactics: true, arena: "Grass_Big_01");
+        var b = new Battle(f.Db, s);
+        Assert.Contains(s.Units, u => u.IsWarMachine && u.Side == 0 && !b.CanShoot(u));
+        var fm = s.Units.First(u => u.CreatureId == "CREATURE_FOOTMAN");
+        Assert.False(OriginalBattleAI.AllRanged(b, 0, false));
+        Assert.True(CombatValue.ShooterShare(b, 0) < 1f);
+        // FUN_00a6d490: a hidden (vf 0x4c = 1) stack is in neither list; FUN_00a2f710 over vf 0x6c takes creatures only, so the
+        // ammo cart, which does not shoot, does not stop the archers' army from counting as ranged.
+        fm.Effects.Add(new Effect { Id = Fx.Invisible, Remaining = 3, Positive = true });
+        Assert.True(OriginalBattleAI.AllRanged(b, 0, false));
+        Assert.Equal(1f, CombatValue.ShooterShare(b, 0));
+    }
+
+    [Fact]
     public void AFlyersWalkerMapHoldsOnlyTheObstacles()   // FUN_00c52e20: stacks (FUN_00b3cf00) only for an actor that does not fly
     {
         var b = f.Duel("CREATURE_GRIFFIN", 5, "CREATURE_PEASANT", 10, 1, new Cell(0, 5), new Cell(1, 5));

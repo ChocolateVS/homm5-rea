@@ -280,14 +280,16 @@ public sealed class CombatValue
     /// <summary>
     /// FUN_00a2f8f0(army), the harpy rule's test: true when the army has no hero (vf 0xc) and none of its living stacks
     /// (army vf 0x6c) shoots (vf 0x1e0), has a spell potential (FUN_00bfa4f0 &gt; 0) or has Strike and Return + No Enemy
-    /// Retaliation (FUN_00a2f130). GAP-detail: war machines are left out (army vf 0x6c not identified).
+    /// Retaliation (FUN_00a2f130). Army vf 0x6c = 004da670 → vf 0x5c = 004da600: the creature interfaces (unit vf 0x6c ≠ 0, so no
+    /// war machine or hero) of the army's units (+0x28) that pass FUN_00a6d490 (not vf 0x5c, visibility vf 0x4c ≠ 1: a hidden
+    /// stack — ours: the Invisible effect — is left out).
     /// </summary>
     internal static bool NoRangedThreat(Battle b, int side)
     {
         if (b.State.Heroes[side].Present) return false;
         foreach (var u in b.State.Living)
         {
-            if (u.Side != side || u.IsObject || u.IsWarMachine) continue;
+            if (u.Side != side || u.IsObject || u.IsWarMachine || u.HasEffect(Fx.Invisible)) continue;
             if (b.CanShoot(u) || b.AiSpellPotential(u, null) > 0 || u.Has(Ab.StrikeAndReturn) && u.Has(Ab.NoEnemyRetaliation)) return false;
         }
         return true;
@@ -295,15 +297,17 @@ public sealed class CombatValue
 
     /// <summary>
     /// FUN_00bfa500(army): over the army's stacks (army vf 0x64), r = count (vf 0x1d8) · (max + min) (vf 0x1ec / 0x1f0) · 0.5
-    /// in single precision; the shooters' (vf 0x1e0) sum over the total, 0 when the total is not above 0.
-    /// GAP-detail: war machines are left out (army vf 0x64 not identified).
+    /// in single precision; the shooters' (vf 0x1e0) sum over the total, 0 when the total is not above 0. Army vf 0x64 =
+    /// 004da560 → vf 0x60 = 004da500: every unit of the army (+0x28), war machines included (no creature-interface test), that
+    /// passes FUN_00a6d490 (not vf 0x5c, vf 0x4c ≠ 1: hidden stacks — ours: Invisible — left out). GAP-detail: whether the
+    /// hero's unit is in that list is not traced (left out here).
     /// </summary>
     internal static float ShooterShare(Battle b, int side)
     {
         float all = 0, shoot = 0;
         foreach (var u in b.State.Living)
         {
-            if (u.Side != side || u.IsObject || u.IsWarMachine) continue;
+            if (u.Side != side || u.IsObject || u.HasEffect(Fx.Invisible)) continue;
             var (min, max) = b.DamageRangeOf(u);
             float r = (float)u.Count * (float)((float)max + (float)min) * 0.5f;
             all = r + all;

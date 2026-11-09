@@ -393,11 +393,11 @@ public sealed partial class OriginalBattleAI : IBattleAI
     /// <summary>
     /// FUN_00a2f710(army, flag): every stack of the army shoots (vf 0x1e0) or has a spell potential FUN_00bfa4f0 =
     /// FUN_00bfa360(10, 0) ≥ 1 (<see cref="Battle.AiSpellPotential"/>), or — with the flag — has Strike and Return and No
-    /// Enemy Retaliation; true for an army without stacks. GAP-detail: war machines are left out of the army list (army
-    /// vf 0x6c not identified).
+    /// Enemy Retaliation; true for an army without stacks. The army list is vf 0x6c = 004da670: the creature interfaces of the
+    /// army's units (no war machine or hero) that pass FUN_00a6d490 (not vf 0x5c, vf 0x4c ≠ 1: hidden — ours: Invisible — left out).
     /// </summary>
     internal static bool AllRanged(Battle b, int side, bool flag) =>
-        b.State.Living.Where(u => u.Side == side && !u.IsObject && !u.IsWarMachine)
+        b.State.Living.Where(u => u.Side == side && !u.IsObject && !u.IsWarMachine && !u.HasEffect(Fx.Invisible))
             .All(u => flag && u.Has(Ab.StrikeAndReturn) && u.Has(Ab.NoEnemyRetaliation) || b.CanShoot(u) || b.AiSpellPotential(u, null) >= 1);
 
     /// <summary>
