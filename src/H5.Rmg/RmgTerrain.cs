@@ -100,8 +100,9 @@ public sealed partial class RmgGenerator
 
     /// <summary>
     /// exe 0x00917e10: per object record on the surface that is not a static, not an Academy town (town shared +0xfc
-    /// == 5) and not an Academy dwelling (Type 0x51, 0x55..0x57): its shared blockedTiles (+0x54) followed by its
-    /// activeTiles (+0x6c), turned by the object's angle (0x00b0be60); each turned tile clears the smoothing mask at
+    /// == 5) and not an Academy dwelling (Type 0x51, 0x55..0x57): its shared blockedTiles (+0x54) followed by the first
+    /// of its activeTiles (+0x6c; 0x00918007..0x00918013 pushes &amp;active[0] once, 0x00a68e00 = push_back of one
+    /// 8-byte point), turned by the object's angle (0x00b0be60); each turned tile clears the smoothing mask at
     /// [x + dx][y + dy]; then 0x00913850 (pos, tiles, floor 0) levels them.
     /// </summary>
     void LevelUnderObjects(RmgResult r, RmgFloor f, byte[] mask)
@@ -112,7 +113,7 @@ public sealed partial class RmgGenerator
             if (o.Def.Tag == "AdvMapTownShared" && o.Def.TownType == "TOWN_ACADEMY") continue;
             if (o.Def.Tag == "AdvMapDwellingShared" && o.Def.Type is "BUILDING_WORKSHOP" or "BUILDING_STONE_PARAPET" or "BUILDING_GOLEM_FORGE" or "BUILDING_ACADEMY_MILITARY_POST") continue;
             int q = ExeQuarter(o.Rot);
-            var tiles = o.Def.Blocked.Concat(o.Def.Active).Select(t => Rotate(t, q)).ToList();
+            var tiles = LevelTiles(o.Def).Select(t => Rotate(t, q)).ToList();
             foreach (var (dx, dy) in tiles)
             {
                 int x = o.X + dx, y = o.Y + dy;
@@ -139,6 +140,9 @@ public sealed partial class RmgGenerator
         foreach (var (x, y) in pts)
             if (y >= 0 && y <= f.H && x >= 0 && x <= f.W) f.Heights[f.Lv(y, x)] = v;
     }
+
+    /// <summary>The footprint 0x00917e10 levels: blockedTiles and the first activeTiles entry (see <see cref="LevelUnderObjects"/>).</summary>
+    public static IEnumerable<(int X, int Y)> LevelTiles(H5.Adventure.Map.SharedDef d) => d.Blocked.Concat(d.Active.Take(1));
 
     /// <summary>The vertex points of 0x00913850 for an object at (px, py) with its turned tiles (see <see cref="LevelFootprint"/>).</summary>
     public static List<(int X, int Y)> LevelPoints(int px, int py, IEnumerable<(int X, int Y)> tiles)
@@ -210,7 +214,7 @@ public sealed partial class RmgGenerator
         for (int r = 1; r < rows - 1; r++)
             for (int c = 1; c < cols - 1; c++)
             {
-                if (mask[r * H + c] == 0) continue;
+                if (mask[c * H + r] == 0) continue;
                 float sum = old[f.Lv(r, c - 1)] + old[f.Lv(r, c + 1)] + old[f.Lv(r + 1, c - 1)] + old[f.Lv(r + 1, c + 1)]
                           + old[f.Lv(r - 1, c - 1)] + old[f.Lv(r - 1, c + 1)] + old[f.Lv(r + 1, c)] + old[f.Lv(r - 1, c)];
                 h[f.Lv(r, c)] = old[f.Lv(r, c)] * kc + sum * kn;

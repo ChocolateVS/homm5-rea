@@ -298,7 +298,7 @@ sealed class RmgStatsCommand : ICommand
 sealed class RmgRefCommand : ICommand
 {
     public string Name => "rmg-ref";
-    public string Help => "rmg-ref [--only=name] [--diverge] [--trace] [--near=x,y,d] [--reach] [--terrain [--window=x0,y0,x1,y1] [--roadtiles=x0,y0,x1,y1]] [--detail]  - the RMG maps in the install's Maps folder next to our generator on the same template/size/seed";
+    public string Help => "rmg-ref [--only=name] [--diverge] [--trace] [--near=x,y,d] [--reach] [--terrain [--window=x0,y0,x1,y1] [--roadtiles=x0,y0,x1,y1] [--hpoint=x,y] [--hdump=dir]] [--detail]  - the RMG maps in the install's Maps folder next to our generator on the same template/size/seed";
 
     public int Run(ToolContext ctx, string[] args)
     {
@@ -496,6 +496,53 @@ sealed class RmgRefCommand : ICommand
                     static string Hs(float[] h) => $"heights min {h.Min():0.00} max {h.Max():0.00} mean {h.Average():0.000}, distinct {h.Distinct().Count()}";
                     Console.WriteLine($"    ref  {Hs(rt.Heights!.Data)}");
                     Console.WriteLine($"    ours {Hs(gen.Floors[0].Heights)}");
+                    // Vertex by vertex: heights (chunk 5), the depth grid (chunk 10) and every layer's weights (by tile).
+                    static string Diff(IReadOnlyList<double> a, IReadOnlyList<double> b, string fmt)
+                    {
+                        if (a.Count != b.Count) return $"sizes {a.Count} / {b.Count}";
+                        double mx = 0, sum = 0; int n = 0, at = -1;
+                        for (int i = 0; i < a.Count; i++)
+                        {
+                            double d = Math.Abs(a[i] - b[i]);
+                            if (d != 0) n++;
+                            sum += d;
+                            if (d > mx) { mx = d; at = i; }
+                        }
+                        return $"differ {n} / {a.Count}, max {mx.ToString(fmt)} (at {at}), mean {(sum / Math.Max(1, a.Count)).ToString(fmt)}";
+                    }
+                    var f0h = gen.Floors[0];
+                    if (args.FirstOrDefault(a => a.StartsWith("--hdump="))?.Substring(8) is string hd)
+                    {
+                        // --hdump=dir: ref heights, our heights, our flags, border distances, zones (raw little-endian), our surface objects.
+                        string bn = Path.Combine(hd, Path.GetFileNameWithoutExtension(file));
+                        File.WriteAllBytes(bn + ".ref.f32", rt.Heights!.Data.SelectMany(BitConverter.GetBytes).ToArray());
+                        File.WriteAllBytes(bn + ".our.f32", f0h.Heights.SelectMany(BitConverter.GetBytes).ToArray());
+                        File.WriteAllBytes(bn + ".flags.i32", f0h.Flags.Select(v => (int)v).SelectMany(BitConverter.GetBytes).ToArray());
+                        File.WriteAllBytes(bn + ".bd.i32", f0h.BorderDist.Select(v => (int)v).SelectMany(BitConverter.GetBytes).ToArray());
+                        File.WriteAllBytes(bn + ".zone.i32", f0h.Zone.Select(v => (int)v).SelectMany(BitConverter.GetBytes).ToArray());
+                        File.WriteAllLines(bn + ".objs.txt", r.Objects.Where(o => o.Floor == 0).Select(o =>
+                            $"{o.Def.Tag}\t{o.Def.Type}\t{o.Shared}\t{o.X}\t{o.Y}\t{RmgGenerator.ExeQuarter(o.Rot)}\t" +
+                            string.Join(" ", o.Def.Blocked.Select(t => RmgGenerator.Rotate(t, RmgGenerator.ExeQuarter(o.Rot))).Select(t => $"{t.X},{t.Y}")) + "\t" +
+                            string.Join(" ", o.Def.Active.Select(t => RmgGenerator.Rotate(t, RmgGenerator.ExeQuarter(o.Rot))).Select(t => $"{t.X},{t.Y}"))));
+                    }
+                    Console.WriteLine($"    diff heights: {Diff(rt.Heights!.Data.Select(v => (double)v).ToList(), f0h.Heights.Select(v => (double)v).ToList(), "0.000000")}");
+                    if (rt.HalfTileMap != null)
+                        Console.WriteLine($"    diff depth:   {Diff(rt.HalfTileMap.Data.Select(v => (double)v).ToList(), f0h.Depth.Select(v => (double)v).ToList(), "0.000")}");
+                    {
+                        int lw = 0, ln = 0; double lmx = 0, lsum = 0;
+                        foreach (var rl in rt.Layers)
+                        {
+                            var ol = f0h.Layers.FirstOrDefault(l => string.Equals(l.Tile, rl.TilePath, StringComparison.OrdinalIgnoreCase));
+                            var ow = ol?.Weights ?? new byte[rl.Weights.Data.Length];
+                            for (int i = 0; i < Math.Min(ow.Length, rl.Weights.Data.Length); i++)
+                            {
+                                int d = Math.Abs(ow[i] - rl.Weights.Data[i]);
+                                if (d != 0) lw++;
+                                ln++; lsum += d; lmx = Math.Max(lmx, d);
+                            }
+                        }
+                        Console.WriteLine($"    diff weights: differ {lw} / {ln}, max {lmx}, mean {lsum / Math.Max(1, ln):0.0000}");
+                    }
                     // Objects whose 0x00913850 points carry one height (levelled and not touched afterwards).
                     static (string, int) Levelled(IEnumerable<(SharedDef D, int X, int Y, float Rot)> objs, float[] h, int w)
                     {
@@ -507,7 +554,7 @@ sealed class RmgRefCommand : ICommand
                             if (d.Tag == "AdvMapTownShared" && d.TownType == "TOWN_ACADEMY") continue;
                             if (d.Tag == "AdvMapDwellingShared" && d.Type is "BUILDING_WORKSHOP" or "BUILDING_STONE_PARAPET" or "BUILDING_GOLEM_FORGE" or "BUILDING_ACADEMY_MILITARY_POST") continue;
                             int q = RmgGenerator.ExeQuarter(rot);
-                            var pts = RmgGenerator.LevelPoints(x, y, d.Blocked.Concat(d.Active).Select(t => RmgGenerator.Rotate(t, q)))
+                            var pts = RmgGenerator.LevelPoints(x, y, RmgGenerator.LevelTiles(d).Select(t => RmgGenerator.Rotate(t, q)))
                                 .Where(p => p.X >= 0 && p.Y >= 0 && p.X <= w && p.Y <= w).Select(p => h[p.Y * (w + 1) + p.X]).ToList();
                             n++;
                             if (pts.Distinct().Count() == 1) k++;
@@ -520,6 +567,21 @@ sealed class RmgRefCommand : ICommand
                     var (rk, rn) = Levelled(refMap.Objects.Where(o => o.Pos.Floor == 0 && o.Shared != null).Select(o => (o.Shared!, o.Pos.X, o.Pos.Y, o.Rot)), rt.Heights!.Data, size);
                     var (ok2, on) = Levelled(r.Objects.Where(o => o.Floor == 0).Select(o => (o.Def, o.X, o.Y, o.Rot)), gen.Floors[0].Heights, size);
                     Console.WriteLine($"    levelling (heights over each object's 0x00913850 points): ref {rk} / {rn}, ours {ok2} / {on}");
+                    if (args.FirstOrDefault(a => a.StartsWith("--hpoint=")) is string hp)
+                    {
+                        // Objects (creation order) whose 0x00913850 points include vertex x,y; ours with their index.
+                        var pv = hp.Substring(9).Split(',').Select(int.Parse).ToArray();
+                        int idx = 0;
+                        foreach (var o in r.Objects)
+                        {
+                            idx++;
+                            if (o.Floor != 0) continue;
+                            var pts = RmgGenerator.LevelPoints(o.X, o.Y, RmgGenerator.LevelTiles(o.Def).Select(t => RmgGenerator.Rotate(t, RmgGenerator.ExeQuarter(o.Rot))));
+                            if (pts.Contains((pv[0], pv[1])))
+                                Console.WriteLine($"      ours #{idx} {o.Shared} ({o.X},{o.Y}) q{RmgGenerator.ExeQuarter(o.Rot)} {o.Def.Tag} {o.Def.Type}: " +
+                                    string.Join(" ", pts.Where(p => p.X >= 0 && p.Y >= 0 && p.X <= size && p.Y <= size).Select(p => $"{rt.Heights!.Data[p.Y * (size + 1) + p.X]:0.0000}/{gen.Floors[0].Heights[p.Y * (size + 1) + p.X]:0.0000}")));
+                        }
+                    }
                 }
             }
             if (args.Contains("--detail"))
