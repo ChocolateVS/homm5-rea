@@ -134,6 +134,7 @@ public sealed partial class Adventure
     {
         if (os.Owner == p.Index) return;
         os.Owner = p.Index;
+        if (o.Kind == ObjectKind.AbandonedMine) os.ResourceKind = AbandonedMineResource(o);
         RumourCaptured(o, p.Index);
         Emit(new ObjectCaptured(o.Index, p.Index));
     }

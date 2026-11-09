@@ -371,6 +371,11 @@ public sealed class MapLoader
                 };
                 break;
             }
+            case ObjectKind.AbandonedMine:
+                // <AvailableResources>: one weight per resource (wood, ore, mercury, crystal, sulfur, gems, gold); stock
+                // maps mostly 0 0 1 1 1 1 1 (the income table 008b54a0 covers mercury .. gold).
+                o.AbanMineWeights = e.StrItems("AvailableResources").Select(v => int.TryParse(v, out var w) ? w : 0).ToArray();
+                break;
             case ObjectKind.HillFort when e.Element("CreaturesUpgradesFilter") is { } f:
                 o.HillFortFilter = ReadUpgradesFilter(f);
                 break;

@@ -189,3 +189,33 @@ public class CaravanTests(Fixture f)
         Assert.Contains(g.S.Caravans.Single().Army, s => s is { Count: 5, Creature: "CREATURE_PEASANT" });
     }
 }
+
+/// <summary>Abandoned mine resource (H5_Game.exe 008b59d0 → 008b5840 at capture; income 008b54a0).</summary>
+[Collection("adv")]
+public class AbandonedMineTests(Fixture f)
+{
+    [Fact]
+    public void CaptureDrawsAResourceFromTheMapWeightsAndItPaysDaily()
+    {
+        Assert.Equal((2, 1), Engine.Adventure.AbandonedMineYield(2));
+        Assert.Equal((6, 1000), Engine.Adventure.AbandonedMineYield(6));
+        Assert.Equal((-1, 0), Engine.Adventure.AbandonedMineYield(0));
+        foreach (var id in new[] { "A1M2", "A1M5", "A2M11", "A1L1" })
+        {
+            Engine.Adventure g;
+            try { g = f.NewGame(id); } catch { continue; }
+            var mine = g.Map.Objects.FirstOrDefault(o => o.Kind == ObjectKind.AbandonedMine && o.AbanMineWeights is { Length: >= 7 } w && w.Take(7).Sum() > 0);
+            if (mine == null) continue;
+            var os = g.S.Obj(mine.Index);
+            os.Guards.Clear();
+            var h = g.S.Heroes.First(x => x.Alive && x.Owner == g.Current.Index);
+            h.Pos = mine.ActiveTiles.First();
+            Assert.True(g.Apply(new MoveHeroCmd(h.Id, h.Pos) { Player = h.Owner }).Ok);
+            Assert.Equal(h.Owner, os.Owner);
+            Assert.InRange(os.ResourceKind, 0, 6);
+            Assert.True(mine.AbanMineWeights![os.ResourceKind] > 0);    // only a weighted resource is drawn
+            return;
+        }
+        Assert.Fail("no abandoned mine with resource weights on the test maps");
+    }
+}

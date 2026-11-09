@@ -191,6 +191,8 @@ public sealed class MapObject
 
     /// <summary>Hill Fort &lt;CreaturesUpgradesFilter&gt; (null when the instance has none, i.e. nothing forbidden).</summary>
     public UpgradesFilter? HillFortFilter;
+    /// <summary>Abandoned mine &lt;AvailableResources&gt;: a weight per resource index (picked at capture, 008b5840).</summary>
+    public int[]? AbanMineWeights;
     /// <summary>
     /// A town's &lt;CreaturesUpgradesFilter&gt; (AdvMapTown +0x130, copied to CAdvMapTown +0x2e8 / +0x2f4 / +0x300 / +0x30c by
     /// 00cd6bc0; used by the dwelling filter 00ccf130); read by the AdvMapTown reader 00a0a490 (null = nothing forbidden).

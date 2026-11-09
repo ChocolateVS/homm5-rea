@@ -123,6 +123,17 @@ public sealed partial class Adventure
                     AddObject(part);
                     break;
                 }
+                case ObjectKind.AbandonedMine:
+                {
+                    // 008b54a0: the resource at +0x50 of the flagged part: 2 mercury 1, 3 crystal 1, 4 sulfur 1, 5 gems 1,
+                    // 6 gold 1000 (jump table 008b55e4); none otherwise.
+                    var (kind, amount) = AbandonedMineYield(os.ResourceKind);
+                    if (kind < 0) break;
+                    var part = new Purse();
+                    part[kind] = amount;
+                    AddObject(part);
+                    break;
+                }
                 case ObjectKind.DwarvenWarren:
                 {
                     // 00457940: one unit of the resource held at +0x60 of the flagged part (1..5: ore, mercury,
