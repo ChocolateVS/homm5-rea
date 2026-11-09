@@ -532,6 +532,8 @@ public sealed class AdvState
     /// "|" creature level); re-applied to the map objects whenever an engine is built over this state.
     /// </summary>
     public Dictionary<int, string> RandomObjects = new();
+    /// <summary>The specialization (TownSpecialization path) drawn for each random town at the game start (0041b5e0).</summary>
+    public Dictionary<int, string> RandomTownSpecs = new();
     /// <summary>Artifact merchant stock (6 slots, null = sold) by town or map object index.</summary>
     public Dictionary<int, string?[]> ArtifactMarkets = new();
     /// <summary>CArtifactsGenerator per-artifact generated count (entry +4; the first pass prefers a count of 0).</summary>

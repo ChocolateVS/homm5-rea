@@ -31,10 +31,50 @@ public sealed partial class Adventure
             }
         foreach (var o in Map.Objects)
         {
-            if (o.Kind == ObjectKind.Town && o.PlacedTownType == RandomTownType) TownRace(o, 0);
+            if (o.Kind == ObjectKind.Town && o.PlacedTownType == RandomTownType) DrawTownSpecialization(o, TownRace(o, 0));
             else if (o.Kind == ObjectKind.Dwelling && RandomDwellingType(o) > 0) ResolveDwelling(o);
         }
         ApplyRandomObjects();
+    }
+
+    /// <summary>
+    /// 0041b5e0: a random town's specialization. The specializations of the towns already in the world (here: the
+    /// towns before it in map order) are counted; then for level 0, 1, … up to the highest count, the slots of the
+    /// 255-slot table (<see cref="AdventureDb.TownSpecs"/>, in slot order) whose RandomTown is TOWN_RANDOM, whose TownType
+    /// is the town's race, that are not TOWN_BONUS_SHIPS when the instance's +0xb0 / +0xb4 are (0, 0) (taken to be an
+    /// unset ShipTile) and that are used at most <c>level</c> times (or not at all) are the candidates; the first level
+    /// with candidates picks one with rand % n (the map's generator vf 0x20 — here the game RNG). With none the exe
+    /// creates no town; here the town keeps no specialization.
+    /// </summary>
+    void DrawTownSpecialization(MapObject o, string race)
+    {
+        if (S.RandomTownSpecs.ContainsKey(o.Index)) return;
+        var usage = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < o.Index && i < Map.Objects.Count; i++)
+        {
+            var t = Map.Objects[i];
+            if (t.Kind != ObjectKind.Town) continue;
+            var sp = S.RandomTownSpecs.TryGetValue(t.Index, out var drawn) ? drawn
+                : (t.PlacedTownType ?? t.TownType) == RandomTownType ? null : t.Specialization;
+            if (!string.IsNullOrEmpty(sp)) usage[sp] = usage.GetValueOrDefault(sp) + 1;
+        }
+        int max = usage.Count == 0 ? 0 : usage.Values.Max();
+        bool noShipTile = o.ShipTile is not { } st || (st.X == 0 && st.Y == 0);
+        var specs = Db.TownSpecs;
+        for (int level = 0; level <= max; level++)
+        {
+            var candidates = new List<string>();
+            for (int i = 0; i < specs.Count && i < 0xff; i++)
+            {
+                if (specs[i] is not { } r || r.RandomTown != "TOWN_RANDOM" || r.TownType != race) continue;
+                if (r.Bonus == "TOWN_BONUS_SHIPS" && noShipTile) continue;
+                if (usage.TryGetValue(r.Path, out int n) && n > level) continue;
+                candidates.Add(r.Path);
+            }
+            if (candidates.Count == 0) continue;
+            S.RandomTownSpecs[o.Index] = candidates[S.Rng.Next(candidates.Count)];
+            return;
+        }
     }
 
     /// <summary>Puts the resolved types and shareds on the map objects (also for an engine built over a saved state).</summary>
@@ -44,7 +84,13 @@ public sealed partial class Adventure
         {
             if (index < 0 || index >= Map.Objects.Count) continue;
             var o = Map.Objects[index];
-            if (o.Kind == ObjectKind.Town) { o.PlacedTownType ??= o.TownType; o.TownType = value; continue; }
+            if (o.Kind == ObjectKind.Town)
+            {
+                o.PlacedTownType ??= o.TownType;
+                o.TownType = value;
+                o.Specialization = S.RandomTownSpecs.GetValueOrDefault(index);   // 0041b5e0 passes the drawn one
+                continue;
+            }
             if (o.Kind == ObjectKind.Treasure)
             {
                 o.PlacedShared ??= o.Shared;

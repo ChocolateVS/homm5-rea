@@ -42,6 +42,31 @@ public class RandomTownDwellingTests(Fixture f)
     }
 
     [Fact]
+    public void RandomTownsDrawTheLeastUsedRandomSpecializationOfTheirRace()
+    {
+        // 0041b5e0: slots of /GameMechanics/RefTables/TownSpecs.xdb (00975920) with RandomTown TOWN_RANDOM and the
+        // town's race; least used first; TOWN_BONUS_SHIPS only with a ship tile.
+        var g = f.NewGame("A1M4", seed: 11);
+        Assert.Equal(255, g.Db.TownSpecs.Count);
+        var towns = g.Map.Objects.Where(o => o.Kind == ObjectKind.Town && o.PlacedTownType == "TOWN_RANDOM_TYPE").ToList();
+        Assert.NotEmpty(towns);
+        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var o in towns)
+        {
+            var t = g.S.Towns.First(x => x.Object == o.Index);
+            Assert.True(g.S.RandomTownSpecs.TryGetValue(o.Index, out var spec));
+            Assert.Equal(spec, t.Specialization);
+            var rec = g.Db.TownSpecs.First(r => r != null && string.Equals(r.Path, spec, StringComparison.OrdinalIgnoreCase))!;
+            Assert.Equal("TOWN_RANDOM", rec.RandomTown);
+            Assert.Equal(t.Type, rec.TownType);
+            if (o.ShipTile is not { } st || (st.X == 0 && st.Y == 0)) Assert.NotEqual("TOWN_BONUS_SHIPS", rec.Bonus);
+            seen[spec!] = seen.GetValueOrDefault(spec!) + 1;
+        }
+        // Each race has about 20 random specializations, more than A1M4's random towns of one race: no repeats.
+        Assert.All(seen.Values, n => Assert.Equal(1, n));
+    }
+
+    [Fact]
     public void TheResolutionIsReplayedFromTheStateAndRepeatsForTheSameSeed()
     {
         var a = f.NewGame("A1M4", seed: 5);

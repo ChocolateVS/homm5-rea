@@ -168,6 +168,36 @@ public sealed partial class AdventureDb
         var key = townType switch { "TOWN_HEAVEN" => "HAVEN", "TOWN_NECROMANCY" => "NECROPOLIS", _ => townType.Replace("TOWN_", "") };
         return SharedGroup("DWELLINGS_" + key);
     }
+    /// <summary>A town specialization record (STownSpecialization: Bonus +0x5c, TownType +0x6c, RandomTown +0x70).</summary>
+    public sealed record TownSpecRecord(string Path, string Bonus, string TownType, string RandomTown);
+
+    List<TownSpecRecord?>? _townSpecs;
+
+    /// <summary>
+    /// The 255-slot town specialization table (H5_Game.exe 00975920: STable_TownSpecRef_TownSpec from
+    /// /GameMechanics/RefTables/TownSpecs.xdb, read through 009750b0 = DAT_00ffa3c4 + 8 + i · 0x14 for i below 00971a50 = 0xff);
+    /// slot i is the table's i-th item (its ID is the TownSpecRef enum value i, names 00972460). A slot whose file is
+    /// missing is null.
+    /// </summary>
+    public IReadOnlyList<TownSpecRecord?> TownSpecs
+    {
+        get
+        {
+            if (_townSpecs != null) return _townSpecs;
+            var list = new List<TownSpecRecord?>();
+            const string table = "GameMechanics/RefTables/TownSpecs.xdb";
+            if (_xdb != null && _xdb.FileSystem.Exists(table))
+                foreach (var item in _xdb.Load(table).Root?.Element("objects")?.Elements("Item") ?? Enumerable.Empty<XElement>())
+                {
+                    var path = XdbRef.Parse((string?)item.Element("obj")?.Element("Spec")?.Attribute("href"), table).Path;
+                    var root = path.Length > 0 && _xdb.FileSystem.Exists(path) ? _xdb.Load(path).Root : null;
+                    list.Add(root == null ? null : new TownSpecRecord(path, root.Element("Bonus")?.Value.Trim() ?? "",
+                        root.Element("TownType")?.Value.Trim() ?? "", root.Element("RandomTown")?.Value.Trim() ?? ""));
+                }
+            return _townSpecs = list;
+        }
+    }
+
     readonly Dictionary<string, string?> _townBonus = new(StringComparer.OrdinalIgnoreCase);
 
     readonly Dictionary<string, bool> _scenarioHero = new(StringComparer.OrdinalIgnoreCase);
