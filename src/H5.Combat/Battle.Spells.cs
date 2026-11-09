@@ -994,8 +994,8 @@ public sealed partial class Battle
     int ApplySpellDamageFinal(Unit t, SpellDef sp, double dmg, int side, bool ignoreResist)
     {
         if (!t.Alive) return 0;
-        // Enchanted Obsidian: magical damage heals instead (p.174).
-        if (t.Has(Ab.EnchantedObsidian) && !ignoreResist)
+        // Enchanted Obsidian: magical damage heals instead (p.174) — exe flush FUN_008d7f40 test (sweep 16).
+        if (EnchantedObsidianHeals(t, sp.Id))
         {
             Heal(t, (int)(dmg * Stats.Get("combat/Creatures/Academy/EnchantedObsidian_DamageToHealCoef", 0.5)), true, Ab.EnchantedObsidian);
             return 0;

@@ -124,4 +124,16 @@ public sealed partial class Battle
             if (!double.IsPositiveInfinity(f.Remaining)) f.Remaining -= dtE;
         ExpireEffects();
     }
+
+    /// <summary>
+    /// Enchanted Obsidian's damage-to-heal (the damage-queue flush FUN_008d7f40, 008d8023..008d80c0): the record's spell
+    /// is its +0x20 — argument 11 of FUN_008d7da0, argument 10 of the queue's slot-0 add 008d7e70 — and the target with
+    /// HasAbility(0x99) is healed when that spell is non-zero, passes FUN_00a349f0 (school Runic / Warcries, or any school
+    /// but Special / None, Dark Ritual excluded) and is not FUN_009776e0 (base Magic Fist or Weakening Strike). The strikes
+    /// (FUN_008cf270, FUN_00a608d0 / a60be0 / a60e20 / a61090, FUN_00a64ad0, FUN_00a673c0) queue with spell 0.
+    /// </summary>
+    internal bool EnchantedObsidianHeals(Unit t, string? spell) =>
+        t.Has(Ab.EnchantedObsidian) && !string.IsNullOrEmpty(spell)
+        && spell is not ("SPELL_MAGIC_FIST" or "SPELL_ABILITY_WEAKNING_STRIKE")
+        && ExeCasterSpells(Db, new[] { spell });
 }

@@ -78,4 +78,19 @@ public class AuditSweep16Tests(GameDataFixture f)
         Assert.True(hero > 0);
         Assert.All(seq.Where(x => !Actor.IsHero(x)), x => Assert.True(seq.IndexOf(x) < hero));
     }
+
+    // exe FUN_008d7f40 (008d8023..008d80c0): the queued record's spell (+0x20, slot-0 add argument 10) must be non-zero,
+    // pass FUN_00a349f0 and not FUN_009776e0; strikes queue spell 0.
+    [Fact]
+    public void EnchantedObsidianHealsOnlySchoolSpells()
+    {
+        var (b, a, d) = Two("CREATURE_PEASANT", "CREATURE_PEASANT");
+        d.Abilities.Add(Ab.EnchantedObsidian);
+        Assert.True(b.EnchantedObsidianHeals(d, "SPELL_LIGHTNING_BOLT"));
+        Assert.False(b.EnchantedObsidianHeals(d, "SPELL_MAGIC_FIST"));
+        Assert.False(b.EnchantedObsidianHeals(d, null));
+        foreach (var sp in f.Db.Spells.Values.Where(x => x.School is "MAGIC_SCHOOL_SPECIAL" or "MAGIC_SCHOOL_NONE"))
+            Assert.False(b.EnchantedObsidianHeals(d, sp.Id));
+        Assert.False(b.EnchantedObsidianHeals(a, "SPELL_LIGHTNING_BOLT"));
+    }
 }
