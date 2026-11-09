@@ -370,7 +370,7 @@ public sealed partial class OriginalBattleAI : IBattleAI
     /// (100 when the enemy's is 0); defensive = (<see cref="AllRanged"/>(own army, enemy's 00bf9d30 = 0) or (part &gt;
     /// OurShootersMinRelativePower (RPGStats +0xbfc) and adv &gt; OurShootersMinRelativeAdvantage (+0xc00))) and not
     /// AllRanged(enemy army, our 00bf9d30 = 0). GAP-details: the player's defensive-combat-AI flag (player vf 0x1ec, set
-    /// by CSetPlayerDefensiveCombatAI: defensive at once) is not modelled; AllRanged ignores creature spell potential.
+    /// by CSetPlayerDefensiveCombatAI: defensive at once; no stock source of that command was found) is not modelled.
     /// </summary>
     public bool Defensive(Battle b, int side, CombatValue start)
     {
@@ -385,13 +385,13 @@ public sealed partial class OriginalBattleAI : IBattleAI
 
     /// <summary>
     /// FUN_00a2f710(army, flag): every stack of the army shoots (vf 0x1e0) or has a spell potential FUN_00bfa4f0 =
-    /// FUN_00bfa360(10, 0) ≥ 1, or — with the flag — has Strike and Return and No Enemy Retaliation; true for an army
-    /// without stacks. GAP-details: the spell potential is not ported (0: a pure caster does not count); war machines
-    /// are left out of the army list (army vf 0x6c not identified).
+    /// FUN_00bfa360(10, 0) ≥ 1 (<see cref="Battle.AiSpellPotential"/>), or — with the flag — has Strike and Return and No
+    /// Enemy Retaliation; true for an army without stacks. GAP-detail: war machines are left out of the army list (army
+    /// vf 0x6c not identified).
     /// </summary>
     internal static bool AllRanged(Battle b, int side, bool flag) =>
         b.State.Living.Where(u => u.Side == side && !u.IsObject && !u.IsWarMachine)
-            .All(u => flag && u.Has(Ab.StrikeAndReturn) && u.Has(Ab.NoEnemyRetaliation) || b.CanShoot(u));
+            .All(u => flag && u.Has(Ab.StrikeAndReturn) && u.Has(Ab.NoEnemyRetaliation) || b.CanShoot(u) || b.AiSpellPotential(u, null) >= 1);
 
     /// <summary>
     /// The rune purchase gate on a rune candidate (FUN_008d30e0: a rune (FUN_00a345b0) is generated only when

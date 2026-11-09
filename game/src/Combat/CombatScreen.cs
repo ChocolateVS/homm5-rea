@@ -37,7 +37,9 @@ public partial class CombatScreen : Control
     readonly Queue<BattleEvent> _queue = new();
     bool _playing;
     double _attackRemainderUntil;
-    readonly IBattleAI _autoAi = H5.Combat.AI.BattleAiRegistry.Create("original");
+    // The human side's auto-combat: the options-screen check box combat_ai_use_magic_for_human (GameCombatAutocombatMagic in
+    // UI/uiconsts.(UIGameConstsH5).xdb, default 0) feeds the mana limit FUN_00a2f280 (exe: CSetArmyAutocombatOptions 00580600).
+    readonly IBattleAI _autoAi = new H5.Combat.AI.OriginalBattleAI { UseMagicForHuman = H5Reborn.Options.OptionsStore.GetBool("combat_ai_use_magic_for_human") };
     InputMode _mode = InputMode.Normal;
     SpellOption? _pendingSpell;
     AbilityOption? _pendingAbility;

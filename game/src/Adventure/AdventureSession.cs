@@ -222,7 +222,8 @@ public sealed class AdventureSession
     /// <summary>The battle ended with the loser fleeing or surrendering (engine EndReason "fled" / "surrender").</summary>
     public static bool Retreated(BattleState s) => s.EndReason is "fled" or "surrender";
 
-    public AdvResult QuickCombat() => Apply(H5.Adventure.Engine.QuickCombat.Resolve(Game, Seed ^ ++_battleSeq, H5.Combat.AI.BattleAiRegistry.Create("original")));
+    public AdvResult QuickCombat() => Apply(H5.Adventure.Engine.QuickCombat.Resolve(Game, Seed ^ ++_battleSeq,
+        new H5.Combat.AI.OriginalBattleAI { UseMagicForHuman = H5Reborn.Options.OptionsStore.GetBool("combat_ai_use_magic_for_human") }));   // options screen, as CombatScreen
 }
 
 /// <summary>Client-side marker queued after script-made events: resync every model with the state.</summary>

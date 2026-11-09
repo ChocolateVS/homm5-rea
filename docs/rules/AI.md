@@ -86,8 +86,11 @@ Per-decision ledger with addresses and status: `docs/rules/AUDIT_AI.md`, section
 * **Tactics**: an AI army is auto-placed (FUN_0085a190) and its tactics phase ended at once (army vf 0x44 = FUN_004d95b0
   from FUN_004d9520); the AI itself places nothing. **exact**
 * **Strategy flags** FUN_00a2fd40 ("Ranged advantage", "Our: Shooters part = %f", "Strategy: %s %s"): the defensive flag
-  (think +0x1ac) and the spread/large flags from the Autoplacement tunables. Not ported in the think; the battle-start
-  placement is ported separately (`ExeAutoPlacement`).
+  (think +0x1ac; `OriginalBattleAI.Defensive`, all-ranged test FUN_00a2f710 with the spell potential) and the
+  spread/large flags from the Autoplacement tunables (battle-start placement `ExeAutoPlacement`). The player's
+  defensive-combat-AI flag (player vf 0x1ec, CSetPlayerDefensiveCombatAI from the combat screen's FUN_00542bf0): GAP.
+* **Mana limit option** `combat_ai_use_magic_for_human`: the options screen's Combat check box
+  GameCombatAutocombatMagic (uiconsts data, default 0), read by the human side's auto-combat and quick combat.
 
 ## Adventure AI (NWorld::CPlayerAI) — `OriginalAdventureAI`
 

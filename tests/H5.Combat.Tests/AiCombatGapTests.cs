@@ -341,4 +341,18 @@ public class AiCombatGapTests(GameDataFixture f)
         Assert.Equal(dmg, b.AiSpellPotential(null, h));
         Assert.Equal(dmg, (int)CombatValue.Of(b, 0).My.SpellPotential);
     }
+
+    [Fact]
+    public void ACasterArmyCountsAsRanged()   // FUN_00a2f710: shoots (vf 0x1e0) or FUN_00bfa4f0 = FUN_00bfa360(10, 0) ≥ 1
+    {
+        var caster = f.Db.Creatures.Values.First(c => c.Shots <= 0 && !c.Abilities.Contains(Ab.StrikeAndReturn)
+            && c.KnownSpells.Any(k => Battle.SpellDamageSpells.Contains(k.Spell) && k.Spell != "SPELL_ABILITY_EXPLOSION"));
+        var b = f.Duel(caster.Id, 20, "CREATURE_PEASANT", 20, 1, new Cell(2, 5), new Cell(9, 5));
+        var u = b.State.Units[0];
+        Assert.True(b.AiSpellPotential(u, null) >= 1);
+        Assert.True(OriginalBattleAI.AllRanged(b, 0, false));
+        u.Mana = 0;   // no cast left: a plain walker
+        Assert.Equal(0, b.AiSpellPotential(u, null));
+        Assert.False(OriginalBattleAI.AllRanged(b, 0, false));
+    }
 }
