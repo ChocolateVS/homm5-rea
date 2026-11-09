@@ -297,6 +297,11 @@ public class GhostStateTests
 
 public class LoopbackTests
 {
+    /// <summary>A wait that only fails when nothing at all happens for this long (the test is CPU-bound, not timed).</summary>
+    static readonly TimeSpan Stall = TimeSpan.FromMinutes(3);
+    /// <summary>Last-resort cap for a game that keeps moving but never gets anywhere.</summary>
+    static readonly TimeSpan Cap = TimeSpan.FromMinutes(30);
+
     [Fact]
     public async Task NetworkedGameAndReconnectReplay()
     {
@@ -308,6 +313,7 @@ public class LoopbackTests
         var replicas = new AdventureNetReplica?[2];
         var inbox = new List<Message>[] { new(), new() };
         string? token0 = null;
+        int lastSeq0 = 0, received = 0;
         for (int i = 0; i < 2; i++)
         {
             int k = i;
@@ -318,17 +324,32 @@ public class LoopbackTests
                 {
                     case Welcome w when k == 0: token0 = w.ResumeToken; break;
                     case GameStarted gs: replicas[k] = new AdventureNetReplica(Env.Maps, gs); break;
-                    case GameUpdate u: replicas[k]!.Apply(u); break;
+                    case GameUpdate u:
+                        replicas[k]!.Apply(u);
+                        if (k == 0) lastSeq0 = u.Seq;
+                        break;
                 }
                 inbox[k].Add(m);
+                received++;
             };
             await clients[i].ConnectAsync("127.0.0.1", server.Port, $"P{i}", "");
         }
-        async Task Pump(Func<bool> until, int ms = 60000)
+        // Polls until the condition holds; fails only when no message arrives for Stall (or after Cap).
+        async Task Pump(Func<bool> until, Action? step = null)
         {
-            var end = DateTime.UtcNow.AddMilliseconds(ms);
-            while (!until() && DateTime.UtcNow < end) { foreach (var c in clients) c.Poll(); await Task.Delay(2); }
-            Assert.True(until(), "timed out: " + string.Join(",", inbox[0].TakeLast(5).Select(m => m.GetType().Name)));
+            var start = DateTime.UtcNow;
+            var lastProgress = start;
+            int seen = received;
+            while (!until())
+            {
+                foreach (var c in clients) c.Poll();
+                step?.Invoke();
+                if (received != seen) { seen = received; lastProgress = DateTime.UtcNow; }
+                var now = DateTime.UtcNow;
+                Assert.True(now - lastProgress < Stall && now - start < Cap,
+                    $"no progress (day {replicas[0]?.View.Day}): " + string.Join(",", inbox[0].TakeLast(5).Select(m => m.GetType().Name)));
+                await Task.Delay(1);
+            }
         }
         await Pump(() => clients.All(c => c.Connected));
         clients[0].Send(new CreateRoom("adv", "adventure", 2, null, Env.Settings()));
@@ -338,48 +359,54 @@ public class LoopbackTests
         clients[1].Send(new SetReady(true));
         await Pump(() => inbox[0].OfType<RoomState>().Any(r => r.Players.Count == 2 && r.Players[1].Ready));
         clients[0].Send(new StartGame());
-        await Pump(() => replicas.All(r => r != null), 120000);
+        await Pump(() => replicas.All(r => r != null));
 
+        // The amount of play to day 3 depends on the server's random seed (a day-1 battle can take 100+ commands, each
+        // costing real CPU on host and replicas), so this waits on progress, not on a wall-clock budget.
         var bots = new[] { new ClientBot(1), new ClientBot(2) };
-        var end = DateTime.UtcNow.AddMinutes(3);
-        while (replicas[0]!.View.Day < 3 && DateTime.UtcNow < end)
+        await Pump(() => replicas[0]!.View.Day >= 3, () =>
         {
             for (int i = 0; i < 2; i++)
-            {
-                clients[i].Poll();
                 if (clients[i].PendingCommands == 0 && bots[i].Decide(replicas[i]!) is { } cmd) clients[i].SendCommand(cmd);
-            }
             Assert.All(replicas, r => Assert.False(r!.Desynced));
-            await Task.Delay(1);
-        }
-        Assert.True(replicas[0]!.View.Day >= 3, $"day {replicas[0]!.View.Day}");
+        });
 
-        // Reconnect as side 0 from scratch: the per-side log must rebuild an identical view.
+        // Reconnect as side 0 from scratch: the per-side log must rebuild an identical view. Compared at the last update
+        // side 0 applied (the host may publish more, e.g. script timers, while the fresh connection is replayed).
         await Pump(() => clients[0].PendingCommands == 0 && clients[1].PendingCommands == 0);
-        await Task.Delay(200);
         foreach (var c in clients) c.Poll();
+        int atSeq = lastSeq0;
         var expected = JsonDiff.CanonicalHash(JsonNode.Parse(replicas[0]!.View.Serialize()));
+        // Retire the old side-0 client first: left alive it would redial with the same token and take the seat back,
+        // and the host's handover disposes the fresh connection with its replay still unsent.
+        await clients[0].DisposeAsync();
+
         AdventureNetReplica? fresh = null;
-        bool resumed = false;
+        string? freshAtSeq = null;
+        bool resumed = false, freshDesynced = false;
         var conn = await Connection.ConnectAsync("127.0.0.1", server.Port);
         conn.Received += (_, m) =>
         {
             lock (inbox) switch (m)
             {
                 case GameStarted gs: fresh = new AdventureNetReplica(Env.Maps, gs); break;
-                case GameUpdate u: fresh!.Apply(u); break;
+                case GameUpdate u:
+                    fresh!.Apply(u);
+                    freshDesynced |= fresh.Desynced;
+                    if (u.Seq == atSeq) freshAtSeq = JsonDiff.CanonicalHash(JsonNode.Parse(fresh.View.Serialize()));
+                    break;
                 case Resumed: resumed = true; break;
             }
         };
         conn.Start();
         conn.Send(new Hello(ProtocolInfo.Version, "P0", "", token0, -1));
-        var deadline = DateTime.UtcNow.AddSeconds(60);
-        while (!resumed && DateTime.UtcNow < deadline) await Task.Delay(10);
-        Assert.True(resumed);
+        var deadline = DateTime.UtcNow + Stall;
+        while (!Volatile.Read(ref resumed) && DateTime.UtcNow < deadline) await Task.Delay(10);
         lock (inbox)
         {
-            Assert.False(fresh!.Desynced);
-            Assert.Equal(expected, JsonDiff.CanonicalHash(JsonNode.Parse(fresh.View.Serialize())));
+            Assert.True(resumed);
+            Assert.False(freshDesynced);
+            Assert.Equal(expected, freshAtSeq);
         }
         await conn.DisposeAsync();
         foreach (var c in clients) await c.DisposeAsync();

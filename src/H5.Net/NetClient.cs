@@ -138,6 +138,9 @@ public sealed class NetClient : IAsyncDisposable
                 case ErrorMsg { Code: "connection_lost" } lost: ConnectionLost?.Invoke(lost.Text); continue;
                 case GameStarted: _pending.Clear(); _inGame = true; _lastSeq = 0; break;
                 case GameUpdate u:
+                    // A resume asks for updates after the last one polled, so updates that were already queued from
+                    // the dropped connection come again in the replay: deliver each sequence number once.
+                    if (_inGame && u.Seq <= _lastSeq) continue;
                     _lastSeq = Math.Max(_lastSeq, u.Seq);
                     if (u.ClientSeq is { } seq) _pending.Remove(seq);
                     break;

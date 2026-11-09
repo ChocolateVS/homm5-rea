@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using H5.Net;
+using H5.Net.Transport;
 
 namespace H5.Tests;
 
@@ -129,5 +130,76 @@ public class LobbyServerTests
         await WaitFor<GameStarted>(a, aLog);
         await b.DisposeAsync();
         Assert.Equal(0, (await WaitFor<GameEnded>(a, aLog)).WinnerSide);
+    }
+
+    /// <summary>Counts game updates after they were handed on, i.e. once the client has queued them.</summary>
+    sealed class CountingChannel(IFrameChannel inner) : IFrameChannel
+    {
+        public int Updates, Resumes;
+        public string RemoteName => inner.RemoteName;
+        public void Send(byte[] frame) => inner.Send(frame);
+        public event Action<byte[]>? FrameReceived;
+        public event Action<Exception?>? Closed { add => inner.Closed += value; remove => inner.Closed -= value; }
+        public void Start()
+        {
+            inner.FrameReceived += f =>
+            {
+                FrameReceived?.Invoke(f);
+                var m = MessageCodec.Decode(f);
+                if (m is GameUpdate) Interlocked.Increment(ref Updates);
+                if (m is Resumed) Interlocked.Increment(ref Resumes);
+            };
+            inner.Start();
+        }
+        public ValueTask DisposeAsync() => inner.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ResumeDeliversEachUpdateOnce()
+    {
+        // An update that arrived but was not polled yet when the connection dropped is replayed again after the resume
+        // (the client asks from the last update it polled); the client must still hand it to the game only once.
+        await using var server = new LobbyServer(new[] { new CountingFactory() });
+        server.Start(0, IPAddress.Loopback);
+        CountingChannel? first = null, second = null;
+        var a = new NetClient();
+        var aLog = new List<Message>();
+        a.MessageReceived += aLog.Add;
+        await a.ConnectAsync(async ct =>
+        {
+            var ch = new CountingChannel(await TcpFrameChannel.ConnectAsync("127.0.0.1", server.Port, TimeSpan.FromSeconds(8), ct));
+            if (first == null) first = ch; else second = ch;
+            return ch;
+        }, "Alice", "");
+        await using var _a = a;
+        await WaitFor<Welcome>(a, aLog);
+        var (b, bLog) = await Join(server.Port, "Bob", "");
+        await using var _b = b;
+        a.Send(new CreateRoom("", "count", 2, null, null));
+        var room = await WaitFor<RoomState>(a, aLog);
+        b.Send(new JoinRoom(room.RoomId, null));
+        b.Send(new SetReady(true));
+        await WaitFor<RoomState>(a, aLog, r => r.Players.Count == 2 && r.Players[1].Ready);
+        a.Send(new StartGame());
+        await WaitFor<GameStarted>(a, aLog);
+        await WaitFor<GameStarted>(b, bLog);
+        a.SendCommand(new JsonObject { ["add"] = 1 });
+        Assert.Equal(1, (await WaitFor<GameUpdate>(a, aLog)).Seq);
+        await WaitFor<GameUpdate>(b, bLog);
+
+        // Bob moves; Alice receives the update but does not poll before her connection drops and is resumed.
+        b.SendCommand(new JsonObject { ["add"] = 1 });
+        Assert.Equal(2, (await WaitFor<GameUpdate>(b, bLog)).Seq);
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (Volatile.Read(ref first!.Updates) < 2 && DateTime.UtcNow < deadline) await Task.Delay(5);
+        Assert.Equal(2, Volatile.Read(ref first.Updates));
+        await first.DisposeAsync();
+
+        // The client redials on its own; still without polling, wait for the resumed connection's replay.
+        deadline = DateTime.UtcNow.AddSeconds(30);
+        while ((second == null || Volatile.Read(ref second.Resumes) == 0) && DateTime.UtcNow < deadline) await Task.Delay(5);
+        Assert.Equal(1, second?.Resumes);
+        await WaitFor<Resumed>(a, aLog);
+        Assert.Equal(new[] { 2 }, aLog.OfType<GameUpdate>().Select(u => u.Seq).ToArray());
     }
 }
