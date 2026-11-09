@@ -420,7 +420,8 @@ public sealed class MapLoader
             case ObjectKind.Hero:
             case ObjectKind.Prison:
                 o.OverrideMask = e.Int("OverrideMask");
-                if (o.Kind == ObjectKind.Hero || e.Element("Editable") != null)
+                if (o.Kind == ObjectKind.Prison) o.RandomHero = e.Bool("RandomHero");
+                if (o.Kind == ObjectKind.Hero || (e.Element("Editable") != null && !o.RandomHero))
                     o.Hero = LoadHero(e, files);
                 break;
         }

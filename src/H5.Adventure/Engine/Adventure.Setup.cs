@@ -26,6 +26,7 @@ public sealed partial class Adventure
         g.ApplyStartBonuses(setup);
         g.SetupBoats();
         g.SetupHeroPool();
+        g.SetupRandomPrisoners();
         g.RefillTavernsWeekly();
         g.SetupMoonCalendar();
         g.StockArtifactMerchants();
@@ -308,6 +309,35 @@ public sealed partial class Adventure
             S.Heroes.Add(h);
         }
         foreach (var h in S.Heroes) h.Mana = MaxMana(h);
+    }
+
+    /// <summary>
+    /// Game start (0041ecd0 → 0041ad90, after the reserve and start heroes, before the first tavern refill 00990550): for
+    /// floor 0 then 1, every object of the floor whose query slot 0x5c (the +0xec table; 009cbf00 returns the IAdvMapPrison
+    /// at +0xc8) answers gets that interface's vf0(world) = 004557b0: a RandomHero prison (+0xd4) without a live prisoner
+    /// (+0xd0) takes a hero from the pool (vf 0x30 = 00ce77f0 → vf 0x34 = 00ce7f50 with race 2 = any: heroes passing vf 0x1c =
+    /// 00ce7920 — in the pool, no player, not taken — one at FUN_008e7840(n − 1)), marks him taken (vf 0x2c = 00ce7bc0),
+    /// gives him his full army (vf 0x1f0(true)) and clears the flag.
+    /// UNVERIFIED: the floor's object order (taken as the map's) and the RNG (the exe seeds world stream 0 with the object
+    /// through 008e7860; ours is the game RNG).
+    /// </summary>
+    void SetupRandomPrisoners()
+    {
+        foreach (int floor in new[] { 0, 1 })
+            foreach (var o in Map.Objects.Where(o => o.Kind == ObjectKind.Prison && o.RandomHero && o.Pos.Floor == floor))
+            {
+                var os = S.Obj(o.Index);
+                if (os.Removed || os.PrisonerDef != null) continue;
+                var cand = S.HeroPool.Where(id => Core.Heroes.ContainsKey(id) && !S.Players.Any(p => p.Tavern.Contains(id))).ToList();
+                if (cand.Count == 0) continue;
+                var id = cand[S.Rng.Next(cand.Count)];
+                S.HeroPool.Remove(id);
+                var d = Core.Heroes[id];
+                var tmp = new HeroState { DefId = id, Town = d.Town, Specialization = d.Specialization };
+                GiveStartingArmy(tmp, full: true);
+                os.PrisonerDef = id;
+                os.PrisonerArmy = tmp.Army;
+            }
     }
 
     static bool IsHireable(HeroDef d, MapPlayer mp) =>

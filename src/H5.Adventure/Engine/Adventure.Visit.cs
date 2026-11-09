@@ -620,11 +620,20 @@ public sealed partial class Adventure
     void FreePrisoner(HeroState h, MapObject o)
     {
         var os = S.Obj(o.Index);
-        if (o.Hero == null || os.PrisonerFreed) { Emit(new ObjectVisited(h.Id, o.Index, "prison:empty")); return; }
+        if ((o.Hero == null && os.PrisonerDef == null) || os.PrisonerFreed) { Emit(new ObjectVisited(h.Id, o.Index, "prison:empty")); return; }
         if (S.Heroes.Count(x => x.Alive && x.Owner == h.Owner) >= MaxHeroesPerPlayer) { Emit(new ObjectVisited(h.Id, o.Index, "prison:full")); return; }
         // TODO(exe): 00cec8e0's tile search is not decoded; the first free neighbour of the visitor.
         if (FreeTileNear(h.Pos) is not { } exit) { Emit(new ObjectVisited(h.Id, o.Index, "prison:noexit")); return; }
-        var freed = HeroFromInstance(o.Hero, h.Owner, exit);
+        HeroState freed;
+        if (o.Hero != null) freed = HeroFromInstance(o.Hero, h.Owner, exit);
+        else
+        {
+            // A RandomHero prisoner: the pool hero drawn at the game start with the army he was given then.
+            freed = HeroFromDef(Core.Heroes[os.PrisonerDef!], h.Owner, exit);
+            SetUpHeroBook(freed);
+            for (int i = 0; i < freed.Army.Length; i++)
+                freed.Army[i] = os.PrisonerArmy?.ElementAtOrDefault(i) is { } st ? new Stack(st.Creature, st.Count) : null;
+        }
         freed.Pos = exit;
         freed.MaxMovePoints = ComputeMaxMovePoints(freed);
         S.Heroes.Add(freed);

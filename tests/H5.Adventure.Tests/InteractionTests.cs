@@ -204,6 +204,39 @@ public class InteractionTests(Fixture f)
             return;
         }
     }
+    /// <summary>
+    /// A RandomHero prison (00a09a70 +0x8c) gets its prisoner at the game start (0041ecd0 → 0041ad90 → 004557b0): a pool
+    /// hero no tavern offers, with his full army (vf 0x1f0(true)); freeing him brings that hero and army.
+    /// </summary>
+    [Fact]
+    public void RandomHeroPrisonDrawsAPoolHeroAtTheStart()
+    {
+        var map = f.Map("A1L10");
+        var prison = map.Objects.First(o => o.Kind == ObjectKind.Prison && o.ActiveTiles.Any());
+        var (hero, random) = (prison.Hero, prison.RandomHero);
+        try
+        {
+            prison.Hero = null;
+            prison.RandomHero = true;
+            var g = Engine.Adventure.NewGame(f.Db, map, GameSetup.AllPlayers(map, 0, 7)).Game;
+            var os = g.S.Obj(prison.Index);
+            Assert.NotNull(os.PrisonerDef);
+            var def = os.PrisonerDef!;
+            Assert.DoesNotContain(def, g.S.HeroPool);
+            Assert.DoesNotContain(g.S.Players, p => p.Tavern.Contains(def));
+            Assert.DoesNotContain(g.S.Heroes, x => x.DefId == def);
+            var army = os.PrisonerArmy!.Where(st => st != null).Select(st => (st!.Creature, st.Count)).ToList();
+            Assert.NotEmpty(army);
+            var h = MyHero(g);
+            var ev = VisitFromEntrance(g, h, prison);
+            Assert.Contains(ev, e => e is HeroHired);
+            var freed = g.S.Heroes.Single(x => x.DefId == def);
+            Assert.Equal(h.Owner, freed.Owner);
+            Assert.Equal(army, freed.Army.Where(st => st != null).Select(st => (st!.Creature, st.Count)).ToList());
+            Assert.Contains(VisitFromEntrance(g, h, prison), e => e is ObjectVisited { What: "prison:empty" });
+        }
+        finally { prison.Hero = hero; prison.RandomHero = random; }
+    }
     [Fact]
     public void MeetingHeroesExchangeAWarMachineSlot()
     {

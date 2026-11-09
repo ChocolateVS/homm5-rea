@@ -150,6 +150,8 @@ public sealed class MapObject
 
     // Hero
     public HeroInstance? Hero;
+    /// <summary>AdvMapPrison RandomHero (reader 00a09a70, +0x8c): the prison gets a hero from the pool at the game start (no editor prisoner is built, ctor 00455ea0).</summary>
+    public bool RandomHero;
     public int OverrideMask;
 
     // Dwelling

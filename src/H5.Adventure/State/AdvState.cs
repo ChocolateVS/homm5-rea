@@ -388,6 +388,9 @@ public sealed class ObjState
     public bool Removed;
     /// <summary>Prison: its hero has been freed (CAdvMapPrison +0x30 cleared, 00455860); the prison stays.</summary>
     public bool PrisonerFreed;
+    /// <summary>A RandomHero prison's prisoner (drawn at the game start, 0041ad90 → 004557b0) and the army he got (hero vf 0x1f0(true)).</summary>
+    public string? PrisonerDef;
+    public Stack?[]? PrisonerArmy;
     /// <summary>Remaining guards / neutral stacks (monsters, guarded mines, banks).</summary>
     public List<Stack> Guards = new();
     /// <summary>Troops an owner left in a flagged army-holding building (garrison, mine; exe 00b08560 / 00b086b0, slots 0..6).</summary>
