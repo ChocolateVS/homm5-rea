@@ -90,4 +90,17 @@ public class AuditSweep14Tests(GameDataFixture f)
         Assert.False(b.RuneHasRecords(peasant.Id));
         Assert.False(b.RuneHasRecords(null));
     }
+
+    // exe FUN_00a5c420 called from FUN_00a62030 (00a62075..00a62081) keeps unit kinds 1 (creature), 9 (hive) and 3
+    // (war machine): a siege building (kinds 4..8) on the line is not hit; the engine hit every living unit on it.
+    [Fact]
+    public void MagicAttackLineSkipsTownBuildings()
+    {
+        var (b, a, t) = Make("CREATURE_PEASANT", 10, "CREATURE_PEASANT", 10, new Cell(1, 5), new Cell(9, 5));
+        var wall = new Unit { Id = 999, Side = 1, Kind = UnitKind.Obstacle, CreatureId = "SIEGE_WALL", Pos = new Cell(5, 5), Count = 1 };
+        Assert.True(Battle.OnMagicLine(a, t, wall));
+        Assert.False(Battle.MagicAttackKind(wall));
+        Assert.True(Battle.MagicAttackKind(t));
+        Assert.True(Battle.MagicAttackKind(new Unit { Kind = UnitKind.WarMachine }));
+    }
 }

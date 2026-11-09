@@ -632,7 +632,7 @@ public sealed partial class Battle
                 // exe FUN_00a62030 → FUN_00a5c420 (width 0, unbounded): every unit on the line (OnMagicLine, Battle.Sweep12.cs);
                 // flag 0x1000 (Eldritch) skipped.
                 foreach (var lu in S.Living.ToList())
-                    if (lu.Id != a.Id && !EldritchFlag(lu) && OnMagicLine(a, t, lu)) Add(lu, 1, enemiesOnly: false);
+                    if (lu.Id != a.Id && MagicAttackKind(lu) && !EldritchFlag(lu) && OnMagicLine(a, t, lu)) Add(lu, 1, enemiesOnly: false);
             // Chain Shot is resolved in Strike (exe FUN_00a64ad0), not as a pattern.
         }
         return list;

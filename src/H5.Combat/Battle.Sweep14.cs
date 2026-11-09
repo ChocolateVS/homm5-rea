@@ -74,4 +74,13 @@ public sealed partial class Battle
     /// stack). Not ported: the record {id, 0, 0, 0} that 00983790 adds after an ability roll (009843c5..009843f2).
     /// </summary>
     internal bool RuneHasRecords(int? target) => target is int t && S.Unit(t) is { } u && u.Town == Towns.Fortress;
+
+    /// <summary>
+    /// Magic Attack's unit kinds (exe FUN_00a62030 → FUN_00a5c420(…, every unit 1, war machines 1, …), 00a62075..00a62081):
+    /// the attacker and units not on the field (FUN_00a6af50, state 1) are dropped, then only kind (unit vf 0) 1
+    /// creatures (FUN_008b1e10), 9 hives (CCombatSpawn, FUN_008b1740) and — with the flag set — 3 war machines
+    /// (FUN_00b59ea0) stay; heroes (2, FUN_007a5ed0) and town buildings (4..8, FUN_00bff800) never. The engine's
+    /// obstacle units (siege buildings, spell objects) are left out.
+    /// </summary>
+    internal static bool MagicAttackKind(Unit u) => !u.IsObject;
 }
