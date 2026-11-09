@@ -134,4 +134,51 @@ public class RetreatTests(Fixture f)
         Assert.Contains(mine.DefId, g.Current.Tavern);
         Assert.Contains(r.Events.OfType<HeroRemoved>(), e => e.HeroId == mine.Id && e.Reason == "fled");
     }
+    /// <summary>
+    /// 00b52cd0 sets the hold flag (hero +0x200) on flight; 004fd6b0 keeps a held hero through the weekly release; the
+    /// flag clears when his player gets the turn (00998060 → vf 0x1e4).
+    /// </summary>
+    [Fact]
+    public void ARetreatedHeroIsKeptByTheWeeklyRefillUntilHisPlayersTurn()
+    {
+        var (g, mine, theirs) = Setup(mineAttacks: true);
+        var tp = g.S.Players.First(p => p.Index == theirs.Owner);
+        Array.Fill(tp.Tavern, null);
+        var r = g.Apply(new ResolveBattleCmd(0, mine.Army.Live().Select(s => new ArmySlot(s.Creature, s.Count)).ToList(), new())
+        { Player = g.Current.Index, EndReason = "fled" });
+        Assert.True(r.Ok, r.Error);
+        Assert.True(theirs.TavernHold);
+        Assert.Contains(theirs.DefId, tp.Tavern);
+        // The last player of the day ends his turn on day 7: the first player's holds clear, then the week's release runs.
+        g.S.CurrentPlayer = g.S.Players.FindLastIndex(g.GetsTurn);
+        Assert.NotEqual(tp, g.S.Players.First(g.GetsTurn));
+        g.S.Day = 7;
+        Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
+        Assert.Equal(8, g.S.Day);
+        Assert.Contains(theirs.DefId, tp.Tavern);
+        while (g.Current != tp) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
+        Assert.False(theirs.TavernHold);
+    }
+
+    /// <summary>MakeHeroReturnToTavernAfterDeath(name, 1, 1) puts the name in the pool's keep set (00ce7d20, +0x60): 004fd6b0 keeps it.</summary>
+    [Fact]
+    public void TheKeepSetSurvivesTheWeeklyRelease()
+    {
+        var g = f.NewGame();
+        var p = g.S.Players.First(g.GetsTurn);
+        var kept = p.Tavern[0]!;
+        var other = p.Tavern[1]!;
+        g.ScriptTavernReturnAfterDeath(kept, true, true);
+        g.ScriptTavernReturnAfterDeath(other, true, false);
+        Assert.Contains(kept, g.S.TavernKeepAfterDeath);
+        Assert.DoesNotContain(other, g.S.TavernKeepAfterDeath);
+        Assert.Contains(other, g.S.TavernReturnAfterDeath);
+        g.S.CurrentPlayer = g.S.Players.FindLastIndex(g.GetsTurn);
+        g.S.Day = 7;
+        Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
+        Assert.Equal(kept, p.Tavern[0]);
+        g.ScriptTavernReturnAfterDeath(kept, false, true);
+        Assert.DoesNotContain(kept, g.S.TavernKeepAfterDeath);
+        Assert.DoesNotContain(kept, g.S.TavernReturnAfterDeath);
+    }
 }

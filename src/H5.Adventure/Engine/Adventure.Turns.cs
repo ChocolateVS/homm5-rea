@@ -13,8 +13,9 @@ public sealed partial class Adventure
         if (TurnOrder != null)
         {
             int next = TurnOrder(S.CurrentPlayer);
-            if (next < 0) { NewDay(); next = TurnOrder(-1); }
+            if (next < 0) { if (TurnOrder(-1) is >= 0 and var first) ReleaseTavernHolds(S.Players[first]); NewDay(); next = TurnOrder(-1); }
             if (next >= 0) S.CurrentPlayer = next;
+            ReleaseTavernHolds(Current);
             CaravansTurn(Current.Index);   // 00998060 → 00995f40: the caravans of the player getting the turn
             if (!S.Finished) EmitTurnStarted();
             return null;
@@ -24,12 +25,39 @@ public sealed partial class Adventure
         do
         {
             idx++;
-            if (idx >= S.Players.Count) { idx = 0; NewDay(); }
+            if (idx >= S.Players.Count)
+            {
+                idx = 0;
+                // 00998060 clears the holds of the player getting the turn before the new day (009949d0) runs.
+                if (S.Players.FirstOrDefault(GetsTurn) is { } first) ReleaseTavernHolds(first);
+                NewDay();
+            }
         } while (!GetsTurn(S.Players[idx]) && S.Players.Any(GetsTurn));   // exe FUN_0098e410 (Adventure.AiDirectives.cs)
         S.CurrentPlayer = idx;
+        ReleaseTavernHolds(Current);
         CaravansTurn(Current.Index);       // 00998060 → 00995f40: the caravans of the player getting the turn
         if (!S.Finished) EmitTurnStarted();
         return null;
+    }
+
+    /// <summary>
+    /// GiveTurnToNextPlayers (00998060): for each player getting the turn, the heroes in his two tavern slots (player vf
+    /// 0x14c(0 / 1)) lose the hold flag (vf 0x1e4 = 00b4bf80).
+    /// </summary>
+    void ReleaseTavernHolds(PlayerState p)
+    {
+        foreach (var id in p.Tavern)
+            if (id != null) foreach (var x in S.Heroes.Where(x => x.DefId == id && !x.Alive)) x.TavernHold = false;
+    }
+
+    /// <summary>Hero vf 0x1e0 of a slot's hero: only a hero that retreated is an object with the flag; a pool hero's is clear.</summary>
+    bool TavernSlotHeld(string? id) => id != null && S.Heroes.Any(x => x.DefId == id && !x.Alive && x.Retreat != 0 && x.TavernHold);
+
+    /// <summary>MakeHeroReturnToTavernAfterDeath -> pool vf 0x44 = 00ce7d20(name, a, b): the return set holds the name iff a, the keep set iff a and b.</summary>
+    public void ScriptTavernReturnAfterDeath(string name, bool a, bool b)
+    {
+        if (a) S.TavernReturnAfterDeath.Add(name); else S.TavernReturnAfterDeath.Remove(name);
+        if (a && b) S.TavernKeepAfterDeath.Add(name); else S.TavernKeepAfterDeath.Remove(name);
     }
 
     void NewDay()
@@ -437,14 +465,16 @@ public sealed partial class Adventure
     /// start): every playing player (vfunc 0x6c == 1, players 1..8 in order) first releases his offers (vfunc 0x154 =
     /// 004fd6b0: each slot's hero back to the pool, pool vf 0x24(hero, 0, 0), slot cleared); then, while players remain,
     /// a random one (world vfunc 0x94 → vf 0x20, % count) gets one hero (vfunc 0x158 = 004fd600 with full = true) and
-    /// leaves the list when he takes none (both slots full or no hero for him). GAP: 004fd6b0 keeps a hero whose flag
-    /// +0x1e4 (vf 0x1e0) is set or who is in the pool's list +0x60 (vf 0x4c); neither is identified, so all are released.
+    /// leaves the list when he takes none (both slots full or no hero for him). 004fd6b0 keeps a slot's hero whose hold
+    /// flag (vf 0x1e0, <see cref="HeroState.TavernHold"/>: he retreated there and his player has not had a turn since) is set
+    /// or whose name is in the pool's keep set (+0x60, vf 0x4c; <see cref="AdvState.TavernKeepAfterDeath"/>).
     /// </summary>
     void RefillTavernsWeekly()
     {
         var players = S.Players.Where(p => p.Alive).ToList();
         foreach (var p in players)
-            for (int i = 0; i < p.Tavern.Length; i++) p.Tavern[i] = null;
+            for (int i = 0; i < p.Tavern.Length; i++)
+                if (p.Tavern[i] is { } id && !TavernSlotHeld(id) && !S.TavernKeepAfterDeath.Contains(id)) p.Tavern[i] = null;
         while (players.Count > 0 && S.HeroPool.Count > 0)
         {
             int k = (int)(NextRand32() % (uint)players.Count);

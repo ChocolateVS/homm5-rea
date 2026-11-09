@@ -278,6 +278,13 @@ public sealed class HeroState
     /// vf 0x1dc 00b52e50, cleared by vf 0x1d8 on flight and vf 0x1ec on hire); 0 otherwise.
     /// </summary>
     public int Retreat;
+    /// <summary>
+    /// Hero +0x200 (vf 0x1e0 reads it through the interface at +0x1c, where it is +0x1e4): set by 00b52cd0, which the flee
+    /// (vf 0x1d8 = 00b52e00) and surrender (vf 0x1dc = 00b52e50) handlers call; cleared by vf 0x1e4 (00b4bf80) for the heroes
+    /// in the tavern slots of a player getting the turn (GiveTurnToNextPlayers 00998060) and by the ctor. While set, the
+    /// weekly release (004fd6b0) keeps the hero in his slot.
+    /// </summary>
+    public bool TavernHold;
     /// <summary>EnableHeroAI (CHero AI settings +0): an AI player's hero the AI moves; false leaves it to scripts.</summary>
     public bool AiEnabled = true;
     /// <summary>
@@ -579,6 +586,11 @@ public sealed class AdvState
     public HashSet<Tile> Holes = new();
     /// <summary>Hero definition ids not yet in play (tavern pool).</summary>
     public List<string> HeroPool = new();
+    /// <summary>
+    /// The pool's name sets set by MakeHeroReturnToTavernAfterDeath (CMakeHeroReturnToTavernAfterDeathCmd 0042a090 -> pool
+    /// vf 0x44 = 00ce7d20(name, a, b)): +0x54 holds the name iff a (vf 0x48), +0x60 iff a and b (vf 0x4c).
+    /// </summary>
+    public HashSet<string> TavernReturnAfterDeath = new(StringComparer.Ordinal), TavernKeepAfterDeath = new(StringComparer.Ordinal);
     /// <summary>The rumours' plain list and the players' last events (CRumours, see Adventure.Rumours).</summary>
     public RumoursState Rumours = new();
     public PendingBattle? Battle;

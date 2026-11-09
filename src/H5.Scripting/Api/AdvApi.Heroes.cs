@@ -396,8 +396,13 @@ public sealed partial class AdventureScripting
             if (OnMap(h)) Change(() => Game.ScriptRemoveHero(h, "sunk"));
         });
         // 0x005e4fc0 (name, enable, 3rd flag=0): no hero validation.
+        // 0x005e4fc0 -> CMakeHeroReturnToTavernAfterDeathCmd (vtable 0x00e0efcc, Execute 0x0042a090): pool vf 0x44(name, a, b).
         Reg("MakeHeroReturnToTavernAfterDeath", c =>
-            World.Settings[$"tavern_after_death:{c.Str(0)}"] = (c.Int(1) != 0 ? "1" : "0") + (c.Int(2) != 0 ? ",1" : ",0"));
+        {
+            string name = c.Str(0);
+            bool a = c.Int(1) != 0, b = c.Int(2) != 0;
+            Change(() => Game.ScriptTavernReturnAfterDeath(name, a, b));
+        });
         // 0x005e4d50: necromancy level 0..4.
         Reg("MakeHeroNecromancer", c =>
         {

@@ -359,8 +359,11 @@ public sealed partial class Adventure
     /// once (loser's gold − cost, not below 0; the winner's player + cost) and vf 0x1dc = 00b52e50 sets +0x22e. Both then
     /// go through 004fe360: the hero leaves the player (004fe000) and the SAME hero object (level, skills, artifacts,
     /// spells) is put into that player's own tavern: the first empty slot of the two, else a random slot, whose hero
-    /// returns to the pool. GAP: 004fe360 prefers replacing slots whose hero lacks flag +0x1e4 (or fails pool vf 0x4c);
-    /// neither is identified, so the random pick is over both slots (the exe's fallback).
+    /// returns to the pool. With both slots taken, 004fe360 picks at random (world vf 0x94 -> vf 0x20, % n) among the slots
+    /// whose hero is not both held (<see cref="HeroState.TavernHold"/>, vf 0x1e0) and in the pool's keep set (+0x60, vf 0x4c;
+    /// <see cref="AdvState.TavernKeepAfterDeath"/>), else among both. The retreating hero gets the hold flag (00b52cd0).
+    /// GAP: 004fe360 first returns without placing the hero when he is in neither the pool's list +0x48 (vf 0x3c) nor the
+    /// return set +0x54 (vf 0x48); the list's members are not identified, so every retreating hero is placed.
     /// </summary>
     void RetreatHero(HeroState h, bool surrender, List<ArmySlot> survivors, HeroState? winner)
     {
@@ -376,11 +379,16 @@ public sealed partial class Adventure
         h.Retreat = surrender ? 2 : 1;
         h.InTown = -1;
         h.Garrisoned = false;
+        h.TavernHold = true;
         if (p != null)
         {
             if (!S.HeroPool.Contains(h.DefId)) S.HeroPool.Add(h.DefId);
             int slot = Array.IndexOf(p.Tavern, null);
-            if (slot < 0) slot = S.Rng.Next(p.Tavern.Length);
+            if (slot < 0)
+            {
+                var cand = Enumerable.Range(0, p.Tavern.Length).Where(i => !(TavernSlotHeld(p.Tavern[i]) && S.TavernKeepAfterDeath.Contains(p.Tavern[i]!))).ToList();
+                slot = cand.Count > 0 ? cand[(int)(NextRand32() % (uint)cand.Count)] : (int)(NextRand32() % (uint)p.Tavern.Length);
+            }
             p.Tavern[slot] = h.DefId;
         }
         Emit(new HeroRemoved(h.Id, surrender ? "surrendered" : "fled"));
