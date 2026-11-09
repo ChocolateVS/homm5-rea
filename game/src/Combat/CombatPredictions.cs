@@ -71,6 +71,7 @@ public static class CombatPredictions
     /// </summary>
     public static Prediction? Spell(Battle b, CastSpellCmd cmd, string spellName, string? targetName)
     {
+        if (cmd.TargetId is int stid && Special(b, cmd, stid, spellName, targetName) is { } special) return special;
         int damage = 0, killed = 0, healed = 0, resurrected = 0;
         bool anyDamage = false, anyHeal = false;
         try
@@ -106,6 +107,41 @@ public static class CombatPredictions
             ? Fill(Str("COMBAT_CAST_SPELL_TARGETED"), ("spell", spellName), ("target", targetName))
             : Fill(Str("COMBAT_CAST_SPELL"), ("spell", spellName));
         return new Prediction(box, null);
+    }
+
+    /// <summary>The value map's kills line beside the cursor (00545ae0: "kills" present → kills_cursor_prediction_1).</summary>
+    static string KillsCursor(string kills) => Fill(UiText("UI/CombatScreen-Heavy/kills-cursor-prediction-1.txt"), ("kills", kills));
+
+    /// <summary>The CWorldValuedText float setter (vt 00e1d544 slot 0x24, 007c5f70): swprintf "%.2f".</summary>
+    static string Float2(double v) => v.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Warcries (exe 009be2a0) and Plague / Firewall (00982010 @ 00982759) on a stack. The box keeps the values set before
+    /// (COMBAT_CAST_SPELL_TARGETED's spell and target), so Call of Blood's &lt;value=target&gt; and the immunity text's
+    /// &lt;value=target&gt; / &lt;value=spell&gt; are filled. Values set with the int setter (vf 0x28, "%d") are plain numbers;
+    /// the duration uses the float setter ("%.2f"). Null when the spell has no such format.
+    /// </summary>
+    static Prediction? Special(Battle b, CastSpellCmd cmd, int target, string spellName, string? targetName)
+    {
+        var p = b.PredictWarcry(cmd.Side, cmd.Spell, target) ?? b.PredictDotSpell(cmd.Side, cmd.Spell, target);
+        if (p == null) return null;
+        string tn = targetName ?? "";
+        switch (p.Kind)
+        {
+            case "IMMUNE":
+                return new(Fill(Str("COMBAT_CANT_CAST_SPELL_IMMUNITY"), ("target", tn), ("spell", spellName)), null);
+            case "CALL_OF_BLOOD":
+                return new(Fill(Str("COMBAT_PREDICTION_CALL_OF_BLOOD"), ("spell", spellName), ("target", tn), ("rp", p.Value.ToString())), null);
+            case "FEAR_MY_ROAR":
+                return new(Fill(Str("COMBAT_PREDICTION_FEAR_MY_ROAR"), ("spell", spellName), ("target", tn), ("chance", p.Value.ToString())), null);
+            case "DIRECT_DAMAGE":
+                return new(Fill(Str("COMBAT_PREDICTION_DIRECT_DAMAGE_SPELL"), ("spell", spellName), ("damage", p.Damage.ToString()), ("kills", p.Kills.ToString())),
+                    KillsCursor(p.Kills.ToString()));
+            case "DOT":
+                return new(Fill(Str("COMBAT_PREDICTION_DOT_SPELL"), ("spell", spellName), ("damage", p.Damage.ToString()), ("kills", p.Kills.ToString()),
+                    ("duration", Float2(p.Turns))), KillsCursor(p.Kills.ToString()));
+        }
+        return null;
     }
 
     /// <summary>
@@ -154,6 +190,9 @@ public static class CombatPredictions
         int actorCount = b.State.Unit(cmd.ActorId)?.Count ?? 0, targetCount = cmd.TargetId is int ti ? b.State.Unit(ti)?.Count ?? 0 : 0;
         switch (cmd.Ability)
         {
+            // Seduce (exe 0097f610 case 0x148): COMBAT_PREDICTION_SPELL_DURATION "Cast: <spell> for <duration> turn(s)".
+            case "ABILITY_SEDUCE" when cmd.TargetId is int sdt && b.PredictSeduce(cmd.ActorId, sdt) is { } sd:
+                return new(Fill(Str("COMBAT_PREDICTION_SPELL_DURATION"), ("spell", abilityName), ("target", targetName ?? ""), ("duration", Float2(sd.Turns))), null);
             case "ABILITY_REPAIR" when healedAny:
                 tHits = (int)(b.Db.Stats.Get("combat/Creatures/Academy/GremlinRepairPowerPreCreature", 5) * actorCount);
                 return new(Fill(Str("COMBAT_PREDICTION_FORMAT_REPAIR"), ("hits_received", tHits.ToString()), ("resurrected", tRes.ToString())), null);

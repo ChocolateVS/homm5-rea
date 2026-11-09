@@ -651,6 +651,10 @@ public partial class CombatScreen : Control
                 else if (at.Ability == FavoredCritical) _favoredHit = true;
                 else if (at.Ability == "HERO_SKILL_CRITICAL_STRIKE") _criticalStrike = true;
                 else if (at.Ability == "ABILITY_PURGER") _pendingPurge = at;
+                // Elemental Chains log their own bonus entry with the next hit on that stack (OnDamaged), no skill text.
+                else if (at.Ability == "HERO_SKILL_ELEMENTAL_VISION") _elementalVision = at;
+                // The moat's own entry is its damage line (CCombatLogMoatDamage, CombatLogText.Damage); no ability text.
+                else if (at.Ability is "MOAT" or "MOAT_MINE") { }
                 else if (CombatLogText.Ability(this, at, _lastCast) is { } abilityLine) Hud.Log.AddLine(abilityLine);
                 if (at.Ability == "ABILITY_DEADLY_STRIKE" && View(at.Target ?? at.UnitId) is { } dsv) _signs.Event(dsv, dsv.SignAnchor, "DeadlyStrike");
                 if (at.Ability == "CATAPULT_SHOT" && View(at.UnitId) is { } cat) await AnimateCatapult(cat);
@@ -964,10 +968,37 @@ public partial class CombatScreen : Control
             _tremors = (d.Source, (_tremors?.Damage ?? 0) + d.Damage, (_tremors?.Dead ?? 0) + d.Killed);
             return;
         }
+        if (_elementalVision is { Target: int evt } ev && evt == d.Target)
+        {
+            _elementalVision = null;
+            if (ElementalVisionLine(ev, d) is { } evLine) Hud.Log.AddLine(evLine);
+        }
         string? line = _criticalStrike && d.Kind == AttackKind.Hero ? CombatLogText.CriticalStrike(this, d, _favoredHit) : null;
         if ((line ?? CombatLogText.Damage(this, d, Hud.PendingLuck, _lastCast, _favoredHit)) is { } damageLine) Hud.Log.AddLine(damageLine);
         Hud.PendingLuck = 0;
         _favoredHit = _criticalStrike = false;
+    }
+
+    AbilityTriggered? _elementalVision;
+
+    /// <summary>
+    /// The Elemental Chains entry (exe 00977e60): the engine reports the spell damage with the bonus folded in, so the
+    /// bonus is split off the total with the hero's multiplier (D + trunc(D·m − D) = total). Its dead count is 00a6bd90 on
+    /// the stack before the hit: exact while the stack survives (its health before = after + damage); for a stack the hit
+    /// destroys the top creature's health before the hit is not known here and the full health is used.
+    /// </summary>
+    string? ElementalVisionLine(AbilityTriggered ev, Damaged d)
+    {
+        var b = Session.Battle;
+        if (!Actor.IsHero(ev.UnitId) || b.State.Unit(d.Target) is not { } u) return null;
+        int bonus = Battle.ElementalVisionBonus(d.Damage, b.ElementalVisionMultiplier(Actor.HeroSide(ev.UnitId)));
+        if (bonus <= 0) return null;
+        int hp = Math.Max(1, u.MaxHealthCache > 0 ? u.MaxHealthCache : u.BaseHealth);
+        int count = d.CountLeft + d.Killed;
+        int top = d.CountLeft > 0 ? ((d.CountLeft - 1) * hp + d.TopHealth + d.Damage - 1) % hp + 1 : hp;
+        int dead = Math.Clamp(bonus / hp + (top <= bonus % hp ? 1 : 0), 0, count);
+        string? spell = CombatLogText.SpellOf(d.By) ?? (d.Kind == AttackKind.Spell ? _lastCast?.Spell : null);
+        return CombatLogText.BonusElemental(this, ev.UnitId, d.Target, spell, bonus, dead);
     }
 
     int _shotCount, _spellCount, _moveCount, _heroStrikeCount;
@@ -1225,8 +1256,12 @@ public partial class CombatScreen : Control
         // or in spell targeting every valid target of the spell (00982a00), each with its own size.
         if (targetShade && la != null)
         {
+            // Ability mode (00548895..00548962): only a First Aid Tent (war machine type 3) gets its castable entry's valid
+            // targets (00982a00).
             IEnumerable<int> aim = _mode == InputMode.Spell && _pendingSpell is { Targeting: Battle.SpellTargeting.Unit or Battle.SpellTargeting.UnitAndCell } psp
                 ? psp.Targets
+                : _mode == InputMode.Ability && _pendingAbility is { Ability: "FIRST_AID" } tent && b.State.Unit(la.Actor) is { CreatureId: "WAR_MACHINE_FIRST_AID_TENT" }
+                    ? tent.Targets
                 : _mode == InputMode.Normal && !la.IsHero ? la.Shoot : Enumerable.Empty<int>();
             foreach (var id in aim)
                 if (b.State.Unit(id) is { Alive: true } tu) Arena.Overlay.Mark(new Vector2I(tu.Pos.X, tu.Pos.Y), tu.Size, CellMark.Aimable);

@@ -104,6 +104,7 @@ public static class CombatLogText
             // attacker, target, damage and dead; selectors FUN_00c9a020 / FUN_00c9a060 take COMBAT_LOG_BONUS_ELEMENTAL_DAMAGE
             // texts 2 and 3).
             // Hellfire is dealt in the same function as Fiery Wrath (00a5ed90) and logs the same entry.
+            if (d.By == "MOAT") return MoatDamage(s, d);
             if (d.By is "FIERY_WRATH" or "COLD_STEEL" or "HELLFIRE")
                 return FillEntry(s, Template(d.By == "COLD_STEEL" ? "BonusColdDamage" : "BonusFireDamage"), src, d.Target, null, d.Damage, d.Killed);
             if (texts is { Count: > 0 } && HasDamage(texts[0]))
@@ -120,6 +121,64 @@ public static class CombatLogText
         if (favored) tname += "Favored";
         return FillEntry(s, Template(tname), d.Source, d.Target, null, d.Damage, d.Killed);
     }
+
+    /// <summary>
+    /// Moat damage: CCombatLogMoatDamage (ctor 00c9b090, vt 00e92584), built by the moat's damage slot 00c51120 after the
+    /// damage pipeline (00a616e0), text 0 MoatMineDamage (00c9a3e0: +0x4c and +0x5c set). &lt;value=mine&gt; (00c9b190) is the
+    /// string at 0085b2d0() + 0x14: TownTypesInfo [town] Moat (record + 200) MineNameFileRef — empty for towns without
+    /// mines. The entry has no source unit (+0x2c = 0), so 00c9b090 takes the source from the hit stack's side
+    /// (vf 0x10 → vf 0x64, first entry): the colour is the target owner's.
+    /// </summary>
+    static string? MoatDamage(CombatScreen s, Damaged d)
+    {
+        if (CombatLogTexts("COMBAT_LOG_MOAT_DAMAGE") is not { Count: > 0 } t) return null;
+        string mine = s.Session.Battle.State.Siege is { } sg ? MineName(sg.Town) : "";
+        return Fill(FillEntry(s, t[0], null, d.Target, null, d.Damage, d.Killed, SideOfActor(s, d.Target)), ("mine", Escape(mine)));
+    }
+
+    static readonly Dictionary<string, string> _mineNames = new();
+
+    static string MineName(string town)
+    {
+        if (_mineNames.TryGetValue(town, out var n)) return n;
+        const string table = "GameMechanics/RefTables/TownTypesInfo.xdb";
+        string name = "";
+        foreach (var item in Game.Instance.Xdb.Load(table).Root?.Element("objects")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+            if ((string?)item.Element("ID") == town)
+                name = Game.Instance.Xdb.ReadText((string?)item.Element("obj")?.Element("Moat")?.Element("MineNameFileRef")?.Attribute("href"), table)?.Trim() ?? "";
+        return _mineNames[town] = name;
+    }
+
+    static Dictionary<string, List<string>>? _logEvents;
+
+    /// <summary>GameMechanics/RefTables/CombatLog.xdb: an event id's texts in order.</summary>
+    static List<string>? CombatLogTexts(string id)
+    {
+        if (_logEvents == null)
+        {
+            _logEvents = new();
+            const string table = "GameMechanics/RefTables/CombatLog.xdb";
+            foreach (var item in Game.Instance.Xdb.Load(table).Root?.Element("objects")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+                if ((string?)item.Element("ID") is { } k)
+                    _logEvents[k] = (item.Element("obj")?.Element("Texts")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+                        .Select(i => Game.Instance.Xdb.ReadText((string?)i.Attribute("href"), table) ?? "").ToList();
+        }
+        return _logEvents.GetValueOrDefault(id);
+    }
+
+    /// <summary>
+    /// Elemental Chains (Elemental Vision): CCombatLogBonusElementalDamage (ctor 00c9a9b0) built by 00977e60 when the bonus
+    /// is &gt; 0 — text 0 BonusElementalDamage for an attack (no spell), text 1 BonusElementalSpellDamage with the spell;
+    /// source = the attacker (the hero), &lt;value=dead&gt; = 00a6bd90(target, bonus, 0) on the stack before the hit.
+    /// </summary>
+    public static string? BonusElemental(CombatScreen s, int source, int target, string? spellId, int bonus, int dead)
+    {
+        if (CombatLogTexts("COMBAT_LOG_BONUS_ELEMENTAL_DAMAGE") is not { Count: > 1 } t) return null;
+        return FillEntry(s, t[spellId != null ? 1 : 0], source, target, spellId != null ? Escape(s.SpellName(spellId)) : null, bonus, dead);
+    }
+
+    /// <summary>The spell an engine damage source stands for (see ResolveSpell), or null.</summary>
+    public static string? SpellOf(string? by) => ResolveSpell(by);
 
     static bool HasDamage(string template) => template.Contains("<value=damage>") || template.Contains("<value=dead>");
 
