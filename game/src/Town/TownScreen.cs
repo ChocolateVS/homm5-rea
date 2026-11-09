@@ -255,7 +255,7 @@ public partial class TownScreen : Control
         BuildingButton("MagicGuild", guild, HudText(guild == "TB_MAGIC_GUILD" ? "TT_MAGE_GUILD" : "TT_HALL_OF_TRIAL"));
         UpdateArtifactsButton();
         // 0061b1c0 (BL = the owner check 00613c00): EnterFort enabled with 0061a390 — a dwelling (buildings 7..0xd) of
-        // level > 0 (its caravan part, other dwellings of the player, is not modelled); the upgrade button (+0x38c, vf
+        // level > 0, or its caravan part (Adventure.CanEnterFort); the upgrade button (+0x38c, vf
         // 0x3c) with 00613090 — a dwelling of level > 1; EnterHall enabled for the owner, its button state (vf 0xc) = town
         // vf 0x9c (00cce4e0: counter +0x80 < period, true from a build until the period has passed — built today for a
         // human); state 1 is the BuildDone look (the second state of EnterHall.(WindowMSButtonShared)).
@@ -272,13 +272,12 @@ public partial class TownScreen : Control
     bool Dwellings(int min) => Enumerable.Range(1, 7).Any(k => Town.Level($"TB_DWELLING_{k}") >= min);
 
     /// <summary>
-    /// 0061a390 (town, player, world): a dwelling (buildings 7..0xd) at level &gt; 0; else (not modelled — caravans are
-    /// not built) an object of the world's vf 0x90 list owned by the player (vf 0x24 = player vf 0x2c) at the town's
+    /// 0061a390 (town, player, world): a dwelling (buildings 7..0xd) at level &gt; 0; else an object of the world's vf 0x90 list owned by the player (vf 0x24 = player vf 0x2c) at the town's
     /// position (vf 0x20 = town vf 0xc4, x / y / floor bit fields), or a caravan source found by 00ce6110 (a path search
     /// from the player's dwellings and towns to the town) whose creature list (00ce43a0 → vf 0, 16-byte entries) is not
     /// empty.
     /// </summary>
-    public bool CanEnterFort() => Dwellings(1);
+    public bool CanEnterFort() => Session.Game.CanEnterFort(Town);
 
     /// <summary>
     /// 00613c00 (town vf 0xbc = the screen player's vf 0x2c) together with the build screen's 00658da0 turn test

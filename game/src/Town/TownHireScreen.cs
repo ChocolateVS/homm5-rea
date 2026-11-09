@@ -34,11 +34,11 @@ public sealed partial class TownHireScreen : TownSubScreen
 
     public TownHireScreen(TownScreen owner, int tier = 0) : base(owner, "UI/HireCreatures.(WindowScreen).xdb")
     {
-        // Caravans (hire from castles / dwellings, caravan info) are not modelled: their tabs and window stay hidden.
-        foreach (var w in new[] { "tabs/hire_from_castles", "tabs/hire_from_dwellings", "tabs/caravans_info", "hire_to_caravan_window", "creature_info", "CreaturepediaButton" })
-            Ui.SetVisible(w, false);
-        Ui.Bus.On("dwellings", () => { Ui.SetVisible("hire_window", true); Ui.SetVisible("creature_info", false); });
-        Ui.Bus.On("creature", () => { Ui.SetVisible("hire_window", false); Ui.SetVisible("creature_info", true); });
+        foreach (var w in new[] { "creature_info", "CreaturepediaButton" }) Ui.SetVisible(w, false);
+        // The caravan tabs (TownHireScreen.Caravans.cs).
+        InitCaravanTabs();
+        Ui.Bus.On("dwellings", () => { HideCaravanWindow(0); Ui.SetVisible("hire_window", true); Ui.SetVisible("creature_info", false); SetCount(MaxCount()); });
+        Ui.Bus.On("creature", () => { HideCaravanWindow(1); Ui.SetVisible("hire_window", false); Ui.SetVisible("creature_info", true); SetCount(MaxCount()); });
         for (int t = 1; t <= 7; t++) if (G.DwellingCreature(owner.Town, t, 0) != null) _tiers.Add(t);
         for (int i = 0; i < 7; i++)
             for (int c = 0; c < 3; c++)
@@ -81,6 +81,7 @@ public sealed partial class TownHireScreen : TownSubScreen
     {
         base._Ready();
         Select(_row, _column[TierOf(_row) - 1]);
+        if (DevTab is { } tab) { DevTab = null; ShowCaravanTab(tab switch { "castles" => 2, "dwellings" => 3, _ => 4 }); }
     }
 
     public override void _UnhandledInput(InputEvent e)
@@ -119,6 +120,8 @@ public sealed partial class TownHireScreen : TownSubScreen
     /// <summary>006dd9d0: min(pool, purse / cost).</summary>
     int MaxCount()
     {
+        if (InCaravanHire) return CaravanMaxCount();
+        if (_tab == 4) return 0;
         if (CreatureAt(_row, _column[TierOf(_row) - 1]) is not { } c || !Game.Instance.Db.Creatures.TryGetValue(c, out var def)) return 0;
         return Math.Max(0, Math.Min(Pool(_row), H5.Adventure.Engine.Adventure.Affordable(Me.Purse, def.Cost)));
     }
@@ -132,6 +135,7 @@ public sealed partial class TownHireScreen : TownSubScreen
 
     void Recruit(int n)
     {
+        if (InCaravanHire) { BuyToCaravan(n); return; }
         if (n <= 0 || _row >= _tiers.Count) return;
         if (Apply(new RecruitCmd(Owner.Town.Object, TierOf(_row), n, _column[TierOf(_row) - 1]))) SetCount(MaxCount());
     }
@@ -140,6 +144,7 @@ public sealed partial class TownHireScreen : TownSubScreen
 
     void AskHireAll()
     {
+        if (InCaravanHire) { BuyAllToCaravan(); return; }
         var plan = G.HireAllPlan(Owner.Town, Me.Purse, G.TownRecruitArmy(Owner.Town), Selection());
         if (plan.Count == 0) return;
         var total = new Purse();
@@ -193,7 +198,7 @@ public sealed partial class TownHireScreen : TownSubScreen
         }
         int max = MaxCount();
         if (_jog.Find("button_2") is { } buy) buy.Enabled = _count > 0;
-        if (_jog.Find("button_4") is { } all) all.Enabled = G.HireAllPlan(Owner.Town, Me.Purse, G.TownRecruitArmy(Owner.Town), Selection()).Count > 0;
+        if (_jog.Find("button_4") is { } all) all.Enabled = InCaravanHire ? _crow < CaravanRows.Count : G.HireAllPlan(Owner.Town, Me.Purse, G.TownRecruitArmy(Owner.Town), Selection()).Count > 0;
         if (_jog.Find("button_1") is { } minus) minus.Enabled = _count > 0;
         if (_jog.Find("button_3") is { } plus) plus.Enabled = _count < max;
     }

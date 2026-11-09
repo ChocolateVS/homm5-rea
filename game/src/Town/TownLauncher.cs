@@ -16,6 +16,9 @@ public static class TownLauncher
     public static bool OpenTown;
     public static string? Goto;
     public static bool BuildAll;
+    /// <summary>Dev only (`--town-caravans=castles|dwellings|info`): own every dwelling and one more town on the floor,
+    /// send a caravan here, then open that caravan tab of the hire screen (with `--town-goto=fort`).</summary>
+    public static string? CaravanTab;
     public static Vector2? OrbitBy;
 
     public static bool HandleArg(string arg)
@@ -29,6 +32,7 @@ public static class TownLauncher
         if (arg == "--town-open") { OpenTown = true; Callable.From(WaitForAdventure).CallDeferred(); return true; }
         if (arg.StartsWith("--town-goto=")) { Goto = arg["--town-goto=".Length..]; return true; }
         if (arg == "--town-build-all") { BuildAll = true; return true; }
+        if (arg.StartsWith("--town-caravans=")) { CaravanTab = arg["--town-caravans=".Length..]; return true; }
         if (arg.StartsWith("--town-type=")) { DevType = arg["--town-type=".Length..]; return true; }
         if (arg.StartsWith("--town-dev-hero=")) { DevHero = arg["--town-dev-hero=".Length..]; return true; }
         if (arg == "--adventure-debug-cam") { Callable.From(DebugCam).CallDeferred(); return true; }
@@ -176,6 +180,41 @@ public static class TownLauncher
         }
     }
 
+    static void DevSetupCaravans(AdventureScreen adv, H5.Adventure.State.TownState town)
+    {
+        var g = adv.Session.Game;
+        foreach (var o in g.Map.Objects.Where(o => o.Kind == H5.Adventure.Map.ObjectKind.Dwelling && o.Pos.Floor == town.Pos.Floor))
+        {
+            var os = g.S.Obj(o.Index);
+            os.Owner = town.Owner;
+            for (int i = 0; i < os.Available.Length; i++) os.Available[i] = Math.Max(os.Available[i], 8);
+        }
+        H5.Adventure.State.TownState? other = null;
+        foreach (var t in g.S.Towns.Where(t => t != town && t.Pos.Floor == town.Pos.Floor)
+            .OrderBy(t => Math.Abs(t.Pos.X - town.Pos.X) + Math.Abs(t.Pos.Y - town.Pos.Y)))
+        {
+            int was = t.Owner;
+            t.Owner = town.Owner;
+            if (g.CaravanSources(town).Any(s => s.Object == t.Object)) { other = t; break; }
+            t.Owner = was;
+        }
+        if (other != null)
+        {
+            other.Owner = town.Owner;
+            other.Built["TB_DWELLING_1"] = Math.Max(1, other.Level("TB_DWELLING_1"));
+            other.Built["TB_DWELLING_2"] = Math.Max(2, other.Level("TB_DWELLING_2"));
+            other.Available[0] = 20; other.Available[1] = 12;
+        }
+        var p = g.S.Players.First(x => x.Index == town.Owner);
+        p.Purse = new H5.Adventure.State.Purse(new H5.Core.Data.Resources(99, 99, 99, 99, 99, 99, 99999));
+        if (g.CaravanSources(town).FirstOrDefault(s => !s.IsTown) is { Object: var src } && g.DwellingRows(src) is { Count: > 0 } rows)
+        {
+            var r = adv.Session.Apply(new H5.Adventure.Engine.BuyToCaravanCmd(src, town.Object, g.Map.Objects[src].Shared.DwellingCreatures[rows[0]], 3) { Player = town.Owner });
+            GD.Print($"[H5] --town-caravans: sources {g.CaravanSources(town).Count}, caravan {(r.Ok ? "sent" : r.Error)}");
+        }
+        TownHireScreen.DevTab = CaravanTab;
+    }
+
     static async void WaitForAdventure()
     {
         var tree = (SceneTree)Engine.GetMainLoop();
@@ -191,6 +230,7 @@ public static class TownLauncher
                 if (DevType != null) town.Type = DevType;
                 if (BuildAll) TownData.GrantAllBuildings(adv.Session, town);
                 if (DevHero != null) DevSetupHero(adv, town, DevHero);
+                if (CaravanTab != null) DevSetupCaravans(adv, town);
                 var screen = TownScreen.Open(adv, town);
                 if (Goto != null) screen.OpenSub(Goto);
                 return;
