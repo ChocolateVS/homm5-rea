@@ -1173,32 +1173,48 @@ public partial class CombatScreen : Control
 
     void ClearHighlights() => Arena.Overlay.ClearMarks();
 
-    /// <summary>Movement area, active stack and any hover marks (original grid materials).</summary>
-    void ShowStaticHighlights(List<(Cell, CellMark)>? hover)
+    /// <summary>
+    /// Grid marks in the exe's layer order (0055c480): base layer (combat_show_grid), the acting stack's movement area as
+    /// passable (combat_show_movement_shade, 0055ba00 kind 6), the hover marks (combat_show_target_shade: destination
+    /// = target kind 2 with the stack's size, affected cells kind 4), then the acting stack's own footprint as select
+    /// (kind 3, one double quad for size 2). Tactics: the deployment zone's free cells as affected (kind 4) and the cells
+    /// under placed stacks as passable target (kind 7), obstacles left out (lists drawn by 0055b810), the carried /
+    /// hovered footprint as select.
+    /// </summary>
+    void ShowStaticHighlights(List<(Cell Low, int Size, CellMark Kind)>? hover)
     {
         ClearHighlights();
         var b = Session.Battle;
         if (MySideToAct() is not int side) return;
+        bool movementShade = H5Reborn.Options.OptionsStore.GetBool("combat_show_movement_shade", true);
+        bool targetShade = H5Reborn.Options.OptionsStore.GetBool("combat_show_target_shade", true);
         if (b.State.Phase == BattlePhase.Tactics)
         {
-            var (minX, maxX) = b.DeployZone(side);
-            for (int x = minX; x <= maxX; x++)
-            for (int y = 0; y < b.State.Height; y++)
-                Arena.Overlay.SetMark(new Vector2I(x, y), CellMark.Aimable);
-            if (_deploySelected is int sel && b.State.Unit(sel) is { } su)
-                foreach (var c in su.Cells()) Arena.Overlay.SetMark(new Vector2I(c.X, c.Y), CellMark.Select2);
-        }
-        else
-        {
-            var la = b.GetLegalActions();
-            if (la != null && _mode == InputMode.Normal)
+            if (targetShade)
             {
-                foreach (var c in la.Moves) foreach (var fc in Footprint(la.Actor, c)) Arena.Overlay.SetMark(new Vector2I(fc.X, fc.Y), CellMark.Aimable);
-                if (!la.IsHero && b.State.Unit(la.Actor) is { } au)
-                    foreach (var c in au.Cells()) Arena.Overlay.SetMark(new Vector2I(c.X, c.Y), CellMark.Select2);
+                var (minX, maxX) = b.DeployZone(side);
+                for (int x = minX; x <= maxX; x++)
+                for (int y = 0; y < b.State.Height; y++)
+                {
+                    var c = new Cell(x, y);
+                    if (b.State.Obstacles.Contains(c)) continue;
+                    Arena.Overlay.SetMark(new Vector2I(x, y), b.State.At(c) != null ? CellMark.PassableTarget : CellMark.Affected);
+                }
             }
+            if (_deploySelected is int sel && b.State.Unit(sel) is { } su && su.Alive)
+                Arena.Overlay.Mark(new Vector2I(su.Pos.X, su.Pos.Y), su.Size, CellMark.Select);
+            if (hover != null) foreach (var (c, n, m) in hover) Arena.Overlay.Mark(new Vector2I(c.X, c.Y), n, m);
+            return;
         }
-        if (hover != null) foreach (var (c, m) in hover) Arena.Overlay.SetMark(new Vector2I(c.X, c.Y), m);
+        var la = b.GetLegalActions();
+        bool normal = la != null && _mode == InputMode.Normal;
+        if (normal && movementShade)
+            foreach (var c in la!.Moves) foreach (var fc in Footprint(la.Actor, c)) Arena.Overlay.MarkArea(new Vector2I(fc.X, fc.Y), CellMark.Passable);
+        if (hover != null && targetShade)
+            foreach (var (c, n, m) in hover) if (m != CellMark.Select) Arena.Overlay.Mark(new Vector2I(c.X, c.Y), n, m);
+        if (la != null && !la.IsHero && b.State.Unit(la.Actor) is { } au)
+            Arena.Overlay.Mark(new Vector2I(au.Pos.X, au.Pos.Y), au.Size, CellMark.Select);
+        if (hover != null) foreach (var (c, n, m) in hover) if (m == CellMark.Select) Arena.Overlay.Mark(new Vector2I(c.X, c.Y), n, m);
     }
 
     /// <summary>Deployment cell test (FUN_005762f0): inside the side's deployment rectangle and off obstacles.</summary>
@@ -1283,7 +1299,7 @@ public partial class CombatScreen : Control
     /// <summary>A command the player would issue by clicking, with a description for the prediction box.</summary>
     sealed record PlannedAction(BattleCommand Command, string Kind, int? Target, CombatPredictions.Prediction? Pred = null);
 
-    PlannedAction? Resolve(Vector2I? hoverCell, Vector2 mouse, out CombatCursor cursor, out List<(Cell, CellMark)> hl)
+    PlannedAction? Resolve(Vector2I? hoverCell, Vector2 mouse, out CombatCursor cursor, out List<(Cell Low, int Size, CellMark Kind)> hl)
     {
         cursor = CombatCursor.Default;
         hl = new();
@@ -1303,13 +1319,13 @@ public partial class CombatScreen : Control
             {
                 if (SnapDeploy(side, su, cell) is not { } dest) return null;
                 _ghostDest = dest;
-                foreach (var c in su.CellsAt(dest)) hl.Add((c, CellMark.Select));
+                hl.Add((dest, su.Size, CellMark.Select));
                 return new PlannedAction(new DeployCmd(sel, dest) { Side = side }, "Deploy", null);
             }
             // Not carrying: the footprint of an own placed stack under the cursor, else the cell itself when valid.
             if (occupant != null && occupant.Side == side && !occupant.IsWarMachine && !occupant.IsObject)
-                foreach (var c in occupant.Cells()) hl.Add((c, CellMark.Select));
-            else if (DeployCellValid(side, cell)) hl.Add((cell, CellMark.Select));
+                hl.Add((occupant.Pos, occupant.Size, CellMark.Select));
+            else if (DeployCellValid(side, cell)) hl.Add((cell, 1, CellMark.Select));
             return null;
         }
 
@@ -1329,7 +1345,7 @@ public partial class CombatScreen : Control
                     if (occupant != null && sp.Targets.Contains(occupant.Id))
                     {
                         cursor = CombatCursor.Cast;
-                        foreach (var c in occupant.Cells()) hl.Add((c, CellMark.Affected));
+                        foreach (var c in occupant.Cells()) hl.Add((c, 1, CellMark.Affected));
                         var castU = new CastSpellCmd(la.Actor, sp.Spell, occupant.Id, sp.Targeting == Battle.SpellTargeting.UnitAndCell ? occupant.Pos : null) { Side = side };
                         return new PlannedAction(castU, SpellName(sp.Spell), occupant.Id,
                             CombatPredictions.Spell(b, castU, CombatLogText.Escape(SpellName(sp.Spell)), CombatLogText.Escape(CombatLogText.UnitName(this, occupant.Id))));
@@ -1341,7 +1357,7 @@ public partial class CombatScreen : Control
                     // Area spells mark the cells they will hit (the engine's area for the spell), others the aimed cell.
                     var area = Battle.AreaCells(sp.Spell, cell);
                     if (area.Count == 0) area.Add(cell);
-                    foreach (var ac in area) if (s.InBounds(ac)) hl.Add((ac, CellMark.Affected));
+                    foreach (var ac in area) if (s.InBounds(ac)) hl.Add((ac, 1, CellMark.Affected));
                     var castC = new CastSpellCmd(la.Actor, sp.Spell, null, cell) { Side = side };
                     return new PlannedAction(castC, SpellName(sp.Spell), null, CombatPredictions.Spell(b, castC, CombatLogText.Escape(SpellName(sp.Spell)), null));
             }
@@ -1354,7 +1370,7 @@ public partial class CombatScreen : Control
                 if (s.Siege != null && b.CatapultTargets().Find(t => t.Blocked.Contains(cell)) is { } bt)
                 {
                     cursor = CombatCursor.Ability;
-                    foreach (var c in bt.Blocked) hl.Add((c, CellMark.Affected));
+                    foreach (var c in bt.Blocked) hl.Add((c, 1, CellMark.Affected));
                     return new PlannedAction(new UseAbilityCmd(la.Actor, ab.Ability, null, cell) { Side = side }, "Catapult", null);
                 }
                 cursor = CombatCursor.CantCast;
@@ -1363,7 +1379,7 @@ public partial class CombatScreen : Control
             if (ab.Targeting == Battle.AbilityTargeting.Cell)
             {
                 cursor = CombatCursor.Ability;
-                hl.Add((cell, CellMark.Affected));
+                hl.Add((cell, 1, CellMark.Affected));
                 var useC = new UseAbilityCmd(la.Actor, ab.Ability, null, cell) { Side = side };
                 return new PlannedAction(useC, ab.Ability, null, CombatPredictions.Ability(b, useC, CombatLogText.Escape(AbilityName(ab.Ability)), null));
             }
@@ -1372,7 +1388,7 @@ public partial class CombatScreen : Control
             if (targetId is int tid && ab.Targets.Contains(tid))
             {
                 cursor = CombatCursor.Ability;
-                hl.Add((cell, CellMark.Affected));
+                hl.Add((cell, 1, CellMark.Affected));
                 var useT = new UseAbilityCmd(la.Actor, ab.Ability, tid) { Side = side };
                 return new PlannedAction(useT, ab.Ability, tid, CombatPredictions.Ability(b, useT, CombatLogText.Escape(AbilityName(ab.Ability)),
                     CombatLogText.Escape(CombatLogText.UnitName(this, tid))));
@@ -1386,7 +1402,7 @@ public partial class CombatScreen : Control
             if (occupant != null && la.HeroAttack.Contains(occupant.Id))
             {
                 cursor = CombatCursor.AttackRight;
-                foreach (var c in occupant.Cells()) hl.Add((c, CellMark.Affected));
+                foreach (var c in occupant.Cells()) hl.Add((c, 1, CellMark.Affected));
                 return new PlannedAction(new HeroAttackCmd(occupant.Id) { Side = side }, "Hero attack", occupant.Id,
                     CombatPredictions.HeroAttack(b, side, occupant.Id));
             }
@@ -1404,7 +1420,7 @@ public partial class CombatScreen : Control
                             && !me.Has("ABILITY_NO_RANGE_PENALTY") && !me.Has("ABILITY_RANGE_PENALTY"))
                            || (s.Siege != null && b.WallsHalveShot(me, occupant));
                 cursor = far ? CombatCursor.ShootPenalty : CombatCursor.Shoot;
-                foreach (var c in occupant.Cells()) hl.Add((c, CellMark.Affected));
+                foreach (var c in occupant.Cells()) hl.Add((c, 1, CellMark.Affected));
                 return new PlannedAction(new ShootCmd(me.Id, occupant.Id) { Side = side }, "Shoot", occupant.Id,
                     CombatPredictions.Attack(b, me.Id, occupant.Id, null, ranged: true));
             }
@@ -1412,8 +1428,8 @@ public partial class CombatScreen : Control
             {
                 var from = PickAttackFrom(me, occupant, froms, mouse);
                 cursor = AttackCursor(from, me.Size, occupant);
-                foreach (var c in me.CellsAt(from)) hl.Add((c, CellMark.Select));
-                foreach (var c in occupant.Cells()) hl.Add((c, CellMark.Affected));
+                hl.Add((from, me.Size, CellMark.Target));
+                foreach (var c in occupant.Cells()) hl.Add((c, 1, CellMark.Affected));
                 return new PlannedAction(new AttackCmd(me.Id, occupant.Id, from == me.Pos ? null : from) { Side = side }, "Attack", occupant.Id,
                     CombatPredictions.Attack(b, me.Id, occupant.Id, from, ranged: false));
             }
@@ -1427,7 +1443,7 @@ public partial class CombatScreen : Control
             if (dest is Cell d)
             {
                 cursor = me.Flying ? CombatCursor.Fly : CombatCursor.Move;
-                foreach (var c in me.CellsAt(d)) hl.Add((c, CellMark.Select));
+                hl.Add((d, me.Size, CellMark.Target));
                 return new PlannedAction(new MoveCmd(me.Id, d) { Side = side }, "Move", null);
             }
         }
