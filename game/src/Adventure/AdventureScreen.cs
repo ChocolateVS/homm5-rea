@@ -102,6 +102,15 @@ public partial class AdventureScreen : Control
     }
 
     TurnTimerView? _turnTimer;
+
+    /// <summary>
+    /// CFreezeTurnTimerForUICmd: the screen freezes the turn timer while a dialog scene is open (005f15d0 / 005f1620);
+    /// local games only (0098c550 ignores it in network games, where no timer view exists here).
+    /// </summary>
+    public void FreezeTurnTimer(bool frozen)
+    {
+        if (_turnTimer != null) _turnTimer.Timer.Frozen = frozen;
+    }
     ulong _battleStartMs;
 
     // ---------------------------------------------------------------- state helpers
@@ -1138,7 +1147,7 @@ public partial class AdventureScreen : Control
         // The retreat box reads the side's player's gold (00570cf0: resources entry 6).
         long SideGold(int side) => Session.Game.BattleSideOwner(pb, side) is var o && o >= 0
             ? Session.S.Players.FirstOrDefault(p => p.Index == o)?.Purse[H5.Adventure.State.Purse.Gold] ?? 0 : 0;
-        var combat = new AdventureCombatSession(state, seed, H5Reborn.AdvNet.HotSeatBattles.HumanSides(Session.S, pb), Session.S.Difficulty, scripts, SideGold, H5.Adventure.Engine.QuickCombat.RuneMoneyValues(Session.Game));
+        var combat = new AdventureCombatSession(state, seed, H5Reborn.AdvNet.HotSeatBattles.HumanSides(Session.S, pb), scripts: scripts, gold: SideGold);
         // Keep the adventure screen alive while the combat screen owns the scene.
         var tree = GetTree();
         var placeholder = new Node { Name = "AdventurePause" };

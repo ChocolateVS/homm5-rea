@@ -86,6 +86,9 @@ public static class SaveManager
             {
                 ["seed"] = session.Seed.ToString(),
                 ["battleSeq"] = session.BattleSeq.ToString(),
+                // The limit is CWorld +0x94 = world settings +0xc, saved with the settings (world chunk 0x12, field 8,
+                // 009a2950); the turn start +0x104 is not saved.
+                ["timeLimit"] = session.TimeLimitMinutes,
             };
             string? campaignJson = campaign == null ? null : new JsonObject
             {
@@ -250,6 +253,7 @@ public static class SaveManager
             ulong seed = ulong.TryParse((string?)client["seed"], out var sd) ? sd : 1;
             ulong battleSeq = ulong.TryParse((string?)client["battleSeq"], out var bs) ? bs : 0;
             var session = AdventureSession.Restore(files, game, seed, battleSeq, generator);
+            session.TimeLimitMinutes = (int?)client["timeLimit"] ?? 0;
             if (save.GetText(AdventureSave.ScriptsPart) is { } scripts) _pendingScripts.AddOrUpdate(session, scripts);
 
             if (save.GetText(AdventureSave.CampaignPart) is { } cj && JsonNode.Parse(cj) is JsonObject c)

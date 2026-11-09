@@ -62,11 +62,12 @@ public partial class TurnTimerView : Control
     /// <summary>CCloseCombat (004e0f10): the combat's duration does not count against the turn.</summary>
     public void AddCombat(long ms) => Timer.AddCombat(ms);
 
-    public bool Expired => Timer.Expired(Now);
+    public bool Expired { get { Timer.Tick(Now); return Timer.Expired(Now); } }
 
     /// <summary>0060edf0 per frame while a human is to move; the window is hidden otherwise.</summary>
     public void Update(bool humanTurn)
     {
+        Timer.Tick(Now);
         _timer.Visible = humanTurn;
         if (!humanTurn) return;
         long left = Timer.TimeLeft(Now);

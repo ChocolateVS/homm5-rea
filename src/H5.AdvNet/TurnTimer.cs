@@ -30,6 +30,23 @@ public sealed class TurnTimer
         _msgMs = 0;
     }
 
+    /// <summary>
+    /// CWorld +0x1d8, set by vf 0x1d4 (0098c550, only when the game is not networked, +0x88) from
+    /// CFreezeTurnTimerForUICmd (vtable 00e0f29c, 006098d0 / 0042a7e0). The adventure screen sends 1 when it opens a
+    /// dialog scene (005f15d0 → 00605fe0(1), CCreateDialogSceneScreen 00767700) and 0 when the scene's listener at
+    /// screen +0x238 is called back (005f1620 → 00605fe0(0)).
+    /// </summary>
+    public bool Frozen { get; set; }
+
+    /// <summary>
+    /// 00998520 at every world tick, before the expiry test: while frozen the turn start +0x104 is set to now (vf 0x9c),
+    /// so the time left stays at the full limit and counts down afresh once the scene is closed.
+    /// </summary>
+    public void Tick(long nowMs)
+    {
+        if (Frozen) _turnStart = nowMs;
+    }
+
     /// <summary>CCloseCombat (004e0f10): the combat's duration is credited to the player.</summary>
     public void AddCombat(long ms) => _credit += Math.Max(0, ms);
 

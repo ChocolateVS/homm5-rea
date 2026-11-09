@@ -222,7 +222,8 @@ public partial class ScriptUiBridge : Node
                 break;
             case "dialog_scene":
                 _fullScreen++;
-                var player = DialogScenePlayer.Open(Screen.DialogLayer, req.Resource, () => { _fullScreen--; answer(true); });
+                Screen.FreezeTurnTimer(true);   // 005f15d0: freeze, then CCreateDialogSceneScreen
+                var player = DialogScenePlayer.Open(Screen.DialogLayer, req.Resource, () => { _fullScreen--; Screen.FreezeTurnTimer(false); answer(true); });
                 if (player == null) break; // missing scene: callback already ran
                 break;
             case "adv_map_dialog":

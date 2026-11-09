@@ -61,4 +61,21 @@ public class TurnTimerTests
         t.NewTurn(0);
         Assert.Equal(-1, t.NextMessage(280_000, StockTimes));
     }
+
+    /// <summary>00998520: while CWorld +0x1d8 (dialog scene, 0098c550) is set the turn start follows now; the count restarts after.</summary>
+    [Fact]
+    public void FrozenTimerHoldsTheFullLimitAndRestartsAfter()
+    {
+        var t = new TurnTimer(1);
+        t.NewTurn(0);
+        Assert.Equal(40_000, t.TimeLeft(20_000));
+        t.Frozen = true;
+        t.Tick(30_000);
+        t.Tick(200_000);
+        Assert.Equal(60_000, t.TimeLeft(200_000));
+        Assert.False(t.Expired(200_000));
+        t.Frozen = false;
+        t.Tick(210_000);
+        Assert.Equal(50_000, t.TimeLeft(210_000));
+    }
 }
