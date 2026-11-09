@@ -113,13 +113,17 @@ public sealed class AdventureSession
     }
 
     /// <summary>A local game on a loaded map (stock, user or generated) with the given map players as humans (hot-seat).</summary>
-    public static AdventureSession StartLocal(H5.AdvNet.LoadedMap lm, IEnumerable<int> humanMapPlayers, ulong seed, int difficulty, H5.AdvNet.RmgSettings? generator = null, int timeLimitMinutes = 0)
+    /// <param name="players">The players chosen on UI/HotSeatWait (state, race, hero, bonus; closed slots left out); null:
+    /// every active map player, the given humans, with the setup model's default bonus (00ca0240).</param>
+    public static AdventureSession StartLocal(H5.AdvNet.LoadedMap lm, IEnumerable<int> humanMapPlayers, ulong seed, int difficulty, H5.AdvNet.RmgSettings? generator = null, int timeLimitMinutes = 0,
+        IReadOnlyList<PlayerSetup>? players = null)
     {
         var humans = humanMapPlayers.ToHashSet();
         var setup = new GameSetup { Seed = seed, Difficulty = difficulty };
-        foreach (var p in lm.Map.Players.Where(p => p.Active))
-            // The hot-seat setup has no bonus arrows yet: each slot keeps the setup model's default (00ca0240).
-            setup.Players.Add(new PlayerSetup { MapPlayer = p.Index, Human = humans.Contains(p.Index), Bonus = H5.Adventure.Engine.Adventure.DefaultStartBonus(lm.Map, p) });
+        if (players != null) setup.Players.AddRange(players);
+        else
+            foreach (var p in lm.Map.Players.Where(p => p.Active))
+                setup.Players.Add(new PlayerSetup { MapPlayer = p.Index, Human = humans.Contains(p.Index), Bonus = H5.Adventure.Engine.Adventure.DefaultStartBonus(lm.Map, p) });
         var (game, opening) = H5.Adventure.Engine.Adventure.NewGame(lm.Db, lm.Map, setup);
         GD.Print($"[H5] adventure {lm.Map.Id} local game, humans {string.Join(",", humans.Select(h => h + 1))}, seed {seed}");
         return new AdventureSession(lm.Db, lm.Map, game, opening, seed)

@@ -191,19 +191,10 @@ public partial class CustomGameWaitScreen : UiScreen
         SetVisible("preferences_container", show);
     }
 
-    static readonly (string Button, CustomGameSetup.Change Kind, bool Right)[] Buttons =
-    {
-        ("open_close_left", CustomGameSetup.Change.State, false), ("open_close_right", CustomGameSetup.Change.State, true),
-        ("team_color_left", CustomGameSetup.Change.Colour, false), ("team_color_right", CustomGameSetup.Change.Colour, true),
-        ("race_change_left", CustomGameSetup.Change.Race, false), ("race_change_right", CustomGameSetup.Change.Race, true),
-        ("hero_change_left", CustomGameSetup.Change.Hero, false), ("hero_change_right", CustomGameSetup.Change.Hero, true),
-        ("bonus_change_left", CustomGameSetup.Change.Bonus, false), ("bonus_change_right", CustomGameSetup.Change.Bonus, true),
-    };
-
     void Press(int row, string button)
     {
         if (_setup == null) return;
-        var b = Buttons.FirstOrDefault(x => x.Button == button);
+        var b = SetupRowView.Buttons.FirstOrDefault(x => x.Button == button);
         if (b.Button == null) return;
         _setup.Apply(row, b.Kind, b.Right, Profile);
         BuildRows();
@@ -230,31 +221,63 @@ public partial class CustomGameWaitScreen : UiScreen
         foreach (var n in new[] { "start", "StartBtn" }) if (Find(n) is { } start) start.Enabled = _setup.CanStart();
     }
 
-    UiNode? Child(UiNode row, string name)
+    void FillRow(UiNode node, int row) => SetupRowView.Fill(this, node, _setup!, row, b => Press(row, b));
+
+    void Start()
+    {
+        // 00776360: nothing happens until the players form at least two teams (model vf 0x4c, 00c9d940).
+        if (_setup == null || _map == null || _choice == null || !_setup.CanStart()) return;
+        var setup = _setup.ToGameSetup((ulong)Time.GetTicksUsec(), _choice.Difficulty);
+        var db = AdventureSession.SharedDb;
+        var (game, opening) = H5.Adventure.Engine.Adventure.NewGame(db, _map, setup);
+        GD.Print($"[H5] custom game {_map.Id}: humans {string.Join(",", setup.Players.Where(p => p.Human).Select(p => p.MapPlayer + 1))}, difficulty {setup.Difficulty}, time limit {_choice.TimeLimitMinutes}");
+        AdventureScreen.Open(AdventureSession.FromNewGame(_files ?? _generated?.Files ?? MapFiles.FromPak(Game.Instance.Fs, "Maps/Generated/map.xdb"), game, opening, setup.Seed, _choice.Map.Rmg, _choice.TimeLimitMinutes));
+    }
+}
+
+/// <summary>The stock player row (UI/MPWait/PlayersList/ItemElements) shared by UI/CustomGameWait and UI/HotSeatWait.</summary>
+static class SetupRowView
+{
+    internal static readonly (string Button, CustomGameSetup.Change Kind, bool Right)[] Buttons =
+    {
+        ("open_close_left", CustomGameSetup.Change.State, false), ("open_close_right", CustomGameSetup.Change.State, true),
+        ("team_color_left", CustomGameSetup.Change.Colour, false), ("team_color_right", CustomGameSetup.Change.Colour, true),
+        ("race_change_left", CustomGameSetup.Change.Race, false), ("race_change_right", CustomGameSetup.Change.Race, true),
+        ("hero_change_left", CustomGameSetup.Change.Hero, false), ("hero_change_right", CustomGameSetup.Change.Hero, true),
+        ("bonus_change_left", CustomGameSetup.Change.Bonus, false), ("bonus_change_right", CustomGameSetup.Change.Bonus, true),
+    };
+
+    internal static UiNode? Child(UiScreen screen, UiNode row, string name)
     {
         var w = row.Window.Descendants().FirstOrDefault(d => string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase));
-        return w == null ? null : NodeOf(w);
+        return w == null ? null : screen.NodeOf(w);
     }
 
-    void FillRow(UiNode node, int row)
+    /// <summary>00778000: human = the slot's (profile) name, computer = the row's colour name, closed = empty.</summary>
+    internal static string DisplayName(SetupSlot s)
     {
-        var s = _setup!.Slots[row];
-        foreach (var (button, kind, right) in Buttons)
-            if (Child(node, button) is { } b)
-            {
-                b.Enabled = _setup.CanChange(row, kind);
-                b.Clicked += _ => Press(row, button);
-            }
         string colour = s.Colour.Replace("PCOLOR_", "").ToLowerInvariant();
-        string colourName = UiResources.Instance.Text($"UI/MPWait/PlayersList/Item/player_{colour}.txt")?.Trim() ?? colour;
-        // 00778000: human = profile name, computer = the row's colour name, closed = empty.
-        string name = s.State switch
+        return s.State switch
         {
             SetupSlot.SlotState.Human => s.Name,
             SetupSlot.SlotState.Closed => "",
-            _ => colourName,
+            _ => UiResources.Instance.Text($"UI/MPWait/PlayersList/Item/player_{colour}.txt")?.Trim() ?? colour,
         };
-        Child(node, "name")?.SetValue("value", ChatLogView.Escape(name));
+    }
+
+    /// <summary>Fills a stock MPWait row (ItemElements) from a setup slot; <paramref name="press"/> gets the button name.</summary>
+    internal static void Fill(UiScreen screen, UiNode node, CustomGameSetup setup, int row, Action<string> press)
+    {
+        UiNode? Child(UiNode r, string n) => SetupRowView.Child(screen, r, n);
+        var s = setup.Slots[row];
+        foreach (var (button, kind, right) in Buttons)
+            if (Child(node, button) is { } b)
+            {
+                b.Enabled = setup.CanChange(row, kind);
+                b.Clicked += _ => press(button);
+            }
+        string colour = s.Colour.Replace("PCOLOR_", "").ToLowerInvariant();
+        Child(node, "name")?.SetValue("value", ChatLogView.Escape(DisplayName(s)));
         Child(node, "teamnumber")?.SetValue("value", (s.Team + 1).ToString());
         Child(node, "bonus")?.SetValue("value", "");
         Child(node, "race")?.SetValue("value", "");
@@ -299,7 +322,7 @@ public partial class CustomGameWaitScreen : UiScreen
             1 => "bonus_tooltip_random_minor_artifact.txt", 2 => "bonus_tooltip_gold.txt", 3 => "bonus_tooltip_resource.txt", _ => "bonus_tooltip_random.txt",
         })?.Trim() ?? "";
 
-    void Icon(UiNode? node, string key)
+    static void Icon(UiNode? node, string key)
     {
         if (node == null || !node.Window.RelatedTextures.TryGetValue(key, out var path)) return;
         if (UiResources.Instance.Texture(path) is { } t) SetIcon(node, t);
@@ -309,7 +332,7 @@ public partial class CustomGameWaitScreen : UiScreen
     {
         node.AddChild(new TextureRect
         {
-            Texture = t, AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore,
+            Texture = t, AnchorRight = 1, AnchorBottom = 1, MouseFilter = Control.MouseFilterEnum.Ignore,
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
         });
     }
@@ -322,14 +345,4 @@ public partial class CustomGameWaitScreen : UiScreen
         return string.IsNullOrEmpty(href) ? null : Game.Instance.LoadTexture(XdbRef.Parse(href, def.SourcePath).Path);
     }
 
-    void Start()
-    {
-        // 00776360: nothing happens until the players form at least two teams (model vf 0x4c, 00c9d940).
-        if (_setup == null || _map == null || _choice == null || !_setup.CanStart()) return;
-        var setup = _setup.ToGameSetup((ulong)Time.GetTicksUsec(), _choice.Difficulty);
-        var db = AdventureSession.SharedDb;
-        var (game, opening) = H5.Adventure.Engine.Adventure.NewGame(db, _map, setup);
-        GD.Print($"[H5] custom game {_map.Id}: humans {string.Join(",", setup.Players.Where(p => p.Human).Select(p => p.MapPlayer + 1))}, difficulty {setup.Difficulty}, time limit {_choice.TimeLimitMinutes}");
-        AdventureScreen.Open(AdventureSession.FromNewGame(_files ?? _generated?.Files ?? MapFiles.FromPak(Game.Instance.Fs, "Maps/Generated/map.xdb"), game, opening, setup.Seed, _choice.Map.Rmg, _choice.TimeLimitMinutes));
-    }
 }

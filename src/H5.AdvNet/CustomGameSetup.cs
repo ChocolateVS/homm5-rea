@@ -168,10 +168,25 @@ public sealed class CustomGameSetup
     readonly Dictionary<int, List<SetupSlot.SlotState>> _states = new();
     readonly Dictionary<int, int> _stateIndex = new();
 
-    public CustomGameSetup(AdvMap map, AdventureDb db, string profileName, bool lockOthers)
+    /// <summary>UI/HotSeatWait's rows (CHotSeatLogic, vtable 00e3edc0) over the same model: see <see cref="ForHotSeat"/>.</summary>
+    public bool HotSeat { get; }
+
+    /// <summary>
+    /// The hot-seat setup (CHotSeatLogic over the game-setup model 00ca0240). 0077c5c0 sets every slot through model
+    /// vf 0x24 = 00c9dd70 (keep flag 0): the first two slots that can be human become human; then a slot that cannot be
+    /// a computer (+0x21) is human when it can be (+0x20), else closed; the rest are computers. 00c9dd70 with the keep
+    /// flag clear resets the bonus of a human or closed slot to random (0) when the bonus can be changed (+0x5d).
+    /// The default player names (hot-seat item vf 0x28) are not traced: "Player N" is used.
+    /// </summary>
+    public static CustomGameSetup ForHotSeat(AdvMap map, AdventureDb db) => new(map, db, "", false, hotSeat: true);
+
+    public CustomGameSetup(AdvMap map, AdventureDb db, string profileName, bool lockOthers) : this(map, db, profileName, lockOthers, false) { }
+
+    CustomGameSetup(AdvMap map, AdventureDb db, string profileName, bool lockOthers, bool hotSeat)
     {
         _map = map;
         LockOthers = lockOthers;
+        HotSeat = hotSeat;
         BuildHeroPool(db);
         var teams = H5.Adventure.Engine.Adventure.SlotTeams(map);
         foreach (var mp in map.Players.Where(p => p.Active))
@@ -191,6 +206,19 @@ public sealed class CustomGameSetup
             if (s.Races.Count == 1) s.Race = s.Races[0];
             s.Heroes = HeroesFor(s);
             Slots.Add(s);
+        }
+        if (hotSeat)
+        {
+            int humans = 2;
+            foreach (var x in Slots)
+            {
+                var st = humans > 0 && x.CanBeHuman ? SetupSlot.SlotState.Human
+                    : !x.CanBeComputer ? (x.CanBeHuman ? SetupSlot.SlotState.Human : SetupSlot.SlotState.Closed)
+                    : SetupSlot.SlotState.Computer;
+                if (st == SetupSlot.SlotState.Human && x.CanBeHuman && humans > 0) humans--;
+                SetModelState(x, st, keep: false);
+            }
+            return;
         }
         // 00778640: state lists {human, closed (if it may be disabled), computer}; row 0 human, the others computer.
         for (int i = 0; i < Slots.Count; i++)
@@ -268,11 +296,55 @@ public sealed class CustomGameSetup
         s.Name = s.State == SetupSlot.SlotState.Human ? profileName : "";
     }
 
-    /// <summary>007782f0: whether a row's left/right buttons of a kind are enabled.</summary>
+    /// <summary>
+    /// Model vf 0x24 = 00c9dd70: computer (0) and closed (3) are always taken, human (2) only by a slot that can be human;
+    /// with the keep flag clear a human or closed slot's bonus goes back to random when it can be changed (+0x5d).
+    /// </summary>
+    static bool SetModelState(SetupSlot s, SetupSlot.SlotState st, bool keep)
+    {
+        if (s.State == st) return true;
+        if (st == SetupSlot.SlotState.Human && !s.CanBeHuman) return false;
+        if (st == SetupSlot.SlotState.Open && !s.CanBeComputer) return false;
+        s.State = st;
+        if (st == SetupSlot.SlotState.Human && s.Name.Length == 0) s.Name = $"Player {s.MapPlayer + 1}";
+        if (st != SetupSlot.SlotState.Human) s.Name = "";
+        if (!keep && st is SetupSlot.SlotState.Human or SetupSlot.SlotState.Closed && s.CanChangeBonus) s.Bonus = 0;
+        return true;
+    }
+
+    /// <summary>
+    /// 0077bc20 (hot-seat state arrows; both arrows the same): the row's item state (computer 1, closed 2, human 3) steps
+    /// over up to three attempts — computer → human (closed from the second attempt when it can be closed, +0x5c),
+    /// closed → computer (human from the second attempt), human → closed when it can be closed, else computer — each
+    /// tried with model vf 0x24 (keep flag 1) until one is taken.
+    /// </summary>
+    void CycleHotSeatState(SetupSlot s)
+    {
+        int item = s.State switch { SetupSlot.SlotState.Closed => 2, SetupSlot.SlotState.Human => 3, _ => 1 };
+        for (int attempt = 0; attempt <= 2; attempt++)
+        {
+            item = item switch
+            {
+                1 => attempt == 0 || !s.CanClose ? 3 : 2,
+                2 => attempt != 0 ? 3 : 1,
+                3 => attempt == 0 && s.CanClose ? 2 : 1,
+                _ => 3,
+            };
+            var st = item switch { 2 => SetupSlot.SlotState.Closed, 1 => SetupSlot.SlotState.Computer, _ => SetupSlot.SlotState.Human };
+            if (SetModelState(s, st, keep: true)) return;
+        }
+    }
+
+    /// <summary>The hot-seat Start (0077baa0): the model's two-team test (vf 0x4c) and at least one human row.</summary>
+    public bool CanStartHotSeat() => CanStart() && Slots.Any(s => s.State == SetupSlot.SlotState.Human);
+
+    /// <summary>007782f0 (custom game) / 0077b760 (hot-seat): whether a row's left/right buttons of a kind are enabled.</summary>
     public bool CanChange(int row, Change kind)
     {
         if (row < 0 || row >= Slots.Count) return false;
         var s = Slots[row];
+        // 0077b760: the state arrows need two of {can be closed (vf 0x6c, +0x5c), human (+0x20), computer (+0x21)}.
+        if (HotSeat && kind == Change.State) return (s.CanClose ? 1 : 0) + (s.CanBeHuman ? 1 : 0) + (s.CanBeComputer ? 1 : 0) > 1;
         bool locked = LockOthers && row != 0;
         return kind switch
         {
@@ -293,6 +365,9 @@ public sealed class CustomGameSetup
         int dir = right ? 1 : -1;
         switch (kind)
         {
+            case Change.State when HotSeat:
+                CycleHotSeatState(s);
+                break;
             case Change.State:
             {
                 // 00777db0: row 0 stays human; the others cycle over the list without its first (human) entry.
@@ -313,7 +388,7 @@ public sealed class CustomGameSetup
                 (a.Race, b.Race) = (b.Race, a.Race);
                 (a.Hero, b.Hero) = (b.Hero, a.Hero);
                 (a.Bonus, b.Bonus) = (b.Bonus, a.Bonus);
-                (_stateIndex[row], _stateIndex[other]) = (_stateIndex[other], _stateIndex[row]);
+                if (!HotSeat) (_stateIndex[row], _stateIndex[other]) = (_stateIndex[other], _stateIndex[row]);
                 foreach (var x in new[] { a, b }) Revalidate(x);
                 break;
             }

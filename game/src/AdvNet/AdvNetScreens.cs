@@ -461,62 +461,97 @@ public sealed class HotSeatPlan
     public AdvNetSettings Settings { get; init; } = new();
     /// <summary>Map player index → player name for every human; other active players are computers.</summary>
     public Dictionary<int, string> Humans { get; } = new();
+    /// <summary>The players chosen on UI/HotSeatWait (closed slots left out); null = every active player, default bonus.</summary>
+    public List<H5.Adventure.Engine.PlayerSetup>? Players { get; set; }
 }
 
 /// <summary>
-/// UI/HotSeatWait ("Hot-Seat options"): each colour of the map as Human (with a name) or
-/// Computer; clicking a row toggles it. Start hands the plan to the adventure screen.
+/// UI/HotSeatWait ("Hot-Seat options", 0077d4d0): one ID_HOTSEAT_ITEM row (UI/MPWait ItemElements + a player-name edit
+/// line) per model slot in "playerslist", over the game-setup model in hot-seat mode (CHotSeatLogic,
+/// <see cref="CustomGameSetup.ForHotSeat"/>): the row arrows set a pending command that 0077bd40 hands to the model —
+/// state 0077bc20, colour vf 0x30, race vf 0x38, hero vf 0x40, starting bonus vf 0x48 (00c9d860) — and 0077b760 enables
+/// each pair (bonus: vf 0x44 = 00c9d810, the slot's CanChangeBonus). Start (0077c470) needs the two-team test and a
+/// human row (0077baa0) and starts with the slots' choices (00c9fa80 applies the bonus).
 /// </summary>
 public partial class HotSeatWaitScreen : UiScreen
 {
-    readonly ListRowsView _rows;
     readonly HotSeatPlan _plan;
-    readonly List<MapPlayer> _slots = new();
+    readonly CustomGameSetup? _setup;
+    readonly List<UiNode> _rows = new();
 
     public HotSeatWaitScreen() : base("UI/HotSeatWait.(WindowScreen).xdb")
     {
-        _plan = new HotSeatPlan { Settings = AdvNetScreens.PendingHotSeat ?? new AdvNetSettings() };
-        var list = Root.Find("playerslist")!;
-        _rows = new ListRowsView(new[] { new ListRowsView.Column(10, 150, ""), new ListRowsView.Column(165, 250, ""), new ListRowsView.Column(420, 150, "") }, 0, 0, 34, 26);
-        Find("playerslist")?.AddChild(_rows);
-        _rows.RowSelected += Toggle;
+        // Dev/test: H5_HOTSEAT_MAP names the map when the screen is opened directly (--goto=hotseatwait).
+        _plan = new HotSeatPlan { Settings = AdvNetScreens.PendingHotSeat ?? new AdvNetSettings { Map = System.Environment.GetEnvironmentVariable("H5_HOTSEAT_MAP") } };
         Bus.On("start", Start);
         Bus.On("back", () => UiNavigator.Goto("hotseatcreate"));
-        try
-        {
-            var s = _plan.Settings;
-            if (s.Map != null && MapCatalog.Find(Game.Instance.Fs, Game.Instance.Install, s.Map) is { } r)
-            {
-                using var files = r.Open(Game.Instance.Fs);
-                _slots.AddRange(new MapLoader(Game.Instance.Db, Game.Instance.Fs).Load(files).Players.Where(p => p.Active));
-            }
-            else
-                _slots.AddRange(Enumerable.Range(0, s.Rmg?.Players ?? 2).Select(i => new MapPlayer { Index = i, Active = true, CanBeHuman = true }));
-        }
+        try { _setup = CustomGameSetup.ForHotSeat(AdvNetGame.Maps.Load(_plan.Settings).Map, H5Reborn.Adventure.AdventureSession.SharedDb); }
         catch (Exception e) { GD.Print($"[advnet] hot-seat map: {e.Message}"); }
-        foreach (var p in _slots.Where(p => p.CanBeHuman).Take(2)) _plan.Humans[p.Index] = $"Player {p.Index + 1}";
         Find("gamename")?.SetValue("value", ChatLogView.Escape(_plan.Settings.Map ?? "Random map"));
-        Refresh();
+        BuildRows();
     }
 
-    void Toggle(int i)
+    public override void _Ready()
     {
-        if (i < 0 || i >= _slots.Count || !_slots[i].CanBeHuman) return;
-        var idx = _slots[i].Index;
-        if (!_plan.Humans.Remove(idx)) _plan.Humans[idx] = $"Player {idx + 1}";
-        Refresh();
+        base._Ready();
+        // Dev/test hook for screenshots: H5_HOTSEAT_CLICKS="row:button,..." presses row buttons.
+        if (System.Environment.GetEnvironmentVariable("H5_HOTSEAT_CLICKS") is { Length: > 0 } clicks && _setup != null)
+            Callable.From(() =>
+            {
+                foreach (var c in clicks.Split(','))
+                {
+                    var p = c.Split(':');
+                    if (p.Length == 2 && int.TryParse(p[0], out var row)) Press(row, p[1]);
+                }
+            }).CallDeferred();
     }
 
-    void Refresh() => _rows.SetRows(_slots.Select(p => new[]
+    void Press(int row, string button)
     {
-        $"<body>{(p.Colour.Length > 0 ? p.Colour.Replace("PCOLOR_", "") : $"Player {p.Index + 1}")}",
-        $"<body_bright>{(_plan.Humans.TryGetValue(p.Index, out var n) ? ChatLogView.Escape(n) : "Computer")}",
-        $"<body>{(_plan.Humans.ContainsKey(p.Index) ? "Human" : "Computer")}",
-    }).ToList());
+        if (_setup == null) return;
+        var b = H5Reborn.Adventure.SetupRowView.Buttons.FirstOrDefault(x => x.Button == button);
+        if (b.Button == null) return;
+        _setup.Apply(row, b.Kind, b.Right, "");
+        BuildRows();
+    }
+
+    void BuildRows()
+    {
+        if (_setup == null || Find("playerslist") is not UiScrollableContainer box) return;
+        float pos = box.ScrollPosition;
+        foreach (var r in _rows) RemoveInstance(r);
+        _rows.Clear();
+        box.ClearItems();
+        for (int i = 0; i < _setup.Slots.Count; i++)
+        {
+            if (CreateRootWindow("ID_HOTSEAT_ITEM", box.Window) is not { } node) continue;
+            int row = i;
+            _rows.Add(node);
+            H5Reborn.Adventure.SetupRowView.Fill(this, node, _setup, row, b => Press(row, b));
+            // The name edit line: the human's name (editable); the default names (item vf 0x28) are not traced.
+            if (H5Reborn.Adventure.SetupRowView.Child(this, node, "playername") is UiEditLine edit)
+            {
+                var s = _setup.Slots[row];
+                // The edit line covers the item's name view: the name is shown in it (computer rows: the colour name).
+                H5Reborn.Adventure.SetupRowView.Child(this, node, "name")?.SetValue("value", "");
+                edit.Value = H5Reborn.Adventure.SetupRowView.DisplayName(s);
+                edit.Enabled = s.State == SetupSlot.SlotState.Human;
+                edit.Changed += t => s.Name = t;
+            }
+            box.AddItem(node);
+        }
+        box.RestorePosition(pos);
+        foreach (var n in new[] { "start", "StartBtn" }) if (Find(n) is { } start) start.Enabled = _setup.CanStartHotSeat();
+    }
 
     void Start()
     {
-        if (_plan.Humans.Count < 2) { UiNavigator.ShowOverlay(new MessageNotice(AdvNetScreens.Text("UI/HotSeatWait/WrongNameText.txt") is { Length: > 0 } t ? t : "Choose at least two human players.")); return; }
+        if (_setup == null || !_setup.CanStartHotSeat()) return;
+        // 0077c470: names that are not valid get the default (0077be40); an empty name is taken as not valid.
+        foreach (var s in _setup.Slots.Where(s => s.State == SetupSlot.SlotState.Human && s.Name.Trim().Length == 0)) s.Name = $"Player {s.MapPlayer + 1}";
+        _plan.Humans.Clear();
+        foreach (var s in _setup.Slots.Where(s => s.State == SetupSlot.SlotState.Human)) _plan.Humans[s.MapPlayer] = s.Name;
+        _plan.Players = _setup.ToGameSetup(0, _plan.Settings.Difficulty).Players;
         if (AdvNetScreens.OpenHotSeatGame?.Invoke(_plan) != true)
             UiNavigator.ShowOverlay(new MessageNotice("Hot-seat games need the adventure screen's hot-seat mode (not available yet)."));
     }
