@@ -222,6 +222,15 @@ public class GrailTests(Fixture f)
         h.Perks.Remove("HERO_SKILL_GRAIL_VISION");
         // Three tiles east: a moved hero cannot dig; a fresh one gets the "west" hint and leaves a hole.
         h.Pos = grail with { X = grail.X + 3 };
+        // 00bcc2b0: only a tile of kind 1 is clear (an object's passable tile, kind 4, is not).
+        var fl = g.Map.Floor(h.Pos.Floor)!;
+        int ti = h.Pos.Y * fl.Width + h.Pos.X;
+        var kind = fl.Kind[ti];
+        Assert.Equal(Map.TileKind.Land, kind);
+        h.MovePoints = h.MaxMovePoints;
+        fl.Kind[ti] = Map.TileKind.ObjectPassable;
+        try { Assert.Equal("GRAAL_TRY_ON_CLEAR", g.Apply(new DigCmd(h.Id) { Player = p.Index }).Error); }
+        finally { fl.Kind[ti] = kind; }
         h.MovePoints = h.MaxMovePoints - 1;
         var refused = g.Apply(new DigCmd(h.Id) { Player = p.Index });
         Assert.False(refused.Ok);

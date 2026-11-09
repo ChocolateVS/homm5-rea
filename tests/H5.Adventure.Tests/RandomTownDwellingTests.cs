@@ -54,7 +54,30 @@ public class RandomTownDwellingTests(Fixture f)
         {
             var o = again.Map.Objects[index];
             if (o.Kind == ObjectKind.Town) Assert.Equal(value, o.TownType);
+            else if (o.Kind == ObjectKind.Treasure) Assert.Equal(value, o.SharedPath);
             else Assert.StartsWith(o.SharedPath + "|", value);
         }
+    }
+
+    [Fact]
+    public void RandomResourcesBecomeATreasureAnyPileWithThatPilesAmount()
+    {
+        // 0041d360 → 0041b350: TREASURE_RANDOM takes a shared of RPGRoot TREASURE_ANY; 00a82720 rolls its amount.
+        var g = f.NewGame("A1M4", seed: 3);
+        var group = g.Db.SharedGroup("TREASURE_ANY");
+        Assert.Equal(7, group.Count);
+        var piles = g.Map.Objects.Where(o => o.Kind == ObjectKind.Treasure && o.PlacedShared?.Type == "TREASURE_RANDOM").ToList();
+        Assert.NotEmpty(piles);
+        var kinds = new HashSet<string>();
+        foreach (var o in piles)
+        {
+            Assert.Contains(o.SharedPath, group);
+            kinds.Add(o.Shared.Type!);
+            var os = g.S.Obj(o.Index);
+            int scale = o.Shared.Type == "TREASURE_GOLD" ? 100 : 1;
+            if (o.TreasureCustom) Assert.Equal(o.TreasureAmount * scale, os.Amount);
+            else Assert.InRange(os.Amount, o.Shared.MinResource * scale, o.Shared.MaxResource * scale);
+        }
+        Assert.True(kinds.Count > 1);
     }
 }

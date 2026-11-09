@@ -23,7 +23,7 @@ public sealed partial class Adventure
     void ResolveRandomObjects()
     {
         foreach (var o in Map.Objects)
-            if (o.Kind is ObjectKind.Town or ObjectKind.Dwelling)
+            if (o.Kind is ObjectKind.Town or ObjectKind.Dwelling or ObjectKind.Treasure)
             {
                 o.PlacedShared ??= o.Shared;
                 o.PlacedSharedPath ??= o.SharedPath;
@@ -45,6 +45,15 @@ public sealed partial class Adventure
             if (index < 0 || index >= Map.Objects.Count) continue;
             var o = Map.Objects[index];
             if (o.Kind == ObjectKind.Town) { o.PlacedTownType ??= o.TownType; o.TownType = value; continue; }
+            if (o.Kind == ObjectKind.Treasure)
+            {
+                o.PlacedShared ??= o.Shared;
+                o.PlacedSharedPath ??= o.SharedPath;
+                if (o.SharedPath == value) continue;
+                o.SharedPath = value;
+                o.Shared = Db.Catalog.Get(value);
+                continue;
+            }
             if (o.Kind != ObjectKind.Dwelling) continue;
             o.PlacedShared ??= o.Shared;
             o.PlacedSharedPath ??= o.SharedPath;
@@ -133,5 +142,22 @@ public sealed partial class Adventure
         var group = Db.DwellingGroup(race);
         if (link >= group.Count) return;
         S.RandomObjects[o.Index] = group[link] + "|" + tier;
+    }
+
+    /// <summary>
+    /// 0041d360 (shared class 0x16130cca, type TREASURE_RANDOM = 7, not while loading) → 0041b350: RPGRoot SharedGroups
+    /// TREASURE_ANY (00bcb710; stock links crystal, gems, gold, mercury, ore, sulfur, wood) at index rand % n (the
+    /// creator's generator, its +0 object's vf 0x20 — here the game RNG), and the treasure is created from that shared
+    /// with the map instance (00a83690), so its IsCustom / Amount still apply and the amount rolls in the new shared's
+    /// MinResource..MaxResource. An empty group gives index 0 of nothing: the object keeps its random shared here.
+    /// </summary>
+    /// Drawn when the object's contents are set up (<see cref="RollTreasure"/>), in map order.
+    void ResolveTreasure(MapObject o)
+    {
+        if ((o.PlacedShared ?? o.Shared).Type != "TREASURE_RANDOM" || S.RandomObjects.ContainsKey(o.Index)) return;
+        var group = Db.SharedGroup("TREASURE_ANY");
+        if (group.Count == 0) return;
+        S.RandomObjects[o.Index] = group[S.Rng.Next(group.Count)];
+        ApplyRandomObjects();
     }
 }

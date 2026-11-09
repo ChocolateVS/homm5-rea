@@ -63,8 +63,11 @@ public sealed partial class Adventure
     /// not clear is refused with GRAAL_TRY_ON_CLEAR; too few movement points with GRAAL_NOT_ENOUGH_MOVEMENT.
     /// Otherwise the movement is spent, a hole is left, and the Tear of Asha is found within reach (GRAAL_NAME /
     /// GRAAL_CONGRATULATIONS) or a direction hint / GRAAL_NOTHING_HERE is given.
-    /// TODO(exe): the cost (hero slots +0x104 → +0xf8) and the "clear tile" test (00bcc2b0 / 0098eb30) are not
-    /// traced: the whole day's movement, on a free land tile, as the stock texts describe.
+    /// Cost (0098ec30): hero vf 0xf8(vf 0x104) = the maximum movement of the hero's movement type (+0x130 / +0x134 /
+    /// +0x138, 00b4bc50), refused when the current points (vf 0xf4 = +0x12c) are below it. Clear (00bcc310 → 00bcc2b0,
+    /// then 0098eb30): passability tile kind +8 = 1 (land; not 4, an object's passable tile), +0x10 = 0 (no object
+    /// footprint) and +0xc = 0, and no object of the tile's list covering it. TODO(exe): what +0xc holds is not
+    /// identified (not tested here); 0098eb30's list is taken as the objects on the tile.
     /// </summary>
     string? DoDig(DigCmd c)
     {
@@ -74,7 +77,9 @@ public sealed partial class Adventure
         if (h.InBoat) return "GRAAL_TRY_ON_CLEAR";
         if (S.Holes.Contains(h.Pos)) { Emit(new ObjectVisited(h.Id, -1, "dig:GRAAL_HAS_HOLE")); return null; }
         var f = Map.Floor(h.Pos.Floor);
-        if (f == null || f.IsWater(h.Pos.X, h.Pos.Y) || ObjectsAt(h.Pos).Any(o => o.Kind != ObjectKind.Hero) || TownAt(h.Pos) != null)
+        if (f == null || f.IsWater(h.Pos.X, h.Pos.Y) || f.IsBlocked(h.Pos.X, h.Pos.Y)
+            || (f.Kind.Length == f.Width * f.Height && f.Kind[h.Pos.Y * f.Width + h.Pos.X] != TileKind.Land)
+            || ObjectsAt(h.Pos).Any(o => o.Kind != ObjectKind.Hero) || TownAt(h.Pos) != null)
             return "GRAAL_TRY_ON_CLEAR";
         if (h.MovePoints < h.MaxMovePoints || h.MaxMovePoints <= 0) return "GRAAL_NOT_ENOUGH_MOVEMENT";
         h.MovePoints = 0;

@@ -134,7 +134,30 @@ public sealed partial class AdventureDb
     /// <summary>Shared object descriptors (random towns and dwellings swap theirs at game start).</summary>
     public SharedCatalog Catalog => _catalog ??= new SharedCatalog(_xdb ?? throw new InvalidOperationException("no archives"));
 
-    Dictionary<string, List<string>>? _dwellingGroups;
+    Dictionary<string, List<string>>? _sharedGroups;
+
+    /// <summary>
+    /// RPGRoot SharedGroups (looked up by ID through 00bcb710) → the group's shared paths in link order; empty when
+    /// the group is missing.
+    /// </summary>
+    public IReadOnlyList<string> SharedGroup(string id)
+    {
+        if (_sharedGroups == null)
+        {
+            _sharedGroups = new(StringComparer.Ordinal);
+            if (_xdb != null && _xdb.FileSystem.Exists("GameMechanics/RPGStats/RPGRoot.xdb"))
+                foreach (var item in _xdb.Load("GameMechanics/RPGStats/RPGRoot.xdb").Root?.Element("SharedGroups")?.Elements("Item") ?? Enumerable.Empty<XElement>())
+                {
+                    var gp = XdbRef.Parse(item.Href("Group"), "GameMechanics/RPGStats/RPGRoot.xdb").Path;
+                    var links = new List<string>();
+                    if (gp.Length > 0 && _xdb.FileSystem.Exists(gp))
+                        foreach (var l in _xdb.Load(gp).Root?.Element("links")?.Elements("Item") ?? Enumerable.Empty<XElement>())
+                            links.Add(XdbRef.Parse((string?)l.Attribute("href"), gp).Path);
+                    _sharedGroups[item.Str("ID")] = links;
+                }
+        }
+        return _sharedGroups.GetValueOrDefault(id) ?? new List<string>();
+    }
 
     /// <summary>
     /// RPGRoot SharedGroups DWELLINGS_&lt;race&gt; (names 0041a890: HAVEN, PRESERVE, ACADEMY, DUNGEON, NECROPOLIS, INFERNO,
@@ -142,24 +165,8 @@ public sealed partial class AdventureDb
     /// </summary>
     public IReadOnlyList<string> DwellingGroup(string townType)
     {
-        if (_dwellingGroups == null)
-        {
-            _dwellingGroups = new(StringComparer.Ordinal);
-            if (_xdb != null && _xdb.FileSystem.Exists("GameMechanics/RPGStats/RPGRoot.xdb"))
-                foreach (var item in _xdb.Load("GameMechanics/RPGStats/RPGRoot.xdb").Root?.Element("SharedGroups")?.Elements("Item") ?? Enumerable.Empty<XElement>())
-                {
-                    var id = item.Str("ID");
-                    if (!id.StartsWith("DWELLINGS_", StringComparison.Ordinal)) continue;
-                    var gp = XdbRef.Parse(item.Href("Group"), "GameMechanics/RPGStats/RPGRoot.xdb").Path;
-                    var links = new List<string>();
-                    if (gp.Length > 0 && _xdb.FileSystem.Exists(gp))
-                        foreach (var l in _xdb.Load(gp).Root?.Element("links")?.Elements("Item") ?? Enumerable.Empty<XElement>())
-                            links.Add(XdbRef.Parse((string?)l.Attribute("href"), gp).Path);
-                    _dwellingGroups[id["DWELLINGS_".Length..]] = links;
-                }
-        }
         var key = townType switch { "TOWN_HEAVEN" => "HAVEN", "TOWN_NECROMANCY" => "NECROPOLIS", _ => townType.Replace("TOWN_", "") };
-        return _dwellingGroups.GetValueOrDefault(key) ?? new List<string>();
+        return SharedGroup("DWELLINGS_" + key);
     }
     readonly Dictionary<string, string?> _townBonus = new(StringComparer.OrdinalIgnoreCase);
 

@@ -191,7 +191,7 @@ public static class MapHash
         void Add(string s) { foreach (var c in s) { h ^= c; h *= 1099511628211UL; } h ^= 0xff; h *= 1099511628211UL; }
         void AddI(int v) { for (int i = 0; i < 4; i++) { h ^= (byte)(v >> (8 * i)); h *= 1099511628211UL; } }
         Add(m.Id); AddI(m.TilesX); AddI(m.TilesY);
-        foreach (var o in m.Objects) { AddI(o.Index); AddI((int)o.Kind); AddI(o.Pos.X); AddI(o.Pos.Y); AddI(o.Pos.Floor); Add(o.SharedPath); }
+        foreach (var o in m.Objects) { AddI(o.Index); AddI((int)o.Kind); AddI(o.Pos.X); AddI(o.Pos.Y); AddI(o.Pos.Floor); Add(o.PlacedSharedPath ?? o.SharedPath); }   // as placed: random objects swap theirs at game start
         foreach (var f in m.Floors)
         {
             if (f == null) { AddI(-1); continue; }

@@ -406,6 +406,7 @@ public sealed partial class Adventure
     /// </summary>
     void RollTreasure(MapObject o)
     {
+        ResolveTreasure(o);
         var os = S.Obj(o.Index);
         int min = o.Shared.MinResource, max = Math.Max(o.Shared.MinResource, o.Shared.MaxResource);
         int Roll() => o.TreasureCustom ? o.TreasureAmount : S.Rng.Range(min, max);
@@ -419,18 +420,8 @@ public sealed partial class Adventure
             case "TREASURE_GEMS": os.ResourceKind = Purse.Gem; os.Amount = Roll(); break;
             // 00a82a64: the amount (data 5..10, maps' custom amounts 1..60) is in hundreds.
             case "TREASURE_GOLD": os.ResourceKind = Purse.Gold; os.Amount = Roll() * 100; break;
-            case "TREASURE_RANDOM":
-            {
-                // TODO(exe): how TREASURE_RANDOM is resolved is not traced (the roller has no case for it).
-                os.ResourceKind = S.Rng.Next(7);
-                os.Amount = os.ResourceKind switch
-                {
-                    Purse.Gold => S.Rng.Range(5, 10) * 100,
-                    Purse.Wood or Purse.Ore => S.Rng.Range(4, 7),
-                    _ => S.Rng.Range(2, 4),
-                };
-                break;
-            }
+            // TREASURE_RANDOM became one of the TREASURE_ANY shareds at creation (ResolveTreasure, 0041b350); one
+            // still random here (no group in the data) holds nothing.
             case "TREASURE_CAMPFIRE":
             {
                 // 00a82a75: r in MinResource..MaxResource (data 24..36), custom amount ignored (00a8289d);
