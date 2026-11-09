@@ -144,15 +144,17 @@ public class TownBuildRulesTests(Fixture f)
     public void MoonWeekIncomeFactorsFollowTheExeHelpers()
     {
         // 00bcda40 (gold: 0x3a ×2), 00bcda60 / 00bcda80 (wood, ore: 0x3c ×2), 00bcdaa0 (crystal, gems 0x38; mercury,
-        // sulfur 0x39 ×2), every one ×3 for 0x37; no case for 0x3b WEEK_OF_FESTIVALS. Callers 00cd43f0 (town) / 00457940 (mine).
+        // sulfur 0x39 ×2), every one ×3 for 0x37. Callers 00cd43f0 (town) / 00b08b20 (mine). WEEK_OF_FESTIVALS (0x3b) is not
+        // a factor: the income rebuild 0098ef10 halves each flagged object's purse (00bcd9a0 → 009d0e90(2), integer).
         var (g, t) = Town();
         t.Built["TB_TOWN_HALL"] = 1;
         var p = g.S.Players.First(x => x.Index == t.Owner);
+        foreach (var h in g.S.Heroes.Where(h => h.Owner == p.Index)) h.Alive = false;
         g.S.MoonWeek = "WEEK_OF_NOTHING";
         var plain = g.ExpectedIncome(p);
         Assert.True(plain[Purse.Gold] > 0);
         g.S.MoonWeek = "WEEK_OF_FESTIVALS";
-        Assert.Equal(plain.R, g.ExpectedIncome(p).R);
+        Assert.Equal(g.S.Towns.Where(x => x.Owner == p.Index).Sum(x => g.TownIncome(x)[Purse.Gold] / 2), g.ExpectedIncome(p)[Purse.Gold]);
         g.S.MoonWeek = "WEEK_OF_GOLD";
         Assert.Equal(plain[Purse.Gold] * 2, g.ExpectedIncome(p)[Purse.Gold]);
         g.S.MoonWeek = "WEEK_OF_CONJUNCTION";

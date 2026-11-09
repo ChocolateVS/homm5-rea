@@ -66,10 +66,13 @@ public sealed partial class Adventure
     /// <summary>Daily gold of a town's hall (Town Info "Income").</summary>
     public static int TownGoldIncome(TownState t) => t.Level("TB_TOWN_HALL") switch { 1 => 500, 2 => 1000, 3 => 2000, >= 4 => 4000, _ => 0 };
 
-    /// <summary>The daily income the player can expect (Kingdom Overview): as paid, minus the Dwarven Warren's random resource.</summary>
+    /// <summary>The daily income the player can expect (Kingdom Overview): as paid, minus the Dwarven Warren's and the Horn of Plenty's random resource.</summary>
     public Purse ExpectedIncome(PlayerState p) => Income(p, display: true);
 
-    /// <summary>Gold from town halls, resources from silos and mines (fan manual p.224, p.269).</summary>
+    /// <summary>
+    /// The new day's payment (world new day 009949d0): the income is rebuilt by 0098ef10 after the moon roll, then
+    /// every player's purse (vf 0xd8) gains the stored income (vf 0xe8, CPlayer +0x58).
+    /// </summary>
     void DailyIncome(PlayerState p)
     {
         var inc = Income(p, display: false);
@@ -80,14 +83,27 @@ public sealed partial class Adventure
         }
     }
 
+    /// <summary>
+    /// 0098ef10: the player's income = Σ hero income (player vf 0xc0 heroes, hero vf 0x14c = 00b4e100, not halved) +
+    /// Σ flagged-object income (IAdvMapFlagged slot 0x18: town 00cd43f0, mine 00b08b20, abandoned mine 008b54a0,
+    /// Dwarven Warren 00457940), each object's purse halved component-wise in WEEK_OF_FESTIVALS (00bcd9a0 → 009d0e90(2)
+    /// → 009d0e00, integer division); negative parts are clamped to 0 (009d0770). The moon factors are applied
+    /// per part inside each income function (<see cref="MoonFactor"/>).
+    /// </summary>
     Purse Income(PlayerState p, bool display)
     {
         var inc = new Purse();
-        foreach (var t in S.Towns.Where(t => t.Owner == p.Index))
+        string week = S.MoonWeek ?? "";
+        void AddObject(Purse part)
         {
-            var ti = TownIncome(t);
-            for (int i = 0; i < 7; i++) inc[i] += ti[i];
+            for (int i = 0; i < 7; i++)
+            {
+                int v = MoonFactor(i, part[i], week);
+                if (week == "WEEK_OF_FESTIVALS") v /= 2;
+                inc[i] += v;
+            }
         }
+        foreach (var t in S.Towns.Where(t => t.Owner == p.Index)) AddObject(TownIncome(t));
         foreach (var (idx, os) in S.Objects)
         {
             if (os.Owner != p.Index || os.Removed) continue;
@@ -95,34 +111,100 @@ public sealed partial class Adventure
             switch (o.Kind)
             {
                 case ObjectKind.Mine:
+                {
+                    // 00b08b20: SAdvMapMineShared +0xec 1 mercury 1, 2 crystal 1, 3 gems 1, 4 gold 1000, 5 ore 2,
+                    // 6 wood 2, 7 sulfur 1 (jump table 00b08d18).
                     var (kind, amount) = MineYield(o.Shared.Type);
                     if (kind >= 0 && MineIncomeHook != null && !display) amount = MineIncomeHook(idx, p.Index, kind, amount);
-                    if (kind >= 0) inc[kind] += amount;
+                    if (kind < 0) break;
+                    var part = new Purse();
+                    part[kind] = amount;
+                    AddObject(part);
                     break;
+                }
                 case ObjectKind.DwarvenWarren:
-                    // One random resource excluding wood and gold (p.269).
-                    if (!display) inc[Purse.Ore + 1 + S.Rng.Next(5)] += 1;
+                {
+                    // 00457940: one unit of the resource held at +0x60 of the flagged part (1..5: ore, mercury,
+                    // crystal, sulfur, gems; 7 = none), moon factors by 00bcdaa0. 00457830 draws it 008e7840 over
+                    // [1, 5] while the warren has an owner (7 otherwise).
+                    if (display) break;
+                    var part = new Purse();
+                    part[Purse.Ore + S.Rng.Next(5)] = 1;
+                    AddObject(part);
                     break;
+                }
             }
         }
-        // Moon weeks: the town income 00cd43f0 passes every part (hall, capital, building 0xe, taxpayers, ability 0x18,
-        // silo / extra resources via 00cd31b0 and 00bcdaa0) and the mine income 00457940 its yield through the helpers
-        // 00bcda40 (gold: 0x3a WEEK_OF_GOLD ×2), 00bcda60 / 00bcda80 (wood / ore: 0x3c WEEK_OF_HARVEST ×2) and
-        // 00bcdaa0 (crystal / gems 0x38 WEEK_OF_JEWELS, mercury / sulfur 0x39 WEEK_OF_ALCHEMY ×2), all ×3 for 0x37
-        // WEEK_OF_CONJUNCTION; integer products, so the sum can be scaled. None of them has a case for 0x3b
-        // WEEK_OF_FESTIVALS (our former halving came from the fan manual).
-        switch (S.MoonWeek)
+        foreach (var h in S.Heroes.Where(h => h.Alive && h.Owner == p.Index))
         {
-            case "WEEK_OF_GOLD": inc[Purse.Gold] *= 2; break;
-            case "WEEK_OF_HARVEST": inc[Purse.Wood] *= 2; inc[Purse.Ore] *= 2; break;
-            case "WEEK_OF_JEWELS": inc[Purse.Gem] *= 2; inc[Purse.Crystal] *= 2; break;
-            case "WEEK_OF_ALCHEMY": inc[Purse.Mercury] *= 2; inc[Purse.Sulfur] *= 2; break;
-            case "WEEK_OF_CONJUNCTION": for (int i = 0; i < 7; i++) inc[i] *= 3; break;
+            var hi = HeroIncome(h, display);
+            for (int i = 0; i < 7; i++) inc[i] += hi[i];
         }
+        for (int i = 0; i < 7; i++) if (inc[i] < 0) inc[i] = 0;
         return inc;
     }
 
-    /// <summary>Daily yield of a mine type (p.269).</summary>
+    /// <summary>
+    /// The moon week factor of one income part: 00bcda40 gold (0x3a WEEK_OF_GOLD ×2), 00bcda60 / 00bcda80 wood / ore
+    /// (0x3c WEEK_OF_HARVEST ×2), 00bcd9c0 / 00bcd9e0 crystal / gems (0x38 WEEK_OF_JEWELS ×2), 00bcda20 / 00bcda00
+    /// mercury / sulfur (0x39 WEEK_OF_ALCHEMY ×2), 00bcdaa0 all of them; every one ×3 in 0x37 WEEK_OF_CONJUNCTION.
+    /// </summary>
+    public static int MoonFactor(int resource, int amount, string? week)
+    {
+        if (week == "WEEK_OF_CONJUNCTION") return amount * 3;
+        string doubled = resource switch
+        {
+            Purse.Gold => "WEEK_OF_GOLD",
+            Purse.Wood or Purse.Ore => "WEEK_OF_HARVEST",
+            Purse.Crystal or Purse.Gem => "WEEK_OF_JEWELS",
+            _ => "WEEK_OF_ALCHEMY",
+        };
+        return week == doubled ? amount * 2 : amount;
+    }
+
+    /// <summary>
+    /// A hero's daily income, CHero 00b4e100 (hero vf 0x14c): HERO_SPEC_SUZERAIN (spec 1, hero +0x8c via vf 0x190)
+    /// 250 gold; Estates (skill 0x1d) 250 gold, ×2 with the Crown of Leadership (vf 0x310); per worn
+    /// ENDLESS_SACK_OF_GOLD (artifact 0x1c, 00ca6680) 1000 gold and per ENDLESS_BAG_OF_GOLD (0x1d) 250 gold; with
+    /// ARTIFACT_HORN_OF_PLENTY (0x5c) worn, by the day counter (world vf 0xa8) % 7 (jump table 00b4e434) wood 2..4, ore
+    /// 2..4, sulfur 1..2, gems 1..2, mercury 1..2, crystal 1..2 or gold 500..750: (rand[min·1000, max·1000] + 382) / 1000,
+    /// gold rounded down to 25, no moon factor; gold per creature with ABILITY_TAXPAYER (0x46, 00b61ba0) in the hero's
+    /// army, ×2 for HERO_SPEC_PEASANTS (spec 4). Gold parts go through 00bcda40; heroes are not halved by festivals.
+    /// </summary>
+    public Purse HeroIncome(HeroState h, bool display = true)
+    {
+        var inc = new Purse();
+        string week = S.MoonWeek ?? "";
+        int Gold(int v) => MoonFactor(Purse.Gold, v, week);
+        if (h.Specialization == "HERO_SPEC_SUZERAIN") inc[Purse.Gold] += Gold(250);
+        if (h.HasPerk("HERO_SKILL_ESTATES")) inc[Purse.Gold] += Gold(250) * (h.HasArtifact("ARTIFACT_CROWN_OF_LEADER") ? 2 : 1);
+        inc[Purse.Gold] += Gold(1000 * h.Artifacts.Count(a => a == "ENDLESS_SACK_OF_GOLD"))
+                         + Gold(250 * h.Artifacts.Count(a => a == "ENDLESS_BAG_OF_GOLD"));
+        if (!display && h.HasArtifact("ARTIFACT_HORN_OF_PLENTY"))
+        {
+            var (lo, hi, res, step) = ((S.Day - 1) % 7) switch
+            {
+                0 => (2, 4, Purse.Wood, 1),
+                1 => (2, 4, Purse.Ore, 1),
+                2 => (1, 2, Purse.Sulfur, 1),
+                3 => (1, 2, Purse.Gem, 1),
+                4 => (1, 2, Purse.Mercury, 1),
+                5 => (1, 2, Purse.Crystal, 1),
+                _ => (500, 750, Purse.Gold, 25),
+            };
+            int v = (lo * 1000 + S.Rng.Next((hi - lo) * 1000 + 1) + 0x17e) / 1000;
+            if (step > 1) v -= v % step;
+            inc[res] += v;
+        }
+        int tax = 0;
+        foreach (var s in h.Army)
+            if (s is { Count: > 0 } && Core.Creatures.TryGetValue(s.Creature, out var cd) && cd.Has("ABILITY_TAXPAYER"))
+                tax += s.Count * (h.Specialization == "HERO_SPEC_PEASANTS" ? 2 : 1);
+        inc[Purse.Gold] += Gold(tax);
+        return inc;
+    }
+
+    /// <summary>Daily yield of a mine type (00b08b20).</summary>
     public static (int Kind, int Amount) MineYield(string type) => type switch
     {
         "BUILDING_SAWMILL" => (Purse.Wood, 2),
