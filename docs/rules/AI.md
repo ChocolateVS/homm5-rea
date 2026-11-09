@@ -45,7 +45,7 @@ Per-decision ledger with addresses and status: `docs/rules/AUDIT_AI.md`, section
   spells + shots (FUN_008d6850 → FUN_008d3950) only; otherwise FUN_008d68c0: spells, guard friendly shooters (FUN_008d58c0) and
   block enemy shooters (FUN_008d4500) while the enemy out-shoots us, attacks from the ring cells FUN_00b3d010 sorted by path
   cost (FUN_008d4330 → FUN_008d3c40; ConsiderOnlyShortestPathToEnemy keeps the first per enemy), and the approach (FUN_008d5b90,
-  same on the whole-path map) only when nothing else was added; then invisible enemies (FUN_008d4f70) and FUN_008d4ce0.
+  same on the whole-path map, planned by FUN_00c540c0 → FUN_00c536f0: Turns, stop cell by danger FUN_00c53310) only when nothing else was added; then invisible enemies (FUN_008d4f70) and FUN_008d4ce0.
   "Too weak" (FUN_00a2f430) restricts spells to damage spells and a list (FUN_008d0bd0); empty → switches cleared, rerun.
 * **Exclusions** (FUN_008d1cb0): type 1 dropped when the start is better, type 2 also when own HP drops ("…by start health
   value"), spells leaving the actor less mana than the limit FUN_00a2f280 (`ExeManaLimit`); the survivors are shuffled with the combat RNG (not ported)

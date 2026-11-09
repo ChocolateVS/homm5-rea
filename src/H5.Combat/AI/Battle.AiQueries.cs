@@ -52,4 +52,69 @@ public sealed partial class Battle
         }
         return best;
     }
+
+    /// <summary>
+    /// The combat AI's path maps (FUN_008d0720(map, own, enemy, flyerAsWalker) → FUN_00c52e20 → FUN_00b3fac0 / FUN_00b5ebd0,
+    /// then FUN_00b5f0d0 from the actor's cell): the obstacle grid without stacks (FUN_00b3fac0 with its unit flag set), plus
+    /// the stacks of the actor's own army (FUN_00b3cf00(actor vf 0xc)) when <paramref name="own"/> and of the other army
+    /// (vf 0x10) when <paramref name="enemy"/>, minus the actor (FUN_00b3cf30); no budget. A flyer (vf 0x190) searches an
+    /// empty board (FUN_00b3fac0's flyer flag) unless <paramref name="flyerAsWalker"/>. The search is the walker search of
+    /// <see cref="MoveSearch"/> (steps 2 / 3, FIFO cost buckets, MoveDirs order, strictly cheaper parents).
+    /// Whole-path map think +0xfc: (own false, enemy true, flyerAsWalker false); think +0xe4: (true, true, true).
+    /// </summary>
+    internal (Dictionary<Cell, int> Dist, Dictionary<Cell, Cell> Prev) AiPathMap(Unit u, bool own, bool enemy, bool flyerAsWalker)
+    {
+        bool flyer = u.Flying && !flyerAsWalker;
+        bool Blocked(Cell c)
+        {
+            if (!S.InBounds(c)) return true;
+            if (flyer) return false;
+            if (S.Obstacles.Contains(c) || GateBlocks(c, u)) return true;
+            foreach (var o in S.Units)
+                if (o.Id != u.Id && o.Alive && !o.IsWarMachine && (o.Side == u.Side ? own : enemy) && o.Occupies(c)) return true;
+            return false;
+        }
+        bool FitsHere(Cell p)
+        {
+            foreach (var c in u.CellsAt(p)) if (Blocked(c)) return false;
+            return true;
+        }
+        var dist = new Dictionary<Cell, int> { [u.Pos] = 0 };
+        var prev = new Dictionary<Cell, Cell>();
+        var buckets = new SortedDictionary<int, Queue<Cell>> { [0] = new Queue<Cell>(new[] { u.Pos }) };
+        while (buckets.Count > 0)
+        {
+            var first = buckets.First();
+            var cur = first.Value.Dequeue();
+            if (first.Value.Count == 0) buckets.Remove(first.Key);
+            int cost = first.Key;
+            if (cost > dist[cur]) continue;
+            foreach (var d in MoveDirs)
+            {
+                var n = cur + d;
+                int nc = cost + (d.X != 0 && d.Y != 0 ? MoveDiag : MoveOrth);
+                if (dist.TryGetValue(n, out var old) && old <= nc) continue;
+                if (!FitsHere(n)) continue;
+                dist[n] = nc;
+                prev[n] = cur;
+                if (!buckets.TryGetValue(nc, out var q)) buckets[nc] = q = new Queue<Cell>();
+                q.Enqueue(n);
+            }
+        }
+        return (dist, prev);
+    }
+
+    /// <summary>
+    /// FUN_00a5c5a0(shooter, cell, size) as the AI's danger score uses it: 1.0 for a shooter that is not a creature (vf 0 ≠ 1,
+    /// a war machine); otherwise the engine's range / wall penalty (<see cref="RangePenaltyFactor"/>) against
+    /// <paramref name="target"/> standing at <paramref name="cell"/>.
+    /// </summary>
+    internal double AiRangeFactorAt(Unit shooter, Unit target, Cell cell)
+    {
+        if (shooter.IsWarMachine) return 1.0;
+        var keep = target.Pos;
+        target.Pos = cell;
+        try { return RangePenaltyFactor(shooter, target); }
+        finally { target.Pos = keep; }
+    }
 }

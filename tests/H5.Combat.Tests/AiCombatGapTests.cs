@@ -355,4 +355,50 @@ public class AiCombatGapTests(GameDataFixture f)
         Assert.Equal(0, b.AiSpellPotential(u, null));
         Assert.False(OriginalBattleAI.AllRanged(b, 0, false));
     }
+
+    [Fact]
+    public void ApproachPlannerCutsAtOwnStacksAndCountsTurns()   // FUN_008d0720(0xfc, 0, 1, 0), FUN_00c536f0 modes 0 / 1 / 2
+    {
+        var s = BattleSetup.Create(f.Db,
+            new ArmySetup { Army = { new ArmySlot("CREATURE_FOOTMAN", 10), new ArmySlot("CREATURE_PEASANT", 10) } },
+            new ArmySetup { Army = { new ArmySlot("CREATURE_PEASANT", 10) } },
+            1, obstacles: Array.Empty<Cell>(), skipTactics: true);
+        var b = new Battle(f.Db, s);
+        var u = s.Units.First(x => x.CreatureId == "CREATURE_FOOTMAN");
+        var own = s.Units.First(x => x.Side == 0 && x.Id != u.Id);
+        var enemy = s.Units.First(x => x.Side == 1);
+        u.Pos = new Cell(0, 5); own.Pos = new Cell(3, 5); enemy.Pos = new Cell(s.Width - 1, 0);
+        // The whole-path map ignores our own stacks: the straight line passes through (3, 5).
+        var map = OriginalBattleAI.WholePath(b, u);
+        Assert.Equal(6, map.Dist[new Cell(3, 5)]);
+        Assert.Equal(20, map.Dist[new Cell(10, 5)]);
+        int B = 2 * b.SpeedOf(u);
+        Assert.Equal(8, B);
+        // Mode 0 (this turn only) fails beyond B; mode 2 keeps the whole path (Turns (B + cost − 1) / B − 1 = 2).
+        Assert.Null(OriginalBattleAI.PlanMove(b, u, new Cell(10, 5), 0, map));
+        Assert.Equal(new OriginalBattleAI.MovePlan(new Cell(2, 5), 2), OriginalBattleAI.PlanMove(b, u, new Cell(10, 5), 2, map));
+        // Mode 1: stop cells path[e..k] = (2,5) (3,5) (4,5) (the pieces of B from the end start at 2; k = 4 cells within B),
+        // no danger there → the later of the ties (4, 5); then the cut before our own stack at (3, 5).
+        Assert.Equal(new OriginalBattleAI.MovePlan(new Cell(2, 5), 2), OriginalBattleAI.PlanMove(b, u, new Cell(10, 5), 1, map));
+        own.Pos = new Cell(0, 0);
+        Assert.Equal(new OriginalBattleAI.MovePlan(new Cell(4, 5), 2), OriginalBattleAI.PlanMove(b, u, new Cell(10, 5), 1, map));
+        // Within B: the whole path, no turns; the own cell fails.
+        Assert.Equal(new OriginalBattleAI.MovePlan(new Cell(4, 5), 0), OriginalBattleAI.PlanMove(b, u, new Cell(4, 5), 0, map));
+        Assert.Null(OriginalBattleAI.PlanMove(b, u, u.Pos, 1, map));
+    }
+
+    [Fact]
+    public void ApproachStopsWhereTheEnemyCannotStrikeThisTurn()   // FUN_00c53640 → FUN_00c53310 (walker branch)
+    {
+        var b = f.Duel("CREATURE_FOOTMAN", 10, "CREATURE_PEASANT", 10, 1, new Cell(0, 5), new Cell(0, 0));
+        var u = b.State.Units[0];
+        var t = b.State.Units[1];
+        int sp = b.SpeedOf(t);
+        t.Pos = new Cell(5 + sp, 5);   // reaches (5, 5) next to (4, 5), not (4, 5)'s left neighbour cells around (3, 5)
+        var cells = new List<Cell> { new(2, 5), new(3, 5), new(4, 5) };
+        var (_, max) = b.DamageRangeOf(t);
+        int d = (int)((float)t.Count * (float)max);
+        Assert.Equal(new[] { 0, 0, d }, OriginalBattleAI.Danger(b, u, cells));
+        Assert.Equal(new Cell(3, 5), OriginalBattleAI.StopCell(b, u, cells));   // lowest score, the later one on ties
+    }
 }
