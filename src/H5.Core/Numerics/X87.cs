@@ -1,11 +1,11 @@
-namespace H5.Rmg;
+namespace H5.Core.Numerics;
 
 /// <summary>
 /// The x87 control word the game runs under: 0x009dc690 calls _control87(0xa031f, 0xffffffff) — every exception
 /// masked, _PC_24 (24-bit mantissa) and _RC_CHOP (round toward zero); 0x00d10bf0, 0x00838e10, 0x00c9fa80, 0x0041ecd0,
-/// 0x007c98e0, 0x007ca990, 0x007e4420 and 0x007c9810 call it again. Every x87 result of the generator is therefore
+/// 0x007c98e0, 0x007ca990, 0x007e4420 and 0x007c9810 call it again. Every x87 result of the game (adventure, combat, AI, RMG) is
 /// chopped to a float, and a plain FISTP (Ghidra prints ROUND) truncates like the C casts that set chop themselves.
-/// Evidence beyond the call: the road builder's sums (0x0091aee0) reproduce the nine stock RMG maps object for object
+/// Evidence beyond the call: the RMG road builder's sums (0x0091aee0) reproduce the nine stock RMG maps object for object
 /// only this way.
 /// </summary>
 public static class X87

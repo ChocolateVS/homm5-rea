@@ -1,3 +1,5 @@
+using H5.Core.Numerics;
+
 namespace H5.Rmg;
 
 public sealed partial class RmgGenerator

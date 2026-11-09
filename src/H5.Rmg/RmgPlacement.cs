@@ -1,5 +1,7 @@
 using H5.Adventure.Map;
 
+using H5.Core.Numerics;
+
 namespace H5.Rmg;
 
 /// <summary>An object placed by the generator, in generator coordinates.</summary>

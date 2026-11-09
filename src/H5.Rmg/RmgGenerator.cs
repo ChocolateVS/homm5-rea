@@ -1,3 +1,5 @@
+using H5.Core.Numerics;
+
 namespace H5.Rmg;
 
 /// <summary>Generation options as chosen on the original RMG screen (sRMGProps.InitialParams).</summary>
