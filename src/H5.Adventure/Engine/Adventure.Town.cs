@@ -510,15 +510,16 @@ public sealed partial class Adventure
     /// <summary>Moves or splits creatures between two armies that are at the same place.</summary>
     string? DoTransfer(TransferStackCmd c)
     {
-        Stack?[]? Army(int hero, int town, out Tile? where)
+        Stack?[]? Army(int hero, int town, int caravan, out Tile? where)
         {
             where = null;
+            if (caravan >= 0) { if (Caravan(caravan) is { } car && car.Owner == Current.Index) { where = car.Pos; return car.Army; } return null; }
             if (hero >= 0 && S.Hero(hero) is { } h && h.Owner == Current.Index) { where = h.Pos; return h.Army; }
             if (town >= 0 && S.Town(town) is { } t && t.Owner == Current.Index) { where = EntranceOf(t); return t.Garrison; }
             return BuildingArmy(town, out where);
         }
-        var from = Army(c.FromHero, c.FromTown, out var wFrom);
-        var to = Army(c.ToHero, c.ToTown, out var wTo);
+        var from = Army(c.FromHero, c.FromTown, c.FromCaravan, out var wFrom);
+        var to = Army(c.ToHero, c.ToTown, c.ToCaravan, out var wTo);
         if (from == null || to == null) return "invalid armies";
         if (wFrom is { } a && wTo is { } b && Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y)) > 1) return "armies are not together";
         if (c.FromSlot is < 0 or >= State.Army.Slots || c.ToSlot is < 0 or >= State.Army.Slots) return "invalid slot";
@@ -536,6 +537,12 @@ public sealed partial class Adventure
         if (src.Count == 0) from[c.FromSlot] = null;
         Emit(new ArmyChanged(c.FromHero, c.FromTown));
         Emit(new ArmyChanged(c.ToHero, c.ToTown));
+        foreach (int id in new[] { c.FromCaravan, c.ToCaravan })
+            if (Caravan(id) is { } car)
+            {
+                // An emptied caravan leaves the map (as after its arrival; UNVERIFIED).
+                if (!car.Army.Live().Any()) RemoveCaravan(car, "emptied"); else Emit(new CaravanChanged(car.Id));
+            }
         return null;
     }
 }

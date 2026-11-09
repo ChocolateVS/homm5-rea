@@ -553,7 +553,7 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
     {
         var pb = _g.S.Battle!;
         int atk = _g.S.Heroes.Find(h => h.Id == pb.AttackerHero)?.Owner ?? -1;
-        int def = OwnerOfTarget(pb.DefenderHero, pb.DefenderObject);
+        int def = pb.DefenderCaravan >= 0 ? pb.DefenderCaravanOwner : OwnerOfTarget(pb.DefenderHero, pb.DefenderObject);
         if ((!IsHuman(atk) && !IsHuman(def)) || _set.QuickCombat)
             return (QuickCombat.Resolve(_g, NextSeed(), _battleAi), null);
 
@@ -633,7 +633,7 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
     {
         if (cmd is not ResolveBattleCmd || _runner == null || !_runner.OnWorker || _g.S.Battle == null) return null;
         var pb = _g.S.Battle;
-        if (_set.QuickCombat || (!IsHuman(_g.S.Hero(pb.AttackerHero)?.Owner ?? -1) && !IsHuman(OwnerOfTarget(pb.DefenderHero, pb.DefenderObject)))) return null;
+        if (_set.QuickCombat || (!IsHuman(_g.S.Hero(pb.AttackerHero)?.Owner ?? -1) && !IsHuman(pb.DefenderCaravan >= 0 ? pb.DefenderCaravanOwner : OwnerOfTarget(pb.DefenderHero, pb.DefenderObject)))) return null;
         var (quick, rb) = StartBattle(forAi: true);
         if (quick != null) return null; // nobody human involved: let the AI's own result through
         if (rb!.Net.Finished) { CloseBattle(rb); return null; }

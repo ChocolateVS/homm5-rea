@@ -54,6 +54,7 @@ public sealed partial class Adventure
         foreach (var t in S.Towns) t.BuiltToday = false;
         foreach (var p in S.Players.Where(p => p.Alive)) DailyIncome(p);
         foreach (var h in S.Heroes.Where(h => h.Alive)) ResetHeroDay(h, newWeek);
+        CaravansNewDay();
         CheckEliminations();
     }
 

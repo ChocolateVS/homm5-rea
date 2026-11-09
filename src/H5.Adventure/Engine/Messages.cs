@@ -61,6 +61,11 @@ namespace H5.Adventure.Engine;
 [JsonDerivedType(typeof(CompleteSeerQuestCmd), "complete_seer_quest")]
 [JsonDerivedType(typeof(AcceptSeerQuestCmd), "accept_seer_quest")]
 [JsonDerivedType(typeof(AnswerSphinxCmd), "answer_sphinx")]
+[JsonDerivedType(typeof(BuyToCaravanCmd), "buy_to_caravan")]
+[JsonDerivedType(typeof(MoveToCaravanCmd), "move_to_caravan")]
+[JsonDerivedType(typeof(BuyAllToCaravanCmd), "buy_all_to_caravan")]
+[JsonDerivedType(typeof(BuyMultipleToCaravanCmd), "buy_multiple_to_caravan")]
+[JsonDerivedType(typeof(DismissCaravanCmd), "dismiss_caravan")]
 public abstract record AdvCommand
 {
     /// <summary>Issuing player; the session layer fills it from the connection.</summary>
@@ -98,7 +103,12 @@ public sealed record ResolveBattleCmd(int WinnerSide, List<ArmySlot> AttackerSur
 public sealed record DismissHeroCmd(int HeroId) : AdvCommand;
 public sealed record BuyWarMachineCmd(int TownObject, int HeroId, string Machine) : AdvCommand;
 /// <summary>Move/split creatures between two armies at the same place (hero ↔ hero, hero ↔ town garrison).</summary>
-public sealed record TransferStackCmd(int FromHero, int FromTown, int FromSlot, int ToHero, int ToTown, int ToSlot, int Count) : AdvCommand;
+public sealed record TransferStackCmd(int FromHero, int FromTown, int FromSlot, int ToHero, int ToTown, int ToSlot, int Count) : AdvCommand
+{
+    /// <summary>A caravan of the player as the source / target army (the caravan meet screen, 0043cdb0); -1 = none.</summary>
+    public int FromCaravan { get; init; } = -1;
+    public int ToCaravan { get; init; } = -1;
+}
 /// <summary>Exchanges two whole slots (possibly empty, possibly different creatures) of armies at the same place.</summary>
 public sealed record SwapStacksCmd(int FromHero, int FromTown, int FromSlot, int ToHero, int ToTown, int ToSlot) : AdvCommand;
 /// <summary>Moves a hero into a town's garrison row (Garrison = true) or out to the visiting row.</summary>
@@ -148,6 +158,10 @@ public sealed record SwapWarMachinesCmd(int HeroId, int OtherHero, string Machin
 [JsonDerivedType(typeof(HeroDisembarked), "disembarked")]
 [JsonDerivedType(typeof(BoatMoved), "boat_moved")]
 [JsonDerivedType(typeof(SphinxRiddlePosed), "sphinx_riddle")]
+[JsonDerivedType(typeof(CaravanCreated), "caravan_created")]
+[JsonDerivedType(typeof(CaravanMoved), "caravan_moved")]
+[JsonDerivedType(typeof(CaravanChanged), "caravan_changed")]
+[JsonDerivedType(typeof(CaravanRemoved), "caravan_removed")]
 public abstract record AdvEvent;
 
 public sealed record TurnStarted(int Player, int Day) : AdvEvent;

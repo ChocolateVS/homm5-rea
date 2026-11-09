@@ -480,6 +480,10 @@ public sealed class PendingBattle
     /// <summary>Defender: a hero id, a town object, or a neutral/guarded object.</summary>
     public int DefenderHero = -1;
     public int DefenderObject = -1;
+    /// <summary>A caravan attacked by an enemy hero (CCombatHeroVsCaravanArenaAndOpponentsLoader, 00433440 → 00436570), else -1.</summary>
+    public int DefenderCaravan = -1;
+    /// <summary>The attacked caravan's owner (the caravan may be gone when the battle is read).</summary>
+    public int DefenderCaravanOwner = -1;
     public Tile Where;
     public List<Stack> DefenderArmy = new();
     public bool Siege;
@@ -573,6 +577,9 @@ public sealed class AdvState
     /// <summary>Ships on the map: pre-placed by the editor, built at shipyards, or summoned.</summary>
     public List<BoatState> Boats = new();
     public int NextBoatId = 1;
+    /// <summary>Caravans on the map (TotE, Adventure.Caravans.cs).</summary>
+    public List<CaravanState> Caravans = new();
+    public int NextCaravanId = 1;
 
     [JsonIgnore] public int DayOfWeek => (Day - 1) % 7 + 1;
     [JsonIgnore] public int Week => (Day - 1) / 7 + 1;

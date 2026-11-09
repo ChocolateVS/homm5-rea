@@ -139,6 +139,11 @@ public sealed partial class Adventure
             CompleteSeerQuestCmd c => DoCompleteSeerQuest(c),
             AcceptSeerQuestCmd c => DoAcceptSeerQuest(c),
             AnswerSphinxCmd c => DoAnswerSphinx(c),
+            BuyToCaravanCmd c => DoBuyToCaravan(c),
+            MoveToCaravanCmd c => DoMoveToCaravan(c),
+            BuyAllToCaravanCmd c => DoBuyAllToCaravan(c),
+            BuyMultipleToCaravanCmd c => DoBuyMultipleToCaravan(c),
+            DismissCaravanCmd c => DoDismissCaravan(c),
             _ => "unknown command",
         };
         if (err == null) SyncArtifactInstances();

@@ -100,6 +100,12 @@ public static class ViewFilter
         v.OffMapHeroes = v.OffMapHeroes.Where(h => h.Owner == me).ToList();
         // Ships are seen like map objects: on explored tiles, or carrying an allied hero.
         v.Boats = v.Boats.Where(b => Explored(mine, b.Pos) || (b.HeroId >= 0 && v.Heroes.Any(h => h.Id == b.HeroId && Ally(h.Owner)))).ToList();
+        // Caravans are seen like heroes: allied ones exactly; others only on explored tiles, with banded stacks and
+        // without their route (destination, source, days).
+        v.Caravans = v.Caravans.Where(c => Ally(c.Owner) || Explored(mine, c.Pos)).Select(c => Ally(c.Owner) ? c : new CaravanState
+        {
+            Id = c.Id, Owner = c.Owner, Pos = c.Pos, Dest = new Tile(-1, -1, 0), Army = BandArmy(c.Army), Name = c.Name,
+        }).ToList();
 
         foreach (var t in v.Towns)
         {
@@ -136,6 +142,7 @@ public static class ViewFilter
         {
             int atkOwner = full.Heroes.Find(h => h.Id == b.AttackerHero)?.Owner ?? -1;
             int defOwner = b.DefenderHero >= 0 ? full.Heroes.Find(h => h.Id == b.DefenderHero)?.Owner ?? -1
+                : b.DefenderCaravan >= 0 ? b.DefenderCaravanOwner
                 : b.DefenderObject >= 0 ? full.Town(b.DefenderObject)?.Owner ?? -1 : -1;
             if (atkOwner != me && defOwner != me) v.Battle = null;
         }
@@ -192,12 +199,15 @@ public static class ViewFilter
             full.Heroes.Find(h => h.Id == id) is { } h ? (h.Owner, h.Pos) : heroPos.TryGetValue(id, out var x) ? x : (-1, default);
         bool HeroSeen(int id) { var (o, p) = Hero(id); return Ally(o) || Explored(mine, p); }
         bool HeroMine(int id) => Ally(Hero(id).Owner);
+        bool CaravanMine(int id) => full.Caravans.Find(c => c.Id == id) is { } c && Ally(c.Owner);
+        bool CaravanSeen(int id) => full.Caravans.Find(c => c.Id == id) is { } c && Explored(mine, c.Pos);
         Tile ObjPos(int idx) => idx >= 0 && idx < map.Objects.Count ? map.Objects[idx].Pos : default;
         bool TownMine(int idx) => full.Town(idx) is { } t && Ally(t.Owner);
         bool InBattle()
         {
             if (full.Battle is not { } b) return false;
-            return HeroMine(b.AttackerHero) || (b.DefenderHero >= 0 && HeroMine(b.DefenderHero)) || (b.DefenderObject >= 0 && TownMine(b.DefenderObject));
+            return HeroMine(b.AttackerHero) || (b.DefenderHero >= 0 && HeroMine(b.DefenderHero)) || (b.DefenderObject >= 0 && TownMine(b.DefenderObject))
+                || (b.DefenderCaravan >= 0 && Ally(b.DefenderCaravanOwner));
         }
 
         var outList = new List<AdvEvent>();
@@ -219,7 +229,8 @@ public static class ViewFilter
                 LevelUpOffered lu => HeroMine(lu.HeroId) ? lu : null,
                 SkillLearned sk => HeroMine(sk.HeroId) ? sk : null,
                 BattleRequested br => HeroMine(br.AttackerHero) || (br.DefenderHero >= 0 && HeroMine(br.DefenderHero))
-                    || (br.DefenderObject >= 0 && TownMine(br.DefenderObject)) ? br : null,
+                    || (br.DefenderObject >= 0 && TownMine(br.DefenderObject))
+                    || (full.Battle is { DefenderCaravan: >= 0 } cb && Ally(cb.DefenderCaravanOwner)) ? br : null,
                 BattleResolved => actor == me || InBattle() ? e : null,
                 ChoiceOffered co => HeroMine(co.HeroId) ? co : null,
                 BuildingBuilt bb => TownMine(bb.TownObject) || Explored(mine, ObjPos(bb.TownObject)) ? bb : null,
@@ -232,6 +243,11 @@ public static class ViewFilter
                 BoatMoved bm => Explored(mine, bm.From) || Explored(mine, bm.To) ? bm : null,
                 HeroEmbarked he => HeroSeen(he.HeroId) ? he : null,
                 HeroDisembarked hd => HeroSeen(hd.HeroId) ? hd : null,
+                CaravanCreated cc => Ally(cc.Owner) || Explored(mine, cc.Pos) ? cc : null,
+                CaravanMoved cm when CaravanMine(cm.CaravanId) => cm,
+                CaravanMoved cm => cm.Path.Where(t => Explored(mine, t)).ToList() is { Count: > 0 } seen ? cm with { Path = seen } : null,
+                CaravanChanged ch => CaravanMine(ch.CaravanId) || CaravanSeen(ch.CaravanId) ? ch : null,
+                CaravanRemoved cr2 => CaravanMine(cr2.CaravanId) || Explored(mine, cr2.Pos) ? cr2 : null,
                 H5.Adventure.Engine.Message => actor == me || actor < 0 ? e : null,
                 _ => actor == me ? e : null,
             };

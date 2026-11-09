@@ -50,6 +50,8 @@ public static class HotSeatBattles
         int defenderOwner = -1;
         if (pb.DefenderHero >= 0)
             defenderOwner = s.Heroes.FirstOrDefault(h => h.Id == pb.DefenderHero)?.Owner ?? -1;
+        else if (pb.DefenderCaravan >= 0)
+            defenderOwner = pb.DefenderCaravanOwner;
         else if (pb.DefenderObject >= 0)
             defenderOwner = s.Towns.FirstOrDefault(t => t.Object == pb.DefenderObject)?.Owner ?? -1;
         return Human(defenderOwner) ? new[] { 0, 1 } : new[] { 0 };

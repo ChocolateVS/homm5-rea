@@ -164,6 +164,8 @@ public sealed partial class Adventure
         if (t == target) return true;
         // Ships block the way like heroes do (boarding one is only possible as the final step).
         if (BoatAt(t) != null) return false;
+        // Caravans stand on the map like heroes (CAdvMapCaravan): only the final step may meet or attack one.
+        if (CaravanAt(t) != null) return false;
         // Intermediate tiles must be free of heroes, monsters and visitable objects.
         if (HeroAt(t, h.Id) != null) return false;
         if (AnyObjectAt(t)) return false;
@@ -382,6 +384,11 @@ public sealed partial class Adventure
             {
                 MoveStep(h, walked);
                 return MeetHero(h, other);
+            }
+            if (isTarget && CaravanAt(next) is { } caravan)
+            {
+                MoveStep(h, walked);
+                return MeetCaravan(h, caravan);
             }
             if (isTarget && IsWaterTile(next) != h.InBoat && TryShoreStep(h, next, walked, cost))
                 return null;

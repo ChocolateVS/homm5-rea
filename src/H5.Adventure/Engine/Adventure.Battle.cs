@@ -514,6 +514,7 @@ public sealed partial class Adventure
             SetArmy(defHero.Army, c.DefenderSurvivors);
             ClearBattleBonuses(defHero);
         }
+        if (pb.DefenderCaravan >= 0) ResolveCaravanBattle(pb, attackerWon ? new List<ArmySlot>() : c.DefenderSurvivors);
 
         // Hero kill counters (hero vtable +0x60, read by the Avenger's Guild list check 009a8be0).
         // TODO(exe): the counter's writer (slot 1, FUN_00a844d0) is not traced; counted here as the enemy's losses.

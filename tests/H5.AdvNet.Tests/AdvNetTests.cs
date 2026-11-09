@@ -45,6 +45,36 @@ public class JsonDiffTests
 public class ViewFilterTests
 {
     [Fact]
+    public void ViewsHideOtherPlayersCaravansInTheShroud()
+    {
+        var h = new Harness(2);
+        var full = h.Session.Game.S;
+        var map = h.Session.Map;
+        int p0 = h.Session.MapPlayerOf(0), p1 = h.Session.MapPlayerOf(1);
+        var mine = full.Players.Find(p => p.Index == p0)!;
+        var enemyHero = full.Heroes.First(x => x.Alive && x.Owner == p1);
+        // One caravan of p1 where p0 has not looked, one on a tile p0 explored (its own hero's tile's neighbour).
+        var hidden = new CaravanState { Id = 90, Owner = p1, Pos = enemyHero.Pos, Dest = enemyHero.Pos, Army = { [0] = new Stack("CREATURE_PEASANT", 37) } };
+        var myHero = full.Heroes.First(x => x.Alive && x.Owner == p0);
+        var seenTile = myHero.Pos.Offset(1, 0);
+        var seen = new CaravanState { Id = 91, Owner = p1, Pos = seenTile, Dest = enemyHero.Pos, DaysLeft = 3, Army = { [0] = new Stack("CREATURE_PEASANT", 37) } };
+        var own = new CaravanState { Id = 92, Owner = p0, Pos = enemyHero.Pos.Offset(0, 1), Dest = myHero.Pos, DaysLeft = 2, Army = { [0] = new Stack("CREATURE_PEASANT", 3) } };
+        full.Caravans.AddRange(new[] { hidden, seen, own });
+        Assert.False(ViewFilter.Sees(map, mine, hidden.Pos));
+        Assert.True(ViewFilter.Sees(map, mine, seen.Pos));
+        var v0 = AdvState.Deserialize(ViewFilter.ViewFor(full, map, p0).ToJsonString());
+        Assert.DoesNotContain(v0.Caravans, c => c.Id == 90);
+        var vs = Assert.Single(v0.Caravans, c => c.Id == 91);
+        Assert.Equal(ViewFilter.Band(37), vs.Army[0]!.Count);           // banded like heroes' stacks
+        Assert.True(vs.Dest.X < 0);                                    // route hidden
+        Assert.Equal(-1, vs.DaysLeft);
+        var vo = Assert.Single(v0.Caravans, c => c.Id == 92);           // own caravans are exact anywhere
+        Assert.Equal(3, vo.Army[0]!.Count);
+        Assert.Equal(2, vo.DaysLeft);
+        full.Caravans.Clear();
+    }
+
+    [Fact]
     public void ViewsHideOtherPlayersSecrets()
     {
         var h = new Harness(2);

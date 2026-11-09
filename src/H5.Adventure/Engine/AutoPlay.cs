@@ -39,6 +39,7 @@ public static class QuickCombat
         var st = AI.AdventureAiStats.Load(game.Core);
         double[]? Of(int owner) => owner >= 0 && owner < game.S.Players.Count ? AI.OriginalAdventureAI.MoneyValues(game, st, owner).Values : null;
         int def = pb.DefenderHero >= 0 && game.S.Hero(pb.DefenderHero) is { } dh ? dh.Owner
+            : pb.DefenderCaravan >= 0 ? pb.DefenderCaravanOwner
             : pb.DefenderObject >= 0 && game.S.Town(pb.DefenderObject) is { } t ? t.Owner : -1;
         return new[] { Of(game.S.Hero(pb.AttackerHero)?.Owner ?? -1), Of(def) };
     }
@@ -49,6 +50,7 @@ public static class QuickCombat
         var pb = game.S.Battle!;
         bool Human(int owner) => owner >= 0 && owner < game.S.Players.Count && game.S.Players[owner].Human;
         int def = pb.DefenderHero >= 0 && game.S.Hero(pb.DefenderHero) is { } dh ? dh.Owner
+            : pb.DefenderCaravan >= 0 ? pb.DefenderCaravanOwner
             : pb.DefenderObject >= 0 && game.S.Town(pb.DefenderObject) is { } t ? t.Owner : -1;
         return new[] { game.S.Hero(pb.AttackerHero) is { } a && Human(a.Owner), Human(def) };
     }

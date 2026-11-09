@@ -490,7 +490,8 @@ public sealed partial class AdventureScripting
             World.Settings[$"dwelling_replaced:{o.Index}"] = o.SharedPath + "|" + string.Join(",", creatures);
             Emit("dwelling_replaced", ("object", o.Name), ("town", town), ("creatures", string.Join(",", creatures)));
         });
-        // 0x005e32c0: (name, player 1..8, floor, x, y, destFloor, destX, destY); no caravan engine yet.
+        // 0x005e32c0: (name, player 1..8, floor, x, y, destFloor, destX, destY) → CCreateCustomCaravanCmd 00429250
+        // (Adventure.CreateScriptCaravan: a named caravan of the player at the tile, heading to the destination).
         Reg("CreateCaravan", c =>
         {
             var name = c.Str(0);
@@ -499,7 +500,7 @@ public sealed partial class AdventureScripting
             if (p < 1 || p > 8) throw c.Error($"Incorrect player ID #{p}!");
             var from = new Tile(c.Int(3), c.Int(4), c.Int(2));
             var to = new Tile(c.Int(6), c.Int(7), c.Int(5));
-            World.Settings[$"caravan:{name}"] = $"{p - 1}|{from}|{to}";
+            Game.CreateScriptCaravan(name, p - 1, from, to);
             Emit("caravan_created", ("name", name), ("player", p), ("from", from), ("to", to));
         });
         Reg("GetStandStatesCount", c => c.Return(2));
