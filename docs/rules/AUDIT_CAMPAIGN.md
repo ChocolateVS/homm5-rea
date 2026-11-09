@@ -79,7 +79,7 @@ Screenshots (off-screen, 1920×1080, MMH55 install): `tools/camp/out/campmenu3.p
 | Results screen | `ID_MISSION_RESULTS_SCREEN` (007a0e50); statistics `T_*_DURING_MISSION` / `AT_END_OF_MISSION`, `T_MISSION_TIME` (0079fcf0) | header + mission name only | GAP (statistics) |
 | Win/lose titles | `T_MISSION_END_TITLE_WIN/LOOSE`, `TX_MISSION_WIN/LOSE` (005a5d90) | `MissionEndWin/Loose.txt` | GAP (key → text file mapping not traced) |
 | Restart mission | `restart_mission`, `T_RESTART_MISSION_TITLE/QUESTION` (007581b0) | Restart restarts with the same bonus | GAP (exe restart path not traced) |
-| Next mission / campaign end | after a win the next mission's PWL, after the last the campaign menu | same | GAP (exe flow after results not traced) |
+| Next mission / campaign end | 00693370 (player 1 won): progress vf 0x24, then with a next mission (index + 1 < vf 0x10) the menu goes to state 5 (mission select) — when that mission is available (vf 0x1c) with it selected on the mission submenu (0069b6b0: +0x24 = index) and the handler's +0x50 set; after the last mission the campaign list (state 0xc, with the message flag, see above) or state 7; a lost / not-won mission: state 5 | after a win the next mission's PWL, after the last the campaign menu | GAP (the consumer of +0x50 — whether the PWL of the selected mission opens by itself — and state 7 not traced) |
 | Objectives screen, win/lose conditions, dialog scenes, cutscenes | handled by the adventure/scripting/cinematics workstreams | — | not in this ledger |
 
 ## 2. Save / load
