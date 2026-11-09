@@ -46,6 +46,9 @@ public sealed class GameDatabase
     public AttackPattern? AcidicHydraPattern { get; private set; }
     /// <summary>DefaultStats combat/Creatures/ConjuredPhoenix: the RPGCombatUniqueCreatureStats record (exe RPGStats +0x530).</summary>
     public System.Xml.Linq.XElement? ConjuredPhoenix { get; private set; }
+    /// <summary>DefaultStats combat/HeroSpecializations/Necromancer/AvatarOfDeath_Creature: the RPGCombatUniqueCreatureStats
+    /// record of Avatar of Death (exe RPGStats +0x880, read by FUN_00862320).</summary>
+    public System.Xml.Linq.XElement? AvatarOfDeath { get; private set; }
     public ExperienceTable Experience { get; } = new();
     public List<string> Warnings { get; } = new();
 
@@ -182,10 +185,12 @@ public sealed class GameDatabase
 
     void LoadStatsPatterns()
     {
-        var creatures = _x.Load(StatsFile).Root?.Element("combat")?.Element("Creatures");
+        var combat = _x.Load(StatsFile).Root?.Element("combat");
+        var creatures = combat?.Element("Creatures");
         ChampionChargePattern = ParsePattern(_x.Resolve(creatures?.Element("Haven")?.Element("ChampionChargePattern"), StatsFile));
         AcidicHydraPattern = ParsePattern(_x.Resolve(creatures?.Element("Dungeon")?.Element("AcidicHydraPattern"), StatsFile));
         ConjuredPhoenix = _x.Resolve(creatures?.Element("ConjuredPhoenix"), StatsFile);
+        AvatarOfDeath = _x.Resolve(combat?.Element("HeroSpecializations")?.Element("Necromancer")?.Element("AvatarOfDeath_Creature"), StatsFile);
     }
 
     void LoadSpells()

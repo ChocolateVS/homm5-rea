@@ -58,22 +58,17 @@ public sealed partial class Battle
     /// the stack damage path — and unlinked (vf 0x2a0); the new stack is placed and linked (vf 0x298(0x2b, stack)) unless it
     /// died on arrival. The engine kept the previous stack and added another.
     /// </summary>
-    Unit? SummonLinkedElementals(HeroState? hero, int side, string kind, int count, string by, double atb)
+    Unit? SummonLinkedElementals(HeroState? hero, int side, string kind, int count, string by)
     {
         if (!Db.Creatures.ContainsKey(kind)) return null;
-        var probe = new Unit { Size = Db.Creature(kind).CombatSize };
-        Cell around = side == 0 ? new Cell(1, S.Height / 2) : new Cell(S.Width - 2, S.Height / 2);
-        if (NearestFree(probe, around) is not Cell pos) return null;
+        if (ExeSummonPosition(side, Db.Creature(kind).CombatSize, S.Rng) is not Cell pos) return null;   // FUN_00860f20
         if (hero != null && hero.Links.TryGetValue(LinkSummonElementals, out var oldId))
         {
             if (S.Unit(oldId) is { Alive: true } old)
                 DealDamage(old, old.MaxHealthCache * old.Count, -1, AttackKind.Other, by);
             hero.Links.Remove(LinkSummonElementals);
         }
-        var u = BattleSetup.AddCreature(Db, S, side, kind, count, pos, summoned: true);
-        u.Atb = atb;
-        u.HasMovedFromStart = true;
-        Emit(new UnitSummoned(u.Id, kind, count, side, u.Pos, by));
+        var u = ExeSummonAt(side, kind, count, by, pos);
         if (hero != null && u.Alive) hero.Links[LinkSummonElementals] = u.Id;
         return u;
     }

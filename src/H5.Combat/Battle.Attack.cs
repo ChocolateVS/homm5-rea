@@ -976,6 +976,7 @@ public sealed partial class Battle
         t.Count = 0;
         t.TopHealth = 0;
         Emit(new UnitDied(t.Id));
+        AvatarOfDeathDied(t);   // exe 008a6e20 @ 008a7492 (Battle.Sweep18.cs)
         EndSeductionOf(t);
         foreach (var h in S.Heroes)
             foreach (var key in h.Links.Where(kv => kv.Value == t.Id).Select(kv => kv.Key).ToList())

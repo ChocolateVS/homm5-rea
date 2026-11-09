@@ -238,6 +238,7 @@ MECH = [
     ('Strikes per action (Double Attack, Berserking, Double Shot)', 'FIXED', '008a0f90', 'AuditStrikeTests'),
     ('War machine shots per action', 'FIXED', '00a75bf0', 'WarMachineAuditTests'),
     ('Spell mana cost chain (00a34740: a version costs its base spell × 2, Avatar of Death level · AvatarOfDeath_ManaCostPerLevel, warcry ≤ 0 → 0; the adventure cast shares it)', 'FIXED', '00a34740, 00a33e20, 00a33f70, 009781e0', 'AuditSpecTests, AuditSweep17Tests (combat_sweep_17.md)'),
+    ('Spell summons: position FUN_00860f20 (the first column from the edge of the caster army with a free anchor, a random row) and the arrival ATB (battle RNG [0, 0.25), base ctor 00a73e70)', 'FIXED', '00860f20, 00b3fac0, 00c56820, 00a73e70', 'AuditSweep18Tests (combat_sweep_18.md)'),
     ('Creature dynamic abilities (HasAbility override)', 'FIXED', '008a34c0', 'AuditSpecTests'),
     ('Stack death summons (Master of Elements, Soulhunter)', 'FIXED', '00a61310', 'AuditSpecTests2'),
     ('Terrain elementals', 'FIXED', '00861120', 'AuditSpecTests2'),

@@ -107,17 +107,14 @@ public sealed partial class Battle
         if (!Db.Creatures.ContainsKey(proto)) return;
         Unit? Place(int s, HeroState? linkTo)
         {
-            var probe = new Unit { Size = Db.Creature(proto).CombatSize };
-            Cell around = s == 0 ? new Cell(1, S.Height / 2) : new Cell(S.Width - 2, S.Height / 2);
-            if (NearestFree(probe, around) is null) return null;          // FUN_00860f20 first: no place, no effect
+            if (ExeSummonPosition(s, Db.Creature(proto).CombatSize, S.Rng) is not Cell pos) return null;   // FUN_00860f20 first: no place, no effect
             if (linkTo != null && linkTo.Links.TryGetValue(LinkConjurePhoenix, out var oldId))
             {
                 if (S.Unit(oldId) is { Alive: true } old) DealDamage(old, old.TotalHealth, -1, AttackKind.Other, by);
                 linkTo.Links.Remove(LinkConjurePhoenix);
             }
-            var ph = SummonStack(s, proto, 1, by, atb: S.Rng.Next(6) * 0.05);
-            if (ph == null) return null;
-            ApplyUniqueCreatureStats(ph, rec, power, level, divisor);
+            var ph = ExeSummonAt(s, proto, 1, by, pos);
+            ApplyUniqueCreatureStats(ph, rec, power, level, divisor, UniqueSummonKnowledge(hero));
             if (linkTo != null && ph.Alive) linkTo.Links[LinkConjurePhoenix] = ph.Id;
             return ph;
         }
@@ -130,21 +127,26 @@ public sealed partial class Battle
     /// <summary>
     /// The SRPGCombatUniqueCreatureStats getters (exe FUN_004bcd60 health, FUN_004bce10 / FUN_004bcea0 min / max damage,
     /// FUN_004bcf30 / FUN_004bcfc0 offence / defence, FUN_004bd060 initiative, FUN_004bd0e0 speed, FUN_004bd1c0 abilities):
-    /// value = Base + level·PerLevel / divisor + power·PerPower / divisor (health also + PerKnowledge × the army hero's
-    /// vf 0x1c — not ported, 0 in stock and MMH55 data), clamped to [0, 10000] (health, damage), [0, 1000] (offence,
+    /// value = Base + level·PerLevel / divisor + power·PerPower / divisor (health also + PerKnowledge × the info's +0x2c,
+    /// FUN_004bcd60: each partial sum stored as a float, the knowledge term undivided — the caster's vf 0x74 / vf 0x78 hero
+    /// object's vf 0x1c, Knowledge (00b4cd80, at least 1), or 1 without a hero; combat_sweep_18.md), clamped to [0, 10000] (health, damage), [0, 1000] (offence,
     /// defence), [1, 100] (initiative, speed) and truncated after + 0.0001 (initiative stays fractional); health is halved
     /// by the summon-halving flag (never set for a hero caster). The abilities are ONLY the record's: every Abilities item
     /// in order while its Level ≤ level / divisor (integer) — HasAbility FUN_008a34c0 uses this list instead of the
     /// creature's for a unit with a unique-summon record.
     /// </summary>
-    internal static void ApplyUniqueCreatureStats(Unit u, System.Xml.Linq.XElement? rec, double power, int level, int divisor)
+    internal static void ApplyUniqueCreatureStats(Unit u, System.Xml.Linq.XElement? rec, double power, int level, int divisor, int knowledge = 0)
     {
         if (rec == null) return;
         double F(string n) => XmlHelpers.ParseDouble(rec.Element(n)?.Value, 0);
         float Raw(string n) =>
             (float)(F(n) + (float)level * (float)F(n + "_PerLevel") / (float)divisor + (float)power * (float)F(n + "_PerPower") / (float)divisor);
         int Trunc(float v, float lo, float hi) => (int)((double)Math.Clamp(v, lo, hi) + 0.0001);
-        u.BaseHealth = Trunc(Raw("Health"), 0, 10000);
+        float hp = (float)((double)level * (float)F("Health_PerLevel") / divisor);                       // 004bcd71..004bcd7c
+        hp = (float)((double)(int)power * (float)F("Health_PerPower") / divisor + hp);                     // 004bcd85..004bcd94
+        hp = (float)((double)knowledge * (float)F("Health_PerKnowledge") + hp);                            // 004bcd9d..004bcda9
+        hp = (float)(hp + (double)(float)F("Health"));                                                     // 004bcdbb
+        u.BaseHealth = Trunc(hp, 0, 10000);
         u.BaseMinDamage = Trunc(Raw("DamageMin"), 0, 10000);
         u.BaseMaxDamage = Trunc(Raw("DamageMax"), 0, 10000);
         u.BaseAttack = Trunc(Raw("Offence"), 0, 1000);

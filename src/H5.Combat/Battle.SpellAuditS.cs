@@ -141,7 +141,7 @@ public sealed partial class Battle
     {
         var e = Enemy(casterSide);
         if (!e.Present || !e.HasPerk("HERO_SKILL_ELEMENTAL_BALANCE")) return null;
-        var u = SummonStack(1 - casterSide, kind, Math.Max(1, count), by, atb: S.Rng.Next(6) * 0.05);
+        var u = SummonStack(1 - casterSide, kind, Math.Max(1, count), by);
         if (u != null) Emit(new AbilityTriggered(Actor.Hero(1 - casterSide), "HERO_SKILL_ELEMENTAL_BALANCE", u.Id));
         return u;
     }

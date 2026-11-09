@@ -51,7 +51,7 @@ public sealed partial class Battle
         if (IsMass(id)) return AreaMass.Contains(id) ? SpellTargeting.Cell : SpellTargeting.None;
         return id switch
         {
-            "SPELL_ARMAGEDDON" or "SPELL_HOLY_WORD" or "SPELL_UNHOLY_WORD" or "SPELL_SUMMON_ELEMENTALS" or "SPELL_CONJURE_PHOENIX"
+            "SPELL_ARMAGEDDON" or "SPELL_HOLY_WORD" or "SPELL_UNHOLY_WORD" or "SPELL_SUMMON_ELEMENTALS" or "SPELL_CONJURE_PHOENIX" or AvatarOfDeathSpell
                 or "SPELL_EARTHQUAKE" or "SPELL_WARCRY_RALLING_CRY" or "SPELL_WARCRY_BATTLECRY" => SpellTargeting.None,
             "SPELL_FIREBALL" or "SPELL_METEOR_SHOWER" or "SPELL_STONE_SPIKES" or "SPELL_FROST_RING" or "SPELL_FIREWALL"
                 or "SPELL_LAND_MINE" or "SPELL_ARCANE_CRYSTAL" or "SPELL_BLADE_BARRIER" or "SPELL_SUMMON_HIVE" => SpellTargeting.Cell,
@@ -82,7 +82,9 @@ public sealed partial class Battle
         foreach (var s in h.Spells.Concat(wands.Select(w => w.Spell)))
         {
             var sp = Db.Spell(s);
-            if (sp == null || !sp.IsCombatSchool) continue;
+            // SPELL_ABILITY_AVATAR_OF_DEATH (school SPECIAL) is cast from the book like a spell (0097c320 → 00862470,
+            // 00984a00 case 0xc8; combat_sweep_18.md).
+            if (sp == null || !sp.IsCombatSchool && s != AvatarOfDeathSpell) continue;
             if (h.Spells.Contains(s) || wands.Any(w => w.Spell == s && w.Charges > 0)) set.Add(s);
             if (MassSpells.TryGetValue(s, out var mass) && h.HasPerk(mass.Perk)) set.Add(mass.Mass);
         }
@@ -385,6 +387,11 @@ public sealed partial class Battle
             var wand = WandFor(h, sp.Id);
             int cost = wand != null ? 0 : HeroManaCost(h, sp);
             if (h.Mana < cost) return "not enough mana";
+            if (sp.Id == AvatarOfDeathSpell)
+            {
+                if (AvatarOfDeathRefusal(h) is { } ar) return ar;    // 0097c320 → 00862470
+                AvatarOfDeathPrePick(h);                              // 00862570: the position before vf 0x224
+            }
             var mastery = HeroMastery(h, sp);
             double power = HeroSpellPower(h, sp);
             if (sp.School == "MAGIC_SCHOOL_RUNIC" && RuneError(h, sp, c.TargetId) is { } re) return re;
@@ -799,7 +806,7 @@ public sealed partial class Battle
                 // (exe FUN_00861630 → FUN_00861120).
                 string kind = hero != null && hero.HasPerk("HERO_SKILL_FIRE_AFFINITY") ? "CREATURE_FIRE_ELEMENTAL" : TerrainElemental();
                 int count = SummonElementalsCount(baseDef, m, power, hero);
-                if (SummonLinkedElementals(hero, side, kind, MoonWeek.SummonCount(count, Db.Creature(kind).Element1, S.Week), sp.Id, atb: S.Rng.Next(6) * 0.05) != null)
+                if (SummonLinkedElementals(hero, side, kind, MoonWeek.SummonCount(count, Db.Creature(kind).Element1, S.Week), sp.Id) != null)
                 {
                     // Elemental Balance on the opposing hero: the opposite elemental, same count (exe 00861630 → 00861500).
                     string opp = OppositeElemental(kind);
@@ -807,6 +814,9 @@ public sealed partial class Battle
                 }
                 break;
             }
+            case AvatarOfDeathSpell:
+                AvatarOfDeath(side, hero, power, casterLevel);
+                break;
             case "SPELL_CONJURE_PHOENIX":
                 ConjurePhoenix(side, hero, sp.Id, power, casterLevel, (int)Math.Max(1, baseDef.DamageAt(m).Base));
                 break;
@@ -1184,18 +1194,13 @@ public sealed partial class Battle
         return c[S.Rng.Next(c.Length)];
     }
 
-    Unit? SummonStack(int side, string creature, int count, string by, double atb)
+    /// <summary>A spell summon at the summon position FUN_00860f20 (<see cref="ExeSummonPosition"/>), placed by
+    /// <see cref="ExeSummonAt"/>; no position → nothing.</summary>
+    Unit? SummonStack(int side, string creature, int count, string by)
     {
         if (!Db.Creatures.ContainsKey(creature)) return null;
-        var probe = new Unit { Size = Db.Creature(creature).CombatSize };
-        Cell around = side == 0 ? new Cell(1, S.Height / 2) : new Cell(S.Width - 2, S.Height / 2);
-        var pos = NearestFree(probe, around);
-        if (pos == null) return null;
-        var u = BattleSetup.AddCreature(Db, S, side, creature, count, pos.Value, summoned: true);
-        u.Atb = atb;
-        u.HasMovedFromStart = true;
-        Emit(new UnitSummoned(u.Id, creature, count, side, u.Pos, by));
-        return u;
+        if (ExeSummonPosition(side, Db.Creature(creature).CombatSize, S.Rng) is not Cell pos) return null;
+        return ExeSummonAt(side, creature, count, by, pos);
     }
 
     void SpawnObject(string id, int side, Cell c, Mastery m, double power, int casterLevel, SpellDef sp)
