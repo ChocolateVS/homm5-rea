@@ -442,4 +442,24 @@ public class AiCombatGapTests(GameDataFixture f)
         var far = f.Duel("CREATURE_PEASANT", 20, "CREATURE_PEASANT", 20, 1, new Cell(0, 0), new Cell(11, 9));
         Assert.False(OriginalBattleAI.ShortCombat(far, 0, CombatValue.Of(far, 0)));
     }
+
+    [Fact]
+    public void TheMoatDamageOfEnemyStacksInTheMoatIsAddedToOurDamage()   // FUN_00bfbe50 → FUN_00bfa610 / FUN_0085c2c0 (type-5 objects)
+    {
+        var s = BattleSetup.Create(f.Db,
+            new ArmySetup { Army = { new ArmySlot("CREATURE_ARCHER", 30), new ArmySlot("CREATURE_FOOTMAN", 30) } },
+            new ArmySetup { Army = { new ArmySlot("CREATURE_FOOTMAN", 30) } },
+            3, skipTactics: true, siege: new SiegeSetup { Town = "TOWN_HEAVEN", FortLevel = 3, TownLevel = 10, TownMaxLevel = 10 });
+        var b = new Battle(f.Db, s);
+        var sg = s.Siege!;
+        Assert.True(sg.MoatDamage > 0);
+        var archer = s.Units.First(u => u.Side == 0 && u.CreatureId == "CREATURE_ARCHER");
+        var footman = s.Units.First(u => u.Side == 0 && u.CreatureId == "CREATURE_FOOTMAN");
+        Assert.Equal(0, CombatValue.Of(b, 1).My.Additive);
+        footman.Pos = sg.Moat.First(c => b.Fits(footman, c));
+        Assert.Equal(sg.MoatDamage, CombatValue.Of(b, 1).My.Additive);           // the defender's half: attackers in its moat
+        archer.Pos = sg.Moat.Last(c => c != footman.Pos && b.Fits(archer, c));
+        Assert.Equal(sg.MoatDamage * (b.CanShoot(archer) ? 3 : 2), CombatValue.Of(b, 1).My.Additive);   // × 2 for a shooter
+        Assert.Equal(0, CombatValue.Of(b, 0).My.Additive);                       // the moat never hurts the defenders
+    }
 }
