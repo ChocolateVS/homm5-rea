@@ -401,4 +401,45 @@ public class AiCombatGapTests(GameDataFixture f)
         Assert.Equal(new[] { 0, 0, d }, OriginalBattleAI.Danger(b, u, cells));
         Assert.Equal(new Cell(3, 5), OriginalBattleAI.StopCell(b, u, cells));   // lowest score, the later one on ties
     }
+
+    [Fact]
+    public void CombatLengthDistanceMovesTheLargeStackOnlyOnTheGreaterSide()   // FUN_00b3c870 (0x00b3c8ab..0x00b3c8fb)
+    {
+        var b = f.Duel("CREATURE_GRIFFIN", 1, "CREATURE_PEASANT", 1, 1, new Cell(0, 0), new Cell(0, 0));
+        var big = b.State.Units[0];
+        var small = b.State.Units[1];
+        Assert.Equal(2, big.Size);
+        Assert.Equal(7, OriginalBattleAI.ExeDistance(small, new Cell(0, 0), small, new Cell(3, 1)));   // min + 2·max
+        Assert.Equal(8, OriginalBattleAI.ExeDistance(big, new Cell(5, 0), small, new Cell(0, 0)));     // a right of b: a.x − 1
+        Assert.Equal(10, OriginalBattleAI.ExeDistance(big, new Cell(0, 0), small, new Cell(5, 0)));    // a left of b: unchanged
+        Assert.Equal(8, OriginalBattleAI.ExeDistance(small, new Cell(0, 0), big, new Cell(5, 0)));     // b right of a: b.x − 1
+        Assert.Equal(10, OriginalBattleAI.ExeDistance(small, new Cell(5, 0), big, new Cell(0, 0)));
+    }
+
+    [Fact]
+    public void CombatLengthFightRoundsUseIntegerShares()   // FUN_00b393a0 0x00b3961d..0x00b396fb (x87 chop)
+    {
+        // Round 1: 50 / 100 = 0 → the enemy keeps its 30 damage; health 100 → 50 / 70. Round 2: 50 / 50 = 1 → enemy damage 0,
+        // enemy health 0: two rounds, won.
+        Assert.Equal((true, 2), OriginalBattleAI.FightRounds(50, 30, 100, 100));
+        Assert.Equal((false, 1), OriginalBattleAI.FightRounds(10, 200, 100, 1000));
+        Assert.Equal((true, 20), OriginalBattleAI.FightRounds(1, 1, 1000, 1000));   // at most 20 rounds
+        Assert.Equal((false, 0), OriginalBattleAI.FightRounds(1, 1, 0, 1000));
+    }
+
+    [Fact]
+    public void AShortCombatMakesNoGuardOrBlockMoves()   // FUN_00a30460 (settings +0xa3 = length < 3) → think +0x1b7, FUN_008d64e0
+    {
+        // 100 peasants next to 5: no moves, the first round kills (75 damage vs 16 health) → length 1, short.
+        var b = f.Duel("CREATURE_PEASANT", 100, "CREATURE_PEASANT", 5, 1, new Cell(5, 5), new Cell(6, 5));
+        Assert.Equal((true, 1), OriginalBattleAI.CombatLength(b, 0, CombatValue.Of(b, 0)));
+        Assert.True(OriginalBattleAI.ShortCombat(b, 0, CombatValue.Of(b, 0)));
+        // 20 against 20: 15 damage vs 63 health a side → five rounds, not short.
+        var even = f.Duel("CREATURE_PEASANT", 20, "CREATURE_PEASANT", 20, 1, new Cell(5, 5), new Cell(6, 5));
+        var v = CombatValue.Of(even, 0);
+        Assert.Equal((15, 63), (v.My.DamageMeasure(v.Enemy), OriginalBattleAI.HealthMeasure(v.My)));
+        Assert.Equal((true, 5), OriginalBattleAI.CombatLength(even, 0, v));
+        var far = f.Duel("CREATURE_PEASANT", 20, "CREATURE_PEASANT", 20, 1, new Cell(0, 0), new Cell(11, 9));
+        Assert.False(OriginalBattleAI.ShortCombat(far, 0, CombatValue.Of(far, 0)));
+    }
 }

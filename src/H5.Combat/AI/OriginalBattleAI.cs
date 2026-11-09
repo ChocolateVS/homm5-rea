@@ -348,18 +348,23 @@ public sealed partial class OriginalBattleAI : IBattleAI
         // Melee (FUN_008d68c0 → FUN_008d64e0; FUN_008d5b90 when that adds nothing).
         var reach = b.Reachable(u);
         int before = list.Count;
-        // Guard / block moves (FUN_008d64e0 head): only while WE out-shoot the enemy (FUN_00bf9eb0 on the start value:
-        // our FUN_00bf9d30 above the enemy's). GAP-details: the gates think +0x1b7 (settings +0xa3 = FUN_00b393a0's count
-        // ≤ 2) and actor vf 0x6c → vf 0x58 are not applied.
-        if (SideValue.OutShoots(start.My, start.Enemy))
+        // Guard / block moves (FUN_008d64e0 head): only when the combat is not short (think +0x1b7 = settings +0xa3, the
+        // combat length evaluation FUN_00b393a0 below 3) and while WE out-shoot the enemy (FUN_00bf9eb0 on the start value:
+        // our FUN_00bf9d30 above the enemy's). GAP-detail: the actor vf 0x6c → vf 0x58 (field +0x48) test is not applied.
+        bool shortCombat = ShortCombat(b, side, start);
+        void GuardAndBlock()
         {
+            if (!SideValue.OutShoots(start.My, start.Enemy)) return;
             if (diff.UseDefendShootersMoves) list.AddRange(DefendShooterMoves(b, u, side, reach));
             if (diff.UseBlockEnemyMoves) list.AddRange(BlockEnemyMoves(b, u, side, reach, enemies, diff));
         }
+        if (!shortCombat) GuardAndBlock();
         list.AddRange(Attacks(b, u, side, la, reach, enemies, diff));
         // FUN_008d5b90: approach records only while the strategy is not defensive (think +0x1ac).
         if (list.Count == before && la.Moves.Count > 0 && !Defensive(b, side, start))
             list.AddRange(ApproachMoves(b, u, side, la, enemies, diff));
+        // FUN_008d68c0: a short combat that added nothing after the spells clears think +0x1b7 and runs FUN_008d64e0 again.
+        if (shortCombat && list.Count == before) GuardAndBlock();
         return list;
     }
 
