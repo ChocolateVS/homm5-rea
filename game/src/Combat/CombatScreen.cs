@@ -1210,12 +1210,31 @@ public partial class CombatScreen : Control
         bool normal = la != null && _mode == InputMode.Normal;
         if (normal && movementShade)
             foreach (var c in la!.Moves) foreach (var fc in Footprint(la.Actor, c)) Arena.Overlay.MarkArea(new Vector2I(fc.X, fc.Y), CellMark.Passable);
+        // The selection state's second stack (005498c0: the action's target +0x324, else the stack under the cursor
+        // +0x2f4) gets its movement area as passable target (kind 7) unless it is the acting stack or hidden from the
+        // acting side (0055cb20 → 00a6af50).
+        if (normal && movementShade && hover != null && _rangeStack is int rs && b.State.Unit(rs) is { Alive: true } ru && ru.Id != la!.Actor
+            && (!ru.HasEffect(H5.Combat.Fx.Invisible) || b.Controller(ru) == side))
+            foreach (var c in b.Reachable(ru).Keys) foreach (var fc in ru.CellsAt(c)) Arena.Overlay.MarkArea(new Vector2I(fc.X, fc.Y), CellMark.PassableTarget);
         if (hover != null && targetShade)
             foreach (var (c, n, m) in hover) if (m != CellMark.Select) Arena.Overlay.Mark(new Vector2I(c.X, c.Y), n, m);
         if (la != null && !la.IsHero && b.State.Unit(la.Actor) is { } au)
             Arena.Overlay.Mark(new Vector2I(au.Pos.X, au.Pos.Y), au.Size, CellMark.Select);
         if (hover != null) foreach (var (c, n, m) in hover) if (m == CellMark.Select) Arena.Overlay.Mark(new Vector2I(c.X, c.Y), n, m);
+        // Aimable units last (0055c480, list +0x37c): a shooter's valid shot targets (00548270 → 00af4450 / 00b3b6c0),
+        // or in spell targeting every valid target of the spell (00982a00), each with its own size.
+        if (targetShade && la != null)
+        {
+            IEnumerable<int> aim = _mode == InputMode.Spell && _pendingSpell is { Targeting: Battle.SpellTargeting.Unit or Battle.SpellTargeting.UnitAndCell } psp
+                ? psp.Targets
+                : _mode == InputMode.Normal && !la.IsHero ? la.Shoot : Enumerable.Empty<int>();
+            foreach (var id in aim)
+                if (b.State.Unit(id) is { Alive: true } tu) Arena.Overlay.Mark(new Vector2I(tu.Pos.X, tu.Pos.Y), tu.Size, CellMark.Aimable);
+        }
     }
+
+    /// <summary>The second stack of the selection state (see ShowStaticHighlights), set by Resolve.</summary>
+    int? _rangeStack;
 
     /// <summary>Deployment cell test (FUN_005762f0): inside the side's deployment rectangle and off obstacles.</summary>
     bool DeployCellValid(int side, Cell c)
@@ -1303,11 +1322,13 @@ public partial class CombatScreen : Control
     {
         cursor = CombatCursor.Default;
         hl = new();
+        _rangeStack = null;
         if (MySideToAct() is not int side || hoverCell is not { } hc) return null;
         var b = Session.Battle;
         var s = b.State;
         var cell = new Cell(hc.X, hc.Y);
         var occupant = s.At(cell);
+        if (occupant is { Alive: true } && _mode == InputMode.Normal) _rangeStack = occupant.Id;
 
         if (s.Phase == BattlePhase.Tactics)
         {
