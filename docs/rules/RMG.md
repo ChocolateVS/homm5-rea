@@ -110,7 +110,9 @@ first pass nothing can be stolen (division by an empty list).
 * Border distance (`0x00904240`): border tiles = a 4-neighbour outside the map or in another zone;
   others get the truncated Euclidean distance to the nearest border tile of their zone.
 * Float-to-int conversions: every FISTP preceded by `FNSTCW / OR AH,0xc / FLDCW` is a C cast (truncation); Ghidra
-  prints it as ROUND. The quarter of an angle (`0x00b0bbd0`) is a plain FISTP (round to nearest).
+  prints it as ROUND. The game runs under `_control87(0xa031f)` (`0x009dc690`: 24-bit precision, round toward zero),
+  so a plain FISTP truncates as well (the quarter of an angle, `0x00b0bbd0`: trunc(angle·2/π + 0.25) & 3) and every
+  x87 sum, product and float store is chopped to a float (`X87`; the road builder's costs and distances depend on it).
 * Towns (`0x00923e50`): candidates with border distance > R/2; each try draws a candidate and a
   quarter turn; the anchor (first active tile) must be ≥ 2R/3 from the border (relaxed after 100
   tries); footprint failures drop the candidate; an underground town gets four point lights (z 5 + Next(3), radius 12 + Next(10))

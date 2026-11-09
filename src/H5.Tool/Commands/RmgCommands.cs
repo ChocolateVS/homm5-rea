@@ -298,7 +298,7 @@ sealed class RmgStatsCommand : ICommand
 sealed class RmgRefCommand : ICommand
 {
     public string Name => "rmg-ref";
-    public string Help => "rmg-ref  - statistics of the RMG maps in the install's Maps folder, next to our generator on the same template/size";
+    public string Help => "rmg-ref [--only=name] [--diverge] [--trace] [--near=x,y,d] [--reach] [--terrain [--window=x0,y0,x1,y1] [--roadtiles=x0,y0,x1,y1]] [--detail]  - the RMG maps in the install's Maps folder next to our generator on the same template/size/seed";
 
     public int Run(ToolContext ctx, string[] args)
     {
@@ -377,6 +377,16 @@ sealed class RmgRefCommand : ICommand
                     .Select(m => float.Parse(Regex.Match(m.Groups[2].Value, @"<Rot>([^<]*)</Rot>").Groups[1].Value is { Length: > 0 } rs ? rs : "0", System.Globalization.CultureInfo.InvariantCulture)).ToList();
                 var turned = Enumerable.Range(0, prefix).Where(i => RmgGenerator.ExeQuarter(refRots[i]) != r.Objects[i].Quarter && r.Objects[i].Angle is float an && MathF.Abs(an - an * 0 - (float)Math.Round(an / 1.5707964f) * 1.5707964f) < 1e-3f).ToList();
                 Console.WriteLine($"    positions: same {same} of ref {refObjs.Count} / ours {ourObjs.Count}; creation-order prefix {prefix}; quarter turn differs in the prefix: {turned.Count}{(turned.Count > 0 ? " (first #" + turned[0] + " " + r.Objects[turned[0]].Note + ")" : "")}");
+                if (args.FirstOrDefault(a => a.StartsWith("--near=")) is string nw)
+                {
+                    // Objects of both maps within d of (x, y) (--near=x,y,d), ours with their stamped tiles.
+                    var nv = nw.Substring(7).Split(',').Select(int.Parse).ToArray();
+                    for (int i = 0; i < Math.Max(refObjs.Count, ourObjs.Count); i++)
+                    {
+                        if (i < refObjs.Count && Math.Abs(refObjs[i].X - nv[0]) <= nv[2] && Math.Abs(refObjs[i].Y - nv[1]) <= nv[2]) Console.WriteLine($"      ref  #{i} {refObjs[i]}");
+                        if (i < ourObjs.Count && Math.Abs(ourObjs[i].X - nv[0]) <= nv[2] && Math.Abs(ourObjs[i].Y - nv[1]) <= nv[2]) Console.WriteLine($"      ours #{i} {ourObjs[i]} {r.Objects[i].Note} q{r.Objects[i].Quarter} blocked {string.Join(" ", r.Objects[i].Def.Blocked.Select(b => RmgGenerator.Rotate(b, r.Objects[i].Quarter)).Select(t => (t.X + r.Objects[i].X, t.Y + r.Objects[i].Y)))} active {string.Join(" ", r.Objects[i].Def.Active.Select(b => RmgGenerator.Rotate(b, r.Objects[i].Quarter)).Select(t => (t.X + r.Objects[i].X, t.Y + r.Objects[i].Y)))}");
+                    }
+                }
                 if (args.Contains("--diverge") && prefix < Math.Min(refObjs.Count, ourObjs.Count))
                     for (int i = Math.Max(0, prefix - 8); i < Math.Min(prefix + 6, Math.Min(refObjs.Count, ourObjs.Count)); i++)
                         Console.WriteLine($"      #{i}: ref {refObjs[i]}  ours {ourObjs[i]} ({r.Objects[i].Note} zone {r.Objects[i].Zone} q{r.Objects[i].Quarter})");
@@ -390,6 +400,20 @@ sealed class RmgRefCommand : ICommand
                 var refMap = new MapLoader(H5.Core.Data.GameDatabase.Load(ctx.Fs), ctx.Fs).Load(MapCatalog.Find(ctx.Fs, ctx.Install, file)!);
                 var ourMap = r.ToAdvMap(new SharedCatalog(new H5.Core.Xdb.XdbLoader(ctx.Fs)));
                 Console.WriteLine($"    unreachable surface objects (adventure passability, from the towns): ref {RmgReach.Unreached(refMap)}, ours {RmgReach.Unreached(ourMap)}");
+                {
+                    // Terrain passability (009d1410 kinds) of both maps: road tiles the terrain refuses, and tiles that differ.
+                    var f0 = gen.Floors[0]; var rf = refMap.Floor(0)!; var of = ourMap.Floor(0)!; int rb = 0, ob = 0, n = 0, differ = 0;
+                    for (int x = 0; x < size; x++)
+                        for (int y = 0; y < size; y++)
+                        {
+                            if (rf.TerrainBlocked(x, y) != of.TerrainBlocked(x, y)) differ++;
+                            if ((f0.Flags[f0.At(x, y)] & (TileFlags.MainRoad | TileFlags.MineRoad)) == 0) continue;
+                            n++;
+                            if (rf.TerrainBlocked(x, y)) rb++;
+                            if (of.TerrainBlocked(x, y)) ob++;
+                        }
+                    Console.WriteLine($"    road tiles {n}: terrain-blocked ref {rb}, ours {ob}; terrain passability differs on {differ} tiles");
+                }
             }
             if (args.Contains("--terrain"))
             {
@@ -446,6 +470,27 @@ sealed class RmgRefCommand : ICommand
                                 int i = vy * (size + 1) + vx;
                                 bool a = rr.Any(w => w[i] != 0), b = oo.Any(w => w[i] != 0);
                                 return a && b ? 'R' : a ? 'r' : b ? 'o' : '.';
+                            })));
+                    }
+                    if (args.FirstOrDefault(a => a.StartsWith("--roadtiles=")) is string rtw)
+                    {
+                        // Main-road tiles (--roadtiles=x0,y0,x1,y1): on the stock map a tile whose four corners carry a RoadTile layer
+                        // (diagonal neighbours can fake one), ours from flag 8. '#' both, 'r' stock only, 'o' ours only; else ours
+                        // 'X' flag 2, '+' flag 0x20.
+                        var wv = rtw.Substring(12).Split(',').Select(int.Parse).ToArray();
+                        var mainTiles = gen.Zones.Select(zz => db.Race(zz.Preset).RoadTile).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                        bool Road(string t) => mainTiles.Contains(t);
+                        var rr = rt.Layers.Where(l => Road(l.TilePath)).Select(l => l.Weights.Data).ToList();
+                        bool V(int vx, int vy) => rr.Any(w => w[vy * (size + 1) + vx] != 0);
+                        var f0 = gen.Floors[0];
+                        Console.WriteLine("      " + string.Concat(Enumerable.Range(wv[0], wv[2] - wv[0] + 1).Select(x => (char)('0' + x % 10))));
+                        for (int ty = wv[1]; ty <= wv[3]; ty++)
+                            Console.WriteLine($"  {ty,3} " + string.Concat(Enumerable.Range(wv[0], wv[2] - wv[0] + 1).Select(tx =>
+                            {
+                                bool a = V(tx, ty) && V(tx + 1, ty) && V(tx, ty + 1) && V(tx + 1, ty + 1);
+                                int fl = f0.Flags[f0.At(tx, ty)];
+                                bool b = (fl & TileFlags.MainRoad) != 0;
+                                return a && b ? '#' : a ? 'r' : b ? 'o' : fl == TileFlags.Blocked ? 'X' : (fl & TileFlags.ObjectPath) != 0 ? '+' : '.';
                             })));
                     }
                     static string Hs(float[] h) => $"heights min {h.Min():0.00} max {h.Max():0.00} mean {h.Average():0.000}, distinct {h.Distinct().Count()}";

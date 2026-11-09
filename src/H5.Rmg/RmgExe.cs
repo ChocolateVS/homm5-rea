@@ -36,14 +36,15 @@ public sealed partial class RmgGenerator
 
     /// <summary>
     /// exe 0x00b0bbd0: an angle's quarter turn. While the angle is below 0 (0x00e0be10) 2π (0x00e155a8) is added; then
-    /// FISTP (round to nearest) of the float angle x 2/π (0x00e7ab2c) + 0.25 (0x00e11bb8), and 3.
+    /// a plain FISTP of the float angle x 2/π (0x00e7ab2c) + 0.25 (0x00e11bb8), and 3. The game's control word
+    /// (<see cref="X87"/>) makes the FISTP truncate: quarters k cover [(k − 0.25)·π/2, (k + 0.75)·π/2).
     /// </summary>
     public static int ExeQuarter(float angle)
     {
         float a = angle;
-        while (a < 0f) a += 6.2831855f;
-        float t = a * 0.63661975f + 0.25f;
-        return (int)Math.Round(t, MidpointRounding.ToEven) & 3;
+        while (a < 0f) a = X87.Add(a, 6.2831855f);
+        float t = X87.Add(X87.Mul(a, 0.63661975f), 0.25f);
+        return (int)t & 3;
     }
 
     /// <summary>exe 0x00b0bca0 with the matrix of 0x00b0bbd0: quarter 1 maps (x, y) to (−y, x), 2 to (−x, −y), 3 to (y, −x).</summary>

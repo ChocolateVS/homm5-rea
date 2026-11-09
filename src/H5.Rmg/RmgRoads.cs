@@ -21,7 +21,8 @@ public sealed partial class RmgGenerator
     /// afterwards. The road is then walked back from the target: each tile is appended to <paramref name="output"/>
     /// and gets <paramref name="flag"/>, Next(2) picks the scan order of the 8 neighbours (0: backwards), the first
     /// strictly lower one is taken, until the walk is within 0.5 of the source. All float-to-int conversions chop
-    /// (FLDCW | 0xc00). Costs are summed at double precision (x87 register), distances stored as floats.
+    /// (FLDCW | 0xc00). The arithmetic runs under the game's x87 control word, _control87(0xa031f) (0x009dc690:
+    /// 24-bit precision, round toward zero): every product and sum is chopped to a float (<see cref="X87"/>).
     /// </summary>
     void BuildRoad(RmgZone z, (float X, float Y) from, (float X, float Y) to, int flag, List<(float X, float Y)> output)
     {
@@ -109,23 +110,21 @@ public sealed partial class RmgGenerator
                 if ((int)dist[i] != pass) continue;
                 int x = i / H, y = i % H;
                 int bd = f.BorderDist[i];
-                double extra = bd < 5 ? 5 - bd : 0;
-                double ortho = (100 - bd) * (double)0.01f + 1.0 + extra;             // 0x00e15a80, 0x00e0a7e4
-                double diag = (100 - bd) * (double)0.01f + (double)1.41f + extra;    // 0x00e57da0
+                float ortho = RoadCost(bd, 1f), diag = RoadCost(bd, 1.41f);              // 0x00e0a7e4, 0x00e57da0
                 for (int t = 0; t < 2; t++)
                 {
                     var table = t == 0 ? RoadOrtho : RoadDiag;
-                    double cost = t == 0 ? ortho : diag;
+                    float cost = t == 0 ? ortho : diag;
                     foreach (var (dx, dy) in table)
                     {
                         int nx = x + dx, ny = y + dy;
                         if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
                         int j = f.At(nx, ny);
                         if (f.Flags[j] == TileFlags.Blocked) continue;
-                        double c = cost + dist[i];
+                        float c = X87.Add(cost, dist[i]);
                         if (!(c < dist[j])) continue;
                         bool wasUnreached = Math.Abs(dist[j] - 1000f) < 1e-4f;
-                        dist[j] = (float)c;
+                        dist[j] = c;
                         if (!Scanned(j)) continue;
                         if (wasUnreached)
                         {
@@ -164,9 +163,7 @@ public sealed partial class RmgGenerator
                     if ((int)dist[i] == pass)
                     {
                         int bd = f.BorderDist[i];
-                        double extra = bd < 5 ? 5 - bd : 0;
-                        double ortho = (100 - bd) * (double)0.01f + 1.0 + extra;
-                        double diag = (100 - bd) * (double)0.01f + (double)1.41f + extra;
+                        float ortho = RoadCost(bd, 1f), diag = RoadCost(bd, 1.41f);
                         for (int t = 0; t < 2; t++)
                             foreach (var (dx, dy) in t == 0 ? RoadOrtho : RoadDiag)
                             {
@@ -174,8 +171,8 @@ public sealed partial class RmgGenerator
                                 if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
                                 int j = f.At(nx, ny);
                                 if (f.Flags[j] == TileFlags.Blocked) continue;
-                                double c = (t == 0 ? ortho : diag) + dist[i];
-                                if (c < dist[j]) dist[j] = (float)c;
+                                float c = X87.Add(t == 0 ? ortho : diag, dist[i]);
+                                if (c < dist[j]) dist[j] = c;
                             }
                     }
                     if (Math.Abs(dist[i] - 1000f) < 1e-4f) done = false;
@@ -186,6 +183,16 @@ public sealed partial class RmgGenerator
             pass++;
             if (done) break;
         }
+    }
+
+    /// <summary>
+    /// The step cost of 0x0091aee0 from a tile at border distance <paramref name="bd"/>: FILD (100 − bd), FMUL 0.01f
+    /// (0x00e15a80), FADD <paramref name="step"/>, FIADD (5 − bd) when bd &lt; 5, each chopped to 24 bits.
+    /// </summary>
+    static float RoadCost(int bd, float step)
+    {
+        float t = X87.Add(X87.Mul(100 - bd, 0.01f), step);
+        return bd < 5 ? X87.Add(t, 5 - bd) : t;
     }
 
     readonly Dictionary<int, List<int>> _roadBuckets = new();

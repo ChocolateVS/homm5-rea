@@ -5,6 +5,7 @@ using H5.Core.Data;
 using H5.Core.IO;
 using H5.Core.Xdb;
 using H5.Rmg;
+using System.Text.RegularExpressions;
 
 namespace H5.Rmg.Tests;
 
@@ -508,6 +509,72 @@ public class GeneratorRoadTests(RmgFixture f) : IClassFixture<RmgFixture>
                 Assert.Equal((float)z.TownPos!.Value.X, z.Network[0].X);
             Assert.Contains(a.Floors[0].Flags, fl => (fl & TileFlags.MainRoad) != 0);
         }
+    }
+
+    /// <summary>
+    /// The nine stock RMG maps (Maps/*_RMG_Map_*.h5m) object for object: shared, position and floor of every object in
+    /// map.xdb order (the exe's creation order), with the template, size, seed, players, monster strength, resource and
+    /// experience levels and the player races read from the map. The road builder 0x0091aee0 sums its costs under the
+    /// game's x87 control word (0x009dc690: 24-bit precision, round toward zero); rounded to nearest, a few road tiles
+    /// moved and the statics tested against them diverged (first difference after 45 .. 1540 objects).
+    /// </summary>
+    [StockTheory]
+    [InlineData("L_I4_RMG_Map_001")]
+    [InlineData("L_S4_RMG_Map_006")]
+    [InlineData("M_S4_RMG_Map_011")]
+    [InlineData("M_VS4_RMG_Map_008")]
+    [InlineData("S_S4_RMG_Map_009")]
+    [InlineData("S_S4_RMG_Map_010")]
+    [InlineData("S_W8_RMG_Map_003")]
+    [InlineData("T_I2_RMG_Map_002")]
+    [InlineData("XL_S5_RMG_Map_012")]
+    public void ReproducesTheStockMapsObjectForObject(string name)
+    {
+        var file = InstallPath.ResolveFile(GameInstall.Locate().Root, "Maps", name + ".h5m");
+        Assert.True(file != null, $"{name}.h5m not in the install's Maps folder");
+        using var zip = System.IO.Compression.ZipFile.OpenRead(file!);
+        string Read(string suffix)
+        {
+            var e = zip.Entries.First(x => x.FullName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+            using var st = e.Open();
+            using var ms = new MemoryStream();
+            st.CopyTo(ms);
+            return TextDecoding.Decode(ms.ToArray());
+        }
+        string desc = Read("mapdesc-text-0.txt"), xml = Read("/map.xdb");
+        static string M(string text, string pattern) => Regex.Match(text, pattern, RegexOptions.Singleline).Groups[1].Value;
+        int Level(string key, string prefix) =>
+            Array.IndexOf(new[] { "MISERABLE", "LITTLE", "NORMAL", "LOTS", "MUCH" }, M(xml, "<" + key + ">" + prefix + "([A-Z]+)<")) is var l and >= 0 ? l : 2;
+        var items = Regex.Matches(xml, @"<Item href=""#n:inline\((\w+)\)[^>]*>(.*?)(?=<Item href=""#n:inline\(|</objects>)", RegexOptions.Singleline)
+            .Select(m => m.Groups[2].Value).ToList();
+        static string Norm(string sh) => sh.Split('#')[0].TrimStart('/').ToLowerInvariant();
+        var stock = items.Select(b => (Norm(M(b, @"<Shared href=""([^""]*)""")), int.Parse(M(b, @"<x>(-?\d+)</x>")), int.Parse(M(b, @"<y>(-?\d+)</y>")),
+            int.TryParse(M(b, @"<Floor>(\d+)</Floor>"), out var fl) ? fl : 0)).ToList();
+        static int RaceOf(string town) => town switch
+        {
+            "Heaven" => 3, "Preserve" => 4, "Academy" => 5, "Dungeon" => 6, "Necromancy" => 7, "Inferno" => 8,
+            "Fortress" => 9, "Orc_Stronghold" => 10, _ => 1,
+        };
+        var races = items.Where(b => Regex.IsMatch(b, @"<PlayerID>PLAYER_\d") && b.Contains("AdvMapTownShared"))
+            .Select(b => (P: int.Parse(M(b, @"<PlayerID>PLAYER_(\d)")), R: RaceOf(M(b, @"MapObjects/([^.]+)\."))))
+            .OrderBy(t => t.P).Select(t => t.R).ToList();
+        var o = new RmgOptions
+        {
+            Template = M(desc, @"template (\S+)"),
+            Size = Array.IndexOf(RmgSizes.Tiles, int.Parse(M(xml, @"<TileX>(\d+)"))),
+            Players = int.Parse(M(desc, @"for (\d+) players")),
+            MonsterLevel = desc.Contains("weak") ? 0 : desc.Contains("impossible") ? 4 : desc.Contains("very strong") ? 3 : desc.Contains("strong") ? 2 : 1,
+            Seed = (int)uint.Parse(M(desc, @"seed is (\d+)")),
+            ResourceLevel = Level("ResourceMultiplier", "RESOURCE_"),
+            ExpLevel = Level("ExpMultiplier", "EXP_"),
+        };
+        o.PlayerRaces.AddRange(races);
+        var r = new RmgGenerator(f.Db, o).Generate();
+        var ours = r.Objects.Select(x => (Norm(x.Shared), x.X, x.Y, x.Floor)).ToList();
+        int same = 0;
+        while (same < Math.Min(stock.Count, ours.Count) && stock[same] == ours[same]) same++;
+        Assert.True(same == stock.Count && ours.Count == stock.Count,
+            $"{name}: first difference at #{same} of {stock.Count} (ours {ours.Count}): stock {stock.ElementAtOrDefault(same)}, ours {ours.ElementAtOrDefault(same)}");
     }
 
     /// <summary>

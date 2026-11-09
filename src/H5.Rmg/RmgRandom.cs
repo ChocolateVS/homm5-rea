@@ -49,12 +49,15 @@ public sealed class RmgRandom
         return (uint)(_s >> 23) & 0x7FFF_FFFF;
     }
 
-    /// <summary>exe 0x00ba6790: a + (b - a) · ((s >> 23) &amp; 0x7FFFFFFF) / 2^31, in single precision.</summary>
+    /// <summary>
+    /// exe 0x00ba6790: FILD v = (s >> 23) &amp; 0x7FFFFFFF, FLD b, FSUB a, FMULP, FMUL 4.656613e-10 (0x00e82680), FADD a,
+    /// each chopped to a float under the game's control word (<see cref="X87"/>).
+    /// </summary>
     public float Float(float a, float b)
     {
         Step();
         uint v = (uint)(_s >> 23) & 0x7FFF_FFFF;
-        return (float)((double)v * (b - a) * 4.656613E-10f + a);
+        return X87.Add(X87.Mul(X87.Mul(v, X87.Add(b, -a)), 4.656613E-10f), a);
     }
 
     /// <summary>
