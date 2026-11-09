@@ -346,6 +346,77 @@ public class SeerHutTests(Fixture f)
     }
 
     [Fact]
+    public void ObjectiveChecksFollowTheExeConditions()
+    {
+        var g = f.NewGame("A2S4");
+        var p = g.Current;
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
+        var hut = g.Map.Objects.First(o => o.Kind == Map.ObjectKind.SeerHut && o.Quest != null);
+        var saved = hut.Quest;
+        bool Met(string kind, params string[] prm)
+        {
+            hut.Quest = new Map.SeerQuest { Objective = new Map.MapObjective { Kind = kind, Parameters = prm.ToList() } };
+            return g.SeerQuestMet(h, hut.Index);
+        }
+        try
+        {
+            // 00b45420 / 00b42690: (number of heroes, level, name) over the player's heroes.
+            var mine = g.S.Heroes.Where(x => x.Alive && x.Owner == p.Index).ToList();
+            foreach (var x in mine) x.Level = 1;
+            Assert.False(Met("OBJECTIVE_KIND_ADVANCE_HEROES", "1", "5"));
+            h.Level = 5;
+            Assert.True(Met("OBJECTIVE_KIND_ADVANCE_HEROES", "1", "5"));
+            foreach (var x in mine) x.Level = 5;
+            Assert.True(Met("OBJECTIVE_KIND_ADVANCE_HEROES", mine.Count.ToString(), "5"));
+            Assert.False(Met("OBJECTIVE_KIND_ADVANCE_HEROES", (mine.Count + 1).ToString(), "5"));
+            Assert.False(Met("OBJECTIVE_KIND_ADVANCE_HEROES", "1", "6"));
+            // 00b44ab0 / 00b41850: the amount defaults to 1.
+            p.Purse[6] = 0;
+            Assert.False(Met("OBJECTIVE_KIND_COLLECT_RESOURCES", "6"));
+            p.Purse[6] = 1;
+            Assert.True(Met("OBJECTIVE_KIND_COLLECT_RESOURCES", "6"));
+            // 00b41fd0 / 00b41f50: every named monster must be defeated.
+            var named = g.Map.Objects.Where(o => o.Kind == Map.ObjectKind.Monster && o.Name.Length > 0 && !g.S.Obj(o.Index).Removed)
+                .GroupBy(o => o.Name).Select(x => x.Key).Take(2).ToList();
+            Assert.Equal(2, named.Count);
+            foreach (var o in g.Map.Objects.Where(o => o.Kind == Map.ObjectKind.Monster && o.Name == named[0])) g.S.Obj(o.Index).Removed = true;
+            Assert.True(Met("OBJECTIVE_KIND_DEFEAT_NEUTRALS", named[0]));
+            Assert.False(Met("OBJECTIVE_KIND_DEFEAT_NEUTRALS", named[0], named[1]));
+        }
+        finally { hut.Quest = saved; }
+    }
+
+    [Theory]
+    [InlineData("AWARD_SPELL_POINTS")]
+    [InlineData("AWARD_MORALE")]
+    [InlineData("AWARD_LUCK")]
+    public void SpellPointsMoraleAndLuckAwardsGiveNothing(string award)
+    {
+        // 00a7e2c0 has no case for award types 7, 8, 9.
+        var g = f.NewGame("A2S4");
+        var p = g.Current;
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
+        var hut = g.Map.Objects.First(o => o.Kind == Map.ObjectKind.SeerHut && o.Quest != null);
+        var saved = hut.Quest;
+        try
+        {
+            hut.Quest = new Map.SeerQuest
+            {
+                Objective = new Map.MapObjective { Kind = "OBJECTIVE_KIND_COLLECT_RESOURCES", Parameters = new() { "6", "1" } },
+                AwardType = award, SpellPoints = 10, Morale = 2, Luck = 2,
+            };
+            h.Pos = hut.ActiveTiles.FirstOrDefault(hut.Pos);
+            p.Purse[6] = 10;
+            int mana = h.Mana, morale = h.NextBattleMorale, luck = h.NextBattleLuck;
+            Assert.True(g.Apply(new AcceptSeerQuestCmd(h.Id, hut.Index) { Player = p.Index }).Ok);
+            var r = g.Apply(new CompleteSeerQuestCmd(h.Id, hut.Index) { Player = p.Index });
+            Assert.True(r.Ok, r.Error);
+            Assert.Equal((mana, morale, luck), (h.Mana, h.NextBattleMorale, h.NextBattleLuck));
+        }
+        finally { hut.Quest = saved; }
+    }
+
+    [Fact]
     public void RewardResourceSkipsSulfur()
     {
         // exe 006eefe0 tests wood, ore, mercury, crystal, gems, gold — not sulfur.

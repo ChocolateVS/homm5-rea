@@ -27,7 +27,7 @@ public sealed partial class Adventure
         {
             "OBJECTIVE_KIND_OBTAIN_ARTIFACT" => ("artifact", Db.EnumName("ArtifactEffect", P(0)), 1, null),
             "OBJECTIVE_KIND_ASSEMBLE_ARMY" => ("army", Db.EnumName("CreatureType", P(0)), Math.Max(1, P(1)), null),
-            "OBJECTIVE_KIND_COLLECT_RESOURCES" => ("resources", null, P(1), P(0).ToString()),
+            "OBJECTIVE_KIND_COLLECT_RESOURCES" => ("resources", null, 1 < p.Count && int.TryParse(p[1], out int amt) ? amt : 1, P(0).ToString()),   // 00b44ab0: amount default 1
             "OBJECTIVE_KIND_ADVANCE_HEROES" => ("level", null, P(1), Str(2)),
             "OBJECTIVE_KIND_DEFEAT_NEUTRALS" => ("neutrals", null, 1, Str(0)),
             "OBJECTIVE_KIND_MANUAL" => ("manual", null, 0, null),
@@ -38,8 +38,22 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// Whether the visiting hero meets the quest. TODO(exe): the objective checks are not traced; the
-    /// parameters are read as the map editor writes them.
+    /// Whether the quest is met, per the objective conditions of H5_Game.exe (factory 00b45b70 by ObjectiveKind; each
+    /// condition's check is vtable +0x10):
+    /// <list type="bullet">
+    /// <item>COLLECT_RESOURCES (ctor 00b44ab0, check 00b41850): parameter 0 the resource (+0x38, default 0), 1 the
+    /// amount (+0x3c, default 1); the player's resources (vf 0xd8) of that index ≥ the amount.</item>
+    /// <item>ADVANCE_HEROES (ctor 00b45420, check 00b42690 → 00b425e0): parameter 0 the number of heroes (+0x30, at
+    /// least 1; 0 without the parameter), 1 the level (+0x34, 0..40, default 1), 2 a hero name (+0x38); met when that
+    /// many of the player's heroes (vf 0xc0; with a name only that hero) have reached the level.</item>
+    /// <item>DEFEAT_NEUTRALS (ctor 00b44e40 → 00496160, check 00b41fd0 → 00b41f50): every parameter names a monster;
+    /// met when all of them are defeated (an object that is gone counts).</item>
+    /// <item>OBTAIN_ARTIFACT (ctor 00b45210, check 00b422c0) and ASSEMBLE_ARMY (ctor 00b44950, check 00b43d30 →
+    /// 00b43c60) look at the player's heroes (vf 0xc0), limited to one hero when the caller passes it; which hero the
+    /// Seer Hut passes is not traced (TODO(exe)), here the visiting hero. The artifact counts worn (00ca6680) or in the
+    /// backpack (00ca6b30); its optional location parameter (+0x3c) is not ported. The army condition takes
+    /// (creature, count) pairs; only the first pair is read here.</item>
+    /// </list>
     /// </summary>
     public bool SeerQuestMet(HeroState h, int hut)
     {
@@ -47,15 +61,29 @@ public sealed partial class Adventure
         if (o?.Quest is not { } q || S.Obj(hut).QuestDone) return false;
         var p = PlayerByIndex(h.Owner)!;
         var (kind, id, amount, name) = QuestRequirement(q);
-        return kind switch
+        var prm = q.Objective.Parameters;
+        int P(int i, int dflt) => i < prm.Count && int.TryParse(prm[i], out int v) ? v : dflt;
+        switch (kind)
         {
-            "artifact" => id != null && (h.Artifacts.Contains(id) || h.Backpack.Contains(id)),
-            "army" => id != null && h.Army.Live().Where(st => st.Creature == id).Sum(st => st.Count) >= amount,
-            "resources" => int.TryParse(name, out int r) && r is >= 0 and < 7 && p.Purse[r] >= amount,
-            "level" => (name == null ? h : S.Heroes.FirstOrDefault(x => x.Alive && (x.DefId == name || x.Name == name)) ?? h).Level >= amount,
-            "neutrals" => name != null && Map.Objects.Where(m => m.Kind == ObjectKind.Monster && m.Name == name).All(m => S.Obj(m.Index).Removed),
-            _ => false,
-        };
+            case "artifact": return id != null && (h.Artifacts.Contains(id) || h.Backpack.Contains(id));
+            case "army": return id != null && h.Army.Live().Where(st => st.Creature == id).Sum(st => st.Count) >= amount;
+            case "resources":
+            {
+                int r = P(0, 0);
+                return r is >= 0 and < 7 && p.Purse[r] >= P(1, 1);
+            }
+            case "level":
+            {
+                int need = prm.Count > 0 ? Math.Max(1, P(0, 0)) : 0;
+                int level = prm.Count > 1 ? Math.Clamp(P(1, 0), 0, 40) : 1;
+                int have = S.Heroes.Count(x => x.Alive && x.Owner == h.Owner && (name == null || x.DefId == name || x.Name == name) && x.Level >= level);
+                return have >= need;
+            }
+            case "neutrals":
+                return prm.Where(n => n.Length > 0).All(n =>
+                    Map.Objects.Where(m => m.Kind == ObjectKind.Monster && m.Name == n).All(m => S.Obj(m.Index).Removed));
+            default: return false;
+        }
     }
 
     /// <summary>
@@ -132,6 +160,16 @@ public sealed partial class Adventure
         return null;
     }
 
+    /// <summary>
+    /// The award (CObjectiveAwardEffect apply 00a7e2c0, switch on the award type +0x28): 1 experience through the hero's
+    /// modifiers (vf 0x19c → vf 0x198); 2 resources to the player (+0x30, vf 0xd8 / 0xdc); 3 attribute (vf 0x1bc(+0x50,
+    /// +0x54)); 4 artifact (+0x58, vf 0x80 / 0x84, TT_ARTIFACT_FOUND); 5 spell (+0x5c, vf 0xe8(spell, 0)); 6 creatures
+    /// (+0x64 × +0x68 into the army, vf 0x378); 10 skill (+0x80) raised one level at a time from the hero's mastery
+    /// (vf 0x174) up to +0x7c (vf 0x1cc / 0x1c8, NEW_SKILL / NEW_ABILITY). AWARD_SPELL_POINTS, AWARD_MORALE and
+    /// AWARD_LUCK (7, 8, 9) have no case: nothing is given (the box shows them as UNKNOWN_FORMAT too, 006efb10).
+    /// TODO(exe): vf 0x1cc (the per-level refusal) and the hero vf 0x80 artifact test are not decoded; MASTERY_EXTRA_EXPERT
+    /// is capped at Expert here.
+    /// </summary>
     void GiveSeerAward(HeroState h, PlayerState p, SeerQuest q)
     {
         switch (q.AwardType)
@@ -152,12 +190,9 @@ public sealed partial class Adventure
             case "AWARD_CREATURE" when q.Creature != null:
                 if (h.Army.TryAdd(q.Creature, q.CreatureCount)) Emit(new ArmyChanged(h.Id, -1));
                 break;
-            case "AWARD_SPELL_POINTS": h.Mana += q.SpellPoints; break;
-            case "AWARD_MORALE": h.NextBattleMorale += q.Morale; break;
-            case "AWARD_LUCK": h.NextBattleLuck += q.Luck; break;
             case "AWARD_SKILL" when q.Skill != null:
-                var m = q.Mastery switch { "MASTERY_EXPERT" => Mastery.Expert, "MASTERY_ADVANCED" => Mastery.Advanced, _ => Mastery.Basic };
-                if (h.MasteryOf(q.Skill) < m)
+                var m = q.Mastery switch { "MASTERY_EXPERT" or "MASTERY_EXTRA_EXPERT" => Mastery.Expert, "MASTERY_ADVANCED" => Mastery.Advanced, "MASTERY_BASIC" => Mastery.Basic, _ => Mastery.None };
+                if (m > Mastery.None && h.MasteryOf(q.Skill) < m)
                 {
                     h.Skills.RemoveAll(x => x.SkillId == q.Skill);
                     h.Skills.Add(new SkillEntry(q.Skill, m));
