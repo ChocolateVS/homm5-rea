@@ -47,7 +47,8 @@ public partial class HeroScreen
     {
         if (!IsInsideTree() || IsQueuedForDeletion()) return;
         QueueFree();
-        if (_town != null) _town.SubClosed();
+        if (_preview) _town?.Refresh();
+        else if (_town != null) _town.SubClosed();
         else { _adv.Hud.Refresh(); foreach (var x in _adv.Session.S.Heroes) _adv.World.SyncHero(x); }
     }
 }

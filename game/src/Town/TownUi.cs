@@ -72,6 +72,8 @@ public sealed class ArmySlotView
 {
     public required UiNode Node;
     public int Hero = -1, Town = -1, Slot;
+    /// <summary>A hero shown without being in the game state (a tavern offer): its army is read from here.</summary>
+    public H5.Adventure.State.HeroState? Snapshot;
     /// <summary>The window that receives the creature picture (the slot's 'Pic' child or the button itself).</summary>
     public Control PicHost => Node.FindChild("Pic", true, false) as Control ?? Node;
 }
@@ -93,6 +95,9 @@ public sealed class ArmySlots
     public delegate bool AdvCommandSink(H5.Adventure.Engine.AdvCommand cmd);
 
     public event Action? Changed;
+
+    /// <summary>No moves or splits (a hero shown as a snapshot); a double click still opens the creature info.</summary>
+    public bool ReadOnly;
 
     public ArmySlots(Control overlay, Func<AdvCommandSink> sink)
     {
@@ -116,7 +121,7 @@ public sealed class ArmySlots
         _infoState = s; // for CreatureInfoWindow on double click
         foreach (var v in _slots)
         {
-            var army = v.Hero >= 0 ? s.Hero(v.Hero)?.Army : v.Town >= 0 ? s.Town(v.Town)?.Garrison : null;
+            var army = v.Snapshot?.Army ?? (v.Hero >= 0 ? s.Hero(v.Hero)?.Army : v.Town >= 0 ? s.Town(v.Town)?.Garrison : null);
             var stack = army != null && v.Slot < army.Length ? army[v.Slot] : null;
             // The 'Pic' window is hidden in the data and shown by code when the slot holds a stack.
             v.PicHost.Visible = stack is { Count: > 0 };
@@ -137,9 +142,10 @@ public sealed class ArmySlots
                 _dragFrom = null;
                 _selected = null;
                 Changed?.Invoke();
-                H5Reborn.Interaction.CreatureInfoWindow.Show(_overlay, st.Creature, st.Count, v.Hero >= 0 ? _infoState.Hero(v.Hero) : null);
+                H5Reborn.Interaction.CreatureInfoWindow.Show(_overlay, st.Creature, st.Count, v.Snapshot ?? (v.Hero >= 0 ? _infoState.Hero(v.Hero) : null));
                 return;
             }
+            if (ReadOnly) return;
             if (mb.Pressed) { _dragFrom = v; _pressPos = mb.GlobalPosition; }
             else if (_dragFrom != null)
             {
@@ -153,7 +159,7 @@ public sealed class ArmySlots
                 else if (!dragged) ClickSlot(v);
             }
         }
-        else if (e is InputEventMouseMotion mm && _dragFrom != null && _dragIcon == null && (mm.GlobalPosition - _pressPos).Length() > 6)
+        else if (!ReadOnly && e is InputEventMouseMotion mm && _dragFrom != null && _dragIcon == null && (mm.GlobalPosition - _pressPos).Length() > 6)
         {
             var tex = (_dragFrom.PicHost.GetNodeOrNull<TextureRect>("_pic"))?.Texture;
             if (tex == null) { _dragFrom = null; return; }
@@ -168,7 +174,7 @@ public sealed class ArmySlots
 
     H5.Adventure.State.Stack? StackOf(ArmySlotView v)
     {
-        var army = v.Hero >= 0 ? _infoState?.Hero(v.Hero)?.Army : v.Town >= 0 ? _infoState?.Town(v.Town)?.Garrison : null;
+        var army = v.Snapshot?.Army ?? (v.Hero >= 0 ? _infoState?.Hero(v.Hero)?.Army : v.Town >= 0 ? _infoState?.Town(v.Town)?.Garrison : null);
         return army != null && v.Slot < army.Length ? army[v.Slot] : null;
     }
 

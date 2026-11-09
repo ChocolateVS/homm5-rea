@@ -75,4 +75,25 @@ public class TownHireTests(Fixture f)
         g.Current.Purse = new Purse(new Resources(999, 999, 999, 999, 999, 999, 999999));
         Assert.Empty(g.HireAllPlan(t, g.Current.Purse, t.Garrison, null));
     }
+
+    [Fact]
+    public void TavernHeroInfoShowsTheArmyTheHireGives()
+    {
+        // 00636c30 case 4 → 006c44f0: the hero screen of the offered hero object, army included. Ours builds the offer on
+        // a copy of the game (TavernHeroPreview), leaving the game untouched; the hire then gives that same army.
+        var (g, t) = Town(1);
+        t.Built["TB_TAVERN"] = 1;
+        foreach (var h in g.S.Heroes.Where(h => h.Pos.Equals(g.EntranceOf(t)))) h.Alive = false;
+        Assert.Equal(0, g.TownHireStatus(g.Current, t));
+        var offers = g.TownTavernOffers(g.Current, t);
+        Assert.NotNull(offers[0]);
+        int heroes = g.S.Heroes.Count;
+        var sim = g.Simulation(H5.Adventure.AI.StateCopy.Of(g.S));
+        var preview = sim.TavernHeroPreview(offers[0]!, g.Current.Index, g.EntranceOf(t));
+        Assert.Equal(heroes, g.S.Heroes.Count);
+        Assert.Contains(preview.Army, s => s is { Count: > 0 });
+        Assert.True(g.Apply(new HireHeroCmd(t.Object, 0) { Player = g.Current.Index }).Ok);
+        var hired = g.S.Heroes.Last(h => h.DefId == offers[0]);
+        Assert.Equal(preview.Army.Select(s => (s?.Creature, s?.Count)), hired.Army.Select(s => (s?.Creature, s?.Count)));
+    }
 }

@@ -70,6 +70,22 @@ public partial class HeroScreen : Control
         return s;
     }
 
+    /// <summary>
+    /// The tavern's hero info (00636c30 case 4: the page's hero object +0x24 / +0x28, its vf 0x138, then 006c44f0 →
+    /// the hero screen factory 006cc450 / 006cd9b0). The exe's offer is a hero object already holding its army; ours is
+    /// built on a copy of the game (<see cref="H5.Adventure.Engine.Adventure.TavernHeroPreview"/>), so the screen shows
+    /// that snapshot and its army and sends no commands. It opens over <paramref name="host"/> and closes back to it.
+    /// </summary>
+    public static HeroScreen OpenPreview(AdventureScreen adv, HeroState hero, TownScreen town, Control host)
+    {
+        var s = new HeroScreen(adv, hero, town) { _preview = true };
+        host.AddChild(s);
+        return s;
+    }
+
+    /// <summary>A hero that is not in the game state (a tavern offer): shown read-only, armies from the snapshot.</summary>
+    bool _preview;
+
     /// <summary>Opens the meeting screen for two heroes of the same player standing next to each other.</summary>
     public static HeroScreen OpenMeeting(AdventureScreen adv, HeroState visitor, HeroState met)
     {
@@ -119,12 +135,12 @@ public partial class HeroScreen : Control
 
         // One ArmySlots for both panels so stacks drag between the two heroes (TransferStackCmd /
         // SwapStacksCmd accept a neighbouring own hero as the target).
-        _army = new ArmySlots(this, () => cmd => Apply(cmd));
+        _army = new ArmySlots(this, () => cmd => Apply(cmd)) { ReadOnly = _preview };
         _army.Changed += Refresh;
         foreach (var p in _panels)
             for (int i = 1; i <= 7; i++)
                 if (Find(p, $"Army/ArmyStacks/Slot_{i}") is { } slot)
-                    _army.Add(new ArmySlotView { Node = slot, Hero = p.Hero.Id, Slot = i - 1 });
+                    _army.Add(new ArmySlotView { Node = slot, Hero = p.Hero.Id, Slot = i - 1, Snapshot = _preview ? p.Hero : null });
         // Meeting: clicking a war machine sends that slot to the other hero (CSwapWarMachinesCmd exchanges the slot).
         if (_meet != null)
             foreach (var p in _panels)
@@ -189,6 +205,7 @@ public partial class HeroScreen : Control
 
     bool Apply(AdvCommand cmd)
     {
+        if (_preview) return false;
         var r = _adv.Session.Apply(cmd);
         if (!r.Ok) GD.Print($"[H5] hero screen: {cmd.GetType().Name} rejected: {r.Error}");
         Refresh();
@@ -220,7 +237,7 @@ public partial class HeroScreen : Control
         _army.Refresh(_adv.Session.S);
         foreach (var p in _panels)
         {
-            if (_adv.Session.S.Hero(p.Hero.Id) is { } fresh) p.Hero = fresh;
+            if (!_preview && _adv.Session.S.Hero(p.Hero.Id) is { } fresh) p.Hero = fresh;
             RefreshPanel(p);
         }
     }

@@ -30,7 +30,9 @@ public partial class HeroScreen
         SetJog("button_0", $"ExitWithDay_{day % 7 + 1}", (UiGameRoot.Text("ExitBtnTooltip") ?? "")
             .Replace("<value=Day>", (day % 7 + 1).ToString()).Replace("<value=Week>", (day / 7 % 4 + 1).ToString())
             .Replace("<value=Month>", (day / 28 + 1).ToString()).Replace("<value=WeekName>", AdvTexts.WeekName(w.MoonWeek)), true);
-        bool single = _meet == null;
+        // A tavern offer (preview) is not in the player's hero list: dismiss needs player vf 0x74 → vf 0x3c(hero), which
+        // does not hold for it; previous / next are left off for it (their +0x1b4 test is not mapped for this case).
+        bool single = _meet == null && !_preview;
         SetJog("button_1", "ToLeft", HT("PrevHero"), single);
         SetJog("button_3", "ToRight", HT("NextHero"), single);
         SetJog("button_2", "HeroScreen_DismissHero", HT("DismissHero_Tooltip"), single && CanDismiss());

@@ -40,6 +40,7 @@ public sealed partial class TavernScreen : TownSubScreen
         foreach (var unused in new[] { "button_1", "button_3" }) _jog.SetVisible(unused, false);
         Ui.Bus.On("jd_button_0_reaction", Close);
         Ui.Bus.On("jd_button_2_reaction", Action);
+        Ui.Bus.On("jd_button_4_reaction", HeroInfo);
         _tab = Offers()[0] != null ? 0 : 2;
         // Dev (screenshots): `--tavern-dev-rumours=N` buys N rumours and shows the rumours page.
         if (OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--tavern-dev-rumours=")) is { } dev && int.TryParse(dev.Split('=')[1], out var n))
@@ -47,6 +48,8 @@ public sealed partial class TavernScreen : TownSubScreen
             for (int i = 0; i < n; i++) owner.Session.Apply(new BuyRumourCmd(owner.Town.Object) { Player = owner.Town.Owner });
             _tab = 2;
         }
+        // `--tavern-dev-heroinfo`: presses HeroInfo (jog button 4) on the first hero page.
+        if (OS.GetCmdlineUserArgs().Contains("--tavern-dev-heroinfo")) Callable.From(HeroInfo).CallDeferred();
     }
 
     static string T(string key) => UiGameRoot.RelatedTextAt(Texts, key) ?? "";
@@ -149,8 +152,20 @@ public sealed partial class TavernScreen : TownSubScreen
             act.Enabled = can;
             act.SetTooltip(blocked ?? T(_tab <= 1 ? "hire_hero" : "pay"));
         }
-        // GAP: hero info (006c44f0) shows the offered hero's screen; the engine has no hero object before hiring.
-        if (_jog.Find("button_4") is { } info) info.Enabled = false;
+        // 00637b50: HeroInfo / hero_info on the hero pages.
+        if (_jog.Find("button_4") is { } info) info.Enabled = _tab <= 1 && offers[_tab] != null;
+    }
+
+    /// <summary>
+    /// Button 4 (00636c30 case 4): the hero screen (006c44f0) for the page's hero (+0x24 on page 0, else +0x28). The
+    /// offer is built as the hire would build it, on a copy of the game (its starting army included), and shown read-only.
+    /// </summary>
+    void HeroInfo()
+    {
+        if (_tab > 1 || Offers()[_tab] is not { } id) return;
+        var sim = Owner.Session.Game.Simulation(H5.Adventure.AI.StateCopy.Of(Owner.Session.S));
+        var hero = sim.TavernHeroPreview(id, Me.Index, Owner.Session.Game.EntranceOf(Owner.Town));
+        Hero.HeroScreen.OpenPreview(Owner.Adv, hero, Owner, this);
     }
 
     void SetBookmark(int i, bool enabled, string? hero)
