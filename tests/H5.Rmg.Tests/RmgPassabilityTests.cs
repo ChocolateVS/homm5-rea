@@ -3,8 +3,7 @@ using H5.Adventure.Map;
 namespace H5.Rmg.Tests;
 
 /// <summary>The adventure passability (H5_Game.exe 00990800) of a generated underground map.</summary>
-[Collection("rmg")]
-public class RmgPassabilityTests(RmgFixture f)
+public class RmgPassabilityTests(RmgFixture f) : IClassFixture<RmgFixture>
 {
     [StockFact]
     public void UndergroundRockChunk15AndZoneBordersAreRefused()
@@ -40,8 +39,7 @@ public class RmgPassabilityTests(RmgFixture f)
 }
 
 /// <summary>True Random Towns maps (generator +0xa5) resolved by the adventure start (0041b450 / 0041b9f0).</summary>
-[Collection("rmg")]
-public class RmgRandomTownTests(RmgFixture f)
+public class RmgRandomTownTests(RmgFixture f) : IClassFixture<RmgFixture>
 {
     [StockFact]
     public void RandomDwellingsFollowTheirZoneTown()

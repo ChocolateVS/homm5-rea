@@ -8,23 +8,33 @@ using H5.Rmg;
 
 namespace H5.Rmg.Tests;
 
+/// <summary>
+/// The RMG data, loaded once per test process and shared by every test class (an xunit collection fixture would
+/// serialise the classes; they only read it, so they run in parallel).
+/// </summary>
 public sealed class RmgFixture
 {
-    public readonly PakFileSystem Fs = PakFileSystem.OpenInstall(GameInstall.Locate());
-    public readonly XdbLoader Xdb;
-    public readonly RmgDatabase Db;
-    readonly Lazy<GameDatabase> _core;
-    readonly Lazy<AdventureDb> _adv;
-
-    public RmgFixture()
+    sealed class Data
     {
-        Xdb = new XdbLoader(Fs);
-        Db = RmgDatabase.Load(Xdb);
-        _core = new(() => GameDatabase.Load(Fs));
-        _adv = new(() => AdventureDb.Load(_core.Value, Fs));
+        public readonly PakFileSystem Fs = PakFileSystem.OpenInstall(GameInstall.Locate());
+        public readonly XdbLoader Xdb;
+        public readonly RmgDatabase Db;
+        public readonly Lazy<AdventureDb> Adv;
+
+        public Data()
+        {
+            Xdb = new XdbLoader(Fs);
+            Db = RmgDatabase.Load(Xdb);
+            Adv = new(() => AdventureDb.Load(GameDatabase.Load(Fs), Fs));
+        }
     }
 
-    public AdventureDb Adventure => _adv.Value;
+    static readonly Lazy<Data> Shared = new(() => new Data());
+
+    public PakFileSystem Fs => Shared.Value.Fs;
+    public XdbLoader Xdb => Shared.Value.Xdb;
+    public RmgDatabase Db => Shared.Value.Db;
+    public AdventureDb Adventure => Shared.Value.Adv.Value;
 
     public RmgResult Generate(string template, int size, int seed, int players, params int[] races)
     {
@@ -32,10 +42,19 @@ public sealed class RmgFixture
         o.PlayerRaces.AddRange(races);
         return new RmgGenerator(Db, o).Generate();
     }
-}
 
-[CollectionDefinition("rmg")]
-public sealed class RmgCollection : ICollectionFixture<RmgFixture> { }
+    /// <summary>
+    /// Runs one template's checks per item on the thread pool (generation only reads the shared data) and rethrows
+    /// the first failure in item order, so a sweep reports what the sequential loop would have.
+    /// </summary>
+    public static void EachInParallel<T>(IEnumerable<T> items, Action<T> check)
+    {
+        var list = items.ToList();
+        var errors = new Exception?[list.Count];
+        Parallel.For(0, list.Count, i => { try { check(list[i]); } catch (Exception e) { errors[i] = e; } });
+        if (errors.FirstOrDefault(e => e != null) is { } first) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(first);
+    }
+}
 
 public class RandomTests
 {
@@ -105,8 +124,7 @@ public class HashMapTests
     }
 }
 
-[Collection("rmg")]
-public class GeneratorTests(RmgFixture f)
+public class GeneratorTests(RmgFixture f) : IClassFixture<RmgFixture>
 {
     [Fact]
     public void LoadsStockData()
@@ -152,7 +170,11 @@ public class GeneratorTests(RmgFixture f)
         Assert.Equal(0, r.Unreachable);
         Assert.Equal(4, r.StartTowns.Count);
     }
+}
 
+/// <summary>Split from GeneratorTests so the long generator runs execute in parallel.</summary>
+public class GeneratorTemplateSweepTests(RmgFixture f) : IClassFixture<RmgFixture>
+{
     /// <summary>
     /// Every template at the smallest size the RMG screen lists it for (exe 0x0090c880), with its most players:
     /// one start town per player while start zones last (exe 0x0090bd80 hands player records to start zones only).
@@ -160,7 +182,7 @@ public class GeneratorTests(RmgFixture f)
     [Fact]
     public void EveryTemplateGeneratesAtItsSmallestListedSize()
     {
-        foreach (var t in f.Db.Templates.Values.Where(t => !t.TestTemplate))
+        RmgFixture.EachInParallel(f.Db.Templates.Values.Where(t => !t.TestTemplate), t =>
         {
             var (size, ug) = Enumerable.Range(0, 7).SelectMany(s => new[] { (s, false), (s, true) })
                 .First(c => t.ListedFor(c.Item1, c.Item2, false, t.MaxPlayers));
@@ -172,9 +194,13 @@ public class GeneratorTests(RmgFixture f)
             // pocket inside an underground static mass can hold one; on the surface every object is reachable.
             var bad = r.Warnings.Where(w => w.StartsWith("unreachable") && !w.Contains("floor 1")).ToList();
             Assert.True(bad.Count == 0, $"{t.Name}: " + string.Join("; ", bad.Take(4)));
-        }
+        });
     }
+}
 
+/// <summary>Split from GeneratorTests so the long generator runs execute in parallel.</summary>
+public class GeneratorWaterSweepTests(RmgFixture f) : IClassFixture<RmgFixture>
+{
     /// <summary>
     /// The water option (exe 0x0090bd80 → CGameWaterBorderedZone 0x00bae920, 0x00904770 → vf 0x24 0x00bae0f0): every
     /// listed template at its smallest water size generates; each surface zone loses its tiles with border distance
@@ -184,10 +210,10 @@ public class GeneratorTests(RmgFixture f)
     public void WaterOptionBordersEverySurfaceZone()
     {
         int unreachable = 0;
-        foreach (var t in f.Db.Templates.Values.Where(t => !t.TestTemplate))
+        RmgFixture.EachInParallel(f.Db.Templates.Values.Where(t => !t.TestTemplate), t =>
         {
             int? size = Enumerable.Range(0, 7).Cast<int?>().FirstOrDefault(s => t.ListedFor(s, false, true, t.MaxPlayers));
-            if (size == null) continue;
+            if (size == null) return;
             var o = new RmgOptions { Template = t.Name, Size = size.Value, Seed = 4711, Players = t.MaxPlayers, WaterAmount = 2 };
             var r = new RmgGenerator(f.Db, o).Generate();
             var g = r.Generator;
@@ -199,12 +225,16 @@ public class GeneratorTests(RmgFixture f)
             Assert.Contains(fl.Depth, b => b == 0xff);
             int starts = t.Zones.Count(z => z.CanBePlayerStart);
             Assert.True(r.StartTowns.Count == Math.Min(g.Players, starts), $"{t.Name}: {r.StartTowns.Count} start towns");
-            unreachable += r.Warnings.Count(w => w.StartsWith("unreachable") && !w.Contains("floor 1"));
+            Interlocked.Add(ref unreachable, r.Warnings.Count(w => w.StartsWith("unreachable") && !w.Contains("floor 1")));
             Assert.Contains(r.Objects, ob => ob.Note == "water treasure");
-        }
+        });
         Assert.Equal(0, unreachable);
     }
+}
 
+/// <summary>Split from GeneratorTests so the long generator runs execute in parallel.</summary>
+public class GeneratorTerrainTests(RmgFixture f) : IClassFixture<RmgFixture>
+{
     /// <summary>
     /// Lakes (exe 0x00924940 → 0x00916f80): the depth grid is written under lake tiles and the tiles with more than
     /// two 0x80 neighbours become 0x82; mountains raise the ground (0x00915e00) before the height pass.
@@ -338,7 +368,11 @@ public class GeneratorTests(RmgFixture f)
         Assert.Equal(u.Level, map.Floors[1]!.Data!.VertexFlags!.Data);
         Assert.Contains(map.Floors[0]!.Data!.VertexMap15!.Data, b => b == 0);
     }
+}
 
+/// <summary>Split from GeneratorTests so the long generator runs execute in parallel.</summary>
+public class GeneratorUndergroundTests(RmgFixture f) : IClassFixture<RmgFixture>
+{
     /// <summary>
     /// 0x0090bd80: underground zones share one class (dwarven when the builder draw is odd, else Next(2)), and vf 0x1c
     /// gives their object preset (SubInferno 0, Dwarven 2, Subterra 6); underground statics are placed; teleports carry
@@ -347,7 +381,7 @@ public class GeneratorTests(RmgFixture f)
     [StockFact]
     public void UndergroundClassesStaticsAndTeleportGroups()
     {
-        foreach (int seed in new[] { 77, 78, 79, 80 })
+        RmgFixture.EachInParallel(new[] { 77, 78, 79, 80 }, seed =>
         {
             var g = new RmgGenerator(f.Db, new RmgOptions { Template = "S1-2P2-4Z4K1S", Size = 2, Underground = true, Seed = seed, Players = 2 });
             var r = g.Generate();
@@ -362,9 +396,13 @@ public class GeneratorTests(RmgFixture f)
             var groups = r.Objects.Where(o => o.GroupId != null).GroupBy(o => o.GroupId).ToList();
             Assert.All(groups, gr => Assert.Equal(2, gr.Count()));
             Assert.All(r.StartTowns.Values, t => Assert.NotNull(t.Specialization));
-        }
+        });
     }
+}
 
+/// <summary>Split from GeneratorTests so the long generator runs execute in parallel.</summary>
+public class GeneratorRoadTests(RmgFixture f) : IClassFixture<RmgFixture>
+{
     /// <summary>
     /// Roads (0x0091aee0 via 0x0091bdb0 and 0x0091bf90): the pass-bucket search gives the same maps as the literal
     /// full-scan transcription of the exe's loop; main roads (flag 8) start at the town.
