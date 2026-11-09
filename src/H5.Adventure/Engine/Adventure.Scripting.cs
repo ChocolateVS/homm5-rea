@@ -147,12 +147,12 @@ public sealed partial class Adventure
 
     public void ScriptRemoveHero(HeroState h, string reason) => RemoveHero(h, reason);
 
-    public void ScriptReveal(int player, Tile center, int radius) => Reveal(PlayerByIndex(player), center, radius);
+    public void ScriptReveal(int player, Tile center, int radius) => Reveal(ScriptPlayer(player, create: true), center, radius);
 
     /// <summary>OpenRegionFog (CModifyPlayerFogCmd): explores exactly the given cells.</summary>
     public void ScriptRevealTiles(int player, IEnumerable<Tile> tiles)
     {
-        var p = PlayerByIndex(player);
+        var p = ScriptPlayer(player, create: true);
         if (p == null) return;
         foreach (var g in tiles.GroupBy(t => t.Floor))
         {
@@ -229,7 +229,7 @@ public sealed partial class Adventure
 
     public void ScriptGive(int player, int resource, int amount)
     {
-        var p = PlayerByIndex(player);
+        var p = ScriptPlayer(player, create: true);
         if (p == null) return;
         p.Purse[resource] = Math.Max(0, p.Purse[resource] + amount);
         var delta = new int[7];
@@ -254,6 +254,29 @@ public sealed partial class Adventure
     public void ScriptCheckVictory() => CheckVictory();
 
     public PlayerState? Player(int index) => PlayerByIndex(index);
+
+    /// <summary>
+    /// The player object a map script acts on. The exe's game start (00c9fa80) creates every player number 1..8; one
+    /// that is not in the game is a 004ffb60 player in state 4 (race RACE_NO_TYPE, team -1) and the script player natives
+    /// (GetPlayerResource 005c19a0, SetPlayerResource 005c1c30, SetPlayerStartResources 005c1fb0, Has/GiveBorderguardKey
+    /// 005c22a0 / 005c2540, OpenCircleFog 005da1e0, OpenRegionFog 005d9df0, IsObjectVisible 005cc2a0) refuse only a
+    /// missing player or state 0, so they act on it. Our engine leaves such players out of <see cref="AdvState.Players"/>;
+    /// their purse, keys and fog live in <see cref="AdvState.AbsentPlayers"/>, made on the first change.
+    /// </summary>
+    public PlayerState? ScriptPlayer(int index, bool create = false)
+    {
+        if (PlayerByIndex(index) is { } p) return p;
+        if (index < 0 || index > 7) return null;
+        var a = S.AbsentPlayers.Find(x => x.Index == index);
+        if (a == null && create)
+        {
+            // 004ffb60 → 004ff2a0(race 2 = RACE_NO_TYPE, team -1, empty name); the purse starts empty (009d09c0).
+            a = new PlayerState { Index = index, Team = -1 };
+            foreach (var f in Map.Floors) a.Explored.Add(f == null ? Array.Empty<bool>() : new bool[f.Width * f.Height]);
+            S.AbsentPlayers.Add(a);
+        }
+        return a;
+    }
 
     /// <summary>
     /// Builds the next level for free, ignoring the daily limit (the free path of 00cd4a40). UpgradeTownBuilding passes

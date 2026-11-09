@@ -522,6 +522,11 @@ public sealed class AdvState
     public bool Campaign;
     public Rng Rng = new(1);
     public List<PlayerState> Players = new();
+    /// <summary>
+    /// Player numbers that are not in the game (exe state 4, see <c>Adventure.ScriptPlayer</c>) once a map script changed
+    /// their purse, keys or fog; never in the turn order.
+    /// </summary>
+    public List<PlayerState> AbsentPlayers = new();
     public List<HeroState> Heroes = new();
     /// <summary>Heroes that exist but are not on the map: player reserves (DeployReserveHero), kept out of taverns.</summary>
     public List<HeroState> OffMapHeroes = new();

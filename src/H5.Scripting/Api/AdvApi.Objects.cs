@@ -593,7 +593,7 @@ public sealed partial class AdventureScripting
 
     bool Explored(int player, Tile t)
     {
-        var p = Game.Player(player);
+        var p = Game.ScriptPlayer(player);
         var f = Map.Floor(t.Floor);
         if (p == null || f == null || t.Floor >= p.Explored.Count) return false;
         int i = t.Y * f.Width + t.X;
@@ -634,7 +634,8 @@ public sealed partial class AdventureScripting
     {
         int p = c.Int(i);
         if (p < 1 || p > 8) throw c.Error($"Invalid player ID #{p} (must be in [1,8] )");
-        if (Game.Player(p - 1) == null) throw c.Error($"Player #{p} doesn`t taking part in the current game");
+        // 005cc2a0 / 005d9df0 / 005da1e0 refuse a missing player or state 0 only: an absent (state 4) player is acted on.
+        if (ScriptPlayerState(p - 1) == 0) throw c.Error($"Player #{p} doesn`t taking part in the current game");
         return p - 1;
     }
 

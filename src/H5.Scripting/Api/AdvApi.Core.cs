@@ -219,7 +219,7 @@ public sealed partial class AdventureScripting
         // 0x005c1c30: (player, resource, quantity, hero = ""); the hero only places the flying text.
         Reg("SetPlayerResource", c =>
         {
-            var p = PlayerInGame(c, PlayerId18(c));
+            var p = PlayerInGame(c, PlayerId18(c), change: true);
             int pi = p.Index, r = c.Int(1), q = c.Int(2);
             if (r < 0 || r > 6) throw c.Error($"Invalid resource specified: {r}");
             if (q < 0) throw c.Error("Quantity cannot be negative");
@@ -230,7 +230,7 @@ public sealed partial class AdventureScripting
         });
         Reg("SetPlayerStartResources", c =>
         {
-            var p = PlayerInGame(c, PlayerId18(c));
+            var p = PlayerInGame(c, PlayerId18(c), change: true);
             int pi = p.Index;
             var q = new int[7];
             for (int r = 0; r < 7; r++) q[r] = c.Int(r + 1);
@@ -253,7 +253,7 @@ public sealed partial class AdventureScripting
         Reg("IsAIPlayer", c => c.ReturnBool(Game.Player(PlayerArg(c, 0)) is { Human: false }));
         Reg("GetPlayerNecroEnergy", c => c.Return(0));
         Reg("HasBorderguardKey", c => { var p = KeyPlayer(c, out int key); c.ReturnBool(p.Keys.Contains(key)); });
-        Reg("GiveBorderguardKey", c => { var p = KeyPlayer(c, out int key); p.Keys.Add(key); });
+        Reg("GiveBorderguardKey", c => { var p = KeyPlayer(c, out int key, change: true); p.Keys.Add(key); });
 
         // Objectives
         Reg("IsObjectiveVisible", c => c.ReturnBool(Objective(c).Visible));
@@ -349,17 +349,22 @@ public sealed partial class AdventureScripting
         return id - 1;
     }
 
-    /// <summary>The player, which must take part in the game (state != 0).</summary>
-    PlayerState PlayerInGame(HostContext c, int index) =>
-        PlayerStateOf(index) != 0 ? Game.Player(index)! : throw c.Error($"Player {index + 1} doesn't taking part in the current game");
+    /// <summary>
+    /// The player of 005c19a0 / 005c1c30 / 005c1fb0 / 005c22a0 / 005c2540: refused only when missing or in state 0, so an
+    /// absent (state 4) player is acted on (<see cref="Adventure.ScriptPlayer"/>); a change makes its record.
+    /// </summary>
+    PlayerState PlayerInGame(HostContext c, int index, bool change = false) =>
+        ScriptPlayerState(index) != 0 && Game.ScriptPlayer(index, change) is { } p ? p
+        : ScriptPlayerState(index) == 4 ? new PlayerState { Index = index, Team = -1 }
+        : throw c.Error($"Player {index + 1} doesn't taking part in the current game");
 
     /// <summary>HasBorderguardKey / GiveBorderguardKey (0x005c22a0 / 0x005c2540): player, then key colour 1..8.</summary>
-    PlayerState KeyPlayer(HostContext c, out int key)
+    PlayerState KeyPlayer(HostContext c, out int key, bool change = false)
     {
         int id = c.Int(0);
         key = c.Int(1);
         if (id < 1 || id > 8) throw c.Error($"Invalid player ID #{id}");
-        var p = PlayerInGame(c, id - 1);
+        var p = PlayerInGame(c, id - 1, change);
         if (key < 1 || key > 8) throw c.Error($"Invalid borderguard key color #{key}");
         return p;
     }
