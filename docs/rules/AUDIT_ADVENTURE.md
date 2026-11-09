@@ -4,7 +4,7 @@ Every adventure mechanic / screen element checked against `H5_Game.exe` (Ghidra 
 the original data. Status: **MATCH** (already as the exe), **FIXED** (changed to match), **GAP** (known difference or
 not built), **UNVERIFIED** (implemented from data/editor semantics, exe path not traced).
 
-Rows at 2026-11-10: 189 FIXED, 30 MATCH, 69 GAP, 69 UNVERIFIED (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
+Rows at 2026-11-10: 195 FIXED, 30 MATCH, 71 GAP, 70 UNVERIFIED, 1 N/A (rows carrying two statuses, e.g. rules FIXED / visual GAP, count once for each).
 
 ## Seer Huts
 
