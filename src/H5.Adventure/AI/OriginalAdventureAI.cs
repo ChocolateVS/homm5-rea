@@ -121,12 +121,20 @@ public sealed partial class OriginalAdventureAI
                     GarrisonHeroInTown(g, st, diff, h, shop);
                     if (h.Garrisoned) break;
                 }
-                else if (h.Alive && g.Map.Objects.FirstOrDefault(o => o.Kind == ObjectKind.Dwelling && o.ActiveTiles.Contains(h.Pos)) is { } dw
+                else if (h.Alive && DwellingAt(g, h.Pos) is { } dw
                          && g.S.Objects.TryGetValue(dw.Index, out var dws) && dws.Owner == me) Purchase(g, st, dw.Index, h, false);
                 if (h.MovePoints < 100) break;
             }
             if (h.Alive && !g.S.Finished) FinishHero(g, h, roles[h.Id]);
         }
+    }
+
+    /// <summary>The first map dwelling (map order) with an active tile at <paramref name="t"/>.</summary>
+    static MapObject? DwellingAt(Engine.Adventure g, Tile t)
+    {
+        foreach (var o in g.Map.Objects)
+            if (o.Kind == ObjectKind.Dwelling && o.ActiveTiles.Contains(t)) return o;
+        return null;
     }
 
     /// <summary>

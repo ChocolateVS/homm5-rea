@@ -195,6 +195,8 @@ public sealed class MapObject
     public IEnumerable<Tile> BlockedTiles => Shared.Blocked.Select(o => Footprint.Place(Pos, o, Rot));
     /// <summary>Tiles from which the object is visited (absolute).</summary>
     public IEnumerable<Tile> ActiveTiles => Shared.Active.Select(o => Footprint.Place(Pos, o, Rot));
+    /// <summary><c>ActiveTiles.FirstOrDefault(Pos)</c> without the enumerator: the first active tile, else the position.</summary>
+    public Tile FirstActiveTile => Shared.Active.Count > 0 ? Footprint.Place(Pos, Shared.Active[0], Rot) : Pos;
     /// <summary>
     /// The tiles the pathfinder's object map lets a hero enter whatever the terrain kind there (H5_Game.exe 0045d910,
     /// built per path search by 00ceb670 → pathfinder +4, read by 009d1410 through vf 0 = 0045d690): an object with at

@@ -74,7 +74,7 @@ public sealed partial class OriginalAdventureAI
         {
             if (o.Pos.Floor != h.Pos.Floor || o.Kind is ObjectKind.Static or ObjectKind.Stand or ObjectKind.Unknown || claimed.Contains(o.Index)) continue;
             if (g.S.Objects.TryGetValue(o.Index, out var os) && os.Removed) continue;
-            var tile = o.Kind is ObjectKind.Monster or ObjectKind.Hero ? o.Pos : o.ActiveTiles.FirstOrDefault(o.Pos);
+            var tile = o.Kind is ObjectKind.Monster or ObjectKind.Hero ? o.Pos : o.FirstActiveTile;
             // Move cost = the flood's path cost to the destination tile (record +0x18); unreached tiles are not found.
             if (tile == h.Pos || !costs.TryGetValue(tile, out int cost) || cost > maxCost) continue;
             if (IsTeleport(o) || !FreeScan(g, h, role, o, tile, cost, targetOk)) continue;
@@ -109,7 +109,7 @@ public sealed partial class OriginalAdventureAI
             int c = costs[last];
             bestState = prev.State;
             bestValue = c > T ? (long)T * prev.Value * 3 / (2L * c) : prev.Value;
-            var o = g.Map.Objects.FirstOrDefault(x => x.Kind is ObjectKind.Monster or ObjectKind.Hero ? x.Pos == last : x.ActiveTiles.FirstOrDefault(x.Pos) == last);
+            var o = g.Map.Objects.FirstOrDefault(x => x.Kind is ObjectKind.Monster or ObjectKind.Hero ? x.Pos == last : x.FirstActiveTile == last);
             if (o != null) chosen = new Candidate { O = o, Tile = last, Cost = c, State = prev.State, Value = bestValue };
         }
         foreach (var d in dests)
