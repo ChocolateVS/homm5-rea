@@ -277,19 +277,7 @@ public sealed partial class Battle
             return false;
         }
 
-        // Bad morale: the turn is lost and ATB reset to 0.5 (p.311).
-        int morale = MoraleOf(u);
-        if (morale < 0 && MoraleRoll(morale))
-        {
-            Emit(new MoraleProc(u.Id, false));
-            RageEvent(u, "BadMoraleRP");
-            EmpathyOnMorale(u, good: false);
-            // exe 008a8140: the opposing hero's Necromancers set (4+ pieces) cripples a stack that fails its morale.
-            if (Specials.Pieces(Enemy(u.Side), Specials.Necromancers) > 3)
-                AddEffect(u, new Effect { Id = NecromancersDebuff, SourceSide = 1 - u.Side, Dispellable = false });
-            FinishTurn(u, Stats.Get("combat/LuckAndMorale/BadMorale_ATBValue", 0.5), allowMorale: false);
-            return false;
-        }
+        // Bad morale is rolled when the gauge crosses 1.0 in the clock tick, not here (ReadyHook, Battle.Sweep17.cs).
 
         if (u.IsWarMachine) return WarMachineTurn(u);
         if (u.IsObject) { ObjectTurn(u); return false; }

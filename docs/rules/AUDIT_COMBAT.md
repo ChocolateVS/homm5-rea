@@ -12,8 +12,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 401 |
-| MATCH | 216 |
+| FIXED | 402 |
+| MATCH | 215 |
 | GAP | 7 |
 | UNVERIFIED | 0 |
 | N/A | 65 |
@@ -25,7 +25,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | Damage pipeline (base roll, attack/defence factor uncapped, truncation) | MATCH | 00a597a0, 00a58de0, 00a5c5a0, 00a5a900 | EXE_FINDINGS |
 | Range penalty (squared distance vs (width/2)²) | MATCH | 00a5c5a0, 00b3c690 | EXE_FINDINGS |
 | Luck: clamp ±5, 10 %/point, once per attack | MATCH | 00a6b820, 008a3ef0, 00a5a170 | EXE_FINDINGS |
-| Morale: clamp ±5 (00a6bd10), 10 %/point, ATB 0.5 good/bad (00a6cf90/00a6cd80) | MATCH | 00a6bd10, 00a6cf90, 00a6cd80 | this audit |
+| Morale: clamp ±5 (00a6bd10), 10 %/point, ATB 0.5 good/bad (00a6cf90/00a6cd80); bad morale rolled when the gauge crosses 1.0 in the tick (004d90d0 ready hooks), no turn start / end | FIXED | 00a6bd10, 00a6cf90, 00a6cd80, 004d90d0, 00a6b8f0, 008a8140 | AuditSweep17Tests.BadMoraleStrikesAtTheCrossingWithoutATurn (combat_sweep_17.md) |
 | Ability trigger chance: integer ratio, ProcFactor as exponent, Range(0,100) roll, Soldier's Luck double/second roll | FIXED | 00a59990, 00a5a170, 00a5d1b0 | AuditProcChanceTests |
 | Retaliation verdict: only Expert Blind blocks, decided before the blow | FIXED | 00a5fee0 | AuditAbilityTests.OnlyExpertBlindStopsRetaliation |
 | Retaliation reset at own turn start / Wait / Defend | MATCH | 008aa960, 008a1990, 008a6be0 | EXE_FINDINGS |
@@ -41,7 +41,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | Siege building health: data (< 1 → 200), TOWN_BONUS_WALLS (0x23) +50, then Stoneworks (ability 0x25) health / 2 + health | FIXED | 00bfe590 | SiegeTests.WallsSpecialisationIsAddedBeforeStoneworks (was ×1.5 before the +50) |
 | Fortress Guard Post placement: FUN_00cd0a30 creature (BaseCreatureToPlace or its first upgrade the town offers) and count at CellToPlaceWithFort / NoFort | FIXED | 00853f90, 00cd0a30, 00cd46c0 | SiegeTests.GuardPostPlacesTheCreatureHandedOver (was always BaseCreatureToPlace) |
 | Pile of Skulls start rage: player +0x1c8 (towns with ability 0x2c) · PileOfOurFoes_StartRPBonus, for every Demon-Raged stack of a player army | FIXED | 008aaec0 (008ab4a3..008ab51f), 00500bf0, 004fcd80 | AuditSkillTests.PileOfSkullsGivesStartRagePerTown (was not built) |
-| ATB: float gauge on the integer game clock — dt = max(1, least chopped time to a turn), single-precision tick capped at 1.25, the turn sequence head (time, ATB desc, attacker stacks, defender stacks, heroes); ATBMin/Max dead code | FIXED | 00af5930, 00af2690, 004d9310, 004d90d0, 00a6a260, 00a6a0b0, 00a2e0c0, 00a2d8f0, 00a2d800, 00a2e8b0, 00a2d890 | AuditSweep16Tests (combat_sweep_16.md); ATBMin/Max: EXE_FINDINGS |
+| ATB: float gauge on the integer game clock — dt = max(1, least chopped time to a turn), single-precision tick capped at 1.25, then the effects of each unit (expired at remaining ≤ dt; a 0-length effect lasts to the next tick), the turn sequence head (time, ATB desc, attacker stacks, defender stacks, heroes), rebuilt when the turn counter moves; ATBMin/Max dead code | FIXED | 00af5930, 00af2690, 004d9310, 004d90d0, 00a6a260, 00a6a0b0, 00a72ae0, 004e3d50, 00a2e310, 00a2db60, 00a2e0c0, 00a2d8f0, 00a2d800, 00a2e8b0, 00a2d890 | AuditSweep16Tests, AuditSweep17Tests (combat_sweep_16.md, combat_sweep_17.md); ATBMin/Max: EXE_FINDINGS |
 | Spell damage rounding / empowered ×1.5 | MATCH | 00976b90 | EXE_FINDINGS |
 | Surrender / retreat conditions and ransom | FIXED | 004d9e20, 004d9780, 004da8d0, 004da9a0 | AuditRetreatTests (combat_heroes.md, combat_sweep_2.md) |
 | Battle-end experience (winner) | FIXED | 00af3430, 004d9c60, 004d99b0, 00b4bbb0, 00bcdc60 | AuditBattleExpTests (combat_heroes_skills_h.md) |

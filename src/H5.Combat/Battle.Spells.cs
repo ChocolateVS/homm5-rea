@@ -1049,7 +1049,7 @@ public sealed partial class Battle
         if (!SpellHits(side, sp, t, hostile, hero)) return false;
         double value = sp.DamageAt(m).Eval(power);
         double duration = sp.Duration.Length > 0 ? sp.DurationAt(m).Eval(power) : double.PositiveInfinity;
-        if (duration <= 0) duration = 1;
+        if (duration <= 0) duration = 0;   // exe 004e57d0: Eval ≤ 0 → 0; in force until the next clock tick (FUN_004e3d50, sweep 17)
 
         switch (id)
         {

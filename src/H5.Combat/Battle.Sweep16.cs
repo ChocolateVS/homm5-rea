@@ -79,8 +79,10 @@ public sealed partial class Battle
             var present = Actors().ToList();
             if (!Actors().Contains(head) || present.Any(a => (float)GetAtb(a) >= 1f))
             {
-                // A dead head, or a ready actor that is not the head: the exe waits for a sequence rebuild (not traced
-                // which event triggers it); the engine rebuilds at once.
+                // The exe rebuilds (FUN_00a2e310 at 00af5a40 / 00af2ca7 / 00af5b6a) when the turn counter +0x38 moved
+                // (FUN_00a2db60: every command handler 004e0xxx, bad morale 00a6cd80, the turn start 00bbcaa0 / 00bbcb40,
+                // summons 00c565e0 / 00c56750 / 00c56820), so a head killed in an action is gone before the next step. A
+                // ready actor behind a not-ready head with no bump (a chop tie) is not resolved; the engine rebuilds at once.
                 seq = TurnSequence();
                 if (seq.Count > 0 && Actors().Contains(seq[0]) && (float)GetAtb(seq[0]) >= 1f) return seq[0];
                 if (present.Any(a => (float)GetAtb(a) >= 1f)) return present.First(a => (float)GetAtb(a) >= 1f);
@@ -89,7 +91,10 @@ public sealed partial class Battle
             foreach (var a in present) dt = Math.Min(dt, TimeToNextTurnOf(a));
             if (dt == NoTurnTime && present.All(a => TimeToNextTurnOf(a) >= NoTurnTime)) return null;
             if (dt < 1) dt = 1;
+            seqDirty = false;
             ClockTick(dt);
+            if (seqDirty && !(seq.Count > 0 && Actors().Contains(seq[0]) && (float)GetAtb(seq[0]) >= 1f))
+                seq = TurnSequence();   // 00af2c60 tries the old head, then 00af5b6a FUN_00a2e310 rebuilds (sweep 17)
         }
         return null;
     }
@@ -97,29 +102,37 @@ public sealed partial class Battle
     /// <summary>
     /// The tick (army vf 0x94 = FUN_004d90d0: the hero, then every stack, vf 0x178 = FUN_00a6a260 → FUN_00a6a0b0): a
     /// present actor not disabled (FUN_004e4920 = 0) gets ATB' = max(0, min(1.25, (float)dt / vf 0x174 + ATB)) in single
-    /// precision. Then the engine's effect and field clocks run dt (one engine time unit = ATBBaseTime / 10 exe units);
-    /// the order of the effect expiries against the tick is not traced — the ATB uses the initiative in force before them.
+    /// precision; then the unit's effects run dt (FUN_00a6a260 calls vf 0x18 = FUN_008a1b80 → FUN_00a72ae0 after the ATB:
+    /// FUN_004e3d50 per effect — so the ATB uses the initiative in force before them), then the ready hooks
+    /// (<see cref="ReadyHook"/>); one engine time unit = ATBBaseTime / 10 exe units. The field clocks run after.
     /// </summary>
     internal void ClockTick(uint dt)
     {
+        double dtE = dt * 10.0 / AtbBaseTime();
+        var ticked = new HashSet<int>();
         for (int side = 0; side < 2; side++)
         {
             var army = Actors().Where(a => Actor.IsHero(a) ? Actor.HeroSide(a) == side : S.Unit(a)!.Side == side)
                 .OrderBy(a => Actor.IsHero(a) ? 0 : 1).ToList();
             foreach (var a in army)
             {
-                if (!Actor.IsHero(a) && AtbFrozen(S.Unit(a)!)) continue;
+                var unit = Actor.IsHero(a) ? null : S.Unit(a)!;
                 float atb = (float)GetAtb(a);
-                float v = (float)((float)dt / FullTurnTimeOf(a) + atb);
-                v = Math.Max(0f, Math.Min(1.25f, v));
-                if (Actor.IsHero(a)) S.Heroes[Actor.HeroSide(a)].Atb = v; else S.Unit(a)!.Atb = v;
+                if (unit == null || !AtbFrozen(unit))
+                {
+                    float v = (float)((float)dt / FullTurnTimeOf(a) + atb);
+                    v = Math.Max(0f, Math.Min(1.25f, v));
+                    if (unit == null) S.Heroes[Actor.HeroSide(a)].Atb = v; else unit.Atb = v;
+                }
+                if (unit == null) continue;
+                TickEffects(unit, dtE);   // vf 0x178 → FUN_00a6a260 → vf 0x18 → FUN_00a72ae0 after the ATB (sweep 17)
+                ticked.Add(unit.Id);
+                if (atb < 1f && (float)unit.Atb >= 1f) ReadyHook(unit);   // 004d90d0: vf 0x1c8 / vf 0x160 (sweep 17)
             }
         }
-        double dtE = dt * 10.0 / AtbBaseTime();
         S.Time += dtE;
         foreach (var u in S.Units)
-            foreach (var e in u.Effects)
-                if (!double.IsPositiveInfinity(e.Remaining)) e.Remaining -= dtE;
+            if (!ticked.Contains(u.Id)) TickEffects(u, dtE);
         foreach (var f in S.Fields)
             if (!double.IsPositiveInfinity(f.Remaining)) f.Remaining -= dtE;
         ExpireEffects();

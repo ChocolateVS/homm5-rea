@@ -56,4 +56,66 @@ public sealed partial class Battle
         }
         return Math.Max(0, c);                                                        // 00a349d4 SETL: < 0 → 0
     }
+
+    /// <summary>
+    /// The ready hooks of the tick FUN_004d90d0: a present stack whose gauge goes from below 1.0 to 1.0 or more runs
+    /// vf 0x1c8 and, when it holds, vf 0x160, then reads its ATB again (only then is it "ready"). vf 0x1c8 is the bad
+    /// morale roll FUN_00a6b8f0 (ABILITY_UNDEAD (0xa) via vf 0x28c → no; morale vf 0x1b0 clamped to ±5, ≥ 0 → no; the
+    /// stack RNG's Range(1, 100) &lt; −10 · morale → bad morale) — for a creature (CCombatCreature vf 0x1c8 = 008aec70 →
+    /// FUN_008a3e90) only while the byte of its vf 0x50 timeline (FUN_008ace60 on [this − 0x94], also tested by the Battle
+    /// Dive finish) is set. vf 0x160 is FUN_00a6cd80 (generic units: 00a74c43 / 00a76886 / 008b1bc6 thunks) — for a
+    /// creature FUN_008a8140 first casts SPELL_ARTFSET_NECROMANCERS_DEBUFF (0xce) when the enemy hero wears 4+ Necromancer
+    /// pieces (FUN_004d8d60(5) &gt; 3) — : the BAD_MORALE animation, the sequence counter bump (FUN_00a2db60), the ATB
+    /// setter vf 0x18c (FUN_00a6b690) with RPGStats +0xad8 (BadMorale_ATBValue), FUN_00bbcaa0 → part of the turn start
+    /// (<see cref="TurnStartPartA"/>) and the own hero's Empathy (vf 0x2c(0)). The creature turn start 008a6c40 and the
+    /// turn end do not run: no retaliation reset, no start-of-turn damage, no action-count tick, no good morale (the
+    /// engine rolled at the turn start, after those, and then finished the turn). A diving stack is left alone, as before
+    /// (the timeline byte's meaning is not resolved).
+    /// </summary>
+    internal void ReadyHook(Unit u)
+    {
+        if (!u.Alive || u.HasEffect(FxDiving)) return;
+        int morale = MoraleOf(u);
+        if (morale >= 0 || !MoraleRoll(morale)) return;
+        if (u.Kind == UnitKind.Creature && Specials.Pieces(Enemy(u.Side), Specials.Necromancers) > 3)   // 008a8140
+            AddEffect(u, new Effect { Id = NecromancersDebuff, SourceSide = 1 - u.Side, Dispellable = false });
+        Emit(new MoraleProc(u.Id, false));
+        SetAtb(u.Id, (float)Stats.Get("combat/LuckAndMorale/BadMorale_ATBValue", 0.5));   // vf 0x18c(RPGStats +0xad8)
+        TurnStartPartA(u);                                                          // vf 0xd8 → FUN_00bbcaa0 → FUN_00bbc8e0
+        RageEvent(u, "BadMoraleRP");                                                // the engine's rage (exe site not traced)
+        EmpathyOnMorale(u, good: false);                                            // hero vf 0x2c(0)
+        seqDirty = true;                                                            // 00a6ce7f FUN_00a2db60: turn counter +0x38
+    }
+
+    /// <summary>Set when the turn sequence must be rebuilt (FUN_00a2db60 bumps +0x38; FUN_00a2e310 rebuilds on a change).</summary>
+    bool seqDirty;
+
+    /// <summary>
+    /// FUN_00bbc8e0, the part of a creature's turn start the bad morale path also runs (FUN_00bbcaa0 when vf 0xd8 holds):
+    /// SPELL_EFFECT_BATTLE_FRENZY (0x112), SPELL_ABILITY_BERSERKER_RAGE (0xf5) and SPELL_EFFECT_PREPARATION (0x11e)
+    /// removed (vf 0x270), the Defile Magic release (vf 0x28c(0x6d)), then FUN_00bbc510 (Battle Dive finish; a diving
+    /// stack does not reach here). Not ported: vf 0x268(SPELL_ABILITY_DASH 0xb0) when vf 0x28 ≠ 0, FUN_00bbb900 (vf 0x4c ≠ 1)
+    /// and FUN_00bbb390 (SPELL_ABILITY_GATING 0x9f).
+    /// </summary>
+    void TurnStartPartA(Unit u)
+    {
+        Sweep7TurnStart(u);
+        RemoveEffect(u, PreparationEffect);
+    }
+
+    /// <summary>
+    /// FUN_00a72ae0(dt, now) over the unit's effect list (+0x4c): FUN_004e3d50 leaves the markers 0x7ffffffd..0x7fffffff
+    /// alone, else remaining (+0x1c) − dt when dt &lt; remaining, otherwise flags the effect expired (+0x34 = 1, +0x30 = now;
+    /// FUN_00a72650 runs its expiry). The effect query vf 0x28 (FUN_00a6d330) skips flagged effects, and the list drops them
+    /// 1000 units later (now ≥ +0x30 + 1000), so an expired effect is gone at once. A 0-length effect (duration Eval ≤ 0,
+    /// 004e57d0) is therefore in force until the next clock tick of any length.
+    /// </summary>
+    void TickEffects(Unit u, double dtE)
+    {
+        foreach (var e in u.Effects)
+            if (!double.IsPositiveInfinity(e.Remaining)) e.Remaining -= dtE;
+        for (int i = u.Effects.Count - 1; i >= 0; i--)
+            if (u.Effects[i].Remaining <= Eps || u.Effects[i].Actions == 0)
+                RemoveEffectAt(u, i);
+    }
 }
