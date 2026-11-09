@@ -137,6 +137,17 @@ in its initial state (exe's transition table); A2C2M3/A2C3M4/SL2 objects or play
 Trigger, `H55_MakeStartArmy` removing 0 creatures ("Quantity cannot be negative", exe check), `CheckWizardCombat2` passing
 nil to IsObjectExists.
 
+Result (2026-11-09, after the single-player host fix of §1; the harness plays single player): **117 maps, 0 engine
+exceptions, 115 run the startup (MMH55) — all playable maps, 65 of them without a map script — 86 without any error of
+ours** (222 stock-matching errors, 42 others; the run before the fix on the same tree: 106 clean, 16 + 107, MMH55 only on
+the 50 scripted maps). The new errors are on multiplayer / user / RMG maps: 18 × `H55_MakeStartArmy(Neutral)` →
+RemoveHeroCreatures(hero, type, 0) when the start hero has none of the swapped creature ("Quantity cannot be negative",
+the exe's count ≤ 0 check, 0x005c64a0 — same as the scripted-map case above); 1 × `H55_WeeklyEvents` AddObjectCreatures
+on a mine (count < 1 check; whether the script's count is fractional there is not checked); 2 × combat
+`C55_ThreadedAimedSpell` "can`t cast spell #278" (UnitCastAimedSpell refused by our combat engine — GAP, not checked
+against the exe). `script-run … --multiplayer` / `--hotseat` applies the networked/hotseat rule (startup only on maps with a MapScript;
+checked on Maps/Multiplayer/A2M1 and user:L_I4_RMG_Map_001: nothing runs).
+
 **MMH55 features (2026-11-09)**: per-setting status in OPTIONS.md §4 (tests `Mmh55FeatureTests`, settings sweep with
 `script-run … --h55-set=H55_X=v`). Natives MMH55 calls: `tools/scriptre/mmh55_natives.py` (none missing by name),
 residual gaps ranked in missing_natives.txt. Fixed in this pass: custom abilities (ControlHeroCustomAbility + the cast
