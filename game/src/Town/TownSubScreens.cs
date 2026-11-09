@@ -79,21 +79,31 @@ public sealed partial class TownBuildScreen : TownSubScreen
 
     public TownBuildScreen(TownScreen owner) : base(owner, "UI/TownBuildNew.(WindowScreen).xdb")
     {
-        // 006590a0: the jog dial (00783fa0), button 2 disabled until a buildable cell is selected. Button 1
-        // (EnterDwellings / ToLeft), 3 (BuildPlan / BuildPlanDone, ToRight) and 4 (town_build_to_full / _half) are
-        // not built here (GAP); button 0's preset (00783710) is taken to be Exit.
+        // 006590a0: the jog dial (00783fa0 → class 00784190, vf 0x18 = 00783da0 → 00783a60). Button 0's preset
+        // (00783710) is taken to be Exit; 1 EnterDwellings / ToLeft and 3 BuildPlan(Done) / ToRight act through the
+        // town screen's interface +0x18c (vtable 00e2a610, handed over as build screen +0x21c by 006182d0 → 00659480 →
+        // 0065d0a0 → 0065e260 → 00659170); 2 Build / BuyBuilding (00783da0); 4 the view toggle (00783330, sub-object
+        // +0x44, vtable 00e3fd8c: 00724930 get / 00783870 set).
         _jog = new UiScreen("UI/Common/JogDial/JogDial.xdb", Ui.Bus);
         AddChild(_jog);
         SetJogButton("button_0", "Exit", null);
-        SetJogButton("button_2", "Build", "UI/Common/JogDial/TownJogDial/BuyBuilding.txt");
-        foreach (var unused in new[] { "button_1", "button_3", "button_4" }) _jog.SetVisible(unused, false);
+        SetJogButton("button_1", "EnterDwellings", JogText("ToLeft"));
+        SetJogButton("button_2", "Build", JogText("BuyBuilding"));
         Ui.Bus.On("jd_button_0_reaction", Close);
+        Ui.Bus.On("jd_button_1_reaction", EnterDwellings);
+        Ui.Bus.On("jd_button_3_reaction", BuildPlan);
+        Ui.Bus.On("jd_button_4_reaction", ToggleView);
+        // input_a2.cfg town_build: jd_button_3 B / A, jd_button_1 R, jd_button_2 Space.
+        Ui.Bus.On("jd_button_1", EnterDwellings);
+        Ui.Bus.On("jd_button_3", BuildPlan);
         Ui.Bus.On("jd_button_2_reaction", Build);
         Ui.Bus.On("jd_button_2", Build);
         // Dev (screenshots): `--town-build-dev=select` selects the first buildable cell, `=build` also presses Build.
         if (OS.GetCmdlineUserArgs().FirstOrDefault(x => x.StartsWith("--town-build-dev=")) is { } dev)
             Callable.From(() =>
             {
+                // `=full` / `=full-select`: press the view toggle (jog button 4) first.
+                if (dev.Contains("full")) ToggleView();
                 for (int x = 1; x <= 5 && _selected == null; x++)
                     for (int y = 1; y <= 6 && _selected == null; y++)
                         if (CellDef((x, y)) is { } d && Owner.Town.Level(d.Type) < d.Level
@@ -154,22 +164,15 @@ public sealed partial class TownBuildScreen : TownSubScreen
         }
     }
 
-    /// <summary>The building level a cell stands for now: the next level to build there, else the highest built.</summary>
-    BuildingDef? CellDef((int X, int Y) cell)
-    {
-        if (!_cells.TryGetValue(cell, out var list)) return null;
-        var db = Owner.Session.Db;
-        var t = Owner.Town;
-        BuildingDef? builtTop = null;
-        foreach (var (type, level) in list.OrderBy(e => e.Level))
-        {
-            var def = db.Building(t.Type, type, level);
-            if (def == null || level > t.MaxLevel.GetValueOrDefault(type)) continue;
-            if (t.Level(type) >= level) { builtTop = def; continue; }
-            return def;
-        }
-        return builtTop;
-    }
+    /// <summary>The building level a shown cell stands for (<see cref="CellView"/>); hidden cells give none.</summary>
+    BuildingDef? CellDef((int X, int Y) cell) => CellView(cell) is { Shown: true } v ? v.Def : null;
+
+    /// <summary>
+    /// DAT_00fdc638: the full-view flag, a process-wide static. 006590a0 starts the dial's view mode at
+    /// (flag == 0) and 0065bab0 writes flag = (mode == 0) on every refresh; the static starts at 0, so the first build
+    /// screen opens in the simple view and later ones in the view last used.
+    /// </summary>
+    static bool _fullView;
 
     public override void Refresh()
     {
@@ -180,44 +183,93 @@ public sealed partial class TownBuildScreen : TownSubScreen
             for (int y = 1; y <= 6; y++)
             {
                 if (Ui.Find($"building_{x}_{y}") is not { } cellNode) continue;
-                var def = CellDef((x, y));
-                cellNode.Visible = def != null;
-                if (def == null || Ui.Find($"building_{x}_{y}/button") is not { } btn) continue;
-                var view = TownData.View(def);
+                var draw = CellView((x, y));
+                cellNode.Visible = draw is { Shown: true };
+                if (draw is not { } d || Ui.Find($"building_{x}_{y}/button") is not { } btn) continue;
+                var view = TownData.View(d.Def);
                 TownUi.SetPicture(btn, view.IconHref != null ? Game.Instance.LoadTexture(view.IconHref) : null);
-                bool built = t.Level(def.Type) >= def.Level;
-                var state = TownData.Check(Owner.Session, t, def);
-                btn.Modulate = CellTint(state, built);
-                btn.TooltipText = Tooltip(view, state);
+                btn.Modulate = d.Tint;
+                btn.TooltipText = Tooltip(view, TownData.Check(Owner.Session, t, d.Def));
             }
         var show = _selected ?? _hover;
         var sel = show is { } s ? CellDef(s) : null;
         TownUi.SetCostStrip(Ui.Find("CreatureCountHolder"),
             sel != null && t.Level(sel.Type) < sel.Level ? CostArray(sel) : null, Me);
-        if (_jog?.Find("button_2") is { } build) build.Enabled = SelectedBuildable() != null;
+        UpdateJog();
         UpdateFrames();
+    }
+
+    /// <summary>
+    /// The jog buttons' states. 00783600 (polled by the dial): button 1 enabled = interface vf 4(0) = 0061ae60(0) — the
+    /// owner check 00613c00 and 0061a390 (EnterFort's condition, <see cref="TownScreen.CanEnterFort"/>); button 3's
+    /// preset = BuildPlan when vf 4(1) = 1, else BuildPlanDone (UIGameRoot: EnterTownBuild / EnterTownBuildDone), with
+    /// 0061ae60(1) = 0 without the owner, else 1 + town vf 0x9c (00cce4e0: built today); 00783a60 enables button 3
+    /// when that value is not 0. Button 2 (0065a4c0 / 0065c530): 00658da0 and a non-empty selection. Button 4
+    /// (00783870): mode 0 (full view) ScrollSmall / town_build_to_half, mode 1 (simple view) Scroll / town_build_to_full.
+    /// </summary>
+    void UpdateJog()
+    {
+        if (_jog == null) return;
+        bool owner = Owner.OwnsTown();
+        if (_jog.Find("button_1") is { } dwellings) dwellings.Enabled = owner && Owner.CanEnterFort();
+        int plan = owner ? 1 + (Owner.Town.BuiltToday ? 1 : 0) : 0;
+        SetJogButton("button_3", plan == 1 ? "EnterTownBuild" : "EnterTownBuildDone", JogText("ToRight"));
+        if (_jog.Find("button_3") is { } buildPlan) buildPlan.Enabled = plan != 0;
+        if (_jog.Find("button_2") is { } build) build.Enabled = SelectedBuildable() != null;
+        SetJogButton("button_4", _fullView ? "ScrollSmall" : "Scroll", JogText(_fullView ? "town_build_to_half" : "town_build_to_full"));
+    }
+
+    static string JogText(string name) => $"UI/Common/JogDial/TownJogDial/{name}.txt";
+
+    /// <summary>Button 1: interface slot 0 with 0 = 0061b720(0): town +0x478 = 0, then 0061af30 (the town hire screen).</summary>
+    void EnterDwellings()
+    {
+        if (!Owner.OwnsTown() || !Owner.CanEnterFort()) return;
+        Owner.OpenSub("fort");
+    }
+
+    /// <summary>
+    /// Button 3: interface slot 0 with 1 = 0061b720(1): town +0x478 = 0, then 006182d0 — ends the fly-up (00618170),
+    /// plays the town's sound and opens a new build screen (00659480 → 00615cb0), replacing this one.
+    /// </summary>
+    void BuildPlan()
+    {
+        if (!Owner.OwnsTown()) return;
+        Owner.OpenSub("hall");
+    }
+
+    /// <summary>Button 4: 00783330 sets mode = (mode == 0); the result handler 0065c530 case 4 then refreshes (0065bab0).</summary>
+    void ToggleView()
+    {
+        _fullView = !_fullView;
+        Refresh();
     }
 
     static int[] CostArray(BuildingDef def) =>
         new[] { def.Cost.Wood, def.Cost.Ore, def.Cost.Mercury, def.Cost.Crystal, def.Cost.Sulfur, def.Cost.Gem, def.Cost.Gold };
 
-    /// <summary>
-    /// Cell tint per state (0065bab0 → 0065b190: colour table 00f37cd8, 12 bytes per state; the second value is the
-    /// factor passed with it). Built levels: state 0 (255,255,255 ×1.0). Next level by check code: 0 → state 2
-    /// (128,255,128) or 4 (0,128,255) — the blue case's condition is not traced; 1 and 9 → state 1 (255,90,90);
-    /// 2 → state 3 (255,255,255 ×0.5); 3 → state 0; 5, 6 → state 1; 4, 7, 8, 10 and levels past the next one → the
-    /// colour at 00f37cfc (255,255,255) with factor 0.5. The factor is read here as a brightness for white tints.
-    /// </summary>
-    static Color CellTint(BuildDenial code, bool built)
+    readonly record struct CellDraw(BuildingDef Def, Color Tint, bool Shown);
+
+    // Colour table 00f37cd8 (12 bytes per state): 0 (255,255,255), 1 (255,90,90), 2 (128,255,128), 4 (0,128,255);
+    // state 3 and the 00f37cfc colour (255,255,255) go with the factor 00f37cd0 = 0.5, read here as brightness.
+    static readonly Color Built = Colors.White, Red = new(1, 90 / 255f, 90 / 255f), New = new(128 / 255f, 1, 128 / 255f),
+        Upgrade = new(0, 128 / 255f, 1), Dim = new(0.5f, 0.5f, 0.5f);
+
+    /// <summary>What 0065bab0 draws into a cell (<see cref="H5.Adventure.Engine.Adventure.BuildScreenCell"/>).</summary>
+    CellDraw? CellView((int X, int Y) cell)
     {
-        if (built) return Colors.White;
-        return code switch
+        if (!_cells.TryGetValue(cell, out var list)) return null;
+        var db = Owner.Session.Db;
+        var t = Owner.Town;
+        var d = H5.Adventure.Engine.Adventure.BuildScreenCell(list, t.Level, type => t.MaxLevel.GetValueOrDefault(type),
+            (type, level) => db.Building(t.Type, type, level) is { } def ? TownData.Check(Owner.Session, t, def) : null, _fullView);
+        if (d is not { } draw || db.Building(t.Type, draw.Type, draw.Level) is not { } bdef) return null;
+        var tint = draw.Tint switch
         {
-            BuildDenial.CanBuild => new Color(128 / 255f, 1, 128 / 255f),
-            BuildDenial.AlreadyBuilt => Colors.White,
-            BuildDenial.CantBuild or BuildDenial.Grail or BuildDenial.NoMoney or BuildDenial.BuiltThisTurn => new Color(1, 90 / 255f, 90 / 255f),
-            _ => new Color(0.5f, 0.5f, 0.5f),
+            BuildCellTint.Built => Built, BuildCellTint.Denied => Red, BuildCellTint.New => New,
+            BuildCellTint.Upgrade => Upgrade, _ => Dim,
         };
+        return new CellDraw(bdef, tint, draw.Shown);
     }
 
     /// <summary>
@@ -258,9 +310,13 @@ public sealed partial class TownBuildScreen : TownSubScreen
         f.GlobalPosition = node.GlobalPosition + (node.Size - f.Size) / 2;
     }
 
+    readonly Dictionary<string, string> _jogPresets = new();
+
     void SetJogButton(string name, string preset, string? tooltip)
     {
         if (_jog.Find(name) is not { } btn) return;
+        if (_jogPresets.TryGetValue(name, out var had) && had == preset) return;
+        _jogPresets[name] = preset;
         var path = $"UI/Common/JogDial/Buttons/{preset}.(JogDialButton).xdb";
         if (Game.Instance.Fs.Exists(path)) UiDrawableHelper.Apply(btn, Game.Instance.Xdb.Load(path).Root!, path);
         if (tooltip != null) btn.SetTooltip(TownUi.Text(tooltip, ""));
@@ -269,10 +325,10 @@ public sealed partial class TownBuildScreen : TownSubScreen
     /// <summary>
     /// 0065a4c0: the selection keeps the cell's building only when town vf 0xac gives code 0 for it (buildable),
     /// else it is cleared; jog button 2 is enabled when 00658da0 holds (the player owns the town and player vf 0x44,
-    /// +0x634, is 0 — that field is not identified and taken as 0) and the selection is not empty.
+    /// +0x634, the turn state, is 0 — <see cref="TownScreen.OwnsTown"/>) and the selection is not empty.
     /// </summary>
     BuildingDef? SelectedBuildable() =>
-        _selected is { } c && CellDef(c) is { } def && Owner.Town.Level(def.Type) < def.Level
+        Owner.OwnsTown() && _selected is { } c && CellDef(c) is { } def && Owner.Town.Level(def.Type) < def.Level
         && TownData.Check(Owner.Session, Owner.Town, def) == BuildDenial.CanBuild ? def : null;
 
     void ClickCell((int X, int Y) cell)
@@ -284,8 +340,10 @@ public sealed partial class TownBuildScreen : TownSubScreen
 
     /// <summary>
     /// 0065c530 case 2: the build command (005e91f0) for the selection, then the selection is cleared, jog button 2
-    /// disabled and the town refreshed (town vf 0xd4). The screen stays open here: the flag the handler sets after the
-    /// build (+0x1ac object, +0x3c = 1) is not identified.
+    /// disabled, the town refreshed (town vf 0xd4) and a sound played (00818c40 / 0081af90); the screen stays open. The
+    /// +0x1ac object (0065dc00, vtable 00e2d934) is the cells' blink timer: 0065d3c0 (each frame from 0065b680) swaps
+    /// its two highlight sets once a second (GetTickCount, +0x40) or at once when +0x3c is set — the build sets it so
+    /// the blink restarts at once; 0065bab0 clears it. The blink itself is not drawn here (GAP).
     /// </summary>
     void Build()
     {

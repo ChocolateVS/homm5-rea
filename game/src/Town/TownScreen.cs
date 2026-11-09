@@ -257,17 +257,35 @@ public partial class TownScreen : Control
         // 0061b1c0 (BL = the owner check 00613c00): EnterFort enabled with 0061a390 — a dwelling (buildings 7..0xd) of
         // level > 0 (its caravan part, other dwellings of the player, is not modelled); the upgrade button (+0x38c, vf
         // 0x3c) with 00613090 — a dwelling of level > 1; EnterHall enabled for the owner, its button state (vf 0xc) = town
-        // vf 0x9c (00cce4e0: a build is still possible today).
-        bool Dwellings(int min) => Enumerable.Range(1, 7).Any(k => Town.Level($"TB_DWELLING_{k}") >= min);
-        if (_hud.Find("EnterFort") is { } fort) fort.Enabled = Dwellings(1);
+        // vf 0x9c (00cce4e0: counter +0x80 < period, true from a build until the period has passed — built today for a
+        // human); state 1 is the BuildDone look (the second state of EnterHall.(WindowMSButtonShared)).
+        if (_hud.Find("EnterFort") is { } fort) fort.Enabled = CanEnterFort();
         if (_hud.Find("UpgradeCreatures") is { } upgrade) upgrade.Enabled = Dwellings(2);
         if (_hud.Find("EnterHall") is { } hall)
         {
             hall.Enabled = true;
-            hall.SetState(Town.BuiltToday ? 0 : 1);
+            hall.SetState(Town.BuiltToday ? 1 : 0);
         }
         UpdateSpecialButton();
     }
+
+    bool Dwellings(int min) => Enumerable.Range(1, 7).Any(k => Town.Level($"TB_DWELLING_{k}") >= min);
+
+    /// <summary>
+    /// 0061a390 (town, player, world): a dwelling (buildings 7..0xd) at level &gt; 0; else (not modelled — caravans are
+    /// not built) an object of the world's vf 0x90 list owned by the player (vf 0x24 = player vf 0x2c) at the town's
+    /// position (vf 0x20 = town vf 0xc4, x / y / floor bit fields), or a caravan source found by 00ce6110 (a path search
+    /// from the player's dwellings and towns to the town) whose creature list (00ce43a0 → vf 0, 16-byte entries) is not
+    /// empty.
+    /// </summary>
+    public bool CanEnterFort() => Dwellings(1);
+
+    /// <summary>
+    /// 00613c00 (town vf 0xbc = the screen player's vf 0x2c) together with the build screen's 00658da0 turn test
+    /// (player vf 0x44 = +0x634 is 0: the turn state GiveTurnToNextPlayers 00998060 / 00998520 sets through vf 0x48 —
+    /// 0 for the player given the turn, 1 / 2 for the others); here: the town's owner is the current player.
+    /// </summary>
+    public bool OwnsTown() => Session.S.Players[Session.S.CurrentPlayer].Index == Town.Owner;
 
     static string HudText(string key) => UiGameRoot.RelatedTextAt("UI/TownScreen/texts.(WindowRelatedTexts).xdb", key) ?? "";
 
