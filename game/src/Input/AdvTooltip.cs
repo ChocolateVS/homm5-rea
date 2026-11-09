@@ -30,7 +30,7 @@ public partial class AdvTooltip : Control
     Control? _content;
     string? _key;
     double _hoverTime;
-    bool _forcedFull, _shownFull;
+    bool _forcedFull, _shownFull, _empty;
     Vector2 _rightPress;
 
     public AdvTooltip(AdventureScreen adv)
@@ -69,13 +69,14 @@ public partial class AdvTooltip : Control
             _hoverTime = 0;
             _forcedFull = false;
             _shownFull = false;
+            _empty = false;
             ClearWindow();
             if (key == null) return;
         }
         if (key == null || build == null) return;
         _hoverTime += delta;
         bool full = _forcedFull || _hoverTime >= FullDelay;
-        if (_frame == null && _hoverTime >= AppearDelay || full && !_shownFull)
+        if (!_empty && (_frame == null && _hoverTime >= AppearDelay || full && !_shownFull))
         {
             ClearWindow();
             _shownFull = full;
@@ -95,20 +96,21 @@ public partial class AdvTooltip : Control
 
     void Show(Control? content, Vector2 mouse)
     {
-        if (content == null) return;
+        // A producer that returns no record (004ed5c0 without an artifact) shows nothing for this object.
+        if (content == null) { _empty = true; return; }
         _frame = Frame(Common + "MainWnd.(WindowGathering).xdb", content);
         _content = content;
         AddChild(_frame);
         Place(mouse);
     }
 
-    /// <summary>A stock tooltip window (its tiled background) sized around <paramref name="content"/> with the 13/12 px margins.</summary>
+    /// <summary>A stock tooltip window (its tiled background) sized around <paramref name="content"/> with MainWnd's sMargins (13 on every side).</summary>
     public static UiNode Frame(string windowXdb, Control content)
     {
         var frame = new UiNode(UiResources.Instance.LoadWindow(windowXdb)) { MouseFilter = MouseFilterEnum.Ignore };
         frame.AddChild(content);
-        frame.Size = content.CustomMinimumSize + new Vector2(26, 24);
-        content.Position = new Vector2(13, 12);
+        frame.Size = content.CustomMinimumSize + new Vector2(26, 26);
+        content.Position = new Vector2(13, 13);
         return frame;
     }
 
@@ -135,7 +137,7 @@ public partial class AdvTooltip : Control
         {
             if (picked.Kind == ObjectKind.Town && s.Town(picked.Index) is { } pt) return ($"t{pt.Object}", full => TownContent(pt));
             if (picked.Kind == ObjectKind.Monster) return ($"m{picked.Index}", full => MonsterContent(picked, full));
-            if (picked.Shared.Messages.Count > 0) return ($"o{picked.Index}", full => ObjectContent(picked));
+            if (Tooltiped(picked)) return ($"o{picked.Index}", full => ObjectContent(picked));
         }
         var townAt = game.TownAt(tile) ?? s.Towns.FirstOrDefault(tw => _adv.Session.Map.Objects.FirstOrDefault(o => o.Index == tw.Object) is { } to
             && (to.BlockedTiles.Contains(tile) || to.ActiveTiles.Contains(tile)));
@@ -144,7 +146,7 @@ public partial class AdvTooltip : Control
         if (game.GuardingMonster(tile) is { } mon && mon.Pos == tile)
             return ($"m{mon.Index}", full => MonsterContent(mon, full));
         var obj = _adv.Session.Map.Objects.FirstOrDefault(o => o.Kind != ObjectKind.Monster && (o.Pos == tile || o.ActiveTiles.Contains(tile) || o.BlockedTiles.Contains(tile))
-            && !(s.Objects.TryGetValue(o.Index, out var st) && st.Removed) && o.Shared.Messages.Count > 0);
+            && !(s.Objects.TryGetValue(o.Index, out var st) && st.Removed) && Tooltiped(o));
         if (obj != null) return ($"o{obj.Index}", full => ObjectContent(obj));
         return (null, null);
     }
@@ -279,15 +281,64 @@ public partial class AdvTooltip : Control
         return l;
     }
 
-    Control ObjectContent(MapObject o)
+    /// <summary>Objects with an ITooltiped producer handled by <see cref="ObjectContent"/> (towns, heroes and monsters have their own).</summary>
+    static bool Tooltiped(MapObject o) =>
+        o.Kind is not (ObjectKind.Static or ObjectKind.Monster or ObjectKind.Town or ObjectKind.Hero or ObjectKind.Unknown)
+        && (o.Shared.Messages.Count > 0 || o.Kind == ObjectKind.Artifact);
+
+    /// <summary>
+    /// The ADV_OBJ_TOOLTIP_WND_ID window for <see cref="H5.Adventure.Engine.Adventure.ObjectTooltip"/>'s record, filled the
+    /// way the CCommonTooltipInfo layout 005f6680 does: Name (name.txt), ObjectInfo — for SObjCommonTooltip the template
+    /// TOOLTIP_COMMON_OBJ_INFO_TEXT with object_info = the description and, when the marker is set, visited_text =
+    /// TOOLTIP_VISITED_TEXT with visited = the marker (005f8ca0); for the flagged / mine / garrison records object_info.txt
+    /// with the description (005f9380) — OwnedBy (owned.txt), the owner's dwelling line TOOLTIP_DWELLING_CREATURES
+    /// (005f9500), the army (army.txt, 00b496d0 exact / rough) and the threat level (MonsterTooltip/danger.txt).
+    /// </summary>
+    Control? ObjectContent(MapObject o)
     {
+        var s = _adv.Session.S;
+        var tt = _adv.Session.Game.ObjectTooltip(_adv.Session.Human.Index, s.Hero(_adv.SelectedHeroId), o);
+        if (tt == null) return null;
+        var db = Game.Instance.Db;
+        string name, desc;
+        if (tt.ArtifactId != null)
+        {
+            var a = db.Artifacts.GetValueOrDefault(tt.ArtifactId);
+            name = a is { Name.Length: > 0 } ? a.Name : tt.ArtifactId;
+            desc = a?.Description ?? "";
+        }
+        else
+        {
+            name = T(tt.NameRef);
+            desc = tt.DescRpg != null ? AdvTexts.Rpg(tt.DescRpg) : tt.DescRef != null ? T(tt.DescRef) : "";
+        }
+        // 00b01470: the witch hut name gets L" (" + the skill's name + L")" (e7a584 / e7a580).
+        if (tt.NameSkill != null)
+            name += " (" + (db.Skills.TryGetValue(tt.NameSkill, out var sk) && sk.Name.Length > 0 ? sk.Name : tt.NameSkill) + ")";
         var l = new Lines();
-        var name = T(o.Shared.Messages[0]);
         l.AddTitle(Fill(T(Common + "name.txt"), ("name", Esc(name))));
-        if (o.Shared.Messages.Count > 1 && T(o.Shared.Messages[1]) is { Length: > 0 } desc)
-            l.AddChild(Text(Fill(T(Common + "object_info.txt"), ("object_info", desc)), 197));
-        if (o.Owner >= 0 || (_adv.Session.S.Objects.TryGetValue(o.Index, out var st) && st.Owner >= 0))
-            l.Add(OwnerName(_adv.Session.S.Objects.TryGetValue(o.Index, out var st2) && st2.Owner >= 0 ? st2.Owner : o.Owner));
+        string info;
+        if (tt.Kind == H5.Adventure.Engine.ObjTooltipKind.Common)
+        {
+            var mark = tt.Mark != null ? AdvTexts.Rpg(tt.Mark) : "";
+            var visited = mark.Length > 0 ? Fill(UiGameRoot.Text("TOOLTIP_VISITED_TEXT") ?? "", ("visited", mark)) : "";
+            info = Fill(UiGameRoot.Text("TOOLTIP_COMMON_OBJ_INFO_TEXT") ?? "", ("object_info", desc), ("visited_text", visited));
+            if (desc.Length == 0 && visited.Length == 0) info = "";
+        }
+        else info = desc.Length > 0 ? Fill(T(Common + "object_info.txt"), ("object_info", desc)) : "";
+        if (info.Length > 0) l.AddChild(Text(info, 197));
+        if (tt.Owner >= 0) l.Add(OwnerName(tt.Owner));
+        if (tt.DwellingLine)
+            l.AddChild(Text(Fill(UiGameRoot.Text("TOOLTIP_DWELLING_CREATURES") ?? "", ("count", tt.DwellingCount.ToString()), ("max_count", tt.DwellingMax.ToString())), 197));
+        if (tt.Army is { Count: > 0 } army)
+        {
+            l.Add(T(Common + "army.txt"));
+            foreach (var x in army)
+                l.AddChild(Text($"<tooltip_bright>{Esc(db.Creatures.GetValueOrDefault(x.Creature)?.Name ?? x.Creature)}: "
+                    + (tt.Detail == H5.Adventure.Engine.ArmyDetail.Exact ? x.Count.ToString() : string.Join(" ", Rough(x.Count).Split(new[] { (char)13, (char)10 }, StringSplitOptions.RemoveEmptyEntries))), 197));
+        }
+        if (tt.Danger is { } danger)
+            l.Add(Fill(T(Monster + "danger.txt"), ("danger", T(Monster + $"danger_level_{danger}.txt").Trim())));
         l.Finish();
         return l;
     }
