@@ -285,20 +285,11 @@ public partial class TownScreen : Control
             "training" => HavenTrainingScreen.CanOpen(this) ? new HavenTrainingScreen(this) : null,
             _ => null,
         };
-        // enter_special (FUN_0061b570) and the building handlers open nothing when the screen's conditions fail.
-        if (sub == null && key is "special" or "training" && SpecialScreenBuilt(Town.Type)) return;
-        // 00618920 opens nothing without a Barbarian in the town.
-        if (sub == null && key == "artifacts" && Town.Type == "TOWN_STRONGHOLD") return;
-        if (sub == null)
-        {
-            var reason = key switch
-            {
-                "hero" => "No hero is in the town.",
-                _ => "This building has not been built yet.",
-            };
-            Notice(Town.Name, reason);
-            return;
-        }
+        // Nothing opens and nothing is shown when the screen's condition fails: the HUD handlers (SFLB_AddObservers
+        // 0061bcf0) end in 006183c0 market / 006186b0 tavern / 00619c20 blacksmith / 00619d70 guild, which return
+        // when town vf 0x34(building) = 0; buy_artifacts 0061a260 → 00618920 (no Barbarian) / 00618a90 (no
+        // CBlackMarket); enter_special 0061b570; the hero screen 00619320 returns without a town hero.
+        if (sub == null) return;
         // The hero screen, the marketplace, the hire screen and the tavern (own resource bar and jog dial) replace the town HUD.
         _hud.Visible = sub is not HeroScreen and not MarketScreen and not TownHireScreen and not TavernScreen;
         _subLayer.AddChild(sub);
@@ -325,9 +316,6 @@ public partial class TownScreen : Control
         "TOWN_FORTRESS" => Town.Level("TB_SPECIAL_1") > 0 ? new MageGuildScreen(this, "Button07") : null,
         _ => null,
     };
-
-    /// <summary>Town types whose enter_special screen is built here (the rest still show the placeholder notice).</summary>
-    static bool SpecialScreenBuilt(string townType) => townType is "TOWN_HEAVEN" or "TOWN_PRESERVE" or "TOWN_FORTRESS" or "TOWN_NECROMANCY" or "TOWN_INFERNO" or "TOWN_DUNGEON" or "TOWN_STRONGHOLD" or "TOWN_ACADEMY";
 
     /// <summary>
     /// Screen of a special building double-clicked in the 3D town (FUN_0061b760: the building's town ability

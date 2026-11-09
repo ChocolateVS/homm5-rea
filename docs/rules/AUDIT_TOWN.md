@@ -62,6 +62,7 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Hover highlight colour | 0061a5d0 with param_3 = 0: highlighter (screen +0x174, vcall +4) colour (0.3961, 0.2196, 0, 0) | brownish-orange highlight | additive overlay of the same colour | FIXED (was (1, 0.9, 0.6) × 0.18) |
 | Hover name line | TownScreen BuildingDesc | building name, town name when nothing is hovered | same | MATCH (earlier work) |
 | Open on double click | AUDIT_INPUT (click_pointer 00613130 no-op, dblclick_pointer 00619a30) | double click opens | same | MATCH |
+| Unbuilt building / no hero | SFLB_AddObservers 0061bcf0: enter_market 0061a120 → 006183c0, enter_tavern 0061a170 → 006186b0, enter_blacksmith 0061a210 → 00619c20, enter_magic_guild 0061a330 → 00619d70 each return when town vf 0x34(2 / 4 / 5 / 006145a0) = 0; buy_artifacts 0061a260 → 00618920 / 00618a90; enter_special 0061b570; hero screen 00619320 returns when the town has no hero (+0x2c8/+0x31c +0x28 = 0) | nothing opens, no message | same (`OpenSub` returns) | FIXED (was our own notices "This building has not been built yet." / "No hero is in the town.") |
 | Building tooltip extras | 0061a5d0 switch on the town ability: 0xc / 0xd mystic_pond_bonus, 0x1c ritual_pit_info_witches / _minotaurs, 0x1d trade_guild_income_bonus / trade_guild_this_week_bonus; shipyard_deserted; default name + description (006b9c10) | per-building extra lines | name + description only (right-click tooltip, AUDIT_INPUT) | GAP |
 
 ## Town camera
