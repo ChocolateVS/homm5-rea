@@ -101,4 +101,77 @@ public class AiCombatGapTests(GameDataFixture f)
         computer.Decide(b2, 0);
         Assert.Contains(computer.LastCandidates, c => c.IsSpell && c.Value != null);
     }
+    [Fact]
+    public void ContactMatrixFloodsAroundObstacles()   // FUN_004b23b0 (004b1b50 / 004b1ff0 / 004b1e20 / 004b18f0)
+    {
+        var b = f.Duel("CREATURE_PEASANT", 20, "CREATURE_PEASANT", 20, 1, new Cell(2, 5), new Cell(9, 5));
+        var s = b.State;
+        var m = Contact.Build(b, 0);
+        Assert.True(m[1, 0] && m[0, 1]);   // the same open region
+        Assert.Equal(1.0, CombatValue.ContactFactor(b, s.Units[0], m));
+        // A wall across the whole field: no region reaches both stacks; the walker's damage counts 0 (FUN_00bfa280).
+        for (int y = 0; y < s.Height; y++) s.Obstacles.Add(new Cell(5, y));
+        m = Contact.Build(b, 0);
+        Assert.False(m[1, 0] || m[0, 1]);
+        Assert.Equal(0.0, CombatValue.ContactFactor(b, s.Units[0], m));
+        Assert.Equal(0, CombatValue.Of(b, 0).My.Damage);
+        // Regions join diagonally (8 directions): a one-cell gap on the diagonal is enough.
+        s.Obstacles.Remove(new Cell(5, 0));
+        Assert.True(Contact.Build(b, 0)[1, 0]);
+        // Next to each other always counts (FUN_004b18f0), whatever the flood says.
+        s.Obstacles.Add(new Cell(5, 0));
+        s.Units[1].Pos = new Cell(3, 5);
+        Assert.True(Contact.Build(b, 0)[1, 0]);
+    }
+
+    [Fact]
+    public void AnUnreachableShooterCountsDouble()   // FUN_00bfba50 → FUN_00bfb950 (matrix [shooter][enemy] via 004b1660)
+    {
+        var st = BattleSetup.Create(f.Db,
+            new ArmySetup { Army = { new ArmySlot("CREATURE_ARCHER", 20), new ArmySlot("CREATURE_PEASANT", 10) } },
+            new ArmySetup { Army = { new ArmySlot("CREATURE_PEASANT", 30) } },
+            1, obstacles: Array.Empty<Cell>(), skipTactics: true);
+        var b = new Battle(f.Db, st);
+        var archer = st.Units.First(u => u.CreatureId == "CREATURE_ARCHER");
+        var own = st.Units.First(u => u.Side == 0 && u != archer);
+        var enemy = st.Units.First(u => u.Side == 1);
+        archer.Pos = new Cell(1, 5); own.Pos = new Cell(4, 2); enemy.Pos = new Cell(10, 5);
+        var m = Contact.Build(b, 0);
+        Assert.Equal(1.0, CombatValue.ShooterThreat(b, archer, m));   // the enemy peasants can walk up to it
+        int plain = CombatValue.ExpectedDamage(b, archer, m);
+        // Walled in: the enemy still reaches our other stack (its damage counts) but not the archer → f = 0.
+        for (int x = 0; x <= 2; x++) for (int y = 4; y <= 6; y++) if (x != 1 || y != 5) st.Obstacles.Add(new Cell(x, y));
+        m = Contact.Build(b, 0);
+        Assert.Equal(0.0, CombatValue.ShooterThreat(b, archer, m));
+        Assert.Equal(2 * plain + CombatValue.ExpectedDamage(b, own, m), CombatValue.Of(b, 0).My.Damage);   // trunc((1 − 0 + 1) · dmg)
+        // An enemy that reaches none of our stacks has no damage (FUN_00bfa280) and drops out of the share: f = 1.
+        own.Pos = new Cell(0, 0);
+        st.Obstacles.AddRange(new[] { new Cell(1, 0), new Cell(0, 1), new Cell(1, 1) });
+        m = Contact.Build(b, 0);
+        Assert.Equal(0, CombatValue.ExpectedDamage(b, enemy, m));
+        Assert.Equal(1.0, CombatValue.ShooterThreat(b, archer, m));
+    }
+
+    [Fact]
+    public void MeasuresTruncateUnderChop()   // FUN_00bf9cc0 / 00bfc4a0 / 00bf9b80: FISTP with RC = 11
+    {
+        var v = new SideValue { ShooterDamage = 10, ShooterAttack = 1, Bonus = 1.19f };
+        Assert.Equal(11, v.ShooterPower(new SideValue { TroopsDefence = 1.9 }));   // factor(1, trunc(1.9) = 1) = 1 → 11.9 → 11
+        var p = new SideValue { Damage = 10, Bonus = 1, AttackLevel = 1, Health = 9, Defence = 1 };
+        Assert.Equal(19, p.Power(new SideValue { AttackLevel = 1.99f, TroopsDefence = 1 }));   // 10 + 9 · 1/factor(1, 1)
+        // The hero share counts when THIS side out-shoots the other (CMP own, other; JLE skip).
+        var me = new SideValue { Damage = 0, HeroPotential = 100, ShooterDamage = 50, ShooterAttack = 1, Bonus = 1 };
+        var them = new SideValue { WalkerDamage = 30, ShooterDamage = 10, ShooterAttack = 1, Bonus = 1 };
+        Assert.Equal(75, me.DamageMeasure(them));   // trunc(30 / 40 · 100)
+        Assert.Equal(0, them.DamageMeasure(me));
+    }
+
+    [Fact]
+    public void IncorporealHealthCountsMore()   // FUN_00bfba50 0x00bfbc07..0x00bfbc7b (ability 0x28, effect 0x100; doubles 00e87cf8 / 00e72bf8)
+    {
+        var b = f.Duel("CREATURE_GHOST", 10, "CREATURE_PEASANT", 30, 1, new Cell(1, 5), new Cell(10, 5));
+        var ghost = b.State.Units[0];
+        Assert.True(ghost.Has(Ab.Incorporeal));
+        Assert.Equal((int)(long)((int)ghost.TotalHealth * 1.4), (int)CombatValue.Of(b, 0).My.Health);
+    }
 }

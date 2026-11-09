@@ -55,13 +55,17 @@ Per-decision ledger with addresses and status: `docs/rules/AUDIT_AI.md`, section
 * **Combat value** (FUN_00bfc2a0): two 0x48-byte halves — first the ENEMY (FUN_00bfbe50 with combat vf 0xe0(side)), then
   our side — each holding [0] extras, [1] hero potential, [2] spell potential, [3] Damage, [4] AttackLevel, [5] Bonus, [6] Health,
   [7] Defence, [8] TroopsHealth, [9] TroopsDefence, [10..15] shooter/flyer/walker damage and attack, [16] additive.
-  Per unit (FUN_00bfba50): Damage += expected damage (shooters × (2 − f), FUN_00bfb950: f = share of threatening enemy walkers);
-  AttackLevel/Bonus/Defence/TroopsDefence are damage- or HP-weighted means of (stat + 1) (FUN_00bf9ee0).
-  **exact** structure; expected damage, luck/morale bonus, hero potential and the threat matrix **reconstructed**; [0], [2],
-  [16] not modelled (0).
-* **Measures**: damage FUN_00bfc4a0 = round(factor(AttackLevel,1)·Damage·Bonus) + hero share; troops
-  FUN_00bf9a50 = round(TroopsHealth·max(0.1, 1/factor(1,TroopsDefence))); war machines FUN_00bf9ab0;
-  power FUN_00bf9b80 = Health·max(0.1,1/factor(otherAttack,Defence)) + Damage·max(1,factor(AttackLevel,otherTroopsDefence)·Bonus) + extras. **exact**
+  Per unit (FUN_00bfba50): dmg = trunc(F · trunc((min + max) · count · 0.5)) (FUN_00bfb880), F = 0 for a walking
+  non-shooter with no enemy contact in the contact matrix (FUN_00bfa280); shooters × (2 − f) (FUN_00bfb950: f = the
+  contact share of the enemy non-shooters' damage); AttackLevel/Bonus/Defence/TroopsDefence are damage- or HP-weighted
+  means of (stat + 1) (FUN_00bf9ee0); health ×1.4 incorporeal (×1.1 Rune of Etherealness), 1 for a Phantom copy.
+  The contact matrix FUN_004b23b0: per creature size a flood of the free positions (own stacks expanded, the others on
+  their far corner, all blocking), stacks bordering one region are in contact; adjacent stacks always (`Contact`).
+  **exact** (`CombatValue.Fill`); the luck/morale bonus FUN_00bfb4b0, hero potential [1], [0], [2], [16] **reconstructed** / 0.
+* **Measures** (x87 chop: every float → int truncates): damage FUN_00bfc4a0 = trunc(factor(AttackLevel,1)·Damage·Bonus) + the hero
+  share when this side out-shoots the other; troops FUN_00bf9a50 = trunc(TroopsHealth·max(0.1, 1/factor(1,TroopsDefence)));
+  war machines FUN_00bf9ab0; power FUN_00bf9b80 = trunc(Damage·max(1,factor(AttackLevel,trunc(otherTroopsDefence))·Bonus) +
+  extras + Health·max(0.1,1/factor(trunc(otherAttack),Defence))). **exact**
 * **Compare** FUN_00bfae20(this, arg) — true = arg better: outside kamikaze mode, the position that has lost all OWN troops
   loses; otherwise Σ (Δenemy·EnemyCoef − Δown·MyCoef) over damage, troops and war machines; better if total &gt;
   clamp(CompareTreshold·0.01, 0, 1)·total. The coefficients are PowerSavingMode for every mode (the mode switch falls through,

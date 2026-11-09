@@ -40,49 +40,66 @@ public sealed class SideValue
     /// <summary>The engine's attack/defence damage factor (exe FUN_00a58d30): 1+0.05(A−D) or 1/(1+0.05(D−A)).</summary>
     public static double Factor(double a, double d) => a > d ? 1 + 0.05 * (a - d) : 1 / (1 + 0.05 * (d - a));
 
-    static int Round(double v) => (int)Math.Round(v, MidpointRounding.ToEven);
+    // The measures below are x87 code under chop: every float → int conversion truncates (FISTP with RC = 11), and the
+    // float slots read as ints (TroopsDefence, AttackLevel) are truncated before use. The 0.1 floors are the float 0.1f (00e12f10).
+    const double Floor01 = 0.1f;
+    static int T(double v) => (int)v;
 
-    /// <summary>Shooter power vs another side (exe FUN_00bf9cc0).</summary>
-    public int ShooterPower(SideValue vs) => Round(Factor(ShooterAttack, Round(vs.TroopsDefence)) * ShooterDamage * Bonus);
+    /// <summary>Shooter power vs another side (exe FUN_00bf9cc0): trunc(factor([11], trunc(vs [9])) · [10] · [5]).</summary>
+    public int ShooterPower(SideValue vs) => T(Factor(ShooterAttack, T(vs.TroopsDefence)) * ShooterDamage * Bonus);
 
-    /// <summary>Damage measure vs the other side (exe FUN_00bfc4a0).</summary>
+    /// <summary>The same with the flat extras (exe FUN_00bf9d30): trunc(factor([11], trunc(vs [9])) · [10] · [5] + ([0] + [2])).</summary>
+    public int ShooterPowerWithExtras(SideValue vs) => T(Factor(ShooterAttack, T(vs.TroopsDefence)) * ShooterDamage * Bonus + (int)(Extra + SpellPotential));
+
+    /// <summary>FUN_00bf9eb0 on (enemy, own): true when our shooters out-shoot the enemy's (FUN_00bf9d30 both ways, own &gt; enemy).</summary>
+    public static bool OutShoots(SideValue own, SideValue enemy) => own.ShooterPowerWithExtras(enemy) > enemy.ShooterPowerWithExtras(own);
+
+    /// <summary>
+    /// Damage measure vs the other side (exe FUN_00bfc4a0): dmg = trunc(factor([4], 1) · [3] · [5]); when THIS side
+    /// out-shoots the other (FUN_00bf9cc0 this vs other &gt; other vs this) and the other's [12] + [14] + [10] &gt; 0.1,
+    /// hero = trunc(other [14] / that total · [1]); sum = [0] + [2] + hero + dmg; 0 when sum &lt; 0 or &gt; 0x70000000,
+    /// else [16] + sum.
+    /// </summary>
     public int DamageMeasure(SideValue other)
     {
-        int dmg = Round(Factor(AttackLevel, 1.0) * Damage * Bonus);
+        int dmg = T(Factor(AttackLevel, 1.0) * Damage * Bonus);
         int hero = 0;
-        double total = other.ShooterDamage + other.WalkerDamage + other.FlyerDamage;
-        if (ShooterPower(other) < other.ShooterPower(this) && total > 0.1)
-            hero = Round(other.WalkerDamage / total * HeroPotential);
-        double sum = Extra + SpellPotential + hero + dmg;
+        float total = (float)(other.FlyerDamage + other.WalkerDamage + other.ShooterDamage);
+        if (ShooterPower(other) > other.ShooterPower(this) && total > 0.1f)
+            hero = T(other.WalkerDamage / total * HeroPotential);
+        long sum = (long)Extra + (long)SpellPotential + hero + dmg;
         if (sum < 0 || sum > 0x70000000) return 0;
-        return (int)(Additive + sum);
+        return (int)((long)Additive + sum);
     }
 
     /// <summary>
-    /// Damage vs the other side (exe FUN_00bfa1b0, the mana limit's "Our Damage"): trunc(factor(AttackLevel,
-    /// trunc(other TroopsDefence)) · Damage · Bonus) + the hero share when we out-shoot (no 0.1 floor) + [0] + [16].
+    /// Damage vs the other side (exe FUN_00bfa1b0, the mana limit's "Our Damage"): trunc(factor([4], trunc(other [9]))
+    /// · [3] · [5]) + the hero share when we out-shoot (no 0.1 floor) + [0] + [16].
     /// </summary>
     public int DamageVs(SideValue other)
     {
-        int dmg = (int)(Factor(AttackLevel, (int)other.TroopsDefence) * Damage * Bonus);
+        int dmg = T(Factor(AttackLevel, T(other.TroopsDefence)) * Damage * Bonus);
         int hero = 0;
         if (other.ShooterPower(this) < ShooterPower(other))
-            hero = (int)(other.WalkerDamage / (other.FlyerDamage + other.ShooterDamage + other.WalkerDamage) * HeroPotential);
+            hero = T(other.WalkerDamage / (float)(other.FlyerDamage + other.ShooterDamage + other.WalkerDamage) * HeroPotential);
         return (int)Additive + (int)Extra + hero + dmg;
     }
 
-    /// <summary>Effective creature HP (exe FUN_00bf9a50): TroopsHealth · max(0.1, 1/factor(1, TroopsDefence)).</summary>
-    public int TroopsMeasure() => Round(TroopsHealth * Math.Max(0.1, 1 / Factor(1.0, TroopsDefence)));
+    /// <summary>Effective creature HP (exe FUN_00bf9a50): trunc([8] · max(0.1, 1/factor(1, [9]))).</summary>
+    public int TroopsMeasure() => T(TroopsHealth * Math.Max(Floor01, 1 / Factor(1.0, TroopsDefence)));
 
-    /// <summary>Effective war-machine HP (exe FUN_00bf9ab0).</summary>
-    public int WarMachinesMeasure() => Round((Health - TroopsHealth) * Math.Max(0.1, 1 / Factor(1.0, TroopsDefence)));
+    /// <summary>Effective war-machine HP (exe FUN_00bf9ab0): trunc(([6] − [8]) · max(0.1, 1/factor(1, [9]))).</summary>
+    public int WarMachinesMeasure() => T((Health - TroopsHealth) * Math.Max(Floor01, 1 / Factor(1.0, TroopsDefence)));
 
-    /// <summary>Overall power vs the other side, used for the mode ratio (exe FUN_00bf9b80).</summary>
+    /// <summary>
+    /// Overall power vs the other side, used for the mode ratio (exe FUN_00bf9b80): k = max(0.1, 1/factor(trunc(other [4]), [7])),
+    /// g = max(1, factor([4], trunc(other [9])) · [5]); trunc([3] · g + ([0] + [2]) + [6] · k).
+    /// </summary>
     public int Power(SideValue other)
     {
-        double k = Math.Max(0.1, 1 / Factor(Round(other.AttackLevel), Defence));
-        double g = Math.Max(1.0, Factor(AttackLevel, Round(other.TroopsDefence)) * Bonus);
-        return Round(Health * k + Damage * g + (SpellPotential + Extra));
+        double k = Math.Max(Floor01, 1 / Factor(T(other.AttackLevel), Defence));
+        double g = Math.Max(1.0, Factor(AttackLevel, T(other.TroopsDefence)) * Bonus);
+        return T(Damage * g + (int)(Extra + SpellPotential) + Health * k);
     }
 }
 
@@ -134,72 +151,127 @@ public sealed class CombatValue
     /// <summary>Builds the value of the battle's current position from <paramref name="side"/>'s point of view.</summary>
     public static CombatValue Of(Battle b, int side) => new() { My = Fill(b, side), Enemy = Fill(b, 1 - side) };
 
-    /// <summary>Per-unit accumulation (exe FUN_00bfba50) followed by the averaging pass (FUN_00bf9ee0).</summary>
+    /// <summary>
+    /// One side's half (exe FUN_00bfbe50): the contact matrix for the side (FUN_00bfb350 → FUN_004b23b0(army, 1)), the
+    /// per-stack accumulation FUN_00bfba50 over the stacks the side controls, then the averaging pass FUN_00bf9ee0.
+    /// Per stack: dmg = <see cref="ExpectedDamage"/>; a shooter's dmg = trunc((1 − f + 1) · dmg), f = <see cref="ShooterThreat"/>;
+    /// [3] += dmg, a0 += (attack + 1)·dmg, a1 += dmg·bonus (float); shooters [10] += dmg·bonus, [11] += (attack + 1)·dmg,
+    /// a4 += dmg; flyers (vf 0x190) [12], [13], a5; walkers [14], [15], a6; hp = the stack's health (×1.4 incorporeal,
+    /// ×1.1 under Rune of Etherealness, FISTP chop; 1 for a Phantom copy), [6] += hp, a2 += (defence + 1)·hp; creatures
+    /// also [8] += hp, a3 += (defence + 1)·hp. Averages: [4] = a0/[3], [5] = a1/[3], [7] = a2/[6], [9] = a3/[8],
+    /// [11] /= a4, [13] /= a5, [15] /= a6.
+    /// GAP-details (not ported): [0] (the vf 0x84 object's vf 0xc), [2] (FUN_00bfa360, best castable damage spell),
+    /// [16] (FUN_00bfa610), the bonus factor FUN_00bfb4b0 (ours: <see cref="LuckMoraleBonus"/>), the hero part [1]
+    /// (0085b4a0 / turn, 0 after turn 2; ours: <see cref="HeroStrikePotential"/>) and its [5] multiplier, the
+    /// think-record damage multiplier FUN_00a314c0 (1.0 unless set), the harpy rule (FUN_00a2f130 when FUN_00a2f8f0 holds
+    /// for the enemy army), the category skip for the vf 0x7c type-2 object (ours: a war machine that cannot shoot),
+    /// Celestial Shield / FUN_00a5b780 / Deflect Arrows health terms, the doubled defence under 0x13d, and the
+    /// hypnotize / berserk side rules of FUN_00bfbe50 (ours: <see cref="Battle.Controller"/>).
+    /// </summary>
     static SideValue Fill(Battle b, int side)
     {
         var s = b.State;
         var v = new SideValue();
-        double accAtk = 0, accBonus = 0, accDef = 0, accTroopDef = 0, accShoot = 0, accFly = 0, accWalk = 0;
+        var m = Contact.Build(b, side);
+        long a0 = 0, a2 = 0, a3 = 0;
+        float a1 = 0;
+        int a4 = 0, a5 = 0, a6 = 0;
+        float shD = 0, shA = 0, flD = 0, flA = 0, waD = 0, waA = 0;
+        int damage = 0, health = 0, troops = 0;
         var enemies = s.Living.Where(e => b.Controller(e) != side && !e.IsObject).ToList();
-        int unitCount = s.Living.Count(u => !u.IsObject);
         foreach (var u in s.Living)
         {
             if (u.IsObject || b.Controller(u) != side) continue;
-            var (min, max) = b.DamageRangeOf(u);
-            double dmg = u.Count * (min + max) * 0.5;
+            int dmg = ExpectedDamage(b, u, m);
             bool shooter = b.CanShoot(u);
-            if (shooter) dmg = Math.Round((1 - ThreatShare(b, u, enemies, unitCount) + 1) * dmg);
+            if (shooter) dmg = (int)((1.0f - ShooterThreat(b, u, m) + 1.0f) * dmg);
+            damage += dmg;
             int atk = b.AttackOf(u);
-            v.Damage += dmg;
-            accAtk += (atk + 1) * dmg;
-            double bonusDmg = dmg * LuckMoraleBonus(b, u);
-            accBonus += bonusDmg;
+            a0 += (long)(atk + 1) * dmg;
+            float bd = (float)(dmg * LuckMoraleBonus(b, u));
+            a1 += bd;
             if (!u.IsWarMachine || shooter)
             {
-                if (shooter) { v.ShooterDamage += bonusDmg; v.ShooterAttack += (atk + 1) * dmg; accShoot += dmg; }
-                else if (u.Flying) { v.FlyerDamage += bonusDmg; v.FlyerAttack += (atk + 1) * dmg; accFly += dmg; }
-                else { v.WalkerDamage += bonusDmg; v.WalkerAttack += (atk + 1) * dmg; accWalk += dmg; }
+                float ad = (float)((double)(atk + 1) * dmg);
+                if (shooter) { shD += bd; shA = (float)((double)ad + shA); a4 += dmg; }
+                else if (u.Flying) { flD += bd; flA = (float)((double)ad + flA); a5 += dmg; }
+                else { waD += bd; waA = (float)((double)ad + waA); a6 += dmg; }
             }
-            double hp = u.TotalHealth;
+            int hp = (int)Math.Min(int.MaxValue, u.TotalHealth);
+            bool rune = u.HasEffect(H5.Combat.Fx.RuneEtherealness);
+            if (u.Has(Ab.Incorporeal) || rune) hp = (int)(long)(hp * (rune ? 1.1 : 1.4));
+            if (u.IsClone) hp = 1;
             int def = b.DefenceOf(u);
-            v.Health += hp;
-            accDef += (def + 1) * hp;
+            health += hp;
+            a2 += (long)(def + 1) * hp;
             if (!u.IsWarMachine)
             {
-                v.TroopsHealth += hp;
-                accTroopDef += (def + 1) * hp;
+                troops += hp;
+                a3 += (long)(def + 1) * hp;
             }
         }
-        if (v.Damage > 0) { v.AttackLevel = accAtk / v.Damage; v.Bonus = accBonus / v.Damage; }
-        if (v.Health > 0) v.Defence = accDef / v.Health;
-        if (v.TroopsHealth > 0) v.TroopsDefence = accTroopDef / v.TroopsHealth;
-        if (accShoot > 0) v.ShooterAttack /= accShoot;
-        if (accFly > 0) v.FlyerAttack /= accFly;
-        if (accWalk > 0) v.WalkerAttack /= accWalk;
+        v.Damage = damage; v.Health = health; v.TroopsHealth = troops;
+        v.ShooterDamage = shD; v.FlyerDamage = flD; v.WalkerDamage = waD;
+        if (damage != 0) { v.AttackLevel = (float)((double)a0 / damage); v.Bonus = (float)((double)a1 / damage); }
+        if (health != 0) v.Defence = (float)((double)a2 / health);
+        if (troops != 0) v.TroopsDefence = (float)((double)a3 / troops);
+        v.ShooterAttack = a4 != 0 ? shA / (float)a4 : shA;
+        v.FlyerAttack = a5 != 0 ? flA / (float)a5 : flA;
+        v.WalkerAttack = a6 != 0 ? waA / (float)a6 : waA;
         v.HeroPotential = HeroStrikePotential(b, side, enemies);
         return v;
     }
 
     /// <summary>
-    /// FUN_00bfb950, the shooter factor f of (2 − f)·damage: 1 for a war machine or with fewer than two units on the field;
-    /// otherwise the share, weighted by expected damage (FUN_00bfb880), of the enemy stacks that cannot shoot and
-    /// threaten the shooter (FUN_004b1660 on the matrix FUN_004b23b0 builds) among all enemy stacks that cannot shoot,
-    /// 1 when there are none. An unthreatened shooter counts double. GAP-detail: the threat matrix is not decoded; ours
-    /// counts a stack as threatening when it can come next to the shooter within its speed.
+    /// FUN_00bfb880: trunc(F · trunc((max + min) · count · 0.5)), F = <see cref="ContactFactor"/> (FUN_00bfa280).
     /// </summary>
-    static double ThreatShare(Battle b, Unit u, List<Unit> enemies, int unitCount)
+    internal static int ExpectedDamage(Battle b, Unit u, Contact m)
     {
-        if (u.IsWarMachine || unitCount < 2) return 1;
-        double total = 0, threat = 0;
-        foreach (var e in enemies)
+        var (min, max) = b.DamageRangeOf(u);
+        int raw = (int)(((double)(float)max + (float)min) * u.Count * 0.5);
+        return (int)(ContactFactor(b, u, m) * raw);
+    }
+
+    /// <summary>
+    /// FUN_00bfa280: 0.0 for a creature (vf 0 = 1) that neither flies (vf 0x190) nor shoots (vf 0x1e0) when the matrix has at
+    /// least two stacks, some stack of another army exists (FUN_004b1810) and no stack of another army is in contact with it
+    /// (FUN_004b1770: matrix [j][u] = 0 for every such j); otherwise 1.0.
+    /// </summary>
+    internal static double ContactFactor(Battle b, Unit u, Contact m)
+    {
+        if (u.Flying || b.CanShoot(u) || u.IsWarMachine || m.Count < 2) return 1.0;
+        int idx = m.IndexOf(u);
+        if (idx < 0) return 1.0;
+        int others = 0, contacts = 0;
+        for (int j = 0; j < m.Count; j++)
         {
-            if (b.CanShoot(e)) continue;
-            var (min, max) = b.DamageRangeOf(e);
-            double w = e.Count * (min + max) * 0.5;
-            total += w;
-            if (Battle.Distance(e, u) <= b.SpeedOf(e) + 1) threat += w;
+            if (m.Units[j].Side == u.Side) continue;
+            others++;
+            if (m[j, idx]) contacts++;
         }
-        return total != 0 ? threat / total : 1;
+        return others != 0 && contacts == 0 ? 0.0 : 1.0;
+    }
+
+    /// <summary>
+    /// FUN_00bfb950, the shooter factor f of (2 − f)·damage: 1 for a war machine or with fewer than two stacks in the
+    /// matrix; otherwise, over the stacks of other armies that cannot shoot, the share of their expected damage
+    /// (<see cref="ExpectedDamage"/>) held by those in contact with the shooter (FUN_004b1660(e, u) = matrix [u][e]);
+    /// 1 when that damage is 0.
+    /// </summary>
+    internal static double ShooterThreat(Battle b, Unit u, Contact m)
+    {
+        if (u.IsWarMachine || m.Count < 2) return 1;
+        int ui = m.IndexOf(u);
+        int total = 0, threat = 0;
+        for (int j = 0; j < m.Count; j++)
+        {
+            var e = m.Units[j];
+            if (e.Side == u.Side || b.CanShoot(e)) continue;
+            int w = ExpectedDamage(b, e, m);
+            total += w;
+            if (ui >= 0 && m[ui, j]) threat += w;
+        }
+        return total != 0 ? (double)threat / total : 1;
     }
 
     /// <summary>Expected multiplier from luck (×2 / ×0.5) and morale (extra / lost half turn), 10% per point, capped at 50%.</summary>
@@ -219,5 +291,91 @@ public sealed class CombatValue
         var targets = enemies.Where(e => !e.IsWarMachine).ToList();
         if (targets.Count == 0) return 0;
         return targets.Average(t => (double)b.HeroStrikeDamage(h, t, 0));
+    }
+}
+
+/// <summary>
+/// The combat AI's contact matrix (exe FUN_004b23b0(army, 1), built by FUN_00bfb350 for the side being valued, kept at
+/// value +0x44). Rows and columns are the stacks on the field; [v, u] = 1 when stack u can come into contact with v:
+/// for each creature size s = 1, 2 (FUN_004b1b50 / FUN_004b1ff0 / FUN_004b1e20) a grid over the size-s positions
+/// (indexed by the footprint's far corner, FUN_00b3f380 expands a cell c to c .. c + s − 1) is filled: obstacles and
+/// non-creature objects blocked; the side's own stacks blocked and labelled over every position touching them; the
+/// other stacks blocked and labelled on their cells (s = 1) or their far-corner position only (s = 2; the flag 1 of
+/// FUN_004b23b0 makes them block). Free positions are flooded in 8 directions (FUN_004b1880 seeds in column order,
+/// FUN_004b1c90 collects the labels bordering the region, the seed's own label excepted); in each region every stack
+/// of size s gets [v, u] = 1 for every collected v. Last, two stacks next to each other get 1 (FUN_004b18f0 → FUN_00b3d3f0).
+/// GAP-details: the unit vf 0xc4 cell flag (siege, army vf 0xac), the type-6 object rule of FUN_00b3d3f0 and whether
+/// war machines are in the object list FUN_00af4450 (ours: they are matrix stacks only).
+/// </summary>
+public sealed class Contact
+{
+    public readonly List<Unit> Units;
+    readonly bool[,] _m;
+    Contact(List<Unit> units) { Units = units; _m = new bool[units.Count, units.Count]; }
+    public int Count => Units.Count;
+    public bool this[int v, int u] => _m[v, u];
+    public int IndexOf(Unit u) => Units.FindIndex(x => x.Id == u.Id);
+
+    static readonly (int, int)[] Dirs = { (0, -1), (0, 1), (-1, 0), (1, 0), (1, -1), (1, 1), (-1, -1), (-1, 1) };
+
+    public static Contact Build(Battle b, int side)
+    {
+        var s = b.State;
+        var c = new Contact(s.Living.Where(u => !u.IsObject).ToList());
+        int n = c.Count, w = s.Width, h = s.Height;
+        for (int size = 1; size <= 2; size++)
+        {
+            var idx = new short[w, h];
+            var blocked = new bool[w, h];
+            var visited = new bool[w, h];
+            for (int x = 0; x < w; x++) for (int y = 0; y < h; y++) idx[x, y] = -1;
+            void Mark(Cell cell, int label, int expand)
+            {
+                for (int dx = 0; dx < expand; dx++)
+                for (int dy = 0; dy < expand; dy++)
+                {
+                    int x = cell.X + dx, y = cell.Y + dy;
+                    if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                    blocked[x, y] = true;
+                    idx[x, y] = (short)label;
+                }
+            }
+            foreach (var o in s.Obstacles) Mark(o, -1, size);
+            foreach (var o in s.Living.Where(u => u.IsObject)) foreach (var cell in o.CellsAt(o.Pos)) Mark(cell, -1, size);
+            for (int i = 0; i < n; i++)
+            {
+                var u = c.Units[i];
+                bool own = u.Side == side;
+                if (own || size < 2) foreach (var cell in u.CellsAt(u.Pos)) Mark(cell, i, own ? size : 1);
+                else Mark(new Cell(u.Pos.X + u.Size - 1, u.Pos.Y + u.Size - 1), i, 1);
+            }
+            for (int sx = 0; sx < w; sx++)
+            for (int sy = 0; sy < h; sy++)
+            {
+                if (blocked[sx, sy] || visited[sx, sy]) continue;
+                var region = new List<int>();
+                var stack = new Stack<(int, int)>();
+                visited[sx, sy] = true;
+                stack.Push((sx, sy));
+                while (stack.Count > 0)
+                {
+                    var (px, py) = stack.Pop();
+                    foreach (var (dx, dy) in Dirs)
+                    {
+                        int x = px + dx, y = py + dy;
+                        if (x < 0 || y < 0 || x >= w || y >= h || visited[x, y]) continue;
+                        if (idx[x, y] >= 0 && !region.Contains(idx[x, y])) region.Add(idx[x, y]);
+                        if (!blocked[x, y]) { visited[x, y] = true; stack.Push((x, y)); }
+                    }
+                }
+                foreach (int u in region)
+                    if (c.Units[u].Size == size)
+                        foreach (int v in region) c._m[v, u] = true;
+            }
+        }
+        for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+            if (i != j && Battle.AreAdjacent(c.Units[i], c.Units[j])) c._m[j, i] = true;
+        return c;
     }
 }
