@@ -128,6 +128,10 @@ public sealed class RmgRacePreset
         BigStatics = new(), Mountains = new(), OverTownCenterObjects = new();
     /// <summary>Preset +0xcc / +0xd8 (0x009225b0, 0x00922760); empty items kept ("" = a null reference, its draws still taken).</summary>
     public List<string> OverLakeCenterObjects = new(), OverLakeOneTileRandomObjects = new();
+    /// <summary>RaceColor (the town point lights of 0x00babbf0 read it as preset[TownType] +0x1ac via 0x0049e000).</summary>
+    public (float R, float G, float B) RaceColor;
+    /// <summary>PointLightParams.Colors (the lit statics of the underground classes take [zone id % n], preset +0x1d4).</summary>
+    public List<(float R, float G, float B)> LightColors = new();
     public List<RmgValuedObject> LuckMorale = new(), Shops = new(), ResourceGivers = new(), Upgrades = new(),
         Shrines = new(), Treasuries = new(), Buffs = new();
     public List<string> Mines = new();
@@ -208,6 +212,12 @@ public sealed class RmgDatabase
     public RmgRacePreset Race(int index) => Races[index];
 
     // ---- parsing helpers -------------------------------------------------------------
+
+    static (float, float, float) Rgb(XElement? e)
+    {
+        float F(string n) => float.TryParse(e?.Element(n)?.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0f;
+        return (F("x"), F("y"), F("z"));
+    }
 
     static int I(XElement? e, string n) =>
         int.TryParse(e?.Element(n)?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
@@ -322,6 +332,8 @@ public sealed class RmgDatabase
                 OverTownCenterObjects = Refs(o?.Element("OverTownCenterObjects"), PresetPath),
                 OverLakeCenterObjects = RefsAll(o?.Element("OverLakeCenterObjects"), PresetPath),
                 OverLakeOneTileRandomObjects = RefsAll(o?.Element("OverLakeOneTileRandomObjects"), PresetPath),
+                RaceColor = Rgb(o?.Element("RaceColor")),
+                LightColors = o?.Element("PointLightParams")?.Element("Colors")?.Elements("Item").Select(Rgb).ToList() ?? new(),
                 LuckMorale = Valued(o?.Element("NewLuckMoraleBuildings"), PresetPath),
                 Shops = Valued(o?.Element("NewShopBuildings"), PresetPath),
                 ResourceGivers = Valued(o?.Element("NewResourceGivers"), PresetPath),

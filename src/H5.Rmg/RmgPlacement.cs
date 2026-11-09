@@ -3,6 +3,9 @@ using H5.Adventure.Map;
 namespace H5.Rmg;
 
 /// <summary>An object placed by the generator, in generator coordinates.</summary>
+/// <summary>One "pointLights" entry: Pos (x, y, z) and Radius as the exe writes them (int setters 0x0090f5d0), Color (0x009100f0).</summary>
+public readonly record struct RmgPointLight(int X, int Y, int Z, int Radius, (float R, float G, float B)? Color);
+
 public sealed class RmgObject
 {
     public required string Shared;
@@ -25,6 +28,9 @@ public sealed class RmgObject
     /// <summary>A town's Specialization (0x00923e50), a TownSpecialization path.</summary>
     public string? Specialization;
     public float? Angle;             // the angle the exe passed in radians
+    public (int X, int Y)? ShipTile; // shipyards: "ShipTile" (0x00915120), the ship's offset from the position
+    /// <summary>"pointLights" written by the underground classes (lit statics: one, towns: four); Pos relative to the object.</summary>
+    public List<RmgPointLight> PointLights = new();
     public float Rot => Angle ?? Quarter * MathF.PI / 2;
 }
 
@@ -226,6 +232,9 @@ public sealed partial class RmgGenerator
 
     int GuardPower(int level) => _db.Params.BasicLevelGuardPower * level;
 
+    /// <summary>The TOWN_* ids 3 .. 10 (TOWN_HEAVEN … TOWN_STRONGHOLD), the RMGPresetTable order; 0 .. 2 ("-") never match a town.</summary>
+    static readonly string[] TownTypeNames = { "-", "-", "-", "TOWN_HEAVEN", "TOWN_PRESERVE", "TOWN_ACADEMY", "TOWN_DUNGEON", "TOWN_NECROMANCY", "TOWN_INFERNO", "TOWN_FORTRESS", "TOWN_STRONGHOLD" };
+
     // ------------------------------------------------------------------ terrain
 
     /// <summary>
@@ -314,12 +323,17 @@ public sealed partial class RmgGenerator
             if (specs.Count == 0) continue;
             town.Specialization = specs[Rng.Next(specs.Count)].Path;
             // The underground classes' vf 0x20 (0x00bac3d0 / 0x0092abe0 / 0x00928a00) call 0x00923e50 and, when it returns
-            // true, the town's point lights (0x00babbf0 / 0x0092a400 / 0x00928220): Next(3), then Next(10).
-            // TODO(exe): the lights' values (pointLights) are not emitted.
+            // true, the town's point lights (0x00babbf0 / 0x0092a400 / 0x00928220, the same code): z = 5 + Next(3), radius
+            // = 12 + Next(10), four lights at (0, −5), (0, 5), (−5, 0), (5, 0) in the colour of preset[TownType]
+            // (0x0049e000 on the RMGPresetTable vector 0x00fd2e54) +0x1ac, RaceColor.
             if (z.Class is RmgZoneClass.SubInferno or RmgZoneClass.Subterra or RmgZoneClass.Dwarven)   // CGameWaterBorderedZone's vf 0x20 is 0x00923e50 itself
             {
-                Rng.Next(3);
-                Rng.Next(10);
+                int lz = Rng.Next(3) + 5;
+                int radius = Rng.Next(10) + 0xc;
+                int tt = Array.IndexOf(TownTypeNames, town.Def.TownType ?? "");
+                (float, float, float)? colour = tt >= 0 && tt < _db.Races.Count ? _db.Races[tt].RaceColor : null;
+                foreach (var (lx, ly) in new[] { (0, -5), (0, 5), (-5, 0), (5, 0) })
+                    town.PointLights.Add(new RmgPointLight(lx, ly, lz, radius, colour));
             }
         }
     }

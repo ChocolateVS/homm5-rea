@@ -130,6 +130,44 @@ sealed class RmgCommand : ICommand
     };
 }
 
+static class RmgReach
+{
+    /// <summary>
+    /// Surface objects (not statics, monsters or loose objects without a visit tile) whose first active tile is neither
+    /// reached nor next to a reached tile, flooding 8-way over unblocked land from every town's visit tile and every
+    /// monolith / subterranean gate (a teleport links its zone to the network).
+    /// </summary>
+    public static int Unreached(AdvMap m)
+    {
+        var f = m.Floor(0);
+        if (f == null) return 0;
+        bool Open(int x, int y) => f.InBounds(x, y) && !f.Blocked[y * f.Width + x] && !f.IsWater(x, y);
+        var seen = new HashSet<(int, int)>();
+        var queue = new Queue<(int X, int Y)>();
+        foreach (var o in m.Objects.Where(o => o.Pos.Floor == 0 && (o.Kind == ObjectKind.Town ||
+                     (o.SharedPath ?? "").Contains("Monolith", StringComparison.OrdinalIgnoreCase) || (o.SharedPath ?? "").Contains("Subterranean_Gate", StringComparison.OrdinalIgnoreCase))))
+            foreach (var t in o.ActiveTiles.Take(1))
+                foreach (var (dx, dy) in new[] { (0, 0), (0, -1), (1, 0), (0, 1), (-1, 0), (-1, -1), (1, -1), (1, 1), (-1, 1) })
+                    if (Open(t.X + dx, t.Y + dy) && seen.Add((t.X + dx, t.Y + dy))) queue.Enqueue((t.X + dx, t.Y + dy));
+        while (queue.Count > 0)
+        {
+            var (x, y) = queue.Dequeue();
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dx = -1; dx <= 1; dx++)
+                    if ((dx != 0 || dy != 0) && Open(x + dx, y + dy) && seen.Add((x + dx, y + dy))) queue.Enqueue((x + dx, y + dy));
+        }
+        int n = 0;
+        foreach (var o in m.Objects.Where(o => o.Pos.Floor == 0 && o.Kind is not (ObjectKind.Static or ObjectKind.Monster)))
+            foreach (var t in o.ActiveTiles.Take(1))
+            {
+                bool hit = seen.Contains((t.X, t.Y)) || (f.InBounds(t.X, t.Y) && !f.ObjectBlocked[t.Y * f.Width + t.X] &&
+                    Enumerable.Range(-1, 3).Any(dy => Enumerable.Range(-1, 3).Any(dx => (dx != 0 || dy != 0) && seen.Contains((t.X + dx, t.Y + dy)))));
+                if (!hit) n++;
+            }
+        return n;
+    }
+}
+
 sealed class RmgStatsCommand : ICommand
 {
     public string Name => "rmg-stats";
@@ -317,6 +355,14 @@ sealed class RmgRefCommand : ICommand
             }
             foreach (var key in refCounts.Keys.Union(ours.Keys).Order())
                 Console.WriteLine($"    {key,-16} ref {refCounts.GetValueOrDefault(key),6}   ours {ours.GetValueOrDefault(key),6}");
+            if (args.Contains("--reach"))
+            {
+                // Surface objects whose visit tile no town reaches over the adventure passability (monoliths and gates
+                // count as reached), on the stock map and on ours.
+                var refMap = new MapLoader(H5.Core.Data.GameDatabase.Load(ctx.Fs), ctx.Fs).Load(MapCatalog.Find(ctx.Fs, ctx.Install, file)!);
+                var ourMap = r.ToAdvMap(new SharedCatalog(new H5.Core.Xdb.XdbLoader(ctx.Fs)));
+                Console.WriteLine($"    unreachable surface objects (adventure passability, from the towns): ref {RmgReach.Unreached(refMap)}, ours {RmgReach.Unreached(ourMap)}");
+            }
             if (args.Contains("--terrain"))
             {
                 // Texture layers of the surface (GroundTerrain.bin vs ours): order, tile priority, painted vertices,

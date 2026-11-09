@@ -74,6 +74,7 @@ public sealed class RmgResult
                 Index = index, Uid = UidOf(index++, o), Kind = kind, Tag = o.Def.Tag.Replace("Shared", ""),
                 Pos = new Tile(o.X, o.Y, o.Floor), Rot = o.Rot, SharedPath = o.Shared, Shared = o.Def, Owner = o.Owner,
             };
+            mo.ShipTile = o.ShipTile;
             if (o.GroupId is int gid) mo.Props["GroupID"] = gid.ToString(System.Globalization.CultureInfo.InvariantCulture);
             switch (kind)
             {
@@ -126,6 +127,7 @@ public sealed class RmgResult
         "AdvMapTownShared" => ObjectKind.Town,
         "AdvMapPrisonShared" => ObjectKind.Prison,
         "AdvMapCartographerShared" => ObjectKind.Cartographer,
+        "AdvMapShipyardShared" => ObjectKind.Shipyard,
         _ => ObjectKind.Unknown,
     };
 

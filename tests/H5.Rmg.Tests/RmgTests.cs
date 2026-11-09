@@ -267,6 +267,59 @@ public class GeneratorTerrainTests(RmgFixture f) : IClassFixture<RmgFixture>
         Assert.Equal(2582, fl.Layers[3].Weights.Count(w => w == 255));
     }
 
+    /// <summary>
+    /// Shipyards (exe 0x00bac930): with the water option every Shipyard zone of S3-5P2-8Z8K2M (8) gets one per round
+    /// (two rounds above size 100), each with a guard and a ShipTile whose tile the adventure map reads as water.
+    /// </summary>
+    [StockFact]
+    public void WaterZonesBuildShipyards()
+    {
+        var o = new RmgOptions { Template = "S3-5P2-8Z8K2M", Size = 4, Seed = 1, Players = 8, WaterAmount = 2 };
+        var r = new RmgGenerator(f.Db, o).Generate();
+        var map = r.ToAdvMap(new SharedCatalog(f.Xdb));
+        var yards = map.Objects.Where(m => m.Kind == ObjectKind.Shipyard).ToList();
+        Assert.Equal(16, yards.Count);
+        Assert.Equal(16, r.Objects.Count(x => x.Note == "shipyard guard"));
+        var fl = map.Floors[0]!;
+        Assert.All(yards, y => Assert.True(fl.IsWater(y.Pos.X + y.ShipTile!.Value.X, y.Pos.Y + y.ShipTile.Value.Y)));
+    }
+
+    /// <summary>
+    /// Point lights of the underground classes (exe 0x00bab980 / 0x0092a190 / 0x00927f90 for statics, 0x00babbf0 /
+    /// 0x0092a400 / 0x00928220 for towns): a lit static carries one light, Pos.z in [zMin, zMax), radius in
+    /// [LightRadiusMin, LightRadiusMax); an underground town four at (0, ±5) / (±5, 0), z 5..7, radius 12..21.
+    /// </summary>
+    [Fact]
+    public void UndergroundObjectsCarryTheirPointLights()
+    {
+        var p = f.Db.Params;
+        int lit = 0;
+        foreach (var t in f.Db.Templates.Values.Where(t => !t.TestTemplate).OrderBy(t => t.Name, StringComparer.Ordinal).Take(12))
+        {
+            int? size = Enumerable.Range(0, 7).Cast<int?>().FirstOrDefault(s => t.ListedFor(s, true, false, t.MaxPlayers));
+            if (size == null) continue;
+            var r = new RmgGenerator(f.Db, new RmgOptions { Template = t.Name, Size = size.Value, Underground = true, Seed = 77, Players = t.MaxPlayers }).Generate();
+            foreach (var o in r.Objects.Where(o => o.PointLights.Count > 0))
+            {
+                Assert.Equal(1, o.Floor);
+                if (o.Def.Tag == "AdvMapTownShared")
+                {
+                    Assert.Equal(new[] { (0, -5), (0, 5), (-5, 0), (5, 0) }, o.PointLights.Select(l => (l.X, l.Y)));
+                    Assert.All(o.PointLights, l => Assert.True(l.Z is >= 5 and < 8 && l.Radius is >= 12 and < 22));
+                }
+                else
+                {
+                    Assert.Single(o.PointLights);
+                    var l = o.PointLights[0];
+                    Assert.True(l.Z >= p.LightZMin && (l.Z < p.LightZMax || p.LightZMax == p.LightZMin));
+                    Assert.True(l.Radius >= p.LightRadiusMin && (l.Radius < p.LightRadiusMax || p.LightRadiusMax == p.LightRadiusMin));
+                    lit++;
+                }
+            }
+        }
+        Assert.True(lit > 0);
+    }
+
     [Fact]
     public void ScreenListsTemplatesLikeTheExe()
     {

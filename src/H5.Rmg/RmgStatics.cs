@@ -47,11 +47,14 @@ public sealed partial class RmgGenerator
     /// nothing): CGameSubInfernoZone 0x00bab980 lights "Crater" (path longer than 5), "Lavacrack" / "Hellpikes" (longer
     /// than 8) statics (0x00914460 → 0x009142d0), CGameSubterraZone 0x0092a190 "Crystal" (longer than 6, 0x009143a0),
     /// CGameDwarvenZone 0x00927f90 "Fakel" (longer than 4) or "FireColumn" (longer than 9) (0x00914420 / 0x00914440).
-    /// A lit static gets pointLights.[0] with Pos.z = zMin + Next(zMax − zMin), a radius from Next(LightRadiusMax −
-    /// LightRadiusMin) and the PointLightParams colour of the zone index. TODO(exe): the light is not emitted.
+    /// A lit static gets one light, pointLights.[0]: Pos.z = zMin + Next(zMax − zMin), Radius = LightRadiusMin +
+    /// Next(LightRadiusMax − LightRadiusMin) (Params PointLightParams +0xb4 / +0xb8 / +0xbc / +0xc0), Color = the zone's
+    /// +0x20 preset PointLightParams.Colors (+0x1d4) [zone id % n] (n = 0 divides by zero in the exe; ours: no colour);
+    /// Pos.x / y stay 0.
     /// </summary>
-    void StaticLight(RmgZone z, string shared)
+    void StaticLight(RmgZone z, RmgObject o)
     {
+        string shared = o.Shared;
         bool Has(int longer, string part) => shared.Length > longer && NameHas(shared, part);
         bool lit = z.Class switch
         {
@@ -62,8 +65,10 @@ public sealed partial class RmgGenerator
         };
         if (!lit) return;
         var p = _db.Params;
-        Rng.Next(p.LightZMax - p.LightZMin);
-        Rng.Next(p.LightRadiusMax - p.LightRadiusMin);
+        int lz = Rng.Next(p.LightZMax - p.LightZMin) + p.LightZMin;
+        int radius = Rng.Next(p.LightRadiusMax - p.LightRadiusMin) + p.LightRadiusMin;
+        var colours = _db.Race(z.Preset).LightColors;
+        o.PointLights.Add(new RmgPointLight(0, 0, lz, radius, colours.Count > 0 ? colours[z.Id % colours.Count] : null));
     }
 
     static bool NameHas(string shared, string part) => shared.Contains(part, StringComparison.Ordinal);
@@ -107,8 +112,8 @@ public sealed partial class RmgGenerator
                     double chance = 1.0 / (d.Blocked.Count + 1);
                     if (Rng.Float(0, 1) < chance)
                     {
-                        CreateObject(r, z, s, x, y, a, "static");
-                        if (z.Class == RmgZoneClass.SubInferno) StaticLight(z, s);   // 0x00baa4a0 only
+                        var so = CreateObject(r, z, s, x, y, a, "static");
+                        if (z.Class == RmgZoneClass.SubInferno) StaticLight(z, so);   // 0x00baa4a0 only
                         if (big) z.BigStaticPoints.Add((x, y));
                         Stamp(z, x, y, a, d, null);
                         if (s.Length > 7 && NameHas(s, "Mountain") && d.Blocked.Count > 15) MountainHeights(z, x, y, a, d);
@@ -446,8 +451,8 @@ public sealed partial class RmgGenerator
             if (list.Count == 0) return;
             var s = list[Rng.Next(list.Count)];
             if (lit && NameHas(s, "FireDot")) a = BuilderAngle;
-            CreateObject(r, z, s, x, y, a, "static");
-            if (lit) StaticLight(z, s);
+            var so = CreateObject(r, z, s, x, y, a, "static");
+            if (lit) StaticLight(z, so);
             f.Flags[f.At(x, y)] = flag;
         }
 
@@ -580,8 +585,8 @@ public sealed partial class RmgGenerator
         bool Crowded(int x, int y) => z.DwarvenPoints.Any(p => MathF.Sqrt((p.X - x) * (p.X - x) + (p.Y - y) * (p.Y - y)) < 4f);
         void Put(string s, int x, int y, bool remember)
         {
-            CreateObject(r, z, s, x, y, 0f, "static");
-            StaticLight(z, s);
+            var so = CreateObject(r, z, s, x, y, 0f, "static");
+            StaticLight(z, so);
             f.Flags[f.At(x, y)] = TileFlags.Blocked;
             if (remember) z.DwarvenPoints.Add((x, y));
         }

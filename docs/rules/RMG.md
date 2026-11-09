@@ -7,7 +7,7 @@ stock archives (`RMG/Templates/*.xdb`, `RMG/Params/Default.xdb`, `GameMechanics/
 
 Tools: `h5tool rmg <template> <size> <seed> [--players=N] [--underground] [--monsters=0..4] [--png=out.png]`,
 `h5tool rmg-stats [seeds] [--threads=N] [--filter=s]` (every template at every size / underground / player count the
-screen lists it for, exe 0x0090c880), `h5tool rmg-ref [--detail] [--terrain]` (the user's RMG maps in `Maps/*RMG*.h5m` regenerated
+screen lists it for, exe 0x0090c880), `h5tool rmg-ref [--detail] [--terrain] [--reach]` (the user's RMG maps in `Maps/*RMG*.h5m` regenerated
 from the template/seed/levels recorded in them, counts side by side). Audit ledger: `docs/rules/AUDIT_RMG.md`.
 Analysis: private Ghidra project `tools/ghidra-projects/rmg`, scripts in `tools/rmgre/` (`ghidra.sh`).
 
@@ -108,7 +108,7 @@ first pass nothing can be stolen (division by an empty list).
   others get the Euclidean distance to the nearest border tile of their zone.
 * Towns (`0x00923e50`): candidates with border distance > R/2; each try draws a candidate and a
   quarter turn; the anchor (first active tile) must be ≥ 2R/3 from the border (relaxed after 100
-  tries); footprint failures drop the candidate; the town's point light draws twice
+  tries); footprint failures drop the candidate; an underground town gets four point lights (z 5 + Next(3), radius 12 + Next(10))
   (`0x0092a400`). Zones without a town anchor at their tile centroid (`0x00919810`).
 * Mines (`0x0091c4a0`): wood/ore between Mine1 radii of the town, others between Mine2 radii; tiles in
   the outer 2/5 of the zone's distance range are skipped; guard = `BasicLeverGuardPower × level`
@@ -148,7 +148,7 @@ blocked + active tiles to their mean and drops them from the smoothing mask), th
 ## Not yet line by line (see AUDIT_RMG.md)
 
 * Underground zones (CGameSubInfernoZone / CGameSubterraZone / CGameDwarvenZone, `0x0090bd80`) place their statics,
-  rock fill and point-light draws as the exe does; heights, light values and the water option's zone class are not built.
+  rock fill and point lights as the exe does (`RmgObject.PointLights`; the adventure `MapObject` has no field for them).
 
 Reference comparison (`h5tool rmg-ref`, same template/size/seed/players/races/levels): mines, prisons and towns
 match exactly on every map; the other object counts are within a few percent (AUDIT_RMG.md).
@@ -162,7 +162,7 @@ match exactly on every map; the other object counts are within a few percent (AU
   minimap); maps exist in memory as `AdvMap`.
 * Grail/obelisks follow the screen's EP_GRAAL_ON_MAP option (0x00907150 / 0x00921a50 / 0x00921a10, see
   AUDIT_ADVENTURE.md "Random maps"); their candidate filters are not ported.
-* Water zones, shipyards, lakes, water cartographers and per-zone point lights are not generated.
+* Water cartographers are not generated (water zones, lakes and shipyards are: AUDIT_RMG.md).
 * MMH 5.5: all 94 template files generate at every listed size / underground / player count (rmg-stats, 465 runs);
   `4P-Diamond-XL-#` has 4 start zones for up to 8 players — as in the exe the extra players stay active without
   a start town (0x0090bd80 / 0x009058e0).
