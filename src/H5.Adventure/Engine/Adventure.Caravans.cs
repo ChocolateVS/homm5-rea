@@ -53,32 +53,45 @@ public sealed partial class Adventure
 
     static readonly Tile Nowhere = new(-1, -1, 0);
 
-    /// <summary>The route of a caravan-like walker of <paramref name="owner"/> and its cumulative costs (index 0 = start, cost 0).</summary>
-    (List<Tile> Path, List<int> Cost)? CaravanRoute(int owner, Tile from, Tile to)
+    /// <summary>
+    /// The route of a caravan-like walker of <paramref name="owner"/> and its cumulative costs (index 0 = start, cost 0).
+    /// Both caravan path modes (00c076d0 mode 8 for the sources 00ce6110, mode 9 for the walk 00ce49b0) start from
+    /// 00ca9c50(race 0): no Pathfinding, no boots, no Rash, native ground TT_NONE (00b4c2a0(0)), so every ground penalty
+    /// applies; then 00ce4880 / 00ce4960 set the owner (+0x18) and the day's movement (+0x28 = +0x30 = 00ce38c0). The
+    /// expansion 00c07f80 prices each step with 00ca9a70 (mode 0 on land) on the step's destination tile, with "left" =
+    /// settings +0x30 − the node's cost (param 5 from 00c08890), so the diagonal rule only acts within the first day;
+    /// the node cost (+8) is the sum of the step costs. Our hero Dijkstra with a skill-less proxy hero whose movement
+    /// points are the caravan speed computes exactly that. The modes' blocking flags (+0x43 .. +0x65: e.g. mode 9
+    /// clears +0x41, so 009d19a0 blocks a step onto any object) are left to our hero passability (UNVERIFIED in detail).
+    /// </summary>
+    public (List<Tile> Path, List<int> Cost)? CaravanRoute(int owner, Tile from, Tile to)
     {
         if (to.X < 0) return null;
-        var proxy = new HeroState { Id = -1, Owner = owner, Pos = from, Alive = true, MovePoints = int.MaxValue };
+        int speed = CaravanSpeed();
+        var proxy = new HeroState { Id = -1, Owner = owner, Pos = from, Alive = true, MovePoints = speed };
         var path = FindPath(proxy, to);
         if (path == null || path.Count == 0) return null;
         var cost = new List<int> { 0 };
-        for (int i = 1; i < path.Count; i++) cost.Add(cost[i - 1] + StepCost(proxy, path[i - 1], path[i]));
+        for (int i = 1; i < path.Count; i++) cost.Add(cost[i - 1] + StepCost(proxy, path[i - 1], path[i], speed - cost[i - 1]));
         return (path, cost);
     }
 
     /// <summary>
     /// The caravan sources of a town (00ce6110, used by the hire screen 006e23a0, EnterFort 0061a390, the script
     /// query 00598970 and the AI 0086a350): every map dwelling or town of the town's owner (dwelling: owner of the
-    /// flagged part; town: vf 0xbc) other than the town itself with a route to its entrance; days =
-    /// <see cref="CaravanDays"/> of the route cost. The exe floods from the town with path mode 8 (00c076d0(8, 0)) for
-    /// the owner; the step costs of that mode are not traced, so the route is our hero path cost without skills
-    /// (UNVERIFIED).
+    /// flagged part; town: vf 0xbc) other than the town itself (its entrance vf 0xc4 is not the flood's start) reached by
+    /// the flood; days = <see cref="CaravanDays"/> of the node cost (+8). The exe floods FROM the town's entrance (path
+    /// mode 8, 00c08be0(param 4 = the town's tile)) to every object node (00c07100), so the cost is that of the walk
+    /// from the town to the source (each step priced on its destination tile, see <see cref="CaravanRoute"/>), not of
+    /// the caravan's way back. GAP-detail: the flood's army estimator (00c07ad0(00c27740), strength of no army) and the
+    /// holder replacement through vf 0x2c → vf 0x1c are not modelled.
     /// </summary>
     public List<CaravanSource> CaravanSources(TownState dest)
     {
         var list = new List<CaravanSource>();
         if (dest.Owner < 0) return list;
         var target = EntranceOf(dest);
-        int? Days(Tile from) => CaravanRoute(dest.Owner, from, target) is { } r ? CaravanDays(r.Cost[^1]) : null;
+        int? Days(Tile at) => CaravanRoute(dest.Owner, target, at) is { } r ? CaravanDays(r.Cost[^1]) : null;
         foreach (var t in S.Towns)
         {
             if (t == dest || t.Owner != dest.Owner) continue;
@@ -216,13 +229,29 @@ public sealed partial class Adventure
         else { c.Stuck++; c.DaysLeft = -1; }
     }
 
+    // 009a5870 (IAdvMapDwelling vf 0, the part at +0xf8 returned by the object's vf 0x18 = 009a80d0): true for these
+    // SAdvMapDwellingShared Type values (+0xec, enum 00ad0650: 0x40 0x49 0x4c 0x53 0x55 0x58 0x6f 0x7b).
+    static readonly HashSet<string> FreeCaravanDwellingTypes = new()
+    {
+        "BUILDING_PEASANT_HUT", "BUILDING_IMP_CRUCIBLE", "BUILDING_GRAVEYARD", "BUILDING_FAIRIE_TREE",
+        "BUILDING_WORKSHOP", "BUILDING_BATTLE_ACADEMY", "BUILDING_FORTRESS_DEFENDERS", "BUILDING_STRONGHOLD_GOBLINS",
+    };
+
+    /// <summary>
+    /// The payment skip of 00428f20 ([ESP+0x13], 00428fb1 / 0042903c): 0 for a town source; for a dwelling the result
+    /// of its IAdvMapDwelling vf 0 (009a5870): the shared Type is one of the eight first-level dwellings above.
+    /// </summary>
+    public bool CaravanPurchaseFree(int source) =>
+        S.Town(source) == null && source >= 0 && source < Map.Objects.Count && O(source).Kind == ObjectKind.Dwelling
+        && FreeCaravanDwellingTypes.Contains(O(source).Shared.Type);
+
     /// <summary>
     /// CPurchaseCreaturesToCaravan (00428f20): the source (a town of the buyer, vf 0x3c → vf 0xbc, or a dwelling whose
     /// flagged owner is the buyer) must offer the creature; the count is clamped to the pool (vf 0xc); 00ce64a0 finds a
     /// caravan from the source to the town: found and taking the creature (0045b240) → join it; found and full → fail
     /// (cant_but_caravan_not_fit); none → a start tile must be free (00ce5f40, cant_buy_no_place_for_caravan) and a new
-    /// caravan is made there (00ce5b30). Cost × count is paid (player vf 0xe0, refused when short), the pool loses the
-    /// count (vf 8) and the creatures join the caravan (00ce4450).
+    /// caravan is made there (00ce5b30). Cost × count is paid (player vf 0xe0, refused when short) unless
+    /// <see cref="CaravanPurchaseFree"/>, the pool loses the count (vf 8) and the creatures join the caravan (00ce4450).
     /// </summary>
     string? DoBuyToCaravan(BuyToCaravanCmd c)
     {
@@ -239,9 +268,12 @@ public sealed partial class Adventure
         List<Tile>? start = null;
         if (car != null) { if (!ArmyTakes(car.Army, c.Creature)) return "caravan is full"; }
         else if ((start = CaravanStartTiles(c.Source)).Count == 0) return "nowhere to place caravan";
-        var cost = Purse.Scale(cd.Cost, n);
-        if (!p.Purse.CanAfford(cost)) return "not enough resources";
-        Give(p, Purse.Scale(cost, -1));
+        if (!CaravanPurchaseFree(c.Source))
+        {
+            var cost = Purse.Scale(cd.Cost, n);
+            if (!p.Purse.CanAfford(cost)) return "not enough resources";
+            Give(p, Purse.Scale(cost, -1));
+        }
         car ??= NewCaravan(p.Index, start![0], to, dest.Object, c.Source);
         pool[slot] -= n;
         car.Army.TryAdd(c.Creature, n);
@@ -253,9 +285,12 @@ public sealed partial class Adventure
 
     /// <summary>
     /// CMoveTownOrTownHeroCreaturesToCaravan (0042c630): slot 0..6 of the source town's army (town vf 0x18(1) hero's
-    /// army vf 0x48, else the town army vf 0x2c) goes whole to the caravan from that town to the destination (found as
-    /// in 00428f20, or made on a free start tile); the army must not be left empty (army vf 0 after the removal, else
-    /// the stack is put back and the command fails; UNVERIFIED that vf 0 is "has creatures").
+    /// army vf 0x48, else the town army vf 0x2c) goes whole to a NEW caravan from that town to the destination: 00ce64a0
+    /// (flag 0) returning 0 — a caravan of the player beside the town heading there that takes the creature — fails
+    /// the command (0042c7b8), as does 2 (that caravan is full); only 1 (none) goes on: a free start tile (00ce5f40)
+    /// and 00ce5b30. The stack is then removed (army vf 0x14 = 00c66e40) and the army's vf 0 asked; CArmy (vtable
+    /// 00e8f43c, the only one with that vf 0x14) answers 00412bd0 = true, so the stack always goes (00ce4450) — the
+    /// army may be left empty; the put-back branch (vf 0x10) is unreachable.
     /// </summary>
     string? DoMoveToCaravan(MoveToCaravanCmd c)
     {
@@ -266,16 +301,11 @@ public sealed partial class Adventure
         var hero = GarrisonHeroOf(src);
         var army = TownRecruitArmy(src);
         if (army[c.Slot] is not { Count: > 0 } stack) return "no creatures in that slot";
-        if (army.StackCount() <= 1) return "the army cannot be left empty";
         var to = EntranceOf(dest);
-        var car = CaravanAtSource(p.Index, src.Object, to);
-        if (car != null) { if (!ArmyTakes(car.Army, stack.Creature)) return "caravan is full"; }
-        else
-        {
-            var start = CaravanStartTiles(src.Object);
-            if (start.Count == 0) return "nowhere to place caravan";
-            car = NewCaravan(p.Index, start[0], to, dest.Object, src.Object);
-        }
+        if (CaravanAtSource(p.Index, src.Object, to) != null) return "a caravan is already there";
+        var start = CaravanStartTiles(src.Object);
+        if (start.Count == 0) return "nowhere to place caravan";
+        var car = NewCaravan(p.Index, start[0], to, dest.Object, src.Object);
         army[c.Slot] = null;
         car.Army.TryAdd(stack.Creature, stack.Count);
         Emit(new ArmyChanged(hero?.Id ?? -1, hero == null ? src.Object : -1));
@@ -339,12 +369,35 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// The caravans' daily walk (interface vf 0x28 = 00ce4de0). Run for every caravan on the world's new day
-    /// (UNVERIFIED: the caller of vf 0x28 is not traced).
+    /// The caravans' walk when the turn is handed over (00998060 GiveTurnToNextPlayers → 00995f40, after the new-day
+    /// work): with one player getting the turn only that player's caravans (owner vf 0x24 = player vf 0x2c), else all
+    /// (null). Passes over the world's caravan list (+0x174): a caravan not yet "moved" walks (interface vf 0x28 =
+    /// 00ce4de0); one that did not stop (vf 0x38: days ≠ −1) is moved and skipped by later passes; then an empty one
+    /// (vf 0x2c = 00ce3de0) is removed (world vf 0xec) and the pass counter restarts. The walker returns after the
+    /// second pass in a row without a removal. UNVERIFIED-detail: world vf 0xec is taken to erase the entry at once
+    /// (the pass then skips the next caravan, as the exe's index loop would).
     /// </summary>
-    void CaravansNewDay()
+    void CaravansTurn(int? player)
     {
-        foreach (var c in S.Caravans.ToList()) if (S.Caravans.Contains(c)) CaravanWalk(c);
+        var moved = new HashSet<CaravanState>();
+        int passes = 0;
+        while (true)
+        {
+            for (int i = 0; i < S.Caravans.Count; i++)
+            {
+                var c = S.Caravans[i];
+                if (player is { } pl && c.Owner != pl) continue;
+                if (moved.Contains(c)) continue;
+                CaravanWalk(c);
+                if (!c.Stopped) moved.Add(c);
+                if (!c.Army.Live().Any())
+                {
+                    RemoveCaravan(c, c.Dest.X < 0 ? "arrived" : "empty");
+                    passes = 0;
+                }
+            }
+            if (++passes > 1) return;
+        }
     }
 
     /// <summary>
@@ -405,26 +458,28 @@ public sealed partial class Adventure
             c.Pos = path[idx];
             Emit(new CaravanMoved(c.Id, path.Take(idx + 1).ToList()));
         }
-        if (!c.Army.Live().Any())
-        {
-            // The caravan that delivered its army: its removal is not traced (the empty caravan no longer walks,
-            // vf 0x2c); it leaves the map here (UNVERIFIED).
-            RemoveCaravan(c, "arrived");
-            return;
-        }
+        // The caravan that delivered its army is removed by the walker (00995f40: vf 0x2c → world vf 0xec).
         if (stop) StopCaravan(c); else UpdateCaravanDays(c);
     }
 
-    /// <summary>00ce3c20 (simplified): a hero or another caravan stands on the node.</summary>
-    bool CaravanNodeBlocked(CaravanState c, Tile t) => HeroAt(t) != null || (CaravanAt(t) is { } o && o != c);
+    /// <summary>
+    /// 00ce3c20 (ECX = the caravan, arg = the node): no world → occupied; else 00cead80 looks for an object (00cea350),
+    /// a hero (00cea010), then a caravan (00ceab70) at the node for the owner: none (or a removed one) → free; one
+    /// whose vf 0x50 part passes 00ce3960 for the caravan's owner → free; otherwise occupied. GAP-detail: 00ce3960
+    /// (the vf 0x50 part's vf 4 / vf 0x54 / vf 0x20 tests) is not decoded: every hero, ship, other caravan or object
+    /// counts as occupying (the caravan itself does not: the walk's node 0 is its own tile).
+    /// </summary>
+    bool CaravanNodeBlocked(CaravanState c, Tile t) =>
+        HeroAt(t) != null || (CaravanAt(t) is { } o && o != c) || BoatAt(t) != null || AnyObjectAt(t);
 
     // 00ce3a20 neighbour order (DAT_00f757c8).
     static readonly (int dx, int dy)[] CaravanMergeDirs = { (0, -1), (0, 1), (-1, 0), (1, 0), (1, -1), (1, 1), (-1, -1), (-1, 1) };
 
     /// <summary>
     /// 00ce4420: days −1, one more stuck day, then 00ce3a20: each neighbouring caravan (order above) of the same owner
-    /// heading to the same tile whose stuck counter (vf 0x44, taken as +0x198) is at most this one's — and not equal
-    /// unless this one is stuck for more than a day — gives this caravan every stack it can take (vf 0xc → vf 0x10).
+    /// heading to the same tile whose stuck counter (interface vf 0x44 = 00ce6790: +0x48 of the interface at +0x150 =
+    /// +0x198) is at most this one's — and not equal unless this one is stuck for more than a day — gives this caravan
+    /// every stack it can take (vf 0xc → vf 0x10). An emptied neighbour stays until the walker's empty test removes it.
     /// </summary>
     void StopCaravan(CaravanState c)
     {
@@ -438,7 +493,6 @@ public sealed partial class Adventure
                 if (o.Army[i] is { Count: > 0 } s && c.Army.TryAdd(s.Creature, s.Count)) o.Army[i] = null;
             Emit(new CaravanChanged(o.Id));
             Emit(new CaravanChanged(c.Id));
-            if (!o.Army.Live().Any()) RemoveCaravan(o, "merged");
         }
     }
 
@@ -462,8 +516,9 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// After a battle against a caravan: its survivors stay in it; a caravan left without creatures leaves the map
-    /// (the finish-combat path for caravans is not traced, UNVERIFIED).
+    /// After a battle against a caravan: its survivors stay in it. The combat finish 00af6680 removes the losing
+    /// side's caravan (side vf 0x24 → world vf 0xec; the attacking side's only when its army count 0045a320 is &lt; 1), so a
+    /// caravan left without creatures leaves the map.
     /// </summary>
     void ResolveCaravanBattle(PendingBattle pb, List<ArmySlot> defenderSurvivors)
     {

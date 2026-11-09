@@ -15,6 +15,7 @@ public sealed partial class Adventure
             int next = TurnOrder(S.CurrentPlayer);
             if (next < 0) { NewDay(); next = TurnOrder(-1); }
             if (next >= 0) S.CurrentPlayer = next;
+            CaravansTurn(Current.Index);   // 00998060 → 00995f40: the caravans of the player getting the turn
             if (!S.Finished) EmitTurnStarted();
             return null;
         }
@@ -26,6 +27,7 @@ public sealed partial class Adventure
             if (idx >= S.Players.Count) { idx = 0; NewDay(); }
         } while (!GetsTurn(S.Players[idx]) && S.Players.Any(GetsTurn));   // exe FUN_0098e410 (Adventure.AiDirectives.cs)
         S.CurrentPlayer = idx;
+        CaravansTurn(Current.Index);       // 00998060 → 00995f40: the caravans of the player getting the turn
         if (!S.Finished) EmitTurnStarted();
         return null;
     }
@@ -54,7 +56,6 @@ public sealed partial class Adventure
         foreach (var t in S.Towns) t.BuiltToday = false;
         foreach (var p in S.Players.Where(p => p.Alive)) DailyIncome(p);
         foreach (var h in S.Heroes.Where(h => h.Alive)) ResetHeroDay(h, newWeek);
-        CaravansNewDay();
         CheckEliminations();
     }
 

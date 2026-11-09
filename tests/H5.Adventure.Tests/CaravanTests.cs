@@ -54,7 +54,8 @@ public class CaravanTests(Fixture f)
         var r = g.Apply(new BuyToCaravanCmd(d.Index, town.Object, creature, 50) { Player = g.Current.Index });
         Assert.True(r.Ok, r.Error);
         Assert.Equal(0, os.Available[row]);
-        Assert.Equal(gold - 10 * g.Core.Creatures[creature].Cost.Gold, g.Current.Purse[Purse.Gold]);
+        // The payment is skipped for the first-level dwelling types (00428f20 [ESP+0x13] <- 009a5870).
+        Assert.Equal(g.CaravanPurchaseFree(d.Index) ? gold : gold - 10 * g.Core.Creatures[creature].Cost.Gold, g.Current.Purse[Purse.Gold]);
         var c = Assert.Single(g.S.Caravans);
         // 00ce5f40 → 00cec660: the first free neighbour of the source's entrance tiles; destination = the town's entrance.
         Assert.Contains(d.ActiveTiles, e => Math.Max(Math.Abs(e.X - c.Pos.X), Math.Abs(e.Y - c.Pos.Y)) == 1);
@@ -75,8 +76,8 @@ public class CaravanTests(Fixture f)
         var (g, town, d) = Setup(f);
         var creature = FirstCreature(g, d);
         g.Current.Purse = new Purse();
-        Assert.False(g.Apply(new BuyToCaravanCmd(d.Index, town.Object, creature, 1) { Player = g.Current.Index }).Ok);
-        Assert.Empty(g.S.Caravans);
+        Assert.Equal(g.CaravanPurchaseFree(d.Index), g.Apply(new BuyToCaravanCmd(d.Index, town.Object, creature, 1) { Player = g.Current.Index }).Ok);
+        g.S.Caravans.Clear();
         g.Current.Purse = new Purse(new Resources(999, 999, 999, 999, 999, 999, 9999999));
         g.S.Obj(d.Index).Owner = -1;
         Assert.False(g.Apply(new BuyToCaravanCmd(d.Index, town.Object, creature, 1) { Player = g.Current.Index }).Ok);
@@ -172,7 +173,7 @@ public class CaravanTests(Fixture f)
     }
 
     [Fact]
-    public void MoveToCaravanTakesAWholeStackButNotTheLast()
+    public void MoveToCaravanTakesTheWholeStackIntoANewCaravanOnly()
     {
         var (g, town, d) = Setup(f);
         var other = g.S.Towns.FirstOrDefault(t => t != town && t.Owner != town.Owner && g.CaravanStartTiles(t.Object).Count > 0);
@@ -181,12 +182,111 @@ public class CaravanTests(Fixture f)
         foreach (var h in g.S.Heroes.Where(h => h.InTown == other.Object)) { h.InTown = -1; h.Garrisoned = false; }
         Array.Fill(other.Garrison, null);
         other.Garrison[0] = new Stack("CREATURE_PEASANT", 5);
-        Assert.False(g.Apply(new MoveToCaravanCmd(other.Object, town.Object, 0, 5) { Player = g.Current.Index }).Ok);
         other.Garrison[3] = new Stack("CREATURE_ARCHER", 2);
+        // 0042c630: the whole stack goes into a new caravan (00ce64a0 = 1 → 00ce5b30).
         var r = g.Apply(new MoveToCaravanCmd(other.Object, town.Object, 0, 5) { Player = g.Current.Index });
         Assert.True(r.Ok, r.Error);
         Assert.Null(other.Garrison[0]);
         Assert.Contains(g.S.Caravans.Single().Army, s => s is { Count: 5, Creature: "CREATURE_PEASANT" });
+        // A caravan from that town to that destination is already there: 00ce64a0 = 0 fails the command (0042c7b8).
+        Assert.False(g.Apply(new MoveToCaravanCmd(other.Object, town.Object, 3, 2) { Player = g.Current.Index }).Ok);
+        // CArmy vf 0 (00412bd0) is always true: the last stack may go too.
+        g.S.Caravans.Clear();
+        r = g.Apply(new MoveToCaravanCmd(other.Object, town.Object, 3, 2) { Player = g.Current.Index });
+        Assert.True(r.Ok, r.Error);
+        Assert.All(other.Garrison, s => Assert.Null(s));
+    }
+
+    [Fact]
+    public void FirstLevelDwellingsSellToCaravansForFree()
+    {
+        // 009a5870: SAdvMapDwellingShared Type 0x40 0x49 0x4c 0x53 0x55 0x58 0x6f 0x7b (enum 00ad0650).
+        var g = f.NewGame("A2M1");
+        foreach (var o in g.Map.Objects.Where(o => o.Kind == ObjectKind.Dwelling))
+            Assert.Equal(o.Shared.Type is "BUILDING_PEASANT_HUT" or "BUILDING_IMP_CRUCIBLE" or "BUILDING_GRAVEYARD" or "BUILDING_FAIRIE_TREE"
+                or "BUILDING_WORKSHOP" or "BUILDING_BATTLE_ACADEMY" or "BUILDING_FORTRESS_DEFENDERS" or "BUILDING_STRONGHOLD_GOBLINS",
+                g.CaravanPurchaseFree(o.Index));
+        Assert.False(g.CaravanPurchaseFree(g.S.Towns[0].Object));
+    }
+
+    [Fact]
+    public void CaravansWalkWhenTheirOwnerGetsTheTurnAndEmptyOnesAreRemovedThen()
+    {
+        var (g, town, d) = Setup(f);
+        Assert.True(g.Apply(new BuyToCaravanCmd(d.Index, town.Object, FirstCreature(g, d), 1) { Player = g.Current.Index }).Ok);
+        var c = g.S.Caravans[0];
+        int owner = c.Owner;
+        var start = c.Pos;
+        // 00998060 → 00995f40(player): a turn handed to another player does not move this caravan.
+        var r = g.Apply(new EndTurnCmd { Player = owner });
+        Assert.True(r.Ok, r.Error);
+        if (g.Current.Index != owner)
+        {
+            Assert.Equal(start, c.Pos);
+            Assert.DoesNotContain(r.Events, e => e is CaravanMoved);
+        }
+        // An emptied caravan stays until its owner's next turn hand-over (vf 0x2c → world vf 0xec).
+        Array.Fill(c.Army, null);
+        Assert.Contains(c, g.S.Caravans);
+        if (g.Current.Index == owner) Assert.True(g.Apply(new EndTurnCmd { Player = owner }).Ok);
+        for (int i = 0; i < 40 && g.Current.Index != owner; i++)
+        {
+            Assert.Contains(c, g.S.Caravans);
+            Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
+        }
+        Assert.Equal(owner, g.Current.Index);
+        Assert.DoesNotContain(c, g.S.Caravans);
+    }
+
+    [Fact]
+    public void MeetSwapsDifferentStacksWithTheCaravan()
+    {
+        var (g, town, d) = Setup(f);
+        var creature = FirstCreature(g, d);
+        Assert.True(g.Apply(new BuyToCaravanCmd(d.Index, town.Object, creature, 2) { Player = g.Current.Index }).Ok);
+        var c = g.S.Caravans[0];
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == c.Owner);
+        h.Pos = c.Pos.Offset(1, 0); h.InTown = -1;
+        Array.Fill(h.Army, null);
+        var others = g.Core.Creatures.Keys.Where(k => k != creature && k.StartsWith("CREATURE_")).Take(2).ToArray();
+        h.Army[0] = new Stack(others[0], 3);
+        h.Army[1] = new Stack(others[1], 4);
+        int slot = Array.FindIndex(c.Army, s => s is { Count: > 0 });
+        // Different creatures exchange places (SwapStacksCmd with the caravan as one army).
+        var r = g.Apply(new SwapStacksCmd(h.Id, -1, 0, -1, -1, slot) { Player = h.Owner, ToCaravan = c.Id });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(creature, h.Army[0]!.Creature);
+        Assert.Equal(others[0], c.Army[slot]!.Creature);
+        Assert.Contains(r.Events, e => e is CaravanChanged cc && cc.CaravanId == c.Id);
+        // Into an empty caravan slot; another player's caravan is refused.
+        int free = Array.FindIndex(c.Army, s => s is not { Count: > 0 });
+        Assert.True(g.Apply(new SwapStacksCmd(h.Id, -1, 1, -1, -1, free) { Player = h.Owner, ToCaravan = c.Id }).Ok);
+        Assert.Equal(2, c.Army.Count(s => s is { Count: > 0 }));
+        c.Owner = g.S.Players.First(p => p.Index != h.Owner).Index;
+        Assert.False(g.Apply(new SwapStacksCmd(h.Id, -1, 0, -1, -1, free) { Player = h.Owner, ToCaravan = c.Id }).Ok);
+    }
+
+    [Fact]
+    public void RouteStepsArePricedWithTheCaravanSpeedAsTheMovementLeft()
+    {
+        // 00ce49b0 / 00ce6110: 00ca9c50(race 0) settings, left = 00ce38c0 speed − node cost (00c08890 → 00c07f80).
+        var (g, town, d) = Setup(f);
+        var r = g.CaravanRoute(town.Owner, g.EntranceOf(town), d.ActiveTiles.First());
+        Assert.NotNull(r);
+        var (path, cost) = r.Value;
+        int speed = g.CaravanSpeed();
+        var s = new MoveCostSettings(false, false, Engine.Adventure.NativeGround(""), 0);
+        for (int i = 1; i < path.Count; i++)
+        {
+            var fl = g.Map.Floor(path[i].Floor)!;
+            if (fl.Ground.Length != fl.Width * fl.Height) return;
+            int k = path[i].Y * fl.Width + path[i].X;
+            int step = Engine.Adventure.ExeStepCost(fl.Ground[k], fl.Road[k], path[i - 1].X != path[i].X && path[i - 1].Y != path[i].Y, speed - cost[i - 1], s, 0);
+            Assert.Equal(cost[i - 1] + step, cost[i]);
+        }
+        // The sources' days come from the flood out of the town (00ce6110), i.e. this direction.
+        var src = g.CaravanSources(town).First(x => x.Object == d.Index);
+        Assert.Equal(g.CaravanDays(cost[^1]), src.Days);
     }
 }
 
@@ -217,5 +317,42 @@ public class AbandonedMineTests(Fixture f)
             return;
         }
         Assert.Fail("no abandoned mine with resource weights on the test maps");
+    }
+}
+
+/// <summary>The AI's caravan phase (H5_Game.exe 0086a350, phase 14 of the CPlayerAI state machine).</summary>
+[Collection("adv")]
+public class CaravanAiTests(Fixture f)
+{
+    [Fact]
+    public void AiBuysTheDwellingStockByCaravanWithinTheBudgetLeftAfterTheDemand()
+    {
+        var g = f.NewGame("A2M1");
+        var town = g.S.Towns.First(t => t.Owner == g.Current.Index);
+        MapObject? d = null;
+        foreach (var o in g.Map.Objects.Where(o => o.Kind == H5.Adventure.Map.ObjectKind.Dwelling && o.ActiveTiles.Any() && o.Pos.Floor == town.Pos.Floor))
+        {
+            var os0 = g.S.Obj(o.Index);
+            int was = os0.Owner;
+            os0.Owner = town.Owner;
+            if (!g.CaravanPurchaseFree(o.Index) && g.CaravanSources(town).Any(s => s.Object == o.Index) && g.CaravanStartTiles(o.Index).Count > 0) { d = o; break; }
+            os0.Owner = was;
+        }
+        Assert.NotNull(d);
+        var os = g.S.Obj(d.Index);
+        int row = g.DwellingRows(d.Index)[0];
+        var creature = d.Shared.DwellingCreatures[row];
+        var unit = g.Core.Creatures[creature].Cost;
+        Array.Fill(os.Available, 0);
+        os.Available[row] = 10;
+        // The budget: purse − AiDemand (CPlayerAIInformation +8), clamped; it covers 3 of the 10 → floor(ratio) = 3.
+        var purse = new Resources(unit.Wood * 3, unit.Ore * 3, unit.Mercury * 3, unit.Crystal * 3, unit.Sulfur * 3, unit.Gem * 3, unit.Gold * 3 + 500);
+        g.Current.Purse = new Purse(purse);
+        g.Current.AiDemand = new[] { 0, 0, 0, 0, 0, 0, 500 };
+        new H5.Adventure.AI.OriginalAdventureAI().CaravanPurchases(g, g.Current.Index);
+        var c = Assert.Single(g.S.Caravans);
+        Assert.Contains(c.Army, s => s is { Count: 3 } && s.Creature == creature);
+        Assert.Equal(7, os.Available[row]);
+        Assert.Equal(500, g.Current.Purse[Purse.Gold]);
     }
 }

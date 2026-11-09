@@ -18,9 +18,10 @@ public sealed partial class Adventure
     /// <summary>A town dwelling tier's weekly growth (for the fort screen's plates).</summary>
     public int WeeklyGrowthOf(TownState t, int tier) => WeeklyGrowth(t, tier);
 
-    Stack?[]? ArmyAt(int hero, int town, out Tile? where)
+    Stack?[]? ArmyAt(int hero, int town, out Tile? where, int caravan = -1)
     {
         where = null;
+        if (caravan >= 0) { if (Caravan(caravan) is { } car && car.Owner == Current.Index) { where = car.Pos; return car.Army; } return null; }
         if (hero >= 0 && S.Hero(hero) is { } h && h.Owner == Current.Index) { where = h.Pos; return h.Army; }
         if (town >= 0 && S.Town(town) is { } t && t.Owner == Current.Index) { where = EntranceOf(t); return t.Garrison; }
         return BuildingArmy(town, out where);
@@ -41,8 +42,8 @@ public sealed partial class Adventure
 
     string? DoSwap(SwapStacksCmd c)
     {
-        var from = ArmyAt(c.FromHero, c.FromTown, out var wFrom);
-        var to = ArmyAt(c.ToHero, c.ToTown, out var wTo);
+        var from = ArmyAt(c.FromHero, c.FromTown, out var wFrom, c.FromCaravan);
+        var to = ArmyAt(c.ToHero, c.ToTown, out var wTo, c.ToCaravan);
         if (from == null || to == null) return "invalid armies";
         if (wFrom is { } a && wTo is { } b && Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y)) > 1) return "armies are not together";
         if (c.FromSlot is < 0 or >= Army.Slots || c.ToSlot is < 0 or >= Army.Slots) return "invalid slot";
@@ -52,7 +53,8 @@ public sealed partial class Adventure
         if (x is not { Count: > 0 } && y is not { Count: > 0 }) return "both slots are empty";
         // Same creature in different armies merges instead (the stock drag-and-drop behaviour).
         if (!ReferenceEquals(from, to) && x is { Count: > 0 } && y is { Count: > 0 } && x.Creature == y.Creature)
-            return DoTransfer(new TransferStackCmd(c.FromHero, c.FromTown, c.FromSlot, c.ToHero, c.ToTown, c.ToSlot, x.Count) { Player = c.Player });
+            return DoTransfer(new TransferStackCmd(c.FromHero, c.FromTown, c.FromSlot, c.ToHero, c.ToTown, c.ToSlot, x.Count)
+                { Player = c.Player, FromCaravan = c.FromCaravan, ToCaravan = c.ToCaravan });
         // A hero must keep at least one stack.
         if (!ReferenceEquals(from, to))
         {
@@ -63,6 +65,8 @@ public sealed partial class Adventure
         to[c.ToSlot] = x is { Count: > 0 } ? x : null;
         Emit(new ArmyChanged(c.FromHero, c.FromTown));
         if (!ReferenceEquals(from, to)) Emit(new ArmyChanged(c.ToHero, c.ToTown));
+        foreach (int id in new[] { c.FromCaravan, c.ToCaravan })
+            if (Caravan(id) is { } car) Emit(new CaravanChanged(car.Id));
         return null;
     }
 

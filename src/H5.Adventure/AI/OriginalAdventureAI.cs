@@ -73,6 +73,8 @@ public sealed partial class OriginalAdventureAI
         foreach (var t in towns)
             if (Threats(me).T.ContainsKey(t.Object) && TownHeroes(g, t).Garrison == null) Purchase(g, st, t.Object, null, ignoreMoney: true);
         BuildInTowns(g, me, diff, ThreatenedTownsOf(Threats(me)));
+        // Phase 14 (FUN_0086a350): caravan purchases from the own map dwellings.
+        if (!g.S.Finished) CaravanPurchases(g, me);
         ResolvePending(g, battleSeedBase + 999);
         foreach (var h in g.S.Heroes.Where(h => h.Alive && h.Owner == me)) LevelUps(g, h, st);
         if (!g.S.Finished) Send(g, new EndTurnCmd { Player = me });

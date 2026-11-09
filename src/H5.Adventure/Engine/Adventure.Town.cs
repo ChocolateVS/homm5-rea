@@ -537,12 +537,9 @@ public sealed partial class Adventure
         if (src.Count == 0) from[c.FromSlot] = null;
         Emit(new ArmyChanged(c.FromHero, c.FromTown));
         Emit(new ArmyChanged(c.ToHero, c.ToTown));
+        // An emptied caravan stays until the caravan walker's empty test (00995f40: vf 0x2c → world vf 0xec).
         foreach (int id in new[] { c.FromCaravan, c.ToCaravan })
-            if (Caravan(id) is { } car)
-            {
-                // An emptied caravan leaves the map (as after its arrival; UNVERIFIED).
-                if (!car.Army.Live().Any()) RemoveCaravan(car, "emptied"); else Emit(new CaravanChanged(car.Id));
-            }
+            if (Caravan(id) is { } car) Emit(new CaravanChanged(car.Id));
         return null;
     }
 }

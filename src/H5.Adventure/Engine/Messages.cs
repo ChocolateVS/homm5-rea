@@ -110,7 +110,12 @@ public sealed record TransferStackCmd(int FromHero, int FromTown, int FromSlot, 
     public int ToCaravan { get; init; } = -1;
 }
 /// <summary>Exchanges two whole slots (possibly empty, possibly different creatures) of armies at the same place.</summary>
-public sealed record SwapStacksCmd(int FromHero, int FromTown, int FromSlot, int ToHero, int ToTown, int ToSlot) : AdvCommand;
+public sealed record SwapStacksCmd(int FromHero, int FromTown, int FromSlot, int ToHero, int ToTown, int ToSlot) : AdvCommand
+{
+    /// <summary>A caravan of the player as either army (the caravan meet screen CCaravanMeet, 0043cdb0); -1 = none.</summary>
+    public int FromCaravan { get; init; } = -1;
+    public int ToCaravan { get; init; } = -1;
+}
 /// <summary>Moves a hero into a town's garrison row (Garrison = true) or out to the visiting row.</summary>
 public sealed record GarrisonHeroCmd(int TownObject, int HeroId, bool Garrison) : AdvCommand;
 /// <summary>
