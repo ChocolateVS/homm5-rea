@@ -255,8 +255,11 @@ public sealed partial class Adventure
 
     public PlayerState? Player(int index) => PlayerByIndex(index);
 
-    /// <summary>UpgradeTownBuilding: builds the next level for free, ignoring the daily limit.</summary>
-    public void ScriptUpgradeBuilding(TownState t, string building)
+    /// <summary>
+    /// Builds the next level for free, ignoring the daily limit (the free path of 00cd4a40). UpgradeTownBuilding passes
+    /// <paramref name="raiseLimit"/> false: the exe leaves the map limit (+0x28) as it is.
+    /// </summary>
+    public void ScriptUpgradeBuilding(TownState t, string building, bool raiseLimit = true)
     {
         int next = t.Level(building) + 1;
         TownSpellsOnBuild(t, building, next - 1);   // the free path of 00cd4a40 runs the same effects
@@ -264,7 +267,7 @@ public sealed partial class Adventure
         if (HasTradeGuild(t) && building == "TB_SPECIAL_4") RollTradeGuild(t);
         if (building.StartsWith("TB_DWELLING_") && next == 1 && int.TryParse(building[^1..], out var tier))
             t.Available[tier - 1] += WeeklyGrowth(t, tier);
-        if (t.MaxLevel.GetValueOrDefault(building) < next) t.MaxLevel[building] = next;
+        if (raiseLimit && t.MaxLevel.GetValueOrDefault(building) < next) t.MaxLevel[building] = next;
         Emit(new BuildingBuilt(t.Object, building, next));
         StockArtifactMerchants();   // 00cd4a40 at 00cd4db7, as in DoBuild
         BuildingEffectsOnHeroes(t, building);

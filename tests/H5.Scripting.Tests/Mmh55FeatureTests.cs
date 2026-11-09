@@ -38,13 +38,14 @@ public sealed class Mmh55Install : IDisposable
     /// A new game on the map with the MMH55 scripts running (bots' setup, one human = player 1), after the startup and
     /// a few script segments so the detector threads and H55_ContinuesEvent have run once.
     /// </summary>
-    public (Adventure.Engine.Adventure G, AdventureScripting Host) Start(string mapId, Dictionary<string, string>? settings = null, int segments = 30)
+    public (Adventure.Engine.Adventure G, AdventureScripting Host) Start(string mapId, Dictionary<string, string>? settings = null, int segments = 30, bool noMapScriptCheck = false)
     {
         var files = MapCatalog.Find(Fs!, Install!, mapId)!.Open(Fs!);
         var map = Loader!.Load(files);
         var g = Adventure.Engine.Adventure.NewGame(Db!, map, GameSetup.AllPlayers(map, humans: 1, seed: 7)).Game;
         var host = AdventureScripting.Create(g, files, Ids!, Loader.Catalog);
         host.SettingOverrides = settings;
+        host.RunWithoutMapScript = noMapScriptCheck;
         string? src = null;
         if (map.ScriptPath != null && files.TryReadAllBytes(map.ScriptPath, out var b)) src = ScriptText.FromBytes(b);
         host.Start(map.ScriptPath, src);
@@ -132,5 +133,56 @@ public class Mmh55FeatureTests(Mmh55Install m) : IClassFixture<Mmh55Install>
         Assert.Equal(1, n.Level("TB_TOWN_HALL"));
         Assert.All(n.Built.Where(kv => kv.Key != "TB_TOWN_HALL"), kv => Assert.Equal(0, kv.Value));
         Assert.All(n.Garrison, s => Assert.Null(s));
+    }
+
+    /// <summary>
+    /// UpgradeTownBuilding (0x005e7a30 → 0x0042fd40 → 0x00cd4a40 free, vf 0xb4 = 0x00cd0de0 on the current level): one
+    /// level past the map limit, then no more; the limit itself is not changed.
+    /// </summary>
+    [Fact]
+    public void UpgradeTownBuildingGoesOneLevelPastTheLimit()
+    {
+        if (!m.Present) return;
+        var (g, host) = m.Start(Map);
+        var t = g.S.Towns.First();
+        var name = g.Map.Objects[t.Object].Name;
+        t.Built["TB_TAVERN"] = 0;
+        t.MaxLevel["TB_TAVERN"] = 0;
+        host.L.DoString($"UpgradeTownBuilding(\"{name}\", TOWN_BUILDING_TAVERN); UpgradeTownBuilding(\"{name}\", TOWN_BUILDING_TAVERN);", "test");
+        host.Tick();
+        Assert.Empty(Mmh55Install.OwnErrors(host));
+        Assert.Equal(1, t.Level("TB_TAVERN"));
+        Assert.Equal(0, t.MaxLevel["TB_TAVERN"]);
+    }
+
+    /// <summary>
+    /// Town Conversion end to end (H55_ConvertNow, reached from the Town Management dialog): on a multiplayer map (the
+    /// conversion is off on campaign and scenario maps; the stock engine runs no scripts on maps without a map script,
+    /// so this uses MMH55's RemoveMapScriptCheck behaviour), the town becomes the hero's race, the resources are paid and
+    /// the recorded buildings are rebuilt by UpgradeTownBuilding.
+    /// </summary>
+    [Fact]
+    public void TownConversionConvertsAndRebuilds()
+    {
+        if (!m.Present) return;
+        var (g, host) = m.Start("Maps/Multiplayer/A2M1", noMapScriptCheck: true);
+        var h = HumanHero(g);
+        var p = g.Player(h.Owner)!;
+        var t = g.S.Towns.First(x => x.Type != p.Race);
+        t.Owner = h.Owner;
+        t.Built["TB_FORT"] = 1;
+        t.Built["TB_DWELLING_1"] = 1;
+        t.Built["TB_TAVERN"] = 1;
+        for (int r = 0; r < 7; r++) host.L.DoString($"SetPlayerResource({h.Owner + 1}, {r}, 100000);", "test");
+        var name = g.Map.Objects[t.Object].Name;
+        host.L.DoString($"startThread(H55_ConvertNow, \"{h.DefId}\", \"{name}\", 2);", "test");
+        host.Tick(20);
+        Assert.Empty(Mmh55Install.OwnErrors(host));
+        var n = g.S.Town(t.Object)!;
+        Assert.Equal(p.Race, n.Type);
+        Assert.Equal(1, n.Level("TB_FORT"));
+        Assert.Equal(1, n.Level("TB_DWELLING_1"));
+        Assert.Equal(1, n.Level("TB_TAVERN"));
+        Assert.Equal(100000 - (2 * 3000 - 2000), p.Purse[6]);
     }
 }

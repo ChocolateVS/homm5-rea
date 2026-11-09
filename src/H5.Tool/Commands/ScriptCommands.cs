@@ -65,7 +65,7 @@ sealed class ScriptRunCommand : ICommand
     static bool IsStockError(string e) => StockErrors.Any(e.Contains);
 
     public string Name => "script-run";
-    public string Help => "script-run <map|all|campaign> [days=14] [seed=1] [-v] [--no-map-script-check] [--include-user]  - play maps with their Lua scripts (bots for every player) and report script errors";
+    public string Help => "script-run <map|all|campaign> [days=14] [seed=1] [-v] [--no-map-script-check] [--include-user] [--h55-set=H55_Name=value]  - play maps with their Lua scripts (bots for every player) and report script errors";
 
     public int Run(ToolContext ctx, string[] args)
     {
@@ -100,6 +100,9 @@ sealed class ScriptRunCommand : ICommand
             var host = AdventureScripting.Create(g, files, ids, loader.Catalog);
             host.AutoAnswerUi = true;
             host.RunWithoutMapScript = args.Contains("--no-map-script-check");
+            // MMH55 player settings (the options screen's overrides of scripts/H55-Settings.lua).
+            var sets = args.Where(x => x.StartsWith("--h55-set=")).Select(x => x["--h55-set=".Length..].Split('=', 2)).Where(p => p.Length == 2).ToDictionary(p => p[0], p => p[1]);
+            if (sets.Count > 0) host.SettingOverrides = sets;
             // Combat scripts run where the exe's combat screen would run them: a battle a human
             // takes part in, single player (FUN_0054c2f0 skips them in multiplayer/hotseat).
             var combatHosts = new List<CombatScripting>();

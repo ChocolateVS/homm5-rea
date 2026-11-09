@@ -73,13 +73,17 @@ public sealed partial class AdventureScripting
             if (level < t.Level(b)) Change(() => Game.ScriptSetBuildingLevel(t, b, level));
             if (c.Int(3) == 0) t.MaxLevel[b] = level;
         });
-        // 0x005e7a30 (format "sn"): the next level, free.
+        // 0x005e7a30 (format "sn"): CUpgradeTownBuildingCmd with the script flag (+0x24 = 1; Execute 0x0042fd40: no
+        // owner or money check) → town vf 0x6c = 0x00cd4a40 free: the build record (town +0x68) must have a next level
+        // (current +0x14 < data maximum +0x18) and pass vf 0xb4 = 0x00cd0de0 with the CURRENT level: current ≤ map limit
+        // (+0x28). So a script builds one level past the limit (a BLD_UPG_NONE building once) and the limit is unchanged.
         Reg("UpgradeTownBuilding", c =>
         {
             var t = TownArg(c, 0, "Town \"{0}\" is not registered!");
             var b = TownBuildingArg(c, t, 1);
-            if (t.Level(b) >= BuildingMaxLevel(t, b)) return;
-            Change(() => Game.ScriptUpgradeBuilding(t, b));
+            int cur = t.Level(b);
+            if (cur >= BuildingMaxLevel(t, b) || cur > t.MaxLevel.GetValueOrDefault(b, BuildingMaxLevel(t, b))) return;
+            Change(() => Game.ScriptUpgradeBuilding(t, b, raiseLimit: false));
         });
         // 0x005c9ee0: the exe replaces the town object (CRemoveObjectCmd + CCreateTownCmd from the old
         // town's vf 0xf4 record, see Adventure.ScriptTransformTown), then plays TOWN_TRANSFORM.
