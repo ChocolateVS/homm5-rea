@@ -141,8 +141,9 @@ public sealed partial class RmgGenerator
             sx += nx - b.X;
             sy += ny - b.Y;
         }
-        float angle = -(float)Math.Atan2(sx + (double)0.01f, sy + (double)0.01f);
-        int power = (int)((float)b.Value * 2.5f + 0.5f);                               // 0x00e57d48, 0x00e0ab70
+        // FADD 0x00e15a80 to both sums (chopped), FPATAN (full precision), FCHS, FSTP float (chopped): 0x00ba97c1..0x00ba97e3.
+        float angle = X87.Chop(-Math.Atan2(X87.Add((float)sx, 0.01f), X87.Add((float)sy, 0.01f)));
+        int power = (int)X87.Add(X87.Mul(b.Value, 2.5f), 0.5f);                         // 0x00e57d48, 0x00e0ab70
         PlaceGuard(r, z, (int)b.X, (int)b.Y, power, "treasure block guard", angle);   // no flag written (0x00ba94c0)
 
         var kept = new List<RmgArtifact>();

@@ -163,7 +163,7 @@ public sealed class RmgFloor
                 {
                     int m = Math.Min(r, c);
                     Level[Lv(r, c)] = (byte)((3 - m) * 0x10 / 3 + 0x10);
-                    Heights[Lv(r, c)] = ((3 - m) * 0.33333334f + 1f) * 2f * 9f;   // 0x00e19950, 0x00e0a7e4, 0x00e4d7a4
+                    Heights[Lv(r, c)] = X87.Mul(X87.Add(X87.Mul(3 - m, 0.33333334f), 1f) * 2f, 9f);   // FILD, FMUL 0x00e19950, FADD 0x00e0a7e4, FMUL 0x00f46678, FMUL 0x00e4d7a4 (0x00912be3), chopped
                 }
                 else if (r < W - W % 3 && c < H - H % 3)
                 {
@@ -469,16 +469,17 @@ public sealed partial class RmgGenerator
         }
         // A point is tested against the zones of the same floor that precede the zone in hash order (0x00905070's inner
         // walk stops at the zone itself), i.e. the ones placed earlier in this attempt.
-        double inv = 1.0 / total;
+        float inv = X87.Div(1f, total);                                          // FLD 1.0, FDIV total (0x00905308)
         for (int attempt = 0; attempt < 400; attempt++)
         {
             if (points.Count > 0) Rng.Shuffle(points);
             foreach (var f in Floors)
                 foreach (var z in f.Zones.Values)
                 {
-                    // FISTP with RC = chop (0x00905345, 0x00905378): truncated.
-                    z.Radius = (int)(Math.Sqrt(z.Def.Size * inv * area * k) * 0.3333333432674408);
-                    if (HasUnderground) z.Radius = (int)(z.Radius * 1.4142135381698608);
+                    // FILD size, FMUL inv, FMUL area, FMUL 0.9, FSQRT, FMUL 1/3, each chopped; FISTP with RC = chop
+                    // (0x00905319..0x00905345, 0x00905378): truncated.
+                    z.Radius = (int)X87.Mul(X87.Sqrt(X87.Mul(X87.Mul(X87.Mul(z.Def.Size, inv), area), k)), 0.33333334f);
+                    if (HasUnderground) z.Radius = (int)X87.Mul(z.Radius, 1.4142135f);
                 }
             bool ok = true;
             foreach (var f in Floors)

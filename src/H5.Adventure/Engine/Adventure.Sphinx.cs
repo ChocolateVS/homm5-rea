@@ -18,7 +18,7 @@ public sealed partial class Adventure
 {
     /// <summary>
     /// The riddle a Sphinx uses: its own (RandomRiddle false) or the next one drawn from the riddle pool
-    /// (CRiddlesPool 00ced780: index clamp(round(n·f), 0, n−1) with f = rand[0,100]·0.01, the pick is swapped
+    /// (CRiddlesPool 00ced780: index clamp(trunc(n·f), 0, n−1) with f = rand[0,100]·0.01, the pick is swapped
     /// with the last entry and dropped; an empty pool is refilled from GameMechanics/SphinxRiddles/RandomGroup).
     /// </summary>
     SphinxRiddle? DrawRiddle(MapObject o)
@@ -29,7 +29,7 @@ public sealed partial class Adventure
         if (S.RiddlePool.Count == 0) S.RiddlePool.AddRange(Enumerable.Range(0, group.Count));
         int n = S.RiddlePool.Count;
         float f = S.Rng.Range(0, 100) * 0.01f;
-        int i = Math.Clamp((int)MathF.Round(n * f, MidpointRounding.ToEven), 0, n - 1);
+        int i = Math.Clamp((int)((double)n * f), 0, n - 1);   // FILD n, FMUL f, then a C cast (OR AH,0xc, 00ced7b9..00ced7d5): truncated
         int pick = S.RiddlePool[i];
         S.RiddlePool[i] = S.RiddlePool[n - 1];
         S.RiddlePool.RemoveAt(n - 1);

@@ -322,7 +322,8 @@ public sealed partial class RmgGenerator
     /// <summary>
     /// exe 0x00915e00 (position, angle, blocked tiles; disassembly, the decompile is pruned): for each rotated blocked
     /// offset (dx, dy) (0x00b0be60) with r = √(dx² + dy²) and 3.5 − r &gt; 0 (0x00e57d10, 0x00e0be10), 0x009127b0 adds
-    /// 2·(3.5 − r) to the floor-0 height of vertex (row chop(y + dy), column chop(x + dx)). Returns false.
+    /// 2·(3.5 − r) to the floor-0 height of vertex (row chop(y + dy), column chop(x + dx)). Returns false. The square
+    /// root, the subtraction and the height sum are chopped to 24 bits (row "x87 control word").
     /// </summary>
     void MountainHeights(RmgZone z, int px, int py, float angle, H5.Adventure.Map.SharedDef d)
     {
@@ -331,10 +332,11 @@ public sealed partial class RmgGenerator
         foreach (var b in d.Blocked)
         {
             var (ox, oy) = Rotate(b, q);
-            double r = Math.Sqrt((double)oy * oy + (double)ox * ox);
-            if (!(3.5 - r > 0.0)) continue;
-            float add = (float)((3.5 - r) * 2.0);
-            f.Heights[f.Lv(py + oy, px + ox)] += add;
+            float r = X87.Sqrt(X87.Add(X87.Mul(ox, ox), X87.Mul(oy, oy)));   // FMUL, FMUL, FADDP, FSQRT (chopped)
+            float k = X87.Sub(3.5f, r);                                         // FSUBR 0x00e57d10
+            if (!(k > 0f)) continue;
+            int row = py + oy, col = px + ox;
+            f.Heights[f.Lv(row, col)] = X87.Add(k + k, f.Heights[f.Lv(row, col)]);   // FADD ST0,ST0; 0x009127b0
         }
     }
 
@@ -543,7 +545,7 @@ public sealed partial class RmgGenerator
                 int v = ((b * i + a * (3 - i)) * (3 - j) + (c * (3 - i) + d * i) * j) / 9;
                 int rr = r0 + i, cc = c0 + j;
                 if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) continue;
-                f.Heights[f.Lv(rr, cc)] += (v - f.Level[f.Lv(rr, cc)]) * 1.125f;
+                f.Heights[f.Lv(rr, cc)] = X87.Add(X87.Mul(v - f.Level[f.Lv(rr, cc)], 1.125f), f.Heights[f.Lv(rr, cc)]);   // FILD, FMUL 0x00e0d3e4, FADD (0x00913364)
                 f.Level[f.Lv(rr, cc)] = (byte)v;
             }
     }

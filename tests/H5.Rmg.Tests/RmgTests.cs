@@ -516,7 +516,9 @@ public class GeneratorRoadTests(RmgFixture f) : IClassFixture<RmgFixture>
     /// map.xdb order (the exe's creation order), with the template, size, seed, players, monster strength, resource and
     /// experience levels and the player races read from the map. The road builder 0x0091aee0 sums its costs under the
     /// game's x87 control word (0x009dc690: 24-bit precision, round toward zero); rounded to nearest, a few road tiles
-    /// moved and the statics tested against them diverged (first difference after 45 .. 1540 objects).
+    /// moved and the statics tested against them diverged (first difference after 45 .. 1540 objects). The surface
+    /// terrain then matches bit for bit: heights (every FADD / FMUL / FDIV / FSQRT of 0x00918180 chopped to 24 bits),
+    /// the depth grid and the texture layers.
     /// </summary>
     [StockTheory]
     [InlineData("L_I4_RMG_Map_001")]
@@ -569,12 +571,27 @@ public class GeneratorRoadTests(RmgFixture f) : IClassFixture<RmgFixture>
             ExpLevel = Level("ExpMultiplier", "EXP_"),
         };
         o.PlayerRaces.AddRange(races);
-        var r = new RmgGenerator(f.Db, o).Generate();
+        var gen = new RmgGenerator(f.Db, o);
+        var r = gen.Generate();
         var ours = r.Objects.Select(x => (Norm(x.Shared), x.X, x.Y, x.Floor)).ToList();
         int same = 0;
         while (same < Math.Min(stock.Count, ours.Count) && stock[same] == ours[same]) same++;
         Assert.True(same == stock.Count && ours.Count == stock.Count,
             $"{name}: first difference at #{same} of {stock.Count} (ours {ours.Count}): stock {stock.ElementAtOrDefault(same)}, ours {ours.ElementAtOrDefault(same)}");
+
+        // The surface terrain bit for bit: heights (chunk 5, 0x00918180 under the x87 control word), the depth grid
+        // (chunk 10) and every texture layer's weights (0x00913510), in the saved layer order.
+        var te = zip.Entries.First(x => x.FullName.EndsWith("GroundTerrain.bin", StringComparison.OrdinalIgnoreCase));
+        using var ts = te.Open();
+        using var tm = new MemoryStream();
+        ts.CopyTo(tm);
+        var rt = H5.Assets.Terrain.TerrainReader.Read(tm.ToArray());
+        var fl0 = gen.Floors[0];
+        int hd = Enumerable.Range(0, fl0.Heights.Length).Count(i => BitConverter.SingleToInt32Bits(rt.Heights.Data[i]) != BitConverter.SingleToInt32Bits(fl0.Heights[i]));
+        Assert.True(hd == 0 && rt.Heights.Data.Length == fl0.Heights.Length, $"{name}: {hd} heights differ");
+        Assert.Equal(rt.HalfTileMap!.Data, fl0.Depth);
+        Assert.Equal(rt.Layers.Select(l => l.TilePath.ToLowerInvariant()), fl0.Layers.Select(l => l.Tile.ToLowerInvariant()));
+        for (int i = 0; i < rt.Layers.Count; i++) Assert.Equal(rt.Layers[i].Weights.Data, fl0.Layers[i].Weights);
     }
 
     /// <summary>

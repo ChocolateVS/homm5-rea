@@ -31,4 +31,35 @@ public static class X87
         if (p > 0 ? d > err : d < err) r = p > 0 ? MathF.BitDecrement(r) : MathF.BitIncrement(r);
         return r;
     }
+
+    /// <summary>FSUB of two floats (a − b), chopped like <see cref="Add"/>.</summary>
+    public static float Sub(float a, float b) => Chop((double)a - b);
+
+    /// <summary>FDIV of two exact operands (floats or FILD integers), chopped from the exact quotient.</summary>
+    public static float Div(double a, double b)
+    {
+        float r = (float)(a / b);
+        if (r == 0f) return r;
+        // |r| > |a / b| exactly  ⇔  the residual r·b − a has the sign of a (either sign of b); FMA gives its sign exactly.
+        double res = Math.FusedMultiplyAdd(r, b, -a);
+        if (res != 0 && Math.Sign(res) == Math.Sign(a)) r = r > 0 ? MathF.BitDecrement(r) : MathF.BitIncrement(r);
+        return r;
+    }
+
+    /// <summary>FSQRT of an exact non-negative operand, chopped.</summary>
+    public static float Sqrt(double a)
+    {
+        float r = (float)Math.Sqrt(a);
+        if (r > 0f && Math.FusedMultiplyAdd(r, r, -a) > 0) r = MathF.BitDecrement(r);
+        return r;
+    }
+
+    /// <summary>
+    /// FSIN / FCOS: not under the precision control (only FADD / FSUB / FMUL / FDIV / FSQRT are); the result keeps
+    /// the 64-bit mantissa. Ours is the double result, which the next chopped operation or float store reads.
+    /// </summary>
+    public static double Sin(float a) => Math.Sin(a);
+
+    /// <summary><see cref="Sin"/> for FCOS.</summary>
+    public static double Cos(float a) => Math.Cos(a);
 }

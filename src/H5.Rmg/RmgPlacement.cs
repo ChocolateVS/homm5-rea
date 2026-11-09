@@ -187,11 +187,11 @@ public sealed partial class RmgGenerator
             foreach (var c in _db.Creatures)
             {
                 if (c.Index == 0 || c.Index == 0x59 || c.Index == 0x72) continue;
-                // x87 at double precision; k is stored as a float after each pass (FSTP at 0x00ba6a7d).
-                double lo = (double)(r + 10) / k * c.Power, hi = (double)(r + 10) * k * c.Power;
+                // FILD, FDIV k / FMUL k, FMUL power, each chopped to 24 bits (0x00ba6a02..0x00ba6a31, row "x87 control word").
+                float lo = X87.Mul(X87.Div(r + 10, k), c.Power), hi = X87.Mul(X87.Mul(r + 10, k), c.Power);
                 if (lo <= value && value <= hi) cands.Add(c);
             }
-            k *= 1.2f;
+            k = X87.Mul(k, 1.2f);                                                // 0x00e12f1c, FSTP float (0x00ba6a7d)
         }
         if (cands.Count == 0) return null;
         var pick = cands[Rng.Next(cands.Count)];
@@ -270,15 +270,16 @@ public sealed partial class RmgGenerator
             var f = Floors[z.Floor];
             if (!z.Def.Town)
             {
-                // exe 0x00919810: zones without a town anchor their objects at the tile centroid: the x87 sums times the
-                // unrounded 1 / n, stored as floats in +0x0c / +0x10 (TownPos holds them rounded for the integer users).
+                // exe 0x00919810: zones without a town anchor their objects at the tile centroid: the x87 sums (FADD of the
+                // tile list's floats) times 1 / n (FDIVR), each chopped to 24 bits, stored as floats in +0x0c / +0x10
+                // (TownPos holds them rounded for the integer users, which all require TownPlaced).
                 // TODO(exe): the sums start from two uninitialised stack slots ([ESP-8], [ESP-4] at entry); ours 0.
                 if (z.Tiles.Count > 0)
                 {
-                    double sx = 0, sy = 0;
-                    foreach (var t in z.Tiles) { sx += t.X; sy += t.Y; }
-                    double inv = 1.0 / z.Tiles.Count;
-                    z.Point = ((float)(sx * inv), (float)(inv * sy));
+                    float sx = 0, sy = 0;
+                    foreach (var t in z.Tiles) { sx = X87.Add(sx, t.X); sy = X87.Add(sy, t.Y); }
+                    float inv = X87.Div(1f, z.Tiles.Count);
+                    z.Point = (X87.Mul(sx, inv), X87.Mul(inv, sy));
                     z.TownPos = ((int)MathF.Round(z.Point.X), (int)MathF.Round(z.Point.Y));
                 }
                 z.AnchorOnly = true;

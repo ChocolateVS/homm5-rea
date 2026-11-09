@@ -185,8 +185,8 @@ public sealed partial class RmgGenerator
             r.Passages.Add((z.Floor, z.Id, other, o.X, o.Y));
             var v = z.ConnectionPoints[^1];
             int vx = (int)v.X, vy = (int)v.Y;
-            int k = (int)(angle * 1.2732395f + 5.212389f);                                     // 0x00e57dd0, 0x00e57e20
-            int power = (int)((float)(_db.Params.BasicLevelGuardPower * _db.Params.ConnectionGuardLevel * c.GuardStrength) * 0.70710677f + 0.5f);
+            int k = (int)X87.Add(X87.Mul(angle, 1.2732395f), 5.212389f);                      // 0x00e57dd0, 0x00e57e20, chopped
+            int power = (int)X87.Add(X87.Mul(_db.Params.BasicLevelGuardPower * _db.Params.ConnectionGuardLevel * c.GuardStrength, 0.70710677f), 0.5f);   // FILD, FMUL, FADD (0x0091e3f1)
             bool found = false;
             foreach (var table in new[] { Ortho4, Diag4 })
             {

@@ -70,7 +70,9 @@ public sealed partial class RmgGenerator
     /// (oy − (y + 1))²) &lt; 8 (0x00e2f79c), an Inferno dwelling (Type +0xec 0x48..0x4b: Demon Gate, Imp Crucible,
     /// Kennels, Inferno Military Post) those with √(z² + (ox − x)² + (oy − y)²) &lt; 2.5 (0x00e57d48); z = Pos.z, which
     /// the generator never writes (0x009155f0 sets x and y). 0x00912e70 then sets each to the list's mean height plus −1
-    /// (0xbf800000) or −2.5 (0xc0200000).
+    /// (0xbf800000) or −2.5 (0xc0200000): the sum from 0.0 by FADD, FDIVR by the count, FADD of the delta, each chopped
+    /// to 24 bits (row "x87 control word"); the distance tests compare square roots of integers with 8 / 2.5, which the
+    /// rounding mode cannot move.
     /// </summary>
     void TownAndDwellingHollows(RmgResult r, RmgFloor f)
     {
@@ -91,9 +93,9 @@ public sealed partial class RmgGenerator
                     if (MathF.Sqrt(0f * 0f + dx * dx + dy * dy) < radius) list.Add((x, y));
                 }
             if (list.Count == 0) continue;
-            double sum = 0.0;                                                   // 0x00e0be10
-            foreach (var (x, y) in list) sum += f.Heights[f.Lv(y, x)];
-            float v = (float)(sum / list.Count + delta);
+            float sum = 0f;                                                     // 0x00e0be10; FADD, FDIVR, FADD chopped
+            foreach (var (x, y) in list) sum = X87.Add(sum, f.Heights[f.Lv(y, x)]);
+            float v = X87.Add(X87.Div(sum, list.Count), delta);
             foreach (var (x, y) in list) f.Heights[f.Lv(y, x)] = v;
         }
     }
@@ -127,16 +129,17 @@ public sealed partial class RmgGenerator
     /// exe 0x00913850 (pos, turned tiles, floor): the points pos + tile; per column x (hash map keyed by trunc x, 10 → 13
     /// buckets) the largest trunc y, adding (x, max + 1) per entry in map order; then per row y over all points the
     /// largest trunc x, adding (max + 1, y). The mean of the heights [y][x] of the points with 0 ≤ x ≤ W and
-    /// 0 ≤ y ≤ H, divided by the count of all points (x87, from 0.0 at 0x00e0be18), is written to those points.
+    /// 0 ≤ y ≤ H, divided by the count of all points (x87, from 0.0 at 0x00e0be18; every FADD and the FDIVP chopped to
+    /// 24 bits, 0x00913f4c..0x00913fa7), is written to those points.
     /// </summary>
     static void LevelFootprint(RmgFloor f, int px, int py, List<(int X, int Y)> tiles)
     {
         if (tiles.Count == 0) return;
         var pts = LevelPoints(px, py, tiles);
-        double sum = 0.0;
+        float sum = 0f;                                                     // FLD double 0.0, FADD float per point
         foreach (var (x, y) in pts)
-            if (y >= 0 && y <= f.H && x >= 0 && x <= f.W) sum += f.Heights[f.Lv(y, x)];
-        float v = (float)(sum / pts.Count);
+            if (y >= 0 && y <= f.H && x >= 0 && x <= f.W) sum = X87.Add(sum, f.Heights[f.Lv(y, x)]);
+        float v = X87.Div(sum, pts.Count);                                  // FILD count, FDIVP
         foreach (var (x, y) in pts)
             if (y >= 0 && y <= f.H && x >= 0 && x <= f.W) f.Heights[f.Lv(y, x)] = v;
     }
@@ -167,30 +170,38 @@ public sealed partial class RmgGenerator
 
     static void AddHeight(RmgFloor f, int row, int col, float d)
     {
-        if (row <= f.H && col <= f.W) f.Heights[f.Lv(row, col)] += d;
+        if (row <= f.H && col <= f.W) f.Heights[f.Lv(row, col)] = X87.Add(d, f.Heights[f.Lv(row, col)]);   // 0x009127b0
     }
 
     /// <summary>
     /// exe 0x00916290: for every vertex (row o = y, column i = x, 0..size): b = border distance of tile (min(i, size − 1),
     /// min(o, size − 1)) x 1/3, negated in Necropolis / Inferno zones (zone race 7 or 8); v = cos(i·1/13)·sin(i·1/29)·
     /// sin(o·0.1)·sin(o·1/42)·6.6666665 + b + 12, the vertex rises by min(v, 3); the four vertices of a tile with road
-    /// flags (8 | 0x10) sink by 1.
+    /// flags (8 | 0x10) sink by 1. Every FMUL / FADD chopped to 24 bits, FSIN / FCOS at full precision (row "x87 control
+    /// word"; disassembly 0x009162e7..0x00916412).
     /// </summary>
     void Relief(RmgFloor f, int n)
     {
         for (int o = 0; o <= n; o++)
         {
-            float s1 = (float)Math.Sin(o * (double)0.023809524f);              // 0x00e57d44
-            float s2 = (float)Math.Sin(o * (double)0.1f);                      // 0x00e12f10
+            float s1 = X87.Chop(X87.Sin(X87.Mul(o, 0.023809524f)));           // 0x00e57d44, FSTP float
+            float s2 = X87.Chop(X87.Sin(X87.Mul(o, 0.1f)));                   // 0x00e12f10
             for (int i = 0; i <= n; i++)
             {
                 int tx = Math.Min(i, n - 1), ty = Math.Min(o, n - 1);
                 int t = f.At(tx, ty);
-                float b = f.BorderDist[t] * 0.33333334f;                       // 0x00e19950
+                float b = X87.Mul(f.BorderDist[t], 0.33333334f);               // 0x00e19950
                 if (f.Zones.TryGetValue(f.Zone[t], out var z) && (z.Race == 8 || z.Race == 7)) b *= -1f;   // 0x00e12f14
-                double v = Math.Cos(i * (double)0.07692308f) * Math.Sin(0.03448276f * (double)i) * s2 * s1 * 6.6666665f + b + 12.0;
-                float add = 3.0 <= v ? 3f : (float)v;                          // 0x00e13280
-                f.Heights[f.Lv(o, i)] += add;
+                // FMUL ST1 / FSIN, FMUL / FCOS, FMULP, FMUL s2, FMUL s1, FMUL 0x00e57d38, FADD b, FADD 0x00e57d34
+                double sa = X87.Sin(X87.Mul(0.03448276f, i)), cb = X87.Cos(X87.Mul(i, 0.07692308f));
+                float v = X87.Mul(sa, cb);
+                v = X87.Mul(v, s2);
+                v = X87.Mul(v, s1);
+                v = X87.Mul(v, 6.6666665f);
+                v = X87.Add(v, b);
+                v = X87.Add(v, 12f);
+                float add = 3f <= v ? 3f : v;                                  // 0x00e13280
+                AddHeight(f, o, i, add);
                 if (o < n && i < n && (f.Flags[f.At(o, i)] & (TileFlags.MainRoad | TileFlags.MineRoad)) != 0)
                 {
                     AddHeight(f, i, o, -1f); AddHeight(f, i, o + 1, -1f);
@@ -203,7 +214,8 @@ public sealed partial class RmgGenerator
     /// <summary>
     /// exe 0x00912d10 (floor 0, mask): every inner vertex (row and column 1 .. size − 1) whose mask entry [row][column]
     /// (the tile mask read with the vertex indices) is set becomes centre·0.8 + Σ8·0.025 (flag 1) or centre·0.2 +
-    /// Σ8·0.1 (flag 0), computed from the old grid.
+    /// Σ8·0.1 (flag 0), computed from the old grid: the eight FADDs in the exe's order, both FMULs and the FADDP chopped
+    /// to 24 bits (0x00912d95..0x00912ddc).
     /// </summary>
     void Smooth(RmgFloor f, byte[] mask, bool soft)
     {
@@ -215,9 +227,14 @@ public sealed partial class RmgGenerator
             for (int c = 1; c < cols - 1; c++)
             {
                 if (mask[c * H + r] == 0) continue;
-                float sum = old[f.Lv(r, c - 1)] + old[f.Lv(r, c + 1)] + old[f.Lv(r + 1, c - 1)] + old[f.Lv(r + 1, c + 1)]
-                          + old[f.Lv(r - 1, c - 1)] + old[f.Lv(r - 1, c + 1)] + old[f.Lv(r + 1, c)] + old[f.Lv(r - 1, c)];
-                h[f.Lv(r, c)] = old[f.Lv(r, c)] * kc + sum * kn;
+                float sum = X87.Add(old[f.Lv(r, c - 1)], old[f.Lv(r, c + 1)]);
+                sum = X87.Add(sum, old[f.Lv(r + 1, c - 1)]);
+                sum = X87.Add(sum, old[f.Lv(r + 1, c + 1)]);
+                sum = X87.Add(sum, old[f.Lv(r - 1, c - 1)]);
+                sum = X87.Add(sum, old[f.Lv(r - 1, c + 1)]);
+                sum = X87.Add(sum, old[f.Lv(r + 1, c)]);
+                sum = X87.Add(sum, old[f.Lv(r - 1, c)]);
+                h[f.Lv(r, c)] = X87.Add(X87.Mul(sum, kn), X87.Mul(old[f.Lv(r, c)], kc));
             }
     }
 
@@ -251,7 +268,7 @@ public sealed partial class RmgGenerator
                 }
                 float min = 1000f;                                                 // 0x00e156d8
                 foreach (var (gx, gy) in group) min = Math.Min(min, f.Heights[f.Lv(gy, gx)]);
-                min += -0.1f;
+                min = X87.Add(min, -0.1f);                                         // 0x00912f90: FADD of the argument
                 foreach (var (gx, gy) in group)
                 {
                     f.Heights[f.Lv(gy, gx)] = min; f.Heights[f.Lv(gy + 1, gx)] = min;
