@@ -1,0 +1,11 @@
+{
+  "name": "h5reborn-web-harness",
+  "private": true,
+  "type": "module",
+  "description": "Static server + headless Chromium smoke test for the H5Reborn web build (docs/WEB_BUILD.md)",
+  "scripts": {
+    "serve": "node serve.mjs ../../../web/dist 8080",
+    "smoke": "node smoke.mjs ../../../web/dist"
+  },
+  "dependencies": { "playwright-core": "1.56.0" }
+}

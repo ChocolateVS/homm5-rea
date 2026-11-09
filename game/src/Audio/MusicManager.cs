@@ -178,7 +178,9 @@ public partial class MusicManager : Node
         if (track == null) { h.Track = null; return; }
         var file = MusicData.ResolveFile(Game.Instance.Install.Root, track.FileName);
         if (file == null) { GD.PushWarning($"[H5][audio] music file missing: {track.FileName}"); return; }
-        var stream = AudioStreamOggVorbis.LoadFromFile(file);
+        // Web build: the install's music lives in the browser, not on a file system (RandomAccessSources).
+        var stream = H5.Core.IO.RandomAccessSources.TryReadVirtual(file) is { } ogg
+            ? AudioStreamOggVorbis.LoadFromBuffer(ogg) : AudioStreamOggVorbis.LoadFromFile(file);
         if (stream == null) { GD.PushWarning($"[H5][audio] cannot load {file}"); return; }
         stream.Loop = false;
 

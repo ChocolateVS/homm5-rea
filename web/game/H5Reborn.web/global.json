@@ -1,0 +1,7 @@
+{
+  "$comment": "Web build only (tools/web/build.sh stages this folder). Pins the .NET 10 SDK that has the wasm-tools workload; the desktop projects stay on .NET 8.",
+  "sdk": {
+    "version": "10.0.402",
+    "rollForward": "latestPatch"
+  }
+}

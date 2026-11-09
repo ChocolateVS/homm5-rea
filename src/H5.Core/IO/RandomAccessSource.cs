@@ -21,6 +21,35 @@ public interface IRandomAccessSource : IDisposable
     ValueTask ReadAtAsync(long offset, Memory<byte> buffer, CancellationToken ct = default);
 }
 
+/// <summary>
+/// Platform hook for loose install files that are not on a real file system. The web build keeps the
+/// player's picked files in the browser (File/Blob or OPFS) and puts only empty placeholders into the
+/// wasm file system; it sets <see cref="Opener"/> so archives under those paths read slices on demand.
+/// Desktop leaves it null and every path opens as a <see cref="FileRandomAccessSource"/>.
+/// </summary>
+public static class RandomAccessSources
+{
+    /// <summary>Returns a source for <c>path</c>, or null to use the file system.</summary>
+    public static Func<string, IRandomAccessSource?>? Opener { get; set; }
+
+    public static IRandomAccessSource Open(string path) => Opener?.Invoke(path) ?? new FileRandomAccessSource(path);
+
+    /// <summary>
+    /// Whole content of a loose file served by <see cref="Opener"/> (for engine loaders that need a buffer,
+    /// e.g. music), or null when the path is an ordinary file.
+    /// </summary>
+    public static byte[]? TryReadVirtual(string path)
+    {
+        if (Opener?.Invoke(path) is not { } src) return null;
+        using (src)
+        {
+            var bytes = new byte[src.Length];
+            src.ReadAt(0, bytes);
+            return bytes;
+        }
+    }
+}
+
 /// <summary>File-backed source using positional reads (no shared stream position, thread-safe).</summary>
 public sealed class FileRandomAccessSource : IRandomAccessSource
 {

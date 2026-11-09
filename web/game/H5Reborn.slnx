@@ -1,0 +1,10 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Release" />
+  </Configurations>
+  <Project Path="H5Reborn.csproj" />
+  <Project Path="H5Reborn.web/H5Reborn.web.csproj">
+    <Build Project="false" />
+  </Project>
+</Solution>

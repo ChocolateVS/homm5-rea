@@ -26,6 +26,8 @@ public static class TargetPrompt
         bool force = args.Contains(ForceArg);
         bool dev = args.Any(a => !PlayerArgs.Any(p => a.StartsWith(p, StringComparison.Ordinal)));
         var explicitRoot = OS.GetEnvironment("H5_GAME_DIR");
+        // The web build sets it in the managed environment before the engine starts (H5Reborn.Web.BrowserData).
+        if (string.IsNullOrEmpty(explicitRoot)) explicitRoot = System.Environment.GetEnvironmentVariable("H5_GAME_DIR");
         return GameTargets.Resolve(new GameTargets.Inputs
         {
             ExplicitRoot = string.IsNullOrEmpty(explicitRoot) ? null : explicitRoot,

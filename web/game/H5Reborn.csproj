@@ -1,0 +1,35 @@
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+  <!-- The game assembly for the web build (.NET 10, 2dog). tools/web/build.sh copies game/ into web/.build/game and
+       puts this file over game/H5Reborn.csproj there. The libraries' sources are compiled in (linked) rather than
+       ProjectReference'd so this build never writes into src/*/obj, which the desktop .NET 8 builds own. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>H5Reborn</RootNamespace>
+    <!-- 2dog.godotsharp generates TwoDogWebBoot (the web host's plugins initializer) only with unsafe code -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- CA1416: [JSImport] is browser-only by design. The rest are warnings the desktop build already has. -->
+    <NoWarn>$(NoWarn);CA1416;CS1591;CS0618;CS8981</NoWarn>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <DefineConstants>$(DefineConstants);H5_WEB</DefineConstants>
+    <DefaultItemExcludes>$(DefaultItemExcludes);H5Reborn.web/**</DefaultItemExcludes>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="2dog.godotsharp" Version="$(TwoDogVersion)" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="$(H5RepoRoot)src/H5.Core/**/*.cs" Exclude="$(H5RepoRoot)src/H5.Core/obj/**;$(H5RepoRoot)src/H5.Core/bin/**" LinkBase="lib/H5.Core" />
+    <Compile Include="$(H5RepoRoot)src/H5.Assets/**/*.cs" Exclude="$(H5RepoRoot)src/H5.Assets/obj/**;$(H5RepoRoot)src/H5.Assets/bin/**" LinkBase="lib/H5.Assets" />
+    <Compile Include="$(H5RepoRoot)src/H5.Combat/**/*.cs" Exclude="$(H5RepoRoot)src/H5.Combat/obj/**;$(H5RepoRoot)src/H5.Combat/bin/**" LinkBase="lib/H5.Combat" />
+    <Compile Include="$(H5RepoRoot)src/H5.Duel/**/*.cs" Exclude="$(H5RepoRoot)src/H5.Duel/obj/**;$(H5RepoRoot)src/H5.Duel/bin/**" LinkBase="lib/H5.Duel" />
+    <Compile Include="$(H5RepoRoot)src/H5.Net/**/*.cs" Exclude="$(H5RepoRoot)src/H5.Net/obj/**;$(H5RepoRoot)src/H5.Net/bin/**" LinkBase="lib/H5.Net" />
+    <Compile Include="$(H5RepoRoot)src/H5.Adventure/**/*.cs" Exclude="$(H5RepoRoot)src/H5.Adventure/obj/**;$(H5RepoRoot)src/H5.Adventure/bin/**" LinkBase="lib/H5.Adventure" />
+    <Compile Include="$(H5RepoRoot)src/H5.Scripting/**/*.cs" Exclude="$(H5RepoRoot)src/H5.Scripting/obj/**;$(H5RepoRoot)src/H5.Scripting/bin/**" LinkBase="lib/H5.Scripting" />
+    <Compile Include="$(H5RepoRoot)src/H5.AdvNet/**/*.cs" Exclude="$(H5RepoRoot)src/H5.AdvNet/obj/**;$(H5RepoRoot)src/H5.AdvNet/bin/**" LinkBase="lib/H5.AdvNet" />
+    <Compile Include="$(H5RepoRoot)src/H5.Save/**/*.cs" Exclude="$(H5RepoRoot)src/H5.Save/obj/**;$(H5RepoRoot)src/H5.Save/bin/**" LinkBase="lib/H5.Save" />
+    <Compile Include="$(H5RepoRoot)src/H5.Rmg/**/*.cs" Exclude="$(H5RepoRoot)src/H5.Rmg/obj/**;$(H5RepoRoot)src/H5.Rmg/bin/**" LinkBase="lib/H5.Rmg" />
+  </ItemGroup>
+</Project>

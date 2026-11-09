@@ -1,0 +1,4 @@
+# Web build intermediates, output and smoke-test screenshots (tools/web); never committed
+.build/
+dist/
+smoke*/

@@ -21,7 +21,7 @@ public sealed class PakArchive : IDisposable
     public IRandomAccessSource Source => _source;
     public IReadOnlyList<Entry> Entries { get; }
 
-    public PakArchive(string path) : this(new FileRandomAccessSource(path)) { }
+    public PakArchive(string path) : this(RandomAccessSources.Open(path)) { }
 
     /// <summary>Opens over a source that supports synchronous reads. Takes ownership of <paramref name="source"/>.</summary>
     public PakArchive(IRandomAccessSource source)

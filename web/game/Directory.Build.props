@@ -1,0 +1,18 @@
+<Project>
+    <!-- Web build (staged by tools/web/build.sh into web/.build/game). Not imported by the desktop build. -->
+    <PropertyGroup>
+        <!-- The repository root; the game libraries' sources are compiled from there (never copied). -->
+        <H5RepoRoot Condition="'$(H5RepoRoot)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../'))</H5RepoRoot>
+    </PropertyGroup>
+
+    <!-- 2dog package versions (pinned; see docs/WEB_BUILD.md). The Godot.NET.Sdk version is in H5Reborn.csproj. -->
+    <PropertyGroup Label="2dog">
+        <TwoDogVersion>4.7.2.124</TwoDogVersion>
+        <TwoDogNativesVersion>4.7.2.28</TwoDogNativesVersion>
+        <TwoDogGodotVersion>4.7.2</TwoDogGodotVersion>
+        <TwoDogPrecision Condition="'$(TwoDogPrecision)' == ''">single</TwoDogPrecision>
+        <GodotFloat64 Condition="'$(TwoDogPrecision)' == 'double'">true</GodotFloat64>
+        <!-- Single-threaded: no SharedArrayBuffer, so no COOP/COEP headers are needed. -->
+        <TwoDogWebThreads Condition="'$(TwoDogWebThreads)' == ''">false</TwoDogWebThreads>
+    </PropertyGroup>
+</Project>

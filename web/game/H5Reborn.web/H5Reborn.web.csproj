@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!-- Browser (wasm) host of the real game; needs the wasm-tools workload (tools/web/setup.*).
+         tools/web/build.sh publishes it: dotnet publish H5Reborn.web -> AppBundle/ (libgodot linked into the .NET
+         runtime's wasm, the Godot project exported as godot.pck). -->
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <OutputType>Exe</OutputType>
+        <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+        <WasmEnableThreads Condition="'$(WasmEnableThreads)' == ''">$(TwoDogWebThreads)</WasmEnableThreads>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <RootNamespace>H5Reborn.WebHost</RootNamespace>
+        <!-- The game's protocol/settings records use reflection-based System.Text.Json, which trimmed browser apps
+             disable by default. -->
+        <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+        <!-- The game formats numbers/dates with CultureInfo.InvariantCulture; ICU data is not needed. -->
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <!-- wasm32 heap: the engine reserves 256 MB at start and may grow to 2 GB (2dog default). -->
+    </PropertyGroup>
+    <PropertyGroup>
+        <GodotProjectDir>..</GodotProjectDir>
+        <TwoDogRemoveDuplicateGodotAnalyzers>true</TwoDogRemoveDuplicateGodotAnalyzers>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="2dog.engine" Version="$(TwoDogVersion)"/>
+        <PackageReference Include="2dog.browser-wasm" Version="[$(TwoDogNativesVersion)]"/>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="../H5Reborn.csproj"/>
+    </ItemGroup>
+
+    <!-- Godot resolves C# scripts by reflection: keep the whole game assembly (it also carries the libraries). -->
+    <ItemGroup>
+        <TrimmerRootAssembly Include="H5Reborn"/>
+        <TrimmerRootAssembly Include="$(TargetName)"/>
+    </ItemGroup>
+
+    <Target Name="DeepClean" AfterTargets="Clean">
+        <RemoveDir Directories="AppBundle"/>
+    </Target>
+</Project>
