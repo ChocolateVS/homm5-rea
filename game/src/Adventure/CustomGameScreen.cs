@@ -92,7 +92,7 @@ public partial class CustomGameScreen : UiScreen
             ((SceneTree)Engine.GetMainLoop()).CreateTimer(2).Timeout += Create;
     }
 
-    static MapEntry Generated(GeneratedMaps.Record r) =>
+    internal static MapEntry Generated(GeneratedMaps.Record r) =>
         new(null, r.Settings, r.Name, r.Settings.Template, RmgSizeTiles(r.Settings.Size), Enumerable.Range(0, r.Settings.Players).ToList(),
             "goal3", null, CustomMapList.Generated, r.Settings.Underground);
 
@@ -125,31 +125,35 @@ public partial class CustomGameScreen : UiScreen
         var list = new List<MapEntry>();
         foreach (var r in MapCatalog.All(fs, Game.Instance.Install))
         {
-            try
-            {
-                using var files = r.Open(fs);
-                int folder = CustomMapList.FolderOfPath(files.MapXdbPath);
-                if (folder == 0) continue;
-                var root = files.LoadXml(files.MapXdbPath).Root!;
-                string? Text(string element) =>
-                    (string?)root.Element(element)?.Attribute("href") is { Length: > 0 } href ? files.ReadText(href, files.MapXdbPath)?.Trim() : null;
-                int size = (int?)root.Element("TileX") ?? 0;
-                // 00ca0240: without CustomTeams every active player is a team of its own.
-                bool customTeams = (string?)root.Element("CustomTeams") == "true";
-                var teams = new List<int>();
-                foreach (var p in root.Element("players")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
-                    if ((string?)p.Element("ActivePlayer") == "true") teams.Add(customTeams ? (int?)p.Element("Team") ?? teams.Count : teams.Count);
-                var custom = Text("CustomGoal");
-                var kind = root.Element("Objectives")?.Element("Primary")?.Descendants("Kind").Select(k => k.Value.Trim()).FirstOrDefault();
-                var name = Text("NameFileRef");
-                // No name text: the map's folder name (the exe's fallback is not traced).
-                if (string.IsNullOrEmpty(name)) name = Path.GetFileName(Path.GetDirectoryName(files.MapXdbPath) ?? r.Id);
-                list.Add(new MapEntry(r, null, name, Text("DescriptionFileRef") ?? "", size, teams,
-                    CustomMapList.GoalKey(!string.IsNullOrEmpty(custom), kind), custom, folder, (string?)root.Element("HasUnderground") == "true"));
-            }
+            try { if (EntryOf(r, listedOnly: true) is { } e) list.Add(e); }
             catch (Exception e) { GD.PushWarning($"[H5] map list {r.Id}: {e.Message}"); }
         }
         return list;
+    }
+
+    /// <summary>A map's list entry from its descriptor (<paramref name="listedOnly"/>: null for maps outside the listed folders).</summary>
+    internal static MapEntry? EntryOf(MapCatalog.MapRef r, bool listedOnly)
+    {
+        var fs = Game.Instance.Fs;
+        using var files = r.Open(fs);
+        int folder = CustomMapList.FolderOfPath(files.MapXdbPath);
+        if (folder == 0 && listedOnly) return null;
+        var root = files.LoadXml(files.MapXdbPath).Root!;
+        string? Text(string element) =>
+            (string?)root.Element(element)?.Attribute("href") is { Length: > 0 } href ? files.ReadText(href, files.MapXdbPath)?.Trim() : null;
+        int size = (int?)root.Element("TileX") ?? 0;
+        // 00ca0240: without CustomTeams every active player is a team of its own.
+        bool customTeams = (string?)root.Element("CustomTeams") == "true";
+        var teams = new List<int>();
+        foreach (var p in root.Element("players")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+            if ((string?)p.Element("ActivePlayer") == "true") teams.Add(customTeams ? (int?)p.Element("Team") ?? teams.Count : teams.Count);
+        var custom = Text("CustomGoal");
+        var kind = root.Element("Objectives")?.Element("Primary")?.Descendants("Kind").Select(k => k.Value.Trim()).FirstOrDefault();
+        var name = Text("NameFileRef");
+        // No name text: the map's folder name (the exe's fallback is not traced).
+        if (string.IsNullOrEmpty(name)) name = Path.GetFileName(Path.GetDirectoryName(files.MapXdbPath) ?? r.Id);
+        return new MapEntry(r, null, name, Text("DescriptionFileRef") ?? "", size, teams,
+            CustomMapList.GoalKey(!string.IsNullOrEmpty(custom), kind), custom, folder, (string?)root.Element("HasUnderground") == "true");
     }
 
     /// <summary>Map size names by width (UIGameRoot MapSizeTable: S, M, L, XL).</summary>

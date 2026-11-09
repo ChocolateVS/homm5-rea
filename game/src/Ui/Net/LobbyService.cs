@@ -299,6 +299,7 @@ public partial class LobbyService : Node
             case ErrorMsg e:
                 StatusChanged?.Invoke(e.Text);
                 if (e.Code is "version" or "data_mismatch") ErrorRaised?.Invoke("Cannot join", e.Text);
+                if (e.Code == "not_in_save") ErrorRaised?.Invoke(LobbyText("NotInSaveHeader", "Error"), NotInSaveText(e.Text));
                 break;
         }
         Combat?.OnMessage(m);
@@ -307,6 +308,28 @@ public partial class LobbyService : Node
     }
 
     public void Send(Message m) => _client?.Send(m);
+
+    static string LobbyText(string file, string fallback) =>
+        Ui.UiResources.Instance.Text($"UI/Lobby/{file}.txt")?.Trim() is { Length: > 0 } t ? t : fallback;
+
+    /// <summary>
+    /// 006f8330: not_in_save_format with playername, players (the saved names) and players_in_game (the connected ones),
+    /// each list joined by not_in_save_separator (006f7170).
+    /// </summary>
+    static string NotInSaveText(string json)
+    {
+        try
+        {
+            var j = System.Text.Json.Nodes.JsonNode.Parse(json)!;
+            string sep = LobbyText("NotInSaveSeparator", ",");
+            string List(string key) => string.Join(sep, (j[key]?.AsArray() ?? new()).Select(x => (string?)x ?? ""));
+            return LobbyText("NotInSaveFormat", "<value=playername> <value=players> <value=players_in_game>")
+                .Replace("<value=playername>", (string?)j["playername"] ?? "")
+                .Replace("<value=players>", List("players"))
+                .Replace("<value=players_in_game>", List("players_in_game"));
+        }
+        catch (Exception) { return json; }
+    }
 
     public void LeaveRoom()
     {

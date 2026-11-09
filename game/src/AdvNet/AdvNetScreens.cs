@@ -239,6 +239,8 @@ public partial class AdvSetupScreen : UiScreen
         Read();
         _set.Map = _selected.Rmg == null ? _selected.Id : null;
         _set.Rmg = _selected.Rmg;
+        // Network rooms use the UI/MPWait rows, kept by the host (NetGameSetup).
+        _set.NetSetup = _network;
         if (!_network)
         {
             AdvNetScreens.PendingHotSeat = _set;
@@ -317,20 +319,27 @@ public partial class MessageNotice : Control
 }
 
 /// <summary>
-/// UI/MPWait ("Standard options"): players with their colour slot and ready state, map
-/// description, chat, Start Game (host) / Ready (guest), Cancel. Clicking your own row picks
-/// the next free colour slot of the map.
+/// UI/MPWait ("Standard options", CMPWaitScreen vtable 00e3a74c over CMPUbiComWaitHostLogic / CMPUbiComWaitClientLogic):
+/// one ID_MPWAIT_ITEM row per active map player (state, colour, faction, starting hero, starting bonus, team) from the
+/// host's rows (<see cref="NetGameSetup"/> in the room settings), the map description / preferences panel with the
+/// preview slideshow, the chat, Start Game and Cancel. A row arrow is a change request to the host (00711580 →
+/// 0071f3d0); the arrows a player may use follow the host's lock bits (0071e7b0). The state arrows of your own row
+/// toggle ready (0 ↔ 3); the host's state arrows on another player's row ask kick_header / kick_text. Start (0071d610)
+/// acts only when 0071d590 allows it. Rooms reloaded from a network save keep the plain list of saved slots.
 /// </summary>
 public partial class AdvWaitScreen : UiScreen
 {
     readonly ChatLogView _log = new();
     readonly ListRowsView _players;
+    readonly List<UiNode> _rows = new();
+    readonly H5Reborn.Adventure.ThumbnailSlideshow _slides;
     List<MapPlayer> _slots = new();
-    string? _slotsFor;
+    string? _slotsFor, _mapFor;
+    LoadedMap? _map;
+    NetGameSetup? _setup;
 
     public AdvWaitScreen() : base("UI/MPWait.(WindowScreen).xdb")
     {
-        var host = Root.Find("playerscontainer")!;
         _players = new ListRowsView(new[]
         {
             new ListRowsView.Column(8, 120, ""), new ListRowsView.Column(130, 280, ""), new ListRowsView.Column(412, 150, ""),
@@ -348,8 +357,10 @@ public partial class AdvWaitScreen : UiScreen
             };
         Bus.On("start", StartOrReady);
         Bus.On("back", () => { LobbyService.Instance.LeaveRoom(); UiNavigator.Goto("lobby"); });
-        Bus.On("switchtopref", () => { SetVisible("container", false); SetVisible("preferences_container", true); });
-        Bus.On("switchtodesc", () => { SetVisible("container", true); SetVisible("preferences_container", false); });
+        Bus.On("switchtopref", () => H5Reborn.Adventure.MapDescriptionPanel.ShowPreferences(this, true));
+        Bus.On("switchtodesc", () => H5Reborn.Adventure.MapDescriptionPanel.ShowPreferences(this, false));
+        _slides = new H5Reborn.Adventure.ThumbnailSlideshow(Find("screenshoot1"), Find("screenshoot2"));
+        AddChild(_slides);
     }
 
     public override void _Ready()
@@ -357,6 +368,19 @@ public partial class AdvWaitScreen : UiScreen
         base._Ready();
         LobbyService.Instance.MessageReceived += OnMessage;
         Refresh();
+        // Dev/test hook for screenshots: H5_MPWAIT_CLICKS="row:button,..." presses row buttons once the rows exist.
+        if (System.Environment.GetEnvironmentVariable("H5_MPWAIT_CLICKS") is { Length: > 0 } clicks)
+        {
+            var t = ((SceneTree)Engine.GetMainLoop()).CreateTimer(4);
+            t.Timeout += () =>
+            {
+                foreach (var c in clicks.Split(','))
+                {
+                    var p = c.Split(':');
+                    if (p.Length == 2 && int.TryParse(p[0], out var row)) Press(row, p[1]);
+                }
+            };
+        }
     }
 
     public override void _ExitTree() => LobbyService.Instance.MessageReceived -= OnMessage;
@@ -373,6 +397,14 @@ public partial class AdvWaitScreen : UiScreen
                 _log.AddChat(from, c.Text);
                 H5Reborn.Audio.AudioSystem.PlayNamed("CHAT_GET_MESSAGE_SOUND"); // new chat line (00726630)
                 break;
+            case ErrorMsg { Code: "kicked" }:
+                LobbyService.Instance.LeaveRoom();
+                UiNavigator.Goto("lobby");
+                break;
+            case ErrorMsg { Code: "start" } when _setup != null:
+                // 0071d910: a failed start shows GAME_START_FAILED_HEADER / _CONTENT (UI/Common/MULTIPLAYER_TEXTS).
+                H5Reborn.Options.MessageBoxes.Message(this, MpText("GAME_START_FAILED_HEADER"), MpText("GAME_START_FAILED_CONTENT"));
+                break;
             case ErrorMsg e: _log.AddSystem(e.Text); break;
             case GameStarted:
                 if (LobbyService.Instance.Adventure is { } game)
@@ -385,7 +417,130 @@ public partial class AdvWaitScreen : UiScreen
         }
     }
 
+    /// <summary>A UI/Common/MULTIPLAYER_TEXTS entry by its TextName.</summary>
+    internal static string MpText(string name)
+    {
+        const string root = "UI/Common/MULTIPLAYER_TEXTS/texts.(WindowRelatedTexts).xdb";
+        try
+        {
+            var item = Game.Instance.Xdb.Load(root).Root?.Element("texts")?.Elements("Item").FirstOrDefault(i => (string?)i.Element("TextName") == name);
+            var href = H5.Core.Xdb.XdbRef.Parse((string?)item?.Element("text")?.Attribute("href"), root);
+            return href.IsEmpty ? name : (UiResources.Instance.Text(href.Path) ?? name).Trim();
+        }
+        catch (Exception) { return name; }
+    }
+
     AdvNetSettings Settings => AdvNetSettings.From(LobbyService.Instance.Room?.Settings);
+
+    void Refresh()
+    {
+        var room = LobbyService.Instance.Room;
+        if (room == null) return;
+        var s = Settings;
+        if (s.NetSetup && s.Setup != null && s.Load == null && LoadMap(s))
+        {
+            _players.Visible = false;
+            BuildRows(room, s);
+            return;
+        }
+        _players.Visible = true;
+        Find("gamename")?.SetValue("value", ChatLogView.Escape(room.Name));
+        RefreshLegacy(room);
+    }
+
+    /// <summary>The room's map on this peer (rows, preview, description); false when it cannot be opened here.</summary>
+    bool LoadMap(AdvNetSettings s)
+    {
+        var key = s.Map ?? $"rmg:{s.Rmg?.Template}:{s.Rmg?.Seed}";
+        if (key == _mapFor) return _map != null;
+        _mapFor = key;
+        _map = null;
+        try
+        {
+            _map = AdvNetGame.Maps.Load(s);
+            H5Reborn.Adventure.CustomGameScreen.MapEntry? entry = s.Rmg != null
+                ? H5Reborn.Adventure.CustomGameScreen.Generated(new H5Reborn.Adventure.GeneratedMaps.Record(_map.Map.Name, s.Rmg))
+                : MapCatalog.Find(Game.Instance.Fs, Game.Instance.Install, s.Map!) is { } r ? H5Reborn.Adventure.CustomGameScreen.EntryOf(r, listedOnly: false) : null;
+            if (entry != null)
+            {
+                // 007132d0: the description / preferences panel, as on UI/CustomGameWait; 00722140: the preview slideshow.
+                H5Reborn.Adventure.MapDescriptionPanel.Fill(this, entry, s.Difficulty, s.TimeLimitMinutes);
+                _slides.SetImages(H5Reborn.Adventure.CustomGameScreen.Thumbnails(entry));
+            }
+        }
+        catch (Exception e) { _log.AddSystem(e.Message); _map = null; }
+        return _map != null;
+    }
+
+    static int LockBit(CustomGameSetup.Change kind) => kind switch
+    {
+        CustomGameSetup.Change.State => NetGameSetup.LockState, CustomGameSetup.Change.Colour => NetGameSetup.LockColour,
+        CustomGameSetup.Change.Race => NetGameSetup.LockRace, CustomGameSetup.Change.Hero => NetGameSetup.LockHero, _ => NetGameSetup.LockBonus,
+    };
+
+    /// <summary>
+    /// The state icon (States related textures; UNVERIFIED: the item's state → texture choice is not decoded, the textures'
+    /// names are used: Open, Closed, Comp, HeroReady, SlotOpen).
+    /// </summary>
+    static string StateKey(NetSlotState st) => st switch
+    {
+        NetSlotState.Human => "state0", NetSlotState.Closed => "state1", NetSlotState.Computer => "state2",
+        NetSlotState.Ready => "state3", _ => "state4",
+    };
+
+    static string StateTip(NetSlotState st) => st switch
+    {
+        NetSlotState.Human => "human_tooltip", NetSlotState.Ready => "human_ready_tooltip", NetSlotState.Closed => "closed_tooltip",
+        NetSlotState.Computer => "computer_tooltip", _ => "open_tooltip",
+    };
+
+    void BuildRows(RoomState room, AdvNetSettings s)
+    {
+        if (_map == null || Find("playerscontainer") is not UiScrollableContainer box) return;
+        _setup = NetGameSetup.FromRows(_map.Map, _map.Db, s.Setup!);
+        int me = LobbyService.Instance.PlayerId, host = room.Players.FirstOrDefault(p => p.IsHost)?.PlayerId ?? -1;
+        float pos = box.ScrollPosition;
+        foreach (var r in _rows) RemoveInstance(r);
+        _rows.Clear();
+        box.ClearItems();
+        for (int i = 0; i < _setup.Rows.Count; i++)
+        {
+            if (CreateRootWindow("ID_MPWAIT_ITEM", box.Window) is not { } node) continue;
+            int row = i, locks = _setup.Locks(i, me, host);
+            var slot = _setup.Rows[i];
+            _rows.Add(node);
+            H5Reborn.Adventure.SetupRowView.Fill(this, node, _setup.Model, row, b => Press(row, b),
+                kind => (locks & LockBit(kind)) == 0, StateKey(slot.NetState), slot.NetState == NetSlotState.Open ? "" : null);
+            if (H5Reborn.Adventure.SetupRowView.Child(this, node, "state") is { } state
+                && state.Window.RelatedTexts.TryGetValue(StateTip(slot.NetState), out var tipPath))
+                state.SetTooltip((UiResources.Instance.Text(tipPath) ?? "").Replace("<value=name>", ChatLogView.Escape(slot.Name)));
+            box.AddItem(node);
+        }
+        box.RestorePosition(pos);
+        // 00720080: the host's Start follows the start test (logic vf 0x18 = 0071d590).
+        bool isHost = me == host;
+        if (Find("creategamebutton") is { } btn) btn.Enabled = !isHost || _setup.CanStart();
+    }
+
+    void Press(int row, string button)
+    {
+        var room = LobbyService.Instance.Room;
+        if (_setup == null || room == null || row < 0 || row >= _setup.Rows.Count) return;
+        var b = H5Reborn.Adventure.SetupRowView.Buttons.FirstOrDefault(x => x.Button == button);
+        if (b.Button == null) return;
+        int me = LobbyService.Instance.PlayerId, host = room.Players.FirstOrDefault(p => p.IsHost)?.PlayerId ?? -1;
+        var slot = _setup.Rows[row];
+        if ((_setup.Locks(row, me, host) & LockBit(b.Kind)) != 0) return;
+        // 0071f3d0 case 1: the host's state arrow on another player's row asks kick_header / kick_text (with the name).
+        if (b.Kind == CustomGameSetup.Change.State && me == host && slot.Owner >= 0 && slot.Owner != me)
+        {
+            int target = slot.Owner;
+            H5Reborn.Options.MessageBoxes.YesNo(this, MpText("kick_header"), MpText("kick_text").Replace("<value=name>", ChatLogView.Escape(slot.Name)),
+                yes => { if (yes) LobbyService.Instance.Send(new KickPlayer(target)); });
+            return;
+        }
+        LobbyService.Instance.Send(new SetupRequest(row, (int)b.Kind, b.Right));
+    }
 
     void LoadSlots()
     {
@@ -412,12 +567,11 @@ public partial class AdvWaitScreen : UiScreen
         catch (Exception e) { _slots = new(); _log.AddSystem(e.Message); }
     }
 
-    void Refresh()
+    /// <summary>Rooms without setup rows (reloaded network saves): the saved slots with their players and ready state.</summary>
+    void RefreshLegacy(RoomState room)
     {
-        var room = LobbyService.Instance.Room;
-        if (room == null) return;
+        _setup = null;
         LoadSlots();
-        Find("gamename")?.SetValue("value", ChatLogView.Escape(room.Name));
         _players.SetRows(room.Players.Select(p =>
         {
             int slot = AdvPlayerOptions.From(p.Options).MapPlayer;
@@ -432,7 +586,7 @@ public partial class AdvWaitScreen : UiScreen
     void NextSlot()
     {
         var room = LobbyService.Instance.Room;
-        if (room == null || _slots.Count == 0) return;
+        if (room == null || _slots.Count == 0 || _setup != null) return;
         var me = room.Players.First(p => p.PlayerId == LobbyService.Instance.PlayerId);
         var taken = room.Players.Where(p => p != me).Select(p => AdvPlayerOptions.From(p.Options).MapPlayer).ToHashSet();
         int cur = AdvPlayerOptions.From(me.Options).MapPlayer;
@@ -447,12 +601,17 @@ public partial class AdvWaitScreen : UiScreen
         }
     }
 
+    /// <summary>
+    /// Start Game: the host starts (0071d610); a client's button toggles its ready state (UNVERIFIED: the client logic's
+    /// start handler is not traced — the same toggle as its own row's state arrows, 0071d3e0).
+    /// </summary>
     void StartOrReady()
     {
         var room = LobbyService.Instance.Room;
         if (room == null) return;
         var me = room.Players.FirstOrDefault(p => p.PlayerId == LobbyService.Instance.PlayerId);
         if (me?.IsHost != true) { LobbyService.Instance.Send(new SetReady(!(me?.Ready ?? false))); return; }
+        if (_setup != null && !_setup.CanStart()) return;
         LobbyService.Instance.Send(new StartGame());
     }
 }

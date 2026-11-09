@@ -92,104 +92,9 @@ public partial class CustomGameWaitScreen : UiScreen
             ((SceneTree)Engine.GetMainLoop()).CreateTimer(2).Timeout += Start;
     }
 
-    /// <summary>
-    /// The map description / preferences panel (MPWait/MapDescription "definition", 007132d0 → 00712470 / 00713180 →
-    /// 007129e0): items from UIGameRoot templates added to the panel's two scrollable containers, then 00711d90(1).
-    /// </summary>
-    void FillDescription()
-    {
-        var m = _choice!.Map;
-        string name = ChatLogView.Escape(m.Name);
-        // 007128f0: the description container is cleared (slot 0x2c), then the map name item (00712800,
-        // map_name_definition_item) and ID_MAP_DESCRIPTION_TEXT with the description are added (slot 8).
-        if (Find("container") is UiScrollableContainer desc)
-        {
-            desc.ClearItems();
-            AddTextItem(desc, "map_name_definition_item", name);
-            AddTextItem(desc, "ID_MAP_DESCRIPTION_TEXT", ChatLogView.Escape(m.Description));
-        }
-        // 007129e0: the preferences container gets the map name item, then one game_definition_item per row
-        // (007121b0: name = the panel's related text, value, addition = related text or empty): players (007123c0,
-        // 00707330 text), goal, size (007f6410: UIGameRoot map_sizes "size%d"), difficulty (00a33740), time limit.
-        if (Find("preferences_container") is UiScrollableContainer prefs)
-        {
-            AddTextItem(prefs, "map_name_definition_item", name);
-            AddPreference(prefs, "players", CustomGameScreen.PlayersText(m), null);
-            AddPreference(prefs, "goal", CustomGameScreen.GoalText(m), null);
-            AddPreference(prefs, "size", MapSizeText(m.Size), null);
-            AddPreference(prefs, "difficulty", CustomGameScreen.DifficultyName(_choice.Difficulty), null);
-            // 007122b0 with no limit: the value is the related text no_limit; else minutes + related "measurement".
-            if (_choice.TimeLimitMinutes < 1) AddPreference(prefs, "time_limit", Related("no_limit"), null);
-            else AddPreference(prefs, "time_limit", _choice.TimeLimitMinutes.ToString(), "measurement");
-        }
-        // 007129e0: gamename (+0x24) "value" = the map name.
-        Find("gamename")?.SetValue("value", name);
-        ShowPreferences(true); // 00713180 ends with 00711d90(1)
-    }
+    void FillDescription() => MapDescriptionPanel.Fill(this, _choice!.Map, _choice.Difficulty, _choice.TimeLimitMinutes);
 
-    string Related(string key) =>
-        Find("definition") is { } panel && panel.Window.RelatedTexts.TryGetValue(key, out var path)
-            ? (UiResources.Instance.Text(path) ?? "").Trim() : "";
-
-    void AddTextItem(UiScrollableContainer box, string id, string value)
-    {
-        if (CreateRootWindow(id, box.Window) is not { } item) return;
-        item.SetValue("value", value);
-        box.AddItem(item);
-    }
-
-    /// <summary>00711e90: a game_definition_item with its name view's "value" and the value view's "value" / "addition".</summary>
-    void AddPreference(UiScrollableContainer box, string nameKey, string value, string? additionKey)
-    {
-        if (CreateRootWindow("game_definition_item", box.Window) is not { } item) return;
-        UiNode? Part(string n) => item.Window.Descendants().FirstOrDefault(d => string.Equals(d.Name, n, StringComparison.OrdinalIgnoreCase)) is { } w ? NodeOf(w) : null;
-        Part("name")?.SetValue("value", Related(nameKey));
-        if (Part("value") is { } v)
-        {
-            v.SetValue("value", ChatLogView.Escape(value));
-            v.SetValue("addition", additionKey == null ? "" : Related(additionKey));
-        }
-        box.AddItem(item);
-    }
-
-    /// <summary>
-    /// 007f6410: UIGameRoot related texts map_sizes, "size%d". The index is taken as the MapSizeTable band of the map
-    /// width (first MaxSize ≥ width); the caller's source of the index is untraced.
-    /// </summary>
-    static string MapSizeText(int tiles)
-    {
-        const string root = "UI/UIGameRoot.(UIGameRoot).xdb";
-        var r = Game.Instance.Xdb.Load(root).Root;
-        var bands = r?.Element("MapSizeTable")?.Element("Items")?.Elements("Item").Select(i => (int?)i.Element("MaxSize") ?? 0).ToList() ?? new();
-        int index = bands.FindIndex(b => tiles <= b);
-        if (index < 0) index = Math.Max(0, bands.Count - 1);
-        var item = r?.Element("relatedTexts")?.Elements("Item").FirstOrDefault(i => (string?)i.Element("ID") == "map_sizes");
-        var href = XdbRef.Parse((string?)item?.Element("RelatedTexts")?.Attribute("href"), root);
-        if (href.IsEmpty || !Game.Instance.Fs.Exists(href.Path)) return "";
-        var entry = Game.Instance.Xdb.Load(href.Path).Root?.Element("texts")?.Elements("Item")
-            .FirstOrDefault(i => (string?)i.Element("TextName") == $"size{index}");
-        var text = XdbRef.Parse((string?)entry?.Element("text")?.Attribute("href"), href.Path);
-        return text.IsEmpty ? "" : (UiResources.Instance.Text(text.Path) ?? "").Trim();
-    }
-
-    /// <summary>
-    /// 00711d90: buttonslayer takes its related texture texture0 (preferences) / texture1 (description); buttontopref
-    /// is enabled while the description shows, buttontodesc while the preferences show; container /
-    /// preferences_container visible accordingly.
-    /// </summary>
-    void ShowPreferences(bool show)
-    {
-        if (Find("buttonslayer") is { } layer && layer.Window.RelatedTextures.TryGetValue(show ? "texture0" : "texture1", out var tex)
-            && layer.Window.Background is { } bg)
-        {
-            bg.DdsPath = bg.TexturePath = tex;
-            layer.QueueRedraw();
-        }
-        if (Find("buttontopref") is { } toPref) toPref.Enabled = !show;
-        if (Find("buttontodesc") is { } toDesc) toDesc.Enabled = show;
-        SetVisible("container", !show);
-        SetVisible("preferences_container", show);
-    }
+    void ShowPreferences(bool show) => MapDescriptionPanel.ShowPreferences(this, show);
 
     void Press(int row, string button)
     {
@@ -235,6 +140,110 @@ public partial class CustomGameWaitScreen : UiScreen
     }
 }
 
+
+/// <summary>The MPWait/MapDescription panel ("definition") shared by UI/CustomGameWait and UI/MPWait.</summary>
+static class MapDescriptionPanel
+{
+    /// <summary>
+    /// The map description / preferences panel (MPWait/MapDescription "definition", 007132d0 → 00712470 / 00713180 →
+    /// 007129e0): items from UIGameRoot templates added to the panel's two scrollable containers, then 00711d90(1).
+    /// </summary>
+    internal static void Fill(UiScreen screen, CustomGameScreen.MapEntry m, int difficulty, int timeLimitMinutes)
+    {
+        string name = ChatLogView.Escape(m.Name);
+        // 007128f0: the description container is cleared (slot 0x2c), then the map name item (00712800,
+        // map_name_definition_item) and ID_MAP_DESCRIPTION_TEXT with the description are added (slot 8).
+        if (screen.Find("container") is UiScrollableContainer desc)
+        {
+            desc.ClearItems();
+            AddTextItem(screen, desc, "map_name_definition_item", name);
+            AddTextItem(screen, desc, "ID_MAP_DESCRIPTION_TEXT", ChatLogView.Escape(m.Description));
+        }
+        // 007129e0: the preferences container gets the map name item, then one game_definition_item per row
+        // (007121b0: name = the panel's related text, value, addition = related text or empty): players (007123c0,
+        // 00707330 text), goal, size (007f6410: UIGameRoot map_sizes "size%d"), difficulty (00a33740), time limit.
+        if (screen.Find("preferences_container") is UiScrollableContainer prefs)
+        {
+            AddTextItem(screen, prefs, "map_name_definition_item", name);
+            AddPreference(screen, prefs, "players", CustomGameScreen.PlayersText(m), null);
+            AddPreference(screen, prefs, "goal", CustomGameScreen.GoalText(m), null);
+            AddPreference(screen, prefs, "size", MapSizeText(m.Size), null);
+            AddPreference(screen, prefs, "difficulty", CustomGameScreen.DifficultyName(difficulty), null);
+            // 007122b0 with no limit: the value is the related text no_limit; else minutes + related "measurement".
+            if (timeLimitMinutes < 1) AddPreference(screen, prefs, "time_limit", Related(screen, "no_limit"), null);
+            else AddPreference(screen, prefs, "time_limit", timeLimitMinutes.ToString(), "measurement");
+        }
+        // 007129e0: gamename (+0x24) "value" = the map name.
+        screen.Find("gamename")?.SetValue("value", name);
+        ShowPreferences(screen, true); // 00713180 ends with 00711d90(1)
+    }
+
+    internal static string Related(UiScreen screen, string key) =>
+        screen.Find("definition") is { } panel && panel.Window.RelatedTexts.TryGetValue(key, out var path)
+            ? (UiResources.Instance.Text(path) ?? "").Trim() : "";
+
+    static void AddTextItem(UiScreen screen, UiScrollableContainer box, string id, string value)
+    {
+        if (screen.CreateRootWindow(id, box.Window) is not { } item) return;
+        item.SetValue("value", value);
+        box.AddItem(item);
+    }
+
+    /// <summary>00711e90: a game_definition_item with its name view's "value" and the value view's "value" / "addition".</summary>
+    static void AddPreference(UiScreen screen, UiScrollableContainer box, string nameKey, string value, string? additionKey)
+    {
+        if (screen.CreateRootWindow("game_definition_item", box.Window) is not { } item) return;
+        UiNode? Part(string n) => item.Window.Descendants().FirstOrDefault(d => string.Equals(d.Name, n, StringComparison.OrdinalIgnoreCase)) is { } w ? screen.NodeOf(w) : null;
+        Part("name")?.SetValue("value", Related(screen, nameKey));
+        if (Part("value") is { } v)
+        {
+            v.SetValue("value", ChatLogView.Escape(value));
+            v.SetValue("addition", additionKey == null ? "" : Related(screen, additionKey));
+        }
+        box.AddItem(item);
+    }
+
+    /// <summary>
+    /// 007f6410: UIGameRoot related texts map_sizes, "size%d". The index is taken as the MapSizeTable band of the map
+    /// width (first MaxSize ≥ width); the caller's source of the index is untraced.
+    /// </summary>
+    internal static string MapSizeText(int tiles)
+    {
+        const string root = "UI/UIGameRoot.(UIGameRoot).xdb";
+        var r = Game.Instance.Xdb.Load(root).Root;
+        var bands = r?.Element("MapSizeTable")?.Element("Items")?.Elements("Item").Select(i => (int?)i.Element("MaxSize") ?? 0).ToList() ?? new();
+        int index = bands.FindIndex(b => tiles <= b);
+        if (index < 0) index = Math.Max(0, bands.Count - 1);
+        var item = r?.Element("relatedTexts")?.Elements("Item").FirstOrDefault(i => (string?)i.Element("ID") == "map_sizes");
+        var href = XdbRef.Parse((string?)item?.Element("RelatedTexts")?.Attribute("href"), root);
+        if (href.IsEmpty || !Game.Instance.Fs.Exists(href.Path)) return "";
+        var entry = Game.Instance.Xdb.Load(href.Path).Root?.Element("texts")?.Elements("Item")
+            .FirstOrDefault(i => (string?)i.Element("TextName") == $"size{index}");
+        var text = XdbRef.Parse((string?)entry?.Element("text")?.Attribute("href"), href.Path);
+        return text.IsEmpty ? "" : (UiResources.Instance.Text(text.Path) ?? "").Trim();
+    }
+
+    /// <summary>
+    /// 00711d90: buttonslayer takes its related texture texture0 (preferences) / texture1 (description); buttontopref
+    /// is enabled while the description shows, buttontodesc while the preferences show; container /
+    /// preferences_container visible accordingly.
+    /// </summary>
+    internal static void ShowPreferences(UiScreen screen, bool show)
+    {
+        if (screen.Find("buttonslayer") is { } layer && layer.Window.RelatedTextures.TryGetValue(show ? "texture0" : "texture1", out var tex)
+            && layer.Window.Background is { } bg)
+        {
+            bg.DdsPath = bg.TexturePath = tex;
+            layer.QueueRedraw();
+        }
+        if (screen.Find("buttontopref") is { } toPref) toPref.Enabled = !show;
+        if (screen.Find("buttontodesc") is { } toDesc) toDesc.Enabled = show;
+        screen.SetVisible("container", !show);
+        screen.SetVisible("preferences_container", show);
+    }
+
+}
+
 /// <summary>The stock player row (UI/MPWait/PlayersList/ItemElements) shared by UI/CustomGameWait and UI/HotSeatWait.</summary>
 static class SetupRowView
 {
@@ -266,24 +275,26 @@ static class SetupRowView
     }
 
     /// <summary>Fills a stock MPWait row (ItemElements) from a setup slot; <paramref name="press"/> gets the button name.</summary>
-    internal static void Fill(UiScreen screen, UiNode node, CustomGameSetup setup, int row, Action<string> press)
+    /// <remarks>Network rows (UI/MPWait) pass the host's lock bits as <paramref name="canChange"/>, their state icon and name.</remarks>
+    internal static void Fill(UiScreen screen, UiNode node, CustomGameSetup setup, int row, Action<string> press,
+        Func<CustomGameSetup.Change, bool>? canChange = null, string? stateKey = null, string? name = null)
     {
         UiNode? Child(UiNode r, string n) => SetupRowView.Child(screen, r, n);
         var s = setup.Slots[row];
         foreach (var (button, kind, right) in Buttons)
             if (Child(node, button) is { } b)
             {
-                b.Enabled = setup.CanChange(row, kind);
+                b.Enabled = canChange?.Invoke(kind) ?? setup.CanChange(row, kind);
                 b.Clicked += _ => press(button);
             }
         string colour = s.Colour.Replace("PCOLOR_", "").ToLowerInvariant();
-        Child(node, "name")?.SetValue("value", ChatLogView.Escape(DisplayName(s)));
+        Child(node, "name")?.SetValue("value", ChatLogView.Escape(name ?? DisplayName(s)));
         Child(node, "teamnumber")?.SetValue("value", (s.Team + 1).ToString());
         Child(node, "bonus")?.SetValue("value", "");
         Child(node, "race")?.SetValue("value", "");
         Child(node, "state")?.SetValue("value", "");
         // Icons from the row's related textures (States/TeamColors/Races/Heroes/Bonuses).
-        Icon(Child(node, "state"), s.State switch { SetupSlot.SlotState.Human => "state3", SetupSlot.SlotState.Closed => "state1", _ => "state2" });
+        Icon(Child(node, "state"), stateKey ?? s.State switch { SetupSlot.SlotState.Human => "state3", SetupSlot.SlotState.Closed => "state1", _ => "state2" });
         Icon(Child(node, "team"), "team_" + (colour == "brown" ? "tan" : colour));
         Icon(Child(node, "race"), RaceKey(s.Race));
         Icon(Child(node, "bonus"), $"bonus{s.Bonus}");

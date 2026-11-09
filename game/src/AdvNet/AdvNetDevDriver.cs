@@ -20,7 +20,7 @@ namespace H5Reborn.AdvNet;
 public partial class AdvNetDevDriver : Node
 {
     static string? _mode, _shots, _map = "Maps/Multiplayer/A2M1";
-    static bool _battle, _hotSeat, _ghost;
+    static bool _battle, _hotSeat, _ghost, _waitScreen;
     static int _port = 27631;
     static double _quitAfter = 240;
 
@@ -30,6 +30,8 @@ public partial class AdvNetDevDriver : Node
         if (arg.StartsWith("--advnet-test=")) { _mode = V("--advnet-test="); Schedule(); return true; }
         if (arg == "--advnet-battle") { _battle = true; return true; }
         if (arg == "--advnet-ghost") { _ghost = true; return true; }
+        // --advnet-wait: the room uses the UI/MPWait rows; both sides open the wait screen and take screenshots there.
+        if (arg == "--advnet-wait") { _waitScreen = true; return true; }
         if (arg == "--advnet-hotseat") { _hotSeat = true; _mode ??= "hotseat"; Schedule(); return true; }
         if (arg.StartsWith("--advnet-map=")) { _map = V("--advnet-map="); return true; }
         if (arg.StartsWith("--advnet-shots=")) { _shots = V("--advnet-shots="); return true; }
@@ -46,7 +48,7 @@ public partial class AdvNetDevDriver : Node
         Callable.From(() => ((SceneTree)Engine.GetMainLoop()).Root.AddChild(new AdvNetDevDriver { Name = "AdvNetDevDriver" })).CallDeferred();
     }
 
-    enum Step { Connect, Room, Wait, Playing, Battle, Back, Done }
+    enum Step { Connect, Room, Wait, WaitScreen, Playing, Battle, Back, Done }
     Step _step;
     double _t, _stepT;
     bool _attacked, _battleSeen, _hotSeatEnded;
@@ -116,7 +118,7 @@ public partial class AdvNetDevDriver : Node
             case Step.Connect when lobby.Connected:
                 if (_mode == "host")
                 {
-                    var settings = new H5.AdvNet.AdvNetSettings { Map = _map, DevStartAdjacent = _battle, GhostMode = _ghost }.ToJson();
+                    var settings = new H5.AdvNet.AdvNetSettings { Map = _map, DevStartAdjacent = _battle, GhostMode = _ghost, NetSetup = _waitScreen }.ToJson();
                     lobby.Send(new CreateRoom("advnet test", "adventure", 2, null, settings));
                     _step = Step.Room;
                 }
@@ -126,6 +128,15 @@ public partial class AdvNetDevDriver : Node
                     _step = Step.Room;
                 }
                 else if (_stepT > 1) { lobby.Send(new ListRooms()); _stepT = 0; }
+                break;
+            case Step.Room when lobby.Room is { } && _waitScreen:
+                Callable.From(() => H5Reborn.Ui.UiNavigator.Goto("advwait")).CallDeferred();
+                _step = Step.WaitScreen;
+                _stepT = 0;
+                break;
+            case Step.WaitScreen:
+                if (_stepT > 10 && _shot == 0) Shot("mpwait");
+                if (_stepT > 16 && _shot == 1) { Shot("mpwait_after"); Finish(); }
                 break;
             case Step.Room when lobby.Room is { } rs:
                 if (_mode == "join") { lobby.Send(new SetReady(true)); _step = Step.Wait; }
