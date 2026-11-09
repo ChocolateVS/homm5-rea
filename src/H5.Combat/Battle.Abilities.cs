@@ -264,6 +264,8 @@ public sealed partial class Battle
         {
             case AbilityTargeting.None: return null;
             case AbilityTargeting.Cell: return null;
+            case AbilityTargeting.DeadFriend when info.Id == Ab.ResurrectAllies:
+                return t == null ? "needs a target" : null;   // living or dead friends: ResurrectAlliesRefusal (sweep 13)
             case AbilityTargeting.DeadFriend:
                 return t == null || t.Alive || t.Removed || t.Kind != UnitKind.Creature ? "needs a corpse" : null;
         }
@@ -387,11 +389,10 @@ public sealed partial class Battle
                 break;
             case Ab.ResurrectAllies:
             {
-                if (t!.Side != u.Side || IsUndeadLike(t) || t.Has(Ab.Mechanical) || t.Has(Ab.Elemental)) return "cannot resurrect this stack";
-                if (!Fits(t, t.Pos)) return "the stack's place is occupied";
-                Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
+                if (ResurrectAlliesRefusal(u, t) is { } re) return re;
+                Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
                 u.AbilityUses[c.Ability] = 1;
-                Resurrect(t, 100 * u.Count);   // TODO: exact Archangel resurrection amount needs exe confirmation
+                Resurrect(t, 100 * u.Count);   // exe FUN_009789b0 case 0x9d: caster stack size (vf 0x1d8) × 100
                 break;
             }
             case Ab.Dash:

@@ -107,6 +107,8 @@ public sealed partial class Battle
         AbilityTargeting.Friend => S.Living.Where(u => Controller(u) == side && !u.IsObject && (user == null || !ab.NeedsAdjacency || AreAdjacent(user, u)) && u.Id != user?.Id).Select(u => u.Id).ToList(),
         AbilityTargeting.Enemy => S.Living.Where(u => Controller(u) != side && !u.IsObject && !u.HasEffect(H5.Combat.Fx.Invisible) && (user == null || !ab.NeedsAdjacency || AreAdjacent(user, u))).Select(u => u.Id).ToList(),
         AbilityTargeting.Any => S.Living.Where(u => !u.IsObject && u.Id != user?.Id).Select(u => u.Id).ToList(),
+        AbilityTargeting.DeadFriend when ab.Id == Ab.ResurrectAllies && user != null =>
+            S.Units.Where(u => ResurrectAlliesRefusal(user, u) == null).Select(u => u.Id).ToList(),
         AbilityTargeting.DeadFriend => S.Units.Where(u => !u.Alive && !u.Removed && u.Kind == UnitKind.Creature && (ab.Id == "CONSUME_CORPSE" || u.Side == side)).Select(u => u.Id).ToList(),
         _ => new List<int>(),
     };
