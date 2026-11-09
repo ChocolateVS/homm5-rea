@@ -163,6 +163,9 @@ public static class CampaignFlow
             return;
         }
         CampaignMenu.OpenOnStart = a != null;
+        // 00693370 (mission won, last mission of the campaign): the select-campaign submenu's message flag (+0x48,
+        // 00699b90) is set when the campaign is now completed (CCampaign vf 0x0c); the list then opens (state 0xc).
+        if (a != null && won && CampaignProfile.Current.IsCampaignCompleted(a.Campaign)) CampaignMenu.PendingCompletionMessage = true;
         host.GetTree().ChangeSceneToFile("res://scenes/MainMenu.tscn");
     }
 }

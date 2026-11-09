@@ -18,6 +18,9 @@ public static class CampaignMenu
     /// <summary>Set before switching to the main menu to land on the campaign list.</summary>
     public static bool OpenOnStart;
 
+    /// <summary>The select-campaign submenu's message flag (+0x48, set by 00699b90 from the mission-won handler 00693370).</summary>
+    public static bool PendingCompletionMessage;
+
     static readonly string[] Panels =
     {
         "Main", "SinglePlayer", "MultiPlayer", "SelectCampaign", "SelectMission", "HotSeatSubMenu", "LoadReplay",
@@ -27,6 +30,8 @@ public static class CampaignMenu
     {
         H5.Assets.Scenes.CampaignDef? current = null;
         var profile = CampaignProfile.Current;
+        // Dev (screenshots): H5_CAMPAIGN_COMPLETE_MSG=1 opens the list as after winning a campaign's last mission.
+        if (System.Environment.GetEnvironmentVariable("H5_CAMPAIGN_COMPLETE_MSG") == "1") OpenOnStart = PendingCompletionMessage = true;
 
         void ShowCampaigns()
         {
@@ -56,6 +61,16 @@ public static class CampaignMenu
             }
             UpdateSetup(menu, profile);
             ApplyVisualStates(panel);
+            // 0069a920 (submenu shown): with the message flag set, a message box with the UIGameRoot related texts
+            // SELECT_CAMPAIGN — the standard set's submenu (mode +0x4c = 0) T_NEW_CAMPAIGN_HEADER / _TEXT, the
+            // user-campaign one (mode 1) T_CAMPAIGN_COMPLETE_HEADER / _TEXT — then the flag is cleared. Only the
+            // standard set is listed here. The box itself (00677a90 / 006792d0) is taken as the common message box.
+            if (PendingCompletionMessage)
+            {
+                PendingCompletionMessage = false;
+                Options.MessageBoxes.Message(menu, UiGameRoot.RelatedText("SELECT_CAMPAIGN", "T_NEW_CAMPAIGN_HEADER")?.Trim() ?? "",
+                    UiGameRoot.RelatedText("SELECT_CAMPAIGN", "T_NEW_CAMPAIGN_TEXT")?.Trim() ?? "");
+            }
             // Dev (screenshots): `--campaign-tab=Btn_Campaign_H5A2` clicks that tab.
             if (OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--campaign-tab=")) is { } tab && Child(panel, tab[15..]) is { } tabBtn)
                 tabBtn.Activate();
