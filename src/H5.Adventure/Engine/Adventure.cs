@@ -66,6 +66,12 @@ public sealed partial class Adventure
     {
         var a = new Adventure(Db, Map, state);
         a._activeIndex = _activeIndex;
+        // The indexes and grids come from the map, not the state: the copy shares them (each is rebuilt on its own when
+        // the scripts drop it).
+        a._activeGrid = _activeGrid;
+        a._actionIndex = _actionIndex;
+        a._actionGrid = _actionGrid;
+        a._objectNames = _objectNames;
         return a;
     }
 

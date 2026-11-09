@@ -125,9 +125,19 @@ public sealed partial class Adventure
         if (name.Length > 0) RecordRumourEvent(t.Owner, e => { e.Build = name; e.BuildLevel = level; });
     }
 
+    /// <summary>The map-object names of <see cref="RumourObjectName"/> (they come from the data files), shared with simulations.</summary>
+    System.Collections.Concurrent.ConcurrentDictionary<MapObject, string>? _objectNames;
+
     string RumourObjectName(MapObject o)
     {
         if (o.Kind == ObjectKind.Town && S.Town(o.Index) is { Name.Length: > 0 } t) return t.Name;
+        var names = _objectNames ??= new(ReferenceEqualityComparer.Instance);
+        if (names.TryGetValue(o, out var known)) return known;
+        return names[o] = DataObjectName(o);
+    }
+
+    string DataObjectName(MapObject o)
+    {
         var href = (string?)o.Shared.Raw?.Element("messagesFileRef")?.Elements("Item").FirstOrDefault()?.Attribute("href");
         if (href is { Length: > 0 } && Db.ReadText(href, o.Shared.Path) is { Length: > 0 } name)
             return System.Text.RegularExpressions.Regex.Replace(name, "<[^>]*>", "").Trim();

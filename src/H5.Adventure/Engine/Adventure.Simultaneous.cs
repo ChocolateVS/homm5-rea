@@ -68,6 +68,51 @@ public sealed partial class Adventure
     /// </summary>
     public Dictionary<Tile, int> ReachableCosts(HeroState h, int limit)
     {
+        var f = Map.Floor(h.Pos.Floor);
+        if (f == null) return new Dictionary<Tile, int> { [h.Pos] = 0 };
+        if (!f.InBounds(h.Pos.X, h.Pos.Y)) return ReachableCostsSlow(h, limit);
+        // The same Dijkstra on pooled per-tile arrays (FloodScratch) with the tile tests memoised: the queue sees the same
+        // operations in the same order, and the result lists the tiles in first-reached order as the dictionary did.
+        var fs = FloodScratch.Rent(f.Width * f.Height);
+        try
+        {
+            int w = f.Width, fl = h.Pos.Floor;
+            var cost = new StepCoster(this, h);
+            int start = h.Pos.Y * w + h.Pos.X;
+            var order = new List<int> { start };
+            fs.Set(start, 0);
+            var pq = fs.Queue;
+            int seq = 0;
+            pq.Enqueue(start, (0, seq++));
+            while (pq.TryDequeue(out int ci, out var pri))
+            {
+                if (pri.Item1 > fs.Dist[ci]) continue;
+                var cur = new Tile(ci % w, ci / w, fl);
+                if (ci != start && (fs.Guarded(ci, this, cur) || !fs.Cross(ci, this, h, cur))) continue;
+                foreach (var (dx, dy) in Dirs)
+                {
+                    var nx = cur.Offset(dx, dy);
+                    if (!f.InBounds(nx.X, nx.Y)) continue;
+                    int ni = nx.Y * w + nx.X;
+                    if (!fs.Enter(ni, this, h, nx, nx)) continue;
+                    int nd = pri.Item1 + cost.Cost(cur, nx);
+                    if (nd > limit) continue;
+                    if (fs.Has(ni)) { if (fs.Dist[ni] <= nd) continue; }
+                    else order.Add(ni);
+                    fs.Set(ni, nd);
+                    pq.Enqueue(ni, (nd, seq++));
+                }
+            }
+            var dist = new Dictionary<Tile, int>(order.Count);
+            foreach (int i in order) dist.Add(new Tile(i % w, i / w, fl), fs.Dist[i]);
+            return dist;
+        }
+        finally { FloodScratch.Return(fs); }
+    }
+
+    /// <summary>The dictionary form of <see cref="ReachableCosts"/>, kept for a hero standing outside its floor.</summary>
+    Dictionary<Tile, int> ReachableCostsSlow(HeroState h, int limit)
+    {
         var dist = new Dictionary<Tile, int> { [h.Pos] = 0 };
         var f = Map.Floor(h.Pos.Floor);
         if (f == null) return dist;
