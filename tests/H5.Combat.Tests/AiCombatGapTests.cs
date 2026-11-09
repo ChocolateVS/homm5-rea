@@ -327,6 +327,39 @@ public class AiCombatGapTests(GameDataFixture f)
     }
 
     [Fact]
+    public void AGoblinUserGetsMovesNextToItsGoblins()   // FUN_008d64e0 → FUN_008d4b30 (FUN_008d03a0: family 0x75, abilities 0x72 / 0x79 / 0x7a)
+    {
+        var user = f.Db.Creatures.Values.First(c => !c.IsShooter && (c.Has("ABILITY_SWALLOW_GOBLIN") || c.Has("ABILITY_SACRIFICE_GOBLIN") || c.Has("ABILITY_GOBLIN_THROWER")));
+        List<OriginalBattleAI.Candidate> Run(string friend)
+        {
+            var s = BattleSetup.Create(f.Db,
+                new ArmySetup { Army = { new ArmySlot(user.Id, 5), new ArmySlot(friend, 10) } },
+                new ArmySetup { Army = { new ArmySlot("CREATURE_PEASANT", 10) } },
+                1, obstacles: Array.Empty<Cell>(), skipTactics: true);
+            var b = new Battle(f.Db, s);
+            var u = s.Units.First(x => x.CreatureId == user.Id);
+            u.Pos = new Cell(0, 2);
+            s.Units.First(x => x.Side == 0 && x.Id != u.Id).Pos = new Cell(0, 6);
+            s.Units.First(x => x.Side == 1).Pos = new Cell(s.Width - 1, 0);
+            b.Begin();
+            for (int i = 0; i < 50 && b.State.Active != u.Id; i++)
+            {
+                var la = b.GetLegalActions();
+                if (la == null) break;
+                b.Apply(la.IsHero ? new WaitCmd(la.Actor) { Side = b.SideToAct!.Value } : new DefendCmd(la.Actor) { Side = b.SideToAct!.Value });
+            }
+            Assert.Equal(u.Id, b.State.Active);
+            var ai = new OriginalBattleAI { HumanSides = new[] { false, false } };
+            ai.Decide(b, 0);
+            return ai.LastCandidates.ToList();
+        }
+        var withGoblins = Run("CREATURE_GOBLIN").Where(c => c.Label.StartsWith("defend goblin")).ToList();
+        Assert.NotEmpty(withGoblins);
+        Assert.All(withGoblins, c => { Assert.Equal(1, c.Turns); Assert.IsType<MoveCmd>(c.Command); });
+        Assert.DoesNotContain(Run("CREATURE_PEASANT"), c => c.Label.StartsWith("defend goblin"));
+    }
+
+    [Fact]
     public void AFlyersWalkerMapHoldsOnlyTheObstacles()   // FUN_00c52e20: stacks (FUN_00b3cf00) only for an actor that does not fly
     {
         var b = f.Duel("CREATURE_GRIFFIN", 5, "CREATURE_PEASANT", 10, 1, new Cell(0, 5), new Cell(1, 5));

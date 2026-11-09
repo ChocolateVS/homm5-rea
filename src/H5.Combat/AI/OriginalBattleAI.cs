@@ -361,6 +361,7 @@ public sealed partial class OriginalBattleAI : IBattleAI
         if (!shortCombat) GuardAndBlock();
         bool defensive = Defensive(b, side, start);
         list.AddRange(Attacks(b, u, side, la, enemies, diff, tooWeak, defensive));
+        list.AddRange(GoblinGuardMoves(b, u, side, reach));
         // FUN_008d5b90: approach records only while the strategy is not defensive (think +0x1ac).
         if (list.Count == before && la.Moves.Count > 0 && !defensive)
             list.AddRange(ApproachMoves(b, u, side, la, enemies, diff));
@@ -613,6 +614,29 @@ public sealed partial class OriginalBattleAI : IBattleAI
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// The goblin pass at the end of FUN_008d64e0 (FUN_008d4b30, records named "Defend shooter"): for every other stack of the
+    /// own army (think +8 vf 0x6c) for which FUN_008d03a0(stack, actor) holds — both have a creature interface (vf 0x6c), the
+    /// stack's family FUN_004babf0 is 0x75 CREATURE_GOBLIN and the actor has ABILITY_SACRIFICE_GOBLIN (0x72),
+    /// ABILITY_SWALLOW_GOBLIN (0x79) or ABILITY_GOBLIN_THROWER (0x7a) — FUN_008d4070 on map think +0xcc, the helper of the
+    /// shooter guard (<see cref="DefendShooterMoves"/>): a move to each ring cell around it, Turns 1. Not gated by the shooting
+    /// test or think +0x1b7. GAP-detail: FUN_008d4070 is ported as the shooter guard is (cells reachable this turn).
+    /// </summary>
+    IEnumerable<Candidate> GoblinGuardMoves(Battle b, Unit u, int side, Dictionary<Cell, int> reach)
+    {
+        if (u.IsWarMachine || !(u.Has(Ab.SacrificeGoblin) || u.Has(Ab.SwallowGoblin) || u.Has(Ab.GoblinThrower))) yield break;
+        int Cost(Cell c) => reach.TryGetValue(c, out var v) ? v : Unreachable;
+        foreach (var g in b.State.Living.Where(g => g.Id != u.Id && !g.IsObject && !g.IsWarMachine && g.Side == side && b.AiGoblinFamily(g)))
+            foreach (var (cell, cost) in SortedRing(g, u, Cost))
+            {
+                if (cost == Unreachable) continue;
+                yield return new Candidate
+                {
+                    Command = new MoveCmd(u.Id, cell) { Side = side }, Turns = 1, MovePrice = cost, Label = $"defend goblin {g.Id}",
+                };
+            }
     }
 
     /// <summary>

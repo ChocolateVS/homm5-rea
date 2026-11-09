@@ -106,6 +106,9 @@ public sealed partial class Battle
         return (dist, prev);
     }
 
+    /// <summary>FUN_004babf0(stack) == 0x75 (CREATURE_GOBLIN family), as FUN_008d03a0 tests it.</summary>
+    internal bool AiGoblinFamily(Unit o) => IsGoblinFamily(o);
+
     /// <summary>
     /// FUN_00a5c5a0(shooter, cell, size) as the AI's danger score uses it: 1.0 for a shooter that is not a creature (vf 0 ≠ 1,
     /// a war machine); otherwise the engine's range / wall penalty (<see cref="RangePenaltyFactor"/>) against
