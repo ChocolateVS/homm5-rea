@@ -94,6 +94,14 @@ public sealed class AdvNetSettings
     /// <summary>The saved human slots (map player and saved name) players choose from in the wait screen.</summary>
     public List<NetSaveSlot>? LoadSlots { get; set; }
 
+    /// <summary>
+    /// The room uses the UI/MPWait player rows (<see cref="NetGameSetup"/>): the host fills <see cref="Setup"/> when the room
+    /// is created and applies the players' change requests; the start takes the rows' choices.
+    /// </summary>
+    public bool NetSetup { get; set; }
+    /// <summary>The host's rows (one per active map player); null until the room exists.</summary>
+    public List<NetSetupRow>? Setup { get; set; }
+
     static readonly JsonSerializerOptions Json = new() { IncludeFields = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     public static AdvNetSettings From(JsonObject? o) =>

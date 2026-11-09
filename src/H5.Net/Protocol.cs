@@ -11,7 +11,7 @@ namespace H5.Net;
 
 public static class ProtocolInfo
 {
-    public const int Version = 2;
+    public const int Version = 3;
     public const int DefaultPort = 27615;
     public const int MaxFrameBytes = 8 * 1024 * 1024;
 }
@@ -39,6 +39,8 @@ public static class ProtocolInfo
 [JsonDerivedType(typeof(GameEnded), "game_ended")]
 [JsonDerivedType(typeof(Resumed), "resumed")]
 [JsonDerivedType(typeof(SetRoomSettings), "set_room_settings")]
+[JsonDerivedType(typeof(SetupRequest), "setup_request")]
+[JsonDerivedType(typeof(KickPlayer), "kick_player")]
 public abstract record Message;
 
 /// <summary>
@@ -75,6 +77,15 @@ public sealed record Chat(int FromPlayerId, string Text) : Message;
 public sealed record StartGame : Message;
 /// <summary>Host only, before the game starts: replaces the room settings (e.g. the chosen map). Clears everyone's ready flag.</summary>
 public sealed record SetRoomSettings(JsonObject Settings) : Message;
+
+/// <summary>
+/// A row arrow on the setup screen (UI/MPWait, CMPWaitChangeRequest 00711580: row, kind, direction); the room's
+/// factory (<see cref="IRoomSetupHandler"/>) applies it on the host and the new state goes out as RoomState.
+/// Kind: 1 state, 2 colour, 3 race, 4 hero, 5 bonus; Right = the "_right" arrow.
+/// </summary>
+public sealed record SetupRequest(int Row, int Kind, bool Right) : Message;
+/// <summary>Host only, before the start: removes a player from the room (the kick question kick_header / kick_text).</summary>
+public sealed record KickPlayer(int PlayerId) : Message;
 
 /// <summary>Sent to each player when the session starts; Setup is mode-specific (seed, armies, side assignment).</summary>
 public sealed record GameStarted(int YourSide, JsonNode Setup) : Message;

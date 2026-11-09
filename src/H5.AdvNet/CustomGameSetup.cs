@@ -144,6 +144,10 @@ public sealed class SetupSlot
     public bool CanBeHuman, CanBeComputer, CanClose, CanChangeBonus, ArtifactBonus, HeroSelectable;
     public int Team;
     public string Colour = "";
+    /// <summary>Network setup (UI/MPWait): the lobby player holding the row (model slot +0x24; -1 none).</summary>
+    public int Owner = -1;
+    /// <summary>Network setup: the MPWait item state (<see cref="NetSlotState"/>).</summary>
+    public NetSlotState NetState = NetSlotState.Computer;
 }
 
 /// <summary>
@@ -388,7 +392,9 @@ public sealed class CustomGameSetup
                 (a.Race, b.Race) = (b.Race, a.Race);
                 (a.Hero, b.Hero) = (b.Hero, a.Hero);
                 (a.Bonus, b.Bonus) = (b.Bonus, a.Bonus);
-                if (!HotSeat) (_stateIndex[row], _stateIndex[other]) = (_stateIndex[other], _stateIndex[row]);
+                (a.Owner, b.Owner) = (b.Owner, a.Owner);
+                (a.NetState, b.NetState) = (b.NetState, a.NetState);
+                if (!HotSeat && _stateIndex.ContainsKey(row) && _stateIndex.ContainsKey(other)) (_stateIndex[row], _stateIndex[other]) = (_stateIndex[other], _stateIndex[row]);
                 foreach (var x in new[] { a, b }) Revalidate(x);
                 break;
             }
@@ -428,7 +434,7 @@ public sealed class CustomGameSetup
         }
     }
 
-    void Revalidate(SetupSlot s)
+    internal void Revalidate(SetupSlot s)
     {
         if (s.Race != null && !s.Races.Contains(s.Race)) s.Race = null;
         if (s.Races.Count == 1) s.Race = s.Races[0];

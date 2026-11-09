@@ -90,6 +90,9 @@ public static class NetSaveLoads
     {
         var s = AdvNetSettings.From(save.Settings);
         s.Load = id;
+        // A reload fills the wait screen from the saved slots (00754350), not from new setup rows.
+        s.NetSetup = false;
+        s.Setup = null;
         s.LoadSlots = save.Humans.Select(h => new NetSaveSlot { MapPlayer = h.MapPlayer, Name = h.Name }).ToList();
         return s.ToJson();
     }

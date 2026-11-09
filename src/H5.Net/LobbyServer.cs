@@ -190,7 +190,28 @@ public sealed class LobbyServer : IAsyncDisposable
             case JoinRoom jr: JoinRoomFor(p, jr); break;
             case LeaveRoom: LeaveCurrentRoom(p); break;
             case SetReady sr when p.Room is { Session: null } r:
+                if (r.Factory is IRoomSetupHandler rh && rh.HasSetup(r.Settings))
+                {
+                    // Setup rooms: ready is the row's state (MPWait 0 / 3); the flag follows it.
+                    if (rh.Ready(r.Settings, p.Id, sr.Ready) is { } rs) r.Settings = rs;
+                    else break;
+                }
                 p.Ready = sr.Ready; BroadcastRoom(r); break;
+            case SetupRequest req when p.Room is { Session: null } r && r.Factory is IRoomSetupHandler sh && sh.HasSetup(r.Settings):
+                if (sh.Request(r.Settings, p.Id, r.Host!.Id, req) is { } ns)
+                {
+                    r.Settings = ns;
+                    SyncReady(r, sh);
+                    BroadcastRoom(r);
+                }
+                break;
+            case KickPlayer kick when p.Room is { Session: null } r && r.Host == p && kick.PlayerId != p.Id:
+                if (r.Players.FirstOrDefault(q => q.Id == kick.PlayerId) is { } target)
+                {
+                    target.Send(new ErrorMsg("kicked", target.Name));
+                    LeaveCurrentRoom(target);
+                }
+                break;
             case SetPlayerOptions so when p.Room is { Session: null } r:
                 if (r.Factory.ValidatePlayerOptions(so.Options) is { } err) { p.Send(new ErrorMsg("options", err)); break; }
                 p.Options = so.Options; p.Ready = false; BroadcastRoom(r); break;
@@ -248,8 +269,15 @@ public sealed class LobbyServer : IAsyncDisposable
         LeaveCurrentRoom(p);
         var max = Math.Clamp(cr.MaxPlayers, factory.MinPlayers, factory.MaxPlayers);
         var name = string.IsNullOrWhiteSpace(cr.Name) ? $"{p.Name}'s game" : cr.Name.Trim();
+        var settings = cr.Settings;
+        if (factory is IRoomSetupHandler sh)
+        {
+            try { settings = sh.Created(settings, p.Id, p.Name) ?? settings; }
+            catch (Exception e) when (e is InvalidOperationException or FileNotFoundException)
+            { p.Send(new ErrorMsg("settings", e.Message)); return; }
+        }
         var room = new Room(_nextRoomId++, name[..Math.Min(name.Length, 48)], factory, max,
-            string.IsNullOrEmpty(cr.Password) ? null : cr.Password, cr.Settings);
+            string.IsNullOrEmpty(cr.Password) ? null : cr.Password, settings);
         _rooms[room.Id] = room;
         AddToRoom(p, room);
         _log($"room {room.Id} '{room.Name}' ({factory.Mode}) created by {p.Id}");
@@ -261,6 +289,12 @@ public sealed class LobbyServer : IAsyncDisposable
         if (room.Session != null) { p.Send(new ErrorMsg("room", "That game has already started.")); return; }
         if (room.Players.Count >= room.MaxPlayers) { p.Send(new ErrorMsg("room", "That game is full.")); return; }
         if (room.Password != null && room.Password != jr.Password) { p.Send(new ErrorMsg("password", "Wrong password.")); return; }
+        if (room.Factory is IRoomSetupHandler sh)
+        {
+            var (settings, error) = sh.Joining(room.Settings, p.Id, p.Name, room.Players.Select(q => q.Name).ToList());
+            if (error != null) { p.Send(error); return; }
+            if (settings != null) room.Settings = settings;
+        }
         LeaveCurrentRoom(p);
         AddToRoom(p, room);
     }
@@ -279,6 +313,7 @@ public sealed class LobbyServer : IAsyncDisposable
         if (p.Room is not { } room) return;
         room.Players.Remove(p);
         p.Room = null;
+        if (room.Session == null && room.Factory is IRoomSetupHandler sh && sh.Left(room.Settings, p.Id) is { } left) room.Settings = left;
         if (room.Session != null && room.SideOf.TryGetValue(p.Id, out var side))
         {
             var ended = room.Session.OnSideLeft(side);
@@ -292,7 +327,11 @@ public sealed class LobbyServer : IAsyncDisposable
     {
         var host = room.Host!;
         if (room.Players.Count < room.Factory.MinPlayers) { host.Send(new ErrorMsg("start", "Not enough players.")); return; }
-        if (room.Players.Any(q => q != host && !q.Ready)) { host.Send(new ErrorMsg("start", "Not everyone is ready.")); return; }
+        if (room.Factory is IRoomSetupHandler sh && sh.HasSetup(room.Settings))
+        {
+            if (sh.CanStart(room.Settings) is { } why) { host.Send(new ErrorMsg("start", why)); return; }
+        }
+        else if (room.Players.Any(q => q != host && !q.Ready)) { host.Send(new ErrorMsg("start", "Not everyone is ready.")); return; }
         if (room.Players.Any(q => q.DroppedAt != null)) { host.Send(new ErrorMsg("start", "A player is reconnecting.")); return; }
 
         var seed = BitConverter.ToUInt64(RandomNumberGenerator.GetBytes(8));
@@ -383,6 +422,12 @@ public sealed class LobbyServer : IAsyncDisposable
         foreach (var q in room.Players.Where(q => q.DroppedAt != null).ToList()) Forget(q);
         if (room.Players.Count > 0) BroadcastRoom(room);
         else _rooms.Remove(room.Id);
+    }
+
+    /// <summary>Setup rooms: each player's ready flag mirrors its row (a request may toggle it).</summary>
+    void SyncReady(Room room, IRoomSetupHandler sh)
+    {
+        foreach (var q in room.Players) q.Ready = sh.IsReady(room.Settings, q.Id);
     }
 
     void BroadcastRoom(Room room)

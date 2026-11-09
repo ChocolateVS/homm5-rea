@@ -14,7 +14,7 @@ using NetGameEnded = H5.Net.GameEnded;
 namespace H5.AdvNet;
 
 /// <summary>Lobby mode "adventure": networked adventure-map games (stock, user and random maps).</summary>
-public sealed class AdventureSessionFactory(AdvMapSource maps) : IGameSessionFactory, IRoomSettingsValidator
+public sealed partial class AdventureSessionFactory(AdvMapSource maps) : IGameSessionFactory, IRoomSettingsValidator
 {
     public string Mode => "adventure";
     public int MinPlayers => 1;
@@ -179,6 +179,20 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
         if (_set.Rmg is { Seed: 0 } r) r.Seed = (int)(seed % int.MaxValue) | 1;
         _lm = _src.Load(_set);
         var map = _lm.Map;
+        if (_set.NetSetup && _set.Setup != null)
+        {
+            // UI/MPWait rows: each side plays the row it holds, with the rows' faction / hero / bonus (00c9fa80).
+            var rows = NetGameSetup.FromRows(map, _lm.Db, _set.Setup);
+            _sideName = playersBySide.Select(p => p.Name).ToArray();
+            _sideMapPlayer = playersBySide.Select(p => rows.RowOf(p.PlayerId)?.MapPlayer ?? -1).ToArray();
+            if (_sideMapPlayer.Any(mp => mp < 0)) throw new InvalidOperationException("A player has no slot.");
+            var rowSetup = rows.ToGameSetup(seed, _set.Difficulty);
+            foreach (var p in rowSetup.Players.Where(p => p.Human)) _humanPlayers.Add(p.MapPlayer);
+            var (rowGame, rowOpening) = H5.Adventure.Engine.Adventure.NewGame(_lm.Db, map, rowSetup);
+            _g = rowGame;
+            StartScripts();
+            return Begin(rowOpening, null);
+        }
 
         // Seats: each side takes its chosen map player if free and human-capable, else the next free one.
         var free = map.Players.Where(p => p.Active && p.CanBeHuman).Select(p => p.Index).ToList();

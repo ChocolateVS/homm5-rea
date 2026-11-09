@@ -51,3 +51,23 @@ public interface IGameSessionFactory
     string? ValidatePlayerOptions(JsonObject? options);
     IGameSession Create();
 }
+
+/// <summary>
+/// Optional: factories whose rooms keep a host-authoritative setup (player rows) in the room settings. Each call gets
+/// the current settings and returns the new ones, or null when nothing changed / the room has no setup.
+/// </summary>
+public interface IRoomSetupHandler
+{
+    /// <summary>True when the room's settings carry a setup (the start then uses <see cref="CanStart"/> instead of the ready flags).</summary>
+    bool HasSetup(JsonObject? settings);
+    /// <summary>The room was created by <paramref name="hostId"/>; may throw InvalidOperationException to refuse it.</summary>
+    JsonObject? Created(JsonObject? settings, int hostId, string hostName);
+    /// <summary>A player asks to join: the new settings, or an error message that refuses the join.</summary>
+    (JsonObject? Settings, ErrorMsg? Error) Joining(JsonObject? settings, int playerId, string name, IReadOnlyList<string> inRoom);
+    JsonObject? Left(JsonObject? settings, int playerId);
+    JsonObject? Ready(JsonObject? settings, int playerId, bool ready);
+    bool IsReady(JsonObject? settings, int playerId);
+    JsonObject? Request(JsonObject? settings, int playerId, int hostId, SetupRequest request);
+    /// <summary>Null when the game may start, else the reason.</summary>
+    string? CanStart(JsonObject? settings);
+}
