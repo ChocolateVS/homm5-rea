@@ -30,7 +30,9 @@ Per-decision ledger with addresses and status: `docs/rules/AUDIT_AI.md`, section
 
 * **Think loop** FUN_008d6a70 ("CombatAI start think", "CombatAI move by %f sec. lookAheadTime: %d, commands tried: %d"):
   generate candidates (FUN_008d6940) → evaluate (FUN_008d5eb0 without look-ahead, FUN_008d10e0 with) → choose (FUN_008d1cb0).
-  The think object is built by FUN_008d27a0 from CCombatAI's think vf 00c97930; no candidate cap. **exact structure**
+  The think object is built by FUN_008d27a0 from CCombatAI's think vf 00c97930; no candidate cap. Look-ahead only when
+  lookAheadTime (think +0x20) = round(unit vf 0x174 · console var combat_ai_lookahead, DAT_00ff699c, default 0) is not 0:
+  never in normal play, not ported. **exact structure**
 * **Think level and difficulty row**: think +0x18 = 4, then FUN_008d0840: human side → 5, computer side →
   FUN_004f66c0(engine difficulty: 0, 1 → 0; 2 → 4; 3 → 5; 4 → 6). Row getter FUN_00a2f0d0: level ≤ 3 → DifficultyNormal,
   ≥ 4 → DifficultyHeroic (Easy and Hard rows are never read). **exact** (the engine difficulty's source field CCombat+0x94 is
@@ -66,9 +68,13 @@ Per-decision ledger with addresses and status: `docs/rules/AUDIT_AI.md`, section
   0x00bfaf5d..0x00bfaf8a). **exact**
 * **Mode** FUN_00a2f4d0 (from FUN_00a30460): ratio = our power / enemy power; kamikaze below
   clamp(KamikazeModeTreshold, 0, 1000), power saving above clamp(PowerSavingTreshold, 0, 1000). **exact**
-* **Rune purchase** FUN_008d0960: buy a rune when cost · priceScale < MaxRuneMoneyEstimate,
-  priceScale piecewise in the power ratio (0.5 below 0.8; 7.5r−5.5 below 2; 6r−4 below 4; else 20). Not ported
-  (runes are cast through the normal spell candidates).
+* **Rune purchase** FUN_008d0960 (rune candidates of FUN_008d30e0): refused when wood / ore is paid and < 15 would stay in
+  the in-combat resources (army +0x84); bought when every paid resource is > 49 in the player's purse, else when
+  priceScale · Σ cost · money value (army vf 0x140 = FUN_004db230, 0.0 without a player) < MaxRuneMoneyEstimate,
+  priceScale piecewise in the power ratio (0.5 below 0.8; 7.5r−5.5 below 2; 6r−4 below 4; else 20). **exact**
+  (`BuysRune`; the money values are not passed in yet: 0.0)
+* **Tactics**: an AI army is auto-placed (FUN_0085a190) and its tactics phase ended at once (army vf 0x44 = FUN_004d95b0
+  from FUN_004d9520); the AI itself places nothing. **exact**
 * **Strategy flags** FUN_00a2fd40 ("Ranged advantage", "Our: Shooters part = %f", "Strategy: %s %s"): the defensive flag
   (think +0x1ac) and the spread/large flags from the Autoplacement tunables. Not ported in the think; the battle-start
   placement is ported separately (`ExeAutoPlacement`).

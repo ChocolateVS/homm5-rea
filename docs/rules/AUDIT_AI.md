@@ -14,11 +14,11 @@ occur in our setup.
 
 | Status | Count |
 |---|---|
-| FIXED | 47 |
-| MATCH | 12 |
-| GAP | 26 (10 of them combat AI) |
+| FIXED | 53 |
+| MATCH | 13 |
+| GAP | 18 (3 of them combat AI) |
 | UNVERIFIED | 3 |
-| N/A | 2 |
+| N/A | 3 |
 
 Tests: `tests/H5.Adventure.Tests/AiAuditTests.cs` (A), `OriginalAdventureAiTests.cs` (O), `AiDirectiveTests.cs` (D),
 `AiSimulationTests.cs` (S), `AiPart4Tests.cs` (P4), `AiPart5Tests.cs` (P5); combat side `tests/H5.Combat.Tests/AiRetreatTests.cs` (C).
@@ -129,7 +129,7 @@ exe instead runs the real world in simulation mode (player vf 0x13c(1)) and roll
 | Area | Status | Exe | Original | Ours / evidence |
 |---|---|---|---|---|
 | Start resources per difficulty | UNVERIFIED | StartHuman/ComputerResources (DefaultStats) | — | `Adventure.Setup.cs` (reader not traced in this audit) |
-| Combat AI difficulty | GAP | CCombatAI +0x1ac / +0x1b4 / +0x1b7 from AI/Combat/Difficulty* | per-difficulty switches and spell level | every `OriginalBattleAI` (adventure quick combat, sessions, net) runs with `AiDifficulty.Normal`; the exe's row choice for combat is not traced |
+| Combat AI difficulty | FIXED | think level FUN_008d0840 (think +0x18 = 4 from FUN_008d27a0), FUN_004f66c0, row getter FUN_00a2f0d0 | human side → level 5; computer side → engine difficulty 0, 1 → 0; 2 → 4; 3 → 5; 4 → 6; level ≤ 3 → DifficultyNormal, ≥ 4 → DifficultyHeroic (the Easy / Hard rows are never read) | `OriginalBattleAI.ExeThinkLevel` / `ExeRow`, set per battle by `For(game difficulty, human sides)` in quick combat (`QuickCombat.Resolve`) and the adventure combat screen (was: always Normal). X: `ThinkLevelAndRowFollowTheExe`, `DecisionsUseTheRowOfTheGameDifficultyAndSide`. GAP-details: `AdventureNetSession` hands its shared `OriginalBattleAI` to `NetBattle` without `For` (script difficulty 1 there); the engine difficulty's source CCombat+0x94 (combat vf 0x38) and the combat vf 0x110 levels (1 → 3, 2 → 1) are not modelled |
 | EnableHeroAI | GAP | see "AI-disabled hero" | — | — |
 | MoveHero on an AI hero | GAP | 005cef50 | sets an AI move target | moves at once (SCRIPTS.md) |
 | DenyAIHeroesFlee | MATCH | 005e2760, 00c9741e | — | see "AI flee / surrender decision" |
@@ -137,21 +137,22 @@ exe instead runs the real world in simulation mode (player vf 0x13c(1)) and roll
 | DoNotGiveTurnToPlayerAIIfNoTownsAndActiveHeroes | MATCH | 0098e410 | — | `GetsTurn` (D) |
 | Determinism | N/A | — | the exe AI is single-machine | private RNG per day/player/hero; O: `PlaysDeterministicallyWithoutStalling` |
 
-## Combat AI (high level): behaviour not from the exe
+## Combat AI (high level)
 
 The combat AI (`OriginalBattleAI`, `CombatValue`) follows the exe structure documented in `AI.md` (think loop
-008d6a70, comparator 008d0030, combat value 00bfc2a0, compare 00bfae20, mode 00a2f4d0). Parts that are ours:
+008d6a70, comparator 008d0030, combat value 00bfc2a0, compare 00bfae20, mode 00a2f4d0). Tests in `tests/H5.Combat.Tests`:
+`OriginalAiExeTests.cs` (X), `AiCombatGapTests.cs` (G), `AiRetreatTests.cs` (C).
 
 | Item | Status | Exe | Notes |
 |---|---|---|---|
-| Candidate cap `MaxCandidates` (96; 24 for adventure quick combat) | GAP | 008d6940 | no cap known in the exe; ours truncates the generated list |
-| Approach moves (closest reachable cell per enemy, Turns = rounds to strike range) | GAP | 008d5b90, 00c52cc0 | reconstructed; the whole-path costs are now the exe's walker search without a budget (`Battle.MoveSearch(u, -1)`: steps 2 / 3, budget 2 × speed per turn, flyers 2·max + min), the same scale as the move reach (was 100 / 141 octile with a corner rule; test `MovementExeTests.AiWholePathMatchesTheMoveSearch`); the planner 00c53f60 / 00c540c0 (turn count, stop cell) stays reconstructed |
-| UseDefendShootersMoves / UseBlockEnemyMoves cell choice | GAP | 008d6940 generators | reconstructed (cell next to a threatened friendly shooter / an enemy shooter) |
-| Area-spell centres between enemy pairs | GAP | 008d61b0 | reconstructed (CenterAreaSpellsOnCreatureOnly honoured) |
-| Shooter penalty share, luck/morale bonus (10 %/point, ≤ 50 %), hero strike potential (mean over targets) | GAP | 00bfb950, 00bfba50 | approximations; value slots [0], [2], [16] are 0 |
-| Health compare rule (compare type 2 vs +0x98) | GAP | 008d1cb0 | not used |
-| Rune purchase (MaxRuneMoneyEstimate) | GAP | 008d0960 | not ported |
-| Tactics autoplacement | GAP | 00a2fd40 | not ported: tactics end at once with the default placement |
-| Look-ahead search | GAP | 008d10e0 | not ported (lookAheadTime 0 in normal play) |
+| Candidate cap | FIXED | 008d6a70 → 008d6940 → 008d5eb0 → 008d1cb0 | the think evaluates every generated record (vector at think +0x2c / +0x30, "commands tried" +0x1cc); `OriginalBattleAI` has no cap (was: `MaxCandidates` 96 / 24 truncating the list; a cap is left only in the stand-in `GreedyBattleAI`) |
+| Approach moves (closest reachable cell per enemy, Turns = rounds to strike range) | GAP | 008d5b90, 00c52cc0 | reconstructed; the whole-path costs are now the exe's walker search without a budget (`Battle.MoveSearch(u, -1)`: steps 2 / 3, budget 2 × speed per turn, flyers 2·max + min), the same scale as the move reach (was 100 / 141 octile with a corner rule; test `MovementExeTests.AiWholePathMatchesTheMoveSearch`); the planner 00c53f60 / 00c540c0 (turn count, stop cell; its path search 00c536f0 and the strike check 00a63020 inside) stays reconstructed. Decoded, not ported: 008d5b90 adds approach records only when the strategy's defensive flag (think +0x1ac, set by 00a2fd40) is clear, and with think +0x1b8 (siege) and 00af3cc0 false it runs the siege approach 008d4610 instead |
+| UseDefendShootersMoves / UseBlockEnemyMoves cell choice | GAP | 008d64e0, 008d58c0 → 008d4070 (cells 00b3f2f0 = the ring 00b3d010 around the shooter for the mover's size), 008d4500 → 008d3c40, 008a16b0, 00b3e1c0 | ported: both only while the enemy out-shoots us (00bf9eb0); defend = every reachable ring cell of each other own shooter without ability 2 (Turns 1); block = the ring cells of each enemy shooter reachable this turn (first only with ConsiderOnlyShortestPathToEnemy); X: `RingCellsFollowTheExeOrder`. Decoded, not ported: the gate think +0x1b7 == 0 and acting stack vf 0x58 false; block only when the enemy army vf 0x1a0 ≠ 0, each shooter filtered by 00b3e1c0 (→ 00b3de90 on its cell) when think +0x1bc; the extra "Defend shooter" record (think +0x1bd and not 008a16b0: command class 00e17db8 for the actor with think +0x1d0, Turns 1) |
+| Area-spell centres between enemy pairs | FIXED | 008d61b0, 008d12a0, 008d6ce0 | every field cell as centre; the hit stacks split into enemy / own sets, centres without enemies dropped, only undominated centres kept (a subset of the enemies with a superset of the own stacks is dominated; equal sets keep the first); CenterAreaSpellsOnCreatureOnly (except Frost Ring) and spells without a centre search use the single-target generator 008d3380 (`SpellCells`, was: centres between enemy pairs). X: `AreaCentresKeepOnlyUndominatedCells` |
+| Shooter penalty share, luck/morale bonus (10 %/point, ≤ 50 %), hero strike potential (mean over targets) | GAP | 00bfbe50, 00bfba50, 00bfb880, 00bfa280, 00bfb950, 00bfb4b0, 00bfa360, 00bfa610, 004b23b0 | approximations; value slots [0], [2], [16] are 0. Decoded, not ported: per stack (00bfba50) [0] += the vf 0x84 object's vf 0xc; expected damage 00bfb880 = round(00bfa280 · round((min + max) · count · 0.5)), × the think record 00a314c0(unit) +4 when value +0x90 is set; 00bfa280 = 0.0 for a walking non-shooter that the contact matrix gives no enemy contact (004b1770 = 0, 004b1810 > 0) with ≥ 2 stacks, else 1.0; shooters × (2 − f), f = 00bfb950 (damage share of enemy non-shooters in contact, 004b1660); the bonus factor 00bfb4b0 (morale / luck vf 0x1ac / 0x1b0, initiative vf 0x1bc clamped to 30, abilities 1, 2, 4, 0x11, 0x22, mana vf 0x234 / 0x238, hero attack / defence 004bab70 / 004bab80, 00bfb3d0, × 1.1 for vf 0x1e4, clamped to [0, 13]) is not the luck/morale formula used here; [2] += 00bfa360(10, 0) (best castable damage spell) for walkers and flyers; the health slot from vf 0x1dc with abilities 0x28 / 0x22 / 0x1d / 0x13d and 00a5b780; hero part [1] = 0085b4a0 / clamp(round(00af1c00 / 00a2d700 + 1), 1, 2), [5] × (1 + 0.05 · (hero vf 0x244 + vf 0x40)), [16] = 00bfa610. The contact matrix 004b23b0 (floods 004b1b50 / 004b1ff0 / 004b1e20 for sizes 1 and 2, adjacency 004b18f0 → 00b3d3f0) is not decoded to the end |
+| Health compare rule (compare type 2 vs +0x98) | FIXED | 008d1cb0 | type 1 dropped when the start value beats the record (00bfae20); type 2 also when own HP (record +0x74 = slot [6] of our half) is below the start's (think +0x98) (`Excluded`; was: not used). X: `ExclusionDropsOnlyWhatTheStartBeats`. GAP-details: the mana-limit exclusion (spell record +0xa8 < think +0x1b0, limit FUN_00a2f280 from 00a30460: 0 when our damage 00bfa1b0 is below the enemy health, else mana × (1 − health / damage) up to 10× the health) is not ported; the exe shuffles the survivors with the combat RNG before choosing (ties) |
+| Rune purchase (MaxRuneMoneyEstimate) | FIXED | 008d30e0 (rune test 00a345b0, cost 00419ad0(caster, 0)), 008d0960, 009d0ad0, army vf 0x138 = 004ddf50 (+0x84), vf 0x140 = 004db230, player vf 0xd8 | r = own / enemy power (00bf9b80 on the start value); refused when wood / ore is paid and fewer than 15 would stay in the in-combat resources; bought when every paid resource is above 49 in the player's purse, else when scale · Σ cost · money value < MaxRuneMoneyEstimate (scale 0.5 / 7.5r − 5.5 / 6r − 4 / 20 split at 0.8, 2, 4). `OriginalBattleAI.BuysRune` / `RunePurchase` gate the rune candidates (was: always generated). G: `RunePurchaseFollowsTheExeGate`. GAP-details: the money values (004db230: 0.0 each, or the owner's AI money values 00a31e50 / 00a325b0 when the side has a player outside a simulation) come from `OriginalBattleAI.RuneMoneyValues`, which no caller fills yet (0.0, the exe's no-player default); the exe rune is the creature's own non-aimed spell, ours the hero's cast on a stack |
+| Tactics autoplacement | MATCH | 004d9520 (begin tactics) → army vf 0x44 = 004d95b0, 0085a190, army vf 0xd0 = 004d9400; CCombatAI vtable 00e91d38; CEndTactic 0054e920 (only caller 00541fa0, the combat screen) | an army that is simulated (combat vf 0x108), has no player or a computer player (vf 0x18c), or whose army +0x20 vf 0x30 ≠ 0, is auto-placed by 0085a190 when its tactics phase starts and ends the phase at once; the AI never places stacks itself. Ours: the battle-start placement is `ExeAutoPlacement` (0085a190) and `Decide` ends tactics at once. G: `AnAiArmyEndsItsTacticsAtOnce`. GAP-details: 0085a190's flag argument and the army +0x20 vf 0x30 test are not decoded; the placement is not re-run at the tactics start (same inputs) |
+| Look-ahead search | N/A | 008d10e0, 008d27a0 (think +0x20 = round(unit vf 0x174 · DAT_00ff699c)), console variable `combat_ai_lookahead` (DAT_00ff699c, registered at 008d761f, static 0) | runs only when the console variable is set (no stock config sets it); not ported |
 | Flee / surrender | FIXED | 00c972d0 | see "AI flee / surrender decision" (retreat only; rule 1 GAP-detail) |
-| Difficulty | GAP | — | always Normal (see above) |
+| Difficulty | FIXED | 008d0840, 004f66c0, 00a2f0d0 | see "Combat AI difficulty" |

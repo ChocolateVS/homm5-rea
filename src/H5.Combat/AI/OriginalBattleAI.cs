@@ -12,7 +12,8 @@ namespace H5.Combat.AI;
 ///    better combat value, non-spell over spell, cheaper move; and defends when nothing survives
 ///    ("End of choose. Chose defend.").
 /// Every generated candidate is evaluated: the exe has no candidate cap. Look-ahead search
-/// (lookAheadTime &gt; 0, FUN_008d10e0) is not used for normal AI turns and is not ported. All randomness
+/// (FUN_008d10e0) runs only when lookAheadTime = round(unit vf 0x174 · combat_ai_lookahead) is not 0 (think +0x20,
+/// FUN_008d27a0); the console variable (DAT_00ff699c, registered at 008d761f) is 0 by default, so it is not ported. All randomness
 /// comes from simulations on cloned states, so decisions are deterministic (the exe shuffles the survivors
 /// with the combat RNG before choosing, which only matters for exact ties; ours keep generation order).
 /// Ledger: docs/rules/AUDIT_AI.md, "Combat AI".
@@ -34,9 +35,20 @@ public sealed partial class OriginalBattleAI : IBattleAI
 
     CombatAiStats? _stats;
 
+    /// <summary>
+    /// Per side, the owner's money estimations (combat army vf 0x140 = FUN_004db230: 7 doubles, 0.0 each unless the
+    /// side has a player and the combat is not a simulation, then the AI money values FUN_00a31e50 / FUN_00a325b0) used by
+    /// the rune purchase test <see cref="BuysRune"/>. Null (or a null side): the exe's 0.0 default.
+    /// </summary>
+    public double[]?[]? RuneMoneyValues { get; init; }
+
     /// <summary>A copy for one battle: game difficulty (script scale) and which sides are human.</summary>
-    public OriginalBattleAI For(int gameDifficulty, bool[]? humanSides) =>
-        new() { GameDifficulty = gameDifficulty, HumanSides = humanSides, RowOverride = RowOverride, Retreats = Retreats, _stats = _stats };
+    public OriginalBattleAI For(int gameDifficulty, bool[]? humanSides, double[]?[]? runeMoneyValues = null) =>
+        new()
+        {
+            GameDifficulty = gameDifficulty, HumanSides = humanSides, RowOverride = RowOverride, Retreats = Retreats, _stats = _stats,
+            RuneMoneyValues = runeMoneyValues ?? RuneMoneyValues,
+        };
 
     public sealed class Candidate
     {
@@ -64,6 +76,8 @@ public sealed partial class OriginalBattleAI : IBattleAI
     {
         _stats ??= CombatAiStats.Load(b.Db);
         var s = b.State;
+        // An AI army's tactics phase (004d9520 → army vf 0x44 = 004d95b0): auto placement FUN_0085a190 (the battle-start
+        // placement, ExeAutoPlacement), then the phase is ended at once (army vf 0xd0); the AI places nothing itself.
         if (s.Phase == BattlePhase.Tactics) return new EndTacticsCmd { Side = side };
         var la = b.GetLegalActions();
         if (la == null || b.SideToAct != side) return new WaitCmd(Actor.Hero(side)) { Side = side };
@@ -228,14 +242,19 @@ public sealed partial class OriginalBattleAI : IBattleAI
             var def = b.Db.Spell(sp.Spell);
             if (def == null || def.Level > diff.MaxSpellLevelToCast) continue;
             if (tooWeak && !AllowedWhenTooWeak(b, sp.Spell, hero)) continue;
+            bool rune = def.School == "MAGIC_SCHOOL_RUNIC" && hero != null;
             switch (sp.Targeting)
             {
                 case Battle.SpellTargeting.None:
+                    if (rune && !RunePurchase(b, hero!, def, null, side, start)) break;
                     list.Add(Spell(b, new CastSpellCmd(la.Actor, sp.Spell) { Side = side }, sp.Spell, Array.Empty<Unit>(), sp.Spell));
                     break;
                 case Battle.SpellTargeting.Unit:
                     foreach (var t in sp.Targets)
+                    {
+                        if (rune && !RunePurchase(b, hero!, def, t, side, start)) continue;
                         list.Add(Spell(b, new CastSpellCmd(la.Actor, sp.Spell, t) { Side = side }, sp.Spell, Hit(s, t), $"{sp.Spell}->{t}"));
+                    }
                     break;
                 case Battle.SpellTargeting.Cell:
                     foreach (var (cell, hit) in SpellCells(b, sp.Spell, side, enemies, diff))
@@ -300,6 +319,50 @@ public sealed partial class OriginalBattleAI : IBattleAI
         if (list.Count == before && la.Moves.Count > 0)
             list.AddRange(ApproachMoves(b, u, side, la, enemies, diff));
         return list;
+    }
+
+    /// <summary>
+    /// The rune purchase gate on a rune candidate (FUN_008d30e0: a rune (FUN_00a345b0) is generated only when
+    /// FUN_008d0960 accepts its cost FUN_00419ad0(caster, 0), i.e. without the Fine Rune roll). The in-combat resources
+    /// (army vf 0x138 = army +0x84) are the hero's <see cref="HeroState.Resources"/> (debited at each cast); the player's
+    /// purse (player vf 0xd8, debited after the battle) is those plus <see cref="HeroState.ResourcesSpent"/>.
+    /// A battle without modelled resources (Resources null: duels, tests) pays nothing for runes and is not gated.
+    /// GAP-detail: in the exe the rune is the creature's own non-aimed spell; ours is the hero's cast on a stack.
+    /// </summary>
+    bool RunePurchase(Battle b, HeroState h, H5.Core.Data.SpellDef def, int? target, int side, CombatValue start)
+    {
+        if (h.Resources is not { Length: 7 } have) return true;
+        var cost = b.RuneCost(h, def, target, fineRune: false);
+        var purse = new int[7];
+        for (int i = 0; i < 7; i++) purse[i] = have[i] + h.ResourcesSpent[i];
+        var money = RuneMoneyValues is { } mv && side < mv.Length ? mv[side] : null;
+        return BuysRune(start.MyPower, start.EnemyPower, cost, purse, have, money, _stats!.MaxRuneMoneyEstimate);
+    }
+
+    /// <summary>
+    /// FUN_008d0960(cost): r = own power / enemy power (FUN_00bf9b80 both ways on the start value, float division).
+    /// Refused when wood (resp. ore) is paid and the in-combat resources after paying (FUN_009d0ad0) keep fewer than 15.
+    /// Bought when every paid resource is above 49 in the player's purse; otherwise when
+    /// scale · Σ cost[i] · money[i] &lt; MaxRuneMoneyEstimate (RPGStats +0xb8c), scale = 0.5 below r = 0.8 (00e1857c),
+    /// 7.5r − 5.5 below 2, 6r − 4 below 4, else 20 (constants 00e0ab70, 00e531c4 / 00e531c0, 00e3a3a8 / 00e11c80, 00e531bc).
+    /// <paramref name="money"/> null = the 0.0 default of FUN_004db230.
+    /// </summary>
+    public static bool BuysRune(int ownPower, int enemyPower, int[] cost, int[] purse, int[] inCombat, double[]? money, int maxRuneMoneyEstimate)
+    {
+        float r = (float)ownPower / (float)enemyPower;
+        if (cost[0] > 0 && inCombat[0] - cost[0] < 15) return false;
+        if (cost[1] > 0 && inCombat[1] - cost[1] < 15) return false;
+        double value = 0;
+        bool rich = true;
+        for (int i = 0; i < 7; i++)
+        {
+            if (cost[i] <= 0) continue;
+            rich = rich && purse[i] > 49;
+            value = cost[i] * (money != null && i < money.Length ? money[i] : 0.0) + value;
+        }
+        if (rich) return true;
+        double scale = !(0.8f <= r) ? 0.5 : !(2.0f <= r) ? r * 7.5 - 5.5 : !(4.0 <= r) ? r * 6.0 - 4.0 : 20.0;
+        return scale * value < maxRuneMoneyEstimate;
     }
 
     static IReadOnlyList<Unit> Hit(BattleState s, int target) => s.Unit(target) is { } t ? new[] { t } : Array.Empty<Unit>();
