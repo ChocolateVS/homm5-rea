@@ -9,7 +9,11 @@ namespace H5Reborn.Ui.Screens;
 /// 'line_template' window (IconBack frame, 64x64 face, Selection64x64 marker),
 /// scrolled by the screen's table_slider bar like the exe (00742910 / 00742230 / 00742350): SetRange(0, 100, 10),
 /// special positions = rows − 1 (0 when that is not positive), SetIndex(top row), the bar enabled only when
-/// rows − 1 &gt; 1; the bar's index is the top row and the lines show the presets from top × columns. The local player's pick uses the stock (additive)
+/// rows − 1 &gt; 1; the bar's index is the top row and the lines show the presets from top × columns. Every row is a
+/// line window (line_%d at line height × row, 00742910: rows = ceil(presets / columns)), and the exe's window renderer
+/// does not clip children to their parent (placement 00a50560 hands the visuals only the window's own rect; the 2D quad
+/// emitter 00a47260 has no clip rect; no scissor state or SetScissorRect call), so all rows are drawn, the lower ones
+/// below the table when there are more than fit. The local player's pick uses the stock (additive)
 /// selection frame; the opponent's pick is shown with the same frame tinted red.
 /// </summary>
 public partial class PresetGridView : Control
@@ -17,7 +21,6 @@ public partial class PresetGridView : Control
     const int Columns = 8;
     readonly UiDrawable? _frame, _selection;
     readonly Vector2 _cell, _faceOffset, _faceSize;
-    readonly int _visibleRows;
     readonly UiScrollBar? _bar;
     int _scroll;
 
@@ -36,11 +39,9 @@ public partial class PresetGridView : Control
         _cell = new Vector2(icon1.Rect.X - icon0.Rect.X, icon0.Rect.H);
         _faceOffset = new Vector2(face.Rect.X - icon0.Rect.X, face.Rect.Y - icon0.Rect.Y);
         _faceSize = new Vector2(face.Rect.W, face.Rect.H);
-        _visibleRows = Math.Max(1, (int)(visibleHeight / _cell.Y));
-        Size = new Vector2(_cell.X * Columns, _cell.Y * _visibleRows);
+        Size = new Vector2(_cell.X * Columns, _cell.Y * Math.Max(1, Rows));
         MouseFilter = MouseFilterEnum.Stop;
         TextureFilter = TextureFilterEnum.Linear;
-        ClipContents = true;
         // The selection frame texture is additive (CONVERT_TRANSPARENT_ADD).
         _selectionLayer = new AdditiveLayer { DrawCallback = DrawSelection };
         AddChild(_selectionLayer);
@@ -67,7 +68,7 @@ public partial class PresetGridView : Control
         {
             if (index is not { } i) continue;
             int row = i / Columns - _scroll, col = i % Columns;
-            if (row < 0 || row >= _visibleRows) continue;
+            if (row < 0 || row >= Rows) continue;
             canvas.DrawTexture(sel, new Vector2(col * _cell.X, row * _cell.Y) + _faceOffset, tint);
         }
     }
@@ -82,7 +83,7 @@ public partial class PresetGridView : Control
         for (int i = _scroll * Columns; i < presets.Count; i++)
         {
             int row = i / Columns - _scroll, col = i % Columns;
-            if (row >= _visibleRows) break;
+            if (row >= Rows) break;
             var origin = new Vector2(col * _cell.X, row * _cell.Y);
             if (frame != null) DrawTexture(frame, origin);
             if (res.Texture(presets[i].RoundedFace ?? presets[i].LeftFace) is { } faceTex)
@@ -99,7 +100,7 @@ public partial class PresetGridView : Control
             case MouseButton.WheelDown or MouseButton.WheelUp when _bar != null:
                 _bar.Wheel(UiScrollBar.WheelNotches(mb) ?? 0);
                 break;
-            case MouseButton.WheelDown: _scroll = Math.Min(_scroll + 1, Math.Max(0, Rows - _visibleRows)); break;
+            case MouseButton.WheelDown: _scroll = Math.Min(_scroll + 1, Math.Max(0, Rows - 1)); break;
             case MouseButton.WheelUp: _scroll = Math.Max(0, _scroll - 1); break;
             case MouseButton.Left:
                 int col = (int)(mb.Position.X / _cell.X), row = (int)(mb.Position.Y / _cell.Y) + _scroll;

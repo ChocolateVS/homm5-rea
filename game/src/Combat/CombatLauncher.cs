@@ -242,5 +242,7 @@ public static class CombatLauncher
         var session = new LocalCombatSession(Game.Instance.Db, presetA, presetB, seed, new[] { 0 });
         GD.Print($"[H5] local duel {presetA} vs {presetB}, seed {seed}");
         CombatScreen.Open(session);
+        // Dev input (`--key=` / `--click=` …) relative to the battle start, as for the menu and the adventure map.
+        if (Engine.GetMainLoop() is SceneTree tree) Ui.DevArgs.ScheduleInput(tree);
     }
 }

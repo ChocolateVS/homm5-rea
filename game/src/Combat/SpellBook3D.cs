@@ -47,13 +47,12 @@ public partial class SpellBook3D : Control
     readonly List<Entry> _all;
     readonly int _mana, _maxMana;
     readonly bool _orcs;
-    /// <summary>Adventure-map book: shows the MAGIC_SCHOOL_ADVENTURE spells under the adventure tab.</summary>
-    readonly bool _adventure;
     Character _book = null!;
     MeshInstance3D? _mesh;
     Camera3D _cam = null!;
     SubViewport _vp = null!;
-    string _school;
+    /// <summary>The bookmark index (+0x19c): 0 Combat tab, 1 Adventure tab, 2..6 PartSpellSchools[0..4] (006867c0).</summary>
+    int _bookmark;
     int _page;
     bool _turning;
     readonly Dictionary<int, (Entry? E, StandardMaterial3D Mat)> _slots = new();
@@ -66,7 +65,6 @@ public partial class SpellBook3D : Control
         AnchorBottom = 1;
         MouseFilter = MouseFilterEnum.Stop;
         _orcs = warcries;
-        _adventure = adventure;
         _d = LoadDesc(warcries ? OrcDesc : StandardDesc);
         _asset = new ModelLoader(Game.Instance.Xdb).Load(_d.Model);
         _mana = mana;
@@ -80,8 +78,39 @@ public partial class SpellBook3D : Control
             .OrderBy(x => x.def!.Level).ThenBy(x => x.def!.Name, StringComparer.Ordinal)
             .Select(x => new Entry { Spell = x.id, Option = byId.GetValueOrDefault(x.id), Cost = byId.GetValueOrDefault(x.id)?.ManaCost ?? x.def!.ManaCost })
             .ToList();
-        _school = warcries ? "MAGIC_SCHOOL_WARCRIES" : SchoolOrder.FirstOrDefault(s => _all.Any(e => SchoolOf(e) == s)) ?? SchoolOrder[0];
+        // The opening bookmark (+0x19c when the book opens) is not traced: the adventure tab on the map, else the
+        // first school bookmark holding a spell.
+        _bookmark = adventure ? 1 : 2 + Math.Max(0, Array.FindIndex(SchoolOrder, sc => _all.Any(e => SchoolOf(e) == sc)));
     }
+
+    /// <summary>
+    /// 00684830 (the list for bookmark <paramref name="bm"/>): SPELL_DEBUG_TELEPORT (0xd0) and SPELL_TIME_SHIFT (0xf0)
+    /// never; spells outside the runic (5) and warcry (6) schools go to the Combat tab (0) unless they are adventure
+    /// spells (school 4, 00a34580) and to the Adventure tab (1) if they are; bookmark 2 = destructive (0), 3 = light (2),
+    /// 4 = dark (1), 5 = summoning (3), 6 = special (7), warcries (6) and runic (5).
+    /// </summary>
+    static bool OnBookmark(int bm, string spell)
+    {
+        if (spell is "SPELL_DEBUG_TELEPORT" or "SPELL_TIME_SHIFT") return false;
+        var school = Game.Instance.Db.Spell(spell)?.School ?? "MAGIC_SCHOOL_NONE";
+        if (school is not ("MAGIC_SCHOOL_RUNIC" or "MAGIC_SCHOOL_WARCRIES"))
+        {
+            bool adv = school == "MAGIC_SCHOOL_ADVENTURE";
+            if (bm == 0 && !adv || bm == 1 && adv) return true;
+        }
+        return bm switch
+        {
+            2 => school == "MAGIC_SCHOOL_DESTRUCTIVE",
+            3 => school == "MAGIC_SCHOOL_LIGHT",
+            4 => school == "MAGIC_SCHOOL_DARK",
+            5 => school == "MAGIC_SCHOOL_SUMMONING",
+            6 => school is "MAGIC_SCHOOL_SPECIAL" or "MAGIC_SCHOOL_WARCRIES" or "MAGIC_SCHOOL_RUNIC",
+            _ => false,
+        };
+    }
+
+    /// <summary>The book part of bookmark <paramref name="bm"/> (006867c0: Combat, Adventure, PartSpellSchools).</summary>
+    int BookmarkPart(int bm) => bm switch { 0 => _d.Combat, 1 => _d.Adventure, _ => bm - 2 < _d.Schools.Length ? _d.Schools[bm - 2] : -1 };
 
     static string SchoolOf(Entry e) => Game.Instance.Db.Spell(e.Spell)?.School ?? "";
 
@@ -217,7 +246,7 @@ public partial class SpellBook3D : Control
         return vp.GetTexture();
     }
 
-    List<Entry> SchoolSpells() => _all.Where(e => _orcs || _adventure || SchoolOf(e) == _school).ToList();
+    List<Entry> SchoolSpells() => _all.Where(e => _orcs || OnBookmark(_bookmark, e.Spell)).ToList();
 
     // H5_Game.exe 00686020 / 00686080: the index of the first shown spell (+0x190[school], reset to 0 when the school is
     // picked, 00685f60);
@@ -274,9 +303,8 @@ public partial class SpellBook3D : Control
         SetPartVisible(_d.Next, _page + 1 < PageCount);
         SetPartVisible(_d.Prev, _page > 0);
         // Selected school bookmark glows with SchoolHighlightColor.
-        for (int i = 0; i < _d.Schools.Length && i < SchoolOrder.Length; i++)
-            HighlightPart(_d.Schools[i], !_adventure && SchoolOrder[i] == _school ? _d.SchoolHighlight : null);
-        HighlightPart(_adventure ? _d.Adventure : _d.Combat, _d.SchoolHighlight);
+        for (int bm = 0; bm < 7; bm++)
+            if (BookmarkPart(bm) is >= 0 and var part) HighlightPart(part, bm == _bookmark ? _d.SchoolHighlight : null);
     }
 
     readonly Dictionary<int, Material?> _baseMaterials = new();
@@ -329,7 +357,8 @@ public partial class SpellBook3D : Control
         parts.Where(p => p >= 0).Cast<int?>().FirstOrDefault(p => ScreenRect(p!.Value) is { } r && r.HasPoint(pos));
 
     /// <summary>input_a2.cfg spellbook_screen: input_previous_page / input_next_page run the Prev / Next handlers
-    /// (H5_Game.exe 00686080 / 00686020). GAP: input_bookmark_up/down (school ±1 over the exe's 7 bookmarks).</summary>
+    /// (H5_Game.exe 00686080 / 00686020); input_bookmark_up / _down (00686160) step the bookmark index to (index + 6) mod 7 /
+    /// (index + 1) mod 7 (006860c0 / 006860e0) through 00685f60. GAP: input_tab (TAB) — handler not traced.</summary>
     public override void _UnhandledKeyInput(InputEvent e)
     {
         if (_turning || e is not InputEventKey { Pressed: true, Echo: false } k) return;
@@ -337,7 +366,27 @@ public partial class SpellBook3D : Control
         {
             if (a == "input_next_page" && _page + 1 < PageCount) { _ = Turn(+1); AcceptEvent(); return; }
             if (a == "input_previous_page" && _page > 0) { _ = Turn(-1); AcceptEvent(); return; }
+            if (!_orcs && a is "input_bookmark_up" or "input_bookmark_down")
+            {
+                SelectBookmark(a == "input_bookmark_up" ? (_bookmark + 6) % 7 : (_bookmark + 1) % 7);
+                AcceptEvent();
+                return;
+            }
         }
+    }
+
+    /// <summary>
+    /// 00685f60: another bookmark starts at its first spread and the page turns forward when it lies after the current
+    /// one, backward otherwise. The same bookmark toggles +0x246, the sort order passed to the list sort (00689140); that
+    /// comparator is not decoded, so ours keeps the order (GAP).
+    /// </summary>
+    void SelectBookmark(int bm)
+    {
+        if (bm == _bookmark) return;
+        int from = _bookmark;
+        var old = Spread(_page);
+        _bookmark = bm;
+        _ = Turn(bm > from ? +1 : -1, toPage: 0, oldSpread: old);
     }
 
     public override void _GuiInput(InputEvent e)
@@ -367,18 +416,10 @@ public partial class SpellBook3D : Control
         if (PartAt(pos, new[] { _d.Close }) != null) { Close(); return; }
         if (PartAt(pos, new[] { _d.Next }) != null && _page + 1 < PageCount) { _ = Turn(+1); return; }
         if (PartAt(pos, new[] { _d.Prev }) != null && _page > 0) { _ = Turn(-1); return; }
-        if (PartAt(pos, _d.Schools) is int tab)
+        if (!_orcs && PartAt(pos, Enumerable.Range(0, 7).Select(BookmarkPart)) is int tab)
         {
-            int i = Array.IndexOf(_d.Schools, tab);
-            if (i >= 0 && i < SchoolOrder.Length && SchoolOrder[i] != _school)
-            {
-                // 00685f60: the new school starts at its first spread and the page turns forward when its bookmark
-                // lies after the current one, backward otherwise.
-                int from = Array.IndexOf(SchoolOrder, _school);
-                var old = Spread(_page);
-                _school = SchoolOrder[i];
-                _ = Turn(i > from ? +1 : -1, toPage: 0, oldSpread: old);
-            }
+            // The MB_Button_School parts (006867c0) carry their bookmark index.
+            SelectBookmark(Enumerable.Range(0, 7).First(bm => BookmarkPart(bm) == tab));
             return;
         }
         if (PartAt(pos, _d.First) is int slotPart && _slots.TryGetValue(slotPart, out var slot) && slot.E?.Option is { } option)
