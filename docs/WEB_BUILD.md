@@ -175,6 +175,52 @@ pause a computer turn while a human fights its battle) runs inline in a browser;
 games, so that path is unused there (if it ever were: a computer player's battle against a human would be
 quick-resolved instead of fought — GAP).
 
+### Audio
+
+Browsers start Web Audio suspended until the page gets a click, key or touch. Godot resumes its context on input it
+handles; `wwwroot/h5audio.js` also tracks every `AudioContext` the page makes and resumes them on the first (and any
+later) gesture anywhere on the page, so the game is never left silent. The web build plays every audio player
+through Godot's own mixer, like the desktop (`audio/general/default_playback_type.web=0`, "Stream", set by
+`build.sh`): Godot's web default "Sample" (Web Audio buffer sources) left the music silent (smoke test: menu music
+peak level 0 with Sample, 0.16 with Stream). Intro movies (Theora `video/logo-*.ogg`) play with picture and sound.
+Without threads the mixer runs on the page's main thread, so a long synchronous step (loading a map) makes the
+sound drop out until it ends.
+
+### Multiplayer (joining from the browser)
+
+A browser cannot open TCP/UDP sockets or listen for connections, so in the browser:
+
+* **Join a desktop-hosted game on the LAN**: every desktop host (and `h5server`) serves WebSocket clients on its
+  normal game port (27615, `PortSharing`: an HTTP `GET` upgrade is a WebSocket, anything else a native client).
+  In *Multiplayer → Connect…* type the host's address (`192.168.1.20` or `192.168.1.20:27615`): the browser build
+  turns it into `ws://192.168.1.20:27615/`; a full `ws://` / `wss://` URL also works. The host needs no change
+  (allow TCP 27615 in its firewall, as for desktop players).
+* **Page served over HTTPS** (the LAN server's Caddy `tls internal`): the browser blocks `ws://` from an `https://`
+  page (mixed content). Either open the page over plain `http://` for LAN games, or let the web server proxy a
+  `wss://` path to the host and type that URL, e.g. Caddy, one route per host:
+
+  ```
+  :8160 {
+      ...
+      handle_path /h5host/* {
+          reverse_proxy 192.168.1.20:27615
+      }
+  }
+  ```
+
+  then connect to `wss://<server>:8160/h5host/` (proxy configs not tested here; the plain `ws://` join is, by
+  `smoke.mjs --only lobby`). nginx: `location /h5host/ { proxy_pass http://192.168.1.20:27615/;
+  proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; }`.
+* **Online join code**: through the master server's WebSocket bridge (`/ws/join?code=…`, `src/H5.Master`), which
+  relays to the lobby's host over UDP; the master URL from *Online server* is used (`https` → `wss`). Listing
+  online lobbies from the browser needs the master's HTTP API reachable from the page (same origin or CORS).
+  Running the master / `h5server`: [MULTIPLAYER.md](MULTIPLAYER.md).
+* **Hosting** is desktop-only (the browser says so); LAN discovery (UDP broadcast) does not exist in a browser.
+* The data check (`GameInstall.DataFingerprint`, names and sizes of the paks) now uses the picked files' real
+  sizes, so a browser and a desktop with the same install match.
+* In the browser the WebSocket connect waits up to 45 s (a long synchronous load can hold the page while the
+  socket is already open).
+
 ## Test page / flags (check future commits in the browser)
 
 The page passes `?args=` to the game exactly like `godot -- <args>` on the desktop (`OS.GetCmdlineUserArgs`),
@@ -242,17 +288,19 @@ is virtual.
 2. ~~Adventure AI turns (threads)~~ — fixed: computer turns run one per frame (see *Computer players' turns*).
 3. ~~Saves, profiles and settings do not persist~~ — fixed: `user://` persists in IndexedDB, with export / import
    (see *Saves, profiles and settings*).
-4. **Multiplayer.** No LAN discovery / direct IP / hosting in a browser. Joining via the master server needs a
-   WebSocket transport selection in the lobby UI, source-generated JSON contexts and CORS or same-origin
-   deployment of the master; WebRTC peers are not implemented (WEB_SPIKE.md, Networking).
-5. **Audio.** Godot web audio needs a user gesture before it starts (the first click/key unlocks it); not yet
-   verified by ear. Music is read whole per track from the picked file (fine), sound effects come from the paks.
-   Intro movies (Theora) untested in the browser.
-6. **Memory ceiling.** wasm32 heap max 2 GB and a 136×136 map already takes ~1.3 GB. Larger maps (XL, two floors)
-   and long sessions need texture/model eviction and transient read buffers;
-   textures stay DXT-compressed on desktop GPUs, but mobile browsers (no S3TC) would fall back to RGBA8 (4× VRAM).
-7. **Data fingerprint.** `GameInstall.DataFingerprint` sizes the placeholder files (0 bytes), so the multiplayer
-   data check differs from a desktop peer with the same install.
+4. **Multiplayer** — joining works (see *Multiplayer*): a browser joined a desktop `h5server` over `ws://` with the
+   data check passing (`smoke.mjs --only lobby`). Open: hosting and LAN discovery (impossible in a browser),
+   `https` pages need a `wss://` proxy to LAN hosts, online lobby *listing* needs the master same-origin or with
+   CORS, WebRTC peers are not implemented, and a browser cannot host network games (so computer turns of a
+   network game never run in a browser).
+5. ~~Audio~~ — fixed: unlock on any gesture, music/sounds through Godot's mixer, intro movies verified (see *Audio*).
+   Sound drops out during long synchronous loads (single thread).
+6. **Memory ceiling.** wasm32 heap max 2 GB. Decoded texture images were kept alive until the GC finalized their
+   wrappers; `Game.LoadTexture` and the adventure terrain now free them after upload: the A2M1 (136×136) heap peak
+   went from **1346 MB to 820 MB** (GC heap ~210 MB, VRAM ~390 MB). The page logs every heap growth
+   (`[H5] web: wasm heap grew to N MB`, h5data.js) next to the game's lines. Still open: model/texture eviction
+   for XL two-floor maps and long sessions; mobile browsers without S3TC would need RGBA8 textures (4× VRAM).
+7. ~~Data fingerprint~~ — fixed: `RandomAccessSources.Length` gives the picked files' real sizes.
 8. **First visit download/copy.** The OPFS copy of ~2 GB takes ~2 minutes in the background; the picked originals
    are used meanwhile. Browser storage quotas may refuse it on small disks (then the folder is asked for each visit).
 9. **Toolchain risk.** 2dog is a single-maintainer project; versions must match Godot exactly. Keep this build

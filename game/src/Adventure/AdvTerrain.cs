@@ -120,6 +120,9 @@ public static class AdvTerrain
         }
         var array = new Texture2DArray();
         array.CreateFromImages(images);
+        // Uploaded: free the decoded layer images now (not when the GC finalizes their wrappers).
+        foreach (var img in images) img.Dispose();
+        images.Clear();
         mat.SetShaderParameter("layers", array);
         mat.SetShaderParameter("layer_count", count);
         mat.SetShaderParameter("tiles_per_texture", TerrainBuilder.TilesPerTexture);
@@ -138,7 +141,8 @@ public static class AdvTerrain
                 for (int x = 0; x < vw; x++)
                     data[(y * vw + x) * 4 + c] = x < src.Width && y < src.Height ? src[x, y] : (byte)0;
             }
-            mat.SetShaderParameter($"weights{w}", ImageTexture.CreateFromImage(Image.CreateFromData(vw, vh, false, Image.Format.Rgba8, data)));
+            using var weights = Image.CreateFromData(vw, vh, false, Image.Format.Rgba8, data);
+            mat.SetShaderParameter($"weights{w}", ImageTexture.CreateFromImage(weights));
         }
         return mat;
     }

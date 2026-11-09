@@ -40,6 +40,9 @@ sed -i.bak -e 's/^renderer\/rendering_method=.*/renderer\/rendering_method="gl_c
 # Web-only autoloads (web/game/src/Web/): WebProbe observes (screen markers for the smoke test, periodic stats);
 # WebStorage keeps user:// in the browser's IndexedDB after System.IO writes too.
 printf '\n[autoload]\n\nWebProbe="*res://src/Web/WebProbe.cs"\nWebStorage="*res://src/Web/WebStorage.cs"\n' >> "$STAGE/project.godot"
+# Audio: mix every player in Godot's own mixer ("Stream", as on the desktop) instead of the web default "Sample"
+# (Web Audio buffer sources), which stayed silent for the game's music players (docs/WEB_BUILD.md, Audio).
+printf '\n[audio]\n\ngeneral/default_playback_type.web=0\n' >> "$STAGE/project.godot"
 rm -f "$STAGE/project.godot.bak"
 grep -q 'gl_compatibility' "$STAGE/project.godot" || { echo "error: could not switch project.godot to gl_compatibility" >&2; exit 1; }
 

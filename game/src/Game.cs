@@ -144,6 +144,9 @@ public partial class Game : Node
         var image = LoadDds(bytes, path);
         if (image == null) return null;
         var tex = ImageTexture.CreateFromImage(image);
+        // The texture holds its own copy (on the GPU); free the decoded image now instead of whenever the GC
+        // finalizes its small wrapper (the browser build's 2 GB wasm heap filled up with them).
+        image.Dispose();
         _textures[path] = tex;
         return tex;
     }

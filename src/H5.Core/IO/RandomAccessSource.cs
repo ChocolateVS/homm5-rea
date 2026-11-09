@@ -35,6 +35,16 @@ public static class RandomAccessSources
     public static IRandomAccessSource Open(string path) => Opener?.Invoke(path) ?? new FileRandomAccessSource(path);
 
     /// <summary>
+    /// Size of a file: the <see cref="Opener"/>'s source when it serves the path (the browser build's install files
+    /// are empty placeholders in its file system), else the file system's.
+    /// </summary>
+    public static long Length(string path)
+    {
+        if (Opener?.Invoke(path) is { } src) using (src) return src.Length;
+        return new FileInfo(path).Length;
+    }
+
+    /// <summary>
     /// Whole content of a loose file served by <see cref="Opener"/> (for engine loaders that need a buffer,
     /// e.g. music), or null when the path is an ordinary file.
     /// </summary>

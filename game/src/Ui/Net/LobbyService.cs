@@ -150,6 +150,8 @@ public partial class LobbyService : Node
     /// <summary>Hosts a game on this computer (LAN-visible) and connects to it.</summary>
     public async Task HostAsync(int port = ProtocolInfo.DefaultPort, bool publishOnline = false)
     {
+        // A browser page cannot listen for connections (no TCP/UDP server sockets): host from the desktop game.
+        if (OperatingSystem.IsBrowser()) throw new PlatformNotSupportedException("The browser version cannot host a game. Host it in the desktop game and join it from here (address or ws:// URL).");
         await DisconnectAsync();
         var install = Game.Instance.Install;
         _host = GameHost.Start(new GameHostOptions
@@ -192,6 +194,10 @@ public partial class LobbyService : Node
     public async Task ConnectAsync(string host, int port = ProtocolInfo.DefaultPort)
     {
         await DisconnectAsync();
+        // Browser: no raw TCP/UDP; every host's game port also accepts WebSocket clients (PortSharing), so a plain
+        // address becomes ws://host:port/ (docs/WEB_BUILD.md, Multiplayer).
+        if (OperatingSystem.IsBrowser() && !host.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) && !host.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
+            host = $"ws://{host}:{port}/";
         if (host.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) || host.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
         {
             var uri = new Uri(host);
@@ -216,8 +222,17 @@ public partial class LobbyService : Node
     {
         await DisconnectAsync();
         if (string.IsNullOrWhiteSpace(Settings.MasterUrl)) throw new InvalidOperationException("No online server is configured. Set one under Online server.");
-        var mc = Master();
         var normalized = JoinCodes.Normalize(code);
+        if (OperatingSystem.IsBrowser())
+        {
+            // Browser: no UDP hole punching; the master's WebSocket bridge relays to the lobby's host (WebSocketBridge /ws/join).
+            var m = MasterClient.ParseAddress(Settings.MasterUrl);
+            var ws = new UriBuilder(m) { Scheme = m.Scheme == "https" ? "wss" : "ws", Path = "/ws/join", Query = "code=" + normalized }.Uri;
+            await ConnectChannelAsync($"online game {normalized}", async ct => await WebSocketFrameChannel.ConnectAsync(ws, TimeSpan.FromSeconds(10), ct));
+            StatusChanged?.Invoke("Connected through the online relay.");
+            return;
+        }
+        var mc = Master();
         bool relayed = false;
         await ConnectChannelAsync($"online game {normalized}", async ct =>
         {

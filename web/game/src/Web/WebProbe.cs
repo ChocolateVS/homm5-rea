@@ -61,7 +61,7 @@ public partial class WebProbe : Node
         if (_sinceStats >= 10)
         {
             _sinceStats = 0;
-            GD.Print($"[H5] web: stats scene={name} fps={Engine.GetFramesPerSecond()} gcMB={GC.GetTotalMemory(false) / 1048576.0:F0} " +
+            GD.Print($"[H5] web: stats scene={name} fps={Engine.GetFramesPerSecond()} gcMB={GC.GetTotalMemory(false) / 1048576.0:F0} gcCommitMB={GC.GetGCMemoryInfo().TotalCommittedBytes / 1048576.0:F0} " +
                      $"staticMB={OS.GetStaticMemoryUsage() / 1048576.0:F0} vramMB={Performance.GetMonitor(Performance.Monitor.RenderVideoMemUsed) / 1048576.0:F0} " +
                      $"reads={BrowserFileSource.Requests} readMB={BrowserFileSource.BytesRequested / 1048576.0:F0}");
         }

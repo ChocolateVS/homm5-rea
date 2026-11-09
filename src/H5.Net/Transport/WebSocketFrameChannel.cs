@@ -36,6 +36,10 @@ public sealed class WebSocketFrameChannel : IFrameChannel
         // Browsers manage WebSocket pings themselves; setting ClientWebSocketOptions there throws
         // PlatformNotSupportedException (found by the web spike, docs/WEB_SPIKE.md).
         if (!OperatingSystem.IsBrowser()) ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+        // Browser: one thread, so a long synchronous step (loading a screen) can hold the page for many seconds while
+        // the socket is already open; give such a frame time to end before calling it unanswered (the browser has
+        // its own connect timeout for hosts that really do not answer).
+        if (OperatingSystem.IsBrowser() && timeout < TimeSpan.FromSeconds(45)) timeout = TimeSpan.FromSeconds(45);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeout);
         try { await ws.ConnectAsync(uri, cts.Token); }

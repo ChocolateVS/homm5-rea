@@ -77,6 +77,12 @@ async function run(name, page, { pick = true, query, marker, then = [], settle, 
     const f = (t) => { if (last) globalThis.h5MaxFrameGapMs = Math.max(globalThis.h5MaxFrameGapMs, t - last); last = t; requestAnimationFrame(f); };
     requestAnimationFrame(f); globalThis.h5ResetFrameGap = () => { globalThis.h5MaxFrameGapMs = 0; }; });
   await page.goto(base + query);
+  // Memory timeline: the wasm heap (linear memory, never shrinks) every 2 s, next to the game's log lines.
+  let peakMB = 0;
+  const memTimer = setInterval(() => page.evaluate(() => globalThis.h5WasmHeapBytes?.()).then((b) => {
+    const mb = b && Math.round(b / 2 ** 20);
+    if (mb && mb !== peakMB) { peakMB = Math.max(peakMB, mb); log.push(`[${stamp()}] [mem] wasm heap ${mb} MB`); }
+  }).catch(() => {}), 2000);
   if (pick) {
     await page.waitForSelector('#h5-dir', { state: 'attached', timeout: 60000 });
     await page.setInputFiles('#h5-dir', install);
@@ -85,6 +91,7 @@ async function run(name, page, { pick = true, query, marker, then = [], settle, 
   const res = await Promise.race([reached.then(() => 'ok'), new Promise((r) => setTimeout(() => r('timeout'), timeoutS * 1000))]);
   if (res === 'ok') await page.waitForTimeout(settle * 1000);
   const extra = res === 'ok' && after ? await after(page, log, stamp) : undefined;
+  clearInterval(memTimer);
   const shot = path.join(outDir, `${name}.png`);
   await page.screenshot({ path: shot });
   const fps = await page.evaluate(() => new Promise((r) => { let n = 0; const s = performance.now();
@@ -134,7 +141,7 @@ if (only.includes('audio')) {
   try {
     let ctx = await b.newContext({ viewport: { width: 1280, height: 720 } });
     let page = await ctx.newPage();
-    await run('audio', page, { query: '?nocache&audiotest&args=--skip-intro', marker: /\[H5\] web: main menu on screen/, settle: 4,
+    await run('audio', page, { query: '?nocache&audiotest&args=' + encodeURIComponent(opt('--audio-arg', '--skip-intro')), marker: /\[H5\] web: main menu on screen/, settle: 4,
       after: async (pg, log, stamp) => {
         const before = await sample(pg);
         await pg.keyboard.press('Shift');

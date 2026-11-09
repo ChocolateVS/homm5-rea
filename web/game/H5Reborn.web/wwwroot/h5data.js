@@ -39,6 +39,14 @@
   WebAssembly.instantiate = (src, imports) => origI(src, imports).then((r) => grab(imports, r));
   if (origS) WebAssembly.instantiateStreaming = (src, imports) => origS(src, imports).then((r) => grab(imports, r));
   globalThis.h5WasmHeapBytes = () => wasmMemory?.buffer.byteLength;
+  // Every growth of the wasm heap, logged in order with the game's own lines (the heap never shrinks: its size is
+  // the high-water mark the 2 GB limit applies to).
+  const origGrow = WebAssembly.Memory.prototype.grow;
+  WebAssembly.Memory.prototype.grow = function (pages) {
+    const r = origGrow.call(this, pages);
+    if (this === wasmMemory || !wasmMemory) console.log(`[H5] web: wasm heap grew to ${Math.round(this.buffer.byteLength / 2 ** 20)} MB`);
+    return r;
+  };
 
   function use(list, how) {
     if (chosen) return;

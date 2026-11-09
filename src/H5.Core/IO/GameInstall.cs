@@ -170,7 +170,7 @@ public sealed class GameInstall
     {
         var sb = new System.Text.StringBuilder();
         foreach (var p in EnumeratePaks())
-            sb.Append(Path.GetFileName(p).ToLowerInvariant()).Append(':').Append(new FileInfo(p).Length).Append(';');
+            sb.Append(Path.GetFileName(p).ToLowerInvariant()).Append(':').Append(RandomAccessSources.Length(p)).Append(';');
         var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(sb.ToString()));
         return Convert.ToHexString(hash, 0, 8);
     }
