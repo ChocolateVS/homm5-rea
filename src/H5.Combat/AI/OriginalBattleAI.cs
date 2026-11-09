@@ -357,10 +357,41 @@ public sealed partial class OriginalBattleAI : IBattleAI
             if (diff.UseBlockEnemyMoves) list.AddRange(BlockEnemyMoves(b, u, side, reach, enemies, diff));
         }
         list.AddRange(Attacks(b, u, side, la, reach, enemies, diff));
-        if (list.Count == before && la.Moves.Count > 0)
+        // FUN_008d5b90: approach records only while the strategy is not defensive (think +0x1ac).
+        if (list.Count == before && la.Moves.Count > 0 && !Defensive(b, side, start))
             list.AddRange(ApproachMoves(b, u, side, la, enemies, diff));
         return list;
     }
+
+    /// <summary>
+    /// The defensive strategy flag (think +0x1ac = settings +0x98, FUN_00a30460 → FUN_00a2fd40 with the think's nested
+    /// flag +0x1c, 0 at the top level; logged "Ranged advantage: %d" / "Strategy: defensive"). With E / O the enemy / own
+    /// halves of the start value: part = O.FUN_00bf9d30(E) / O.FUN_00bfc4a0(E), adv = O.FUN_00bf9d30(E) / E.FUN_00bf9d30(O)
+    /// (100 when the enemy's is 0); defensive = (<see cref="AllRanged"/>(own army, enemy's 00bf9d30 = 0) or (part &gt;
+    /// OurShootersMinRelativePower (RPGStats +0xbfc) and adv &gt; OurShootersMinRelativeAdvantage (+0xc00))) and not
+    /// AllRanged(enemy army, our 00bf9d30 = 0). GAP-details: the player's defensive-combat-AI flag (player vf 0x1ec, set
+    /// by CSetPlayerDefensiveCombatAI: defensive at once) is not modelled; AllRanged ignores creature spell potential.
+    /// </summary>
+    public bool Defensive(Battle b, int side, CombatValue start)
+    {
+        var st = _stats ??= CombatAiStats.Load(b.Db);
+        SideValue e = start.Enemy, o = start.My;
+        int oShoot = o.ShooterPowerWithExtras(e), eShoot = e.ShooterPowerWithExtras(o);
+        float part = (float)((double)oShoot / o.DamageMeasure(e));
+        float adv = eShoot == 0 ? 100f : (float)((double)oShoot / eShoot);
+        bool ranged = AllRanged(b, side, eShoot == 0) || part > (float)st.OurShootersMinRelativePower && adv > (float)st.OurShootersMinRelativeAdvantage;
+        return ranged && !AllRanged(b, 1 - side, oShoot == 0);
+    }
+
+    /// <summary>
+    /// FUN_00a2f710(army, flag): every stack of the army shoots (vf 0x1e0) or has a spell potential FUN_00bfa4f0 =
+    /// FUN_00bfa360(10, 0) ≥ 1, or — with the flag — has Strike and Return and No Enemy Retaliation; true for an army
+    /// without stacks. GAP-details: the spell potential is not ported (0: a pure caster does not count); war machines
+    /// are left out of the army list (army vf 0x6c not identified).
+    /// </summary>
+    internal static bool AllRanged(Battle b, int side, bool flag) =>
+        b.State.Living.Where(u => u.Side == side && !u.IsObject && !u.IsWarMachine)
+            .All(u => flag && u.Has(Ab.StrikeAndReturn) && u.Has(Ab.NoEnemyRetaliation) || b.CanShoot(u));
 
     /// <summary>
     /// The rune purchase gate on a rune candidate (FUN_008d30e0: a rune (FUN_00a345b0) is generated only when

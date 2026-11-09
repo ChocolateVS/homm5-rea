@@ -209,4 +209,44 @@ public class AiCombatGapTests(GameDataFixture f)
         var weak = Candidates(2, 60);
         Assert.DoesNotContain(weak, c => c.Label.StartsWith("guard shooter") || c.Label.StartsWith("block shooter"));
     }
+    [Fact]
+    public void ADefensiveStrategyMakesNoApproachMoves()   // FUN_00a2fd40 (settings +0x98 → think +0x1ac), FUN_008d5b90
+    {
+        (OriginalBattleAI Ai, bool Defensive) Run(int archers, int footmen, int enemyArchers)
+        {
+            var enemy = new ArmySetup { Army = { new ArmySlot("CREATURE_PEASANT", 30) } };
+            if (enemyArchers > 0) enemy.Army.Add(new ArmySlot("CREATURE_ARCHER", enemyArchers));
+            var s = BattleSetup.Create(f.Db,
+                new ArmySetup { Army = { new ArmySlot("CREATURE_FOOTMAN", footmen), new ArmySlot("CREATURE_ARCHER", archers) } },
+                enemy,
+                1, obstacles: Array.Empty<Cell>(), skipTactics: true);
+            var b = new Battle(f.Db, s);
+            var footman = s.Units.First(u => u.CreatureId == "CREATURE_FOOTMAN");
+            footman.Pos = new Cell(1, 1);
+            s.Units.First(u => u.Side == 0 && u.CreatureId == "CREATURE_ARCHER").Pos = new Cell(0, 5);
+            s.Units.First(u => u.Side == 1 && u.CreatureId == "CREATURE_PEASANT").Pos = new Cell(s.Width - 1, s.Height - 1);
+            if (s.Units.FirstOrDefault(u => u.Side == 1 && u.CreatureId == "CREATURE_ARCHER") is { } ea) ea.Pos = new Cell(s.Width - 1, 0);
+            // Our archer walled in: no guard-shooter cell can be reached, so only the approach generator could add records.
+            s.Obstacles.AddRange(new[] { new Cell(0, 4), new Cell(1, 4), new Cell(1, 5), new Cell(1, 6), new Cell(0, 6) });
+            b.Begin();
+            for (int i = 0; i < 50 && b.State.Active != footman.Id; i++)
+            {
+                var la = b.GetLegalActions();
+                if (la == null) break;
+                b.Apply(la.IsHero ? new WaitCmd(la.Actor) { Side = b.SideToAct!.Value } : new DefendCmd(la.Actor) { Side = b.SideToAct!.Value });
+            }
+            Assert.Equal(footman.Id, b.State.Active);
+            var ai = new OriginalBattleAI { HumanSides = new[] { false, false } };
+            ai.Decide(b, 0);
+            return (ai, ai.Defensive(b, 0, CombatValue.Of(b, 0)));
+        }
+        // Our archers carry the damage and the enemy has no shooting: "Strategy: defensive" → no approach records.
+        var (def, isDef) = Run(60, 2, 0);
+        Assert.True(isDef);
+        Assert.Empty(def.LastCandidates);   // nothing generated → "Chose defend"
+        // The enemy out-shoots us: attacking strategy (and no guard / block records), the footmen approach.
+        var (att, isAtt) = Run(1, 60, 20);
+        Assert.False(isAtt);
+        Assert.Contains(att.LastCandidates, c => c.Label.StartsWith("approach"));
+    }
 }
