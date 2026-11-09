@@ -11,7 +11,8 @@ namespace H5.Net;
 
 public static class ProtocolInfo
 {
-    public const int Version = 3;
+    /// <summary>4: adventure views sync as hashed segments (<c>ViewSegments</c>, view format 2) instead of JSON-tree patches.</summary>
+    public const int Version = 4;
     public const int DefaultPort = 27615;
     public const int MaxFrameBytes = 8 * 1024 * 1024;
 }

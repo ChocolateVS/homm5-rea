@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using H5.Adventure.Engine;
 using H5.Adventure.State;
@@ -59,7 +60,7 @@ public sealed record ChatLine(int FromSide, string Name, string Scope, string Te
 /// Client side of a networked adventure game. Holds this player's redacted view of the game in a
 /// real <see cref="AdvState"/> wrapped in an <see cref="H5.Adventure.Engine.Adventure"/> so the
 /// existing adventure screen can render it and query paths, but never simulates: commands go to
-/// the host, and every update replaces the view (applied as a patch and verified by hash).
+/// the host, and every update patches the view (its changed segments, verified by hash; see <see cref="ViewSegments"/>).
 /// </summary>
 public sealed class AdventureNetReplica
 {
@@ -88,7 +89,7 @@ public sealed class AdventureNetReplica
     public event Action<BattleReplica>? BattleStarted;
     public event Action<BattleReplica>? BattleEnded;
 
-    JsonNode _viewNode;
+    readonly ViewReceiver _view = new();
 
     public AdventureNetReplica(AdvMapSource maps, GameStarted started)
     {
@@ -103,9 +104,9 @@ public sealed class AdventureNetReplica
             throw new InvalidDataException("This map differs from the host's copy (different version or random map generator output).");
         Players = s["players"]!.AsArray().Select(p => ((int)p!["side"]!, (int)p["mapPlayer"]!, (string)p["name"]!)).ToList();
 
-        _viewNode = s["view"]!.DeepClone();
-        if (JsonDiff.CanonicalHash(_viewNode) != (string?)s["hash"]) Desynced = true;
-        Game = new H5.Adventure.Engine.Adventure(Map.Db, Map.Map, AdvState.Deserialize(_viewNode.ToJsonString()));
+        _view.Apply(s["view"]!.AsObject());
+        if (_view.Hash != (string?)s["hash"]) Desynced = true;
+        Game = new H5.Adventure.Engine.Adventure(Map.Db, Map.Map, JsonSerializer.Deserialize<AdvState>(_view.Document(), AdvState.Json)!);
         Absorb(s);
     }
 
@@ -113,10 +114,15 @@ public sealed class AdventureNetReplica
     public void Apply(GameUpdate update)
     {
         var p = update.Events.AsObject();
-        try { _viewNode = JsonDiff.Apply(_viewNode, p["view"]!.AsArray())!; }
+        HashSet<string>? fields;
+        try { fields = _view.Apply(p["view"]!.AsObject()); }
         catch (Exception) { Desynced = true; return; }
-        if (JsonDiff.CanonicalHash(_viewNode) != update.StateHash) Desynced = true;
-        CopyInto(View, AdvState.Deserialize(_viewNode.ToJsonString()));
+        if (_view.Hash != update.StateHash) Desynced = true;
+        // Only the top-level fields the patch touched are deserialised again; the others are unchanged.
+        if (fields == null || fields.Any(f => !StateFieldByName.ContainsKey(f)))
+            CopyInto(View, JsonSerializer.Deserialize<AdvState>(_view.Document(), AdvState.Json)!, StateFields);
+        else if (fields.Count > 0)
+            CopyInto(View, JsonSerializer.Deserialize<AdvState>(_view.Fields(fields), AdvState.Json)!, fields.Select(f => StateFieldByName[f]));
         Absorb(p);
     }
 
@@ -185,10 +191,11 @@ public sealed class AdventureNetReplica
     public bool IsMyTurn => !View.Finished && View.CurrentPlayer >= 0 && View.Players[View.CurrentPlayer].Index == MyPlayer && Battle == null && Turn?["battle"]?.GetValue<bool>() != true;
 
     static readonly FieldInfo[] StateFields = typeof(AdvState).GetFields(BindingFlags.Public | BindingFlags.Instance);
+    static readonly Dictionary<string, FieldInfo> StateFieldByName = StateFields.ToDictionary(f => f.Name);
 
     /// <summary>Replaces the view in place so references held by the UI stay valid.</summary>
-    static void CopyInto(AdvState target, AdvState source)
+    static void CopyInto(AdvState target, AdvState source, IEnumerable<FieldInfo> fields)
     {
-        foreach (var f in StateFields) f.SetValue(target, f.GetValue(source));
+        foreach (var f in fields) f.SetValue(target, f.GetValue(source));
     }
 }

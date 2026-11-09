@@ -67,6 +67,17 @@ public static class ViewFilter
     {
         Bind(map);
         var v = full.Clone();
+        Redact(v, full, map, me, current, objects: true);
+        return JsonNode.Parse(v.Serialize())!;
+    }
+
+    /// <summary>
+    /// Applies the view rules to <paramref name="v"/>, a private copy of <paramref name="full"/>. With
+    /// <paramref name="objects"/> false the map objects are left to the caller (<see cref="RedactObject"/>,
+    /// as <see cref="ViewDocBuilder"/> does per object).
+    /// </summary>
+    internal static void Redact(AdvState v, AdvState full, AdvMap map, int me, int? current, bool objects)
+    {
         if (current is { } cp) v.CurrentPlayer = cp;
         var mine = v.Players.Find(p => p.Index == me) ?? throw new ArgumentException($"no player {me}");
         bool Ally(int owner) => owner >= 0 && v.Players.Find(p => p.Index == owner) is { } o && o.Team == mine.Team;
@@ -113,19 +124,12 @@ public static class ViewFilter
             }
         }
 
-        foreach (var key in v.Objects.Keys.ToList())
-        {
-            var o = v.Objects[key];
-            var pos = key < map.Objects.Count ? map.Objects[key].Pos : default;
-            if (!Explored(mine, pos)) { v.Objects[key] = new ObjState { Object = key }; continue; }
-            bool owned = Ally(o.Owner);
-            o.Guards = o.Guards.Select(g => new Stack(g.Creature, Band(g.Count))).ToList();
-            o.Amount = 0;
-            o.Variant = -1;
-            if (!owned) { o.Available = new int[o.Available.Length]; o.RechargeDay = 0; }
-            o.VisitedBy = o.VisitedBy.Where(Ally).ToHashSet();
-            if (!o.VisitedBy.Contains(me) && !owned) o.SpellId = null;
-        }
+        if (objects)
+            foreach (var key in v.Objects.Keys.ToList())
+            {
+                if (!ObjectSeen(map, mine, key)) { v.Objects[key] = new ObjState { Object = key }; continue; }
+                RedactObject(v.Objects[key], me, Ally);
+            }
 
         if (v.Battle is { } b)
         {
@@ -135,9 +139,32 @@ public static class ViewFilter
             if (atkOwner != me && defOwner != me) v.Battle = null;
         }
         if (v.Choice is { } c && full.Heroes.Find(h => h.Id == c.Hero)?.Owner != me) v.Choice = null;
-
-        return JsonNode.Parse(v.Serialize())!;
     }
+
+    /// <summary>Whether map object <paramref name="key"/> stands on a tile <paramref name="mine"/> explored (else it is shown pristine).</summary>
+    internal static bool ObjectSeen(AdvMap map, PlayerState mine, int key) =>
+        Explored(mine, key < map.Objects.Count ? map.Objects[key].Pos : default);
+
+    /// <summary>Redacts a private copy of an explored map object for map player <paramref name="me"/>.</summary>
+    internal static void RedactObject(ObjState o, int me, Func<int, bool> ally)
+    {
+        bool owned = ally(o.Owner);
+        o.Guards = o.Guards.Select(g => new Stack(g.Creature, Band(g.Count))).ToList();
+        o.Amount = 0;
+        o.Variant = -1;
+        if (!owned) { o.Available = new int[o.Available.Length]; o.RechargeDay = 0; }
+        o.VisitedBy = o.VisitedBy.Where(ally).ToHashSet();
+        if (!o.VisitedBy.Contains(me) && !owned) o.SpellId = null;
+    }
+
+    /// <summary>Map player <paramref name="me"/>'s allies (same team, itself included) in <paramref name="s"/>.</summary>
+    internal static Func<int, bool> AllyOf(AdvState s, int me)
+    {
+        var mine = s.Players.Find(p => p.Index == me) ?? throw new ArgumentException($"no player {me}");
+        return owner => owner >= 0 && s.Players.Find(p => p.Index == owner) is { } o && o.Team == mine.Team;
+    }
+
+    internal static void BindMap(AdvMap map) => Bind(map);
 
     static HeroState RedactHero(HeroState h) => new()
     {

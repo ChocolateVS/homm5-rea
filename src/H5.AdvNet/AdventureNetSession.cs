@@ -53,7 +53,7 @@ public sealed partial class AdventureSessionFactory(AdvMapSource maps) : IGameSe
 ///   {"$t":"battle","cmd":BattleCommand}   command in a battle you take part in
 ///   {"$t":"ghost", …}                     ghost-mode action while another player moves
 ///   {"$t":"chat","text":"…"}              in-game chat; "/a" all, "/t" team, "/&lt;name&gt; " private (UI/MPChatInGame)
-/// Update payload per side: {"events":[AdvEvent], "view":patch, "battle":[…], "chat":[…], "ghosts":{…}, "turn":{…}}.
+/// Update payload per side: {"events":[AdvEvent], "view":segment patch (ViewSegments), "battle":[…], "chat":[…], "ghosts":{…}, "turn":{…}}.
 /// </summary>
 public sealed partial class AdventureNetSession : IGameSession, ITickableSession
 {
@@ -90,7 +90,8 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
     int[] _sideMapPlayer = Array.Empty<int>();
     string[] _sideName = Array.Empty<string>();
     readonly HashSet<int> _humanPlayers = new();   // map players controlled by a connected human
-    JsonNode?[] _lastView = Array.Empty<JsonNode?>();
+    ViewDocBuilder[] _viewBuilders = Array.Empty<ViewDocBuilder>();
+    ViewSender[] _viewSenders = Array.Empty<ViewSender>();
     int _lastTurnPlayer = -1;
     long _turnStartMs, _lastTickMs;
     double _scriptCarryMs;
@@ -265,7 +266,8 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
         for (int s = 0; s < _sideMapPlayer.Length; s++)
             players.Add(new JsonObject { ["side"] = s, ["mapPlayer"] = _sideMapPlayer[s], ["name"] = _sideName[s] });
 
-        _lastView = new JsonNode?[_sideMapPlayer.Length];
+        _viewBuilders = _sideMapPlayer.Select(_ => new ViewDocBuilder()).ToArray();
+        _viewSenders = _sideMapPlayer.Select(_ => new ViewSender()).ToArray();
         var first = (SessionResult.AcceptedPerSide)BuildResult(-1);
         var setups = new List<JsonNode>();
         for (int s = 0; s < _sideMapPlayer.Length; s++)
@@ -279,7 +281,7 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
                 ["settings"] = _set.ToJson(),
                 ["map"] = mapInfo.DeepClone(),
                 ["players"] = players.DeepClone(),
-                ["view"] = _lastView[s]!.DeepClone(),
+                ["view"] = _viewSenders[s].Snapshot(),
                 ["hash"] = first.HashBySide[s],
                 ["events"] = payload["events"]?.DeepClone(),
                 ["battle"] = payload["battle"]?.DeepClone(),
@@ -809,14 +811,14 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
         var payloads = new JsonNode[n];
         var hashes = new string[n];
         if (_shownCurrent.Length != n) _shownCurrent = Enumerable.Repeat(-1, n).ToArray();
+        var objectTexts = new ViewDocBuilder.ObjectTexts(_g.S);
         for (int s = 0; s < n; s++)
         {
             int mp = _sideMapPlayer[s];
             int? viewCurrent = _simul?.ViewCurrentFor(mp);
-            var view = ViewFor(mp);
-            var patch = JsonDiff.Diff(_lastView[s], view);
-            _lastView[s] = view;
-            hashes[s] = JsonDiff.CanonicalHash(view);
+            var segments = WithOwnSlots(mp, () => _viewBuilders[s].Build(_g.S, _lm.Map, mp, viewCurrent, objectTexts));
+            var patch = _viewSenders[s].Update(segments);
+            hashes[s] = _viewSenders[s].Hash;
 
             var evs = new List<AdvEvent>();
             int i = 0;
