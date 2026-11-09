@@ -97,11 +97,20 @@ public partial class AdvWorld : Node3D
         }
         foreach (var _ in BuildStatics()) yield return 1;
         H5Reborn.Dev.LoadTrace.Mark("statics");
+        // Browser build: fetch the objects' decoded skeletons and clips from the browser's store first (asynchronous;
+        // the page keeps drawing meanwhile). The objects built below are the same either way.
+        if (CharacterBuilder.DecodedPrefetch is { } prefetch)
+        {
+            var fetch = prefetch(DecodedCacheKeys());
+            while (!fetch.IsCompleted) yield return 1;
+            H5Reborn.Dev.LoadTrace.Mark("decoded prefetch");
+        }
         foreach (var o in Map.Objects)
             if (o.Kind != ObjectKind.Static && o.Kind != ObjectKind.Hero) { SyncObject(o.Index); yield return 1; }
         H5Reborn.Dev.LoadTrace.Mark("objects");
         foreach (var h in _session.S.Heroes.ToList()) { SyncHero(h); yield return 1; }
         H5Reborn.Dev.LoadTrace.Mark("heroes");
+        CharacterBuilder.DecodedRelease?.Invoke();
         for (int f = 0; f < 2; f++)
         {
             AddChild(_floors[f]);
@@ -507,11 +516,97 @@ public partial class AdvWorld : Node3D
     /// </summary>
     void FollowCameraWithSkyDome()
     {
-        if (GetViewport()?.GetCamera3D() is not { } cam) return;
+        // The map's own camera when it is the current one (the common case); Viewport.GetCamera3D otherwise. Same camera
+        // either way; GetCamera3D's interop call alone took ~2 ms per frame in the browser build (a CPU profile).
+        Camera3D? cam = Camera is { } own && own.Current ? own : GetViewport()?.GetCamera3D();
+        if (cam == null) return;
         var eye = cam.GlobalPosition;
         foreach (var dome in _skyDome)
             if (dome != null && dome.IsVisibleInTree())
                 dome.GlobalPosition = new Vector3(eye.X, 0, eye.Z);
+    }
+
+    /// <summary>Per animated map object: its world bounds (objects do not move) and whether its player is held.</summary>
+    sealed class AnimHold
+    {
+        public Vector3 Center;
+        public float Radius;
+        public int Floor;
+        public bool Held;
+        public double Owed;
+        public int PlayCount;
+        public AnimationMixer.AnimationCallbackModeProcess Mode;
+    }
+
+    readonly Dictionary<Character, AnimHold> _animHolds = new();
+    /// <summary><c>--adventure-animate-all</c>: every object animates every frame (to compare frame rates).</summary>
+    static readonly bool AnimateAll = OS.GetCmdlineUserArgs().Contains("--adventure-animate-all");
+
+    /// <summary>
+    /// Map objects off the screen (outside the camera's view with a margin, on the other floor, or the whole map hidden
+    /// behind the town screen) that play a looping clip stop being animated every frame: their player switches to manual
+    /// processing and the skipped time is owed; when they come back into view (or start another clip) the player first
+    /// advances by everything owed in one step, so the clip is exactly where continuous playback would have put it. Purely
+    /// visual: the animation of ~300 objects on A2M1 took a quarter of each frame. One-shot clips always play normally
+    /// (their end is awaited by some callers); heroes are not map objects and always animate.
+    /// </summary>
+    void PauseOffscreenAnimations(double delta)
+    {
+        if (AnimateAll) return;
+        bool shown = IsVisibleInTree();
+        Camera3D? cam = Camera is { } own && own.Current ? own : GetViewport()?.GetCamera3D();
+        var planes = shown && cam != null ? cam.GetFrustum() : null;
+        List<Character>? gone = null;
+        foreach (var (c, h) in _animHolds)
+            if (!IsInstanceValid(c) || !c.IsInsideTree()) (gone ??= new()).Add(c);
+        if (gone != null) foreach (var c in gone) _animHolds.Remove(c);
+        foreach (var (index, node) in _objects)
+        {
+            if (node is not Character c || c.Player == null) continue;
+            if (!_animHolds.TryGetValue(c, out var h))
+            {
+                if (!c.IsInsideTree()) continue;
+                _animHolds[c] = h = MeasureAnimated(c, Map.Objects[index].Pos.Floor);
+            }
+            bool inView = planes != null && h.Floor == Floor && InFrustum(planes, h.Center, h.Radius);
+            if (!inView && c.CurrentLoops)
+            {
+                if (!h.Held)
+                {
+                    h.Mode = c.Player.CallbackModeProcess;
+                    c.Player.CallbackModeProcess = AnimationMixer.AnimationCallbackModeProcess.Manual;
+                    h.Held = true;
+                    h.Owed = 0;
+                    h.PlayCount = c.PlayCount;
+                }
+                if (h.PlayCount == c.PlayCount) h.Owed += delta;
+            }
+            else if (h.Held)
+            {
+                c.Player.CallbackModeProcess = h.Mode;
+                h.Held = false;
+                // The owed time belongs to the clip that was held; a clip started since then begins from its start.
+                if (h.Owed > 0 && h.PlayCount == c.PlayCount) c.Player.Advance(h.Owed);
+                h.Owed = 0;
+            }
+        }
+    }
+
+    static bool InFrustum(Godot.Collections.Array<Plane> planes, Vector3 center, float radius)
+    {
+        foreach (var p in planes)
+            if (p.DistanceTo(center) > radius) return false;
+        return true;
+    }
+
+    /// <summary>World bounding sphere of an animated object's mesh, widened for poses beyond the rest pose and for the
+    /// shadow it casts into the view.</summary>
+    static AnimHold MeasureAnimated(Character c, int floor)
+    {
+        var mesh = c.Skeleton?.GetNodeOrNull<MeshInstance3D>("Mesh") ?? c.GetNodeOrNull<MeshInstance3D>("Mesh");
+        var box = mesh?.Mesh is { } m ? mesh.GlobalTransform * m.GetAabb() : new Aabb(c.GlobalPosition, Vector3.Zero);
+        float radius = box.Size.Length() * 0.5f;
+        return new AnimHold { Center = box.GetCenter(), Radius = radius * 1.5f + 4f, Floor = floor };
     }
 
     static Shader? _skyDomeShader;
@@ -585,6 +680,25 @@ public partial class AdvWorld : Node3D
             for (int i = 0; i < list.Count; i++) mm.SetInstanceTransform(i, ObjectTransform(list[i]));
             _floors[group.Key.Floor].AddChild(new MultiMeshInstance3D { Name = System.IO.Path.GetFileNameWithoutExtension(group.Key.ModelPath), Multimesh = mm });
         }
+    }
+
+    /// <summary>Decoded-cache keys of every animated object the object pass will build (see <see cref="Build"/>).</summary>
+    HashSet<string> DecodedCacheKeys()
+    {
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var o in Map.Objects)
+        {
+            if (o.Kind == ObjectKind.Static || o.Kind == ObjectKind.Hero || o.Pos.Floor is < 0 or > 1) continue;
+            _session.S.Objects.TryGetValue(o.Index, out var os);
+            if (os?.Removed == true) continue;
+            try
+            {
+                var (model, animSet) = VisualFor(o, os);
+                if (model != null && animSet != null) keys.UnionWith(CharacterBuilder.DecodedCacheKeys(model, animSet));
+            }
+            catch (Exception) { /* the object pass reports it */ }
+        }
+        return keys;
     }
 
     /// <summary>Creates, updates or removes the node of a non-static object to match the game state.</summary>
@@ -975,6 +1089,7 @@ public partial class AdvWorld : Node3D
     public override void _Process(double delta)
     {
         FollowCameraWithSkyDome();
+        PauseOffscreenAnimations(delta);
         // Hidden behind the town screen: the town scene owns the shader globals.
         if (_fogA == null || !IsVisibleInTree()) return;
         // An overlay with its own 3D scene (dialog scene, hero screen stand) owns the shader globals:

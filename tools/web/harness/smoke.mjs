@@ -1,7 +1,11 @@
 // Headless smoke test of the web build: serves <dist>, opens it in a headless Chromium (never a visible window),
 // feeds it the local game install through the page's folder picker, and screenshots each scenario.
-//   node smoke.mjs <dist> --install "<game folder>" [--out DIR] [--only menu,duel,adventure,endturn,remember,persist,audio,lobby,lobby-wss] [--server H5.Server.dll] [--timeout s]
-//                         [--map-arg --adventure=<map>] [--duel-arg --combat-vs-ai=1,2] [--gpu] [--coi]
+//   node smoke.mjs <dist> --install "<game folder>" [--out DIR] [--only menu,duel,adventure,endturn,remember,persist,decoded,audio,lobby,lobby-wss] [--server H5.Server.dll] [--timeout s]
+//                         [--map-arg --adventure=<map>] [--duel-arg --combat-vs-ai=1,2] [--gpu] [--coi] [--init extra-init-script.js]
+//                         [--record-shaders web/game/H5Reborn.web/wwwroot/h5shaders.json]
+// --pick-delay <s>: seconds between the page being ready and the folder being picked.
+// --record-shaders: records every WebGL program the game links in the scenarios run (menu,duel,adventure make a good
+// list) and writes the page's shader warm-up list (wwwroot/h5shaders.js; docs/WEB_BUILD.md, Shaders).
 // Chromium: $CHROMIUM, else the playwright cache (npx playwright-core install chromium).
 // Exit code 0 only if every scenario reached its marker without a page error.
 import { chromium } from 'playwright-core';
@@ -76,6 +80,9 @@ async function run(name, page, { pick = true, query, marker, then = [], settle, 
   await page.addInitScript(() => { let last = 0; globalThis.h5MaxFrameGapMs = 0;
     const f = (t) => { if (last) globalThis.h5MaxFrameGapMs = Math.max(globalThis.h5MaxFrameGapMs, t - last); last = t; requestAnimationFrame(f); };
     requestAnimationFrame(f); globalThis.h5ResetFrameGap = () => { globalThis.h5MaxFrameGapMs = 0; }; });
+  // --init <file.js>: an extra script that runs before the page's own (instrumentation for experiments).
+  if (opt('--init')) await page.addInitScript({ path: path.resolve(opt('--init')) });
+  if (opt('--record-shaders')) await page.addInitScript(() => { globalThis.H5_RECORD_SHADERS = true; });
   await page.goto(pageBase + query);
   // Memory timeline: the wasm heap (linear memory, never shrinks) every 2 s, next to the game's log lines.
   let peakMB = 0;
@@ -85,12 +92,15 @@ async function run(name, page, { pick = true, query, marker, then = [], settle, 
   }).catch(() => {}), 2000);
   if (pick) {
     await page.waitForSelector('#h5-dir', { state: 'attached', timeout: 60000 });
+    // --pick-delay <s>: wait like a player choosing the folder (the page warms shaders meanwhile, h5shaders.js).
+    if (opt('--pick-delay')) await page.waitForTimeout(Number(opt('--pick-delay')) * 1000);
     await page.setInputFiles('#h5-dir', install);
     log.push(`[${stamp()}] picked ${install}`);
   }
   const res = await Promise.race([reached.then(() => 'ok'), new Promise((r) => setTimeout(() => r('timeout'), timeoutS * 1000))]);
   if (res === 'ok') await page.waitForTimeout(settle * 1000);
   const extra = res === 'ok' && after ? await after(page, log, stamp) : undefined;
+  if (opt('--record-shaders')) recordShaders(await page.evaluate(() => globalThis.h5shaders?.recorded()).catch(() => null), name);
   clearInterval(memTimer);
   const shot = path.join(outDir, `${name}.png`);
   await page.screenshot({ path: shot });
@@ -98,11 +108,42 @@ async function run(name, page, { pick = true, query, marker, then = [], settle, 
     const f = () => { n++; if (performance.now() - s < 3000) requestAnimationFrame(f); else r(n / ((performance.now() - s) / 1000)); };
     requestAnimationFrame(f); }));
   const mem = await page.evaluate(() => ({ js: performance.memory?.usedJSHeapSize, wasm: globalThis.h5WasmHeapBytes?.(), gap: globalThis.h5MaxFrameGapMs }));
+  const shaderWarm = await page.evaluate(() => globalThis.h5shaders?.status()).catch(() => null);
   results[name] = { result: res, seconds: +((Date.now() - t0) / 1000).toFixed(1), screenshot: shot, pageErrors: errors.length,
-    rafFps: Math.round(fps * 10) / 10, maxFrameGapMs: Math.round(mem.gap), ...(extra || {}), wasmHeapMB: mem.wasm && Math.round(mem.wasm / 2 ** 20), jsHeapMB: mem.js && Math.round(mem.js / 2 ** 20) };
+    rafFps: Math.round(fps * 10) / 10, maxFrameGapMs: Math.round(mem.gap), ...(extra || {}), wasmHeapMB: mem.wasm && Math.round(mem.wasm / 2 ** 20), jsHeapMB: mem.js && Math.round(mem.js / 2 ** 20), ...(shaderWarm ? { shaderWarm } : {}) };
   fs.writeFileSync(path.join(outDir, `${name}.log`), log.join('\n') + '\n');
   if (extra?.result && extra.result !== 'ok') results[name].result = extra.result;
   console.log(`${name}: ${results[name].result} in ${results[name].seconds}s -> ${shot}`);
+}
+
+// --record-shaders: programs in first-linked order over all scenarios, then encoded with a shared line table.
+const shaderRec = { exts: new Set(), programs: [], seen: new Set() };
+function recordShaders(r, name) {
+  if (!r) return;
+  r.exts.forEach((e) => shaderRec.exts.add(e));
+  let added = 0;
+  for (const p of r.programs) { const k = JSON.stringify(p); if (!shaderRec.seen.has(k)) { shaderRec.seen.add(k); shaderRec.programs.push(p); added++; } }
+  console.log(`shaders: ${name}: ${r.programs.length} programs, ${added} new (${shaderRec.programs.length} in all)`);
+}
+async function writeShaderList(file) {
+  const lines = [], lineIdx = new Map(), shaders = [], shaderIdx = new Map();
+  const runs = (text) => {
+    const out = [];
+    for (const l of text.split(String.fromCharCode(10))) {
+      let i = lineIdx.get(l);
+      if (i === undefined) { i = lines.length; lines.push(l); lineIdx.set(l, i); }
+      if (out.length && out[out.length - 2] + out[out.length - 1] === i) out[out.length - 1]++; else out.push(i, 1);
+    }
+    return out;
+  };
+  const programs = shaderRec.programs.map((p) => {
+    const s = p.shaders.map(([t, text]) => { let i = shaderIdx.get(text); if (i === undefined) { i = shaders.length; shaders.push(runs(text)); shaderIdx.set(text, i); } return [t, i]; });
+    return p.tf ? { s, tf: p.tf } : { s };
+  });
+  const body = { exts: [...shaderRec.exts].sort(), lines, shaders, programs };
+  const id = (await import('node:crypto')).createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 16);
+  fs.writeFileSync(file, JSON.stringify({ v: 1, id, ...body }));
+  console.log(`shaders: wrote ${programs.length} programs, ${shaders.length} shaders, ${lines.length} lines -> ${file}`);
 }
 
 const browser = await chromium.launch(LAUNCH);
@@ -129,6 +170,31 @@ if (only.includes('remember')) {
     page = ctx.pages()[0] || await ctx.newPage();
     await run('remember-second', page, { ...SCENARIOS.menu, pick: false });
     await ctx.close();
+  } finally { fs.rmSync(profile, { recursive: true, force: true }); }
+}
+if (only.includes('decoded')) {
+  // Decoded-asset cache (IndexedDB, h5cache.js): the same map twice in one browser profile. The second visit must find
+  // the characters' skeletons and clips stored by the first and build the objects faster; results.json gets both visits'
+  // object-pass and character-template times.
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'h5web-'));
+  const q = { ...SCENARIOS.adventure, query: SCENARIOS.adventure.query.replace('?', '?nocache&'), settle: 5 };
+  const loadTimes = (name) => {
+    const log = fs.readFileSync(path.join(outDir, `${name}.log`), 'utf8');
+    const ms = (re) => { const m = log.match(re); return m ? Number(m[1]) : null; };
+    const hit = log.match(/decoded cache: (\d+) of (\d+) entries/);
+    return { objectsMs: ms(/load: objects (\d+) ms/), chTemplateMs: ms(/ch template=(\d+)ms/), cacheHits: hit ? `${hit[1]}/${hit[2]}` : null };
+  };
+  try {
+    for (const visit of ['decoded-first', 'decoded-second']) {
+      const ctx = await chromium.launchPersistentContext(profile, { ...LAUNCH, viewport: { width: 1280, height: 720 } });
+      const page = ctx.pages()[0] || await ctx.newPage();
+      await run(visit, page, q);
+      // Let the background IndexedDB writes finish before the browser closes.
+      if (visit === 'decoded-first') await page.waitForTimeout(5000);
+      await ctx.close();
+      Object.assign(results[visit], loadTimes(visit));
+    }
+    if (!(results['decoded-second'].cacheHits && !results['decoded-second'].cacheHits.startsWith('0/'))) results['decoded-second'].result = 'no cache hits';
   } finally { fs.rmSync(profile, { recursive: true, force: true }); }
 }
 if (only.includes('audio')) {
@@ -234,5 +300,6 @@ if (only.includes('persist')) {
 }
 server.close();
 fs.writeFileSync(path.join(outDir, 'results.json'), JSON.stringify(results, null, 2));
+if (opt('--record-shaders')) await writeShaderList(path.resolve(opt('--record-shaders')));
 console.log(JSON.stringify(results, null, 2));
 process.exit(Object.values(results).every((r) => r.result === 'ok' && !r.pageErrors) ? 0 : 1);

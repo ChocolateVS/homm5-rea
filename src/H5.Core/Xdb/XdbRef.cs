@@ -29,25 +29,69 @@ public readonly record struct XdbRef(string Path, string? Pointer)
     }
 }
 
-/// <summary>Loads and caches .xdb XML documents and resolves hrefs between them.</summary>
+/// <summary>
+/// Loads and caches .xdb XML documents and resolves hrefs between them. The cache is bounded: least recently used
+/// documents are dropped once the cached files' total size passes <see cref="MaxCachedBytes"/> (a dropped document is
+/// parsed again on its next use; elements callers still hold stay valid). Before, every document read in a session stayed
+/// parsed for good (the browser build's memory ceiling).
+/// </summary>
 public sealed class XdbLoader(PakFileSystem fs)
 {
-    readonly Dictionary<string, XDocument> _cache = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Default for <see cref="MaxCachedBytes"/>: 32 MB of xdb text (a parsed document takes several times that).</summary>
+    public static long DefaultMaxCachedBytes = 32L << 20;
+
+    sealed class Entry(string path, XDocument doc, long bytes)
+    {
+        public readonly string Path = path;
+        public readonly XDocument Doc = doc;
+        public readonly long Bytes = bytes;
+        public LinkedListNode<Entry>? Node;
+    }
+
+    readonly Dictionary<string, Entry> _cache = new(StringComparer.OrdinalIgnoreCase);
+    readonly LinkedList<Entry> _lru = new();
 
     public PakFileSystem FileSystem => fs;
+
+    /// <summary>Total size of the cached documents' files; see <see cref="DefaultMaxCachedBytes"/>.</summary>
+    public long MaxCachedBytes { get; set; } = DefaultMaxCachedBytes;
+    public long CachedBytes { get; private set; }
+    public int CachedCount { get { lock (_cache) return _cache.Count; } }
+    public long Evictions { get; private set; }
 
     public XDocument Load(string path)
     {
         path = PakFileSystem.Normalize(path);
         lock (_cache)
         {
-            if (_cache.TryGetValue(path, out var doc)) return doc;
+            if (_cache.TryGetValue(path, out var hit))
+            {
+                if (hit.Node!.Previous != null) { _lru.Remove(hit.Node); _lru.AddFirst(hit.Node); }
+                return hit.Doc;
+            }
             var bytes = fs.ReadAllBytes(path);
+            XDocument doc;
             try { doc = XDocument.Load(new MemoryStream(bytes)); }
             catch (System.Xml.XmlException) { doc = XdbRepair.Load(bytes); }
-            _cache[path] = doc;
+            var e = new Entry(path, doc, bytes.Length);
+            e.Node = _lru.AddFirst(e);
+            _cache[path] = e;
+            CachedBytes += e.Bytes;
+            while (CachedBytes > MaxCachedBytes && _lru.Last is { } last && last != e.Node)
+            {
+                _lru.RemoveLast();
+                _cache.Remove(last.Value.Path);
+                CachedBytes -= last.Value.Bytes;
+                Evictions++;
+            }
             return doc;
         }
+    }
+
+    /// <summary>Drops every cached document (they are parsed again on next use).</summary>
+    public void Clear()
+    {
+        lock (_cache) { _cache.Clear(); _lru.Clear(); CachedBytes = 0; }
     }
 
     /// <summary>

@@ -12,7 +12,8 @@
 // doing anything (explicitSwapControl stays set, no defaultFbo). Otherwise identical to Emscripten 3.1.56's
 // emscripten_webgl_do_create_context (src/library_html5_webgl.js) for a build without threads / OffscreenCanvas.
 addToLibrary({
-  emscripten_webgl_do_create_context__deps: ['$GL', '$webglPowerPreferences', '$findCanvasEventTarget'],
+  // (webglPowerPreferences is Emscripten-internal: its three values are spelled out below.)
+  emscripten_webgl_do_create_context__deps: ['$GL', '$findCanvasEventTarget'],
   emscripten_webgl_do_create_context: (target, attributes) => {
     var a = {{{ getHeapOffset('attributes', 'i32') }}};
     var powerPreference = HEAP32[a + ({{{ C_STRUCTS.EmscriptenWebGLContextAttributes.powerPreference }}}>>2)];
@@ -23,7 +24,7 @@ addToLibrary({
       'antialias': !!HEAP32[a + ({{{ C_STRUCTS.EmscriptenWebGLContextAttributes.antialias }}}>>2)],
       'premultipliedAlpha': !!HEAP32[a + ({{{ C_STRUCTS.EmscriptenWebGLContextAttributes.premultipliedAlpha }}}>>2)],
       'preserveDrawingBuffer': !!HEAP32[a + ({{{ C_STRUCTS.EmscriptenWebGLContextAttributes.preserveDrawingBuffer }}}>>2)],
-      'powerPreference': webglPowerPreferences[powerPreference],
+      'powerPreference': ['default', 'low-power', 'high-performance'][powerPreference],
       'failIfMajorPerformanceCaveat': !!HEAP32[a + ({{{ C_STRUCTS.EmscriptenWebGLContextAttributes.failIfMajorPerformanceCaveat }}}>>2)],
       majorVersion: HEAP32[a + ({{{ C_STRUCTS.EmscriptenWebGLContextAttributes.majorVersion }}}>>2)],
       minorVersion: HEAP32[a + ({{{ C_STRUCTS.EmscriptenWebGLContextAttributes.minorVersion }}}>>2)],

@@ -232,7 +232,7 @@ sealed class Gr2CheckSetsCommand : ICommand
                     {
                         anims++;
                         kinds[kind] = kinds.GetValueOrDefault(kind) + 1;
-                        foreach (var t in a.Source.TransformTracks)
+                        foreach (var t in a.Source!.TransformTracks)
                         {
                             tracks++;
                             var bi = skel.IndexOf(t.Name);

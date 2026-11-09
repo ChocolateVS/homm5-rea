@@ -118,17 +118,38 @@ public static class GrannyConvert
         {
             var track = new BoneTrack { BoneName = t.Name };
             track.TranslationTimes = KeyTimes(t.Position, a.Duration, sampleRate);
-            track.Translations = t.Position.IsEmpty ? new[] { Vector3.Zero } : track.TranslationTimes.Select(t.SamplePosition).ToArray();
+            // Plain loops instead of LINQ Select/ToArray (same values; the generic LINQ path ran in the browser build's
+            // interpreter and cost as much as the sampling itself).
+            var tt = track.TranslationTimes;
+            if (t.Position.IsEmpty) track.Translations = new[] { Vector3.Zero };
+            else
+            {
+                track.Translations = new Vector3[tt.Length];
+                for (int i = 0; i < tt.Length; i++) track.Translations[i] = t.SamplePosition(tt[i]);
+            }
             track.RotationTimes = KeyTimes(t.Orientation, a.Duration, sampleRate);
-            track.Rotations = t.Orientation.IsEmpty ? new[] { Quaternion.Identity } : track.RotationTimes.Select(t.SampleOrientation).ToArray();
+            var rt = track.RotationTimes;
+            if (t.Orientation.IsEmpty) track.Rotations = new[] { Quaternion.Identity };
+            else
+            {
+                track.Rotations = new Quaternion[rt.Length];
+                for (int i = 0; i < rt.Length; i++) track.Rotations[i] = t.SampleOrientation(rt[i]);
+            }
             MakeQuaternionsContinuous(track.Rotations);
             track.ScaleTimes = KeyTimes(t.ScaleShear, a.Duration, sampleRate);
-            track.Scales = t.ScaleShear.IsEmpty ? new[] { Vector3.One } : track.ScaleTimes.Select(time =>
+            var st = track.ScaleTimes;
+            if (t.ScaleShear.IsEmpty) track.Scales = new[] { Vector3.One };
+            else
             {
+                track.Scales = new Vector3[st.Length];
                 Span<float> m = stackalloc float[9];
-                t.SampleScaleShear(time, m);
-                return new Vector3(m[0], m[4], m[8]);
-            }).ToArray();
+                for (int i = 0; i < st.Length; i++)
+                {
+                    m.Clear(); // as a fresh stackalloc per key before
+                    t.SampleScaleShear(st[i], m);
+                    track.Scales[i] = new Vector3(m[0], m[4], m[8]);
+                }
+            }
             clip.Tracks.Add(track);
         }
         foreach (var (name, curve) in a.VectorTracks)

@@ -19,6 +19,7 @@ public partial class WebStorage : Node
     public override void _Ready()
     {
         ProcessMode = ProcessModeEnum.Always;
+        WebDecodedCache.Install();
         _root = OS.GetUserDataDir();
         _signature = Signature(out int files);
         GD.Print($"[H5] web: user data {_root}: {files} files{(files > 0 ? ": " + string.Join(", ", List().Take(40)) : "")}");
@@ -41,17 +42,33 @@ public partial class WebStorage : Node
             : Enumerable.Empty<string>();
 
     /// <summary>Hash of every entry's path, size and write time (the marker file excluded).</summary>
+    /// <remarks>Walks the folder with Godot's DirAccess: System.IO's directory enumeration cost ~40 ms per scan in the
+    /// browser build even for an empty folder (a CPU profile of the adventure map: 2 % of the frame time).</remarks>
     long Signature(out int files)
     {
         files = 0;
-        if (!Directory.Exists(_root)) return 0;
+        if (!DirAccess.DirExistsAbsolute(_root)) return 0;
         var h = new HashCode();
-        foreach (var e in new DirectoryInfo(_root).EnumerateFileSystemInfos("*", SearchOption.AllDirectories))
+        var dirs = new Stack<string>();
+        dirs.Push(_root);
+        while (dirs.Count > 0)
         {
-            if (e.Name == ".h5sync") continue;
-            h.Add(e.FullName);
-            h.Add(e.LastWriteTimeUtc.Ticks);
-            if (e is FileInfo fi) { h.Add(fi.Length); files++; }
+            var dir = dirs.Pop();
+            foreach (var name in DirAccess.GetDirectoriesAt(dir))
+            {
+                var p = dir + "/" + name;
+                h.Add(p);
+                dirs.Push(p);
+            }
+            foreach (var name in DirAccess.GetFilesAt(dir))
+            {
+                if (name == ".h5sync") continue;
+                var p = dir + "/" + name;
+                h.Add(p);
+                h.Add(Godot.FileAccess.GetModifiedTime(p));
+                h.Add(Godot.FileAccess.GetSize(p));
+                files++;
+            }
         }
         return h.ToHashCode();
     }

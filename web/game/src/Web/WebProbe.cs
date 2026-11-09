@@ -66,6 +66,7 @@ public partial class WebProbe : Node
             GD.Print($"[H5] web: stats scene={name} fps={Engine.GetFramesPerSecond()} gcMB={GC.GetTotalMemory(false) / 1048576.0:F0} gcCommitMB={GC.GetGCMemoryInfo().TotalCommittedBytes / 1048576.0:F0} " +
                      $"staticMB={OS.GetStaticMemoryUsage() / 1048576.0:F0} vramMB={Performance.GetMonitor(Performance.Monitor.RenderVideoMemUsed) / 1048576.0:F0} " +
                      $"reads={BrowserFileSource.Requests} readMB={BrowserFileSource.BytesRequested / 1048576.0:F0} " +
+                     (Game.Instance?.Xdb is { } xdb ? $"xdbDocs={xdb.CachedCount} xdbMB={xdb.CachedBytes / 1048576.0:F0} xdbEvicted={xdb.Evictions} " : "") +
                      // Per-frame cost: script _process / _physics_process (ms), what the renderer drew.
                      $"procMs={Performance.GetMonitor(Performance.Monitor.TimeProcess) * 1000:F1} physMs={Performance.GetMonitor(Performance.Monitor.TimePhysicsProcess) * 1000:F1} " +
                      $"objs={Performance.GetMonitor(Performance.Monitor.RenderTotalObjectsInFrame)} draws={Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame)} " +

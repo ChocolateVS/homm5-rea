@@ -47,10 +47,16 @@ public partial class Character : Node3D
         Player.SpeedScale = SpeedFactor(kind);
         Player.Play(Lib + kind, blendSeconds > 0 ? blendSeconds : 0);
         CurrentKind = kind;
+        CurrentLoops = loop;
+        PlayCount++;
     }
 
     /// <summary>The kind most recently started with <see cref="Play(string, bool, float)"/>.</summary>
     public string? CurrentKind { get; private set; }
+    /// <summary>Whether that clip was started looping (it then never finishes).</summary>
+    public bool CurrentLoops { get; private set; }
+    /// <summary>Number of <see cref="Play(string, bool, float)"/> calls so far (changes when a new clip starts).</summary>
+    public int PlayCount { get; private set; }
 
     /// <summary>The (AnimSet) the clips came from (for each kind's Sound/Effect refs), if any.</summary>
     public string? AnimSetPath { get; internal set; }
@@ -67,6 +73,17 @@ public static class CharacterBuilder
 {
     static AnimSetLoader? _anims;
     static AnimSetLoader Anims => _anims ??= new AnimSetLoader(Game.Instance.Xdb);
+
+    /// <summary>
+    /// Fetches entries of <see cref="AnimSetLoader.DecodedCache"/> ahead of a batch of builds (the browser build's
+    /// IndexedDB is asynchronous, the builders are not); null on the desktop.
+    /// </summary>
+    public static Func<IReadOnlyCollection<string>, Task>? DecodedPrefetch { get; set; }
+    /// <summary>Lets go of what <see cref="DecodedPrefetch"/> fetched (it stays stored); null on the desktop.</summary>
+    public static Action? DecodedRelease { get; set; }
+
+    /// <summary>The decoded-cache keys a <see cref="BuildFromModel"/> of this model and set reads.</summary>
+    public static IEnumerable<string> DecodedCacheKeys(string modelPath, string? setPath) => Anims.CacheKeys(modelPath, setPath);
 
     /// <summary>Forgets the decoded skeletons and animations (decoded again on next use); see <see cref="Game.ReleaseUnused"/>.</summary>
     public static void ReleaseDecoded() { if (_shareDepth == 0) _anims = null; }
@@ -257,7 +274,20 @@ public static class CharacterBuilder
             anim.PositionTrackInsertKey(t, duration, -ModelBuilder.ToGodot(d));
     }
 
+    /// <summary>
+    /// <c>--anim-keys-check</c>: every clip is also built key by key (Position/Rotation/ScaleTrackInsertKey, as before the
+    /// bulk path) and compared with the bulk result; differences are printed as <c>[H5] anim keys check: …</c>.
+    /// </summary>
+    static readonly bool KeysCheck = OS.GetCmdlineUserArgs().Contains("--anim-keys-check");
+
     static Animation ToGodot(AnimationClip clip, SkeletonData skeleton)
+    {
+        var anim = BuildClip(clip, skeleton, bulk: true);
+        if (KeysCheck) CompareKeys(clip.Name, BuildClip(clip, skeleton, bulk: false), anim);
+        return anim;
+    }
+
+    static Animation BuildClip(AnimationClip clip, SkeletonData skeleton, bool bulk)
     {
         var anim = new Animation { Length = Math.Max(clip.Duration, 1f / 30f) };
         var bones = new HashSet<string>(skeleton.Bones.Select(b => b.Name));
@@ -272,21 +302,93 @@ public static class CharacterBuilder
             int p = anim.AddTrack(Animation.TrackType.Position3D);
             anim.TrackSetPath(p, path);
             if (tr.Translations.Length == 0) anim.PositionTrackInsertKey(p, 0, Vector3.Zero);
-            for (int k = 0; k < tr.Translations.Length; k++)
-                anim.PositionTrackInsertKey(p, tr.TranslationTimes[k], ModelBuilder.ToGodot(tr.Translations[k]));
+            else if (!bulk || !SetKeys(anim, p, tr.TranslationTimes, tr, KeyKind.Position))
+                for (int k = 0; k < tr.Translations.Length; k++)
+                    anim.PositionTrackInsertKey(p, tr.TranslationTimes[k], ModelBuilder.ToGodot(tr.Translations[k]));
 
             int r = anim.AddTrack(Animation.TrackType.Rotation3D);
             anim.TrackSetPath(r, path);
             if (tr.Rotations.Length == 0) anim.RotationTrackInsertKey(r, 0, Quaternion.Identity);
-            for (int k = 0; k < tr.Rotations.Length; k++)
-                anim.RotationTrackInsertKey(r, tr.RotationTimes[k], ModelBuilder.ToGodot(tr.Rotations[k]).Normalized());
+            else if (!bulk || !SetKeys(anim, r, tr.RotationTimes, tr, KeyKind.Rotation))
+                for (int k = 0; k < tr.Rotations.Length; k++)
+                    anim.RotationTrackInsertKey(r, tr.RotationTimes[k], ModelBuilder.ToGodot(tr.Rotations[k]).Normalized());
 
             int s = anim.AddTrack(Animation.TrackType.Scale3D);
             anim.TrackSetPath(s, path);
             if (tr.Scales.Length == 0) anim.ScaleTrackInsertKey(s, 0, Vector3.One);
-            for (int k = 0; k < tr.Scales.Length; k++)
-                anim.ScaleTrackInsertKey(s, tr.ScaleTimes[k], ModelBuilder.ScaleToGodot(tr.Scales[k]));
+            else if (!bulk || !SetKeys(anim, s, tr.ScaleTimes, tr, KeyKind.Scale))
+                for (int k = 0; k < tr.Scales.Length; k++)
+                    anim.ScaleTrackInsertKey(s, tr.ScaleTimes[k], ModelBuilder.ScaleToGodot(tr.Scales[k]));
         }
         return anim;
     }
+
+    enum KeyKind { Position, Rotation, Scale }
+
+    /// <summary>
+    /// Sets all keys of a position / rotation / scale track in one call (the track's "keys" property: time, transition,
+    /// value per key), instead of one interop call per key. Only when the times are strictly increasing and further
+    /// apart than Godot's is_equal_approx tolerance: then inserting the keys one by one appends each with transition 1,
+    /// i.e. exactly this array. Otherwise (~15 % of the stock tracks, e.g. a resampled clip whose end lies just after its
+    /// last sample) returns false and the caller inserts them one by one (Godot then merges near-equal times).
+    /// <c>--anim-keys-check</c> on A2M1: 400 clips, 0 differences.
+    /// </summary>
+    static bool SetKeys(Animation anim, int track, float[] times, BoneTrack tr, KeyKind kind)
+    {
+        int count = kind switch { KeyKind.Position => tr.Translations.Length, KeyKind.Rotation => tr.Rotations.Length, _ => tr.Scales.Length };
+        if (times.Length < count) { _insertedTracks++; return false; }
+        for (int k = 1; k < count; k++)
+        {
+            double a = times[k - 1], b = times[k], tol = Math.Max(1e-5, 1e-5 * Math.Abs(a));
+            if (!(b > a) || b - a < 2 * tol) { _insertedTracks++; return false; }
+        }
+        _bulkTracks++;
+        int stride = kind == KeyKind.Rotation ? 6 : 5;
+        var keys = new float[count * stride];
+        for (int k = 0, o = 0; k < count; k++, o += stride)
+        {
+            keys[o] = times[k];
+            keys[o + 1] = 1f;
+            switch (kind)
+            {
+                case KeyKind.Position: { var g = ModelBuilder.ToGodot(tr.Translations[k]); keys[o + 2] = g.X; keys[o + 3] = g.Y; keys[o + 4] = g.Z; break; }
+                case KeyKind.Rotation: { var g = ModelBuilder.ToGodot(tr.Rotations[k]).Normalized(); keys[o + 2] = g.X; keys[o + 3] = g.Y; keys[o + 4] = g.Z; keys[o + 5] = g.W; break; }
+                default: { var g = ModelBuilder.ScaleToGodot(tr.Scales[k]); keys[o + 2] = g.X; keys[o + 3] = g.Y; keys[o + 4] = g.Z; break; }
+            }
+        }
+        using var value = Variant.CreateFrom(keys);
+        anim.Set(KeysProperty(track), value);
+        return true;
+    }
+
+    static readonly List<StringName> _keysProperties = new();
+    /// <summary>"tracks/&lt;i&gt;/keys", made once per track index.</summary>
+    static StringName KeysProperty(int track)
+    {
+        while (_keysProperties.Count <= track) _keysProperties.Add(new StringName($"tracks/{_keysProperties.Count}/keys"));
+        return _keysProperties[track];
+    }
+
+    static void CompareKeys(string name, Animation expected, Animation actual)
+    {
+        int bad = 0;
+        if (expected.GetTrackCount() != actual.GetTrackCount()) bad++;
+        for (int t = 0; t < expected.GetTrackCount() && bad == 0; t++)
+        {
+            int n = expected.TrackGetKeyCount(t);
+            if (n != actual.TrackGetKeyCount(t) || expected.TrackGetType(t) != actual.TrackGetType(t) || expected.TrackGetPath(t) != actual.TrackGetPath(t)) { bad++; break; }
+            for (int k = 0; k < n; k++)
+                if (expected.TrackGetKeyTime(t, k) != actual.TrackGetKeyTime(t, k)
+                    || expected.TrackGetKeyTransition(t, k) != actual.TrackGetKeyTransition(t, k)
+                    || !SameValue(expected.TrackGetType(t), expected.TrackGetKeyValue(t, k), actual.TrackGetKeyValue(t, k))) { bad++; GD.Print($"[H5] anim keys check: {name} track {t} key {k}: {expected.TrackGetKeyValue(t, k)} vs {actual.TrackGetKeyValue(t, k)}"); break; }
+        }
+        _checkedClips++;
+        if (bad > 0) _badClips++;
+        if (bad > 0 || _checkedClips % 200 == 0) GD.Print($"[H5] anim keys check: {_checkedClips} clips compared, {_badClips} different ({_bulkTracks} tracks set at once, {_insertedTracks} key by key)");
+    }
+
+    static int _checkedClips, _badClips, _bulkTracks, _insertedTracks;
+
+    static bool SameValue(Animation.TrackType type, Variant a, Variant b) =>
+        type == Animation.TrackType.Rotation3D ? a.As<Quaternion>() == b.As<Quaternion>() : a.As<Vector3>() == b.As<Vector3>();
 }

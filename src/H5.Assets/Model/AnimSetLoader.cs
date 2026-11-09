@@ -20,14 +20,15 @@ public sealed class AnimSetEntry
     public string? EffectHref;
 }
 
-/// <summary>A loaded animation: baked clip plus the raw Granny data (curves, events, marks).</summary>
+/// <summary>A loaded animation: baked clip plus the Granny text events of its source.</summary>
 public sealed class LoadedAnimation
 {
     public required AnimSetEntry Entry;
     public required AnimationClip Clip;
-    public required GrannyAnimation Source;
     /// <summary>Animator-placed text events, e.g. "action" at the moment an attack lands.</summary>
-    public IReadOnlyList<GrannyTextEvent> Events => Source.TextEvents;
+    public required IReadOnlyList<GrannyTextEvent> Events;
+    /// <summary>The decoded Granny animation (curves, marks); null when the clip came from <see cref="AnimSetLoader.DecodedCache"/>.</summary>
+    public GrannyAnimation? Source;
 }
 
 /// <summary>
@@ -44,6 +45,23 @@ public sealed class AnimSetLoader
 
     public float SampleRate { get; init; } = GrannyConvert.DefaultSampleRate;
 
+    /// <summary>
+    /// Decoded skeletons and baked clips kept between sessions (the browser build's IndexedDB store; none on the
+    /// desktop). A hit skips reading the Granny file from the pak, decoding it and baking the clip; the result is the same.
+    /// </summary>
+    public static IDecodedCache? DecodedCache { get; set; }
+
+    public static string SkeletonCacheKey(string uid) => $"skel/{DecodedCacheFormat.Version}/{uid}";
+    public string ClipCacheKey(string uid) => $"clip/{DecodedCacheFormat.Version}/{SampleRate.ToString(System.Globalization.CultureInfo.InvariantCulture)}/{uid}";
+
+    /// <summary>The <see cref="DecodedCache"/> keys a model + animation set reads (to fetch them ahead).</summary>
+    public IEnumerable<string> CacheKeys(string modelPath, string? animSetPath)
+    {
+        if (SkeletonUidForModel(modelPath) is { } su) yield return SkeletonCacheKey(su);
+        if (animSetPath == null) yield break;
+        foreach (var e in ReadAnimSet(animSetPath)) yield return ClipCacheKey(e.Uid);
+    }
+
     public AnimSetLoader(XdbLoader xdb)
     {
         _xdb = xdb;
@@ -53,19 +71,42 @@ public sealed class AnimSetLoader
     // ---- binaries by uid ---------------------------------------------------------------
 
     public SkeletonData? LoadSkeletonByUid(string uid) =>
-        _skeletons.GetOrAdd(uid, u => _fs.TryReadAllBytes("bin/Skeletons/" + u, out var d)
-            ? GrannyConvert.ReadSkeleton(Gr2File.Read(d)) : null);
+        _skeletons.GetOrAdd(uid, u =>
+        {
+            var cache = DecodedCache;
+            if (cache?.Get(SkeletonCacheKey(u)) is { } hit) return DecodedCacheFormat.ReadSkeleton(hit);
+            if (!_fs.TryReadAllBytes("bin/Skeletons/" + u, out var d)) return null;
+            var s = GrannyConvert.ReadSkeleton(Gr2File.Read(d));
+            if (s != null) cache?.Put(SkeletonCacheKey(u), DecodedCacheFormat.WriteSkeleton(s));
+            return s;
+        });
+
+    /// <summary>
+    /// The baked clip of an animation uid (a new object on every call; clip name = Granny source name) and its text
+    /// events, from the <see cref="DecodedCache"/> when it has them, else decoded, baked and stored there.
+    /// </summary>
+    public (AnimationClip Clip, IReadOnlyList<GrannyTextEvent> Events, GrannyAnimation? Source)? LoadBakedByUid(string uid)
+    {
+        var cache = DecodedCache;
+        var key = cache == null ? null : ClipCacheKey(uid);
+        if (key != null && cache!.Get(key) is { } hit)
+        {
+            var (c, ev) = DecodedCacheFormat.ReadClip(hit);
+            return (c, ev, null);
+        }
+        var src = LoadAnimationByUid(uid);
+        if (src == null) return null;
+        var clip = GrannyConvert.ToClip(src, SampleRate);
+        if (key != null) cache!.Put(key, DecodedCacheFormat.WriteClip(clip, src.TextEvents));
+        return (clip, src.TextEvents, src);
+    }
 
     public GrannyAnimation? LoadAnimationByUid(string uid) =>
         _animations.GetOrAdd(uid, u => _fs.TryReadAllBytes("bin/animations/" + u, out var d)
             ? GrannyConvert.ReadGrannyAnimations(Gr2File.Read(d)).FirstOrDefault() : null);
 
     /// <summary>Baked clip for an animation uid (clip name = Granny source name).</summary>
-    public AnimationClip? LoadClipByUid(string uid)
-    {
-        var a = LoadAnimationByUid(uid);
-        return a == null ? null : GrannyConvert.ToClip(a, SampleRate);
-    }
+    public AnimationClip? LoadClipByUid(string uid) => LoadBakedByUid(uid)?.Clip;
 
     /// <summary>Plugs this loader into <see cref="ModelLoader"/>'s skeleton/animation hooks.</summary>
     public ModelLoader Install(ModelLoader modelLoader)
@@ -126,11 +167,10 @@ public sealed class AnimSetLoader
         var result = new Dictionary<string, LoadedAnimation>(StringComparer.OrdinalIgnoreCase);
         foreach (var e in ReadAnimSet(animSetPath))
         {
-            var src = LoadAnimationByUid(e.Uid);
-            if (src == null) continue;
-            var clip = GrannyConvert.ToClip(src, SampleRate);
+            if (LoadBakedByUid(e.Uid) is not { } baked) continue;
+            var (clip, events, source) = baked;
             clip.Name = e.Kind;
-            result[e.Kind] = new LoadedAnimation { Entry = e, Clip = clip, Source = src };
+            result[e.Kind] = new LoadedAnimation { Entry = e, Clip = clip, Events = events, Source = source };
         }
         return result;
     }
