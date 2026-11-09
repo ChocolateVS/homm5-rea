@@ -249,4 +249,96 @@ public class AiCombatGapTests(GameDataFixture f)
         Assert.False(isAtt);
         Assert.Contains(att.LastCandidates, c => c.Label.StartsWith("approach"));
     }
+
+    [Fact]
+    public void BonusFactorFollowsTheExeTerms()   // FUN_00bfb4b0 (00e12f10 0.1, 00e12f18 0.05, 00e87cf4 1/6, 00e2f798 5, 00e87cf0 13)
+    {
+        var b = f.Duel("CREATURE_PEASANT", 20, "CREATURE_PEASANT", 20, 1, new Cell(2, 5), new Cell(9, 5));
+        var u = b.State.Units[0];
+        u.Atb = 0;
+        float k0 = CombatValue.ExeBonus(b, u);
+        // Without luck or morale: clamp(initiative, 2, 30) · 0.1 · (1 + 0.05 · (speed − 5)) · (0.95 + 0.1 · ATB).
+        float expect = (float)((float)Math.Max(2f, Math.Min((float)b.InitiativeOf(u), 30f)) * 1.0 * 0.1f);
+        expect = (float)(((b.SpeedOf(u) - 5) * (double)0.05f + 1.0) * expect);
+        expect = (float)((0 * (double)0.1f + 1.0 - 0.05f) * expect);
+        Assert.Equal(0, b.MoraleOf(u));
+        Assert.Equal(0, b.LuckOf(u));
+        Assert.Equal(expect, k0);
+        u.Atb = 1;
+        Assert.Equal((float)((0.1f + 1.0 - 0.05f) * (expect / (float)(1.0 - 0.05f))), CombatValue.ExeBonus(b, u), 5);
+        u.Atb = 0;
+        // Disabled time above 0.1 turns: × (1 − min(t, 5) / 6); 0.1 or less: unchanged.
+        b.AddEffect(u, new Effect { Id = "SPELL_BLIND", Remaining = 2 });
+        Assert.Equal((float)((1.0 - 2f * (double)(1f / 6f)) * k0), CombatValue.ExeBonus(b, u));
+        u.GetEffect("SPELL_BLIND")!.Remaining = 9;
+        Assert.Equal((float)((1.0 - 5f * (double)(1f / 6f)) * k0), CombatValue.ExeBonus(b, u));
+        u.GetEffect("SPELL_BLIND")!.Remaining = 0.1;
+        Assert.Equal(k0, CombatValue.ExeBonus(b, u));
+    }
+
+    [Fact]
+    public void FlatExtrasAreZeroAndTheHeroPartStopsAtTurnThree()   // FUN_00bfba50 (unit vf 0x84 null), FUN_00bfbe50 00bfc00e..00bfc08b
+    {
+        var b = f.Duel("CREATURE_PEASANT", 20, "CREATURE_PEASANT", 20, 1, new Cell(2, 5), new Cell(9, 5));
+        Assert.Equal(0, CombatValue.Of(b, 0).My.Extra);
+        // n = trunc(time + 1): above 2 (from the third turn) the hero part is not computed.
+        b.State.Time = 2.0;
+        Assert.Equal(0, CombatValue.Of(b, 0).My.HeroPotential);
+    }
+
+    [Fact]
+    public void CelestialShieldAndDeflectArrowsRaiseHealth()   // FUN_00bfba50 00bfbc97..00bfbcef (00e239bc 1.25), 00bfbd58..00bfbdb4
+    {
+        var b = f.Duel("CREATURE_PEASANT", 20, "CREATURE_ARCHER", 20, 1, new Cell(2, 5), new Cell(9, 5));
+        var u = b.State.Units[0];
+        int hp = (int)u.TotalHealth;
+        Assert.Equal(hp, (int)CombatValue.Of(b, 0).My.Health);
+        b.AddEffect(u, new Effect { Id = "SPELL_CELESTIAL_SHIELD", Remaining = 3 });
+        Assert.Equal((int)(hp * 1.25f), (int)CombatValue.Of(b, 0).My.Health);
+        u.Effects.Clear();
+        // Deflect Arrows: ((1 − s) + s / (1 − g)) · hp · hp, s = the enemy's shooter share (all archers: 1).
+        b.AddEffect(u, new Effect { Id = "SPELL_DEFLECT_ARROWS", Remaining = 3, Value = 0.5 });
+        Assert.Equal(1f, CombatValue.ShooterShare(b, 1));
+        Assert.Equal(CombatValue.Fistp((1.0 - 1f + 1.0 / (1.0 - 0.5f) * 1f) * hp * hp), (int)CombatValue.Of(b, 0).My.Health);
+    }
+
+    [Fact]
+    public void StrikeAndReturnCountsAsShooterAgainstAMeleeArmy()   // FUN_00a2f8f0 (enemy army) + FUN_00a2f130 in FUN_00bfba50
+    {
+        var witch = f.Db.Creatures.Values.First(c => c.Abilities.Contains(Ab.StrikeAndReturn) && c.Abilities.Contains(Ab.NoEnemyRetaliation));
+        var b = f.Duel(witch.Id, 5, "CREATURE_PEASANT", 20, 1, new Cell(2, 5), new Cell(9, 5));
+        Assert.True(CombatValue.NoRangedThreat(b, 1));
+        var v = CombatValue.Of(b, 0).My;
+        Assert.True(v.ShooterDamage > 0);
+        Assert.Equal(0, v.WalkerDamage + v.FlyerDamage);
+        // Against an army that shoots, the stack is a walker / flyer again.
+        var b2 = f.Duel(witch.Id, 5, "CREATURE_ARCHER", 20, 1, new Cell(2, 5), new Cell(9, 5));
+        Assert.False(CombatValue.NoRangedThreat(b2, 1));
+        Assert.Equal(0, CombatValue.Of(b2, 0).My.ShooterDamage);
+    }
+
+    [Fact]
+    public void HeroSpellPotentialIsTheBestDamageSpell()   // FUN_00bfa360(10, 0) for the army's hero (FUN_00bfbe50 00bfc182)
+    {
+        var s = BattleSetup.Create(f.Db,
+            new ArmySetup { Hero = f.Db.DuelPresets[0].Hero, Army = new() { new ArmySlot("CREATURE_FOOTMAN", 10) } },
+            new ArmySetup { Army = new() { new ArmySlot("CREATURE_IMP", 50) } },
+            7, skipTactics: true, arena: "Grass_Big_01");
+        var b = new Battle(f.Db, s);
+        var h = s.Heroes[0];
+        h.Spells.Clear();
+        h.Wands.Clear();
+        h.Spells.Add("SPELL_MAGIC_ARROW");
+        var sp = f.Db.Spell("SPELL_MAGIC_ARROW")!;
+        int cost = b.HeroManaCost(h, sp);
+        Assert.True(cost > 0);
+        h.Mana = cost - 1;   // no cast (mana / cost < 1)
+        Assert.Equal(0, b.AiSpellPotential(null, h));
+        int dmg = (int)b.SpellBaseDamage(sp, sp, b.HeroMastery(h, sp), b.HeroSpellPower(h, sp));
+        h.Mana = cost * 3;   // three casts: 3 · dmg / 10
+        Assert.Equal(3 * dmg / 10, b.AiSpellPotential(null, h));
+        h.Mana = cost * 40;  // capped at 10 casts
+        Assert.Equal(dmg, b.AiSpellPotential(null, h));
+        Assert.Equal(dmg, (int)CombatValue.Of(b, 0).My.SpellPotential);
+    }
 }

@@ -61,7 +61,13 @@ Per-decision ledger with addresses and status: `docs/rules/AUDIT_AI.md`, section
   means of (stat + 1) (FUN_00bf9ee0); health ×1.4 incorporeal (×1.1 Rune of Etherealness), 1 for a Phantom copy.
   The contact matrix FUN_004b23b0: per creature size a flood of the free positions (own stacks expanded, the others on
   their far corner, all blocking), stacks bordering one region are in contact; adjacent stacks always (`Contact`).
-  **exact** (`CombatValue.Fill`); the luck/morale bonus FUN_00bfb4b0, hero potential [1], [0], [2], [16] **reconstructed** / 0.
+  **exact** (`CombatValue.Fill`). [0] = 0 (unit vf 0x84 null for every unit class); [2] = FUN_00bfa360(10, 0) of the walkers,
+  flyers and the hero (best damage spell, min(casts, 10) · damage / 10; `Battle.AiSpellPotential`); the bonus FUN_00bfb4b0
+  (`ExeBonus`: morale · luck, disabled time, initiative, speed, shooter flags, ATB, mana; clamp 0..13) and the health terms
+  (Celestial Shield ×1.25, Deflect Arrows ((1 − s) + s/(1 − g)) · hp · hp, defence ×2 under 0x13d) **exact** as far as
+  ported; the harpy rule (FUN_00a2f8f0 / FUN_00a2f130) **exact**; [1] = X / n, 0 from turn 3, with X **reconstructed**;
+  [16], the bonus's Gating / Forgetfulness / attack-defence / rune / vf 0x1e4 terms, the [5] hero multiplier, the
+  hypnotize / berserk side rules: GAP (AUDIT_AI.md).
 * **Measures** (x87 chop: every float → int truncates): damage FUN_00bfc4a0 = trunc(factor(AttackLevel,1)·Damage·Bonus) + the hero
   share when this side out-shoots the other; troops FUN_00bf9a50 = trunc(TroopsHealth·max(0.1, 1/factor(1,TroopsDefence)));
   war machines FUN_00bf9ab0; power FUN_00bf9b80 = trunc(Damage·max(1,factor(AttackLevel,trunc(otherTroopsDefence))·Bonus) +

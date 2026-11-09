@@ -8,17 +8,17 @@ namespace H5.Combat.AI;
 /// </summary>
 public sealed class SideValue
 {
-    /// <summary>[0] flat extras (ability objects). Not modelled yet: always 0.</summary>
+    /// <summary>[0] flat extras (the unit vf 0x84 object; null for every unit class, so always 0).</summary>
     public double Extra;
     /// <summary>[1] hero strike potential, split by the enemy's walker damage share in <see cref="DamageMeasure"/>.</summary>
     public double HeroPotential;
-    /// <summary>[2] spell potential (FUN_00bfa360). Not modelled yet: always 0.</summary>
+    /// <summary>[2] spell potential (FUN_00bfa360 of the walkers, flyers and the hero; an int slot).</summary>
     public double SpellPotential;
     /// <summary>[3] expected damage per round of all stacks.</summary>
     public double Damage;
     /// <summary>[4] damage-weighted mean of (Attack + 1).</summary>
     public double AttackLevel;
-    /// <summary>[5] damage-weighted luck/morale multiplier (starts at 1).</summary>
+    /// <summary>[5] damage-weighted bonus factor FUN_00bfb4b0 (starts at 1).</summary>
     public double Bonus = 1;
     /// <summary>[6] hit points of everything on the side (creatures and war machines).</summary>
     public double Health;
@@ -160,13 +160,32 @@ public sealed class CombatValue
     /// ×1.1 under Rune of Etherealness, FISTP chop; 1 for a Phantom copy), [6] += hp, a2 += (defence + 1)·hp; creatures
     /// also [8] += hp, a3 += (defence + 1)·hp. Averages: [4] = a0/[3], [5] = a1/[3], [7] = a2/[6], [9] = a3/[8],
     /// [11] /= a4, [13] /= a5, [15] /= a6.
-    /// GAP-details (not ported): [0] (the vf 0x84 object's vf 0xc), [2] (FUN_00bfa360, best castable damage spell),
-    /// [16] (FUN_00bfa610), the bonus factor FUN_00bfb4b0 (ours: <see cref="LuckMoraleBonus"/>), the hero part [1]
-    /// (0085b4a0 / turn, 0 after turn 2; ours: <see cref="HeroStrikePotential"/>) and its [5] multiplier, the
-    /// think-record damage multiplier FUN_00a314c0 (1.0 unless set), the harpy rule (FUN_00a2f130 when FUN_00a2f8f0 holds
-    /// for the enemy army), the category skip for the vf 0x7c type-2 object (ours: a war machine that cannot shoot),
-    /// Celestial Shield / FUN_00a5b780 / Deflect Arrows health terms, the doubled defence under 0x13d, and the
-    /// hypnotize / berserk side rules of FUN_00bfbe50 (ours: <see cref="Battle.Controller"/>).
+    /// [0] is 0 for every unit: its source, the unit vf 0x84 object (+= its vf 0xc), is null on the creature (008ae290),
+    /// hero (00bc2b50) and war-machine (00a76cf0) unit interfaces (all → FUN_00c98940).
+    /// [2] += <see cref="Battle.AiSpellPotential"/> (FUN_00bfa360(10, 0)) for each walker and flyer and, in FUN_00bfbe50, for
+    /// the army's hero. The bonus is <see cref="ExeBonus"/> (FUN_00bfb4b0). The harpy rule: with FUN_00a2f8f0(enemy army)
+    /// (<see cref="NoRangedThreat"/>) a stack with Strike and Return + No Enemy Retaliation (FUN_00a2f130) is a shooter.
+    /// Health terms (00bfbc07..00bfbe05): ×1.4 incorporeal (×1.1 under Rune of Etherealness, FISTP chop); 1 under Phantom
+    /// (effect 0x28; ours: a Phantom copy); else Celestial Shield (effect 0x22) ×1.25 (FISTP chop); Deflect Arrows (effect
+    /// 0x1d): trunc(((1 − s) + s / (1 − g)) · hp · hp), g = clamp(power, 0, 0.95) (FUN_00976b60), s = the enemy army's
+    /// shooter share FUN_00bfa500 (<see cref="ShooterShare"/>) — the exe multiplies by hp twice; a value beyond the int
+    /// range gives the FISTP integer indefinite. a2 uses the defence doubled under effect 0x13d (FISTP), a3 the plain one.
+    /// The hero part [1] (00bfc00e..00bfc08b): n = trunc(elapsed combat time / ticks per turn + 1) (FUN_00af1c00 /
+    /// FUN_00a2d700, FISTP chop; ours: <see cref="BattleState.Time"/>); n &gt; 2 → [1] stays 0; else [1] = X / max(1, n)
+    /// (integer division).
+    /// GAP-details (not ported): X = FUN_0085b4a0(combat vf 0x18, army) — the sum of vf 0x1c(0,0,0) over the objects of
+    /// that list (+0x54) of type 0 / 3 / 5 with vf 0x18(0,0) set owned by the army — is not identified (ours:
+    /// <see cref="HeroStrikePotential"/>); [16] = FUN_00bfa610 (Σ FUN_0085c2c0 over the army's stacks — the type-5 objects'
+    /// vf 0x1c(stack, 1, 0) — × 2 for shooters) stays 0; the [5] multiplier 1 + 0.05 · (hero unit vf 0x244(no spell) + hero
+    /// vf 0x40 = FUN_00bc0730) unless the hero holds effect 0x41 (vf 0x40 not identified); the think-record damage
+    /// multiplier FUN_00a314c0 (1.0 unless set); FUN_00a5b780's health addend (unit vf 0x70 / vf 0x2d0 / vf 0x1a8,
+    /// RPGStats +0x4cc / +0x4c0); Celestial Shield's ×2 branch (effect +0x20 / 100000 &gt; 2, field not identified); the
+    /// category skip for a unit whose vf 0x7c object has +0x1c = 2 (ours: a war machine that cannot shoot); the [8] / a3
+    /// test (unit vf 0 = 1 and creature interface vf 0x58 = +0x48 false; ours: not a war machine); the hypnotize rule of
+    /// FUN_00bfbe50 (effect 0x14: counted for the owner while its +0x1c ≤ the unit's vf 0x180, for the other army while
+    /// ≥) and the berserk rule (effect 0x12: skipped when its FUN_00bbbbc0 target belongs to the valued army; an enemy
+    /// berserker without a target is skipped) — ours: <see cref="Battle.Controller"/>; a unit counts when the valued
+    /// army owns (vf 0xc) or controls (vf 0x18) it.
     /// </summary>
     static SideValue Fill(Battle b, int side)
     {
@@ -175,10 +194,12 @@ public sealed class CombatValue
         var m = Contact.Build(b, side);
         long a0 = 0, a2 = 0, a3 = 0;
         float a1 = 0;
-        int a4 = 0, a5 = 0, a6 = 0;
+        int a4 = 0, a5 = 0, a6 = 0, spell = 0;
         float shD = 0, shA = 0, flD = 0, flA = 0, waD = 0, waA = 0;
         int damage = 0, health = 0, troops = 0;
         var enemies = s.Living.Where(e => b.Controller(e) != side && !e.IsObject).ToList();
+        bool harpy = NoRangedThreat(b, 1 - side);
+        float share = ShooterShare(b, 1 - side);
         foreach (var u in s.Living)
         {
             if (u.IsObject || b.Controller(u) != side) continue;
@@ -188,28 +209,38 @@ public sealed class CombatValue
             damage += dmg;
             int atk = b.AttackOf(u);
             a0 += (long)(atk + 1) * dmg;
-            float bd = (float)(dmg * LuckMoraleBonus(b, u));
+            float bd = (float)(dmg * (double)ExeBonus(b, u));
             a1 += bd;
             if (!u.IsWarMachine || shooter)
             {
                 float ad = (float)((double)(atk + 1) * dmg);
-                if (shooter) { shD += bd; shA = (float)((double)ad + shA); a4 += dmg; }
-                else if (u.Flying) { flD += bd; flA = (float)((double)ad + flA); a5 += dmg; }
-                else { waD += bd; waA = (float)((double)ad + waA); a6 += dmg; }
+                if (shooter || harpy && u.Has(Ab.StrikeAndReturn) && u.Has(Ab.NoEnemyRetaliation)) { shD += bd; shA = (float)((double)ad + shA); a4 += dmg; }
+                else if (u.Flying) { flD += bd; flA = (float)((double)ad + flA); a5 += dmg; spell += b.AiSpellPotential(u, null); }
+                else { waD += bd; waA = (float)((double)ad + waA); a6 += dmg; spell += b.AiSpellPotential(u, null); }
             }
             int hp = (int)Math.Min(int.MaxValue, u.TotalHealth);
             bool rune = u.HasEffect(H5.Combat.Fx.RuneEtherealness);
             if (u.Has(Ab.Incorporeal) || rune) hp = (int)(long)(hp * (rune ? 1.1 : 1.4));
             if (u.IsClone) hp = 1;
+            else if (u.HasEffect("SPELL_CELESTIAL_SHIELD")) hp = (int)(hp * 1.25f);
+            if (u.GetEffect("SPELL_DEFLECT_ARROWS") is { } da)
+            {
+                float g = Math.Max(0f, Math.Min((float)da.Value, 0.95f));
+                hp = Fistp((1.0 - share + 1.0 / (1.0 - g) * share) * (float)hp * (float)hp);
+            }
             int def = b.DefenceOf(u);
+            int def2 = u.HasEffect(H5.Combat.Fx.Invisible) ? Fistp(def + (double)def) : def;
             health += hp;
-            a2 += (long)(def + 1) * hp;
+            a2 += (long)(def2 + 1) * hp;
             if (!u.IsWarMachine)
             {
                 troops += hp;
                 a3 += (long)(def + 1) * hp;
             }
         }
+        var hero = s.Heroes[side];
+        if (hero.Present) spell += b.AiSpellPotential(null, hero);
+        v.SpellPotential = spell;
         v.Damage = damage; v.Health = health; v.TroopsHealth = troops;
         v.ShooterDamage = shD; v.FlyerDamage = flD; v.WalkerDamage = waD;
         if (damage != 0) { v.AttackLevel = (float)((double)a0 / damage); v.Bonus = (float)((double)a1 / damage); }
@@ -218,8 +249,89 @@ public sealed class CombatValue
         v.ShooterAttack = a4 != 0 ? shA / (float)a4 : shA;
         v.FlyerAttack = a5 != 0 ? flA / (float)a5 : flA;
         v.WalkerAttack = a6 != 0 ? waA / (float)a6 : waA;
-        v.HeroPotential = HeroStrikePotential(b, side, enemies);
+        int n = (int)((float)s.Time + 1.0f);
+        if (n <= 2) v.HeroPotential = (int)HeroStrikePotential(b, side, enemies) / Math.Max(1, n);
         return v;
+    }
+
+    /// <summary>x87 FISTP of a double: the integer, or the integer indefinite 0x80000000 outside the int range.</summary>
+    internal static int Fistp(double x) => x >= -2147483648.0 && x < 2147483648.0 ? (int)x : int.MinValue;
+
+    /// <summary>
+    /// FUN_00a2f8f0(army), the harpy rule's test: true when the army has no hero (vf 0xc) and none of its living stacks
+    /// (army vf 0x6c) shoots (vf 0x1e0), has a spell potential (FUN_00bfa4f0 &gt; 0) or has Strike and Return + No Enemy
+    /// Retaliation (FUN_00a2f130). GAP-detail: war machines are left out (army vf 0x6c not identified).
+    /// </summary>
+    internal static bool NoRangedThreat(Battle b, int side)
+    {
+        if (b.State.Heroes[side].Present) return false;
+        foreach (var u in b.State.Living)
+        {
+            if (u.Side != side || u.IsObject || u.IsWarMachine) continue;
+            if (b.CanShoot(u) || b.AiSpellPotential(u, null) > 0 || u.Has(Ab.StrikeAndReturn) && u.Has(Ab.NoEnemyRetaliation)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// FUN_00bfa500(army): over the army's stacks (army vf 0x64), r = count (vf 0x1d8) · (max + min) (vf 0x1ec / 0x1f0) · 0.5
+    /// in single precision; the shooters' (vf 0x1e0) sum over the total, 0 when the total is not above 0.
+    /// GAP-detail: war machines are left out (army vf 0x64 not identified).
+    /// </summary>
+    internal static float ShooterShare(Battle b, int side)
+    {
+        float all = 0, shoot = 0;
+        foreach (var u in b.State.Living)
+        {
+            if (u.Side != side || u.IsObject || u.IsWarMachine) continue;
+            var (min, max) = b.DamageRangeOf(u);
+            float r = (float)u.Count * (float)((float)max + (float)min) * 0.5f;
+            all = r + all;
+            if (b.CanShoot(u)) shoot = r + shoot;
+        }
+        return all > 0f ? shoot / all : 0f;
+    }
+
+    /// <summary>
+    /// FUN_00bfb4b0(unit, x), the stack's bonus factor (single precision, clamped to [0, 13]), as ported:
+    /// (1 + 0.1·vf 0x1b0)(1 + 0.1·vf 0x1ac) (morale, luck); × (1 − min(t, 5)/6) when the disabled time t (FUN_004e4920: the
+    /// remaining duration of Blind 0x13, Frozen 0xc9, Sabotage 0x14a or Sleeping Strike 0x150, else of Seduce 0x148 via
+    /// FUN_004e48a0, over the ticks per turn) is above 0.1; × max(2, min(initiative, 30)) · 0.1; × (1 + 0.05·(speed − 5))
+    /// without ability 1 (shooter); a shooter (ability 1) that cannot shoot (vf 0x1e0) × 0.9 with ability 2 (no melee
+    /// penalty), else × 0.5; ability 4 (range penalty) and able to shoot × 0.5; × (0.95 + 0.1·clamp(ATB, 0, 1)) when the unit
+    /// is not x (always in the position value: x is an army there); × (1 + 0.1·mana/max) when max mana &gt; 0.
+    /// GAP-details: the Gating term (effect 0x9f: × (1 − min(ceil(max(1 − ATB, 0) · vf 0x174) / ticks per turn, 3)/6)), the
+    /// Forgetfulness term for a shooter (effect 0x11: × (2 − FUN_00976b30)/2, its power FUN_00a34c40 not identified), the
+    /// creature's attack and defence terms (× (1 + 0.1·(creature interface +0x20)/record +0x78), × (1 + 0.1·(+0x24)/record
+    /// +0x7c): fields not identified), the rune share FUN_00bfb3d0 (× (1 + 0.1·share); ours: no creature runes) and
+    /// × 1.1 for vf 0x1e4 (FUN_008a10e0, field −0x80 not identified) without ability 0x22 are not applied; the shooter
+    /// ability is read as having shots (war machines: no); Seduce is read on the unit itself (the exe reads it through vf 0x30).
+    /// </summary>
+    internal static float ExeBonus(Battle b, Unit u)
+    {
+        float k = (float)((b.MoraleOf(u) * (double)0.1f + 1.0) * (b.LuckOf(u) * (double)0.1f + 1.0));
+        float t = DisabledTime(u);
+        if (t > 0.1f) k = (float)((1.0 - Math.Min(t, 5f) * (double)(1f / 6f)) * k);
+        float init = (float)b.InitiativeOf(u);
+        float c = Math.Max(2f, Math.Min(init, 30f));
+        k = (float)((double)c * k * 0.1f);
+        bool shooterAbility = !u.IsWarMachine && u.MaxShots > 0;
+        if (!shooterAbility) k = (float)(((b.SpeedOf(u) - 5) * (double)0.05f + 1.0) * k);
+        bool shoots = b.CanShoot(u);
+        if (shooterAbility && !shoots) k *= u.Has(Ab.NoMeleePenalty) ? 0.9f : 0.5f;
+        if (u.Has(Ab.RangePenalty) && shoots) k *= 0.5f;
+        float atb = Math.Max(0f, Math.Min((float)u.Atb, 1f));
+        k = (float)((atb * (double)0.1f + 1.0 - 0.05f) * k);
+        if (u.MaxMana > 0) k = (float)((u.Mana * (double)0.1f / u.MaxMana + 1.0) * k);
+        return k < 0f ? 0f : k > 13f ? 13f : k;
+    }
+
+    /// <summary>FUN_004e4920: remaining turns of the first of Blind, Frozen, Sabotage, Sleeping Strike, else Seduce; 0 without.</summary>
+    static float DisabledTime(Unit u)
+    {
+        foreach (var id in new[] { "SPELL_BLIND", H5.Combat.Fx.Frozen, H5.Combat.Fx.Sabotaged, H5.Combat.Fx.Sleep, H5.Combat.Fx.Seduced })
+            if (u.GetEffect(id) is { } e) return (float)e.Remaining;
+        return 0f;
     }
 
     /// <summary>
@@ -272,16 +384,6 @@ public sealed class CombatValue
             if (ui >= 0 && m[ui, j]) threat += w;
         }
         return total != 0 ? (double)threat / total : 1;
-    }
-
-    /// <summary>Expected multiplier from luck (×2 / ×0.5) and morale (extra / lost half turn), 10% per point, capped at 50%.</summary>
-    static double LuckMoraleBonus(Battle b, Unit u)
-    {
-        int luck = b.LuckOf(u), morale = b.MoraleOf(u);
-        double pl = Math.Min(0.5, 0.1 * Math.Abs(luck)), pm = Math.Min(0.5, 0.1 * Math.Abs(morale));
-        double l = luck >= 0 ? 1 + pl : 1 - 0.5 * pl;
-        double m = morale >= 0 ? 1 + 0.5 * pm : 1 - 0.5 * pm;
-        return l * m;
     }
 
     static double HeroStrikePotential(Battle b, int side, List<Unit> enemies)
