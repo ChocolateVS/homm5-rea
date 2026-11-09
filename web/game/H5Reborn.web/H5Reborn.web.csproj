@@ -37,6 +37,13 @@
         <TrimmerRootAssembly Include="$(TargetName)"/>
     </ItemGroup>
 
+    <!-- Single-threaded build: WebGL renders straight to the canvas instead of Emscripten's offscreen back buffer, whose
+         per-frame copy waited for the GPU process (emscripten/h5_webgl_direct.js; docs/WEB_BUILD.md, Performance). -->
+    <ItemGroup Condition="'$(WasmEnableThreads)' != 'true'">
+        <_H5WebJsLibrary Include="$(MSBuildProjectDirectory)/emscripten/h5_webgl_direct.js"/>
+        <TwoDogGodotEmccExtraLDFlag Include="@(_H5WebJsLibrary->'--js-library &quot;%(FullPath)&quot;'->Replace('\', '/'))"/>
+    </ItemGroup>
+
     <Target Name="DeepClean" AfterTargets="Clean">
         <RemoveDir Directories="AppBundle"/>
     </Target>
