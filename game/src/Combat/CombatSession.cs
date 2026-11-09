@@ -91,7 +91,14 @@ public sealed class LocalCombatSession : CombatSession
     readonly ulong _seed;
 
     public LocalCombatSession(GameDatabase db, int presetA, int presetB, ulong seed, IEnumerable<int> humanSides)
-        : this(db, BattleSetup.CreateDuel(db, presetA, presetB, seed), presetA, presetB, seed, humanSides) { }
+        : this(db, DuelState(db, presetA, presetB, seed), presetA, presetB, seed, humanSides) { }
+
+    /// <summary>The duel heroes are made by the map-hero creation (H5_Game.exe 009aacb0, <c>Adventure.DuelHeroes</c>).</summary>
+    static BattleState DuelState(GameDatabase db, int presetA, int presetB, ulong seed)
+    {
+        var (a, b) = H5.Adventure.Engine.Adventure.DuelHeroes(H5Reborn.Adventure.AdventureSession.SharedDb, presetA, presetB, seed);
+        return BattleSetup.CreateDuel(db, a, b, seed);
+    }
 
     /// <summary>A local battle on a prepared state (e.g. a siege built with BattleSetup.Create(..., siege:)).</summary>
     public LocalCombatSession(GameDatabase db, BattleState state, int presetA, int presetB, ulong seed, IEnumerable<int> humanSides)

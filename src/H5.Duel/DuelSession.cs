@@ -16,7 +16,9 @@ namespace H5.Duel;
 // GameCommand.Command: a BattleCommand json ("$t" tagged)
 // GameUpdate.Events:  { "command": <BattleCommand json with Side>, "events": [BattleEvent json] }
 
-public sealed class DuelSessionFactory(GameDatabase db) : IGameSessionFactory
+/// <param name="heroes">Builds the two combat heroes from the chosen presets and the seed (the game passes
+/// H5.Adventure's map-hero creation, <c>Adventure.DuelHeroes</c>); null uses the raw preset records.</param>
+public sealed class DuelSessionFactory(GameDatabase db, Func<int, int, ulong, (HeroInstance A, HeroInstance B)>? heroes = null) : IGameSessionFactory
 {
     public string Mode => "duel";
     public int MinPlayers => 2;
@@ -28,10 +30,10 @@ public sealed class DuelSessionFactory(GameDatabase db) : IGameSessionFactory
         return p >= 0 && p < db.DuelPresets.Count ? null : $"preset must be 0..{db.DuelPresets.Count - 1}";
     }
 
-    public IGameSession Create() => new DuelSession(db);
+    public IGameSession Create() => new DuelSession(db, heroes);
 }
 
-public sealed class DuelSession(GameDatabase db) : IGameSession
+public sealed class DuelSession(GameDatabase db, Func<int, int, ulong, (HeroInstance A, HeroInstance B)>? heroes = null) : IGameSession
 {
     Battle _battle = null!;
 
@@ -43,7 +45,9 @@ public sealed class DuelSession(GameDatabase db) : IGameSession
     public IReadOnlyList<JsonNode> Start(IReadOnlyList<RoomPlayer> playersBySide, JsonObject? roomSettings, ulong seed)
     {
         int a = PresetOf(playersBySide[0], 0), b = PresetOf(playersBySide[1], 1);
-        var state = BattleSetup.CreateDuel(db, a, b, seed);
+        BattleState state;
+        if (heroes == null) state = BattleSetup.CreateDuel(db, a, b, seed);
+        else { var (ha, hb) = heroes(a, b, seed); state = BattleSetup.CreateDuel(db, ha, hb, seed); }
         // The initial state is captured before Begin() so replicas reproduce the opening exactly.
         var stateJson = JsonNode.Parse(state.Serialize())!;
         _battle = new Battle(db, state);

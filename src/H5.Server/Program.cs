@@ -77,7 +77,8 @@ public static class SessionFactories
     {
         var fs = PakFileSystem.OpenInstall(install);
         var db = H5.Core.Data.GameDatabase.Load(fs);
-        yield return new H5.Duel.DuelSessionFactory(db);
+        var advDb = new Lazy<H5.Adventure.Data.AdventureDb>(() => H5.Adventure.Data.AdventureDb.Load(db, fs));
+        yield return new H5.Duel.DuelSessionFactory(db, (a, b, seed) => H5.Adventure.Engine.Adventure.DuelHeroes(advDb.Value, a, b, seed));
         yield return new H5.AdvNet.AdventureSessionFactory(new H5.AdvNet.AdvMapSource(db, fs, install));
     }
 }

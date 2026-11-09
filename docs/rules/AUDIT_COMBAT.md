@@ -12,9 +12,9 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 393 |
+| FIXED | 394 |
 | MATCH | 217 |
-| GAP | 14 |
+| GAP | 13 |
 | UNVERIFIED | 0 |
 | N/A | 64 |
 
@@ -688,7 +688,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | `DRAGON_TALON_CROWN` | FIXED | 00a75930 → 004bae60 | war machine initiative × (0.1 · crowns + 1), + RunicMachines_InitiativeBonus (float; the rounded copy at 004bd7b0 +0x68 is not the combat value). Was missing | AuditSkillTestsH.DragonTalonCrownSpeedsUpWarMachines |
 | `DRAGON_TEETH_NECKLACE` | FIXED | 004bc190 (004bc380) | +10 % each for ABILITY_CASTER / ABILITY_RANDOM_CASTER creatures | (same helper) |
 | `DRAGON_WING_MANTLE` | FIXED | 004bc190 (004bc363) | +10 % each for flyers | AuditSkillTestsH.ArmyArtifactsScaleCreatureInitiative |
-| `Duel heroes' artifact book entries` | GAP | DuelPresets readers 0051dd20 / 00513d60 (lobby), 00b56cd0, 00b541f0 | `BattleSetup.CreateDuel` builds the heroes from UI/MPDMLobby presets with the preset spells only, so worn tomes / Band of Conjurer / Ring of Unsummoning / wands give a duel hero nothing; how the exe turns a preset into a hero (whether through the map-hero creation 009aacb0 and the set-up 00b56cd0, which would add the entries) is not traced |  |
+| `Duel heroes' artifact book entries` | FIXED | 0081ebc0 ("presetmap"), Maps/DuelMode/PresetMap/map.xdb objects, 009aacb0 → 00b56cd0 / 00b541f0, preset screen 00749570 / 0072d430 | the duel map Maps/DuelMode/PresetMap holds the 24 preset AdvMapHero records as map objects, so the preset heroes are made by the map-hero creation 009aacb0 (talisman, hero set-up with the worn artifacts' entries, artifact objects 00ca7e40); the preset screen is given those hero objects (0072d430 reads face, class 00b4d640, level 00b4c840, army, artifacts, book from them). `Adventure.DuelHeroes` runs `HeroFromInstance` + `ToInstance` for both presets and `BattleSetup.CreateDuel(db, heroA, heroB, …)` takes them (local duel, LAN/online host, dedicated server); the army stays the record's slots (009aa5f0's slot copy not traced; the adventure merge would join two equal stacks) and the Rune of Flame draw uses a seed-derived RNG (exe: the world RNG of the map load) | DuelHeroTests.WornArtifactSpellsReachTheDuelHero |
 | `Hero set-up artifact entries (00b56cd0)` | GAP | 00b56cd0 (00b53b10 at 00b56de9, 00b541f0 at 00b56e53) | the set-up rebuilds the book before it puts the worn artifacts' entries in, so a hero's starting artifacts have no mass / empowered versions until the next rebuild (perk learn, artifact on / off); the adventure book follows this (`SetUpHeroBook`), but `Battle.HeroSpells` derives the versions for every entry it is given, so in combat they are there from the start |  |
 | `MAE_ARMOR_CRUSHING` | FIXED | 00a629b0 (00a62cbc..00a62d08, byte +8), 004e3990, 004e4a80, 00989790 | after each strike on a live target (any strike, retaliations and shots included) the attacker's value is put on the target as SPELL_EFFECT_ARMOR_CRUSHING (vf 0x260, duration 0x7ffffffe); repeated applications add up | AuditMicroArtifactTests.ArmorCrushingAccumulatesPerStrikeAndSparesArmored |
 | `MAE_DEFENCE` | FIXED | 004bb2a0 (byte +7) | defence = week-adjusted record defence + value, then the hero's defence; the Defend posture bonus (008a22f0) is computed on the sum | AuditMicroArtifactTests.PiercingDefenceHealthAndSpeedRaiseTheBaseValues |

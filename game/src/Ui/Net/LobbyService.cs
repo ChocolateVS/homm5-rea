@@ -161,7 +161,8 @@ public partial class LobbyService : Node
             LanBind = DevArgs.NetLoopback ? new IPEndPoint(IPAddress.Loopback, LanDiscovery.DefaultPort) : null,
         }, new IGameSessionFactory[]
         {
-            new H5.Duel.DuelSessionFactory(Game.Instance.Db),
+            new H5.Duel.DuelSessionFactory(Game.Instance.Db,
+                (a, b, seed) => H5.Adventure.Engine.Adventure.DuelHeroes(H5Reborn.Adventure.AdventureSession.SharedDb, a, b, seed)),
             new H5.AdvNet.AdventureSessionFactory(AdvNet.AdvNetGame.Maps),
         }, s => GD.Print($"[server] {s}"));
         var hostPort = _host.Port;

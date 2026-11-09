@@ -103,7 +103,15 @@ public static class BattleSetup
         return (t0 && !t1 ? 3 : 2, t1 && !t0 ? 3 : 2);
     }
 
-    public static BattleState CreateDuel(GameDatabase db, int presetA, int presetB, ulong seed, bool skipTactics = false, string? arena = null)
+    /// <summary>
+    /// A duel between the raw preset records: only the record's own spells, no artifact book entries or artifact objects.
+    /// The game builds duel heroes with H5.Adventure's <c>Adventure.DuelHeroes</c> (the map-hero creation 009aacb0) and
+    /// the overload taking the heroes; this one is kept for engine tests.
+    /// </summary>
+    public static BattleState CreateDuel(GameDatabase db, int presetA, int presetB, ulong seed, bool skipTactics = false, string? arena = null) =>
+        CreateDuel(db, db.DuelPresets[presetA].Hero, db.DuelPresets[presetB].Hero, seed, skipTactics, arena);
+
+    public static BattleState CreateDuel(GameDatabase db, HeroInstance heroA, HeroInstance heroB, ulong seed, bool skipTactics = false, string? arena = null)
     {
         if (arena == null)
         {
@@ -111,7 +119,7 @@ public static class BattleSetup
             var pick = new Rng(seed ^ 0x9E3779B97F4A7C15UL);
             arena = PickArena(db, pick, CombatArenaTable.TerrainGrass);
         }
-        return Create(db, ArmySetup.FromHero(db.DuelPresets[presetA].Hero), ArmySetup.FromHero(db.DuelPresets[presetB].Hero), seed,
+        return Create(db, ArmySetup.FromHero(heroA), ArmySetup.FromHero(heroB), seed,
             skipTactics: skipTactics, arena: arena);
     }
 
