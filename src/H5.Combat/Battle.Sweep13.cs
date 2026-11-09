@@ -14,7 +14,8 @@ public sealed partial class Battle
     /// COMBAT_ABILITY_ALREADY_USED) and FUN_0097a230: a creature (vf 0x6c); a dead stack needs FUN_00977da0 — not a Phantom
     /// (vf 0x28(0x28)) and every one of its cells held by itself (FUN_00b3f330); then vf 0x1fc(1) = FUN_008a40c0: the top
     /// creature below full health or the count below the initial count (else COMBAT_CANT_RESURRECT_ONE_CREATURE).
-    /// So a living damaged ally is a valid target. Not ported: FUN_00977da0's vf 0x4c ≠ 1 (a unit state not identified).
+    /// So a living damaged ally is a valid target. FUN_00977da0's vf 0x4c ≠ 1 is the placement state (sweep 14): state 1
+    /// on a dead stack comes from the corpse consumers, which mark it <c>Removed</c> here.
     /// </summary>
     internal string? ResurrectAlliesRefusal(Unit caster, Unit? t)
     {

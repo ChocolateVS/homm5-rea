@@ -615,7 +615,7 @@ public sealed partial class Battle
                 break;
             }
             case Ab.Sabotage:
-                if (!(t!.Has(Ab.Mechanical) || t.IsWarMachine) || !SabotageHealthAllows(u, t)) return "cannot sabotage this target";   // exe 0097f610 case 0x14a
+                if (!SabotageTargetAllows(u, t!)) return "cannot sabotage this target";   // exe 0097f610 case 0x14a (Battle.Sweep14.cs)
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
                 AddEffect(t, new Effect { Id = H5.Combat.Fx.Sabotaged, Actions = 1, SourceSide = u.Side, Dispellable = false });
                 break;

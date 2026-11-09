@@ -459,7 +459,7 @@ public sealed partial class Battle
     {
         int need = sp.Level <= 2 ? 1 : sp.Level <= 4 ? 2 : 3;   // Runelore circles (p.143)
         if ((int)h.SkillLevel(Sk.Runelore) < need) return "runelore mastery too low";
-        if (RuneUsedUp(h, sp, target)) return "rune already used on this stack";   // exe FUN_00419f00 / FUN_00989190 (Battle.Sweep12.cs)
+        if (RuneHasRecords(target) && RuneUsedUp(h, sp, target)) return "rune already used on this stack";   // exe FUN_00419f00 / FUN_00989190 (Battle.Sweep12.cs, Sweep14.cs)
         if (RuneUsedThisTurn(target)) return "COMBAT_RUNIC_SPELL_ALREADY_USED_THIS_TURN";   // exe FUN_00989190 flag 1 (Battle.Sweep13.cs)
         // exe FUN_00419f00: hero vf 0x220 — the cast is refused (COMBAT_NO_ENOUGH_MONEY) when the cost without the Fine
         // Rune roll cannot be paid.

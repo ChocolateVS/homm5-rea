@@ -327,12 +327,14 @@ public sealed partial class Battle
         var target = f.Cells[0];
         if (f.Kind == "BATTLE_DIVE")
         {
-            if (S.At(target) is { } v && v.Id != u.Id)
-                Strike(u, v, new Hit { Kind = AttackKind.Melee, Multiplier = 2, BattleDiveFinish = true }, pattern: false);   // ×2 on anyone, friend or foe
-            // Return to a random free cell.
-            var free = new List<Cell>();
-            for (int x = 0; x < S.Width; x++) for (int y = 0; y < S.Height; y++) { var c = new Cell(x, y); if (Fits(u, c)) free.Add(c); }
-            if (free.Count > 0 && u.Alive) Teleport(u, free[S.Rng.Next(free.Count)]);
+            // exe case 0x9b (009877df..00987963): the landing cell first (FUN_00979680, Battle.Sweep14.cs) — none → no
+            // strike; then vf 0xe8(0) puts the griffins down and FUN_00a65d50 strikes the unit at the target cell
+            // (FUN_00a65260 → FUN_00a5fde0), ×2 on anyone, friend or foe.
+            var v = S.At(target) is { } occ && occ.Id != u.Id ? occ : null;
+            if (BattleDiveLanding(u, target) is not { } land) return;
+            if (land != u.Pos) Teleport(u, land);
+            if (v is { Alive: true } && u.Alive)
+                Strike(u, v, new Hit { Kind = AttackKind.Melee, Multiplier = 2, BattleDiveFinish = true }, pattern: false);
         }
         else
         {

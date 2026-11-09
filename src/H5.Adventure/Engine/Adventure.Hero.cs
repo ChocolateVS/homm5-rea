@@ -328,6 +328,8 @@ public sealed partial class Adventure
         var id = CanonicalSkill(perk);
         if (id == "HERO_SKILL_LEARNING") { ApplyLearningBonus(h); return; }
         if (PerkStat(id) is { } st) AddStat(h, st.Stat, st.Amount);
+        if (id == "HERO_SKILL_DEFEND_US_ALL") DefendUsAllOnLearn(h);
+        if (id == "HERO_SKILL_BODYBUILDING") BodybuildingOnLearn(h);
         PerkSpellsOnLearn(h, id);
         if (id is not ("HERO_SKILL_STUDENT_AWARD" or "HERO_SKILL_ACADEMY_AWARD" or "HERO_SKILL_DARK_REVELATION")) return;
         if (!h.PerkRewardsClaimed.Add(id)) return;
@@ -348,6 +350,45 @@ public sealed partial class Adventure
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// Defend Us All (00b54770 case 0xb5, 00b55815..00b55980), once per hero (flag +0x2ac, set even when nothing is
+    /// given): n = min(120, (day counter (world vf 0xa8, 0-based) / 7 + 1) · 15) creatures of FUN_0045b8e0(army,
+    /// CREATURE_GOBLIN 0x75) join the army (vf 0x378). FUN_0045b8e0: a creature without Upgrades (record +0x104) is
+    /// itself; else, when the army has an empty slot, its first upgrade; else the first of the upgrades in reverse
+    /// order, then the creature, that the army already holds (FUN_0045b0e0); none → nothing.
+    /// </summary>
+    void DefendUsAllOnLearn(HeroState h)
+    {
+        if (!h.PerkRewardsClaimed.Add("HERO_SKILL_DEFEND_US_ALL")) return;
+        int n = Math.Min(120, ((S.Day - 1) / 7 + 1) * 15);
+        if (DefendUsAllCreature(h.Army, "CREATURE_GOBLIN") is not { } c || n <= 0) return;
+        if (h.Army.TryAdd(c, n)) Emit(new ArmyChanged(h.Id, -1));
+    }
+
+    string? DefendUsAllCreature(Stack?[] army, string creature)
+    {
+        if (!Core.Creatures.TryGetValue(creature, out var cd) || cd.Upgrades.Count == 0) return creature;
+        if (army.Any(s => s is not { Count: > 0 })) return cd.Upgrades[0];
+        foreach (var c in Enumerable.Reverse(cd.Upgrades).Append(creature))
+            if (army.Any(s => s is { Count: > 0 } && s.Creature == c)) return c;
+        return null;
+    }
+
+    /// <summary>The source key of Bodybuilding's next-battle bonus (hero vf 0x1fc / 0x200 with 0x160bd300, 0).</summary>
+    internal const int BodybuildingBonusSource = 0x160bd300;
+
+    /// <summary>
+    /// Bodybuilding (00b54770 case 0xba, 00b559a7..00b55a3f): unless the hero already holds the next-battle bonus of
+    /// source (0x160bd300, 0) (vf 0x1fc), vf 0x200 adds the bonus record with field [4] (+0x10, creature hit points
+    /// percent, read by FUN_004bc470 through hero vf 0x330) = Bodybuilding_HPBonusPercent (RPGStats +0x718) — the
+    /// list of the next-battle bonus buildings, cleared by the next battle (<see cref="ClearBattleBonuses"/>).
+    /// </summary>
+    void BodybuildingOnLearn(HeroState h)
+    {
+        if (!h.VisitedSinceBattle.Add(BodybuildingBonusSource)) return;
+        h.NextBattleHitPoints += (int)Core.Stats.Get("combat/HeroSkills/Barbarian/Bodybuilding_HPBonusPercent", 10);
     }
 
     /// <summary>
