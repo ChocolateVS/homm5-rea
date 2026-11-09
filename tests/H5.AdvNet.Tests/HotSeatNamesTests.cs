@@ -48,4 +48,23 @@ public class HotSeatNamesTests
         HotSeatNames.Fix(s, Name);
         Assert.Equal(new[] { "Green", "Blue", "Teal" }, s.Select(x => x.Name));
     }
+
+    /// <summary>006666f0 / 006664c0 type 0: 2..10 units after trimming, none of &lt; &gt; &amp; " =; else the text counts as empty.</summary>
+    [Fact]
+    public void NamesOutsideTheTypeZeroLimitsCountAsEmpty()
+    {
+        Assert.Equal("Anna", HotSeatNames.Trim("  Anna "));
+        Assert.Equal("", HotSeatNames.Trim(" A "));
+        Assert.Equal("Bo", HotSeatNames.Trim("Bo"));
+        Assert.Equal("ABCDEFGHIJ", HotSeatNames.Trim("ABCDEFGHIJ"));
+        Assert.Equal("", HotSeatNames.Trim("ABCDEFGHIJK"));
+        Assert.Equal("", HotSeatNames.Trim("A<b>"));
+        Assert.Equal("", HotSeatNames.Trim("a=b"));
+        var s = Slots();
+        HotSeatNames.Init(s, Name);
+        s[1].Name = "X";
+        Assert.False(HotSeatNames.Valid(s[1], Name));
+        HotSeatNames.Fix(s, Name);
+        Assert.Equal("Blue", s[1].Name);
+    }
 }

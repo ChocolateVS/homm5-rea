@@ -222,7 +222,8 @@ public partial class PwlScreen : UiScreen
 
     /// <summary>
     /// 006b1530 (campaign mission) passes the map's PWLPicture (SAdvMapDesc +0x238, registered 00a0b4b0) to the screen;
-    /// 006b30c0 gives it to Main/CustomPicture (window vf 0xa4) when there is one, and shows Main/Logo only without one.
+    /// 006b30c0 gives it to Main/CustomPicture (window vf 0xa4) when there is one, and shows Main/Logo only without one;
+    /// the same test picks the root background.
     /// </summary>
     void ShowPicture(Texture2D? picture)
     {
@@ -233,6 +234,13 @@ public partial class PwlScreen : UiScreen
                 pic.AddChild(new TextureRect { Texture = picture, AnchorRight = 1, AnchorBottom = 1, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = MouseFilterEnum.Ignore });
         }
         SetVisible("Logo", picture == null);
+        // 006b3223: the root's related texture back_custom (a picture given) or back_common becomes the root window's
+        // background (root vf 0x110 by name → vf 0x104 → vf 0x28); a2p1 UI/pwlscreen/Textures: CustomBack / Back.
+        if (Root.RelatedTextures.TryGetValue(picture != null ? "back_custom" : "back_common", out var back) && Root.Background is { } bg)
+        {
+            bg.DdsPath = bg.TexturePath = back;
+            NodeOf(Root)?.QueueRedraw();
+        }
     }
 
     /// <summary>The map's PWLPicture: the campaign map tag (map-tag.xdb) names the AdvMapDesc (map.xdb) that holds it.</summary>

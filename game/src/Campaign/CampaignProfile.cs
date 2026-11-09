@@ -1,55 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Godot;
-using H5.Adventure.State;
+using H5.Adventure.Engine;
 using H5.Core.Data;
 
 namespace H5Reborn.Campaign;
-
-public sealed class SavedStack
-{
-    public string Creature = "";
-    public int Count;
-}
-
-/// <summary>
-/// A hero saved at the end of a campaign mission (HeroesPool) and restored in the mission
-/// named by TargetMission: level, experience, attributes, skills, perks, spells, artifacts,
-/// army and war machines. Position, owner and identity come from the new map.
-/// </summary>
-public sealed class SavedHero
-{
-    public string ScriptName = "";
-    public int Level = 1;
-    public long Experience;
-    public int Attack, Defence, SpellPower, Knowledge;
-    public List<SkillEntry> Skills = new();
-    public List<string> Perks = new(), Spells = new(), Artifacts = new(), Backpack = new();
-    public List<SavedStack> Army = new();
-    public bool Ballista, FirstAidTent, AmmoCart;
-
-    public static SavedHero From(HeroState h) => new()
-    {
-        ScriptName = h.DefId,
-        Level = h.Level, Experience = h.Experience,
-        Attack = h.Attack, Defence = h.Defence, SpellPower = h.SpellPower, Knowledge = h.Knowledge,
-        Skills = h.Skills.ToList(),
-        Perks = h.Perks.ToList(), Spells = h.Spells.ToList(), Artifacts = h.Artifacts.ToList(), Backpack = h.Backpack.ToList(),
-        Army = h.Army.Live().Select(s => new SavedStack { Creature = s.Creature, Count = s.Count }).ToList(),
-        Ballista = h.Ballista, FirstAidTent = h.FirstAidTent, AmmoCart = h.AmmoCart,
-    };
-
-    public void ApplyTo(HeroState h)
-    {
-        h.Level = Level; h.Experience = Experience;
-        h.Attack = Attack; h.Defence = Defence; h.SpellPower = SpellPower; h.Knowledge = Knowledge;
-        h.Skills = Skills.ToList();
-        h.Perks = Perks.ToList(); h.Spells = Spells.ToList(); h.Artifacts = Artifacts.ToList(); h.Backpack = Backpack.ToList();
-        h.Army = H5.Adventure.State.Army.Empty();
-        foreach (var s in Army) h.Army.TryAdd(s.Creature, s.Count);
-        h.Ballista = Ballista; h.FirstAidTent = FirstAidTent; h.AmmoCart = AmmoCart;
-    }
-}
 
 /// <summary>
 /// Per-profile campaign progress (completed missions, carried heroes, difficulty), kept in
@@ -62,7 +17,12 @@ public sealed class CampaignProfile
     /// <summary>Campaign internal name → completed mission indices.</summary>
     public Dictionary<string, SortedSet<int>> Completed = new();
     /// <summary>"&lt;campaign&gt;:&lt;targetMission&gt;" (0-based) → heroes waiting for that mission.</summary>
-    public Dictionary<string, List<SavedHero>> CarriedHeroes = new();
+    public Dictionary<string, List<CampaignHeroRecord>> CarriedHeroes = new();
+    /// <summary>
+    /// "&lt;campaign&gt;:&lt;mission&gt;" → the extra heroes (HeroesPool Count beyond its entries) stored by the mission won before
+    /// it (0045f460 → record +0x18, handed on by 0045f080). Kept for the map's placeholder heroes; not consumed yet (GAP).
+    /// </summary>
+    public Dictionary<string, List<CampaignHeroRecord>> CarriedExtras = new();
 
     static readonly JsonSerializerOptions Json = new()
     {

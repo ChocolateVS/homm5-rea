@@ -14,8 +14,18 @@ public static class HotSeatNames
     /// <summary>The name-table key of a slot colour ("PCOLOR_RED" → "red").</summary>
     public static string ColourKey(string colour) => colour.Replace("PCOLOR_", "").ToLowerInvariant();
 
-    /// <summary>006666f0 → 00666950: the text without leading and trailing " \t\n\r" (the 006664c0 type-0 checks are not traced).</summary>
-    public static string Trim(string n) => n.Trim(' ', '\t', '\n', '\r');
+    /// <summary>
+    /// 006666f0: the text without leading and trailing " \t\n\r" (00666950) when 006664c0 type 0 accepts it, else empty.
+    /// Type 0 (006664c0 at 00666507): the trimmed length is within [00f38304, 00f38308] = [2, 10] UTF-16 units, every unit
+    /// passes 00c3cf80(c, 3) — none of &lt; &gt; &amp; " = CR LF — and 00c10ff0 passes (not traced, taken as passing).
+    /// </summary>
+    public static string Trim(string n)
+    {
+        var t = n.Trim(' ', '\t', '\n', '\r');
+        return t.Length is >= 2 and <= 10 && t.IndexOfAny(Refused) < 0 ? t : "";
+    }
+
+    static readonly char[] Refused = { '<', '>', '&', '"', '=', '\r', '\n' };
 
     /// <summary>0077c5c0 ends with item vf 0x28 (00713a00 = vf 0x1c(vf 0x20())) on every row: each name starts as its default.</summary>
     public static void Init(IEnumerable<SetupSlot> slots, Func<string, string> colourName)

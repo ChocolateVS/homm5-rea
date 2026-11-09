@@ -127,7 +127,7 @@ public static class CampaignFlow
     {
         if (!p.CarriedHeroes.TryGetValue(CampaignProfile.CarryKey(c.InternalName, m.Index), out var heroes)) return;
         foreach (var saved in heroes)
-            if (s.Game.HeroByNameAnywhere(saved.ScriptName) is { } h) saved.ApplyTo(h);
+            if (s.Game.HeroByNameAnywhere(saved.ScriptName) is { } h) s.Game.ApplyCampaignRecord(h, saved);
     }
 
     /// <summary>Called when the active mission's game ends; records progress and carries heroes forward (CCampaign vf 0x24 = 0045fab0).</summary>
@@ -146,8 +146,16 @@ public static class CampaignFlow
                 var key = CampaignProfile.CarryKey(target.Campaign.InternalName, target.Mission);
                 if (!p.CarriedHeroes.TryGetValue(key, out var list)) p.CarriedHeroes[key] = list = new();
                 list.RemoveAll(x => x.ScriptName == h.DefId);
-                list.Add(SavedHero.From(h));
+                list.Add(H5.Adventure.Engine.CampaignHeroRecord.From(h));
             }
+            // 0045f460: Count beyond the entries (plus empty entries) takes the most experienced heroes into the won
+            // mission's record, which 0045f080 hands to the next mission of the campaign.
+            var mine = a.Session.S.Heroes.Where(h => h.Alive && h.Owner == a.Session.Human.Index).ToList();
+            var extras = H5.Adventure.Engine.CampaignHeroRecord.ExtraHeroes(mine, a.Mission.HeroesPoolCount, a.Mission.HeroesPool.Count,
+                a.Mission.HeroesPool.Count(e => e.HeroScriptName.Length == 0));
+            var nextKey = CampaignProfile.CarryKey(a.Campaign.InternalName, a.Mission.Index + 1);
+            if (extras.Count > 0) p.CarriedExtras[nextKey] = extras.Select(H5.Adventure.Engine.CampaignHeroRecord.From).ToList();
+            else p.CarriedExtras.Remove(nextKey);
             p.Save();
         }
     }
