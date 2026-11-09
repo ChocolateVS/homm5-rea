@@ -253,6 +253,26 @@ public class GrailTests(Fixture f)
     }
 
     [Fact]
+    public void DiggingNeedsATileWithoutWaterCover()
+    {
+        // 00bcc2b0 needs the passability byte +0xc clear: 00990800 sets it from 00c0f100 (00c10450: the strongest
+        // TT_SMALL_WATER / TT_BIG_WATER layer at the tile centre counts above 32).
+        var g = f.NewGame("A2M13");
+        var p = g.Current;
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
+        var fl = g.Map.Floor(h.Pos.Floor)!;
+        Assert.False(Map.TerrainPassability.WaterCovered(fl.Data!, fl.LayerTypes, g.S.Grail!.Value.X, g.S.Grail!.Value.Y));
+        var spot = Enumerable.Range(0, fl.Width * fl.Height)
+            .Select(i => new Map.Tile(i % fl.Width, i / fl.Width, h.Pos.Floor))
+            .First(t => fl.Kind[t.Y * fl.Width + t.X] == Map.TileKind.Land && !fl.IsBlocked(t.X, t.Y)
+                && Map.TerrainPassability.WaterCovered(fl.Data!, fl.LayerTypes, t.X, t.Y)
+                && !g.Map.Objects.Any(o => o.Pos == t || o.BlockedTiles.Contains(t) || o.ActiveTiles.Contains(t)));
+        h.Pos = spot;
+        h.MovePoints = h.MaxMovePoints;
+        Assert.Equal("GRAAL_TRY_ON_CLEAR", g.Apply(new DigCmd(h.Id) { Player = p.Index }).Error);
+    }
+
+    [Fact]
     public void MapWithoutGraalHasNoGrail() => Assert.Null(f.NewGame("A2M1").S.Grail);
 
     [Theory]

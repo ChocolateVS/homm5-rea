@@ -66,8 +66,8 @@ public sealed partial class Adventure
     /// Cost (0098ec30): hero vf 0xf8(vf 0x104) = the maximum movement of the hero's movement type (+0x130 / +0x134 /
     /// +0x138, 00b4bc50), refused when the current points (vf 0xf4 = +0x12c) are below it. Clear (00bcc310 → 00bcc2b0,
     /// then 0098eb30): passability tile kind +8 = 1 (land; not 4, an object's passable tile), +0x10 = 0 (no object
-    /// footprint) and +0xc = 0, and no object of the tile's list covering it. TODO(exe): what +0xc holds is not
-    /// identified (not tested here); 0098eb30's list is taken as the objects on the tile.
+    /// footprint) and +0xc = 0 (no water layer covering the tile centre, <see cref="TerrainPassability.WaterCovered"/>),
+    /// and no object of the tile's list covering it (0098eb30's list taken as the objects on the tile).
     /// </summary>
     string? DoDig(DigCmd c)
     {
@@ -79,6 +79,7 @@ public sealed partial class Adventure
         var f = Map.Floor(h.Pos.Floor);
         if (f == null || f.IsWater(h.Pos.X, h.Pos.Y) || f.IsBlocked(h.Pos.X, h.Pos.Y)
             || (f.Kind.Length == f.Width * f.Height && f.Kind[h.Pos.Y * f.Width + h.Pos.X] != TileKind.Land)
+            || (f.Data != null && TerrainPassability.WaterCovered(f.Data, f.LayerTypes, h.Pos.X, h.Pos.Y))
             || ObjectsAt(h.Pos).Any(o => o.Kind != ObjectKind.Hero) || TownAt(h.Pos) != null)
             return "GRAAL_TRY_ON_CLEAR";
         if (h.MovePoints < h.MaxMovePoints || h.MaxMovePoints <= 0) return "GRAAL_NOT_ENOUGH_MOVEMENT";

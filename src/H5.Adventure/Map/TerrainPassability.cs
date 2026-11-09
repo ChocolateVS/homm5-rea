@@ -113,6 +113,28 @@ public static class TerrainPassability
     }
 
     /// <summary>
+    /// The byte +0xc of the passability tile (00990800 → 00c0f100 → 00c10450): the layers from the top whose type is
+    /// TT_SMALL_WATER or TT_BIG_WATER (others are skipped), each counting w·r at the tile centre with r (from 1)
+    /// shrinking by (1 − w/255) as in <see cref="DominantType"/>; set when the largest count is above 32 (00e22a0c).
+    /// The dig's clear test (00bcc2b0) needs it clear.
+    /// </summary>
+    public static bool WaterCovered(TerrainData t, IReadOnlyList<int> layerTypes, int x, int y)
+    {
+        if (x < 0 || x >= t.TilesX || y < 0 || y >= t.TilesY) return false;
+        float best = 0f, rem = 1f;
+        for (int li = t.Layers.Count - 1; li >= 0; li--)
+        {
+            int ty = li < layerTypes.Count ? layerTypes[li] : -1;
+            if (ty != TypeSmallWater && ty != TypeBigWater) continue;
+            byte wgt = li == 0 ? (byte)0xff : CentreWeight(t.Layers[li].Weights, x, y);
+            float vis = wgt * rem;
+            rem = (1f - wgt * (1f / 255f)) * rem;
+            if (best < vis) best = vis;
+        }
+        return best > 32f;
+    }
+
+    /// <summary>
     /// 00c0ff70 at (x + 0.5, y + 0.5): each corner weight v becomes 2v (v &lt; 128) or 255, the row pairs are averaged
     /// and the two rows averaged, each step truncated (_ftol 00d11a60).
     /// </summary>
