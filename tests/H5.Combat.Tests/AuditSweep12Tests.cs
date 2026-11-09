@@ -82,4 +82,23 @@ public class AuditSweep12Tests(GameDataFixture f)
         Assert.Equal(new[] { new Cell(5, 4) }, b.RainbowWalk(a, t, 1));
         Assert.Equal(new[] { t }, b.RainbowVictims(a, t, 1));
     }
+
+    // exe 00987cb1 → FUN_00979410 / FUN_009848a0: Random Caster draws from a fixed list filtered by the application check
+    // FUN_00982010 on the target — the dark six for 0xae; light six then dark six for 0xaf (only those valid on the target).
+    [Fact]
+    public void RandomCasterDrawsFromTheExeListValidOnTheTarget()
+    {
+        var genie = f.Db.Creatures.Values.First(c => c.Abilities.Contains(Ab.RandomCaster)).Id;
+        var (b, a, t) = Make(genie, 5, "CREATURE_PEASANT", 30, new Cell(1, 1), new Cell(8, 5), mineExtra: new[] { new Cell(1, 4) });
+        var pool = b.RandomCasterPool(a, Ab.RandomCaster, t).Select(s => s.Id).ToList();
+        Assert.Equal(Battle.RandomCastDark, pool);
+        var friend = b.State.Units.First(u => u.Side == 0 && u.Id != a.Id);
+        Assert.Empty(b.RandomCasterPool(a, Ab.RandomCaster, friend));
+        var light = b.RandomCasterPool(a, Ab.RandomCasterBless, friend).Select(s => s.Id).ToList();
+        Assert.Contains("SPELL_BLESS", light);
+        Assert.DoesNotContain("SPELL_CURSE", light);
+        var onEnemy = b.RandomCasterPool(a, Ab.RandomCasterBless, t).Select(s => s.Id).ToList();
+        Assert.DoesNotContain("SPELL_BLESS", onEnemy);
+        Assert.Contains("SPELL_CURSE", onEnemy);
+    }
 }

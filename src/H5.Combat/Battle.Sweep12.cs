@@ -83,4 +83,27 @@ public sealed partial class Battle
                 if (u.Side == t.Side && !u.IsObject && !list.Contains(u) && u.Cells().Contains(c)) list.Add(u);
         return list;
     }
+
+    /// <summary>FUN_00979410: SPELL_ABILITY_RANDOM_CAST_DARK (0xae) lists Curse, Slow, Disrupting Ray, Plague, Weakness,
+    /// Forgetfulness (0xb..0xf, 0x11); SPELL_ABILITY_RANDOM_CAST_DARK_LIGHT (0xaf) Bless, Haste, Stoneskin, Dispel,
+    /// Bloodlust, Deflect Arrows (0x17..0x1a, 0x1c, 0x1d) and then the same six.</summary>
+    internal static readonly string[] RandomCastDark =
+        { "SPELL_CURSE", "SPELL_SLOW", "SPELL_DISRUPTING_RAY", "SPELL_PLAGUE", "SPELL_WEAKNESS", "SPELL_FORGETFULNESS" };
+    internal static readonly string[] RandomCastLight =
+        { "SPELL_BLESS", "SPELL_HASTE", "SPELL_STONESKIN", "SPELL_DISPEL", "SPELL_BLOODLUST", "SPELL_DEFLECT_ARROWS" };
+
+    /// <summary>
+    /// The Random Caster draw (exe 00987cb1 cases 0xae / 0xaf): FUN_00979410's list, of which FUN_009848a0 keeps the
+    /// entries the application check FUN_00982010 accepts on the target (no UI message, in list order; the engine's
+    /// ValidateSpellTarget with the cast's mastery), then the battle RNG Random(n) picks one.
+    /// </summary>
+    internal List<SpellDef> RandomCasterPool(Unit u, string ability, Unit t)
+    {
+        var ids = ability == Ab.RandomCasterBless ? RandomCastLight.Concat(RandomCastDark) : RandomCastDark;
+        var pool = new List<SpellDef>();
+        foreach (var id in ids)
+            if (Db.Spell(id) is { } sp && ValidateSpellTarget(u.Id, Controller(u), sp, Mastery.Advanced, t.Id, null) == null)
+                pool.Add(sp);
+        return pool;
+    }
 }

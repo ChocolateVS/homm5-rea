@@ -134,9 +134,8 @@ public sealed partial class Battle
                 // three times per combat (p.180, p.306).
                 bool friend = Controller(t!) == Controller(u);
                 if (friend && c.Ability == Ab.RandomCaster) return "djinns can only curse enemies";
-                string school = friend ? "MAGIC_SCHOOL_LIGHT" : "MAGIC_SCHOOL_DARK";
-                var pool = Db.Spells.Values.Where(sp => sp.School == school && sp.Level is >= 1 and <= 3 && !sp.Id.StartsWith("SPELL_MASS_")
-                    && sp.Duration.Length > 0 && sp.Target == (friend ? "TARGET_FRIEND" : "TARGET_HOSTILE")).OrderBy(sp => sp.Id).ToList();
+                // exe 00987cb1: the fixed list of FUN_00979410, filtered for the target by FUN_009848a0 (RandomCasterPool).
+                var pool = RandomCasterPool(u, c.Ability, t!);
                 if (pool.Count == 0) return "no spell available";
                 u.AbilityUses[c.Ability] = u.AbilityUses.GetValueOrDefault(c.Ability) + 1;
                 var spell = pool[S.Rng.Next(pool.Count)];
