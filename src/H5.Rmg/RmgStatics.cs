@@ -198,28 +198,28 @@ public sealed partial class RmgGenerator
     /// s = 0xf for race 7 (Necropolis), else 2 and 0x1e. Then twice over the list (entry i % n, no bounds tests) the
     /// /6 smoothing of 0x00916790 on those cells (±2, then ±1); then every tile of 1 .. size − 2 with more than two of
     /// its 8 neighbours (0x00f466d8) flagged exactly 0x80 gets flags 0x82.
-    /// TODO(exe): the vertex strengths (0x00913510) and the WaterBottomTile are not modelled: the tile's one layer entry
-    /// is the WaterTile.
     /// </summary>
     void LakeTerrain(RmgResult r, RmgZone z, RmgRacePreset race, List<(int X, int Y)> lake)
     {
         var f = Floors[z.Floor];
         var lakeSet = new HashSet<(int, int)>(lake);
+        int bottomK = z.Race == 7 ? 4 : 2, bottomS = z.Race != 7 ? 0x1e : 0xf;   // local_70 / local_78 from the race argument
         int cols = 2 * f.H + 1;
         var d = f.Depth;
         foreach (var (x, y) in lake)
         {
             int n = 0;
             foreach (var (dx, dy) in Ortho4) if (lakeSet.Contains((x + dx, y + dy))) n++;
-            if (race.WaterTile.Length > 0) r.TileLayers[z.Floor][y * W + x] = race.WaterTile;
+            PaintTile(f, x, y, race.WaterTile, 0x96);
             int i = f.At(x, y);
+            int m = Math.Min(f.Dist[i], f.BorderDist[i]);
             if (f.Dist[i] > 3 && n > 2)
             {
-                int m = Math.Min(f.Dist[i], f.BorderDist[i]);
                 byte c = m * 0x3c - 0x3c < 0xff ? (byte)(m * 0x3c - 0x3c) : (byte)0xff;
                 for (int k = 0; k < 4; k++)
                     for (int j = 0; j < 4; j++) d[(2 * y + k) * cols + 2 * x + j] = c;
             }
+            PaintTile(f, x, y, race.WaterBottomTile, Math.Min((m - bottomK) * bottomS, 200));
         }
         for (int k = 0; k < 2 * lake.Count; k++)
         {

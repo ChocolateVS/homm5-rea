@@ -129,6 +129,8 @@ public sealed class RmgFloor
     /// </summary>
     public readonly byte[] Depth;
     public int Lv(int y, int x) => y * (W + 1) + x;
+    /// <summary>Terrain +8: the texture layers painted by 0x00913510 (<see cref="RmgGenerator.Paint"/>), priority order.</summary>
+    public readonly List<RmgTerrainLayer> Layers = new();
     public readonly NivalHashMap<RmgZone> Zones = new();
 
     public RmgFloor(int index, int w, int h)
@@ -233,7 +235,7 @@ public sealed partial class RmgGenerator
         // (byte 1 = 1, byte 2 = Next(8) + 8). TODO(exe): that grid is not modelled (terrain).
         if ((BuilderDraw & 1) != 0 && Floors.Count > 1) Rng.Next(8);
         var result = new RmgResult(this);
-        PaintTerrain(result);
+        PaintTerrain();
         Mark("PlaceTowns");
         PlaceTowns(result);
         // 0x0090e7e0: with the water option (+0xa6) 0x00904770 gives every surface zone its water border (vf 0x24).
@@ -250,6 +252,7 @@ public sealed partial class RmgGenerator
         PlaceUndergroundTreasures(result);
         PlaceTreasureBlocks(result);
         FinishMap(result);
+        result.TileLayers.AddRange(Floors.Select(TileTypes));
         Finish(result);
         Mark("Finished");
         return result;

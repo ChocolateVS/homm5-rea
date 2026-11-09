@@ -317,6 +317,57 @@ sealed class RmgRefCommand : ICommand
             }
             foreach (var key in refCounts.Keys.Union(ours.Keys).Order())
                 Console.WriteLine($"    {key,-16} ref {refCounts.GetValueOrDefault(key),6}   ours {ours.GetValueOrDefault(key),6}");
+            if (args.Contains("--terrain"))
+            {
+                // Texture layers of the surface (GroundTerrain.bin vs ours): order, tile priority, painted vertices,
+                // full-strength vertices and the most frequent weights.
+                var te = z.Entries.FirstOrDefault(x => x.FullName.EndsWith("GroundTerrain.bin", StringComparison.OrdinalIgnoreCase));
+                if (te != null)
+                {
+                    using var s = te.Open();
+                    using var ms = new MemoryStream();
+                    s.CopyTo(ms);
+                    var rt = H5.Assets.Terrain.TerrainReader.Read(ms.ToArray());
+                    void Dump(string who, IEnumerable<(string Tile, byte[] W)> layers)
+                    {
+                        Console.WriteLine($"    terrain {who}:");
+                        foreach (var (tile, w) in layers)
+                        {
+                            var top = w.Where(v => v != 0).GroupBy(v => v).OrderByDescending(g => g.Count()).Take(6).Select(g => $"{g.Key}x{g.Count()}");
+                            Console.WriteLine($"      p{db.Tile(tile)?.Priority,4} {tile,-62} >0 {w.Count(v => v != 0),6} 255 {w.Count(v => v == 255),6}  {string.Join(" ", top)}");
+                        }
+                    }
+                    Dump("ref", rt.Layers.Select(l => (l.TilePath, l.Weights.Data)));
+                    Dump("ours", gen.Floors[0].Layers.Select(l => (l.Tile, l.Weights)));
+                    static string Hs(float[] h) => $"heights min {h.Min():0.00} max {h.Max():0.00} mean {h.Average():0.000}, distinct {h.Distinct().Count()}";
+                    Console.WriteLine($"    ref  {Hs(rt.Heights!.Data)}");
+                    Console.WriteLine($"    ours {Hs(gen.Floors[0].Heights)}");
+                    // Objects whose 0x00913850 points carry one height (levelled and not touched afterwards).
+                    static (string, int) Levelled(IEnumerable<(SharedDef D, int X, int Y, float Rot)> objs, float[] h, int w)
+                    {
+                        int n = 0, k = 0;
+                        var spreads = new List<float>();
+                        foreach (var (d, x, y, rot) in objs)
+                        {
+                            if (d.Tag == "AdvMapStaticShared" || d.Blocked.Count + d.Active.Count == 0) continue;
+                            if (d.Tag == "AdvMapTownShared" && d.TownType == "TOWN_ACADEMY") continue;
+                            if (d.Tag == "AdvMapDwellingShared" && d.Type is "BUILDING_WORKSHOP" or "BUILDING_STONE_PARAPET" or "BUILDING_GOLEM_FORGE" or "BUILDING_ACADEMY_MILITARY_POST") continue;
+                            int q = RmgGenerator.ExeQuarter(rot);
+                            var pts = RmgGenerator.LevelPoints(x, y, d.Blocked.Concat(d.Active).Select(t => RmgGenerator.Rotate(t, q)))
+                                .Where(p => p.X >= 0 && p.Y >= 0 && p.X <= w && p.Y <= w).Select(p => h[p.Y * (w + 1) + p.X]).ToList();
+                            n++;
+                            if (pts.Distinct().Count() == 1) k++;
+                            if (pts.Count > 0) spreads.Add(pts.Max() - pts.Min());
+                        }
+                        spreads.Sort();
+                        return ($"{k} one height, spread median {spreads[spreads.Count / 2]:0.000} < 0.1: {spreads.Count(v => v < 0.1f)}", n);
+                    }
+                    var refMap = new MapLoader(H5.Core.Data.GameDatabase.Load(ctx.Fs), ctx.Fs).Load(MapCatalog.Find(ctx.Fs, ctx.Install, file)!);
+                    var (rk, rn) = Levelled(refMap.Objects.Where(o => o.Pos.Floor == 0 && o.Shared != null).Select(o => (o.Shared!, o.Pos.X, o.Pos.Y, o.Rot)), rt.Heights!.Data, size);
+                    var (ok2, on) = Levelled(r.Objects.Where(o => o.Floor == 0).Select(o => (o.Def, o.X, o.Y, o.Rot)), gen.Floors[0].Heights, size);
+                    Console.WriteLine($"    levelling (heights over each object's 0x00913850 points): ref {rk} / {rn}, ours {ok2} / {on}");
+                }
+            }
             if (args.Contains("--detail"))
             {
                 // Per shared object (buildings, treasures, artifacts, shrines): Shared href of each inline object.

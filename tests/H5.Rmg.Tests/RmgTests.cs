@@ -218,6 +218,25 @@ public class GeneratorTests(RmgFixture f)
         Assert.Contains(fl.Depth, b => b > 0x8c);
     }
 
+    /// <summary>
+    /// Per-vertex terrain layers (exe 0x00913510 / 0x00c0f140 / 0x00c0f7a0, base and transitions 0x00918270): the stock
+    /// map T_I2_RMG_Map_002 (S0-1P2Z2K3T, tiny, seed 1658912490, Preserve vs Fortress) carries the layers below in this
+    /// order; its zone tiles and the transitive DarkGround (208 vertices: 176 at 255, 32 at 0x80) and Snow_(2) (2582)
+    /// counts are reproduced exactly (the roads differ with the object positions).
+    /// </summary>
+    [StockFact]
+    public void TerrainLayersMatchTheStockMap()
+    {
+        var o = new RmgOptions { Template = "S0-1P2Z2K3T", Size = 0, Seed = 1658912490, Players = 2, ResourceLevel = 0, ExpLevel = 0 };
+        o.PlayerRaces.AddRange(new[] { 4, 9 });
+        var fl = new RmgGenerator(f.Db, o).Generate().Generator.Floors[0];
+        Assert.Equal(new[] { "Haven/Dark_Grass", "Haven/Used_Grass", "Necropolis/DarkGround", "Snow/Snow_(2)", "Haven/StoneRoad", "Snow/SnowRoad" },
+            fl.Layers.Select(l => l.Tile.Replace("RMG/Tiles/", "").Replace(".xdb", "")));
+        var dark = fl.Layers[2].Weights;
+        Assert.Equal((208, 176, 32), (dark.Count(w => w > 0), dark.Count(w => w == 255), dark.Count(w => w == 0x80)));
+        Assert.Equal(2582, fl.Layers[3].Weights.Count(w => w == 255));
+    }
+
     [Fact]
     public void ScreenListsTemplatesLikeTheExe()
     {

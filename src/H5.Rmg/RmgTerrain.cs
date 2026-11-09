@@ -15,7 +15,7 @@ public sealed partial class RmgGenerator
             foreach (var z in f.Zones.Values)
                 if (z.Class == RmgZoneClass.WaterBordered) WaterZoneFinish(z); else ZoneFinish(z);
         PaintRoads(r);
-        SurfaceHeights();
+        SurfaceHeights(r);
     }
 
     /// <summary>
@@ -37,12 +37,9 @@ public sealed partial class RmgGenerator
     /// <summary>
     /// exe 0x00918180 on the surface (floor 0): 0x00916290 relief; a tile mask of 1 (builder +0x10); 0x00915860 lakes;
     /// 0x00917a30; 0x00917e10; 0x00912d10 (1); mask reset to 1; 0x00912d10 (1); 0x00917e10; 0x00915f20 lake beds;
-    /// 0x00912d10 (0).
-    /// TODO(exe): 0x00917a30 (vertices within 8 of a town whose type +0xfc is 8 set to their mean − 1, within 2.5 of
-    /// dwellings 0x48..0x4b to their mean − 2.5) and 0x00917e10 (0x00913850 levels the vertices under every
-    /// non-static object, both floors) are not modelled.
+    /// 0x00912d10 (0) (disassembly 0x00918180..0x0091826b; the mask is +0x10, rows +0x14, [x][y]).
     /// </summary>
-    void SurfaceHeights()
+    void SurfaceHeights(RmgResult r)
     {
         var f = Floors[0];
         int n = W;                       // RMG maps are square; the exe mixes the two sizes freely
@@ -57,11 +54,111 @@ public sealed partial class RmgGenerator
                     AddHeight(f, y + 1, x, -0.5f); AddHeight(f, y + 1, x + 1, -0.5f);
                     mask[x * H + y] = 0;
                 }
+        TownAndDwellingHollows(r, f);
+        LevelUnderObjects(r, f, mask);
         Smooth(f, mask, true);
         Array.Fill(mask, (byte)1);
         Smooth(f, mask, true);
+        LevelUnderObjects(r, f, mask);
         LakeBeds(f);
         Smooth(f, mask, false);
+    }
+
+    /// <summary>
+    /// exe 0x00917a30: per object record (builder +0x40, 0x20 bytes, creation order) on the surface (+0x54 == 0): an
+    /// Inferno town (town shared +0xfc == 8) takes the vertices (x, y), x &lt; W, y &lt; H, with √(z² + (ox − (x + 1))² +
+    /// (oy − (y + 1))²) &lt; 8 (0x00e2f79c), an Inferno dwelling (Type +0xec 0x48..0x4b: Demon Gate, Imp Crucible,
+    /// Kennels, Inferno Military Post) those with √(z² + (ox − x)² + (oy − y)²) &lt; 2.5 (0x00e57d48); z = Pos.z, which
+    /// the generator never writes (0x009155f0 sets x and y). 0x00912e70 then sets each to the list's mean height plus −1
+    /// (0xbf800000) or −2.5 (0xc0200000).
+    /// </summary>
+    void TownAndDwellingHollows(RmgResult r, RmgFloor f)
+    {
+        foreach (var o in r.Objects)
+        {
+            if (o.Floor != 0) continue;
+            float radius, delta;
+            bool shift;
+            if (o.Def.Tag == "AdvMapTownShared" && o.Def.TownType == "TOWN_INFERNO") { radius = 8f; delta = -1f; shift = true; }
+            else if (o.Def.Tag == "AdvMapDwellingShared" && o.Def.Type is "BUILDING_DEMON_GATE" or "BUILDING_IMP_CRUCIBLE" or "BUILDING_KENNELS" or "BUILDING_INFERNO_MILITARY_POST")
+            { radius = 2.5f; delta = -2.5f; shift = false; }
+            else continue;
+            var list = new List<(int X, int Y)>();
+            for (int x = 0; x < W; x++)
+                for (int y = 0; y < H; y++)
+                {
+                    float dx = o.X - (float)(shift ? x + 1 : x), dy = o.Y - (float)(shift ? y + 1 : y);
+                    if (MathF.Sqrt(0f * 0f + dx * dx + dy * dy) < radius) list.Add((x, y));
+                }
+            if (list.Count == 0) continue;
+            double sum = 0.0;                                                   // 0x00e0be10
+            foreach (var (x, y) in list) sum += f.Heights[f.Lv(y, x)];
+            float v = (float)(sum / list.Count + delta);
+            foreach (var (x, y) in list) f.Heights[f.Lv(y, x)] = v;
+        }
+    }
+
+    /// <summary>
+    /// exe 0x00917e10: per object record on the surface that is not a static, not an Academy town (town shared +0xfc
+    /// == 5) and not an Academy dwelling (Type 0x51, 0x55..0x57): its shared blockedTiles (+0x54) followed by its
+    /// activeTiles (+0x6c), turned by the object's angle (0x00b0be60); each turned tile clears the smoothing mask at
+    /// [x + dx][y + dy]; then 0x00913850 (pos, tiles, floor 0) levels them.
+    /// </summary>
+    void LevelUnderObjects(RmgResult r, RmgFloor f, byte[] mask)
+    {
+        foreach (var o in r.Objects)
+        {
+            if (o.Floor != 0 || o.Def.Tag == "AdvMapStaticShared") continue;
+            if (o.Def.Tag == "AdvMapTownShared" && o.Def.TownType == "TOWN_ACADEMY") continue;
+            if (o.Def.Tag == "AdvMapDwellingShared" && o.Def.Type is "BUILDING_WORKSHOP" or "BUILDING_STONE_PARAPET" or "BUILDING_GOLEM_FORGE" or "BUILDING_ACADEMY_MILITARY_POST") continue;
+            int q = ExeQuarter(o.Rot);
+            var tiles = o.Def.Blocked.Concat(o.Def.Active).Select(t => Rotate(t, q)).ToList();
+            foreach (var (dx, dy) in tiles)
+            {
+                int x = o.X + dx, y = o.Y + dy;
+                if (f.In(x, y)) mask[x * H + y] = 0;                            // the exe writes without a test
+            }
+            LevelFootprint(f, o.X, o.Y, tiles);
+        }
+    }
+
+    /// <summary>
+    /// exe 0x00913850 (pos, turned tiles, floor): the points pos + tile; per column x (hash map keyed by trunc x, 10 → 13
+    /// buckets) the largest trunc y, adding (x, max + 1) per entry in map order; then per row y over all points the
+    /// largest trunc x, adding (max + 1, y). The mean of the heights [y][x] of the points with 0 ≤ x ≤ W and
+    /// 0 ≤ y ≤ H, divided by the count of all points (x87, from 0.0 at 0x00e0be18), is written to those points.
+    /// </summary>
+    static void LevelFootprint(RmgFloor f, int px, int py, List<(int X, int Y)> tiles)
+    {
+        if (tiles.Count == 0) return;
+        var pts = LevelPoints(px, py, tiles);
+        double sum = 0.0;
+        foreach (var (x, y) in pts)
+            if (y >= 0 && y <= f.H && x >= 0 && x <= f.W) sum += f.Heights[f.Lv(y, x)];
+        float v = (float)(sum / pts.Count);
+        foreach (var (x, y) in pts)
+            if (y >= 0 && y <= f.H && x >= 0 && x <= f.W) f.Heights[f.Lv(y, x)] = v;
+    }
+
+    /// <summary>The vertex points of 0x00913850 for an object at (px, py) with its turned tiles (see <see cref="LevelFootprint"/>).</summary>
+    public static List<(int X, int Y)> LevelPoints(int px, int py, IEnumerable<(int X, int Y)> tiles)
+    {
+        var pts = tiles.Select(t => (X: px + t.X, Y: py + t.Y)).ToList();
+        var byX = new NivalHashMap<int>(10);
+        foreach (var (x, y) in pts)
+        {
+            if (byX.TryGetValue(x, out var m)) { if (m < y) byX[x] = y; }
+            else byX[x] = y;
+        }
+        foreach (var (x, m) in byX.Items().ToList()) pts.Add((x, m + 1));
+        var byY = new NivalHashMap<int>(10);
+        foreach (var (x, y) in pts)
+        {
+            if (byY.TryGetValue(y, out var m)) { if (m < x) byY[y] = x; }
+            else byY[y] = x;
+        }
+        foreach (var (y, m) in byY.Items().ToList()) pts.Add((m + 1, y));
+        return pts;
     }
 
     static void AddHeight(RmgFloor f, int row, int col, float d)

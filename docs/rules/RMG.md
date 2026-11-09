@@ -3,11 +3,11 @@
 Port of the TotE random map generator from `H5_Game.exe` into `src/H5.Rmg`. Data comes from the
 stock archives (`RMG/Templates/*.xdb`, `RMG/Params/Default.xdb`, `GameMechanics/RefTables/RMGPresetTable.xdb`,
 `RefTables/Creatures.xdb`, `RefTables/Artifacts.xdb`). Output is the adventure engine's `AdvMap`
-(`RmgResult.ToAdvMap`), with flat terrain layers the client can render.
+(`RmgResult.ToAdvMap`), with the terrain layers, heights and grids the exe saves.
 
 Tools: `h5tool rmg <template> <size> <seed> [--players=N] [--underground] [--monsters=0..4] [--png=out.png]`,
 `h5tool rmg-stats [seeds] [--threads=N] [--filter=s]` (every template at every size / underground / player count the
-screen lists it for, exe 0x0090c880), `h5tool rmg-ref [--detail]` (the user's RMG maps in `Maps/*RMG*.h5m` regenerated
+screen lists it for, exe 0x0090c880), `h5tool rmg-ref [--detail] [--terrain]` (the user's RMG maps in `Maps/*RMG*.h5m` regenerated
 from the template/seed/levels recorded in them, counts side by side). Audit ledger: `docs/rules/AUDIT_RMG.md`.
 Analysis: private Ghidra project `tools/ghidra-projects/rmg`, scripts in `tools/rmgre/` (`ghidra.sh`).
 
@@ -129,11 +129,26 @@ first pass nothing can be stolen (division by an empty list).
   `r = rand(30)`, creatures (except ids 0, 0x59, 0x72) whose Power·(r+10) lies within ×k of the value appended per
   pass (k = 1.1 growing ×1.2, list kept) until ≥ 10 entries; count = trunc(value / Power).
 
+## Terrain layers (0x00913510)
+
+Each floor's terrain object keeps texture layers sorted by tile `Priority`; `0x00913510` paints one vertex: a new tile
+is refused while a layer of type ≠ TT_DIRT has the same blend class (roads / small water / big water / other,
+`0x00c0e320`) and the same priority; a new layer is inserted before the first of priority ≥ its own (`0x00c0f7a0`);
+strength < 1 adds; otherwise v = strength + the highest same-class weight of priority ≥ the tile's, and v > 255 lowers
+the other same-class layers by 2v − 510. Painters: `0x00918270` (zone base tile — OtherTiles[seed % n] for even zone
+seeds — at 255 on every vertex, Params DefaultTransitiveTile at 0x80 / 255 next to a diagonal / side neighbour of
+another race, Haven and Preserve counting as one, surface only), roads `0x00916570` (255), water border `0x00bae0f0` /
+`0x00916790` (200), lakes `0x00916f80` (WaterTile 0x96, WaterBottomTile min((m − k)·s, 200)). On the stock T_I2 map
+the layer list, order and transition counts come out exactly (`rmg-ref --terrain`).
+
+Heights (`0x00918180`, surface): relief, lake dips, then `0x00917a30` (Inferno towns and dwellings sink their
+surroundings) and `0x00917e10` → `0x00913850` (every non-static, non-Academy object levels the vertices of its
+blocked + active tiles to their mean and drops them from the smoothing mask), three smoothing passes and lake beds.
+
 ## Not yet line by line (see AUDIT_RMG.md)
 
 * Underground zones (CGameSubInfernoZone / CGameSubterraZone / CGameDwarvenZone, `0x0090bd80`) place their statics,
   rock fill and point-light draws as the exe does; heights, light values and the water option's zone class are not built.
-* Terrain: lakes take the preset's WaterTile; mountain terrain (`0x00915e00`), tile strengths and transitions are not done.
 
 Reference comparison (`h5tool rmg-ref`, same template/size/seed/players/races/levels): mines, prisons and towns
 match exactly on every map; the other object counts are within a few percent (AUDIT_RMG.md).
@@ -151,4 +166,3 @@ match exactly on every map; the other object counts are within a few percent (AU
 * MMH 5.5: all 94 template files generate at every listed size / underground / player count (rmg-stats, 465 runs);
   `4P-Diamond-XL-#` has 4 start zones for up to 8 players — as in the exe the extra players stay active without
   a start town (0x0090bd80 / 0x009058e0).
-* Terrain is flat and uses only each race's default and road tiles (no transitive/secondary tiles).

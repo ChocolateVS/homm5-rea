@@ -276,8 +276,7 @@ public sealed partial class RmgGenerator
     /// <summary>
     /// exe 0x00916570 (from 0x00904ad0, after the treasure blocks): every tile whose flags carry 8 or 0x10 is painted
     /// with the road tile of the race preset of its zone (preset +0x20 of the zone, Tiles +0x4c RoadTile when the flag
-    /// 8 is set, else +0x58 SecondaryRoadTile). The exe paints the tile's four corners at strength 0xff; our layer has
-    /// one entry per tile.
+    /// 8 is set, else +0x58 SecondaryRoadTile), on the tile's four corners at strength 0xff (0x00913510).
     /// </summary>
     void PaintRoads(RmgResult r)
     {
@@ -291,7 +290,7 @@ public sealed partial class RmgGenerator
                     if (!f.Zones.TryGetValue(f.Zone[i], out var z)) continue;
                     var race = _db.Race(z.Preset);
                     string tile = (fl & TileFlags.MainRoad) != 0 ? race.RoadTile : race.SecondaryRoadTile;
-                    if (tile.Length > 0) r.TileLayers[f.Index][y * W + x] = tile;
+                    PaintTile(f, x, y, tile, 0xff);
                 }
     }
 

@@ -8,7 +8,7 @@ public sealed class RmgResult
 {
     public RmgGenerator Generator { get; }
     public List<RmgObject> Objects { get; } = new();
-    /// <summary>Per floor: AdvMapTile path per tile, row-major (y·W + x).</summary>
+    /// <summary>Per floor: the AdvMapTile each tile shows (topmost layer covering half of it), row-major (y·W + x).</summary>
     public List<string[]> TileLayers { get; } = new();
     /// <summary>Connection end points: (floor, zone, other zone, x, y).</summary>
     public List<(int Floor, int Zone, int Other, int X, int Y)> Passages { get; } = new();
@@ -142,18 +142,17 @@ public sealed class RmgResult
             f.TileType[i] = catalog.TileType(tiles[i]);
             f.Terrain[i] = SharedCatalog.Classify(f.TileType[i]);
         }
-        f.Data = BuildTerrain(tiles, w, h, Generator.Floors[index]);
+        f.Data = BuildTerrain(w, h, Generator.Floors[index]);
         f.LayerTypes = f.Data.Layers.Select(l => TerrainPassability.TypeId(catalog.TileType(l.TilePath))).ToArray();
         return f;
     }
 
     /// <summary>
-    /// The floor's terrain as the exe saves it (0x0090a980 → 0x00a57ea0 writes the floor's terrain object): heights
-    /// (chunk 5), levels (chunk 7), the depth grid (chunk 10) and chunk 15 from the generator's vertex grids ([y][x], the file's row-major order);
-    /// one blend layer per tile type, a vertex weight being the share of its four tiles using that type
-    /// (TODO(exe): the exe paints corner strengths, 0x00916570 / 0x00916f80 / 0x00918270).
+    /// The floor's terrain as the exe saves it (0x0090a980 → 0x00a57ea0 writes the floor's terrain object): the texture
+    /// layers painted by 0x00913510 in their priority order (chunk 4), heights (chunk 5), levels (chunk 7), the depth
+    /// grid (chunk 10) and chunk 15 from the generator's vertex grids ([y][x], the file's row-major order).
     /// </summary>
-    static TerrainData BuildTerrain(string[] tiles, int w, int h, RmgFloor fl)
+    static TerrainData BuildTerrain(int w, int h, RmgFloor fl)
     {
         var t = new TerrainData
         {
@@ -163,27 +162,8 @@ public sealed class RmgResult
             VertexMap15 = new Grid<byte>(w + 1, h + 1, (byte[])fl.Chunk15.Clone()),
             HalfTileMap = new Grid<byte>(2 * w + 1, 2 * h + 1, (byte[])fl.Depth.Clone()),
         };
-        var types = tiles.GroupBy(x => x).OrderByDescending(g => g.Count()).Select(g => g.Key).ToList();
-        for (int li = 0; li < types.Count; li++)
-        {
-            var weights = new byte[(w + 1) * (h + 1)];
-            for (int vy = 0; vy <= h; vy++)
-                for (int vx = 0; vx <= w; vx++)
-                {
-                    if (li == 0) { weights[vy * (w + 1) + vx] = 255; continue; }
-                    int n = 0, c = 0;
-                    for (int dy = -1; dy <= 0; dy++)
-                        for (int dx = -1; dx <= 0; dx++)
-                        {
-                            int x = vx + dx, y = vy + dy;
-                            if (x < 0 || y < 0 || x >= w || y >= h) continue;
-                            c++;
-                            if (tiles[y * w + x] == types[li]) n++;
-                        }
-                    weights[vy * (w + 1) + vx] = (byte)(c == 0 ? 0 : 255 * n / c);
-                }
-            t.Layers.Add(new TerrainLayer { TilePath = types[li], Weights = new Grid<byte>(w + 1, h + 1, weights) });
-        }
+        foreach (var l in fl.Layers)
+            t.Layers.Add(new TerrainLayer { TilePath = l.Tile, Weights = new Grid<byte>(w + 1, h + 1, (byte[])l.Weights.Clone()) });
         return t;
     }
 }

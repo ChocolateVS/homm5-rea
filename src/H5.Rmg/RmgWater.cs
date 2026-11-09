@@ -30,8 +30,6 @@ public sealed partial class RmgGenerator
     /// 0 ≤ distance &lt; 2 with the +0x20 preset's WaterCoastTile (+0x88; DeepWaterBottom when empty) at 200 (0x00913510).
     /// Then 0x00916790 (water list, zone id): DeepWaterTile (+0x150) at 200 and the depth grid; the zone tiles with a
     /// negative border distance move to +0x148, the others stay the zone's tiles; 0x00bad280 water treasures.
-    /// TODO(exe): the vertex strengths of 0x00913510 are not modelled; the tile's one layer entry takes the last tile
-    /// painted on it.
     /// </summary>
     void WaterBorder(RmgResult r, RmgZone z, int w)
     {
@@ -65,11 +63,8 @@ public sealed partial class RmgGenerator
         WaterTreasures(r, z, water);
     }
 
-    /// <summary>The coarse stand-in for 0x00913510 on a tile's four vertices: the tile's layer entry.</summary>
-    static void PaintWater(RmgResult r, RmgFloor f, int x, int y, string tile)
-    {
-        if (tile.Length > 0) r.TileLayers[f.Index][y * f.W + x] = tile;
-    }
+    /// <summary>0x00913510 on a tile's four vertices at 200.</summary>
+    void PaintWater(RmgResult r, RmgFloor f, int x, int y, string tile) => PaintTile(f, x, y, tile, 200);
 
     /// <summary>
     /// exe 0x00916790 (builder +0x60; water list of (a, b) = (y, x), zone id): nothing when no zone has the id. Per entry:
@@ -79,7 +74,7 @@ public sealed partial class RmgGenerator
     /// for 0 &lt; a, b ≤ W − 3: each of those 4 x 4 cells in order becomes (2·c + the cells 2 rows / columns away) / 6,
     /// then (2·c + the cells 1 away) / 6, in place.
     /// </summary>
-    static void WaterDepth(RmgResult r, RmgFloor f, List<(int A, int B)> water, string tile)
+    void WaterDepth(RmgResult r, RmgFloor f, List<(int A, int B)> water, string tile)
     {
         int n = water.Count;
         int rows = 2 * f.W + 1, cols = 2 * f.H + 1;       // +0x4c, +0x50

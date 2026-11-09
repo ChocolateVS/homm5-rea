@@ -228,21 +228,25 @@ public sealed partial class RmgGenerator
 
     // ------------------------------------------------------------------ terrain
 
-    void PaintTerrain(RmgResult r)
+    /// <summary>
+    /// The tile each tile shows: the topmost layer covering at least half of it (mean of its four corner weights),
+    /// else layer 0 — the rule the map loader applies to authored maps (MapLoader.ReadFloor); "" without layers.
+    /// </summary>
+    static string[] TileTypes(RmgFloor f)
     {
-        foreach (var f in Floors)
-        {
-            var tiles = new string[W * H];
-            for (int x = 0; x < W; x++)
-                for (int y = 0; y < H; y++)
+        var tiles = new string[f.W * f.H];
+        for (int y = 0; y < f.H; y++)
+            for (int x = 0; x < f.W; x++)
+            {
+                int chosen = 0;
+                for (int li = f.Layers.Count - 1; li > 0; li--)
                 {
-                    int id = f.Zone[f.At(x, y)];
-                    string tile = f.Index == 0 ? _db.Params.DefaultSurfaceTile : _db.Params.DefaultSubterraTile;
-                    if (id != -1 && f.Zones.TryGetValue(id, out var z) && _db.Race(z.Preset).DefaultTile is { Length: > 0 } t) tile = t;   // 0x00918270: zone +0x20
-                    tiles[y * W + x] = tile;
+                    var g = f.Layers[li].Weights;
+                    if (g[f.Lv(y, x)] + g[f.Lv(y, x + 1)] + g[f.Lv(y + 1, x)] + g[f.Lv(y + 1, x + 1)] >= 4 * 128) { chosen = li; break; }
                 }
-            r.TileLayers.Add(tiles);
-        }
+                tiles[y * f.W + x] = f.Layers.Count > 0 ? f.Layers[chosen].Tile : "";
+            }
+        return tiles;
     }
 
     // ------------------------------------------------------------------ towns (exe 0x009058e0)

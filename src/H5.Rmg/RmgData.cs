@@ -122,6 +122,8 @@ public sealed class RmgRacePreset
     /// <summary>Preset +0x28 (after TownProto +0x14 and HeroPool +0x1c): the dwellings 0x0091e910 places, by tier.</summary>
     public List<string> Dwellings = new();
     public string DefaultTile = "", RoadTile = "", SecondaryRoadTile = "", WaterTile = "", WaterBottomTile = "", WaterCoastTile = "";
+    /// <summary>Tiles +0x7c (0x00918270 paints OtherTiles[seed % n] in zones with an even seed); empty items kept.</summary>
+    public List<string> OtherTiles = new();
     public List<string> OneTileSmallBlockers = new(), OneTileSmallNonblockers = new(), OneTileBigObjects = new(),
         BigStatics = new(), Mountains = new(), OverTownCenterObjects = new();
     /// <summary>Preset +0xcc / +0xd8 (0x009225b0, 0x00922760); empty items kept ("" = a null reference, its draws still taken).</summary>
@@ -166,6 +168,25 @@ public sealed class RmgDatabase
     public const string PresetPath = "GameMechanics/RefTables/RMGPresetTable.xdb";
 
     RmgDatabase(XdbLoader xdb) => Xdb = xdb;
+
+    readonly Dictionary<string, (int Priority, int Type)?> _tiles = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// An AdvMapTile's Priority (+0x5c) and Type (+0x60, the ESpecialTerrainType id; serializer 0x00aab6a0); null for an
+    /// empty or unresolved reference (0x00c0f140 refuses it).
+    /// </summary>
+    public (int Priority, int Type)? Tile(string path)
+    {
+        if (path.Length == 0) return null;
+        lock (_tiles)
+        {
+            if (_tiles.TryGetValue(path, out var t)) return t;
+            if (Xdb.FileSystem.Exists(path) && Xdb.Load(path).Root is { } r)
+                t = (I(r, "Priority"), Math.Max(0, H5.Adventure.Map.TerrainPassability.TypeId(S(r, "Type"))));
+            _tiles[path] = t;
+            return t;
+        }
+    }
 
     public static RmgDatabase Load(XdbLoader xdb)
     {
@@ -293,6 +314,7 @@ public sealed class RmgDatabase
                 SecondaryRoadTile = Ref(tiles?.Element("SecondaryRoadTile"), PresetPath),
                 WaterTile = Ref(tiles?.Element("WaterTile"), PresetPath), WaterBottomTile = Ref(tiles?.Element("WaterBottomTile"), PresetPath),
                 WaterCoastTile = Ref(tiles?.Element("WaterCoastTile"), PresetPath),
+                OtherTiles = RefsAll(tiles?.Element("OtherTiles"), PresetPath),
                 OneTileSmallBlockers = Refs(o?.Element("OneTileSmallBlockers"), PresetPath),
                 OneTileSmallNonblockers = Refs(o?.Element("OneTileSmallNonblockers"), PresetPath),
                 OneTileBigObjects = Refs(o?.Element("OneTileBigObjects"), PresetPath),
