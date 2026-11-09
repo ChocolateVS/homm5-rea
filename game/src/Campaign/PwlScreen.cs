@@ -42,6 +42,7 @@ public partial class PwlScreen : UiScreen
         desc?.SetValue("map_desc", MapDescription(mission.MapTag));
         Find("Progress")?.SetMeta("value", 0);
         Find("ProgressBarText")?.SetValue("val", "");
+        ShowPicture(MapPicture(mission.MapTag));
 
         // 006b38d0: only the valid bonuses (006b25e0) are offered, packed into Bonus_0.. in order; no
         // valid bonus → no selection panel. Nothing is preselected: Start stays disabled with the
@@ -217,6 +218,41 @@ public partial class PwlScreen : UiScreen
             GetViewport().SetInputAsHandled();
             (GetParent() is CanvasLayer layer ? (Node)layer : this).QueueFree();
         }
+    }
+
+    /// <summary>
+    /// 006b1530 (campaign mission) passes the map's PWLPicture (SAdvMapDesc +0x238, registered 00a0b4b0) to the screen;
+    /// 006b30c0 gives it to Main/CustomPicture (window vf 0xa4) when there is one, and shows Main/Logo only without one.
+    /// </summary>
+    void ShowPicture(Texture2D? picture)
+    {
+        if (Find("CustomPicture") is { } pic)
+        {
+            pic.Visible = picture != null;
+            if (picture != null)
+                pic.AddChild(new TextureRect { Texture = picture, AnchorRight = 1, AnchorBottom = 1, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = MouseFilterEnum.Ignore });
+        }
+        SetVisible("Logo", picture == null);
+    }
+
+    /// <summary>The map's PWLPicture: the campaign map tag (map-tag.xdb) names the AdvMapDesc (map.xdb) that holds it.</summary>
+    static Texture2D? MapPicture(string mapTag)
+    {
+        try
+        {
+            var xdb = Game.Instance.Xdb;
+            if (!Game.Instance.Fs.Exists(mapTag)) return null;
+            var root = xdb.Load(mapTag).Root;
+            string desc = mapTag;
+            if (root?.Element("PWLPicture") == null && (string?)root?.Element("AdvMapDesc")?.Attribute("href") is { Length: > 0 } d)
+            {
+                desc = XdbRef.Parse(d, mapTag).Path;
+                root = Game.Instance.Fs.Exists(desc) ? xdb.Load(desc).Root : null;
+            }
+            var h = (string?)root?.Element("PWLPicture")?.Attribute("href");
+            return string.IsNullOrEmpty(h) ? null : Game.Instance.LoadTexture(XdbRef.Parse(h, desc).Path);
+        }
+        catch (Exception e) { GD.PushWarning($"[H5] PWLPicture {mapTag}: {e.Message}"); return null; }
     }
 
     // ---- bonus presentation ------------------------------------------------------------
