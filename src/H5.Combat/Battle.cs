@@ -336,6 +336,7 @@ public sealed partial class Battle
 
         StartOfTurnDamage(u);
         if (!u.Alive) { CheckEnd(); return false; }
+        if (BattleDiveTurnStart(u)) return false;   // exe FUN_00bbc8e0 → FUN_00bbc510: a pending Battle Dive finishes
 
         if (u.HasEffect("SPELL_BLIND") || u.HasEffect(H5.Combat.Fx.Sleep) || u.HasEffect(H5.Combat.Fx.Stunned) || u.HasEffect(H5.Combat.Fx.Sabotaged) || u.HasEffect(FxDiving))
         {

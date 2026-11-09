@@ -98,7 +98,10 @@ public sealed partial class Battle
                 // turns later (exe spells 0x9a/0x15a, finishing strikes 0x9b ×2 / 0x15b ×PackDive_DamageMultiplier).
                 var cell = c.Cell!.Value;
                 if (c.Ability == Ab.PackDive) u.AbilityUses[Ab.PackDive] = 1;
-                double delay = Stats.Get("combat/Creatures/Haven/PackDive_DelayBeforAttack", 1);
+                // Battle Dive (0x9a) stays up until it is removed (vf 0x260(0x9a, 0x7ffffffe, …)); the finish comes at once
+                // or at the griffins' next turn start (Battle.Sweep15.cs). Pack Dive keeps PackDive_DelayBeforAttack.
+                double delay = c.Ability == Ab.BattleDive ? double.PositiveInfinity
+                    : Stats.Get("combat/Creatures/Haven/PackDive_DelayBeforAttack", 1);
                 var f = new FieldObject
                 {
                     Id = S.NextFieldId++, Kind = c.Ability == Ab.PackDive ? "PACK_DIVE" : "BATTLE_DIVE",
@@ -110,6 +113,8 @@ public sealed partial class Battle
                 AddEffect(u, new Effect { Id = H5.Combat.Fx.Invisible, Remaining = delay + 1e-6, Positive = true, Dispellable = false });
                 Emit(new AbilityTriggered(u.Id, c.Ability));
                 Emit(new FieldChanged(f.Id, f.Kind, f.Cells, false));
+                if (c.Ability == Ab.BattleDive && BattleDiveFinishesAtOnce(u, S.At(cell) is { } occ && occ.Id != u.Id ? occ : null))
+                    BattleDiveFinish(u, f);
                 return null;
             }
         }
@@ -214,9 +219,8 @@ public sealed partial class Battle
         RemoveEffect(caster, FxDefiled);
         var goblins = S.Unit(e.SourceUnit);
         if (goblins is not { Alive: true }) return 0;
-        int ng = (int)Math.Ceiling(goblins.Count / 25.0);
-        int nt = (int)Math.Ceiling(caster.Tier + (caster.Upgraded ? 1 : 0) - 1 + caster.Count / (double)Math.Max(1, caster.WeeklyGrowth));
-        int outcome = RollShifted(new[] { 10, 40, 40, 10 }, ng - nt) + 1;
+        int outcome = DefileRoll(caster, new[] { goblins });   // exe FUN_00c50a30 (Battle.Sweep15.cs)
+        if (outcome == 0) return 0;
         Emit(new AbilityTriggered(goblins.Id, Ab.DefileMagic, caster.Id));
         if (outcome == 4) SetAtb(goblins.Id, 0);
         return outcome;
@@ -325,18 +329,7 @@ public sealed partial class Battle
         RemoveEffect(u, FxDiving);
         RemoveEffect(u, H5.Combat.Fx.Invisible);
         var target = f.Cells[0];
-        if (f.Kind == "BATTLE_DIVE")
-        {
-            // exe case 0x9b (009877df..00987963): the landing cell first (FUN_00979680, Battle.Sweep14.cs) — none → no
-            // strike; then vf 0xe8(0) puts the griffins down and FUN_00a65d50 strikes the unit at the target cell
-            // (FUN_00a65260 → FUN_00a5fde0), ×2 on anyone, friend or foe.
-            var v = S.At(target) is { } occ && occ.Id != u.Id ? occ : null;
-            if (BattleDiveLanding(u, target) is not { } land) return;
-            if (land != u.Pos) Teleport(u, land);
-            if (v is { Alive: true } && u.Alive)
-                Strike(u, v, new Hit { Kind = AttackKind.Melee, Multiplier = 2, BattleDiveFinish = true }, pattern: false);
-        }
-        else
+        // Battle Dive never expires (its finish is Battle.BattleDiveFinish, Battle.Sweep15.cs); only Pack Dive gets here.
         {
             // Area of the finishing strike (exe FUN_0097a530 case 0x15a/0x15b): every cell of rows y and y+1 of the
             // target cell across the whole field width, enemy stacks only (FUN_00b3d850).
