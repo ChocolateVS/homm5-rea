@@ -66,4 +66,60 @@ public class AuditSweep13Tests(GameDataFixture f)
         other.Pos = new Cell(5, 5);
         Assert.Null(b.ResurrectAlliesRefusal(angel, dead));
     }
+
+    // exe FUN_00987cb1 casts through FUN_0097d7b0, which reads the caster's vf 0x240 (FUN_00a6a700: FUN_004bba60 — the
+    // creature list's mastery, 2 when the spell is not listed — the week, then enemy Shatter FUN_004e6190) and vf 0x244
+    // (FUN_00a6a7e0: FUN_008a3960, then Shatter / Weaken). The engine cast at a fixed Advanced with the bare creature power.
+    [Fact]
+    public void RandomCasterMasteryIsAdvancedLessTheEnemyShatter()
+    {
+        var genie = f.Db.Creatures.Values.First(c => c.Abilities.Contains(Ab.RandomCaster)).Id;
+        var (b, a, _) = Make(genie, 20, "CREATURE_PEASANT", 10, new Cell(1, 1), new Cell(14, 10));
+        var curse = f.Db.Spell("SPELL_CURSE")!;
+        var enemy = b.State.Heroes[1];
+        enemy.Skills.RemoveAll(s => s.SkillId.StartsWith("HERO_SKILL_SHATTER"));
+        Assert.Equal(Mastery.Advanced, b.CreatureCastMastery(a, curse));
+        double plain = b.CreatureCastPower(a, curse);
+        Assert.Equal(b.CreatureCasterPower(a, a.Count), (int)plain);
+        enemy.Skills.Add(new SkillEntry(Sk.ShatterDark, Mastery.Expert));
+        Assert.True(b.CreatureCastMastery(a, curse) < Mastery.Advanced);
+        Assert.True(b.CreatureCastPower(a, curse) <= plain);
+    }
+
+    // exe hive vtable: vf 0x240 → FUN_00a6a700 (thunk 008b1e20) with primary vf 0x20 = FUN_008b0b50 (+0xe0 = SummonHive
+    // Spell Mastery), vf 0x244 → FUN_00a6a7e0 (thunk 008b1e30) with primary vf 0x24 = FUN_008b07d0 (+0xc0, the caster's
+    // power stored at the summon): the week and the enemy hero's Shatter apply to its Wasp Swarm.
+    [Fact]
+    public void HiveCastsAtItsStoredPowerLessTheEnemyShatter()
+    {
+        var (b, _, _) = Make("CREATURE_PEASANT", 10, "CREATURE_PEASANT", 10, new Cell(1, 1), new Cell(14, 10));
+        var wasp = f.Db.Spell("SPELL_WASP_SWARM")!;
+        var hive = new Unit { Id = 900, Side = 0, Pos = new Cell(3, 3), Size = 1, Count = 1, Power = 12 };
+        var enemy = b.State.Heroes[1];
+        enemy.Skills.RemoveAll(s => s.SkillId.StartsWith("HERO_SKILL_SHATTER"));
+        Assert.Equal(Mastery.Expert, b.HiveCastMastery(hive, wasp));
+        Assert.Equal(12, (int)b.HiveCastPower(hive, wasp));
+        enemy.Skills.Add(new SkillEntry(Sk.ShatterSummoning, Mastery.Expert));
+        Assert.True(b.HiveCastMastery(hive, wasp) < Mastery.Expert);
+    }
+
+    // exe FUN_0041a1a0 → FUN_00989120(1) after a rune cast by the cast event (flag 1); FUN_008a6c40 → FUN_00a6e400 →
+    // FUN_00989130(1) at the stack's turn start; FUN_00989190 refuses while bit 1 is set, for the runes the stack holds a
+    // record of (every rune of the hero's book on a Fortress stack, FUN_0041a250).
+    [Fact]
+    public void ARuneStackGetsOneRunePerTurnOfItsOwn()
+    {
+        var (b, u, _) = Make("CREATURE_DEFENDER", 10, "CREATURE_PEASANT", 10, new Cell(1, 1), new Cell(14, 10));
+        var other = Add(b, 0, "CREATURE_FOOTMAN", 10, new Cell(1, 5));
+        Assert.Equal(Towns.Fortress, u.Town);
+        Assert.False(b.RuneUsedThisTurn(u.Id));
+        b.MarkRuneTurn(u.Id); b.MarkRuneTurn(other.Id);
+        Assert.True(b.RuneUsedThisTurn(u.Id));
+        Assert.False(b.RuneUsedThisTurn(other.Id));   // no records outside Fortress
+        b.Begin();
+        typeof(Battle).GetMethod("BeginTurn", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(b, new object[] { u.Id });
+        Assert.False(b.RuneUsedThisTurn(u.Id));
+    }
 }
+

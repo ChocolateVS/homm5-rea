@@ -1183,7 +1183,7 @@ public sealed partial class Battle
             {
                 caster.Mana -= HeroBaseManaCost(caster, spell);                                         // exe FUN_008b08a0
                 Emit(new ManaChanged(Actor.Hero(u.Side), caster.Mana));
-                ResolveSpell(u.Id, u.Side, spell, Mastery.Expert, u.Power, target, target.Pos, fromHero: false);
+                ResolveSpell(u.Id, u.Side, spell, HiveCastMastery(u, spell), HiveCastPower(u, spell), target, target.Pos, fromHero: false);   // sweep 13
             }
         }
         FinishTurn(u, 0, allowMorale: false);

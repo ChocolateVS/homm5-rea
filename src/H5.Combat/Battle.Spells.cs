@@ -195,7 +195,12 @@ public sealed partial class Battle
     double ShatterWeakenPower(HeroState h, SpellDef sp, double p)
     {
         Mastery m = h.HasPerk("HERO_SKILL_ABSOLUTE_WIZARDY") ? Mastery.Expert : SchoolMastery(h, sp);
-        m = MoonWeek.SpellMastery(m, sp.School, S.Week);
+        return ShatterWeakenPowerAt(h, sp, p, MoonWeek.SpellMastery(m, sp.School, S.Week));
+    }
+
+    /// <summary>ShatterWeakenPower with the caster's mastery after the week given (a creature caster: sweep 13).</summary>
+    double ShatterWeakenPowerAt(HeroState h, SpellDef sp, double p, Mastery m)
+    {
         int below = ShatterMasteryAfterDrop(h, sp, m);
         if (below == int.MinValue) return p;
         var enemy = Enemy(h.Side);
@@ -404,7 +409,7 @@ public sealed partial class Battle
             if (sp.School == "MAGIC_SCHOOL_RUNIC") PayRune(h, sp, c.TargetId);   // exe FUN_00419ad0 (sweep 10)
             ResolveSpell(c.ActorId, h.Side, sp, mastery, power, target, c.Cell, fromHero: true);
             MindCleanerCheck(h, sp);
-            if (sp.School == "MAGIC_SCHOOL_RUNIC") { SpendRuneUse(h, sp, c.TargetId); TapRunes(h); }
+            if (sp.School == "MAGIC_SCHOOL_RUNIC") { SpendRuneUse(h, sp, c.TargetId); MarkRuneTurn(c.TargetId); TapRunes(h); }
             double reset = HeroCastAtbReset(h, sp);
             EndAction(c.ActorId, reset, false);
             return null;
@@ -414,8 +419,11 @@ public sealed partial class Battle
         if (known == null) return "creature does not know this spell";
         int ucost = CreatureManaCost(u, sp);
         if (u.Mana < ucost) return "not enough mana";
-        int cp = CreatureCasterPower(u, u.Count);   // exe FUN_008a3960: Magis, then the demon-rage multiplier
-        if (ValidateSpellTarget(u.Id, Controller(u), sp, MoonWeek.SpellMastery(known.Mastery, sp.School, S.Week), c.TargetId, c.Cell) is { } te2) return te2;
+        // exe vf 0x244 = FUN_00a6a7e0: FUN_008a3960 (Magis, then the demon-rage multiplier), then enemy Shatter / Weaken
+        // (FUN_004e6190); vf 0x240 = FUN_00a6a700: the creature's list mastery, the week, enemy Shatter (sweep 13).
+        int cp = (int)CreatureCastPower(u, sp);
+        var cm = CreatureCastMastery(u, sp);
+        if (ValidateSpellTarget(u.Id, Controller(u), sp, cm, c.TargetId, c.Cell) is { } te2) return te2;
         var castTarget = c.TargetId is int t2 ? S.Unit(t2) : null;
         var castCell = c.Cell;
         // Defile Magic (p.324): 1 fails, 2 halves spell power, 3 doubles the cost, 4 backfires onto the goblins.
@@ -439,7 +447,7 @@ public sealed partial class Battle
         // Counterspell stops creature casts too (exe FUN_00983790 → FUN_00978670 for every caster).
         if (Counterspelled(Controller(u), sp, CreatureManaCost(u, sp))) { Emit(new SpellResisted(castTarget?.Id ?? u.Id, sp.Id)); EndAction(u.Id, 0); return null; }
         _castingCreature = u;
-        try { ResolveSpell(u.Id, Controller(u), sp, MoonWeek.SpellMastery(known.Mastery, sp.School, S.Week), cp, castTarget, castCell, fromHero: false); }
+        try { ResolveSpell(u.Id, Controller(u), sp, cm, cp, castTarget, castCell, fromHero: false); }
         finally { _castingCreature = null; }
         MarkOfTheDamnedTrigger(u);   // exe FUN_00983790 @ 009840a1: the marked caster is struck after its spell
         ManaBurst(u);
@@ -452,6 +460,7 @@ public sealed partial class Battle
         int need = sp.Level <= 2 ? 1 : sp.Level <= 4 ? 2 : 3;   // Runelore circles (p.143)
         if ((int)h.SkillLevel(Sk.Runelore) < need) return "runelore mastery too low";
         if (RuneUsedUp(h, sp, target)) return "rune already used on this stack";   // exe FUN_00419f00 / FUN_00989190 (Battle.Sweep12.cs)
+        if (RuneUsedThisTurn(target)) return "COMBAT_RUNIC_SPELL_ALREADY_USED_THIS_TURN";   // exe FUN_00989190 flag 1 (Battle.Sweep13.cs)
         // exe FUN_00419f00: hero vf 0x220 — the cast is refused (COMBAT_NO_ENOUGH_MONEY) when the cost without the Fine
         // Rune roll cannot be paid.
         if (h.Resources != null && !CanPay(h.Resources, RuneCost(h, sp, target, fineRune: false))) return "COMBAT_NO_ENOUGH_MONEY";

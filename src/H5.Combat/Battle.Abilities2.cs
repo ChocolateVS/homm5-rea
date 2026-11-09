@@ -140,7 +140,8 @@ public sealed partial class Battle
                 u.AbilityUses[c.Ability] = u.AbilityUses.GetValueOrDefault(c.Ability) + 1;
                 var spell = pool[S.Rng.Next(pool.Count)];
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
-                ApplyEffectSpell(u.Id, Controller(u), spell, Mastery.Advanced, CreatureSpellPower(u.Count, Math.Max(1, u.WeeklyGrowth)), t, u.Level, null);
+                // exe FUN_0097d7b0 reads the caster's vf 0x240 / vf 0x244 (vf 0x130 is the cast animation's time): sweep 13.
+                ApplyEffectSpell(u.Id, Controller(u), spell, CreatureCastMastery(u, spell), (int)CreatureCastPower(u, spell), t, u.Level, null);
                 return null;
             }
             case Ab.Incinerate:

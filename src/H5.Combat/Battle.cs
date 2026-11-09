@@ -326,6 +326,7 @@ public sealed partial class Battle
         RemoveEffect(u, PreparationEffect);   // exe 008a65e0: duration 1, i.e. until the stack's next turn
         Sweep7TurnStart(u);   // exe FUN_00bbc8e0: Battle Frenzy removed, Defile Magic released
         u.AgilityCells = 0;   // exe FUN_008a6c40: SPELL_ABILITY_AGILITY is removed when the creature's turn begins
+        u.AbilityUses.Remove(RuneTurnKey);   // exe FUN_008a6c40 → FUN_00a6e400 → FUN_00989130(1) (sweep 13)
         RemoveEffect(u, H5.Combat.Fx.TakeRoots);
         RemoveEffect(u, NecromancersDebuff);   // exe 008a6c40: lasts until the stack's next turn start
         // Mountain King: the hero's creatures get MountainKing_ActiveRune (Rune of Thunderclap) refreshed at the
