@@ -148,6 +148,32 @@ on a mine (count < 1 check; whether the script's count is fractional there is no
 against the exe). `script-run … --multiplayer` / `--hotseat` applies the networked/hotseat rule (startup only on maps with a MapScript;
 checked on Maps/Multiplayer/A2M1 and user:L_I4_RMG_Map_001: nothing runs).
 
+Follow-up (2026-11-10, HEAD 6e7f7e2 + this change): **117 maps, 0 engine exceptions, 88 clean, 34 errors of ours
+(+226 stock)** (before, same HEAD: 87 clean, 35 + 225).
+- `H55_WeeklyEvents` AddObjectCreatures on a guarded mine: **stock**. The count was 0.9999999744551522: t = random(3) +
+  math.ceil(x) with MMH55's math.ceil (n − mod(n, 1) + 1) over the float mod (0x00cabf00); `if t > 0` passes; the
+  native parser FUN_0087ad40 stores the integer argument truncated (control word | 0xc00); 0x005ccec0 then fails its
+  count < 1 check. The harness counts these seven lines (H55-Core.lua 5577…5595) as stock.
+- `H55_MakeStartArmy(Neutral)` RemoveHeroCreatures(hero, type, 0) (19): the exe's check is the same (0x005c64a0: count
+  must be > 0, else "Quantity cannot be negative"), but the 0 comes from **our** start army, so these stay ours. The
+  failing heroes (Rissa, Davius, Kyrre, Mephala, Nemor, Nimbus, Pelt, Tamika, Vidomina, Xerxon) were given the TotE
+  alternative upgrade as their tier-2 stack (Elemental Gargoyle, Disease Zombie, Blade Juggler; Dryad for tier 1):
+  `GiveStartingArmy` takes the first non-`Upgrade` creature of the tier by id, and those creatures have
+  `<Upgrade>false</Upgrade>` with a BaseCreature set. MMH55 swaps the base creature (H55_Creatures[fc][n][1]), which it
+  could only do if the stock start army holds it. GAP: the exe's start-army generator is not traced — the
+  RPGStats HeroArmyGeneration block (+0xb0c; fields +0xb10…+0xb48, registered by 00946220) has no reader in .text
+  (scalar and raw-byte scans: only its serialiser 0095d720 / 0095f330 / 0095ffc0, ctor 0096ee00 and copy 0096f9e0), so
+  the HeroArmyGeneration-based count is unconfirmed too. One case (Pelt with a map-placed army without Walking Dead) is
+  the exe's behaviour as well.
+- `C55_ThreadedAimedSpell` "can`t cast spell #278": our engine refused with "not your hero's turn"; the exe has no turn
+  check on script casts (§6 UnitCastAimedSpell) — **FIXED** (`Battle.ApplyScriptCast`, test
+  `CombatScriptTests.ScriptCastsNeedNotBeTheCastersTurn`). The two cases did not recur in this run (bot play differs).
+- GAP: the override text of the adventure controller (FUN_00598f90 param+0x4c, §1 item 1) is carried by the
+  CCreateAdvScreen command (`.?AVCCreateAdvScreen@NUI@@`, vtable 00e22828, ctor 005a0c00 via 00593960; execute
+  005a1a50 passes its +0x44 block as that parameter, copied by 005a0050); its creators 00820830 / 00823910 / 007e0c66 /
+  008246c2 were not followed to the field. Not traced either: the world-side draw of the start hero and the tavern
+  hero pool filter.
+
 **MMH55 features (2026-11-09)**: per-setting status in OPTIONS.md §4 (tests `Mmh55FeatureTests`, settings sweep with
 `script-run … --h55-set=H55_X=v`). Natives MMH55 calls: `tools/scriptre/mmh55_natives.py` (none missing by name),
 residual gaps ranked in missing_natives.txt. Fixed in this pass: custom abilities (ControlHeroCustomAbility + the cast
@@ -352,9 +378,9 @@ note a residual gap.
 | SetControlMode | combat | 0x00566d70 | FIXED | texts "Invalid side #%i", "Invalid control mode #%i" (0..2), "Side #%i player is not a human" (AI side) added; mode≠0 → arena vf8(player, mode==2), always vfc(player, mode≠0) |
 | SetUnitManaPoints | combat | 0x005699b0 | FIXED | any unit incl. heroes; mana<0 → "Invalid mana points number %i"; exe posts a set-mana command (async, value unclamped) — we set immediately |
 | SummonCreature | combat | 0x00569180 | FIXED | same body as AddCreature with summoned default true |
-| UnitCastAimedSpell | combat | 0x0056a080 | FIXED | caster/target any unit incl. hero ("Unit \"%s\" is not exists"); refused cast → "Unit \"%s\" can`t cast spell #%i on unit \"%s\"" (was only logged). GAP: exe validates via FUN_00982010 and posts a free cast; we route through Battle.Apply, which may refuse out-of-turn casts |
-| UnitCastAreaSpell | combat | 0x00569e60 | FIXED | same; refused → "Unit \"%s\" can`t cast spell #%i at (%i,%i)" |
-| UnitCastGlobalSpell | combat | 0x00569c30 | FIXED | same; refused → "Unit \"%s\" can`t cast spell #%i" |
+| UnitCastAimedSpell | combat | 0x0056a080 | FIXED | caster/target any unit incl. hero ("Unit \"%s\" is not exists"); refused cast → "Unit \"%s\" can`t cast spell #%i on unit \"%s\"" (was only logged). all three UnitCast* natives go through FUN_00566940: FUN_00982010 (mana via caster vf 0x220 "COMBAT_NO_ENOUGH_MANA", blocked spell, time stop, target side/live/immunity, no turn check) then a cast command (vtable 00e17d4c, ctor 0054e5e0; execute 004e0c20 re-checks and casts via 00983790) — now `Battle.ApplyScriptCast`: no turn check (2026-11-10; MMH55 C55_FreeSpell #278 was refused "not your hero's turn"). GAP: the active unit's turn after an out-of-turn script cast (we end the action as a normal cast) and whether a spell outside the caster's book passes (our spellbook check kept) are not traced |
+| UnitCastAreaSpell | combat | 0x00569e60 | FIXED | same (FUN_00566940, no turn check); refused → "Unit \"%s\" can`t cast spell #%i at (%i,%i)" |
+| UnitCastGlobalSpell | combat | 0x00569c30 | FIXED | same (FUN_00566940, no turn check); refused → "Unit \"%s\" can`t cast spell #%i" |
 | combatReadyPerson | combat | 0x0056cd60 | FIXED | returns nothing while finished (vf98) or not started (vf124); else ready unit name (vfbc(0)) |
 | combatSetPause | combat | 0x0056d3c0 | MATCH | posts pause(bool) command; presentation/flow flag |
 | combatStarted | combat | 0x0056cbd0 | MATCH | !world vf124 (preparation/tactics) ~ our Started (set at DoStart) |

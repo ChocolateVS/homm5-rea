@@ -62,7 +62,20 @@ sealed class ScriptRunCommand : ICommand
         "in H55_GetUnusualSchools]",
     };
 
-    static bool IsStockError(string e) => StockErrors.Any(e.Contains);
+    static bool IsStockError(string e) => StockErrors.Any(e.Contains) || IsFractionalMineGuard(e);
+
+    /// <summary>
+    /// H55_WeeklyEvents' guarded-mine refill: t = random(3) + math.ceil(x) with MMH55's own math.ceil (n - mod(n, 1) + 1),
+    /// and the stock mod (0x00cabf00) works on floats, so t can be 0.9999999744551522; `if t &gt; 0` passes, and the native
+    /// argument parser (FUN_0087ad40) stores the count truncated (FPU control word | 0xc00), so AddObjectCreatures
+    /// (0x005ccec0) sees 0 and fails its count &lt; 1 check with "Quantity cannot be negative", in the exe as here.
+    /// </summary>
+    static bool IsFractionalMineGuard(string e) =>
+        e.Contains("Quantity cannot be negative") && e.Contains("in H55_WeeklyEvents]") &&
+        MineGuardAddLines.Any(l => e.Contains($"/scripts/H55-Core.lua:{l} "));
+
+    /// <summary>The seven AddObjectCreatures(mine, …, tN) calls of that refill in MMH55's H55-Core.lua.</summary>
+    static readonly int[] MineGuardAddLines = { 5577, 5580, 5583, 5586, 5589, 5592, 5595 };
 
     public string Name => "script-run";
     public string Help => "script-run <map|all|campaign> [days=14] [seed=1] [-v] [--multiplayer|--hotseat] [--no-map-script-check] [--include-user] [--h55-set=H55_Name=value]  - play maps with their Lua scripts (bots for every player) and report script errors";

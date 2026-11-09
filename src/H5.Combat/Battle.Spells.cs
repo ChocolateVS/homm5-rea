@@ -363,6 +363,40 @@ public sealed partial class Battle
 
     // ------------------------------------------------------------------ commands
 
+    bool _scriptCast;
+
+    /// <summary>
+    /// A cast posted by a combat script: UnitCastAimedSpell / UnitCastAreaSpell / UnitCastGlobalSpell (exe 0x0056a080 /
+    /// 0x00569e60 / 0x00569c30) all go through FUN_00566940, which checks the cast with FUN_00982010 (mana, blocked
+    /// spell, time stop, target side / live / immunity rules; flag 1 = the mana test, caster vf 0x220) and posts the
+    /// cast command (vtable 00e17d4c, ctor 0054e5e0) whose execute 004e0c20 repeats that check and casts (00983790).
+    /// Neither checks whose turn it is, so the caster need not be the active unit (MMH55's C55_FreeSpell casts for the
+    /// hero on another unit's move). The cast then ends like a normal one (<see cref="EndAction"/>) — GAP: what the
+    /// exe does with the active unit's turn after an out-of-turn script cast is not traced.
+    /// </summary>
+    public ApplyResult ApplyScriptCast(CastSpellCmd cmd)
+    {
+        _scriptCast = true;
+        try { return Apply(cmd); }
+        finally { _scriptCast = false; }
+    }
+
+    string? CheckHeroPresent(BattleCommand c, out HeroState h)
+    {
+        h = S.Heroes[Math.Clamp(c.Side, 0, 1)];
+        return !h.Present || h.Fled ? "no hero" : null;
+    }
+
+    string? CheckUnitPresent(BattleCommand c, int unitId, out Unit u)
+    {
+        u = null!;
+        var unit = S.Unit(unitId);
+        if (unit == null || !unit.Alive) return "invalid unit";
+        if (Controller(unit) != c.Side) return "not your unit";
+        u = unit;
+        return null;
+    }
+
     string? DoCast(CastSpellCmd c)
     {
         var sp = Db.Spell(c.Spell);
@@ -370,7 +404,7 @@ public sealed partial class Battle
         if (Actor.IsHero(c.ActorId))
         {
             if (Actor.HeroSide(c.ActorId) != c.Side) return "not your hero";
-            if (CheckHeroActive(c, out var h) is { } e) return e;
+            if ((_scriptCast ? CheckHeroPresent(c, out var h) : CheckHeroActive(c, out h)) is { } e) return e;
             if (!HeroSpells(h).Contains(sp.Id)) return "spell not known";
             if (!CanCastWarcry(h, sp)) return "hero level too low for this warcry";
             var wand = WandFor(h, sp.Id);
@@ -414,7 +448,7 @@ public sealed partial class Battle
             EndAction(c.ActorId, reset, false);
             return null;
         }
-        if (CheckActive(c, c.ActorId, out var u) is { } err) return err;
+        if ((_scriptCast ? CheckUnitPresent(c, c.ActorId, out var u) : CheckActive(c, c.ActorId, out u)) is { } err) return err;
         var known = u.Spells.Find(s => s.Spell == sp.Id);
         if (known == null) return "creature does not know this spell";
         int ucost = CreatureManaCost(u, sp);

@@ -89,4 +89,24 @@ public class CombatScriptTests(ScriptDataFixture f)
         Assert.Equal(0.25, units[0].Atb);
         Assert.Equal(1.0, units[1].Atb);
     }
+    [Fact]
+    public void ScriptCastsNeedNotBeTheCastersTurn()
+    {
+        // UnitCastAimedSpell 0x0056a080 → FUN_00566940 → FUN_00982010 / cast command 004e0c20: no turn check. MMH55's
+        // C55_FreeSpell casts SPELL_VAMPIRISM (#278) for the hero while another unit moves.
+        var b = new Battle(f.Db, BattleSetup.CreateDuel(f.Db, 0, 1, 3));
+        var opening = b.Begin();
+        var cs = Session(b, "");
+        ((IBattleScriptSession)cs).Begun(opening);
+        for (int i = 0; i < 20 && b.State.Phase == BattlePhase.Tactics; i++) cs.Apply(new EndTacticsCmd { Side = b.State.TacticsDone[0] ? 1 : 0 });
+        var h = b.State.Heroes[0];
+        if (!h.Spells.Contains("SPELL_VAMPIRISM")) h.Spells.Add("SPELL_VAMPIRISM");
+        h.Mana = 50;
+        Assert.NotEqual(Actor.Hero(0), b.State.Active);
+        var u = b.State.Units.First(x => x.Alive && x.Kind == UnitKind.Creature && x.Side == 0);
+        string hero = h.HeroId.Length > 0 ? h.HeroId : "hero:0";
+        Assert.True(cs.L.DoString($"UnitCastAimedSpell('{hero}', 278, '{cs.NameOf(u)}')", "t"));
+        Assert.DoesNotContain(cs.Errors, e => e.Contains("can`t cast"));
+        Assert.True(h.Mana < 50);
+    }
 }

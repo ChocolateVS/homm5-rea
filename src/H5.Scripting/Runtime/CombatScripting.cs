@@ -565,7 +565,7 @@ public sealed class CombatScripting : IBattleScriptSession
         var spell = Ids.Spells.Name(spellId);
         if (spell == null) return false;
         var cmd = new CastSpellCmd(caster, spell, target, cell) { Side = SideOf(caster) };
-        var r = Battle.Apply(cmd);
+        var r = Battle.ApplyScriptCast(cmd);   // FUN_00566940: no turn check (Battle.ApplyScriptCast)
         if (!r.Ok) { Log.Add($"script command rejected: {cmd.GetType().Name}: {r.Error}"); return false; }
         Emit("script_command", ("command", cmd.GetType().Name));
         ScriptBattleEvents.AddRange(r.Events);
