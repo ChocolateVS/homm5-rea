@@ -101,4 +101,72 @@ public class AuditSweep12Tests(GameDataFixture f)
         Assert.DoesNotContain("SPELL_BLESS", onEnemy);
         Assert.Contains("SPELL_CURSE", onEnemy);
     }
+
+    // exe FUN_00989270 (the use writer, from the payments FUN_008a11c0 / FUN_00bbf610), FUN_00989210(id, 1, 0) for Strong
+    // Rune at the set-up and FUN_00989190 (uses < 1 → COMBAT_RUNIC_SPELL_ALREADY_USED): once per stack, twice with
+    // Strong Rune — the engine let a Strong Rune hero reuse a rune without limit.
+    [Fact]
+    public void StrongRuneGivesOneMoreUsePerStack()
+    {
+        var (b, u, _) = Make("CREATURE_PEASANT", 10, "CREATURE_PEASANT", 10, new Cell(1, 1), new Cell(14, 10));
+        var h = b.State.Heroes[0];
+        var sp = f.Db.Spell("SPELL_RUNE_OF_CHARGE")!;
+        Assert.False(Battle.RuneUsedUp(h, sp, u.Id));
+        Battle.SpendRuneUse(h, sp, u.Id);
+        Assert.True(Battle.RuneUsedUp(h, sp, u.Id));
+        h.Perks.Add(Sk.StrongRune);
+        Assert.False(Battle.RuneUsedUp(h, sp, u.Id));
+        Battle.SpendRuneUse(h, sp, u.Id);
+        Assert.True(Battle.RuneUsedUp(h, sp, u.Id));
+    }
+
+    // exe 008cf54c..008cf5bf / FUN_0097ea20 (0097ea95..0097eab5): Imbue Arrow queues the strike damage; the queue is flushed
+    // before the imbued cast when FUN_00976b90 gives the spell no damage (Slow) and after it for a damage spell (Magic
+    // Arrow) — the spell's damage lands first. The engine always dealt the arrow first.
+    [Fact]
+    public void ImbuedDamageSpellLandsBeforeTheArrow()
+    {
+        foreach (var (spell, spellFirst) in new[] { ("SPELL_MAGIC_ARROW", true), ("SPELL_SLOW", false) })
+        {
+            var (b, u, t) = Make("CREATURE_PEASANT", 10, "CREATURE_PEASANT", 50, new Cell(1, 1), new Cell(14, 10));
+            var h = b.State.Heroes[0];
+            h.Perks.Add(Sk.ImbueArrow);
+            h.Spells.Add(spell);
+            h.Mana = h.MaxMana = 100;
+            h.ImbuedSpell = spell;
+            Assert.Equal(spellFirst, b.ImbueSpellFirst(h));
+            b.Begin();
+            b.State.Active = Actor.Hero(0);
+            var r = b.Apply(new HeroAttackCmd(t.Id) { Side = 0 });
+            Assert.True(r.Ok, r.Error);
+            var ev = r.Events.ToList();
+            int arrow = ev.FindIndex(e => e is Damaged d && d.Target == t.Id && d.Kind == AttackKind.Hero);
+            int cast = ev.FindIndex(e => e is SpellCast c && c.Spell == spell);
+            Assert.True(arrow >= 0 && cast >= 0, $"{spell}: arrow {arrow}, cast {cast}");
+            Assert.Equal(spellFirst, cast < arrow);
+        }
+    }
+
+    // exe FUN_0097f610 case 0x14a: a mechanical target qualifies when trunc(its total health − the saboteurs' total health ·
+    // SabotageCoef) < 0 — the engine compared the two totals without the coefficient (10 stock, 1 in MMH55).
+    [Fact]
+    public void SabotageScalesTheSaboteursHealthBySabotageCoef()
+    {
+        var gremlin = f.Db.Creatures.Values.First(c => c.Abilities.Contains(Ab.Sabotage)).Id;
+        var (b, a, t) = Make(gremlin, 10, "CREATURE_IRON_GOLEM", 1, new Cell(1, 1), new Cell(8, 5));
+        Assert.True(t.Has(Ab.Mechanical));
+        double k = (float)f.Db.Stats.Get("combat/Creatures/Academy/SabotageCoef", 10);
+        int u = a.TotalHealth, hp = t.MaxHealthCache;
+        for (int n = 1; n <= 200; n++)
+        {
+            t.Count = n; t.TopHealth = hp;
+            Assert.Equal(t.TotalHealth - u * k <= -1, b.SabotageHealthAllows(a, t));
+        }
+        if (k > 1)
+        {
+            t.Count = (u + hp - 1) / hp + 1; t.TopHealth = hp;   // more total health than the saboteurs
+            Assert.True(t.TotalHealth >= u);
+            Assert.Equal(t.TotalHealth < u * k, b.SabotageHealthAllows(a, t));
+        }
+    }
 }

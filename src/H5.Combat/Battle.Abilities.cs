@@ -106,8 +106,18 @@ public sealed partial class Battle
                     dmg *= 2;
             }
         }
-        DealDamage(t, (int)dmg, actor, AttackKind.Hero, null);
-        if (!friendly && imbue) ImbuedCast(h, t);
+        // exe 008cf54c..008cf5bf / FUN_0097ea20: with Imbue Arrow the strike damage is queued and dealt by the queue flush,
+        // which comes before the imbued cast for a spell without damage and after it for a damage spell (ImbueSpellFirst).
+        if (!friendly && imbue && ImbueSpellFirst(h))
+        {
+            ImbuedCast(h, t);
+            if (t.Alive) DealDamage(t, (int)dmg, actor, AttackKind.Hero, null);
+        }
+        else
+        {
+            DealDamage(t, (int)dmg, actor, AttackKind.Hero, null);
+            if (!friendly && imbue) ImbuedCast(h, t);
+        }
         RageEvent(t, "ReceiveHeroAttackRP");
         if (!t.Alive || friendly) return;
         // exe 008cf673..008cf8a1: Suffering Strike (HasSkill 0x5f → SPELL_WEAKNESS, 008cf692), then the Lions mark, then
@@ -604,7 +614,7 @@ public sealed partial class Battle
                 break;
             }
             case Ab.Sabotage:
-                if (!(t!.Has(Ab.Mechanical) || t.IsWarMachine) || t.TotalHealth >= u.TotalHealth) return "cannot sabotage this target";
+                if (!(t!.Has(Ab.Mechanical) || t.IsWarMachine) || !SabotageHealthAllows(u, t)) return "cannot sabotage this target";   // exe 0097f610 case 0x14a
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
                 AddEffect(t, new Effect { Id = H5.Combat.Fx.Sabotaged, Actions = 1, SourceSide = u.Side, Dispellable = false });
                 break;

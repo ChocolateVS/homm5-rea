@@ -106,4 +106,55 @@ public sealed partial class Battle
                 pool.Add(sp);
         return pool;
     }
+
+    /// <summary>
+    /// The per-stack rune record {id, uses, firsts, re-activations} (stack vf 0x2b8): a Fortress stack starts every rune
+    /// of its hero's book with one use and one first activation (FUN_00989350 via FUN_0041a250); a Strong Rune hero
+    /// (HasSkill 0x99) adds one use (FUN_00989210(id, 1, 0)). Each activation spends one (FUN_00989270, from the payments
+    /// FUN_008a11c0 / FUN_00bbf610 via FUN_00a6a6d0 and FUN_00a6a970: uses − 1 and firsts − 1 while positive,
+    /// re-activations + 1), and FUN_00989190 refuses the rune once uses &lt; 1 (COMBAT_RUNIC_SPELL_ALREADY_USED) — so a rune
+    /// works once per stack, twice with Strong Rune (the second at the re-activation cost of FUN_00419ad0).
+    /// </summary>
+    internal static bool RuneUsedUp(HeroState h, SpellDef sp, int? target) =>
+        h.AbilityUses.GetValueOrDefault($"{sp.Id}:{target}") >= (h.HasPerk(Sk.StrongRune) ? 2 : 1);
+
+    internal static void SpendRuneUse(HeroState h, SpellDef sp, int? target)
+    {
+        var key = $"{sp.Id}:{target}";
+        h.AbilityUses[key] = h.AbilityUses.GetValueOrDefault(key) + 1;
+    }
+
+    /// <summary>The spells FUN_00976b90 gives a damage (its switch on the base id: Magic Arrow … Armageddon 1..10, Plague,
+    /// Unholy / Holy Word, Land Mine, Wasp Swarm, Explosion, Call Lightning, Firewall, Stone Spikes, Uber Chain Lightning,
+    /// Boss Firewall, Deep Freeze, Divine Vengeance, Uber Meteor Shower, Call Storm); every other spell gives 0.</summary>
+    internal static readonly HashSet<string> SpellDamageSpells = new()
+    {
+        "SPELL_MAGIC_ARROW", "SPELL_MAGIC_FIST", "SPELL_LIGHTNING_BOLT", "SPELL_ICE_BOLT", "SPELL_FIREBALL", "SPELL_FROST_RING",
+        "SPELL_CHAIN_LIGHTNING", "SPELL_METEOR_SHOWER", "SPELL_IMPLOSION", "SPELL_ARMAGEDDON", "SPELL_PLAGUE", "SPELL_UNHOLY_WORD",
+        "SPELL_HOLY_WORD", "SPELL_LAND_MINE", "SPELL_WASP_SWARM", "SPELL_ABILITY_EXPLOSION", "SPELL_ABILITY_CALL_LIGHTNING",
+        "SPELL_FIREWALL", "SPELL_STONE_SPIKES", "SPELL_UBER_CHAIN_LIGHTNING", "SPELL_BOSS_FIREWALL", "SPELL_DEEP_FREEZE",
+        "SPELL_DIVINE_VENGEANCE", "SPELL_UBER_METEOR_SHOWER", "SPELL_ABILITY_CALL_STORM",
+    };
+
+    /// <summary>
+    /// Imbue Arrow's order (exe FUN_008cf270 008cf54c..008cf5bf, FUN_0097ea20 0097ea95..0097eab5): the strike damage goes
+    /// into CCombat's deferred damage queue (vf 0x14 → vf 0), then FUN_0097ea20 casts the imbued spell; when the spell's
+    /// FUN_00976b90 damage is 0 it flushes the queue (vf 0x14 → vf 8 = FUN_008d7f40) before the cast, otherwise the strike
+    /// flushes it after the cast (008cf5ac..008cf5ba). The flush skips a dead target. True: the spell lands first.
+    /// </summary>
+    internal bool ImbueSpellFirst(HeroState h) =>
+        h.HasPerk(Sk.ImbueArrow) && h.ImbuedSpell is { } id && SpellDamageSpells.Contains(BaseSpell(id));
+
+    /// <summary>
+    /// Sabotage's health test (exe FUN_0097f610 case 0x14a, 009804ed..009805e3): r = trunc(A − B · SabotageCoef) — A the
+    /// target's and B the saboteurs' total health (vf 0x1dc = FUN_008a4190: (count − 1) · health + top health), the
+    /// floats subtracted on the x87 stack, SabotageCoef (RPGStats +0x304, 10 stock, 1 in MMH55) as a float, FISTP under
+    /// chop; the target qualifies when r &lt; 0 (with ABILITY_MECHANICAL or as a war machine, vf 0x84).
+    /// </summary>
+    internal bool SabotageHealthAllows(Unit saboteur, Unit target)
+    {
+        float k = (float)Stats.Get("combat/Creatures/Academy/SabotageCoef", 10);
+        double x = (double)(float)target.TotalHealth - (double)(float)saboteur.TotalHealth * k;
+        return Math.Truncate(x) < 0;
+    }
 }
