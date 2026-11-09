@@ -487,6 +487,7 @@ public partial class HotSeatWaitScreen : UiScreen
         Bus.On("back", () => UiNavigator.Goto("hotseatcreate"));
         try { _setup = CustomGameSetup.ForHotSeat(AdvNetGame.Maps.Load(_plan.Settings).Map, H5Reborn.Adventure.AdventureSession.SharedDb); }
         catch (Exception e) { GD.Print($"[advnet] hot-seat map: {e.Message}"); }
+        if (_setup != null) HotSeatNames.Init(_setup.Slots, ColourText);
         Find("gamename")?.SetValue("value", ChatLogView.Escape(_plan.Settings.Map ?? "Random map"));
         BuildRows();
     }
@@ -512,6 +513,7 @@ public partial class HotSeatWaitScreen : UiScreen
         var b = H5Reborn.Adventure.SetupRowView.Buttons.FirstOrDefault(x => x.Button == button);
         if (b.Button == null) return;
         _setup.Apply(row, b.Kind, b.Right, "");
+        FixNames();   // 0077bd40: after a row command, logic vf 0x1c = 0077be40
         BuildRows();
     }
 
@@ -528,7 +530,7 @@ public partial class HotSeatWaitScreen : UiScreen
             int row = i;
             _rows.Add(node);
             H5Reborn.Adventure.SetupRowView.Fill(this, node, _setup, row, b => Press(row, b));
-            // The name edit line: the human's name (editable); the default names (item vf 0x28) are not traced.
+            // The name edit line: the row's name (editable for humans); defaults and fixes: HotSeatNames.
             if (H5Reborn.Adventure.SetupRowView.Child(this, node, "playername") is UiEditLine edit)
             {
                 var s = _setup.Slots[row];
@@ -544,11 +546,16 @@ public partial class HotSeatWaitScreen : UiScreen
         foreach (var n in new[] { "start", "StartBtn" }) if (Find(n) is { } start) start.Enabled = _setup.CanStartHotSeat();
     }
 
+    /// <summary>The name table text of a colour key (UI/MPWait/PlayersList/Item related texts, see HotSeatNames).</summary>
+    static string ColourText(string key) => UiResources.Instance.Text($"UI/MPWait/PlayersList/Item/player_{key}.txt")?.Trim() ?? key;
+
+    void FixNames() { if (_setup != null) HotSeatNames.Fix(_setup.Slots, ColourText); }
+
     void Start()
     {
         if (_setup == null || !_setup.CanStartHotSeat()) return;
-        // 0077c470: names that are not valid get the default (0077be40); an empty name is taken as not valid.
-        foreach (var s in _setup.Slots.Where(s => s.State == SetupSlot.SlotState.Human && s.Name.Trim().Length == 0)) s.Name = $"Player {s.MapPlayer + 1}";
+        // 0077c470: unless every row's name is valid (logic vf 0x18 = 0077bbe0 → 0077bb50), vf 0x1c = 0077be40 fixes them.
+        if (!_setup.Slots.All(s => HotSeatNames.Valid(s, ColourText))) FixNames();
         _plan.Humans.Clear();
         foreach (var s in _setup.Slots.Where(s => s.State == SetupSlot.SlotState.Human)) _plan.Humans[s.MapPlayer] = s.Name;
         _plan.Players = _setup.ToGameSetup(0, _plan.Settings.Difficulty).Players;
