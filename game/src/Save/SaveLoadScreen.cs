@@ -31,12 +31,20 @@ public partial class SaveLoadScreen : UiScreen
 
     /// <summary>Which saves the list shows: network saves only on the network load list, the others elsewhere.</summary>
     readonly bool _network;
+    /// <summary>
+    /// The hot-seat list (CLoadScreen&lt;SHotSeatHeaderInfo&gt;): 007f9480 builds one load screen per header type — 0
+    /// SHeaderInfo (single player menu 0069f110, custom game 00774a60), 2 SLanSaveHeaderInfo, 4 SHotSeatHeaderInfo (the
+    /// hot-seat create screen, 0077a7c0), 5 combat replays, 6 SCampaignHeaderInfo, 7 dialog scenes — so hot-seat saves are
+    /// listed only here and in hot-seat games.
+    /// </summary>
+    readonly bool _hotSeat;
     readonly Action<SaveEntry>? _onLoad;
 
-    public SaveLoadScreen(Mode mode, AdventureScreen? game, byte[]? thumbnail, Action close, bool network = false, Action<SaveEntry>? onLoad = null)
+    public SaveLoadScreen(Mode mode, AdventureScreen? game, byte[]? thumbnail, Action close, bool network = false, Action<SaveEntry>? onLoad = null, bool hotSeat = false)
         : base(mode == Mode.Save ? "UI/Save.(WindowScreen).xdb" : "UI/Load.(WindowScreen).xdb")
     {
         _network = network || game?.Session.IsRemote == true;
+        _hotSeat = hotSeat || game?.Session.IsHotSeat == true;
         _onLoad = onLoad;
         _mode = mode;
         _game = game;
@@ -72,7 +80,8 @@ public partial class SaveLoadScreen : UiScreen
     void Refresh(string? select = null)
     {
         // The exe keeps separate save/load screens per header type (SHeaderInfo, SLanSaveHeaderInfo, …).
-        _entries = SaveSlots.List(SaveManager.Storage).Where(e => (e.Header.Kind == SaveKind.Multiplayer) == _network).ToList();
+        _entries = SaveSlots.List(SaveManager.Storage).Where(e => (e.Header.Kind == SaveKind.Multiplayer) == _network &&
+            (_network || (e.Header.Kind == SaveKind.HotSeat) == _hotSeat)).ToList();
         _list.SetEntries(_entries);
         int index = select != null ? _entries.FindIndex(e => e.FileName == select) : -1;
         _list.Select(index >= 0 ? index : _mode == Mode.Load && _entries.Count > 0 ? 0 : -1);
@@ -303,6 +312,17 @@ public partial class SavesListView : Control
     public override void _Notification(int what)
     {
         if (what == NotificationMouseExit) Hover(-1);
+    }
+}
+
+/// <summary>The hot-seat load list (CLoadScreen&lt;SHotSeatHeaderInfo&gt;, 007f9480 type 4) opened by Load on UI/HotSeat (0077a7c0).</summary>
+public static class HotSeatLoadList
+{
+    public static Control Open()
+    {
+        SaveLoadScreen? s = null;
+        s = new SaveLoadScreen(SaveLoadScreen.Mode.Load, null, null, () => UiNavigator.CloseOverlay(s!), hotSeat: true);
+        return s;
     }
 }
 

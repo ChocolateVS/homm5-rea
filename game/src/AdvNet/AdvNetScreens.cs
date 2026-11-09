@@ -65,10 +65,12 @@ public partial class AdvSetupScreen : UiScreen
         _network = network;
         // Simultaneous turns (room key simultaneus_turns, docs/rules/SIMULTANEOUS.md): off by default.
         if (Find("simultaneus") is { } sim) { sim.SetState(1); sim.Clicked += _ => { Read(); ShowValues(); }; }
-        // Network: Load reopens a network save on this host (CMultiplayerHostLoadLogic); hot-seat loading is the load screen's.
+        // Network: Load reopens a network save on this host (CMultiplayerHostLoadLogic); hot-seat: the hot-seat save list
+        // (0077a7c0 → 007f9480 type 4, CLoadScreen<SHotSeatHeaderInfo>).
         foreach (var n in new[] { "loadbutton", "load" })
-            if (Find(n) is { } load) load.Enabled = network;
+            if (Find(n) is { } load) load.Enabled = true;
         if (network) Bus.On("load", () => UiNavigator.ShowOverlay(H5Reborn.Save.NetLoadList.Open(LoadNetworkSave)));
+        else Bus.On("load", () => UiNavigator.ShowOverlay(H5Reborn.Save.HotSeatLoadList.Open()));
 
         var maps = Root.Find("maps")!;
         float ox = maps.Rect.X, oy = maps.Rect.Y;
