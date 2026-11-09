@@ -185,13 +185,7 @@ public sealed class CustomGameSetup
                 HeroSelectable = mp.HeroInTown && !map.Objects.Any(o => o.Kind == ObjectKind.Hero && o.Owner == mp.Index),
                 Races = RacesFor(mp),
                 // 00ca07c5: DefaultBonus ARTIFACT only when the player has a hero, GOLD, RESOURCE, else random.
-                Bonus = mp.DefaultBonus switch
-                {
-                    "PLAYER_BONUS_ARTIFACT" => hasHero ? 1 : 0,
-                    "PLAYER_BONUS_GOLD" => 2,
-                    "PLAYER_BONUS_RESOURCE" => 3,
-                    _ => 0,
-                },
+                Bonus = H5.Adventure.Engine.Adventure.DefaultStartBonus(map, mp),
             };
             // 00c9e9f0: a player with exactly one possible faction has it fixed.
             if (s.Races.Count == 1) s.Race = s.Races[0];

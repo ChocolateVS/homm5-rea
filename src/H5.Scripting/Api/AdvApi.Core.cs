@@ -201,12 +201,12 @@ public sealed partial class AdventureScripting
         Reg("GetPlayerSelectedCampaignBonusIndex", c => c.Return(World.GameVars.TryGetValue("__campaign_bonus", out var v) && int.TryParse(v, out var i) ? i : 0));
 
         // Players (table 0x00f34c28)
-        Reg("GetPlayerState", c => c.Return(PlayerStateOf(PlayerId18(c))));
+        Reg("GetPlayerState", c => c.Return(ScriptPlayerState(PlayerId18(c))));
         Reg("GetPlayerHeroes", c =>
         {
             int id = c.Int(0);
             if (id < 1 || id > 8) throw c.Error($"Player ID #{id} is not valid");
-            if (PlayerStateOf(id - 1) == 0) throw c.Error($"Player #{id} is not exists");
+            if (ScriptPlayerState(id - 1) == 0) throw c.Error($"Player #{id} is not exists");
             c.Return(StringArray(S.Heroes.Where(h => h.Alive && h.Owner == id - 1).Select(h => h.DefId)));
         });
         Reg("GetPlayerResource", c =>
@@ -327,6 +327,14 @@ public sealed partial class AdventureScripting
     // ---- players ---------------------------------------------------------------------------------
 
     /// <summary>Player state (player vf0x6c): 0 PLAYER_NOT_IN_GAME, 1 PLAYER_ACTIVE, 2 PLAYER_WON, 3 PLAYER_LOST.</summary>
+    /// <summary>
+    /// Player vf 0x6c (+0x7c) as GetPlayerState (005c1390) / GetPlayerHeroes (005c1540) read it: the game start from the
+    /// setup model (00c9fa80) creates every player number 1..8; one without a setup slot, closed, or an open slot nobody
+    /// took is made by 004ffb60 (race RACE_NO_TYPE, team -1) and set to state 4 (vf 0x70). Our engine leaves such players
+    /// out, so a missing player reports 4 here (and has no heroes).
+    /// </summary>
+    int ScriptPlayerState(int engineIndex) => Game.Player(engineIndex) == null ? 4 : PlayerStateOf(engineIndex);
+
     int PlayerStateOf(int engineIndex)
     {
         var p = Game.Player(engineIndex);

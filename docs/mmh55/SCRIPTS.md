@@ -139,9 +139,9 @@ note a residual gap.
 | GetMapDataPath | core | 0x006b5c70 | MATCH | directory of map path (FUN_00bf6a40 formatting of the leading '/' not traced) |
 | GetMaxFloor | core | 0x005e1570 | MATCH | 1 if floor 1 exists else 0 |
 | GetObjectiveState | core | 0x005d8710 | FIXED | per-player lookup (player arg, default 1) with exe errors: name not specified / Incorrect player ID #%i / Objective "%s" is not exists |
-| GetPlayerHeroes | core | 0x005c1540 | FIXED | errors "Player ID #%i is not valid", "Player #%i is not exists" (state 0); order = our hero list order (exe player list order not traced) |
+| GetPlayerHeroes | core | 0x005c1540 | FIXED | errors "Player ID #%i is not valid", "Player #%i is not exists" (state 0 — a player missing from the game is state 4 in the exe, 004ffb60 via 00c9fa80, so it returns an empty table); order = our hero list order (exe player list order not traced) |
 | GetPlayerResource | core | 0x005c19a0 | FIXED | "Player ID must be 1 through 8", "Player %d doesn't taking part in the current game" (state 0), "Invalid resource specified: %d" |
-| GetPlayerState | core | 0x005c1390 | FIXED | "Player ID must be 1 through 8"; returns player state 0/1/2/3 |
+| GetPlayerState | core | 0x005c1390 | FIXED | "Player ID must be 1 through 8"; returns player vf 0x6c (+0x7c): 1/2/3, and 4 for a player number not in the game (closed / no slot: 004ffb60 sets 4, see AUDIT_CAMPAIGN.md "Closed / absent players"; was 0) |
 | GetSavedCombatArmyCreatureInfo | core | 0x005e6720 | FIXED | winner=army0/loser=army1 (side 0 -> loser); unknown index/no armies -> 0,0,0; bad index -> "Invalid creature index %d!"; data now recorded (engine hook) |
 | GetSavedCombatArmyCreaturesCount | core | 0x005e64d0 | FIXED | side mapping fixed; unknown index -> 0 (no error); counts start-of-combat stacks |
 | GetSavedCombatArmyHero | core | 0x005e6260 | FIXED | side mapping fixed; no hero / unknown index -> no return value (nil), no error |

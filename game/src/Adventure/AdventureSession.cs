@@ -55,7 +55,8 @@ public sealed class AdventureSession
         new(SharedDb, game.Map, game, Array.Empty<AdvEvent>(), seed) { Files = files, _battleSeq = battleSeq, Generator = generator };
 
     /// <summary>Loads a map (catalogue id, short name or .h5m path) and starts a game with one human player.</summary>
-    public static AdventureSession Start(string mapQuery, ulong seed, int humanMapPlayer = -1, int difficulty = 1)
+    /// <param name="campaign">a campaign mission: 006948c0 sets the setup model's campaign flag +0x1c (vf 0x5c).</param>
+    public static AdventureSession Start(string mapQuery, ulong seed, int humanMapPlayer = -1, int difficulty = 1, bool campaign = false)
     {
         var fs = H5Reborn.Game.Instance.Fs;
         var core = H5Reborn.Game.Instance.Db;
@@ -65,7 +66,7 @@ public sealed class AdventureSession
         var files = mapRef.Open(fs);
         var map = new MapLoader(core, fs).Load(files);
 
-        var setup = new GameSetup { Seed = seed, Difficulty = difficulty };
+        var setup = new GameSetup { Seed = seed, Difficulty = difficulty, Campaign = campaign };
         var active = map.Players.Where(p => p.Active).ToList();
         int human = humanMapPlayer >= 0 ? humanMapPlayer : active.FirstOrDefault(p => p.CanBeHuman)?.Index ?? active[0].Index;
         foreach (var p in active)
@@ -117,7 +118,8 @@ public sealed class AdventureSession
         var humans = humanMapPlayers.ToHashSet();
         var setup = new GameSetup { Seed = seed, Difficulty = difficulty };
         foreach (var p in lm.Map.Players.Where(p => p.Active))
-            setup.Players.Add(new PlayerSetup { MapPlayer = p.Index, Human = humans.Contains(p.Index) });
+            // The hot-seat setup has no bonus arrows yet: each slot keeps the setup model's default (00ca0240).
+            setup.Players.Add(new PlayerSetup { MapPlayer = p.Index, Human = humans.Contains(p.Index), Bonus = H5.Adventure.Engine.Adventure.DefaultStartBonus(lm.Map, p) });
         var (game, opening) = H5.Adventure.Engine.Adventure.NewGame(lm.Db, lm.Map, setup);
         GD.Print($"[H5] adventure {lm.Map.Id} local game, humans {string.Join(",", humans.Select(h => h + 1))}, seed {seed}");
         return new AdventureSession(lm.Db, lm.Map, game, opening, seed)

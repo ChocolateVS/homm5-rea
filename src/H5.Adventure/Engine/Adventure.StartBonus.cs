@@ -1,3 +1,4 @@
+using H5.Adventure.Map;
 using H5.Adventure.State;
 
 namespace H5.Adventure.Engine;
@@ -8,10 +9,13 @@ public sealed partial class Adventure
     /// Custom-game starting bonuses (H5_Game.exe 00c9fa80, after every player and the map's heroes exist): for each
     /// setup slot that is not closed — a computer slot only when the map player CanBeComputerPlayer (slot +0x21) — and
     /// unless the setup model's flag +0x1c is set (vf 0x54 = 00ca11c0), the slot's bonus (+0x4c) goes to the player's
-    /// vf 0x1c = 004fd860. Players without a setup bonus (scenario/campaign/network starts) get none.
+    /// vf 0x1c = 004fd860. The flag is set only by the campaign mission start (006948c0 → vf 0x5c = 00ca0c60, which
+    /// copies the campaign start info to model +0x20), so campaign missions get none. Players without a setup bonus
+    /// (map started directly, without a setup screen) get none.
     /// </summary>
     void ApplyStartBonuses(GameSetup setup)
     {
+        if (setup.Campaign) return;
         foreach (var ps in setup.Players)
         {
             if (ps.Bonus is not { } bonus || PlayerByIndex(ps.MapPlayer) is not { } p) continue;
@@ -19,6 +23,23 @@ public sealed partial class Adventure
             if (!p.Human && !mp.CanBeComputer) continue;
             ApplyStartBonus(p, bonus);
         }
+    }
+
+    /// <summary>
+    /// The setup model's slot bonus before any change (00ca0240, slot +0x4c from map player +0x98 DefaultBonus): ARTIFACT
+    /// only for a player with a hero (one placed on the map, the map's main hero or HeroInTown), GOLD, RESOURCE, else random.
+    /// The custom-game, hot-seat and network setups all start from this model.
+    /// </summary>
+    public static int DefaultStartBonus(AdvMap map, MapPlayer mp)
+    {
+        bool hasHero = map.Objects.Any(o => o.Kind == ObjectKind.Hero && o.Owner == mp.Index) || mp.MainHeroUid != null || mp.HeroInTown;
+        return mp.DefaultBonus switch
+        {
+            "PLAYER_BONUS_ARTIFACT" => hasHero ? 1 : 0,
+            "PLAYER_BONUS_GOLD" => 2,
+            "PLAYER_BONUS_RESOURCE" => 3,
+            _ => 0,
+        };
     }
 
     /// <summary>

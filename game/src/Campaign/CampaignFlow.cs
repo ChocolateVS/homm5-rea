@@ -72,7 +72,7 @@ public static class CampaignFlow
     {
         var profile = CampaignProfile.Current;
         var seed = (ulong)Time.GetTicksUsec();
-        var session = AdventureSession.Start(m.MapId, seed, difficulty: CampaignMenu.Difficulty);
+        var session = AdventureSession.Start(m.MapId, seed, difficulty: CampaignMenu.Difficulty, campaign: true);
         ApplyCarryOver(session, c, m, profile);
         if (bonusIndex >= 0 && bonusIndex < m.Bonuses.Count) ApplyBonus(session, m.Bonuses[bonusIndex]);
         Active = new ActiveMission(c, m, bonusIndex, session);

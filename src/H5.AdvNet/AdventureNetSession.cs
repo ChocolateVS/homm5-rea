@@ -196,7 +196,8 @@ public sealed partial class AdventureNetSession : IGameSession, ITickableSession
         foreach (var p in map.Players.Where(p => p.Active))
         {
             int side = Array.IndexOf(_sideMapPlayer, p.Index);
-            setup.Players.Add(new PlayerSetup { MapPlayer = p.Index, Human = side >= 0, Race = side >= 0 ? opts[side].Race : null });
+            // The network setup has no bonus arrows yet: each slot keeps the setup model's default (00ca0240).
+            setup.Players.Add(new PlayerSetup { MapPlayer = p.Index, Human = side >= 0, Race = side >= 0 ? opts[side].Race : null, Bonus = H5.Adventure.Engine.Adventure.DefaultStartBonus(map, p) });
             if (side >= 0) _humanPlayers.Add(p.Index);
         }
         var (game, opening) = H5.Adventure.Engine.Adventure.NewGame(_lm.Db, map, setup);

@@ -89,4 +89,44 @@ public class StartBonusTests(Fixture f)
             .Except(g0.S.Heroes.Where(h => h.Owner == p0.Index).SelectMany(h => h.Artifacts)).Single();
         Assert.Equal("ARTF_CLASS_MINOR", f.Db.ArtifactClass[extra]);
     }
+
+    /// <summary>00c9fa80 skips the bonus when the model's flag +0x1c is set; only the campaign start 006948c0 sets it (vf 0x5c).</summary>
+    [Fact]
+    public void CampaignStartsGetNoBonus()
+    {
+        var map = f.Map("A2M1");
+        int Gold(bool campaign)
+        {
+            var setup = GameSetup.AllPlayers(map, 1, 7);
+            setup.Campaign = campaign;
+            foreach (var ps in setup.Players) ps.Bonus = 2;
+            var g = Engine.Adventure.NewGame(f.Db, map, setup).Game;
+            return g.S.Players.First(p => p.Index == setup.Players[0].MapPlayer).Purse[Purse.Gold];
+        }
+        int noBonus = Start(null, 7).P.Purse[Purse.Gold];
+        Assert.Equal(noBonus, Gold(true));
+        Assert.InRange(Gold(false) - noBonus, 500, 1000);
+    }
+
+    /// <summary>00ca0240: the slot default from DefaultBonus — ARTIFACT only with a hero (map hero, main hero or HeroInTown).</summary>
+    [Fact]
+    public void DefaultBonusFollowsTheMapPlayer()
+    {
+        var map = f.Map("A2M1");
+        var mp = map.Players.First(p => p.Active);
+        var saved = (mp.DefaultBonus, mp.HeroInTown, mp.MainHeroUid);
+        try
+        {
+            mp.DefaultBonus = "PLAYER_BONUS_GOLD"; Assert.Equal(2, Engine.Adventure.DefaultStartBonus(map, mp));
+            mp.DefaultBonus = "PLAYER_BONUS_RESOURCE"; Assert.Equal(3, Engine.Adventure.DefaultStartBonus(map, mp));
+            mp.DefaultBonus = "PLAYER_BONUS_RANDOM"; Assert.Equal(0, Engine.Adventure.DefaultStartBonus(map, mp));
+            mp.DefaultBonus = "PLAYER_BONUS_ARTIFACT";
+            mp.HeroInTown = true;
+            Assert.Equal(1, Engine.Adventure.DefaultStartBonus(map, mp));
+            bool mapHero = map.Objects.Any(o => o.Kind == Map.ObjectKind.Hero && o.Owner == mp.Index);
+            mp.HeroInTown = false; mp.MainHeroUid = null;
+            Assert.Equal(mapHero ? 1 : 0, Engine.Adventure.DefaultStartBonus(map, mp));
+        }
+        finally { (mp.DefaultBonus, mp.HeroInTown, mp.MainHeroUid) = saved; }
+    }
 }
