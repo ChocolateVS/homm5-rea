@@ -24,7 +24,7 @@ namespace H5.AdvNet;
 ///   their skills, spells, artifacts, experience, mana and movement are hidden.
 /// - Map objects under the shroud are reset to their pristine state; visible neutral guards are
 ///   banded; unrevealed contents (treasure amounts, bank variants, shrine spells) are hidden.
-/// - The RNG, the tavern pool and other players' fog/taverns are never sent.
+/// - The RNG, the tavern pool and other players' fog/taverns (offered heroes and their armies) are never sent.
 /// </summary>
 public static class ViewFilter
 {
@@ -91,6 +91,7 @@ public static class ViewFilter
             if (!ally) p.Purse = new Purse();
             p.Explored = p.Explored.Select(_ => Array.Empty<bool>()).ToList();
             p.Tavern = new string?[p.Tavern.Length];
+            p.TavernArmy = p.TavernArmy.Select(_ => Army.Empty()).ToArray();
             p.VisitedObjects.Clear();
             p.Keys.Clear();
         }
