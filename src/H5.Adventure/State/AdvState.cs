@@ -414,8 +414,19 @@ public sealed class ObjState
     public string? ArtifactId;
     public string? SpellId;
     public string? Creature;
-    /// <summary>Seer Hut quest completed (AllowMultipleCompletions is not modelled: once).</summary>
-    public bool QuestDone;
+    /// <summary>
+    /// Players whose Seer Hut quest is over (the hut's per-player offer objective left state 2 at the terminate 004f26b0:
+    /// completed or failed); the hut shows them no box.
+    /// </summary>
+    public HashSet<int> QuestDoneBy = new();
+    /// <summary>Players whose taken quest failed (objective state 4: banned by another player, 00afb060 / 00afb170).</summary>
+    public HashSet<int> QuestFailedBy = new();
+    /// <summary>
+    /// The common objective's recorded player (+0x16c, set by the state listener 00afb410 when AllowMultipleActivations is
+    /// off and a player takes the quest, or AllowMultipleCompletions is off and a player completes it); every other player
+    /// is banned from then on. -1: none.
+    /// </summary>
+    public int QuestBanPlayer = -1;
     /// <summary>Players that took the Seer Hut quest (Accept on the first visit).</summary>
     public HashSet<int> QuestTakenBy = new();
     /// <summary>

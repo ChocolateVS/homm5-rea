@@ -60,6 +60,13 @@ public sealed class MapLoader
         };
 
         ReadPlayers(root, m);
+        foreach (var r in root.Items("regions"))
+        {
+            var rect = r.Element("Rect");
+            int x1 = rect.Int("x1"), y1 = rect.Int("y1"), x2 = rect.Int("x2"), y2 = rect.Int("y2");
+            if (r.Str("Name") is { Length: > 0 } rn)
+                m.Regions.TryAdd(rn, new MapRect(r.Int("Floor"), Math.Min(x1, x2), Math.Min(y1, y2), Math.Max(x1, x2), Math.Max(y1, y2)));
+        }
         ReadReserveHeroes(root, m, files);
         ReadObjectives(root, m, files);
         ReadScript(root, m, files);
@@ -360,6 +367,8 @@ public sealed class MapLoader
                     Objective = ReadObjective(q, false, -1, files),
                     Description = files.ReadText(q.Href("DescriptionFileRef"))?.Trim(),
                     TakeContribution = q.Bool("TakeContribution"),
+                    AllowMultipleActivations = q.Bool("AllowMultipleActivations", false),
+                    AllowMultipleCompletions = q.Bool("AllowMultipleCompletions", true),
                     AwardType = aw.Str("Type") is { Length: > 0 } at ? at : "AWARD_NONE",
                     Experience = aw.Int("Experience"),
                     Resources = new[] { "Wood", "Ore", "Mercury", "Crystal", "Sulfur", "Gem", "Gold" }.Select(r => awardRes.Int(r)).ToArray(),

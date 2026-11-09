@@ -68,21 +68,33 @@ public sealed partial class Adventure
     /// <item>OBTAIN_ARTIFACT (ctor 00b45210, check 00b422c0) and ASSEMBLE_ARMY (ctor 00b44950, check 00b43d30 →
     /// 00b43c60) look at the player's heroes (vf 0xc0), limited to one hero when the caller passes it; which hero the
     /// Seer Hut passes is not traced (TODO(exe)), here the visiting hero. The artifact counts worn (00ca6680) or in the
-    /// backpack (00ca6b30); its optional location parameter (+0x3c) is not ported. The army condition takes
+    /// backpack (00ca6b30); with a location (parameter 1, +0x3c) that names a map region, only while the holder's position —
+    /// the town's when he is in one (world vf 0x100 → vf 0xa4), else his own (vf 0x54 → vf 0xc4) — is inside it (region
+    /// vf 0xc); a location that names no region is ignored (local_c null: met). The army condition takes
     /// every (creature, count) pair (<see cref="ArmyRequirement"/>) and needs a creature total above their sum.</item>
     /// </list>
+    /// What the box reads (004f25f0) is the player's quest objective in state 3 (completed) or 4 (failed): a quest failed
+    /// by a ban (<see cref="SeerQuestFailed"/>) counts as fulfilled, and Complete then ends it without the award.
     /// </summary>
     public bool SeerQuestMet(HeroState h, int hut)
     {
         var o = Map.Objects.ElementAtOrDefault(hut);
-        if (o?.Quest is not { } q || S.Obj(hut).QuestDone) return false;
+        var os = S.Obj(hut);
+        if (o?.Quest is not { } q || os.QuestDoneBy.Contains(h.Owner)) return false;
+        if (os.QuestTakenBy.Contains(h.Owner) && SeerQuestFailed(h.Owner, hut)) return true;
         var p = PlayerByIndex(h.Owner)!;
         var (kind, id, amount, name) = QuestRequirement(q);
         var prm = q.Objective.Parameters;
         int P(int i, int dflt) => i < prm.Count && int.TryParse(prm[i], out int v) ? v : dflt;
         switch (kind)
         {
-            case "artifact": return id != null && (h.Artifacts.Contains(id) || h.Backpack.Contains(id));
+            case "artifact":
+            {
+                if (id == null || !(h.Artifacts.Contains(id) || h.Backpack.Contains(id))) return false;
+                if (prm.Count < 2 || prm[1].Length == 0 || !Map.Regions.TryGetValue(prm[1], out var region)) return true;
+                var at = h.InTown >= 0 && Map.Objects.ElementAtOrDefault(h.InTown) is { } town ? town.Pos : h.Pos;
+                return region.Contains(at);
+            }
             case "army":
             {
                 // 00b43c60: every required creature present in at least its count (00b43940 / 00b42cb0) and the hero's
@@ -138,7 +150,32 @@ public sealed partial class Adventure
         var os = S.Obj(o.Index);
         if (o.Quest == null) { Emit(new ObjectVisited(h.Id, o.Index, o.Shared.Type)); return; }
         PlayerByIndex(h.Owner)?.VisitedObjects.Add(o.Index);
-        Emit(new ObjectVisited(h.Id, o.Index, os.QuestDone ? "seerhut:done" : os.QuestTakenBy.Contains(h.Owner) ? "seerhut" : "seerhut:offer"));
+        Emit(new ObjectVisited(h.Id, o.Index, os.QuestDoneBy.Contains(h.Owner) ? "seerhut:done" : os.QuestTakenBy.Contains(h.Owner) ? "seerhut" : "seerhut:offer"));
+    }
+
+    /// <summary>
+    /// The player's taken quest failed: the bannable condition (00afb060) answers "decided, not met" when the common
+    /// objective's recorded player (+0x16c, 00afb170) is another player — at the take (004f2560 checks with flags 3) or when
+    /// the listener 00afb410 re-checks the players still active (flags 1). State 4 is final.
+    /// </summary>
+    public bool SeerQuestFailed(int player, int hut) => S.Obj(hut).QuestFailedBy.Contains(player);
+
+    /// <summary>
+    /// The common objective's state listener (00afb410) for a player's quest objective entering state 2 (taken) with
+    /// AllowMultipleActivations off, or state 3 (completed) with AllowMultipleCompletions off: the player is recorded (+0x16c)
+    /// and every other player whose objective is still active (state 2) is checked again (vf 0x60(…, 1, 0) → 00c603f0),
+    /// which the ban fails (state 4, no award).
+    /// UNVERIFIED: here "still active" is taken but neither completed at the hut nor failed; the exe's objective may already
+    /// be completed (state 3) when its condition was met at an earlier check, and then it is spared.
+    /// </summary>
+    void SeerQuestStateChanged(int hut, int player, bool completed)
+    {
+        var o = Map.Objects[hut];
+        var os = S.Obj(hut);
+        if (completed ? o.Quest!.AllowMultipleCompletions : o.Quest!.AllowMultipleActivations) return;
+        os.QuestBanPlayer = player;
+        foreach (int other in os.QuestTakenBy)
+            if (other != player && !os.QuestDoneBy.Contains(other)) os.QuestFailedBy.Add(other);
     }
 
     string? DoAcceptSeerQuest(AcceptSeerQuestCmd c)
@@ -149,7 +186,11 @@ public sealed partial class Adventure
         if (o?.Quest == null) return "not a seer hut";
         if (h == null || !h.Alive || h.Owner != p.Index || !HeroAt(h, o)) return "hero must visit the seer hut";
         var os = S.Obj(c.Hut);
-        if (os.QuestDone || !os.QuestTakenBy.Add(p.Index)) return "quest already taken";
+        if (os.QuestDoneBy.Contains(p.Index) || !os.QuestTakenBy.Add(p.Index)) return "quest already taken";
+        // 004f2560: the offer and the quest objectives enter state 2 (the listener 00afb410 runs), then the quest is checked
+        // (vf 0x60 flags 3): a ban by another recorded player fails it at once.
+        SeerQuestStateChanged(c.Hut, p.Index, completed: false);
+        if (os.QuestBanPlayer >= 0 && os.QuestBanPlayer != p.Index) os.QuestFailedBy.Add(p.Index);
         // The KILL_CREATURES baseline (condition vf 8 = 00b427f0); UNVERIFIED: that it runs when the quest is taken.
         if (QuestRequirement(o.Quest) is ("kill", { } cr, _, _)) os.QuestKillBaseline[p.Index] = KilledCount(p.Index, cr);
         return null;
@@ -163,7 +204,16 @@ public sealed partial class Adventure
         if (o?.Quest is not { } q) return "not a seer hut";
         if (h == null || !h.Alive || h.Owner != p.Index || !HeroAt(h, o)) return "hero must visit the seer hut";
         if (!S.Obj(c.Hut).QuestTakenBy.Contains(p.Index)) return "quest not taken";
+        var os = S.Obj(c.Hut);
+        if (os.QuestDoneBy.Contains(p.Index)) return "quest already completed";
         if (!SeerQuestMet(h, c.Hut)) return "quest not fulfilled";
+        // 004f26b0: the offer objective takes the quest objective's state; a failed quest (4) ends with no award.
+        if (os.QuestFailedBy.Contains(p.Index))
+        {
+            os.QuestDoneBy.Add(p.Index);
+            Emit(new ObjectVisited(h.Id, c.Hut, "seerhut:failed"));
+            return null;
+        }
         // The quest item is handed over when the quest takes the contribution.
         if (q.TakeContribution)
         {
@@ -194,7 +244,10 @@ public sealed partial class Adventure
                     break;
             }
         }
-        S.Obj(c.Hut).QuestDone = true;
+        os.QuestDoneBy.Add(p.Index);
+        // TODO(exe): the exe's quest objective completes (state 3) at the check that first finds it met, which is when the
+        // listener runs for AllowMultipleCompletions off; here at the hand-in.
+        SeerQuestStateChanged(c.Hut, p.Index, completed: true);
         GiveSeerAward(h, p, q);
         Emit(new ObjectVisited(h.Id, c.Hut, "seerhut:complete"));
         return null;

@@ -342,7 +342,7 @@ public class SeerHutTests(Fixture f)
         Assert.True(g.SeerQuestMet(h, hut.Index));
         var r = g.Apply(new CompleteSeerQuestCmd(h.Id, hut.Index) { Player = p.Index });
         Assert.True(r.Ok, r.Error);
-        Assert.True(g.S.Obj(hut.Index).QuestDone);
+        Assert.Contains(p.Index, g.S.Obj(hut.Index).QuestDoneBy);
         Assert.False(g.Apply(new CompleteSeerQuestCmd(h.Id, hut.Index) { Player = p.Index }).Ok);
     }
 

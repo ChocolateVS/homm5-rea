@@ -58,6 +58,11 @@ public sealed class AdvMap
     /// <summary>Spells/artifacts banned or enabled at map level (raw ids from map.xdb).</summary>
     public List<string> SpellIds = new(), ArtifactIds = new(), AvailableHeroes = new();
     public List<string> Warnings = new();
+    /// <summary>
+    /// map.xdb &lt;regions&gt; by name (the first of a name; unnamed regions are left out): what an OBJECTIVE_KIND_OBTAIN_ARTIFACT
+    /// location parameter names (00b422c0: world vf 0x140 → vf 0x30 by name, then the region's vf 0xc on a position).
+    /// </summary>
+    public Dictionary<string, MapRect> Regions = new(StringComparer.Ordinal);
 
     public IEnumerable<MapObject> OfKind(ObjectKind k) => Objects.Where(o => o.Kind == k);
     public MapFloor? Floor(int f) => f >= 0 && f < Floors.Length ? Floors[f] : null;
@@ -236,12 +241,23 @@ public sealed record TownBuildingInit(string Type, int Initial, int Max);
 public sealed record UpgradesFilter(IReadOnlySet<int> ForbiddenBasicUpgradeTiers, IReadOnlySet<int> ForbiddenAlterUpgradeTiers,
     IReadOnlySet<string> NotUpgradeable, IReadOnlySet<string> ForbiddenUpgrades);
 
+/// <summary>A map region: an inclusive tile rectangle on a floor.</summary>
+public sealed record MapRect(int Floor, int X1, int Y1, int X2, int Y2)
+{
+    public bool Contains(Tile t) => t.Floor == Floor && t.X >= X1 && t.X <= X2 && t.Y >= Y1 && t.Y <= Y2;
+}
+
 /// <summary>A Seer Hut's quest: an objective (OBJECTIVE_KIND_*) with enum-index parameters and its award.</summary>
 public sealed class SeerQuest
 {
     public MapObjective Objective = new();
     public string? Description;
     public bool TakeContribution;
+    /// <summary>
+    /// SQuest +0x138 / +0x139 (reader 00adb3f0; record defaults 00892b80: false / true), copied into the common objective
+    /// (00afbc20: +0x3c / +0x3d) and read by its state listener 00afb410.
+    /// </summary>
+    public bool AllowMultipleActivations, AllowMultipleCompletions = true;
     public string AwardType = "AWARD_NONE";
     public int Experience;
     public int[] Resources = new int[7];
