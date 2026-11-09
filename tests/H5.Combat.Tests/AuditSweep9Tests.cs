@@ -79,8 +79,10 @@ public class AuditSweep9Tests(GameDataFixture f)
         if (rf < rs) (fast, slow, rf, rs) = (slow, fast, rs, rf);
         Assert.True(rf > rs);
         foreach (var h in b.State.Heroes) h.Atb = -100;
-        fast.Atb = 1 - 0.5 * rf;
-        slow.Atb = 1 - 0.5 * rs;
+        // Sweep 16: the times are the exe's integers (vf 0x180, chop) — both 5000 here (5000.5 before the chop).
+        fast.Atb = (float)(1 - 5000.5 / b.FullTurnTime(fast));
+        slow.Atb = (float)(1 - 5000.5 / b.FullTurnTime(slow));
+        Assert.Equal(b.TimeToNextTurn(fast), b.TimeToNextTurn(slow));
         Assert.Equal(slow.Id, b.AdvanceTimeToNextActor());
     }
 

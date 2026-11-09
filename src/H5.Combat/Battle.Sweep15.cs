@@ -33,30 +33,30 @@ public sealed partial class Battle
     /// </summary>
     internal uint TimeToNextTurn(Unit u)
     {
-        double atb = (float)u.Atb;
-        if (atb >= 1) return 0;
+        float atb = (float)u.Atb;
+        if (atb >= 1f) return 0;
         var saved = u.Effects.ToList();
-        double t = 0;
+        double scale = AtbBaseTime() / 10.0, t = 0, a = atb;   // t in exe units; engine expiries × ATBBaseTime / 10
         try
         {
             foreach (var e in saved.Where(e => !double.IsPositiveInfinity(e.Remaining) && e.Remaining > 0).OrderBy(e => e.Remaining))
             {
-                double r = InitiativeOf(u) / 10.0, seg = e.Remaining - t;
-                if (r > 0 && atb + r * seg >= 1) break;
-                atb += r * seg;
-                t = e.Remaining;
+                // Sweep 16: a disabled stack (FUN_004e4920 ≠ 0) fills its gauge at 0 while the effect lasts.
+                double full = AtbFrozen(u) ? double.PositiveInfinity : FullTurnTime(u), seg = e.Remaining * scale - t;
+                if (!double.IsPositiveInfinity(full) && a + seg / full >= 1) break;
+                if (!double.IsPositiveInfinity(full)) a += seg / full;
+                t = e.Remaining * scale;
                 u.Effects.Remove(e);
             }
-            double rate = InitiativeOf(u) / 10.0;
-            if (rate <= 0) return uint.MaxValue;
-            t += (1 - atb) / rate;
+            if (AtbFrozen(u)) return uint.MaxValue;
+            t += (1.0 - a) * FullTurnTime(u);
         }
         finally
         {
             u.Effects.Clear();
             u.Effects.AddRange(saved);
         }
-        double exe = Math.Floor(t * AtbBaseTime() / 10.0);
+        double exe = Math.Floor(t);
         return exe >= uint.MaxValue ? uint.MaxValue : (uint)exe;
     }
 

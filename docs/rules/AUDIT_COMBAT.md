@@ -12,8 +12,8 @@ compared line by line · **N/A** unused by shipped data / test content.
 
 | Status | Count |
 |---|---|
-| FIXED | 399 |
-| MATCH | 217 |
+| FIXED | 400 |
+| MATCH | 216 |
 | GAP | 7 |
 | UNVERIFIED | 0 |
 | N/A | 65 |
@@ -41,7 +41,7 @@ compared line by line · **N/A** unused by shipped data / test content.
 | Siege building health: data (< 1 → 200), TOWN_BONUS_WALLS (0x23) +50, then Stoneworks (ability 0x25) health / 2 + health | FIXED | 00bfe590 | SiegeTests.WallsSpecialisationIsAddedBeforeStoneworks (was ×1.5 before the +50) |
 | Fortress Guard Post placement: FUN_00cd0a30 creature (BaseCreatureToPlace or its first upgrade the town offers) and count at CellToPlaceWithFort / NoFort | FIXED | 00853f90, 00cd0a30, 00cd46c0 | SiegeTests.GuardPostPlacesTheCreatureHandedOver (was always BaseCreatureToPlace) |
 | Pile of Skulls start rage: player +0x1c8 (towns with ability 0x2c) · PileOfOurFoes_StartRPBonus, for every Demon-Raged stack of a player army | FIXED | 008aaec0 (008ab4a3..008ab51f), 00500bf0, 004fcd80 | AuditSkillTests.PileOfSkullsGivesStartRagePerTown (was not built) |
-| ATB continuous time (ATBMin/Max dead code) | MATCH | EXE_FINDINGS | EXE_FINDINGS |
+| ATB: float gauge on the integer game clock — dt = max(1, least chopped time to a turn), single-precision tick capped at 1.25, the turn sequence head (time, ATB desc, attacker stacks, defender stacks, heroes); ATBMin/Max dead code | FIXED | 00af5930, 00af2690, 004d9310, 004d90d0, 00a6a260, 00a6a0b0, 00a2e0c0, 00a2d8f0, 00a2d800, 00a2e8b0, 00a2d890 | AuditSweep16Tests (combat_sweep_16.md); ATBMin/Max: EXE_FINDINGS |
 | Spell damage rounding / empowered ×1.5 | MATCH | 00976b90 | EXE_FINDINGS |
 | Surrender / retreat conditions and ransom | FIXED | 004d9e20, 004d9780, 004da8d0, 004da9a0 | AuditRetreatTests (combat_heroes.md, combat_sweep_2.md) |
 | Battle-end experience (winner) | FIXED | 00af3430, 004d9c60, 004d99b0, 00b4bbb0, 00bcdc60 | AuditBattleExpTests (combat_heroes_skills_h.md) |

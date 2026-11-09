@@ -161,7 +161,6 @@ public sealed partial class Battle
             if (S.Heroes[side].Present && !S.Heroes[side].Fled) yield return Actor.Hero(side);
     }
 
-    double Rate(int actor) => (Actor.IsHero(actor) ? HeroInitiative(Actor.HeroSide(actor)) : InitiativeOf(S.Unit(actor)!)) / 10.0;
     double GetAtb(int actor) => Actor.IsHero(actor) ? S.Heroes[Actor.HeroSide(actor)].Atb : S.Unit(actor)!.Atb;
 
     void SetAtb(int actor, double v, bool emit = true)
@@ -195,77 +194,8 @@ public sealed partial class Battle
         EndBattle(null, "turn limit");
     }
 
-    internal int? AdvanceTimeToNextActor()
-    {
-        for (int guard = 0; guard < 1000; guard++)
-        {
-            int? best = null; double bestT = double.PositiveInfinity, bestRate = 0, bestAtb = 0;
-            foreach (var a in Actors())
-            {
-                double r = Rate(a);
-                if (r <= 0) continue;
-                double atb = GetAtb(a);
-                double t = Math.Max(0, (1 - atb) / r);
-                // Equal turn times: the larger current ATB first (exe comparator FUN_00a2d800: time ascending, then
-                // ATB +0x1c descending). Equal ATB as well: the exe's stable sort keeps the queue order (not traced) —
-                // the engine's higher rate / hero / side / id order stands in.
-                bool better = t < bestT - Eps
-                              || (Math.Abs(t - bestT) <= Eps && (atb > bestAtb + Eps
-                                  || (Math.Abs(atb - bestAtb) <= Eps && (r > bestRate + Eps
-                                      || (Math.Abs(r - bestRate) <= Eps && best != null && TieBreak(a, best.Value))))));
-                if (best == null || better) { best = a; bestT = t; bestRate = r; bestAtb = atb; }
-            }
-            if (best == null) return null;
-            double expiry = NextExpiry();
-            if (expiry < bestT - Eps)
-            {
-                AdvanceTime(expiry);
-                continue;     // initiative may have changed; re-evaluate
-            }
-            AdvanceTime(bestT);
-            SetAtb(best.Value, Math.Max(1, GetAtb(best.Value)), emit: false);
-            return best;
-        }
-        return null;
-    }
-
-    // Lower side first (attacker), then lower id; heroes before their units on exact ties.
-    static bool TieBreak(int a, int b)
-    {
-        int sa = Actor.IsHero(a) ? Actor.HeroSide(a) : int.MaxValue, sb = Actor.IsHero(b) ? Actor.HeroSide(b) : int.MaxValue;
-        if (Actor.IsHero(a) != Actor.IsHero(b)) return Actor.IsHero(a);
-        if (Actor.IsHero(a)) return sa < sb;
-        return a < b;
-    }
-
-    double NextExpiry()
-    {
-        double m = double.PositiveInfinity;
-        foreach (var u in S.Units)
-            if (u.Alive)
-                foreach (var e in u.Effects)
-                    if (e.Remaining < m) m = e.Remaining;
-        foreach (var f in S.Fields) if (f.Remaining < m) m = f.Remaining;
-        return Math.Max(0, m);
-    }
-
-    void AdvanceTime(double dt)
-    {
-        if (dt <= 0) { ExpireEffects(); return; }
-        foreach (var a in Actors().ToList())
-        {
-            double r = Rate(a);
-            if (Actor.IsHero(a)) S.Heroes[Actor.HeroSide(a)].Atb += r * dt;
-            else S.Unit(a)!.Atb += r * dt;
-        }
-        S.Time += dt;
-        foreach (var u in S.Units)
-            foreach (var e in u.Effects)
-                if (!double.IsPositiveInfinity(e.Remaining)) e.Remaining -= dt;
-        foreach (var f in S.Fields)
-            if (!double.IsPositiveInfinity(f.Remaining)) f.Remaining -= dt;
-        ExpireEffects();
-    }
+    /// <summary>The exe's float-ATB-on-integer-clock turn order (FUN_00af5930; <see cref="NextActorOnTheClock"/>).</summary>
+    internal int? AdvanceTimeToNextActor() => NextActorOnTheClock();
 
     void ExpireEffects()
     {
