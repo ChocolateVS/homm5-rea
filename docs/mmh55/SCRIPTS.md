@@ -165,6 +165,8 @@ Follow-up (2026-11-10, HEAD 6e7f7e2 + this change): **117 maps, 0 engine excepti
   (scalar and raw-byte scans: only its serialiser 0095d720 / 0095f330 / 0095ffc0, ctor 0096ee00 and copy 0096f9e0), so
   the HeroArmyGeneration-based count is unconfirmed too. One case (Pelt with a map-placed army without Walking Dead) is
   the exe's behaviour as well.
+- Start army **FIXED** (follow-up below): the generator is FUN_00b57de0 (hero vfunc 0x1f0); its RPGStats access is
+  `ADD ESI,0xb0c` at 00b57fa9, in code Ghidra had not made a function, which the scans above missed.
 - `C55_ThreadedAimedSpell` "can`t cast spell #278": our engine refused with "not your hero's turn"; the exe has no turn
   check on script casts (§6 UnitCastAimedSpell) — **FIXED** (`Battle.ApplyScriptCast`, test
   `CombatScriptTests.ScriptCastsNeedNotBeTheCastersTurn`). The two cases did not recur in this run (bot play differs).
@@ -173,6 +175,16 @@ Follow-up (2026-11-10, HEAD 6e7f7e2 + this change): **117 maps, 0 engine excepti
   005a1a50 passes its +0x44 block as that parameter, copied by 005a0050); its creators 00820830 / 00823910 / 007e0c66 /
   008246c2 were not followed to the field. Not traced either: the world-side draw of the start hero and the tavern
   hero pool filter.
+
+Follow-up (2026-11-10, start army, base a56c5cd): **117 maps, 0 engine exceptions, 104 clean, 20 errors of ours
+(+116 stock)** (before, same base: 88 clean, 34 + 115). `GiveStartingArmy` now ports FUN_00b57de0 / FUN_00b513e0
+(docs/rules/AUDIT_ADVENTURE.md "Hero start army"): per tier the last creature id of the town with BaseCreature =
+CREATURE_UNKNOWN, so the base creature, and the specialists' own stacks (table 00f75648). 17 of the 19
+`H55_MakeStartArmy(Neutral)` errors are gone. The two left (Maps/Multiplayer/A1M9, A2M11) are in its specialist branch
+(H55-Core.lua 3616: RemoveHeroCreatures of the swap tier's creature): A2M11 is Pelt's map-placed army (above); on A1M9 the
+start heroes with a tier 1..3 specialisation creature (Mardigo footmen, Urunir witches) get only NumSuchStacks_SpecTierN
+stacks of it from 00b57de0 — the stock exe gives them the same, so the swap removes 0 there too (the hero is inferred from
+the spec-branch line and the map's heroes; the harness still counts both as ours).
 
 **MMH55 features (2026-11-09)**: per-setting status in OPTIONS.md §4 (tests `Mmh55FeatureTests`, settings sweep with
 `script-run … --h55-set=H55_X=v`). Natives MMH55 calls: `tools/scriptre/mmh55_natives.py` (none missing by name),

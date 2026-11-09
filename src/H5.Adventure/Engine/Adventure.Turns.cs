@@ -50,6 +50,7 @@ public sealed partial class Adventure
             // next resource, training points).
             foreach (var t in S.Towns) TownWeeklyUpdate(t);
         }
+        RefillTavernsDaily();
         foreach (var t in S.Towns) t.BuiltToday = false;
         foreach (var p in S.Players.Where(p => p.Alive)) DailyIncome(p);
         foreach (var h in S.Heroes.Where(h => h.Alive)) ResetHeroDay(h, newWeek);
@@ -345,7 +346,20 @@ public sealed partial class Adventure
         }
     }
 
-    void RollTavernSlot(PlayerState p, int i)
+    /// <summary>
+    /// Every new day (009949d0) each playing player's empty tavern slots are refilled: CPlayer vfunc 0x158 = 004fd600
+    /// (pool, false), called twice, takes a hero for the first empty slot (FUN_004fc770: slot 0 tries the player's
+    /// race first) and gives it the one-creature army (hero vfunc 0x1f0(false), <see cref="GiveStartingArmy"/>).
+    /// On the first day of a week the weekly refill (00990550, vfunc 0x158 with true) has already filled them.
+    /// </summary>
+    void RefillTavernsDaily()
+    {
+        foreach (var p in S.Players.Where(p => p.Alive))
+            for (int i = 0; i < p.Tavern.Length; i++)
+                if (p.Tavern[i] == null) RollTavernSlot(p, i, fullArmy: false);
+    }
+
+    void RollTavernSlot(PlayerState p, int i, bool fullArmy = true)
     {
         var mp = Map.Players[p.Index];
         // Slot 0 prefers the player's race, slot 1 any race (TODO(exe): exact tavern rules).
@@ -355,6 +369,7 @@ public sealed partial class Adventure
                                          !p.Tavern.Contains(id) && TavernAccepts(p, id)).ToList();
         if (pool.Count == 0) pool = S.HeroPool.Where(id => !p.Tavern.Contains(id) && TavernAccepts(p, id)).ToList();
         p.Tavern[i] = pool.Count == 0 ? null : pool[S.Rng.Next(pool.Count)];
+        p.TavernFullArmy[i] = fullArmy;
     }
 
     void CheckEliminations()

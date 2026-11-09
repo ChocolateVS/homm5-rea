@@ -79,6 +79,11 @@ public sealed class PlayerState
     public List<bool[]> Explored = new();
     /// <summary>Hero definition ids offered in this player's taverns this week (2 slots).</summary>
     public string?[] Tavern = new string?[2];
+    /// <summary>
+    /// Per tavern slot: the hero came with a weekly refill (full start army: CPlayer vfunc 0x158 with true, from 00990550)
+    /// rather than the daily refill of an emptied slot (one tier-1 creature: 0x158 with false, from 009949d0).
+    /// </summary>
+    public bool[] TavernFullArmy = { true, true };
     /// <summary>Days since the player lost their last town (-1 while they own a town).</summary>
     public int DaysWithoutTown = -1;
     /// <summary>Objects already visited by any hero of this player (e.g. Eye/Hut of Magi reveals, Keymaster tents).</summary>

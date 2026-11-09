@@ -354,7 +354,8 @@ public sealed partial class Adventure
     /// <summary>
     /// A hero leaves the battle alive (CFinishCombat 00af64b0, then the loser player's 004fe770 flee / 004fe890
     /// surrender). Flight (case 2): the army is emptied (hero vf 0x48 → 0045a590) and the hero's flee handler runs
-    /// (vf 0x1d8 = 00b52e00: surrender flag +0x22e cleared). Surrender (case 3): the army is kept, the ransom is paid at
+    /// (vf 0x1d8 = 00b52e00: hero vf 0x1f0(false) = the one-creature army of <see cref="GiveStartingArmy"/>, then the
+    /// surrender flag +0x22e cleared). Surrender (case 3): the army is kept, the ransom is paid at
     /// once (loser's gold − cost, not below 0; the winner's player + cost) and vf 0x1dc = 00b52e50 sets +0x22e. Both then
     /// go through 004fe360: the hero leaves the player (004fe000) and the SAME hero object (level, skills, artifacts,
     /// spells) is put into that player's own tavern: the first empty slot of the two, else a random slot, whose hero
@@ -370,7 +371,7 @@ public sealed partial class Adventure
             if (p != null) GiveOne(p, Purse.Gold, -(int)Math.Min(cost, Math.Max(0, p.Purse[Purse.Gold])));
             if (winner != null && PlayerByIndex(winner.Owner) is { } wp) GiveOne(wp, Purse.Gold, (int)Math.Min(int.MaxValue, cost));
         }
-        else Array.Fill(h.Army, null);
+        else GiveStartingArmy(h, full: false);
         h.Alive = false;
         h.Retreat = surrender ? 2 : 1;
         h.InTown = -1;
@@ -387,9 +388,11 @@ public sealed partial class Adventure
 
     /// <summary>
     /// The hero a tavern hire brings (004fec50): a hero that fled or surrendered is the same object again (its surrender
-    /// flag cleared, vf 0x1ec), otherwise a new one from the hero's definition with a starting army.
-    /// GAP: 004fec50 gives a returning hero no army; a fled hero's army was emptied, and where the exe refills it is not
-    /// traced, so an empty army gets the starting army of a new hire.
+    /// flag cleared, vf 0x1ec) with the army it left with (004fec50 generates none: a fled hero brings the one creature
+    /// 00b52e00 gave it, a surrendered one its survivors), otherwise a new one from the hero's definition with the army
+    /// its tavern slot was filled with (<see cref="PlayerState.TavernFullArmy"/>: full after the weekly refill, one
+    /// creature after a daily one). GAP: the exe generates that army when the hero enters the slot (004fd600), not at the
+    /// hire, so the random stream is consumed at another time.
     /// </summary>
     HeroState HireHero(string defId, int owner, Tile pos, out bool returning)
     {
@@ -399,7 +402,9 @@ public sealed partial class Adventure
         {
             h = HeroFromDef(Core.Heroes[defId], owner, pos);
             SetUpHeroBook(h);
-            GiveStartingArmy(h);
+            var p = PlayerByIndex(owner);
+            int slot = p == null ? -1 : Array.IndexOf(p.Tavern, defId);
+            GiveStartingArmy(h, slot < 0 || p!.TavernFullArmy[slot]);
             return h;
         }
         h.Alive = true;
@@ -408,7 +413,6 @@ public sealed partial class Adventure
         h.Pos = pos;
         h.InBoat = false;
         h.BoatId = -1;
-        if (h.Army.StackCount() == 0) GiveStartingArmy(h);
         return h;
     }
 

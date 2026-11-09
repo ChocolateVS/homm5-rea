@@ -7,6 +7,8 @@ namespace H5.Core.Data;
 public sealed class CreatureDef
 {
     public string Id = "";
+    /// <summary>CreatureType enum value of <see cref="Id"/> (types.xml): the exe's creature table index; -1 when missing.</summary>
+    public int Number = -1;
     /// <summary>In the stock engine's fixed-size table (StockTables): only these take part in random pools.</summary>
     public bool Stock = true;
     public string SourcePath = "";

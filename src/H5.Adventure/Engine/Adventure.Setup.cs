@@ -359,22 +359,111 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// A freshly hired or auto-created hero brings tier 1–3 creatures of their faction scaled by
-    /// weekly growth (DefaultStats HeroArmyGeneration: Min/MaxWeekGrowthCoef_TierN).
+    /// The hero army generator, CAdvMapHero vfunc 0x1f0 = FUN_00b57de0(full). The army is first emptied (7 empty slots).
+    /// Base creature of tier 1..3: the LAST creature id 1..179 (FUN_00acb380 = 0xb4) whose CreatureTown (record +0x98)
+    /// is the hero's town (vfunc 0x254 → +0x84) and whose BaseCreature (+0x100) is CREATURE_UNKNOWN; tier = +0x8c.
+    /// <paramref name="full"/> false: one creature of the tier-1 base (FUN_004bd4d0; a missing creature or count &lt; 1
+    /// becomes {1 = CREATURE_PEASANT, 1}). True: the specialisation creature (vfunc 0x298 = FUN_00b4bf10, see
+    /// <see cref="SpecialisationCreatures"/>); none → one stack each of the tier 1, 2, 3 bases with HeroArmyGeneration
+    /// Min/MaxWeekGrowthCoef_TierN (RPGStats +0xb10..+0xb24); a tier-1/2/3 specialisation creature → only
+    /// NumSuchStacks_SpecTierN stacks of it with the SpecTierN coefficients (+0xb28..+0xb48); any other tier → the
+    /// tier 1 and 2 bases and one forced stack of it (FUN_00b513e0(0, 0, 1, 1)). Each roll is <see cref="StartArmyCount"/>;
+    /// every stack goes into the first empty slot (FUN_0045a290), never merged with another.
     /// </summary>
-    void GiveStartingArmy(HeroState h)
+    public void GiveStartingArmy(HeroState h, bool full = true)
     {
-        var gen = Db.Stats.Node("HeroArmyGeneration");
-        for (int tier = 1; tier <= 3; tier++)
+        for (int i = 0; i < h.Army.Length; i++) h.Army[i] = null;
+        var tierBase = StartArmyBases(h.Town);
+        if (!full)
         {
-            var cr = Core.Creatures.Values.Where(c => c.Town == h.Town && c.Tier == tier && !c.Upgrade).OrderBy(c => c.Id, StringComparer.Ordinal).FirstOrDefault();
-            if (cr == null) continue;
-            double lo = gen.Dbl($"MinWeekGrowthCoef_Tier{tier}"), hi = gen.Dbl($"MaxWeekGrowthCoef_Tier{tier}");
-            double coef = lo + (hi - lo) * S.Rng.NextDouble();
-            int count = (int)Math.Round(cr.WeeklyGrowth * coef);
-            if (count > 0) h.Army.TryAdd(cr.Id, count);
+            PutStack(h, tierBase[1] ?? "CREATURE_PEASANT", 1);
+            return;
+        }
+        var gen = Db.Stats.Node("HeroArmyGeneration");
+        float Coef(string name) => (float)gen.Dbl(name);
+        void Roll(string? creature, string tierKey, bool forced)
+        {
+            // GAP: the exe has no guard here (a town without that tier's base dereferences record 0); we skip it.
+            if (creature == null || !Core.Creatures.TryGetValue(creature, out var cr)) return;
+            int n = tierKey.Length == 0 ? StartArmyCount(cr.WeeklyGrowth, 0, 0, NextRand32())
+                : StartArmyCount(cr.WeeklyGrowth, Coef($"MinWeekGrowthCoef_{tierKey}"), Coef($"MaxWeekGrowthCoef_{tierKey}"), NextRand32());
+            if (n > 0 || forced) PutStack(h, creature, Math.Max(1, n));
+        }
+        var spec = SpecialisationCreatures.GetValueOrDefault(h.Specialization);
+        int specTier = spec != null && Core.Creatures.TryGetValue(spec, out var sc) ? sc.Tier : 0;
+        if (spec == null)
+            for (int t = 1; t <= 3; t++) Roll(tierBase[t], $"Tier{t}", false);
+        else if (specTier is >= 1 and <= 3)
+        {
+            int stacks = gen.Int($"NumSuchStacks_SpecTier{specTier}");
+            for (int i = 0; i < stacks; i++) Roll(spec, $"SpecTier{specTier}", true);
+        }
+        else
+        {
+            Roll(tierBase[1], "Tier1", false);
+            Roll(tierBase[2], "Tier2", false);
+            Roll(spec, "", true);
         }
     }
+
+    /// <summary>FUN_00b57de0's table: [tier] = the last creature id 1..179 of the town with tier 1..3 and no BaseCreature.</summary>
+    public string?[] StartArmyBases(string town)
+    {
+        var tierBase = new string?[4];
+        foreach (var c in Core.Creatures.Values.Where(c => c.Number is > 0 and < 180).OrderBy(c => c.Number))
+            if (c.Town == town && c.BaseCreature is "" or "CREATURE_UNKNOWN" && c.Tier is >= 1 and <= 3) tierBase[c.Tier] = c.Id;
+        return tierBase;
+    }
+
+    uint NextRand32() => (uint)(S.Rng.NextU64() >> 32);
+
+    void PutStack(HeroState h, string creature, int count)
+    {
+        int slot = Array.FindIndex(h.Army, s => s is not { Count: > 0 });
+        if (slot >= 0) h.Army[slot] = new Stack(creature, count);
+    }
+
+    /// <summary>
+    /// One start-army roll, FUN_00b513e0: lo = (float)(growth · min), hi = (float)(growth · max) (FSTP float),
+    /// count = trunc(lo + (hi − lo) · rand32 · 2^-32) (x87, 53-bit precision, control word | 0xc00 = chop).
+    /// </summary>
+    public static int StartArmyCount(int weeklyGrowth, float min, float max, uint rand32)
+    {
+        double lo = (float)(weeklyGrowth * (double)min), hi = (float)(weeklyGrowth * (double)max);
+        return (int)(lo + (hi - lo) * rand32 * (1.0 / 4294967296.0));
+    }
+
+    /// <summary>
+    /// FUN_00b4bf10 (hero vfunc 0x298): the specialisation (hero +0x8c) looked up in the 24 {spec, creature, …} entries
+    /// at 00f75648 (HeroSpecialization / CreatureType enum values in the comments); other specialisations have none.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> SpecialisationCreatures = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["HERO_SPEC_PEASANTS"] = "CREATURE_PEASANT",            // 4 → 1
+        ["HERO_SPEC_ARCHERS"] = "CREATURE_ARCHER",              // 5 → 3
+        ["HERO_SPEC_FOOTMEN"] = "CREATURE_FOOTMAN",             // 6 → 5
+        ["HERO_SPEC_GRIFFINS"] = "CREATURE_GRIFFIN",            // 7 → 7
+        ["HERO_SPEC_HOUNDS"] = "CREATURE_HELL_HOUND",           // 18 → 19
+        ["HERO_SPEC_SUCCUBUSES"] = "CREATURE_SUCCUBUS",         // 19 → 21
+        ["HERO_SPEC_BLADE_MASTER"] = "CREATURE_BLADE_JUGGLER",  // 21 → 45
+        ["HERO_SPEC_ELVES"] = "CREATURE_WOOD_ELF",              // 22 → 47
+        ["HERO_SPEC_UNICORNS"] = "CREATURE_UNICORN",            // 23 → 51
+        ["HERO_SPEC_ZOMBIES"] = "CREATURE_WALKING_DEAD",        // 30 → 31
+        ["HERO_SPEC_VAMPIRES"] = "CREATURE_VAMPIRE",            // 31 → 35
+        ["HERO_SPEC_GREMLINS"] = "CREATURE_GREMLIN",            // 44 → 57
+        ["HERO_SPEC_GOLEMS"] = "CREATURE_IRON_GOLEM",           // 45 → 61
+        ["HERO_SPEC_MAGES"] = "CREATURE_MAGI",                  // 46 → 63
+        ["HERO_SPEC_SAVAGE"] = "CREATURE_SCOUT",                // 54 → 71
+        ["HERO_SPEC_WITCHES"] = "CREATURE_WITCH",               // 55 → 73
+        ["HERO_SPEC_MINOTAURS"] = "CREATURE_MINOTAUR",          // 56 → 75
+        ["HERO_SPEC_AXE_MASTER"] = "CREATURE_AXE_FIGHTER",      // 61 → 94
+        ["HERO_SPEC_BEAR_RIDERS"] = "CREATURE_BEAR_RIDER",      // 62 → 96
+        ["HERO_SPEC_MAGISTER"] = "CREATURE_RUNE_MAGE",          // 63 → 100
+        ["HERO_SPEC_DEFENDER"] = "CREATURE_DEFENDER",           // 67 → 92
+        ["HERO_SPEC_GRIM_FIGHTER"] = "CREATURE_ORC_WARRIOR",    // 71 → 121
+        ["HERO_SPEC_CENTAUR_MISTRESS"] = "CREATURE_CENTAUR",    // 73 → 119
+        ["HERO_SPEC_ORC_ELDER"] = "CREATURE_ORCCHIEF_BUTCHER",  // 78 → 125
+    };
 
     // ------------------------------------------------------------------ random content
 

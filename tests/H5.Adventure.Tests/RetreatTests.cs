@@ -103,10 +103,11 @@ public class RetreatTests(Fixture f)
         Assert.Equal(theirGold + cost, Gold(g, theirs.Owner));
     }
 
-    // 00af64b0 case 2: a fleeing attacker loses his army and pays nothing; 004fe360 takes the first free tavern slot,
+    // 00af64b0 case 2: a fleeing attacker loses his army (0045a590) and pays nothing; 004fe770 -> vf 0x1d8 = 00b52e00
+    // -> vf 0x1f0(false) leaves him one creature of his town's tier-1 base; 004fe360 takes the first free tavern slot,
     // a random one when both are taken.
     [Fact]
-    public void AttackerFleesWithoutArmyIntoHisTavern()
+    public void AttackerFleesWithOneCreatureIntoHisTavern()
     {
         var (g, mine, theirs) = Setup(mineAttacks: true);
         int gold = g.Current.Purse[Purse.Gold];
@@ -114,7 +115,7 @@ public class RetreatTests(Fixture f)
         Assert.True(g.Apply(new ResolveBattleCmd(1, Slots(("CREATURE_ARCHER", 5)), new()) { Player = g.Current.Index, EndReason = "fled" }).Ok);
         Assert.False(mine.Alive);
         Assert.Equal(1, mine.Retreat);
-        Assert.Equal(0, mine.Army.StackCount());
+        Assert.Equal(new[] { (g.StartArmyBases(mine.Town)[1], 1) }, mine.Army.Live().Select(s => ((string?)s.Creature, s.Count)));
         Assert.Equal(gold, g.Current.Purse[Purse.Gold]);
         Assert.Equal(mine.DefId, g.Current.Tavern[1]);
         Assert.Contains(mine.DefId, g.S.HeroPool);

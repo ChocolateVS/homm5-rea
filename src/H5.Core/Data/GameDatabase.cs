@@ -137,6 +137,7 @@ public sealed class GameDatabase
             var c = new CreatureDef
             {
                 Id = id, SourcePath = f, Stock = StockTables.Kept(_x.FileSystem, CreatureTable, id),
+                Number = StockTables.EnumValue(_x.FileSystem, "CreatureType", id) ?? -1,
                 Attack = o.Int("AttackSkill"), Defence = o.Int("DefenceSkill"), Shots = o.Int("Shots"),
                 MinDamage = o.Int("MinDamage"), MaxDamage = o.Int("MaxDamage"), Speed = o.Int("Speed"),
                 Initiative = o.Int("Initiative"), Flying = o.Bool("Flying"), Health = o.Int("Health"),
