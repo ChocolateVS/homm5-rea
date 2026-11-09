@@ -337,7 +337,8 @@ public class SeerHutTests(Fixture f)
         Assert.False(g.Apply(new AcceptSeerQuestCmd(h.Id, hut.Index) { Player = p.Index }).Ok);
         Assert.False(g.Apply(new CompleteSeerQuestCmd(h.Id, hut.Index) { Player = p.Index }).Ok);
         if (kind == "artifact") { Assert.True(f.Core.Artifacts.ContainsKey(id!)); h.Artifacts.Add(id!); }
-        else { Assert.True(f.Core.Creatures.ContainsKey(id!)); for (int i = 0; i < 7; i++) h.Army[i] = null; h.Army[0] = new Stack(id!, amount); }
+        // 00b43c60: the hero must keep a creature beyond the requirement.
+        else { Assert.True(f.Core.Creatures.ContainsKey(id!)); for (int i = 0; i < 7; i++) h.Army[i] = null; h.Army[0] = new Stack(id!, amount + 1); }
         Assert.True(g.SeerQuestMet(h, hut.Index));
         var r = g.Apply(new CompleteSeerQuestCmd(h.Id, hut.Index) { Player = p.Index });
         Assert.True(r.Ok, r.Error);
@@ -382,6 +383,25 @@ public class SeerHutTests(Fixture f)
             foreach (var o in g.Map.Objects.Where(o => o.Kind == Map.ObjectKind.Monster && o.Name == named[0])) g.S.Obj(o.Index).Removed = true;
             Assert.True(Met("OBJECTIVE_KIND_DEFEAT_NEUTRALS", named[0]));
             Assert.False(Met("OBJECTIVE_KIND_DEFEAT_NEUTRALS", named[0], named[1]));
+            // 00b44950 / 00b43c60: every (creature, count) pair, and the hero's creature total above their sum.
+            string Num(string cr) => g.Core.Creatures[cr].Number.ToString();
+            for (int i = 0; i < h.Army.Length; i++) h.Army[i] = null;
+            h.Army[0] = new State.Stack("CREATURE_PEASANT", 10);
+            h.Army[1] = new State.Stack("CREATURE_ARCHER", 5);
+            Assert.True(Met("OBJECTIVE_KIND_ASSEMBLE_ARMY", Num("CREATURE_PEASANT"), "10"));
+            Assert.False(Met("OBJECTIVE_KIND_ASSEMBLE_ARMY", Num("CREATURE_PEASANT"), "10", Num("CREATURE_ARCHER"), "6"));
+            Assert.False(Met("OBJECTIVE_KIND_ASSEMBLE_ARMY", Num("CREATURE_PEASANT"), "10", Num("CREATURE_ARCHER"), "5"));
+            Assert.True(Met("OBJECTIVE_KIND_ASSEMBLE_ARMY", Num("CREATURE_PEASANT"), "9", Num("CREATURE_ARCHER"), "5"));
+            // 00b455a0 / 00b42840: the player's heroes' kills of the creature minus the baseline taken with the quest.
+            foreach (var x in mine) x.Kills.Clear();
+            h.Kills["CREATURE_PEASANT"] = 4;
+            g.S.Obj(hut.Index).QuestKillBaseline[p.Index] = 0;
+            Assert.False(Met("OBJECTIVE_KIND_KILL_CREATURES", Num("CREATURE_PEASANT"), "5"));
+            h.Kills["CREATURE_PEASANT"] = 5;
+            Assert.True(Met("OBJECTIVE_KIND_KILL_CREATURES", Num("CREATURE_PEASANT"), "5"));
+            g.S.Obj(hut.Index).QuestKillBaseline[p.Index] = 1;
+            Assert.False(Met("OBJECTIVE_KIND_KILL_CREATURES", Num("CREATURE_PEASANT"), "5"));
+            g.S.Obj(hut.Index).QuestKillBaseline.Clear();
         }
         finally { hut.Quest = saved; }
     }
@@ -412,6 +432,38 @@ public class SeerHutTests(Fixture f)
             var r = g.Apply(new CompleteSeerQuestCmd(h.Id, hut.Index) { Player = p.Index });
             Assert.True(r.Ok, r.Error);
             Assert.Equal((mana, morale, luck), (h.Mana, h.NextBattleMorale, h.NextBattleLuck));
+        }
+        finally { hut.Quest = saved; }
+    }
+
+    [Theory]
+    [InlineData("MASTERY_EXTRA_EXPERT", false, 3)]
+    [InlineData("MASTERY_ADVANCED", false, 2)]
+    [InlineData("MASTERY_EXPERT", true, 0)]
+    public void SkillAwardStepsUpToExpertUnlessRefused(string mastery, bool slotsFull, int expected)
+    {
+        // 00a7e2c0 case 10 steps level by level; 00b4f760 refuses a new skill without a free slot and stops at Expert.
+        var g = f.NewGame("A2S4");
+        var p = g.Current;
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == p.Index);
+        var hut = g.Map.Objects.First(o => o.Kind == Map.ObjectKind.SeerHut && o.Quest != null);
+        var saved = hut.Quest;
+        try
+        {
+            var skills = g.Db.Perks.Values.Where(d => d.IsSkill).Select(d => d.Id).OrderBy(x => x, StringComparer.Ordinal).ToList();
+            h.Skills.Clear();
+            if (slotsFull) foreach (var id in skills.Skip(1).Take(Engine.Adventure.MaxSkills)) h.Skills.Add(new SkillEntry(id, Mastery.Basic));
+            hut.Quest = new Map.SeerQuest
+            {
+                Objective = new Map.MapObjective { Kind = "OBJECTIVE_KIND_COLLECT_RESOURCES", Parameters = new() { "6", "1" } },
+                AwardType = "AWARD_SKILL", Skill = skills[0], Mastery = mastery,
+            };
+            h.Pos = hut.ActiveTiles.FirstOrDefault(hut.Pos);
+            p.Purse[6] = 10;
+            Assert.True(g.Apply(new AcceptSeerQuestCmd(h.Id, hut.Index) { Player = p.Index }).Ok);
+            var r = g.Apply(new CompleteSeerQuestCmd(h.Id, hut.Index) { Player = p.Index });
+            Assert.True(r.Ok, r.Error);
+            Assert.Equal(expected, (int)h.MasteryOf(skills[0]));
         }
         finally { hut.Quest = saved; }
     }

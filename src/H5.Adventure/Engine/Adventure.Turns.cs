@@ -43,7 +43,7 @@ public sealed partial class Adventure
         if (newWeek)
         {
             WeeklyGrowthAll();
-            foreach (var p in S.Players) RollTavern(p);
+            RefillTavernsWeekly();
             RestockTownArtifactMerchants();
             if (S.WeekOfMonth == 1) StockSpellShops();
             // 00993cd0 after the growth: IAdvMapWeeklyUpdate vf 0 = FUN_00cd2b90 per town (extras, the Trade Guild's
@@ -337,39 +337,90 @@ public sealed partial class Adventure
 
     static int Chop(double x) => (int)Math.Truncate(x);
 
-    void RollTavern(PlayerState p)
+    /// <summary>
+    /// The weekly and initial tavern refill, FUN_00990550 (from 00993cd0 each new week and from 0041ecd0 at the game
+    /// start): every playing player (vfunc 0x6c == 1, players 1..8 in order) first releases his offers (vfunc 0x154 =
+    /// 004fd6b0: each slot's hero back to the pool, pool vf 0x24(hero, 0, 0), slot cleared); then, while players remain,
+    /// a random one (world vfunc 0x94 → vf 0x20, % count) gets one hero (vfunc 0x158 = 004fd600 with full = true) and
+    /// leaves the list when he takes none (both slots full or no hero for him). GAP: 004fd6b0 keeps a hero whose flag
+    /// +0x1e4 (vf 0x1e0) is set or who is in the pool's list +0x60 (vf 0x4c); neither is identified, so all are released.
+    /// </summary>
+    void RefillTavernsWeekly()
     {
-        for (int i = 0; i < p.Tavern.Length; i++)
+        var players = S.Players.Where(p => p.Alive).ToList();
+        foreach (var p in players)
+            for (int i = 0; i < p.Tavern.Length; i++) p.Tavern[i] = null;
+        while (players.Count > 0 && S.HeroPool.Count > 0)
         {
-            if (p.Tavern[i] != null && S.HeroPool.Contains(p.Tavern[i]!) && S.Week > 1) continue;
-            RollTavernSlot(p, i);
+            int k = (int)(NextRand32() % (uint)players.Count);
+            if (!FillTavernSlot(players[k], full: true)) players.RemoveAt(k);
         }
     }
 
     /// <summary>
-    /// Every new day (009949d0) each playing player's empty tavern slots are refilled: CPlayer vfunc 0x158 = 004fd600
-    /// (pool, false), called twice, takes a hero for the first empty slot (FUN_004fc770: slot 0 tries the player's
-    /// race first) and gives it the one-creature army (hero vfunc 0x1f0(false), <see cref="GiveStartingArmy"/>).
-    /// On the first day of a week the weekly refill (00990550, vfunc 0x158 with true) has already filled them.
+    /// Every new day (009949d0) each playing player's vfunc 0x158 = 004fd600 (pool, false) runs twice: an emptied slot
+    /// gets a hero with the one-creature army (hero vfunc 0x1f0(false), <see cref="GiveStartingArmy"/>). On the first
+    /// day of a week the weekly refill (00990550) has already filled them.
     /// </summary>
     void RefillTavernsDaily()
     {
         foreach (var p in S.Players.Where(p => p.Alive))
-            for (int i = 0; i < p.Tavern.Length; i++)
-                if (p.Tavern[i] == null) RollTavernSlot(p, i, fullArmy: false);
+        {
+            FillTavernSlot(p, full: false);
+            FillTavernSlot(p, full: false);
+        }
     }
 
-    void RollTavernSlot(PlayerState p, int i, bool fullArmy = true)
+    /// <summary>
+    /// CPlayer vfunc 0x158 = FUN_004fd600(pool, full): nothing when both slots hold a hero; otherwise FUN_004fc770 draws
+    /// a hero for the first empty slot (slot 0 empty: pool vf 0x38 = 00ce8050 with the player's race (+0x198) first,
+    /// then with 2 = any race; slot 1: any race), the hero gets his army at once (vfunc 0x1f0(full)) and the pool gives
+    /// him to the player (vf 0x20 = 00ce7980 → hero vf 0x40(player)). Returns false when no hero was placed.
+    /// </summary>
+    bool FillTavernSlot(PlayerState p, bool full)
+    {
+        int i = Array.IndexOf(p.Tavern, null);
+        if (i < 0) return false;
+        var id = DrawTavernHero(p, raceFirst: i == 0);
+        if (id == null) return false;
+        PlaceTavernHero(p, i, id, full);
+        return true;
+    }
+
+    /// <summary>
+    /// The pool draw (00ce8050): among the pool's heroes the player may get (vf 0x1c = 00ce7920: the hero has no player,
+    /// i.e. is in no tavern and not hired; the player's tavern filter, CHeroesFilter rule of player vf 0x224) of the asked
+    /// race, one at FUN_008e7840(n − 1) (inclusive). <paramref name="raceFirst"/>: the player's race, then any race.
+    /// </summary>
+    string? DrawTavernHero(PlayerState p, bool raceFirst)
     {
         var mp = Map.Players[p.Index];
-        // Slot 0 prefers the player's race, slot 1 any race (TODO(exe): exact tavern rules).
-        // AllowPlayerTavernRace/Hero (p.TavernFilter) keep heroes out of this player's taverns.
-        var pool = S.HeroPool.Where(id => Core.Heroes.TryGetValue(id, out var d) && IsHireable(d, mp) &&
-                                         !mp.BannedHeroRaces.Contains(d.Town) && (i != 0 || d.Town == p.Race) &&
-                                         !p.Tavern.Contains(id) && TavernAccepts(p, id)).ToList();
-        if (pool.Count == 0) pool = S.HeroPool.Where(id => !p.Tavern.Contains(id) && TavernAccepts(p, id)).ToList();
-        p.Tavern[i] = pool.Count == 0 ? null : pool[S.Rng.Next(pool.Count)];
-        p.TavernFullArmy[i] = fullArmy;
+        List<string> Candidates(bool race) => S.HeroPool.Where(id => Core.Heroes.TryGetValue(id, out var d) && IsHireable(d, mp) &&
+            !mp.BannedHeroRaces.Contains(d.Town) && (!race || d.Town == p.Race) &&
+            !S.Players.Any(o => o.Tavern.Contains(id)) && TavernAccepts(p, id)).ToList();
+        var pool = raceFirst ? Candidates(true) : new List<string>();
+        if (pool.Count == 0) pool = Candidates(false);
+        return pool.Count == 0 ? null : pool[S.Rng.Next(pool.Count)];
+    }
+
+    /// <summary>
+    /// A hero entering tavern slot <paramref name="i"/> gets his army there (004fd600: vfunc 0x1f0(full) right after the
+    /// draw). A hero that fled or surrendered earlier is the same object again, so his own army is replaced.
+    /// </summary>
+    void PlaceTavernHero(PlayerState p, int i, string defId, bool full)
+    {
+        p.Tavern[i] = defId;
+        var back = S.Heroes.Find(x => !x.Alive && x.Retreat != 0 && x.DefId == defId);
+        var h = back ?? new HeroState { DefId = defId, Town = Core.Heroes[defId].Town, Specialization = Core.Heroes[defId].Specialization };
+        GiveStartingArmy(h, full);
+        p.TavernArmy[i] = back != null ? State.Army.Empty() : h.Army;
+    }
+
+    /// <summary>Re-rolls one slot (an offer the player's new tavern filter rejects).</summary>
+    void RollTavernSlot(PlayerState p, int i)
+    {
+        p.Tavern[i] = null;
+        if (DrawTavernHero(p, raceFirst: i == 0) is { } id) PlaceTavernHero(p, i, id, full: true);
     }
 
     void CheckEliminations()

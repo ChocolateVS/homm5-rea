@@ -26,7 +26,7 @@ public sealed partial class Adventure
         g.ApplyStartBonuses(setup);
         g.SetupBoats();
         g.SetupHeroPool();
-        foreach (var p in s.Players) g.RollTavern(p);
+        g.RefillTavernsWeekly();
         g.SetupMoonCalendar();
         g.StockArtifactMerchants();
         g.StockSpellShops();
@@ -260,7 +260,9 @@ public sealed partial class Adventure
             if (TownAt(o.Pos) is { } t && t.Owner == owner) h.InTown = t.Object;
             S.Heroes.Add(h);
         }
-        // Player reserves exist from the start but stay off the map until scripts deploy them.
+        // Player reserves exist from the start but stay off the map until scripts deploy them. 0041c600 (game start
+        // 0041ecd0): each player's ReserveHeroes (map player +0x34, stride 8) are built through 0041c4b0, handed to the
+        // player (vf 0x16c) and then given hero vfunc 0x1f0(true): a generated full army replaces the editor's army.
         foreach (var p in S.Players)
         {
             if (p.Index >= Map.Players.Count) continue;
@@ -268,6 +270,7 @@ public sealed partial class Adventure
             {
                 if (hi.Shared == null || S.Heroes.Any(x => x.DefId == hi.Shared.Id) || S.OffMapHeroes.Any(x => x.DefId == hi.Shared.Id)) continue;
                 var h = HeroFromInstance(hi, p.Index, default);
+                GiveStartingArmy(h);
                 S.OffMapHeroes.Add(h);
                 S.HeroPool.Remove(h.DefId);
             }

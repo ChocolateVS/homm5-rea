@@ -31,10 +31,27 @@ public sealed partial class Adventure
             "OBJECTIVE_KIND_ADVANCE_HEROES" => ("level", null, P(1), Str(2)),
             "OBJECTIVE_KIND_DEFEAT_NEUTRALS" => ("neutrals", null, 1, Str(0)),
             "OBJECTIVE_KIND_MANUAL" => ("manual", null, 0, null),
-            // KILL_CREATURES has its own format (KILLARMY_FORMAT) but no shipped map uses it; parameters untraced.
-            "OBJECTIVE_KIND_KILL_CREATURES" => ("kill", null, 0, null),
+            // KILL_CREATURES (ctor 00b455a0): parameter 0 the creature (+0x30, 0 when FUN_0089fbf0 finds no such
+            // creature), 1 the count (+0x34, default 0).
+            "OBJECTIVE_KIND_KILL_CREATURES" => ("kill", P(0) != 0 ? Db.EnumName("CreatureType", P(0)) : null, P(1), null),
             _ => ("unknown", null, 0, null),
         };
+    }
+
+    /// <summary>
+    /// ASSEMBLE_ARMY's requirement as its ctor 00b44950 builds it: the parameters in (creature, count) pairs (stride
+    /// 0x18 = two strings), each read with sscanf "%i"; a pair counts when the creature is 0 ≤ id &lt; FUN_00acb380() (180)
+    /// and the count ≥ 0, map[creature] = count (a later pair of the same creature replaces the earlier one).
+    /// </summary>
+    public Dictionary<string, int> ArmyRequirement(SeerQuest q)
+    {
+        var p = q.Objective.Parameters;
+        var need = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (int i = 0; i + 1 < p.Count; i += 2)
+            if (int.TryParse(p[i], out int c) && int.TryParse(p[i + 1], out int n) && c is >= 0 and < 180 && n >= 0 &&
+                Db.EnumName("CreatureType", c) is { } id)
+                need[id] = n;
+        return need;
     }
 
     /// <summary>
@@ -52,7 +69,7 @@ public sealed partial class Adventure
     /// 00b43c60) look at the player's heroes (vf 0xc0), limited to one hero when the caller passes it; which hero the
     /// Seer Hut passes is not traced (TODO(exe)), here the visiting hero. The artifact counts worn (00ca6680) or in the
     /// backpack (00ca6b30); its optional location parameter (+0x3c) is not ported. The army condition takes
-    /// (creature, count) pairs; only the first pair is read here.</item>
+    /// every (creature, count) pair (<see cref="ArmyRequirement"/>) and needs a creature total above their sum.</item>
     /// </list>
     /// </summary>
     public bool SeerQuestMet(HeroState h, int hut)
@@ -66,7 +83,15 @@ public sealed partial class Adventure
         switch (kind)
         {
             case "artifact": return id != null && (h.Artifacts.Contains(id) || h.Backpack.Contains(id));
-            case "army": return id != null && h.Army.Live().Where(st => st.Creature == id).Sum(st => st.Count) >= amount;
+            case "army":
+            {
+                // 00b43c60: every required creature present in at least its count (00b43940 / 00b42cb0) and the hero's
+                // creature total (0045a360) greater than the summed requirement (00b42dd0): a hero never hands over his
+                // whole army.
+                var need = ArmyRequirement(q);
+                return need.All(kv => h.Army.Live().Where(st => st.Creature == kv.Key).Sum(st => st.Count) >= kv.Value) &&
+                       h.Army.Live().Sum(st => st.Count) > need.Values.Sum();
+            }
             case "resources":
             {
                 int r = P(0, 0);
@@ -82,9 +107,19 @@ public sealed partial class Adventure
             case "neutrals":
                 return prm.Where(n => n.Length > 0).All(n =>
                     Map.Objects.Where(m => m.Kind == ObjectKind.Monster && m.Name == n).All(m => S.Obj(m.Index).Removed));
+            case "kill":
+                // 00b42840: creature set and KilledCount − baseline (+0x38) ≥ the count.
+                return id != null && KilledCount(h.Owner, id) - S.Obj(hut).QuestKillBaseline.GetValueOrDefault(h.Owner) >= amount;
             default: return false;
         }
     }
+
+    /// <summary>
+    /// FUN_00b412f0(player, creature): over the player's heroes (vf 0xc0) the hero kill counter (vf 0x60 = hero +0x1e0,
+    /// get 00a84480) of exactly that creature, summed.
+    /// </summary>
+    int KilledCount(int player, string creature) =>
+        S.Heroes.Where(x => x.Alive && x.Owner == player).Sum(x => x.Kills.GetValueOrDefault(creature));
 
     /// <summary>
     /// Visit (exe 005a5d90 case 0x1d, CSeerHutDialogLogEntry → 006f0ee0): quest state 1 (not taken) opens the box in
@@ -115,6 +150,8 @@ public sealed partial class Adventure
         if (h == null || !h.Alive || h.Owner != p.Index || !HeroAt(h, o)) return "hero must visit the seer hut";
         var os = S.Obj(c.Hut);
         if (os.QuestDone || !os.QuestTakenBy.Add(p.Index)) return "quest already taken";
+        // The KILL_CREATURES baseline (condition vf 8 = 00b427f0); UNVERIFIED: that it runs when the quest is taken.
+        if (QuestRequirement(o.Quest) is ("kill", { } cr, _, _)) os.QuestKillBaseline[p.Index] = KilledCount(p.Index, cr);
         return null;
     }
 
@@ -137,15 +174,18 @@ public sealed partial class Adventure
                     if (h.Artifacts.Remove(id)) TakeInstance(h, id, true);
                     else if (h.Backpack.Remove(id)) TakeInstance(h, id, false);
                     break;
-                case "army" when id != null:
-                    int left = amount;
-                    for (int i = 0; i < h.Army.Length && left > 0; i++)
+                case "army":
+                    foreach (var (cr, n) in ArmyRequirement(q))
                     {
-                        if (h.Army[i] is not { } st || st.Creature != id) continue;
-                        int take = Math.Min(left, st.Count);
-                        st.Count -= take;
-                        left -= take;
-                        if (st.Count == 0) h.Army[i] = null;
+                        int left = n;
+                        for (int i = 0; i < h.Army.Length && left > 0; i++)
+                        {
+                            if (h.Army[i] is not { } st || st.Creature != cr) continue;
+                            int take = Math.Min(left, st.Count);
+                            st.Count -= take;
+                            left -= take;
+                            if (st.Count == 0) h.Army[i] = null;
+                        }
                     }
                     Emit(new ArmyChanged(h.Id, -1));
                     break;
@@ -191,14 +231,25 @@ public sealed partial class Adventure
                 if (h.Army.TryAdd(q.Creature, q.CreatureCount)) Emit(new ArmyChanged(h.Id, -1));
                 break;
             case "AWARD_SKILL" when q.Skill != null:
-                var m = q.Mastery switch { "MASTERY_EXPERT" or "MASTERY_EXTRA_EXPERT" => Mastery.Expert, "MASTERY_ADVANCED" => Mastery.Advanced, "MASTERY_BASIC" => Mastery.Basic, _ => Mastery.None };
-                if (m > Mastery.None && h.MasteryOf(q.Skill) < m)
+            {
+                // 00a7e2c0 case 10: steps = max(0, award mastery (+0x7c) − current (vf 0x174)); each step stops when
+                // vf 0x1cc = 00b4f760 refuses: 1 a perk id (record +0x48), 2 a new skill with no free slot (vf 0x1b8 =
+                // 00b4d380: 5 − the skills that are neither +0x48 nor +0x4c), 3 already Expert (> 2), so
+                // MASTERY_EXTRA_EXPERT ends at Expert; else vf 0x1c8 raises one level.
+                int target = q.Mastery switch { "MASTERY_EXTRA_EXPERT" => 4, "MASTERY_EXPERT" => 3, "MASTERY_ADVANCED" => 2, "MASTERY_BASIC" => 1, _ => 0 };
+                bool perk = Db.Perks.TryGetValue(q.Skill, out var sd) && !sd.IsSkill;
+                for (int step = Math.Max(0, target - (int)h.MasteryOf(q.Skill)); step > 0 && !perk; step--)
                 {
-                    h.Skills.RemoveAll(x => x.SkillId == q.Skill);
-                    h.Skills.Add(new SkillEntry(q.Skill, m));
-                    Emit(new SkillLearned(h.Id, q.Skill, m));
+                    var cur = h.MasteryOf(q.Skill);
+                    if (cur > Mastery.Advanced || (cur == Mastery.None && KnownSkills(h).Count >= MaxSkills)) break;
+                    var next = cur + 1;
+                    int at = h.Skills.FindIndex(x => x.SkillId == q.Skill);
+                    if (at >= 0) h.Skills[at] = new SkillEntry(q.Skill, next);
+                    else h.Skills.Add(new SkillEntry(q.Skill, next));
+                    Emit(new SkillLearned(h.Id, q.Skill, next));
                 }
                 break;
+            }
         }
     }
 }

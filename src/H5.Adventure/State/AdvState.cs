@@ -80,10 +80,11 @@ public sealed class PlayerState
     /// <summary>Hero definition ids offered in this player's taverns this week (2 slots).</summary>
     public string?[] Tavern = new string?[2];
     /// <summary>
-    /// Per tavern slot: the hero came with a weekly refill (full start army: CPlayer vfunc 0x158 with true, from 00990550)
-    /// rather than the daily refill of an emptied slot (one tier-1 creature: 0x158 with false, from 009949d0).
+    /// Per tavern slot: the army the offered hero got when he entered the slot (004fd600: hero vfunc 0x1f0 right after
+    /// the pool draw; full from the weekly / initial refill 00990550, one tier-1 creature from the daily refill of an
+    /// emptied slot 009949d0). A hired new hero brings it; a fled / surrendered hero carries his own army instead.
     /// </summary>
-    public bool[] TavernFullArmy = { true, true };
+    public Stack?[][] TavernArmy = { Army.Empty(), Army.Empty() };
     /// <summary>Days since the player lost their last town (-1 while they own a town).</summary>
     public int DaysWithoutTown = -1;
     /// <summary>Objects already visited by any hero of this player (e.g. Eye/Hut of Magi reveals, Keymaster tents).</summary>
@@ -417,6 +418,11 @@ public sealed class ObjState
     public bool QuestDone;
     /// <summary>Players that took the Seer Hut quest (Accept on the first visit).</summary>
     public HashSet<int> QuestTakenBy = new();
+    /// <summary>
+    /// KILL_CREATURES: per player, the kill count when the quest was taken (condition +0x38, set by its vf 8 = 00b427f0
+    /// from FUN_00b412f0).
+    /// </summary>
+    public Dictionary<int, int> QuestKillBaseline = new();
     /// <summary>Sphinx answered (CAdvMapSphinx +0xd0): later visits get the refuse message.</summary>
     public bool SphinxUsed;
     /// <summary>The riddle a Sphinx posed on the current visit, waiting for the answer.</summary>

@@ -145,7 +145,7 @@ public sealed partial class MapTavernScreen : MapBuildingScreen
         if (_tab <= 1)
         {
             price = game.HireCost(Me);
-            TavernHeroView.Show(Ui, offers[_tab]);
+            TavernHeroView.Show(Ui, offers[_tab], offers[_tab] is { } oid ? game.TavernOfferArmy(Me, oid) : null);
             // 00636d20: status 004f46a0 (3 money, 5 heroes) and the tile list (no place).
             int status = game.MapTavernHireStatus(Me);
             bool place = Hero is { } v && game.MapTavernFreeTiles(v).Count > 0;
@@ -247,7 +247,7 @@ public sealed partial class MapTavernScreen : MapBuildingScreen
 /// <summary>The hire page of the tavern screen (town and map): the offered hero's face, name, class, attributes.</summary>
 public static class TavernHeroView
 {
-    public static void Show(UiScreen ui, string? defId)
+    public static void Show(UiScreen ui, string? defId, H5.Adventure.State.Stack?[]? army = null)
     {
         var db = Game.Instance.Db;
         if (defId == null || !db.Heroes.TryGetValue(defId, out var def))
@@ -274,12 +274,19 @@ public static class TavernHeroView
         var manaNode = ui.Find("HeroAttributes/Mana");
         manaNode?.SetValue("Attribute", ((int)mana).ToString());
         manaNode?.SetValue("AttributeMax", ((int)mana).ToString());
-        // GAP: the exe shows the offered hero's army (00638d90); the engine rolls it at hire (GiveStartingArmy).
+        // The offered hero's army (00638d90, the army view: per slot the stack's icon and its count as "NumberOfCreatures";
+        // the army was rolled when the hero entered the tavern slot, 004fd600).
         for (int i = 0; i < 7; i++)
         {
             var slot = ui.Find($"Slot_{i + 1}");
-            TownUi.SetPicture(slot?.FindChild("Pic", true, false) as Control, null);
-            if (slot?.FindChild("Text", true, false) is UiNode txt) txt.Visible = false;
+            var st = army != null && i < army.Length ? army[i] : null;
+            bool has = st is { Count: > 0 };
+            TownUi.SetPicture(slot?.FindChild("Pic", true, false) as Control, has ? TownUi.CreatureIcon(st!.Creature) : null);
+            if (slot?.FindChild("Text", true, false) is UiNode txt)
+            {
+                txt.Visible = has;
+                if (has) txt.SetValue("NumberOfCreatures", st!.Count.ToString());
+            }
         }
     }
 }

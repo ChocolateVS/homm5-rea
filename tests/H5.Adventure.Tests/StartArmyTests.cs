@@ -126,14 +126,14 @@ public class StartArmyTests(Fixture f)
     {
         var g = f.NewGame("A2M1");
         var p = g.Current;
-        Assert.All(p.TavernFullArmy, Assert.True);
+        Assert.All(p.TavernArmy, a => Assert.True(a.StackCount() >= 1));
         p.Tavern[0] = null;
         int day = g.S.Day;
         while (g.S.Day == day) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
         Assert.NotEqual(1, g.S.DayOfWeek);
         Assert.NotNull(p.Tavern[0]);
-        Assert.False(p.TavernFullArmy[0]);
-        Assert.True(p.TavernFullArmy[1]);
+        Assert.Equal(1, p.TavernArmy[0].StackCount());
+        Assert.Equal(1, p.TavernArmy[0].Live().Single().Count);
         while (g.Current != p) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
         var town = g.S.Towns.First(t => t.Owner == p.Index);
         town.Built["TB_TAVERN"] = 1;
@@ -145,5 +145,26 @@ public class StartArmyTests(Fixture f)
         Assert.True(r.Ok, r.Error);
         var hired = g.S.Heroes.Single(x => x.Alive && x.DefId == defId);
         Assert.Equal(new List<(string, int)> { (g.StartArmyBases(hired.Town)[1]!, 1) }, Army(hired));
+    }
+
+    // 004fd600: the army is rolled when the hero enters the slot (vfunc 0x1f0 right after the pool draw), so the hire
+    // brings exactly that army; the pool gives a hero to one player at a time (00ce7920: the hero has no player).
+    [Fact]
+    public void TavernArmyIsRolledAtSlotEntryAndOffersAreExclusive()
+    {
+        var g = f.NewGame("A2M1");
+        var offered = g.S.Players.Where(x => x.Alive).SelectMany(x => x.Tavern).Where(id => id != null).ToList();
+        Assert.Equal(offered.Count, offered.Distinct().Count());
+        var p = g.Current;
+        var town = g.S.Towns.First(t => t.Owner == p.Index);
+        town.Built["TB_TAVERN"] = 1;
+        foreach (var x in g.S.Heroes.Where(x => x.Alive && x.Pos == g.EntranceOf(town))) x.Pos = new Tile(0, 0, x.Pos.Floor);
+        foreach (var x in g.S.Heroes.Where(x => x.Owner == p.Index)) x.Alive = false;
+        p.Purse[Purse.Gold] = 100000;
+        string defId = g.TownTavernOffers(p, town).First(id => id != null)!;
+        var expected = p.TavernArmy[Array.IndexOf(p.Tavern, defId)].Live().Select(st => (st.Creature, st.Count)).ToList();
+        var r = g.Apply(new HireHeroCmd(town.Object, Array.IndexOf(g.TownTavernOffers(p, town), defId)) { Player = p.Index });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(expected, Army(g.S.Heroes.Single(x => x.Alive && x.DefId == defId)));
     }
 }

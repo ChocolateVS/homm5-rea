@@ -146,7 +146,7 @@ public sealed partial class TavernScreen : TownSubScreen
         if (_tab <= 1)
         {
             price = game.HireCost(Me, Owner.Town);
-            TavernHeroView.Show(Ui, offers[_tab]);
+            TavernHeroView.Show(Ui, offers[_tab], offers[_tab] is { } oid ? game.TavernOfferArmy(Me, oid) : null);
             // 00636d20 (town): enabled when 004f4570 is 0; 3 → hire_result_no_money, 5 → _max_heroes, 0/4/6 → _no_place.
             int status = game.TownHireStatus(Me, Owner.Town);
             blocked = status switch { 0 => null, 3 => T("hire_result_no_money"), 5 => T("hire_result_max_heroes"), _ => T("hire_result_no_place") };

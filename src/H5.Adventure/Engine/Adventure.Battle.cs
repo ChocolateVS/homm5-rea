@@ -388,11 +388,10 @@ public sealed partial class Adventure
 
     /// <summary>
     /// The hero a tavern hire brings (004fec50): a hero that fled or surrendered is the same object again (its surrender
-    /// flag cleared, vf 0x1ec) with the army it left with (004fec50 generates none: a fled hero brings the one creature
-    /// 00b52e00 gave it, a surrendered one its survivors), otherwise a new one from the hero's definition with the army
-    /// its tavern slot was filled with (<see cref="PlayerState.TavernFullArmy"/>: full after the weekly refill, one
-    /// creature after a daily one). GAP: the exe generates that army when the hero enters the slot (004fd600), not at the
-    /// hire, so the random stream is consumed at another time.
+    /// flag cleared, vf 0x1ec) with the army it has (004fec50 generates none: a fled hero brings the one creature
+    /// 00b52e00 gave it, a surrendered one its survivors, either replaced when he re-entered a slot through a refill),
+    /// otherwise a new one from the hero's definition with the army his slot gave him (<see cref="PlayerState.TavernArmy"/>,
+    /// 004fd600 vfunc 0x1f0 at slot entry).
     /// </summary>
     HeroState HireHero(string defId, int owner, Tile pos, out bool returning)
     {
@@ -404,7 +403,9 @@ public sealed partial class Adventure
             SetUpHeroBook(h);
             var p = PlayerByIndex(owner);
             int slot = p == null ? -1 : Array.IndexOf(p.Tavern, defId);
-            GiveStartingArmy(h, slot < 0 || p!.TavernFullArmy[slot]);
+            if (slot >= 0)
+                for (int i = 0; i < h.Army.Length; i++) h.Army[i] = p!.TavernArmy[slot][i] is { } st ? new Stack(st.Creature, st.Count) : null;
+            else GiveStartingArmy(h);
             return h;
         }
         h.Alive = true;
@@ -414,6 +415,14 @@ public sealed partial class Adventure
         h.InBoat = false;
         h.BoatId = -1;
         return h;
+    }
+
+    /// <summary>The army an offered hero shows and would bring (the tavern's army view 00638d90 reads the hero's own army).</summary>
+    public Stack?[] TavernOfferArmy(PlayerState p, string defId)
+    {
+        if (S.Heroes.Find(x => !x.Alive && x.Retreat != 0 && x.DefId == defId) is { } back) return back.Army;
+        int slot = Array.IndexOf(p.Tavern, defId);
+        return slot >= 0 ? p.TavernArmy[slot] : State.Army.Empty();
     }
 
     static void ClearBattleBonuses(HeroState h)
