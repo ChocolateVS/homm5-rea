@@ -343,24 +343,51 @@ public sealed partial class BlacksmithScreen : TownSubScreen
         Owner.Session.S.Heroes.FirstOrDefault(h => h.Alive && h.InTown == Owner.Town.Object && !h.Garrisoned)
         ?? Owner.Session.S.Heroes.FirstOrDefault(h => h.Alive && h.InTown == Owner.Town.Object);
 
+    /// <summary>
+    /// The choice record (006ee160): the hero's machines (hero vf 0x70), its owner's gold (+0x18 of player vf 0xd8, −1
+    /// without a hero) and town vf 0xe4 = 00cd07c0 (blacksmith built and a visiting hero, town +0x40). 006ee270: a choice
+    /// is enabled only with gold ≥ price, the machine not owned and that flag; its state is 1 when selected; the price
+    /// label is ID_PRICE_LABEL_TEXT_NORMAL or _NOT_ENOUGH_GOLD (gold &lt; price).
+    /// </summary>
+    bool Buyable(int i, out bool enoughGold)
+    {
+        var h = Hero();
+        int gold = h == null ? -1 : Owner.Session.S.Players.First(p => p.Index == h.Owner).Purse[H5.Adventure.State.Purse.Gold];
+        enoughGold = gold >= Owner.Session.Game.WarMachinePrice(Owner.Town, Machines[i]);
+        bool has = h != null && Machines[i] switch
+        {
+            "WAR_MACHINE_BALLISTA" => h.Ballista, "WAR_MACHINE_FIRST_AID_TENT" => h.FirstAidTent, _ => h.AmmoCart,
+        };
+        bool visiting = Owner.Town.Level("TB_BLACKSMITH") > 0 && Owner.VisitingHero() != null;
+        return enoughGold && !has && visiting;
+    }
+
     void Buy()
     {
-        if (Hero() is not { } h) { Owner.Notice("Blacksmith", "A hero must be in the town to buy a war machine."); return; }
+        if (Hero() is not { } h || !Buyable(_choice, out _)) return;
         Apply(new BuyWarMachineCmd(Owner.Town.Object, h.Id, Machines[_choice]));
     }
 
     public override void Refresh()
     {
         base.Refresh();
-        var db = Game.Instance.Db;
-        Ui.Find("MainHeaderText")?.SetValue("Value", "Blacksmith");
+        // 006ed200, screen +0x1a8 = 1 (town): MainHeader_Blacksmith (0 = the map's War Machine Factory).
+        Ui.Find("MainHeaderText")?.SetValue("Value", TownUi.Text("UI/BuyWarMachine/Texts/MainHeader_Blacksmith.txt", "Blacksmith").Trim());
         for (int i = 0; i < Machines.Length; i++)
         {
             TownUi.SetPicture(Ui.Find($"Choice_{i}/Icon"), TownUi.CreatureIcon(Machines[i]));
             int price = Owner.Session.Game.WarMachinePrice(Owner.Town, Machines[i]);
-            // The stock text carries filler digits after the value; show the price alone.
-            Ui.Find($"Price_{i}")?.SetText($"<center><value_value>{price}");
-            Ui.Find($"Choice_{i}")?.SetState(i == _choice && (Ui.Find($"Choice_{i}")?.Window.ButtonStates.Count ?? 0) > 1 ? 1 : 0);
+            bool buyable = Buyable(i, out bool enoughGold);
+            if (Ui.Find($"Price_{i}") is { } label)
+            {
+                label.SetText(TownUi.Text(enoughGold ? "UI/BuyArtefact/Main/ArtefactPriceNormal.txt" : "UI/BuyArtefact/Main/ArtefactPriceNotEnoughGold.txt", "<center><value=Price>").Trim());
+                label.SetValue("Price", price.ToString());
+            }
+            if (Ui.Find($"Choice_{i}") is { } choice)
+            {
+                choice.SetState(buyable && i == _choice && choice.Window.ButtonStates.Count > 1 ? 1 : 0);
+                choice.Enabled = buyable;
+            }
         }
         var (name, desc) = MachineTexts(Machines[_choice]);
         Ui.Find("DescriptionHeader")?.SetValue("Value", name);

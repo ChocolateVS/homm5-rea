@@ -145,6 +145,8 @@ public static class TownLauncher
         h.InTown = town.Object;
         // `--town-dev-hero=def:<HeroId>` swaps the hero's definition (portrait checks, e.g. def:GodricMP).
         if (what.StartsWith("def:", StringComparison.Ordinal)) h.DefId = what[4..];
+        // `--town-dev-hero=garrison`: the hero sits in the garrison (empty visiting row checks).
+        if (what == "garrison") { Array.Fill(town.Garrison, null); h.Garrisoned = true; }
         if (what == "avenger")
         {
             h.Skills.RemoveAll(s => s.SkillId == "HERO_SKILL_AVENGER");

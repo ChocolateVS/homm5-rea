@@ -189,7 +189,9 @@ public partial class TownScreen : Control
         {
             if (_hud.Find($"ListBase/List_{node}/HeroContainer/Hero") is { } top)
                 Bind(top, garrison?.Id ?? -1, garrison == null ? Town.Object : -1, node - 1, true);
-            if (_hud.Find($"ListBase/List_{node}/TownContainer/Town") is { } bottom) Bind(bottom, visiting?.Id ?? -1, -1, node - 1, visiting != null);
+            // 0061c5b0 shows both rows' PicBoxes (vf 0x44(1)) for List_1..7 whatever the heroes; 00615d10 hides only an
+            // empty slot's picture.
+            if (_hud.Find($"ListBase/List_{node}/TownContainer/Town") is { } bottom) Bind(bottom, visiting?.Id ?? -1, -1, node - 1, true);
         }
         var visitPic = _hud.Find("ListBase/List_0/TownContainer/Town/PicBox/Pic");
         TownUi.SetPicture(visitPic, visiting != null ? TownUi.HeroFace(visiting, false) : null);
@@ -198,7 +200,10 @@ public partial class TownScreen : Control
         if (garrisonPic != null)
         {
             garrisonPic.Visible = true;
-            TownUi.SetPicture(garrisonPic, garrison != null ? TownUi.HeroFace(garrison, false) : TownIcon());
+            // 00615d10: an empty garrison slot shows UIGameRoot CDBID_TEXTURE_GARRISON (Textures/TownScreen/GarHero) with
+            // the GARRISON_SLOT tooltip; an empty visiting slot is cleared and hidden.
+            TownUi.SetPicture(garrisonPic, garrison != null ? TownUi.HeroFace(garrison, false) : Game.Instance.LoadTexture("Textures/TownScreen/GarHero.xdb"));
+            if (garrisonPic is UiNode gp) gp.SetTooltip(garrison == null ? TownUi.Text("Text/Interface/TownScreen/GarrisonHeroSlot.txt", "") : null);
         }
         _army.Refresh(Session.S);
         _hud.Find("BuildingDesc")?.SetValue("value", _hoverBuilding ?? Town.Name);
