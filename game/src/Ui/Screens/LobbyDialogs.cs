@@ -111,7 +111,7 @@ public partial class PasswordDialog : MpdmDialog
 /// <summary>
 /// Connect prompt built from the stock create-game window parts. One field takes an
 /// IP address ("192.168.1.20", "host:27615", "[fe80::1]:27615"), a WebSocket URL
-/// ("wss://games.example.com") or a 6-letter online join code. "Host this game" hosts
+/// ("wss://games.example.com/h5host/"; https:// works the same) or a 6-letter online join code. "Host this game" hosts
 /// on this computer instead (LAN-visible; optionally listed online with a join code).
 /// The second edit line holds the online (master) server used for codes and listing.
 /// </summary>
@@ -204,7 +204,8 @@ public partial class ConnectDialog : MpdmDialog
     public static (string host, int port) ParseAddress(string s)
     {
         s = s.Trim();
-        if (s.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) || s.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
+        if (s.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) || s.StartsWith("wss://", StringComparison.OrdinalIgnoreCase)
+            || s.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || s.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             return (s, 0);
         if (s.StartsWith('['))
         {

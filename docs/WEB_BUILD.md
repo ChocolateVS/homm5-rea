@@ -212,22 +212,45 @@ A browser cannot open TCP/UDP sockets or listen for connections, so in the brows
   In *Multiplayer → Connect…* type the host's address (`192.168.1.20` or `192.168.1.20:27615`): the browser build
   turns it into `ws://192.168.1.20:27615/`; a full `ws://` / `wss://` URL also works. The host needs no change
   (allow TCP 27615 in its firewall, as for desktop players).
-* **Page served over HTTPS** (the LAN server's Caddy `tls internal`): the browser blocks `ws://` from an `https://`
-  page (mixed content). Either open the page over plain `http://` for LAN games, or let the web server proxy a
-  `wss://` path to the host and type that URL, e.g. Caddy, one route per host:
+* **Page served over HTTPS** (as on the LAN server: Caddy terminates TLS): browsers only allow secure `wss://`
+  sockets from an `https://` page (`ws://` is blocked as mixed content). The web server that serves the page also
+  forwards a path to the game host (an `h5server` or a desktop host on the LAN, port 27615), and players type that URL
+  in *Multiplayer → Connect…*, e.g. **`wss://h5reborn.int.rowansserver.com/h5host/`** (the trailing `/` matters;
+  `https://…` is accepted too and means the same). On an `https` page a plain address is refused with
+  "This page is https: enter the host's wss:// address (a proxy)". The host itself needs no change: its game port
+  answers WebSocket upgrades on any path, and it pings every 20 s, so idle proxy timeouts do not drop the game.
+
+  Caddy (the site block that serves the game; `handle_path` strips `/h5host` before forwarding; one path per host):
 
   ```
-  :8160 {
-      ...
+  h5reborn.int.rowansserver.com {
+      tls internal
       handle_path /h5host/* {
-          reverse_proxy 192.168.1.20:27615
+          reverse_proxy 192.168.1.20:27615      # the h5server / desktop host on the LAN
+      }
+      handle {
+          reverse_proxy 127.0.0.1:8080          # nginx with the static files (as now), or root + file_server
       }
   }
   ```
 
-  then connect to `wss://<server>:8160/h5host/` (proxy configs not tested here; the plain `ws://` join is, by
-  `smoke.mjs --only lobby`). nginx: `location /h5host/ { proxy_pass http://192.168.1.20:27615/;
-  proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade"; }`.
+  nginx (only needed if Caddy hands everything to nginx instead; Caddy forwards WebSocket upgrades by itself):
+
+  ```
+  location /h5host/ {
+      proxy_pass http://192.168.1.20:27615/;    # trailing / strips the /h5host/ prefix
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_read_timeout 1h;
+      proxy_send_timeout 1h;
+  }
+  ```
+
+  Tested by `smoke.mjs --only lobby-wss`: the page over `https` (self-signed certificate) from
+  `serve.mjs --tls --proxy /h5host/=127.0.0.1:<port>`, which forwards upgrades the way the snippets above do, joins an
+  `h5server` at `wss://127.0.0.1:<port>/h5host/` (data check included). Locally:
+  `node tools/web/harness/serve.mjs web/dist 8443 --tls --proxy /h5host/=192.168.1.20:27615`.
 * **Online join code**: through the master server's WebSocket bridge (`/ws/join?code=…`, `src/H5.Master`), which
   relays to the lobby's host over UDP; the master URL from *Online server* is used (`https` → `wss`). Listing
   online lobbies from the browser needs the master's HTTP API reachable from the page (same origin or CORS).

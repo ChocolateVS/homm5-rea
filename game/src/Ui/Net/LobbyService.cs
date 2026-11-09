@@ -189,16 +189,27 @@ public partial class LobbyService : Node
 
     /// <summary>
     /// Joins by address: "host", "host:port", "[ipv6]:port" (TCP, falling back to UDP),
-    /// or a "ws://" / "wss://" URL (WebSocket, e.g. a server behind a TLS proxy).
+    /// or a "ws://" / "wss://" URL (WebSocket, e.g. a server behind a TLS proxy); "http://" / "https://" URLs mean the
+    /// same as "ws://" / "wss://".
     /// </summary>
     public async Task ConnectAsync(string host, int port = ProtocolInfo.DefaultPort)
     {
         await DisconnectAsync();
-        // Browser: no raw TCP/UDP; every host's game port also accepts WebSocket clients (PortSharing), so a plain
-        // address becomes ws://host:port/ (docs/WEB_BUILD.md, Multiplayer).
-        if (OperatingSystem.IsBrowser() && !host.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) && !host.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
-            host = $"ws://{host}:{port}/";
-        if (host.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) || host.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
+        host = host.Trim();
+        if (host.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) host = "wss://" + host["https://".Length..];
+        else if (host.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) host = "ws://" + host["http://".Length..];
+        bool url = host.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) || host.StartsWith("wss://", StringComparison.OrdinalIgnoreCase);
+        if (OperatingSystem.IsBrowser())
+        {
+            // A page opened over https:// may only open secure wss:// sockets (browsers block ws:// there as mixed
+            // content): such a page joins a LAN host through a TLS proxy (docs/WEB_BUILD.md, Multiplayer).
+            if (PageIsSecure() && !host.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("This page is https: enter the host's wss:// address (a proxy)");
+            // No raw TCP/UDP; every host's game port also accepts WebSocket clients (PortSharing), so a plain
+            // address becomes ws://host:port/.
+            if (!url) { host = $"ws://{host}:{port}/"; url = true; }
+        }
+        if (url)
         {
             var uri = new Uri(host);
             await ConnectChannelAsync(uri.Authority, async ct => await WebSocketFrameChannel.ConnectAsync(uri, TimeSpan.FromSeconds(8), ct));
@@ -215,6 +226,13 @@ public partial class LobbyService : Node
                 return await Udp(addr.AddressFamily).ConnectAsync(new UdpPath(new IPEndPoint(addr, port)), TimeSpan.FromSeconds(4), ct);
             }
         });
+    }
+
+    /// <summary>Browser: the page was opened over https:// (only wss:// sockets are allowed from it).</summary>
+    static bool PageIsSecure()
+    {
+        try { return JavaScriptBridge.Eval("location.protocol", false).AsString() == "https:"; }
+        catch (Exception) { return false; }
     }
 
     /// <summary>Joins an online game by its join code through the master server.</summary>

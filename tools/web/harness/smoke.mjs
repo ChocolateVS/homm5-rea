@@ -1,6 +1,6 @@
 // Headless smoke test of the web build: serves <dist>, opens it in a headless Chromium (never a visible window),
 // feeds it the local game install through the page's folder picker, and screenshots each scenario.
-//   node smoke.mjs <dist> --install "<game folder>" [--out DIR] [--only menu,duel,adventure,endturn,remember,persist,audio,lobby] [--server H5.Server.dll] [--timeout s]
+//   node smoke.mjs <dist> --install "<game folder>" [--out DIR] [--only menu,duel,adventure,endturn,remember,persist,audio,lobby,lobby-wss] [--server H5.Server.dll] [--timeout s]
 //                         [--map-arg --adventure=<map>] [--duel-arg --combat-vs-ai=1,2] [--gpu] [--coi]
 // Chromium: $CHROMIUM, else the playwright cache (npx playwright-core install chromium).
 // Exit code 0 only if every scenario reached its marker without a page error.
@@ -8,7 +8,7 @@ import { chromium } from 'playwright-core';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { serve } from './serve.mjs';
+import { serve, selfSignedCert } from './serve.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
@@ -56,7 +56,7 @@ const server = await serve(dist, 0, { coi: argv.includes('--coi') });
 const base = `http://127.0.0.1:${server.address().port}/`;
 const results = {};
 
-async function run(name, page, { pick = true, query, marker, then = [], settle, after }) {
+async function run(name, page, { pick = true, query, marker, then = [], settle, after, base: pageBase = base }) {
   const t0 = Date.now();
   const log = [];
   const stamp = () => ((Date.now() - t0) / 1000).toFixed(1).padStart(6);
@@ -76,7 +76,7 @@ async function run(name, page, { pick = true, query, marker, then = [], settle, 
   await page.addInitScript(() => { let last = 0; globalThis.h5MaxFrameGapMs = 0;
     const f = (t) => { if (last) globalThis.h5MaxFrameGapMs = Math.max(globalThis.h5MaxFrameGapMs, t - last); last = t; requestAnimationFrame(f); };
     requestAnimationFrame(f); globalThis.h5ResetFrameGap = () => { globalThis.h5MaxFrameGapMs = 0; }; });
-  await page.goto(base + query);
+  await page.goto(pageBase + query);
   // Memory timeline: the wasm heap (linear memory, never shrinks) every 2 s, next to the game's log lines.
   let peakMB = 0;
   const memTimer = setInterval(() => page.evaluate(() => globalThis.h5WasmHeapBytes?.()).then((b) => {
@@ -159,27 +159,48 @@ if (only.includes('audio')) {
     await ctx.close();
   } finally { await b.close(); }
 }
-if (only.includes('lobby')) {
-  // Multiplayer: a desktop dedicated server (H5.Server, --server <H5.Server.dll>) on this machine; the browser joins
-  // its WebSocket port with the game's own --connect (same as typing the address in the lobby). "Connected to" means
-  // the server accepted the browser's hello, including the game-data fingerprint check.
+// Multiplayer: a desktop dedicated server (H5.Server, --server <H5.Server.dll>) on this machine; the browser joins its
+// WebSocket port with the game's own --connect (same as typing the address in the lobby). "Connected to" means the server
+// accepted the browser's hello, including the game-data fingerprint check.
+//   lobby:     the page over http, ws://127.0.0.1:<port>/ straight to the server.
+//   lobby-wss: the page over https (self-signed, like the LAN server's Caddy `tls internal`) and wss:// through that web
+//              server's WebSocket proxy (/h5host/ -> the server, prefix stripped): the setup docs/WEB_BUILD.md describes.
+async function withServer(name, fn) {
   const dll = opt('--server');
-  if (!dll) { results.lobby = { result: 'error', error: '--server <path to H5.Server.dll> is required for the lobby scenario' }; }
-  else {
-    const { spawn } = await import('node:child_process');
-    const port = 20000 + Math.floor(Math.random() * 20000);
-    const srv = spawn('dotnet', [dll, '--port', String(port), '--bind', '127.0.0.1', '--no-lan', '--game-dir', install, '--name', 'smoke server']);
-    const srvLog = [];
-    const ready = new Promise((r) => { const on = (d) => { srvLog.push(String(d)); if (/fingerprint/.test(String(d))) r(); }; srv.stdout.on('data', on); srv.stderr.on('data', on); });
+  if (!dll) { results[name] = { result: 'error', error: '--server <path to H5.Server.dll> is required for the ' + name + ' scenario' }; return; }
+  const { spawn } = await import('node:child_process');
+  const port = 20000 + Math.floor(Math.random() * 20000);
+  const srv = spawn('dotnet', [dll, '--port', String(port), '--bind', '127.0.0.1', '--no-lan', '--game-dir', install, '--name', 'smoke server']);
+  const srvLog = [];
+  const ready = new Promise((r) => { const on = (d) => { srvLog.push(String(d)); if (/fingerprint/.test(String(d))) r(); }; srv.stdout.on('data', on); srv.stderr.on('data', on); });
+  try {
+    await Promise.race([ready, new Promise((r) => setTimeout(r, 60000))]);
+    await fn(port);
+  } finally { srv.kill(); fs.writeFileSync(path.join(outDir, `${name}-server.log`), srvLog.join('')); }
+}
+const LOBBY_MARKER = /\[H5\] web: lobby: Connected to smoke server/;
+if (only.includes('lobby')) {
+  await withServer('lobby', async (port) => {
+    const b = await chromium.launch(LAUNCH);
+    const ctx = await b.newContext({ viewport: { width: 1280, height: 720 } });
+    const page = await ctx.newPage();
+    await run('lobby', page, { query: '?nocache&args=' + encodeURIComponent(`--goto=create --connect=ws://127.0.0.1:${port}/`), marker: LOBBY_MARKER, settle: 3 });
+    await ctx.close(); await b.close();
+  });
+}
+if (only.includes('lobby-wss')) {
+  await withServer('lobby-wss', async (port) => {
+    const tlsServer = await serve(dist, 0, { coi: argv.includes('--coi'), tls: selfSignedCert(), proxy: { '/h5host/': `127.0.0.1:${port}` } });
+    const tlsBase = `https://127.0.0.1:${tlsServer.address().port}/`;
+    const b = await chromium.launch({ ...LAUNCH, args: [...LAUNCH.args, '--ignore-certificate-errors'] });
     try {
-      await Promise.race([ready, new Promise((r) => setTimeout(r, 60000))]);
-      const b = await chromium.launch(LAUNCH);
-      const ctx = await b.newContext({ viewport: { width: 1280, height: 720 } });
+      const ctx = await b.newContext({ viewport: { width: 1280, height: 720 }, ignoreHTTPSErrors: true });
       const page = await ctx.newPage();
-      await run('lobby', page, { query: '?nocache&args=' + encodeURIComponent(`--goto=create --connect=ws://127.0.0.1:${port}/`), marker: /\[H5\] web: lobby: Connected to smoke server/, settle: 3 });
-      await ctx.close(); await b.close();
-    } finally { srv.kill(); fs.writeFileSync(path.join(outDir, 'lobby-server.log'), srvLog.join('')); }
-  }
+      await run('lobby-wss', page, { base: tlsBase, marker: LOBBY_MARKER, settle: 3,
+        query: '?nocache&args=' + encodeURIComponent(`--goto=create --connect=wss://127.0.0.1:${tlsServer.address().port}/h5host/`) });
+      await ctx.close();
+    } finally { await b.close(); tlsServer.close(); }
+  });
 }
 if (only.includes('persist')) {
   // user:// in IndexedDB: visit 1 quicksaves on an adventure map; visit 2 (same browser profile) must list the save,

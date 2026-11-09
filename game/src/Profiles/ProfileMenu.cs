@@ -86,7 +86,8 @@ public static class ProfileMenu
 
         UpdateNames();
         OptionsStore.Apply();
-        if (ProfileManager.NoProfiles) Callable.From(() => AskFirstName(menu, UpdateNames)).CallDeferred();
+        // Deferred: the menu may be gone by then (`--goto=create` leaves it at once); the prompt comes back with the menu.
+        if (ProfileManager.NoProfiles) Callable.From(() => { if (GodotObject.IsInstanceValid(menu) && menu.IsInsideTree()) AskFirstName(menu, UpdateNames); }).CallDeferred();
 
         // Dev/test: `--profile-dev=profiles|halloffame|load|firstname` opens that part once the menu exists.
         if (!_devUsed && OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--profile-dev=")) is { } dev)
