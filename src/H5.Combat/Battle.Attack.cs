@@ -1,4 +1,5 @@
 using H5.Core.Data;
+using H5.Core.Numerics;
 
 namespace H5.Combat;
 
@@ -326,8 +327,9 @@ public sealed partial class Battle
             if (h.TotalRoll == null && HasAbilityNow(a, Ab.StormStrike)) h.TotalRoll = BaseDamageRoll(a, target, h, ranged);
             stormStrikeHit = (h.TotalRoll ?? 0, luckMult, h.Kind);   // exe 00a68348: Storm Strike reuses this roll and luck
             int dmg = ComputeDamage(a, target, h, ranged, luckMult);
-            // The pattern share is applied to the already truncated damage and truncated again (exe 00a67bf3).
-            if (factor != 1) dmg = (int)(dmg * (float)factor);
+            // The pattern share is applied to the already truncated damage and truncated again (exe 00a67bf3: FILD, FMUL
+            // float, FISTP under chop — the chopped product, not C#'s round-to-nearest float product).
+            if (factor != 1) dmg = (int)X87.Mul(dmg, (float)factor);
             int hpBefore = target.TotalHealth;
             int killed;
             // Deadly Strike (exe FUN_00a5bf60, from the strike loop 00a67c26): on any strike against a target without
@@ -395,21 +397,23 @@ public sealed partial class Battle
     /// The stack's base damage roll (exe 00a597a0): with min == max it is Count*min; otherwise up to
     /// three creatures roll individually and larger stacks average three rolls: (r1+r2+r3)/3 * Count.
     /// Confusion (Forgetfulness) removes part of the stack from ranged attacks and retaliations.
+    /// Under the game's x87 control word (<see cref="X87"/>): Forgetfulness keeps FISTP-chop((1 − v) · Count)
+    /// (00a59809..00a59827), FILD Count · min (00a59888), the rolls add up chopped as floats (00a598d7 / 00a59909),
+    /// and a large stack is (Count · Σ) · 0.33333334f (00a5991b / 00a59921, constant 00e19950), all chopped.
     /// </summary>
     double BaseDamageRoll(Unit a, Unit t, Hit hit, bool ranged)
     {
         var (min, max) = DamageRangeOf(a);
         int count = a.IsWarMachine ? 1 : a.Count;
         if (a.GetEffect("SPELL_FORGETFULNESS") is { } conf && (ranged || hit.Kind == AttackKind.Retaliation))
-            count = (int)Math.Round((1 - conf.Value) * count);
+            count = (int)X87.Mul(X87.Sub(1f, (float)conf.Value), count);
         if (t.HasEffect(H5.Combat.Fx.Sleep) && VampireFamily(a)) min = max;    // Sleeping Strike (exe 00a597a0)
         if (hit.FixedRoll is double fr) return count * (fr < 0 ? (min + max) / 2 : fr);           // previews / AI
-        if (min == max) return count * min;
-        if (count > 3)
-            return count * (S.Rng.RangeD(min, max) + S.Rng.RangeD(min, max) + S.Rng.RangeD(min, max)) * (float)(1.0 / 3);
-        double sum = 0;
-        for (int i = 0; i < count; i++) sum += S.Rng.RangeD(min, max);
-        return sum;
+        float fmin = (float)min, fmax = (float)max;
+        if (fmin == fmax) return X87.Mul(count, fmin);
+        float sum = 0;
+        for (int i = 0, n = Math.Min(count, 3); i < n; i++) sum = X87.Add(sum, (float)S.Rng.RangeD(fmin, fmax));
+        return count > 3 ? X87.Mul(X87.Mul(count, sum), 0.33333334f) : sum;
     }
 
     /// <summary>
@@ -417,6 +421,11 @@ public sealed partial class Battle
     /// attacker multipliers (exe 00a58de0) × range penalty (00a5c5a0) × defender stage (00a5a900),
     /// truncated with a 1e-4 epsilon and never below 1. The attack/defence factor is uncapped
     /// (DamageIncreaseCap/DamageDecreaseCap are loaded but never read by the game).
+    /// Under the game's x87 control word (_PC_24 | _RC_CHOP, <see cref="X87"/>) the damage is one float that every
+    /// factor multiplies in turn, chopped each time (00a58de0 accumulates on the base roll, 00a5c848 the range
+    /// penalty, 00a5a900 the attack/defence factor 00a58d30 and the defender factors), + 1e-4f (00a5ae1b) — itself chopped —
+    /// and _ftol (00d11a60) truncates: the epsilon absorbs small chop errors but not those of large stacks.
+    /// The 1 ± x factors are chopped FADD / FSUB of the float x.
     /// </summary>
     public int ComputeDamage(Unit a, Unit t, Hit hit, bool ranged, double luckMult = 1)
     {
@@ -424,6 +433,8 @@ public sealed partial class Battle
         bool melee = !ranged;
         bool isShooter = a.MaxShots > 0 && !a.IsWarMachine;
         double baseDmg = hit.TotalRoll ?? BaseDamageRoll(a, t, hit, ranged);
+        float acc = (float)baseDmg;
+        void M(double f) => acc = X87.Mul(acc, (float)f);
 
         // Avenger critical (exe 00a5ae40 / 00a673c0): replaces the luck multiplier with luck+1
         // when luck is normal or good, and with 1.0 on bad luck.
@@ -435,18 +446,19 @@ public sealed partial class Battle
         }
 
         // ---- attacker stage (exe 00a58de0), starting from the luck multiplier
-        double m = luckMult * hit.Multiplier;
-        if (melee ? isShooter && !HasAbilityNow(a, Ab.NoMeleePenalty) : HasAbilityNow(a, Ab.RangePenalty)) m *= 0.5;
-        if (melee) m *= 1 + Math.Clamp(OffenceBonus(ah), 0, 10);
-        else if (ah.HasPerk(Sk.Archery)) m *= 1 + Math.Clamp(Stats.Get("combat/HeroSkills/SkillOffence/Archery_DamageBonus", 0.2), 0, 10);
+        M(luckMult);
+        M(hit.Multiplier);
+        if (melee ? isShooter && !HasAbilityNow(a, Ab.NoMeleePenalty) : HasAbilityNow(a, Ab.RangePenalty)) M(0.5);
+        if (melee) M(OnePlus(Math.Clamp(OffenceBonus(ah), 0, 10)));
+        else if (ah.HasPerk(Sk.Archery)) M(OnePlus(Math.Clamp(Stats.Get("combat/HeroSkills/SkillOffence/Archery_DamageBonus", 0.2), 0, 10)));
         if (hit.Kind == AttackKind.Retaliation)
         {
-            if (ah.Class == "HERO_CLASS_KNIGHT" || ah.SkillLevel(Sk.Training) > 0) m *= 1 + Math.Clamp(TrainingBonus(ah), 0, 10);
+            if (ah.Class == "HERO_CLASS_KNIGHT" || ah.SkillLevel(Sk.Training) > 0) M(OnePlus(Math.Clamp(TrainingBonus(ah), 0, 10)));
         }
         else if (ah.HasPerk(Sk.Retribution))
         {
             int morale = MoraleOf(a);
-            if (morale > 0) m *= 1 + Math.Clamp(Stats.Get("combat/HeroSkills/Knight/Retribution_DamageBonusPerMorale", 0.05) * morale, 0, 10);
+            if (morale > 0) M(OnePlus(Math.Clamp(Stats.Get("combat/HeroSkills/Knight/Retribution_DamageBonusPerMorale", 0.05) * morale, 0, 10)));
         }
         if (melee && HasAbilityNow(a, Ab.Jousting) && hit.Kind == AttackKind.Melee && hit.CellsWalked > 0)
         {
@@ -456,22 +468,22 @@ public sealed partial class Battle
             if (ah.Specialization == "HERO_SPEC_JOUSTING")
                 j *= 1 + Math.Clamp(Stats.Get("combat/HeroSpecializations/Knight/CavalryCommander_JoustingBonus", 0.1), 0, 1000)
                        + Math.Clamp(Stats.Get("combat/HeroSpecializations/Knight/CavalryCommander_JoustingBonusPerLevel", 0.01), 0, 1000) * ah.Level;
-            m *= j;
+            M(j);
         }
         if (hit.Kind == AttackKind.Retaliation)
         {
-            if (HasAbilityNow(a, Ab.FierceRetaliation)) m *= Stats.Get("combat/Creatures/Stronghold/FierceRetaliationCoef", 1.5);
+            if (HasAbilityNow(a, Ab.FierceRetaliation)) M(Stats.Get("combat/Creatures/Stronghold/FierceRetaliationCoef", 1.5));
         }
-        if (a.HasEffect("FX_STORM_PENALTY") && ranged) m *= 1 - Fx(a, "FX_STORM_PENALTY");
+        if (a.HasEffect("FX_STORM_PENALTY") && ranged) M(OneMinus(Fx(a, "FX_STORM_PENALTY")));
 
         // ---- range penalty (exe 00a5c5a0): nearest-cell squared distance > (width/2)^2
         if (ranged && !a.IsWarMachine && !HasAbilityNow(a, Ab.NoRangePenalty) && !HasAbilityNow(a, Ab.RangePenalty))
         {
             int half = S.Width / 2;
-            if (NearestCellDistanceSq(a, t) > half * half) m *= 0.5;
+            if (NearestCellDistanceSq(a, t) > half * half) M(0.5);
         }
         // Shooting across intact town walls (same exe function; not affected by No Range Penalty).
-        if (ranged && ShotCrossesWalls(a, t)) m *= 0.5;
+        if (ranged && ShotCrossesWalls(a, t)) M(0.5);
 
         // ---- defender stage (exe 00a5a900)
         int A = AttackOf(a, t), D = DefenceOf(t, a);
@@ -485,19 +497,16 @@ public sealed partial class Battle
             if (a.IsWarMachine && a.CreatureId == "WAR_MACHINE_BALLISTA" && ah.HasPerk("HERO_SKILL_WILDFIRE")) D /= 2;
         }
         if (hit.IgnoreDefence) D = 0;
-        double ad = A > D
-            ? 1 + Math.Max(0, Stats.Get("combat/DamageIncrease", 0.05)) * (A - D)
-            : 1 / (1 - Math.Max(0, Stats.Get("combat/DamageDecrease", 0.05)) * (A - D));
-        double dm = ad;
-        if (t.GetEffect(H5.Combat.Fx.DeepFreeze) is { } df) dm *= Math.Max(df.Value, 1);
+        M(AttackDefenceFactor(A, D, (float)Stats.Get("combat/DamageIncrease", 0.05), (float)Stats.Get("combat/DamageDecrease", 0.05)));
+        if (t.GetEffect(H5.Combat.Fx.DeepFreeze) is { } df) M(Math.Max(df.Value, 1));
         if (ranged)
         {
-            if (t.Has(Ab.LargeShield) || Adjacent(t).Any(o => o.Side == t.Side && o.Has(Ab.ShieldOther))) dm *= 0.5;
-            if (th.HasPerk(Sk.Evasion)) dm *= 1 - Math.Clamp(Stats.Get("combat/HeroSkills/SkillDefence/Evasion_DamageReduce", 0.2), 0, 1);
+            if (t.Has(Ab.LargeShield) || Adjacent(t).Any(o => o.Side == t.Side && o.Has(Ab.ShieldOther))) M(0.5);
+            if (th.HasPerk(Sk.Evasion)) M(OneMinus(Math.Clamp(Stats.Get("combat/HeroSkills/SkillDefence/Evasion_DamageReduce", 0.2), 0, 1)));
             if (th.Present && th.Specialization == "HERO_SPEC_EVASIVE")
-                dm *= 1 - Math.Clamp(Stats.Get("combat/HeroSpecializations/Warlock/Evasive_DamageReduceBase", 0)
-                                     + Stats.Get("combat/HeroSpecializations/Warlock/Evasive_DamageReducePerLevel", 0.01) * th.Level, 0, 1);
-            if (t.GetEffect("SPELL_DEFLECT_ARROWS") is { } da) dm *= 1 - Math.Clamp(da.Value, 0, 0.95);
+                M(OneMinus(Math.Clamp(Stats.Get("combat/HeroSpecializations/Warlock/Evasive_DamageReduceBase", 0)
+                                     + Stats.Get("combat/HeroSpecializations/Warlock/Evasive_DamageReducePerLevel", 0.01) * th.Level, 0, 1)));
+            if (t.GetEffect("SPELL_DEFLECT_ARROWS") is { } da) M(OneMinus(Math.Clamp(da.Value, 0, 0.95)));
         }
         else
         {
@@ -505,19 +514,18 @@ public sealed partial class Battle
             {
                 double r = Math.Clamp(hit.CellsWalked * Stats.Get("combat/Creatures/Fortress/ShieldWall_DamageReducePerPathCell", 0.1), 0, 1);
                 r = Math.Clamp(r, 0, Stats.Get("combat/Creatures/Fortress/ShieldWall_MaxDamageReduce", 0.9));
-                dm *= 1 - r;
+                M(OneMinus(r));
             }
-            dm *= 1 - Math.Clamp(DefenceReduction(th), 0, 1);
+            M(OneMinus(Math.Clamp(DefenceReduction(th), 0, 1)));
         }
-        if (t.Summoned && ah.HasPerk(Sk.BackToTheVoid)) dm *= Stats.Get("combat/HeroSkills/Barbarian/DeathToNonexistent_DamageToSummonsMult", 3);
+        if (t.Summoned && ah.HasPerk(Sk.BackToTheVoid)) M(Stats.Get("combat/HeroSkills/Barbarian/DeathToNonexistent_DamageToSummonsMult", 3));
 
         // Forest Guardian (exe 00a59340): Sylvan creatures vs the hero's favoured enemies.
         if (ah.Present && ah.Specialization == "HERO_SPEC_FOREST_GUARDIAN" && a.Town == Towns.Sylvan && IsFavoredEnemy(ah, t))
-            dm *= 1 + Math.Clamp(Stats.Get("combat/HeroSpecializations/Ranger/ForestGuardian_DamageBonus", 0)
-                                 + Stats.Get("combat/HeroSpecializations/Ranger/ForestGuardian_DamageBonusPerHeroLevel", 0.02) * ah.Level, 0, 10);
+            M(OnePlus(Math.Clamp(Stats.Get("combat/HeroSpecializations/Ranger/ForestGuardian_DamageBonus", 0)
+                                 + Stats.Get("combat/HeroSpecializations/Ranger/ForestGuardian_DamageBonusPerHeroLevel", 0.02) * ah.Level, 0, 10)));
 
-        double dmg = baseDmg * m * dm;
-        int result = Math.Max(1, (int)(dmg + 1e-4));
+        int result = Math.Max(1, (int)X87.Add(acc, 1e-4f));   // 00a5ae1b: FADD 1e-4f (00e3dee4), _ftol (00d11a60) truncates
         // Blade of Slaughter: +2 per creature in the target stack, after multipliers (p.172).
         if (HasAbilityNow(a, Ab.AxeOfSlaughter) && melee) result += (int)Stats.Get("combat/Creatures/Inferno/AxeOfSlaughterDamageHits", 2) * t.Count;
         // Vorpal Sword: one extra creature killed (exe 00a673c0 / 00a63020: +1 kill unless the target is not a creature or
@@ -526,6 +534,26 @@ public sealed partial class Battle
             result += MaxHealthOf(t);
         return Math.Max(baseDmg > 0 ? 1 : 0, result);
     }
+
+    /// <summary>
+    /// FUN_00a58d30(A, D) under _PC_24 | _RC_CHOP: d = A − D (FSUB, stored float); the coefficient is DamageIncrease
+    /// (RPGStats +0x1d0) for d &gt; 0, else DamageDecrease (+0x1d8), raised to 0 when not positive; p = coefficient · d;
+    /// d &gt; 0 → p + 1, else 1 / (1 − p), every step chopped to a float.
+    /// </summary>
+    public static float AttackDefenceFactor(int attack, int defence, float increase, float decrease)
+    {
+        float d = X87.Sub(attack, defence);
+        float k = d > 0 ? increase : decrease;
+        if (!(k > 0)) k = 0;
+        float p = X87.Mul(k, d);
+        return d > 0 ? X87.Add(p, 1f) : X87.Div(1, X87.Sub(1f, p));
+    }
+
+    /// <summary>A 1 + x factor of the damage chain: FADD of the float x and 1.0, chopped.</summary>
+    static float OnePlus(double x) => X87.Add(1f, (float)x);
+
+    /// <summary>A 1 − x factor of the damage chain: FSUB of the float x from 1.0, chopped.</summary>
+    static float OneMinus(double x) => X87.Sub(1f, (float)x);
 
     bool IsFavoredEnemy(HeroState h, Unit t)
     {

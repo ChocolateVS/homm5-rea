@@ -227,7 +227,7 @@ for ident in sorted(i for i in FRAG if i not in _listed):
     rows['week' if ident.startswith('WEEK_OF_') else 'artifact'].append((ident,) + FRAG[ident])
 
 MECH = [
-    ('Damage pipeline (base roll, attack/defence factor uncapped, truncation)', 'MATCH', '00a597a0, 00a58de0, 00a5c5a0, 00a5a900', 'EXE_FINDINGS'),
+    ('Damage pipeline (base roll, attack/defence factor uncapped, truncation) under the x87 control word (_PC_24, _RC_CHOP): one float chopped at every factor, + 1e-4f chopped, _ftol truncation', 'FIXED', '00a597a0, 00a58de0, 00a5c5a0, 00a5c790, 00a5a900, 00a58d30, 00d11a60, 00a67bf3', 'DamageX87Tests (combat_x87.md)'),
     ('Range penalty (squared distance vs (width/2)²)', 'MATCH', '00a5c5a0, 00b3c690', 'EXE_FINDINGS'),
     ('Luck: clamp ±5, 10 %/point, once per attack', 'MATCH', '00a6b820, 008a3ef0, 00a5a170', 'EXE_FINDINGS'),
     ('Morale: clamp ±5 (00a6bd10), 10 %/point, ATB 0.5 good/bad (00a6cf90/00a6cd80); bad morale rolled when the gauge crosses 1.0 in the tick (004d90d0 ready hooks), no turn start / end', 'FIXED', '00a6bd10, 00a6cf90, 00a6cd80, 004d90d0, 00a6b8f0, 008a8140', 'AuditSweep17Tests.BadMoraleStrikesAtTheCrossingWithoutATurn (combat_sweep_17.md)'),
