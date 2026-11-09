@@ -236,8 +236,94 @@ Measured on the same busy machine (headless Chromium with the GPU, A2M1, `smoke.
 
 What the load still spends (browser, A2M1, `[H5] load:` buckets): converting ~150 characters (Granny decode, Oodle1 in
 C#, clip baking) ~30 s on this busy machine, models / meshes ~9 s, texture reads ~4 s, WebGL shader compiles ~20 s
-(Chrome keeps compiled shaders in its GPU cache, so later visits compile less). Next: keep decoded Granny clips in
-IndexedDB between visits.
+(Chrome keeps compiled shaders in its GPU cache, so later visits compile less). Since then:
+
+* **Decoded characters kept between visits.** `AnimSetLoader.DecodedCache` (`IDecodedCache`, `H5.Assets`) stores each
+  Granny skeleton and each baked clip (with its text events) under `skel/<v>/<uid>` / `clip/<v>/<rate>/<uid>`; in the
+  browser that is IndexedDB (`wwwroot/h5cache.js`, database `h5reborn-decoded`, keys prefixed with the install's data
+  fingerprint, at most 384 MB, least recently used dropped first; `web/game/src/Web/WebDecodedCache.cs`). IndexedDB is
+  asynchronous and the builders are not, so before the object pass `AdvWorld.Build` names every key the map's objects
+  will read and waits (frames keep coming) until they are in memory (`[H5] web: decoded cache: N of M entries`); they
+  are let go once the map is built. A hit skips the pak read, the Granny / Oodle1 decode and the baking; the stored
+  floats are the baked ones bit for bit (`DecodedCacheTests`). The desktop has no store (nothing changes there).
+  `?nodecoded` turns it off; `smoke.mjs --only decoded` loads A2M1 twice in one browser profile.
+* **Faster baking (both builds, same results).** `GrannyConvert.ToClip` samples with plain loops instead of LINQ
+  `Select().ToArray()` (that generic path ran in the browser's interpreter: 8.7 % → 2.2 % of the object pass), and
+  `CharacterBuilder` sets each Godot track's keys in one call (the track's `keys` array) instead of one interop call per
+  key, whenever the key times are strictly increasing beyond Godot's merge tolerance (~85 % of the stock tracks; the
+  rest are inserted key by key as before). `--anim-keys-check` builds every clip both ways and compares every key:
+  0 differences over A2M1's clips.
+* **Shaders compiled ahead** (next section): the map's warm-up phase went from ~22 s to ~1.5 s.
+
+Measured (headless Chromium with the GPU, A2M1, busy machine; `smoke.mjs --only decoded`):
+
+| | first visit | second visit (same browser) |
+|---|---|---|
+| object pass (`load: objects`) | 32.7 s | 15.7 s |
+| character templates (`ch template`) | 26.4 s | 11.7 s |
+| decoded-cache hits | 0 / 655 | 655 / 655 |
+| map warm-up phase (shaders) | 1.5 s | 1.5 s |
+| page opened → adventure on screen | 75 s | 60 s |
+| wasm heap after load | 820 MB | 724 MB |
+
+### Shaders (first visit)
+
+Godot compiles a WebGL program the first time something is drawn with it and waits for it; on Chrome / Windows (ANGLE
+on Direct3D) a big scene program takes 1–2 s, and the first menu frames need ~50 programs, the first map frames ~80
+more, so a first visit froze for tens of seconds. Browsers keep compiled programs in their GPU cache and find them
+again for an identical program in a context with the same extensions enabled. `wwwroot/h5shaders.js` compiles the
+programs listed in `wwwroot/h5shaders.json` in a hidden WebGL 2 context (the game context's extensions, from the list)
+with `KHR_parallel_shader_compile`, six at a time without waiting, from the moment the page opens (while the player
+picks the folder and the engine boots); Godot's own compiles of the same programs then come from the cache. It never
+changes what is drawn; without `KHR_parallel_shader_compile` it does nothing (it would block the page); `?noshaderwarm`
+turns it off. It runs on every visit (a program already cached links in milliseconds).
+
+The list is recorded from the game, not written by hand: `node smoke.mjs <dist> --install … --gpu --only
+menu,duel,adventure --record-shaders web/game/H5Reborn.web/wwwroot/h5shaders.json` (every program the game links, in
+first-use order, plus the extensions its context enabled; 111 programs, 1.4 MB, ~60 KB compressed). Re-record it after a
+Godot / 2dog bump or when the game's shaders change: stale entries only cost a compile, missing ones are compiled by
+Godot as before.
+
+| headless Chromium, GPU, folder picked 20 s after the page opened | before | now |
+|---|---|---|
+| time Godot waited for program links: main menu | 11.4 s | 0.13 s |
+| … then A2M1 | 19.4 s | 0.26 s |
+| 111 programs compiled in the background | – | 6 s (no frame longer than 0.4 s meanwhile) |
+| longest frame gap up to the main menu | ~20 s | 8 s (engine start + menu scene load) |
+
+### Frame rate
+
+A browser CPU profile of the adventure map (`H5_WEB_PUBLISH_ARGS=-p:WasmNativeStrip=false tools/web/build.sh` keeps
+function names; `tools/web/harness/prof.mjs` records one headless) showed, in order:
+
+1. **Half of every frame waiting for the GPU process in `getParameter`.** Godot asks for its WebGL context with
+   `explicitSwapControl`; without OffscreenCanvas, Emscripten (`-sOFFSCREEN_FRAMEBUFFER=1`, as in Godot's own web link)
+   emulates that by rendering into an offscreen framebuffer with `preserveDrawingBuffer` and copying it to the canvas in
+   every `emscripten_webgl_commit_frame`, and that copy starts with `gl.getParameter()` calls, each a synchronous round
+   trip that waits for the whole frame's commands. `web/game/H5Reborn.web/emscripten/h5_webgl_direct.js` (an Emscripten
+   JS library linked by `H5Reborn.web.csproj`, single-threaded build only) creates the same context straight on the
+   canvas: no offscreen buffer, no copy; the commit does nothing and the browser presents when the
+   `requestAnimationFrame` callback (where Godot's web main loop draws) returns. Same picture. The page logs
+   `[H5] web: WebGL context on the canvas directly`.
+2. **A quarter of the frame animating ~300 map objects, mostly off screen** (Godot's `AnimationMixer` and skeleton
+   updates). Objects outside the camera's view (with a margin for their size and shadow), on the other floor, or with
+   the whole map hidden behind the town screen, that play a *looping* clip, are held: their `AnimationPlayer` switches
+   to manual processing and the skipped time is owed; when they come back into view (or start another clip) the
+   player first advances by the owed time in one step, so the clip is exactly where continuous playback would have put
+   it (`AdvWorld.PauseOffscreenAnimations`; desktop too). One-shot clips always play normally; heroes always animate.
+   `--adventure-animate-all` turns it off to compare.
+3. Smaller C# costs: `Viewport.GetCamera3D()` called every frame for the sky dome cost ~2 ms in the browser (its
+   interop call went through the interpreter); the map's own camera is used when it is the current one.
+   `WebStorage`'s 2-second watch of `user://` used System.IO's directory enumeration, ~40 ms per scan even for an empty
+   folder; it now walks the folder with Godot's `DirAccess`.
+
+Headless Chromium with the GPU, A2M1 (busy machine):
+
+| | 4739f4f | WebGL direct only | now |
+|---|---|---|---|
+| frame rate on the map (`rafFps`) | 9.9 fps | 16.7 fps | 48–51 fps |
+
+What a frame spends now: Godot's rendering, the remaining on-screen animation, audio mixing.
 
 ### Multiplayer (joining from the browser)
 
@@ -311,23 +397,33 @@ so every dev flag works:
 | `/?args=--adventure=A2M1%20--adventure-shadow-splits=1` | the sun's shadow with 0 (off), 1, 2 or 4 (default) splits, to compare frame rates |
 | `/?fresh` | ignore the stored copy and ask for the folder |
 | `/?nocache` | do not copy the picked files to browser storage |
+| `/?nodecoded` | do not use the decoded-character store (IndexedDB) |
+| `/?noshaderwarm` | do not compile the listed shader programs ahead |
+| `/?recordshaders` | record the programs the game links (`h5shaders.recorded()`; used by `smoke.mjs --record-shaders`) |
+| `/?args=--adventure=A2M1%20--adventure-animate-all` | animate every map object every frame (off-screen objects are normally held) |
+| `/?args=--adventure=A2M1%20--anim-keys-check` | build every clip key by key too and compare (`[H5] anim keys check: …`) |
 
 The web-only autoload `WebProbe` logs `[H5] web: scene <name>`, `[H5] web: main menu on screen`,
 `[H5] web: adventure on screen` and every 10 s a stats line (fps, GC heap, video memory, number and MB of file
-reads) to the browser console.
+reads, parsed xdb documents and their size) to the browser console.
 
 **Headless smoke test** (never opens a window; uses the local install):
 
 ```sh
 cd tools/web/harness && npm install
 node smoke.mjs ../../../web/dist --install "/path/to/Tribes of the East" [--gpu] [--coi] \
-     [--only menu,duel,adventure,endturn,persist,audio,lobby,remember] [--map-arg --adventure=A2M1]      [--server src/H5.Server/bin/.../H5.Server.dll] [--out DIR]
+     [--only menu,duel,adventure,endturn,persist,decoded,audio,lobby,remember] [--map-arg --adventure=A2M1] \
+     [--server src/H5.Server/bin/.../H5.Server.dll] [--out DIR] [--pick-delay s] [--init extra.js] [--record-shaders file]
 ```
 
 It serves the folder, picks the install through the page's folder input, waits for each screen's log marker and
 saves `DIR/<scenario>.png`, `<scenario>.log` and `results.json` (time, fps, wasm heap). `--gpu` renders with the
 machine's GPU (still headless); the default SwiftShader software renderer works anywhere but is slow for 3D.
 `remember` checks the OPFS flow (first visit picks and copies, second visit starts without picking).
+`decoded` loads A2M1 twice in one browser profile and reports both object passes and the second visit's
+decoded-cache hits (fails without hits). `--pick-delay` waits like a player choosing the folder (the shader warm-up runs
+meanwhile); results.json carries each page's `shaderWarm` state. `--init` adds a script before the page's own
+(instrumentation); `--record-shaders` writes the shader warm-up list (see *Shaders*).
 `endturn` ends the first turn on the map (`--save-dev=endturn`) and waits for every computer player and the human's
 day 2 (`[H5] web: adventure day … human turn`); `maxFrameGapMs` is the longest the page went without a frame after
 the map was up. `persist` quicksaves (visit 1), reloads in the same browser profile and checks the save is listed
@@ -359,14 +455,11 @@ is virtual.
 
 ## Not working yet in the browser (ranked)
 
-1. **Performance (CPU).** Map loading is spread over frames behind the loading picture and ~40 % shorter (see
-   *Loading an adventure map*); the hover pick no longer walks every object's nodes twice per frame (cached mesh lists
-   with their world bounds, one pick per frame shared by cursor and tooltip: 25 → 5 ms per frame on the desktop, same
-   picks over 10 000 test rays). The adventure map still runs at ~10 fps headless: a browser CPU profile
-   (`H5_WEB_PUBLISH_ARGS=-p:WasmNativeStrip=false tools/web/build.sh` keeps function names) spends about half of the
-   frame waiting in `getParameter` inside Emscripten's frame commit (`blitOffscreenFramebuffer`), i.e. on the GPU
-   process; fewer shadow splits (`--adventure-shadow-splits=1`, 885 → 608 draw calls) did not change the frame rate.
-   Next: find what the GPU process spends the frame on; persistent decoded-asset cache.
+1. **Performance (CPU).** The adventure map runs at ~50 fps headless (was ~10: see *Frame rate*); map loading is
+   spread over frames behind the loading picture, shaders are compiled ahead on a first visit (*Shaders*) and decoded
+   characters are kept between visits (*Loading an adventure map*). Still open: a first visit's object pass (~30 s on a
+   busy machine: synchronous range reads of the picked files, ~1-2 ms each, Granny decode, Godot resource building),
+   and ~8 s of engine start and main menu loading before the first menu frame.
 2. ~~Adventure AI turns (threads)~~ — fixed: computer turns run one per frame (see *Computer players' turns*).
 3. ~~Saves, profiles and settings do not persist~~ — fixed: `user://` persists in IndexedDB, with export / import
    (see *Saves, profiles and settings*).
@@ -384,8 +477,10 @@ is virtual.
    (`[H5] web: wasm heap grew to N MB`, h5data.js) next to the game's lines. Shared character data cut A2M1 to 822 MB;
    the largest maps fit: 176×176 two floors 819 MB, 216×216 917 MB. Opening an adventure map now first lets go of what
    the previous screens loaded and nothing uses (`Game.ReleaseUnused`: textures no material holds, the decoded Granny
-   cache; a reload of A2M1 released 94 textures). Still open: the XDocument cache (`XdbLoader`) grows for the whole
-   session; mobile browsers without S3TC would need RGBA8 textures (4× VRAM).
+   cache; a reload of A2M1 released 94 textures). The parsed-xdb cache (`XdbLoader`) is bounded: least recently used
+   documents are dropped past 32 MB of xdb text (`XdbLoader.DefaultMaxCachedBytes`; A2M1 reads ~3 000 documents, ~4 MB;
+   a dropped document is parsed again on its next use). Still open: mobile browsers without S3TC would need RGBA8
+   textures (4× VRAM).
 7. ~~Data fingerprint~~ — fixed: `RandomAccessSources.Length` gives the picked files' real sizes.
 8. **First visit download/copy.** The OPFS copy of ~2 GB takes ~2 minutes in the background; the picked originals
    are used meanwhile. Browser storage quotas may refuse it on small disks (then the folder is asked for each visit).
