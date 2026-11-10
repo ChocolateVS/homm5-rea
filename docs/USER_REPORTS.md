@@ -32,3 +32,6 @@ from the description. Move an item to "Done" with the commit when fixed.
     also draws unexplored geometry black rather than hiding it, but our blending (linear vs gamma)
     makes the shapes ~2.5× more visible; re-check with the user's view (camera tilted down, not
     only through light beams) and match the original's look.
+14. **Keyboard shortcuts:** some don't work, e.g. Space to move (continue the hero's route) on the
+    adventure map. Check every shortcut against the stock input bindings (input_a2.cfg etc.) and the
+    exe's handlers, in the desktop and the browser build (the browser may swallow keys).
