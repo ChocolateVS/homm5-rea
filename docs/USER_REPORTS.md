@@ -40,3 +40,8 @@ from the description. Move an item to "Done" with the commit when fixed.
 16. **Start of combat:** the user's hero stood inside his war machines, and both heroes were shown
     (check hero model placement vs war machine positions per the exe's arena setup, and which heroes
     the exe shows at battle start / in duels).
+17. **Combat hover highlight:** the user asks whether a hovered stack should be highlighted. Known so far
+    (AUDIT_COMBAT_UI, commit 84b052b): hovering another stack draws its movement range as grid kind 7.
+    Not yet traced: whether the hovered unit itself gets an outline / glow / base marker (likely related
+    to item 10, "troops normally have something around them") — trace the exe's hover/selection
+    rendering of units (CombatSelectionDesc, unit materials) and match it.
