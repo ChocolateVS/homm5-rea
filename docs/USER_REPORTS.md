@@ -45,3 +45,9 @@ from the description. Move an item to "Done" with the commit when fixed.
     Not yet traced: whether the hovered unit itself gets an outline / glow / base marker (likely related
     to item 10, "troops normally have something around them") — trace the exe's hover/selection
     rendering of units (CombatSelectionDesc, unit materials) and match it.
+18. **Attacking war machines:** the user could not attack the enemy's war machines in combat. Check the
+    exe's attack / shoot target rules for war-machine units (ballista, ammo cart, first aid tent;
+    catapult) and our Battle legality + cursor/click handling for them.
+19. **Combat graphics glitches:** "a little bit glitchy" in battle (browser build) — details not given;
+    reproduce in a browser duel (smoke harness) and compare with the desktop build to find what
+    looks wrong (z-fighting, overlay blend, shadows, flicker).
