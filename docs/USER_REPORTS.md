@@ -35,3 +35,8 @@ from the description. Move an item to "Done" with the commit when fixed.
 14. **Keyboard shortcuts:** some don't work, e.g. Space to move (continue the hero's route) on the
     adventure map. Check every shortcut against the stock input bindings (input_a2.cfg etc.) and the
     exe's handlers, in the desktop and the browser build (the browser may swallow keys).
+15. **Duel setup screen:** the UI for starting a duel looks broken ("a bit cooked") — compare the
+    duel preset / duel start screens with the exe's screen code and UI data.
+16. **Start of combat:** the user's hero stood inside his war machines, and both heroes were shown
+    (check hero model placement vs war machine positions per the exe's arena setup, and which heroes
+    the exe shows at battle start / in duels).
