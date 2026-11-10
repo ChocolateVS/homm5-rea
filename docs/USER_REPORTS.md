@@ -50,4 +50,10 @@ from the description. Move an item to "Done" with the commit when fixed.
     catapult) and our Battle legality + cursor/click handling for them.
 19. **Combat graphics glitches:** "a little bit glitchy" in battle (browser build) — details not given;
     reproduce in a browser duel (smoke harness) and compare with the desktop build to find what
-    looks wrong (z-fighting, overlay blend, shadows, flicker).
+    looks wrong (z-fighting, overlay blend, shadows, flicker). Detail from the user: the blue squares
+    under a stack flicker against the green movement grid — looks like z-fighting between overlapping
+    grid-mark quads (select/target kinds vs the movement area, commits 9537a77 / 84b052b); check the
+    exe's draw order / depth state for the CombatSelectionDesc layers (0055c480) and match it.
+20. **Griffin Battle Dive:** "just doesn't work at all" in play. The rules were ported in sweeps 14–16
+    (landing FUN_00979680, strike timing 00985474.., finish 0x9b); check the player-facing path —
+    ability button / cursor / target click in the combat UI, and the AI's use — end to end in a duel.
