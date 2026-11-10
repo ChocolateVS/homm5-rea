@@ -156,15 +156,27 @@
     const panel = document.createElement('div');
     panel.id = 'h5-picker';
     panel.innerHTML =
-      '<h1>H5Reborn</h1>' +
-      '<p>Choose your <b>Heroes of Might and Magic V: Tribes of the East</b> folder (or the <code>.pak</code> files from its ' +
-      '<code>data</code> folder). The files stay on this computer; nothing is uploaded.</p>' +
-      (window.showDirectoryPicker ? '<p><button id="h5-fsa" type="button">Choose game folder…</button></p>' : '') +
-      '<p><label>Game folder: <input id="h5-dir" type="file" webkitdirectory></label></p>' +
-      '<p><label>or .pak files: <input id="h5-paks" type="file" multiple accept=".pak,.h5u,.h5m"></label></p>' +
-      '<p><label><input id="h5-opfs" type="checkbox" checked> Remember (keeps a copy in this browser\'s storage, ~2 GB)</label></p>' +
-      '<p><button id="h5-forget" type="button">Forget the stored copy</button></p>' +
-      '<p id="h5-status"></p>';
+      '<div class="h5-card" role="dialog" aria-labelledby="h5-title">' +
+      '<h1 id="h5-title">H5Reborn</h1>' +
+      '<p class="h5-sub">Heroes of Might and Magic V: Tribes of the East</p>' +
+      '<hr>' +
+      '<p>To play, choose your own installed game folder (the one that contains the <code>data</code> folder), ' +
+      'or select the <code>.pak</code> files from inside its <code>data</code> folder.</p>' +
+      '<p>Your files stay on this computer. Nothing is uploaded.</p>' +
+      '<div class="h5-actions">' +
+      (window.showDirectoryPicker ? '<button id="h5-fsa" class="h5-btn" type="button">Choose game folder</button>' : '') +
+      '<label class="h5-btn">' + (window.showDirectoryPicker ? 'Select folder (alternative)' : 'Choose game folder') +
+      '<input id="h5-dir" class="h5-hidden-input" type="file" webkitdirectory></label>' +
+      '<label class="h5-btn">Select .pak files' +
+      '<input id="h5-paks" class="h5-hidden-input" type="file" multiple accept=".pak,.h5u,.h5m"></label>' +
+      '</div>' +
+      '<p class="h5-check"><input id="h5-opfs" type="checkbox" checked>' +
+      '<label for="h5-opfs">Remember the game files in this browser (about 2 GB), so you only choose them once.</label></p>' +
+      '<p id="h5-status" aria-live="polite"></p>' +
+      '<hr>' +
+      '<p class="h5-foot">Press F11 for full screen. ' +
+      '<button id="h5-forget" class="h5-btn h5-small" type="button">Forget stored files</button></p>' +
+      '</div>';
     document.body.appendChild(panel);
     const pick = (list, how) => {
       if (!use(list, how)) return;

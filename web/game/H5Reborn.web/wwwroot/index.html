@@ -96,31 +96,126 @@
 
         #h5-picker {
             position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+            inset: 0;
             z-index: 10;
-            max-width: min(92vw, 560px);
-            padding: 1.2rem 1.5rem;
-            border-radius: 8px;
-            background: rgba(14, 18, 26, .94);
-            border: 1px solid #4a5568;
-            color: #e2e6ee;
-            font: 15px/1.45 system-ui, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background: radial-gradient(ellipse at center, #2a1f14 0%, #120c07 70%, #070403 100%);
+            font: 17px/1.5 Georgia, "Palatino Linotype", "Book Antiqua", serif;
+        }
+
+        #h5-picker .h5-card {
+            width: min(100%, 620px);
+            max-height: calc(100vh - 32px);
+            overflow: auto;
+            padding: 1.6rem 2rem 1.4rem;
+            color: #2b1d0e;
+            background: linear-gradient(180deg, #efe1bb 0%, #e3cf9f 55%, #d6bd86 100%);
+            border: 3px solid #8a6a2c;
+            border-radius: 6px;
+            box-shadow: 0 0 0 2px #2b1d0e, 0 0 0 5px #b8913f, 0 18px 60px rgba(0, 0, 0, .75), inset 0 0 40px rgba(110, 72, 20, .35);
         }
 
         #h5-picker h1 {
-            margin: 0 0 .5rem;
-            font-size: 1.3rem;
+            margin: 0 0 .2rem;
+            text-align: center;
+            font-size: 2rem;
+            letter-spacing: .06em;
+            color: #5a1d0c;
+            text-shadow: 0 1px 0 rgba(255, 240, 200, .7);
+        }
+
+        #h5-picker .h5-sub {
+            margin: 0 0 1rem;
+            text-align: center;
+            font-style: italic;
+            color: #6b4a1e;
+        }
+
+        #h5-picker hr {
+            border: 0;
+            height: 2px;
+            margin: .9rem 0;
+            background: linear-gradient(90deg, transparent, #8a6a2c, transparent);
         }
 
         #h5-picker p {
-            margin: .55rem 0;
+            margin: .6rem 0;
+        }
+
+        #h5-picker code {
+            font: 600 .92em Consolas, monospace;
+            background: rgba(90, 60, 20, .14);
+            padding: 0 .25em;
+            border-radius: 3px;
+        }
+
+        #h5-picker .h5-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .6rem;
+            justify-content: center;
+            margin: 1rem 0 .4rem;
+        }
+
+        #h5-picker .h5-btn {
+            display: inline-block;
+            cursor: pointer;
+            padding: .6rem 1.2rem;
+            font: 700 1rem Georgia, serif;
+            color: #f6e7bf;
+            background: linear-gradient(180deg, #7a2a14 0%, #57180a 100%);
+            border: 2px solid #c9a24f;
+            border-radius: 4px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 220, 150, .35);
+            text-shadow: 0 1px 1px #000;
+        }
+
+        #h5-picker .h5-btn:hover, #h5-picker .h5-btn:focus-within, #h5-picker .h5-btn:focus-visible {
+            background: linear-gradient(180deg, #9a3a1c 0%, #6c2010 100%);
+            outline: none;
+        }
+
+        #h5-picker .h5-btn.h5-small {
+            padding: .35rem .8rem;
+            font-size: .9rem;
+        }
+
+        #h5-picker .h5-hidden-input {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+        }
+
+        #h5-picker .h5-check {
+            display: flex;
+            gap: .5rem;
+            align-items: flex-start;
+            justify-content: center;
+            font-size: .95rem;
+        }
+
+        #h5-picker .h5-check input {
+            margin-top: .3em;
+            accent-color: #7a2a14;
+        }
+
+        #h5-picker .h5-foot {
+            text-align: center;
+            font-size: .85rem;
+            color: #6b4a1e;
         }
 
         #h5-status {
-            opacity: .8;
-            min-height: 1.2em;
+            text-align: center;
+            font-weight: 700;
+            color: #5a1d0c;
+            min-height: 1.4em;
         }
 
         #status-notice {
@@ -143,6 +238,15 @@
 </head>
 
 <body>
+    <script>
+        // Let the browser handle F11 (full screen): registered before the engine starts, in the capture
+        // phase, so the game never sees the key and never calls preventDefault on it.
+        (function () {
+            const isF11 = (e) => e.key === 'F11' || e.code === 'F11' || e.keyCode === 122;
+            for (const type of ['keydown', 'keyup', 'keypress'])
+                window.addEventListener(type, (e) => { if (isF11(e)) e.stopImmediatePropagation(); }, true);
+        })();
+    </script>
     <canvas id="canvas">
         Your browser does not support the canvas tag.
     </canvas>
