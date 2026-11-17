@@ -21,9 +21,6 @@ from the description. Move an item to "Done" with the commit when fixed.
 10. **Ownership / selection marks:** a captured mine (or other object) should show something on top
     (owner flag/banner); troops normally have something around them (ring/base marker).
 11. **Minimap icons:** the icons for castles and other objects are wrong.
-12. **Browser — bug reports:** add an in-game way to submit a report (text, optional screenshot,
-    build/commit, map/save state) that is stored on the user's server, so issues found while playing
-    are tracked. Server: apps/h5reborn-web on the LAN server (see memory / docs/WEB_BUILD.md).
 13. **Fog of war:** unexplored areas are black, but tilting the camera down shows the outlines of
     things in the darkness. Earlier finding (docs/rules/ADVENTURE_RENDER.md, 7be9d21): the original
     also draws unexplored geometry black rather than hiding it, but our blending (linear vs gamma)
@@ -65,3 +62,9 @@ from the description. Move an item to "Done" with the commit when fixed.
    empty; the exe (009946e0) uses the RPGRoot texture TEXTURE_INFO (UI/MessageBox/Message) then. (MMH55's Box0p
    has no Face window, so there the box shows no picture at all, as in MMH55.) — commit "adventure: start-of-week
    box shows TEXTURE_INFO for non-creature weeks".
+12. **Browser — bug reports:** "Report a problem" in the page (faded button bottom-right, F9, `?report`;
+   `wwwroot/h5report.js`): text + optional canvas screenshot, newest save and console log tail, plus build,
+   browser and current scene/map (`globalThis.h5game` from WebProbe). Stored by `tools/web/report-server`
+   (one folder per report; read-only list at `/api/reports/view`); deploy steps in docs/WEB_BUILD.md,
+   "Bug reports" — commits "tools/web/report-server: bug-report receiver …" (5aebbf7) and
+   "web: Report a problem dialog …".

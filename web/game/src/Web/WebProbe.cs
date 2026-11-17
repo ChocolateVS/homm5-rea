@@ -6,6 +6,7 @@ namespace H5Reborn.Web;
 /// Web-build-only autoload (added to the staged project.godot by tools/web/build.sh): prints a log line when a
 /// screen is up, so the headless smoke test (tools/web/harness/smoke.mjs) knows when to take its screenshot, plus a
 /// periodic status line (fps, memory, file reads). Observes only; never changes what the game does.
+/// Also keeps <c>globalThis.h5game</c> in the page up to date (scene, map, day, player) for bug reports (h5report.js).
 /// </summary>
 public partial class WebProbe : Node
 {
@@ -27,6 +28,7 @@ public partial class WebProbe : Node
             _scene = name;
             _framesInScene = 0;
             GD.Print($"[H5] web: scene {name}");
+            PublishState(cur);
         }
         // The adventure screen builds its map over several frames: count from when it is loaded.
         if (cur is H5Reborn.Adventure.AdventureScreen { IsLoaded: false }) _framesInScene = 0;
@@ -46,6 +48,7 @@ public partial class WebProbe : Node
             {
                 _turn = t;
                 GD.Print($"[H5] web: adventure day {t.Day} player {t.CurrentPlayer} {(t.IsHumanTurn ? "human turn" : "computer turn")}");
+                PublishState(cur);
             }
         }
         // Multiplayer lobby: its status lines (connected, errors), once the game made the service.
@@ -72,5 +75,19 @@ public partial class WebProbe : Node
                      $"objs={Performance.GetMonitor(Performance.Monitor.RenderTotalObjectsInFrame)} draws={Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame)} " +
                      $"prims={Performance.GetMonitor(Performance.Monitor.RenderTotalPrimitivesInFrame)} nodes={Performance.GetMonitor(Performance.Monitor.ObjectNodeCount)}");
         }
+    }
+
+    /// <summary>The page's <c>globalThis.h5game</c>: what a bug report says about the game (h5report.js).</summary>
+    void PublishState(Node? cur)
+    {
+        var d = new Godot.Collections.Dictionary { ["scene"] = _scene ?? "none" };
+        if (cur is H5Reborn.Adventure.AdventureScreen { Session: { } ses })
+        {
+            if (ses.Files is { } f) d["map"] = f.Source == f.MapXdbPath ? f.Source : $"{f.Source} ({f.MapXdbPath})";
+            if (_turn is { } t) { d["day"] = t.Day; d["player"] = t.Player; d["humanTurn"] = t.Human; }
+            d["remote"] = ses.IsRemote;
+        }
+        try { JavaScriptBridge.Eval("globalThis.h5game=" + Json.Stringify(d), false); }
+        catch (Exception e) { GD.Print($"[H5] web: h5game state not set: {e.Message}"); }
     }
 }

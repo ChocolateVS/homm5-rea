@@ -180,6 +180,102 @@ e.g. `profiles/Player/saves/save_0.sav`; the same layout as the desktop's
 separate IndexedDB database and reloads; the page merges them into `/userfs` *before* the engine mounts it, so the
 running game's write-back can never undo an import. Clearing the site's data in the browser deletes the saves.
 
+### Bug reports
+
+**In the game** (`wwwroot/h5report.js`): the faded **Report a problem** button in the bottom-right corner, **F9**
+(not bound by the game; the page takes it before the engine sees it) or `?report` opens a dialog themed like the
+data picker. The player writes what happened and chooses what to attach: a screenshot of the game canvas (taken
+when the dialog opens, downscaled to ≤ 1280 px wide, JPEG 0.8), their newest `.sav` from `user://` (≤ 4 MB) and the
+console log tail (the last 1 500 lines / 256 KB, kept from page start, uncaught errors included). Always sent: the
+build (`build-info.json`), the browser, the page size and what the game last told the page (`globalThis.h5game`,
+set by `WebProbe`: `scene`, and on an adventure map `map`, `day`, `player`, `humanTurn`, `remote`). While the
+dialog is open the game receives no keys; Esc or F9 closes it. It is sent to `api/report` relative to the page
+(override: `globalThis.H5_REPORT_URL`), i.e. the same site and the same login as the game.
+
+**Payload** (`POST /api/report`, `Content-Type: application/json`, ≤ 10 MB; a desktop build can send the same):
+
+| field | | |
+|---|---|---|
+| `format` | required | `"h5reborn-report/1"` |
+| `text` | required | the description, ≤ 20 000 characters |
+| `contact` | optional | name, ≤ 200 characters |
+| `client` | optional | object, ≤ 16 KB as JSON: `platform` (`web` / `desktop`), `commit`, `dirty`, `built`, `aot`, `godot`, `userAgent`, `language`, `page`, `viewport`, `time` |
+| `game` | optional | object, ≤ 16 KB: `scene`, `map`, `day`, `player`, `humanTurn`, `remote`, `args` |
+| `log` | optional | string, ≤ 512 K characters |
+| `screenshot` | optional | `data:image/jpeg;base64,…` or `data:image/png;base64,…`, ≤ 4 MB decoded (the bytes must match the type) |
+| `save` | optional | `{ "name": "profiles/Player/saves/save_0.sav", "data": "<base64>" }`, ≤ 6 MB decoded |
+
+Answers: `201 {"ok":true,"id":"20261117-153012-ab12cd"}`; errors `{"ok":false,"error":"…"}` with 400 (invalid),
+413 (too big), 415 (not JSON), 429 (rate limit, `Retry-After`), 507 (storage full). Other fields are ignored.
+
+**Receiver** (`tools/web/report-server/`, Node ≥ 20, no dependencies, Dockerfile). Each report is a folder
+`<data>/<id>/` with `report.json` (the fields above + `received`: time, client address, user agent, size),
+`screenshot.jpg|png`, `save.sav`, `log.txt`. Read-only views: `GET /api/reports` (JSON list, newest first),
+**`/api/reports/view`** (HTML list with thumbnails), `/api/reports/<id>` (report.json), `/api/reports/<id>/view`,
+`/screenshot`, `/save` (download), `/log`; `GET /api/health`. No delete over HTTP (remove folders on the server).
+Settings (environment): `H5R_REPORTS_DIR` (`/data` in the image), `H5R_REPORTS_PORT` (8170),
+`H5R_REPORTS_RATE_MAX` / `H5R_REPORTS_RATE_WINDOW` (6 reports per 600 s per address), `H5R_REPORTS_MAX_TOTAL_MB`
+(2048: refuses new reports above it), `H5R_REPORTS_READ_TOKEN` (if set, the read views also need `?token=` or
+`Authorization: Bearer`), `H5R_REPORTS_TRUST_PROXY` (1: client address from `X-Real-IP` / first `X-Forwarded-For`).
+
+Tests: `cd tools/web/report-server && npm test` (= `node --test test/server.test.mjs`; validation, storage,
+views, escaping, limits, rate limit, token). Locally: `node tools/web/report-server/server.mjs`
+(data in `./data`), then put it behind the page's origin (the page posts to its own `api/report`).
+
+**Deploying on the LAN server** (`/opt/containers/config/apps/h5reborn-web`): the receiver runs as a second
+container that only nginx can reach, so every request passes the site's guard (Caddy: open on the LAN, basic_auth
+from outside) — players need the site login to send, and the read views are behind the same login.
+
+1. Copy the receiver: `tar -C tools/web/report-server -cf - Dockerfile .dockerignore package.json server.mjs | ssh server 'mkdir -p /opt/containers/config/apps/h5reborn-web/report-server && tar -C /opt/containers/config/apps/h5reborn-web/report-server -xf -'`
+   and make the data folder writable for the image's user (uid 1000):
+   `ssh server 'cd /opt/containers/config/apps/h5reborn-web && mkdir -p reports && sudo chown 1000:1000 reports'`
+   (git-ignore `reports/` there like `site/`).
+2. `docker-compose.yml` — add the service and a private network, and put the existing nginx service on it too:
+
+   ```yaml
+   services:
+     h5reborn-web:              # the existing nginx service: add `reports` to its networks
+       networks: [<its current networks>, reports]
+     h5reborn-reports:
+       build: ./report-server
+       container_name: h5reborn-reports
+       restart: unless-stopped
+       environment:
+         H5R_REPORTS_DIR: /data
+         # H5R_REPORTS_READ_TOKEN: ${H5R_REPORTS_READ_TOKEN}   # optional extra lock for the read views
+       volumes:
+         - ./reports:/data
+       networks: [reports]      # no ports, no caddy labels: only nginx reaches it
+   networks:
+     reports:
+       internal: true
+   ```
+
+3. nginx (the `server` block that serves `./site`; nginx's default body limit is 1 MB):
+
+   ```nginx
+   location /api/ {
+       resolver 127.0.0.11 valid=30s;                  # Docker's DNS: nginx also starts while the receiver is down
+       set $h5reports http://h5reborn-reports:8170;
+       proxy_pass $h5reports;                          # no URI part: the /api/... path is passed unchanged
+       proxy_http_version 1.1;
+       proxy_set_header Host $host;
+       proxy_set_header X-Real-IP "";                  # drop a client-supplied one
+       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;   # first entry = the player (via Caddy or direct)
+       client_max_body_size 11m;
+       proxy_read_timeout 60s;
+       add_header Cache-Control "no-store" always;
+   }
+   ```
+
+4. `docker compose up -d --build`, then check: `curl -s http://127.0.0.1:8160/api/health` on the server →
+   `{"ok":true}`; from outside the LAN `https://h5reborn.rowansserver.com/api/reports/view` must ask for the login;
+   open `…/api/reports/view` to read reports. The LAN port (:8160) is open like the site itself: to keep LAN players
+   from reading reports, set `H5R_REPORTS_READ_TOKEN` (then open `/api/reports/view?token=…`) or add
+   `location /api/reports { allow <your PC's IP>; deny all; …same lines as above… }` next to the block above.
+
+A site without the receiver answers 404 and the dialog says "this site has no report server".
+
 ### Computer players' turns
 
 The desktop computes all consecutive computer turns at once when the human ends the turn
@@ -396,6 +492,7 @@ so every dev flag works:
 | `/?args=--adventure=A2M1%20--adventure-reveal` | several args: space separated (`%20`) |
 | `/?args=--adventure=A2M1%20--adventure-shadow-splits=1` | the sun's shadow with 0 (off), 1, 2 or 4 (default) splits, to compare frame rates |
 | `/?fresh` | ignore the stored copy and ask for the folder |
+| `/?report` | open the *Report a problem* dialog (also F9; see *Bug reports*) |
 | `/?nocache` | do not copy the picked files to browser storage |
 | `/?nodecoded` | do not use the decoded-character store (IndexedDB) |
 | `/?noshaderwarm` | do not compile the listed shader programs ahead |
