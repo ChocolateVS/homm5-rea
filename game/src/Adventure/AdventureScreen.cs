@@ -1138,19 +1138,29 @@ public partial class AdventureScreen : Control
                 }
                 break;
             case PlayerEliminated pe:
-                if (pe.Player == Session.Human.Index)
-                    await Dialog(done => Message("", AdvTexts.Get(AdvTexts.Defeat), null, () => { done(); ReturnToMainMenu(); }));
+                if (pe.Player == Session.Human.Index && !IsCampaignMission) await MissionEnd(false);
                 break;
             case H5.Adventure.Engine.GameEnded ge:
                 bool won = ge.WinnerTeam == Session.Human.Team;
                 if (won) RecordHallOfFame();
-                await Dialog(done => Message("", AdvTexts.Get(won ? AdvTexts.Victory : AdvTexts.Defeat), null, () => { done(); ReturnToMainMenu(); }));
+                // A campaign mission's end is shown (and continued) by ScriptUiBridge.
+                if (!IsCampaignMission) await MissionEnd(won);
                 break;
             case BattleRequested:
                 // The battle starts once playback is idle (see _Process).
                 break;
         }
     }
+
+    bool IsCampaignMission => Campaign.CampaignFlow.Active is { } a && a.Session == Session;
+
+    /// <summary>
+    /// The mission-end window (005a5d90 case 0xd → UI/MissionResults) with the default victory / defeat message;
+    /// Close returns to the main menu. (The log entry's message is the player's vf 0x84 text, not traced: the stock
+    /// default messages stand in.)
+    /// </summary>
+    Task MissionEnd(bool won) => Dialog(done => _dialogLayer.AddChild(new Campaign.MissionResultsScreen(won,
+        AdvTexts.Get(won ? AdvTexts.Victory : AdvTexts.Defeat), () => { done(); ReturnToMainMenu(); })));
 
     Task Dialog(Action<Action> open)
     {

@@ -49,7 +49,10 @@ public static class CinematicsDevArgs
         }
         if (Arg("--mission-results") is { } res)
         {
-            Callable.From(() => boot.AddChild(new Campaign.MissionResultsScreen(res == "win", "A2C1", 0, () => GD.Print("[H5] results closed")))).CallDeferred();
+            // `--mission-results=win|lose` (campaign A2C1 mission 1), `adv-win|adv-lose` (an adventure map's end).
+            Callable.From(() => boot.AddChild(res.StartsWith("adv-")
+                ? new Campaign.MissionResultsScreen(res == "adv-win", Adventure.AdvTexts.Get(res == "adv-win" ? Adventure.AdvTexts.Victory : Adventure.AdvTexts.Defeat), () => GD.Print("[H5] results closed"))
+                : new Campaign.MissionResultsScreen(res == "win", "A2C1", 0, () => GD.Print("[H5] results closed")))).CallDeferred();
             return true;
         }
         return false;

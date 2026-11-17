@@ -264,6 +264,7 @@ public partial class ScriptUiBridge : Node
         var human = Screen.Session.Human;
         bool won = s.WinnerTeam is { } team && team == human.Team && human.Alive;
         var active = CampaignFlow.Active is { } a && a.Session == Screen.Session ? a : null;
+        if (active == null) return; // other maps: AdventureScreen shows the mission end (GameEnded)
         CampaignFlow.OnMissionEnded(won);
         var results = new MissionResultsScreen(won, active?.Campaign.InternalName ?? Screen.Session.Map.Name, active?.Mission.Index ?? -1,
             () => CampaignFlow.Continue(Screen, won));

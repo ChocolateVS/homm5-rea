@@ -327,6 +327,22 @@ Off-screen check: `--input-test=3:click:1157,797` on the A2M1 start-of-week box 
 | Keys | Box0p ButtonOk GameMessageReactions enter_pressed / esc_pressed → Ok reaction | Enter / Esc close | Enter / Esc; a two-choice box ignores Enter until a choice is made | MATCH |
 | Combat retreat box | same Box2p (FUN_00570cf0) | as above | `Combat/RetreatDialog` still preselects Flee and leaves OK / Flee disabled | GAP (combat workstream) |
 
+## Mission end window (UI/MissionResults)
+
+The game's end (CVictoryDialogLogEntry, ctor 0099af80: +0x20 won, +0x14 message; created per winner by 00995856 with the
+message of the player's vf 0x84(1)) is shown by the log handler 005a5d90 case 0xd. Code: `Campaign/MissionResultsScreen`
+(PwlScreen.cs), `AdventureScreen.MissionEnd`; off-screen checks `--mission-results=adv-win|adv-lose`,
+`--adventure=A2M1 --script-eval=Win()`.
+
+| Item | Evidence | Original | Ours | Status |
+|---|---|---|---|---|
+| Window | 005a5d90 case 0xd → (vf 0x2c, 0xb928cb03) → 0079fc90 → object 007a1800 (vtable 00e41550) → 007a1e10 → 007a0e50: ID_MISSION_RESULTS_SCREEN; enter / esc / close_mission_results close it | the mission results window, not a message box | `MissionResultsScreen` over the map; Close → main menu (non-campaign) or the campaign flow | FIXED (was a plain message box with the default victory / defeat text; a finished map also got the results window from ScriptUiBridge on top) |
+| Texts and icon | case 0xd: title T_MISSION_END_TITLE_WIN / _LOOSE and T_END_ICON_DESC_WIN / _LOOSE via the screen's texts (vf 0x10c; UI/AdventureScreen-heavy/Texts.(WindowRelatedTexts)), TX_MISSION_WIN / TX_MISSION_LOSE via vf 0x110 (…/Textures.(WindowRelatedTextures)); 007a0e50: Header ← title, Description ← the entry's message, WinIcon ← the texture (vf 0xa4) with the icon text as its tooltip (vf 0x68) | Mission completed / failed, the message, the win / lose picture | same | FIXED (was: header only, no picture) / UNVERIFIED (Ghidra's parameter order of 007a0e50 is off by one; Description = message and tooltip = icon text by the string names) |
+| Message | entry +0x14 = the winner's vf 0x84(1) text (not identified; the map's VictoryMessageRef / DefeatMessageRef (00a007f0) are candidates) | — | the stock DefaultVictoryMessage / DefaultDefeatMessage | GAP |
+| Statistics, heroes / towns | 007a0e50: Statistics (scrollable, StatisticsSlotTemplate / StatisticsResourcesSlotTemplate / ResourceInfoSlotTemplate, texts UI/MissionResults/ResultStrings: mission time, resources, battles, heroes, towns, creatures, artefacts), filled by 007a1a60 / 007a08b0 / 0079f990 / 0079fcf0; scroll buttons | statistics of the game | empty slots, scroll buttons hidden | GAP (no game statistics are recorded) |
+| Multiplayer messages | case 0xd with a network game (0058e2f0 +0x7c): WinLooseMessages → MPPlayerWonMessage / MPPLayerSurrenderedMessage / MPPlayerDefeatedMessage with PlayerName to the chat | — | — | GAP |
+| Human eliminated before the end | `PlayerEliminated` of the human (other players left) | not traced which entry the exe logs | the same window as a loss | UNVERIFIED |
+
 ## Battle end: flee and surrender
 
 Traced for the adventure host (flee/surrender pass): CCombatArmy::CanRetreat 004d9e20, the retreat box 00570cf0,

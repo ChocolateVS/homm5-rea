@@ -360,29 +360,67 @@ public partial class PwlScreen : UiScreen
 }
 
 /// <summary>
-/// UI/MissionResults (UIGameRoot ID_MISSION_RESULTS_SCREEN): "Mission completed" /
-/// "Mission failed" (UI/AdventureScreen-heavy/MissionEndWin/Loose.txt) with the mission's
-/// description; Close continues the campaign.
+/// UI/MissionResults (UIGameRoot ID_MISSION_RESULTS_SCREEN), the mission-end window of 005a5d90 case 0xd
+/// (CVictoryDialogLogEntry: +0x20 won, +0x14 message): window 007a1800 / 007a0e50 with the title
+/// T_MISSION_END_TITLE_WIN / _LOOSE in Header, the message in Description, and WinIcon showing TX_MISSION_WIN /
+/// TX_MISSION_LOSE (vf 0xa4) with the tooltip T_END_ICON_DESC_WIN / _LOOSE (vf 0x68) — the texts and textures of
+/// UI/AdventureScreen-heavy (Texts / Textures related lists); Close continues (the campaign, or the main menu).
 /// </summary>
 public partial class MissionResultsScreen : UiScreen
 {
+    const string AdvRelatedTexts = "UI/AdventureScreen-heavy/Texts.(WindowRelatedTexts).xdb";
+    const string AdvRelatedTextures = "UI/AdventureScreen-heavy/Textures.(WindowRelatedTextures).xdb";
     readonly Action _onClose;
 
-    public MissionResultsScreen(bool won, string campaignOrMap, int mission, Action onClose) : base("UI/MissionResults.(WindowScreen).xdb")
+    /// <summary>A campaign mission's end: the description is the mission's name (not traced against the log entry's message).</summary>
+    public MissionResultsScreen(bool won, string campaignOrMap, int mission, Action onClose) : this(won, onClose)
     {
-        _onClose = onClose;
-        MouseFilter = MouseFilterEnum.Stop;
-        var header = UiResources.Instance.Text(won ? "UI/AdventureScreen-heavy/MissionEndWin.txt" : "UI/AdventureScreen-heavy/MissionEndLoose.txt") ?? (won ? "Mission completed" : "Mission failed");
-        Find("Header")?.SetValue("text", UiResources.StripMarkup(header).Trim());
         var c = CampaignFlow.Find(campaignOrMap);
         var m = c != null && mission >= 0 && mission < c.Missions.Count ? c.Missions[mission] : null;
         // Substituted values are plain text (not markup), so no <br> here.
         Find("Description")?.SetValue("text", m != null ? $"{m.Description}: {m.Name}" : campaignOrMap);
         if (c != null) Audio.MissionResultsAudio.Attach(this, c.Path, mission, won);
+    }
+
+    /// <summary>The adventure map's end (005a5d90 case 0xd): <paramref name="message"/> is the log entry's message.</summary>
+    public MissionResultsScreen(bool won, string message, Action onClose) : this(won, onClose)
+    {
+        Find("Description")?.SetValue("text", message);
+    }
+
+    MissionResultsScreen(bool won, Action onClose) : base("UI/MissionResults.(WindowScreen).xdb")
+    {
+        _onClose = onClose;
+        MouseFilter = MouseFilterEnum.Stop;
+        var header = UiGameRoot.RelatedTextAt(AdvRelatedTexts, won ? "T_MISSION_END_TITLE_WIN" : "T_MISSION_END_TITLE_LOOSE")
+            ?? (won ? "Mission completed" : "Mission failed");
+        Find("Header")?.SetValue("text", UiResources.StripMarkup(header).Trim());
+        if (Find("WinIcon") is { } icon)
+        {
+            if (RelatedTexture(AdvRelatedTextures, won ? "TX_MISSION_WIN" : "TX_MISSION_LOSE") is { } tex)
+                icon.AddChild(new TextureRect
+                {
+                    Texture = tex, AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore,
+                    ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale,
+                });
+            if (UiGameRoot.RelatedTextAt(AdvRelatedTexts, won ? "T_END_ICON_DESC_WIN" : "T_END_ICON_DESC_LOOSE") is { Length: > 0 } tip)
+                icon.SetTooltip(tip);
+        }
         foreach (var n in new[] { "LeftScrollButton", "RightScrollButton" }) SetVisible(n, false);
         // UISSendGameMessage arguments arrive as written in the data ("0 close_mission_results0 0").
         foreach (var name in new[] { "close_mission_results0", "close_mission_results", "0 close_mission_results0 0" })
             Bus.On(name, Close);
+    }
+
+    /// <summary>A texture of a WindowRelatedTextures xdb (TextureName → texture), or null.</summary>
+    static Texture2D? RelatedTexture(string relatedXdb, string name)
+    {
+        if (!Game.Instance.Fs.Exists(relatedXdb) || Game.Instance.Xdb.Load(relatedXdb).Root is not XElement r) return null;
+        foreach (var item in r.Descendants("Item"))
+            if (string.Equals((string?)item.Element("TextureName"), name, StringComparison.OrdinalIgnoreCase)
+                && (string?)item.Element("Texture")?.Attribute("href") is { Length: > 0 } h)
+                return UiResources.Instance.Texture(XdbRef.Parse(h, relatedXdb).Path);
+        return null;
     }
 
     public override void _Ready()
