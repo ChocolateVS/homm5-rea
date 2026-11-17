@@ -305,7 +305,8 @@ public class AuditAbilityTests(GameDataFixture f)
         Assert.True(b.Apply(new AttackCmd(a.Id, t.Id) { Side = 0 }).Ok);
         Assert.False(t.Alive);
         int burnt = attackerBefore - a.TotalHealth;
-        Assert.InRange(burnt, 1, (int)(hpBefore * f.Db.Stats.Get("combat/Creatures/Abilities/FireShield_Damage_Multiplier", 0.2)));
+        // the burn goes through FUN_0097d740 (stand-in spell 0xcd): trunc(x + 0.5), x = chop(0.2f · min(damage, HP before))
+        Assert.InRange(burnt, 1, (int)(hpBefore * f.Db.Stats.Get("combat/Creatures/Abilities/FireShield_Damage_Multiplier", 0.2) + 0.5));
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using H5.Core.Data;
+using H5.Core.Numerics;
 
 namespace H5.Combat;
 
@@ -593,7 +594,9 @@ public sealed partial class Battle
     /// </summary>
     internal double SpellBaseDamage(SpellDef baseDef, SpellDef cast, Mastery m, double power)
     {
-        double dmg = ExeChop(Math.Max(1, baseDef.DamageAt(m).Eval(power)));
+        // 00a34c40: FILD power · PerPower + Base (floats), chopped; at least 1 (00976bf5); FISTP under chop.
+        var f = baseDef.DamageAt(m);
+        double dmg = ExeChop(Math.Max(1f, X87.Add(X87.Mul(power, (float)f.PerPower), (float)f.Base)));
         if (cast.Id.StartsWith("SPELL_EMPOWERED_")) dmg = ExeChop(dmg * 1.5);
         return MoonWeek.SpellDamage((int)dmg, cast.Element, S.Week);   // exe 00976c73 → 00bcde80
     }
@@ -1105,7 +1108,7 @@ public sealed partial class Battle
                 duration = sp.DurationAt(m).Base;
                 break;
             case "SPELL_VAMPIRISM":
-                value = sp.DamageAt(m).Eval(power) / 100.0;
+                value = sp.DamageAt(m).Eval(power);   // the percent; the drain multiplies it by 0.01f (exe 00a59d31)
                 break;
             case "SPELL_BLIND":
                 break;

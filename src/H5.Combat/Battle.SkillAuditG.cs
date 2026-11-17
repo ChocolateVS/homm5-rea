@@ -1,4 +1,5 @@
 using H5.Core.Data;
+using H5.Core.Numerics;
 
 namespace H5.Combat;
 
@@ -28,7 +29,8 @@ public sealed partial class Battle
                 : (float)(SpellDamageMultiplier(t, sp, -1, casterIsHero: false, protectionOnly: true) * ElementProtectionArtifacts(t, element));
             pct = Math.Clamp((int)((1f - Math.Clamp(mult, 0f, 1f)) * 100f), 0, 100);
         }
-        return (int)((1 - pct * (double)0.01f) * (double)(float)amount + 0.5);
+        // 0097d764..0097d792: FILD p · 0.01f, FSUBR 1, FMUL amount, FADD 0.5, FISTP under chop — each step chopped.
+        return (int)X87.Add(X87.Mul(X87.Sub(1f, X87.Mul(pct, 0.01f)), (float)amount), 0.5f);
     }
 
     /// <summary>Deals a perk's extra elemental damage through <see cref="PerkElementalAmount"/>.</summary>

@@ -33,12 +33,30 @@ The ledger's core row "Damage pipeline … under the x87 control word" (ledger.p
 | Pattern share | FIXED | 00a673c0 (00a67bf3..00a67c18) | FILD damage, FMUL float share, FISTP under chop. The engine multiplied int × float in C# float arithmetic (round to nearest) before the truncation | |
 | Early 0x7b branch of 00a5c790 | UNVERIFIED | 00a5c790 (00a5c79e..00a5c7ff) | with ability 0x7b and a target vf 0x84 ≠ 0: FILD (vf 0x1d8 count) → float, · RPGStats +0x508, FISTP-chop — the whole pipeline is skipped; not traced to an ability name / engine path here | |
 
-## Not yet checked for x87 semantics (other float → integer sites of the combat code)
+## Other float → integer sites of the combat code
 
-Spell damage and its rounding (00976b90, `EXE_FINDINGS` "Spell damage rounding / empowered ×1.5"), the drain / heal
-conversions (`DrainHeal`, Life Drain, Vampirism), the Lightning Breath shared roll (00a67b2c..00a67ba5: roll / targets),
-Chain Shot shares (00a64ad0, which also calls 00a58de0 / 00a5c5a0 / 00a5a900 on its own path), Fire / Magma Shield and
-Mark of Fire multipliers, Deadly Strike, damage over time (00bbb900), the ATB tick (already single precision, see the
-ATB core row), the combat AI's estimates (out of scope here). In the stages above: the storm field's n (vf 0x78 of the
-field, ours a precomputed min(0.9, 0.01 · count)), effect 0x117 (FUN_00a34c40 · 0.01f, max 1), ability 0x68
-(1 − +0xa48) and special 0x5e are not mapped to engine paths; the Maneuver shot and Flamewave strike specials are untraced.
+A single chopped product truncated at once gives the exact product's integer part (every integer below 2^24 is a float,
+and chopping never crosses one), so such sites match the double port; differences come from chains of chopped steps,
+round-to-nearest conversions and the 0.5 roundings.
+
+| Site | Status | Exe | Original behaviour | Test |
+|---|---|---|---|---|
+| Spell base damage | MATCH | 00976b90 (00976bf5..00976c66), 00a34ca0 → 00a34c40 | FILD power · PerPower (float) + Base (float), each chopped, at least 1, FISTP under chop; empowered: FILD · 1.5f, chop. Ported with the chopped steps (`SpellBaseDamage`); every shipped damage formula has integer Base / PerPower, so the double port gave the same integers | |
+| Life Drain / Vampirism heal | FIXED | 00a59c60 (00a59d0d..00a59d6e) | frac = max(0, chop(chop(Vampirism percent (004e3e40) · 0.01f) + LifeDrainIntensity (+0x270))); heal = FISTP-chop(chop(chop(frac · damage) + 0.5)). Ours stored Vampirism as the double percent / 100 and rounded frac · damage + 0.5 to nearest: Vampirism 50 % is 0.49999997, 15 damage heal 7 (not 8) | AuditSpellTests (DrainHeal / DrainFraction cases) |
+| Lightning Breath share | FIXED | 00a673c0 (00a67b6c..00a67ba5) | FILD n (the pattern's targets), FDIVR the float roll, FSTP float — chopped. Ours divided in double and rounded to nearest | |
+| Chain Shot shares | MATCH | 00a64ad0 | roll → 00a58de0 → acc + acc, then per chained target × its range penalty (00a5c5a0) × 0.5, cumulative, → 00a5a900. Every factor of the chain is a power of two, which scales a float exactly, so ours (the doubled roll halved per target, then the ordinary stages) gives the same floats | |
+| Perk elemental damage rounding | FIXED | 0097d740 (0097d764..0097d792) | trunc(chop(chop(chop(1 − chop(p · 0.01f)) · amount) + 0.5)) for the protection percent p. Ours computed it in double | |
+| Cold Steel / Chilling Bones / Fiery Wrath and Hellfire amounts | FIXED | 00a5c088, 00a5bca9 (≥ 0.5 test 00a5bcb7), 00a5ee09, 00a5ef3d, 00a5ef77 | FILD damage · 0.1f (Cold Steel, Fiery Wrath) / · 0.05f (Chilling Bones), chopped; Hellfire FADD of its integer damage and · 1.5f (Searing Fires), chopped; Chilling Bones below 0.5 deals nothing (no resistance roll). Ours used round-to-nearest float / double products and rolled resistance for any positive amount | |
+| Fire / Magma Shield | FIXED | 00a5bcf0 (00a5bd78..00a5bdbf), 00a5bdd0 (00a5be58..00a5be9f) | x = chop(clamp(multiplier, 0, 10) · min(damage, holder HP before)) (FIMUL, FST float); x < 0.5 → nothing; else FUN_0097d740 with the stand-in spell 0xcd SPELL_EFFECT_FIRE_SHIELD / 0xf8 SPELL_EFFECT_MAGMA_SHIELD (resistance roll, protections, trunc(… + 0.5)) — no Mark of Fire. Ours truncated x and dealt it as plain fire damage (Mark of Fire ×2 included) | AuditAbilityTests.FireShieldIgnoresOverkill (bound now trunc(x + 0.5)) |
+| Mark of Fire multipliers | MATCH | 00bbb900 (Set Afire), 00977a80 | trunc(clamp(+0x374, 0, 1000) · damage): one chopped product, truncated | |
+| Damage over time | MATCH | 00bbb900 | the only float step is the Mark of Fire product above; the rest is integer | |
+| Pattern share, Deadly Strike | MATCH | 00a67bf3, 00a5bf60 | the share is the Pattern share core row; Deadly Strike is integer (count / 2) | |
+
+## Not yet checked for x87 semantics
+
+The ATB tick (already single precision, see the ATB core row), the combat AI's estimates (out of scope here), the
+remaining `Math.Round` sites of the combat code that are not damage (mana / rage / summon counts, war machine damage
+factors, Shake Ground, siege moat), the effect formulas through 00a34c40 other than spell damage (durations, Berserk /
+Hypnotize thresholds, summoned counts). In the stages above: the storm field's n (vf 0x78 of the field, ours a
+precomputed min(0.9, 0.01 · count)), effect 0x117 (FUN_00a34c40 · 0.01f, max 1), ability 0x68 (1 − +0xa48) and special
+0x5e are not mapped to engine paths; the Maneuver shot and Flamewave strike specials are untraced.

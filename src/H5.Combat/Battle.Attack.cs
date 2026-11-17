@@ -308,7 +308,7 @@ public sealed partial class Battle
         // targets (the main target included) and every target is struck with that share.
         double? sharedRoll = null;
         if (pattern && HasAbilityNow(a, Ab.LightningBreath) && hit.Kind != AttackKind.Retaliation && targets.Count > 0)
-            sharedRoll = (float)(BaseDamageRoll(a, t, hit, ranged) / targets.Count);
+            sharedRoll = X87.Div((float)BaseDamageRoll(a, t, hit, ranged), targets.Count);   // 00a67b6c: FILD n, FDIVR roll, chopped
 
         int primaryDamage = 0, primaryKilled = 0;
         bool stunned = false;
@@ -721,26 +721,29 @@ public sealed partial class Battle
             // Extra elemental damage from hero perks.
             if (t.Alive && !a.IsWarMachine) FieryWrathAndHellfire(a, t, ah, dmg, retaliation);   // exe FUN_00a5ed90 → 0097d740, ECX=5
             if (t.Alive && ah.HasPerk(Sk.ColdSteel) && !a.IsWarMachine)
-                DealPerkElementalDamage(t, dmg * (double)0.1f, "SPELL_ICE_BOLT", a.Id, "COLD_STEEL");   // exe FUN_00a5c000 → 0097d740, ECX=4
-            // Life Drain / Vampirism (exe FUN_00a59c60): heal = trunc(frac·damage + 0.5), resurrecting; frac = LifeDrainIntensity
-            // for the ability + Vampirism value (·0.01); Undead, Mechanical and Elemental targets give nothing.
+                DealPerkElementalDamage(t, X87.Mul(dmg, 0.1f), "SPELL_ICE_BOLT", a.Id, "COLD_STEEL");   // exe FUN_00a5c000 → 0097d740, ECX=4 (00a5c088: FILD · 0.1f)
+            // Life Drain / Vampirism (exe FUN_00a59c60): heal = trunc(frac·damage + 0.5), resurrecting; frac = max(0,
+            // chop(Vampirism percent · 0.01f (00a59d31) + LifeDrainIntensity (+0x270) for the ability)); Undead, Mechanical
+            // and Elemental targets give nothing.
             if (HasAbilityNow(a, Ab.LifeDrain) || a.GetEffect("SPELL_VAMPIRISM") is { })
             {
-                double frac = HasAbilityNow(a, Ab.LifeDrain) ? Stats.Get("combat/Creatures/Necropolis/LifeDrainIntensity", 0.5) : 0;
-                if (a.GetEffect("SPELL_VAMPIRISM") is { } vamp) frac += vamp.Value;
+                float intensity = HasAbilityNow(a, Ab.LifeDrain) ? (float)Stats.Get("combat/Creatures/Necropolis/LifeDrainIntensity", 0.5) : 0f;
+                float frac = DrainFraction(a.GetEffect("SPELL_VAMPIRISM")?.Value, intensity);
                 if (CanBeDrained(t))
                     Heal(a, DrainHeal(Math.Min(dmg, hpBefore), frac), resurrect: true, "LIFE_DRAIN");
             }
             // Fire/Magma Shield on melee (p.174, p.177).
             if (!ranged && a.Alive)
             {
-                // Fire / Magma Shield (exe 00a5bcf0 / 00a5bdd0): clamp(multiplier, 0, 10) × the damage taken, capped at the
-                // shield holder's hit points before the blow (overkill doesn't count).
+                // Fire / Magma Shield (exe 00a5bcf0 / 00a5bdd0): x = chop(clamp(multiplier, 0, 10) · the damage taken), capped
+                // at the shield holder's hit points before the blow (overkill doesn't count); x ≥ 0.5 goes through the perk
+                // elemental path FUN_0097d740 with the stand-in spell 0xcd SPELL_EFFECT_FIRE_SHIELD / 0xf8
+                // SPELL_EFFECT_MAGMA_SHIELD (00a5bd8e..00a5bdbf, 00a5be6e..00a5be9f): resistance, protections, rounding.
                 int taken = Math.Min(dmg, hpBefore);
-                if (t.Has(Ab.FireShield)) DealElementalDamage(a, (int)(taken * Math.Clamp(Stats.Get("combat/Creatures/Abilities/FireShield_Damage_Multiplier", 0.2), 0, 10)), Elements.Fire, t.Id, Ab.FireShield);
-                if (t.Has(Ab.MagmaShield) && a.Alive) DealElementalDamage(a, (int)(taken * Math.Clamp(Stats.Get("combat/Creatures/Abilities/MagmaShield_Damage_Multiplier", 0.4), 0, 10)), Elements.Fire, t.Id, Ab.MagmaShield);
+                if (t.Has(Ab.FireShield)) ShieldBurn(a, X87.Mul(Math.Clamp((float)Stats.Get("combat/Creatures/Abilities/FireShield_Damage_Multiplier", 0.2), 0f, 10f), taken), "SPELL_EFFECT_FIRE_SHIELD", t.Id, Ab.FireShield);
+                if (t.Has(Ab.MagmaShield) && a.Alive) ShieldBurn(a, X87.Mul(Math.Clamp((float)Stats.Get("combat/Creatures/Abilities/MagmaShield_Damage_Multiplier", 0.4), 0f, 10f), taken), "SPELL_EFFECT_MAGMA_SHIELD", t.Id, Ab.MagmaShield);
                 var th = HeroOf(t);
-                if (th.HasPerk(Sk.ChillingBones) && IsUndeadLike(t) && a.Alive) DealPerkElementalDamage(a, dmg * (double)0.05f, "SPELL_SKILL_CHILLING_BONES", t.Id, "CHILLING_BONES");   // exe FUN_00a5bc50 → 0097d740, ECX=0xcf
+                if (th.HasPerk(Sk.ChillingBones) && IsUndeadLike(t) && a.Alive) ShieldBurn(a, X87.Mul(dmg, 0.05f), "SPELL_SKILL_CHILLING_BONES", t.Id, "CHILLING_BONES");   // exe FUN_00a5bc50 → 0097d740, ECX=0xcf (00a5bca9: FILD · 0.05f, ≥ 0.5)
                 if (HasAbilityNow(t, Ab.AcidBlood) && t.Alive && a.Alive) AcidBloodSplash(t, a, hit);
             }
         }
@@ -1082,8 +1085,14 @@ public sealed partial class Battle
     }
 
     /// <summary>Heals a stack. With resurrect, dead creatures come back up to the stack's initial size.</summary>
-    /// <summary>Drain heal (exe 00a59d4e..00a59d6e): (frac·damage + 0.5) truncated in chop mode, i.e. rounded half up.</summary>
-    internal static int DrainHeal(int damage, double frac) => (int)((float)Math.Max(0, frac) * damage + 0.5f);
+    /// <summary>
+    /// Drain heal (exe 00a59d4e..00a59d6e): FIMUL damage, FADD 0.5, FISTP in chop mode — each step chopped (x87 _PC_24 |
+    /// _RC_CHOP), so the sum is rounded half up only when the product is exact.
+    /// </summary>
+    internal static float DrainFraction(double? vampirismPercent, float intensity)
+        => Math.Max(0f, X87.Add(vampirismPercent is double v ? X87.Mul((float)v, 0.01f) : 0f, intensity));   // 00a59d26..00a59d49
+
+    internal static int DrainHeal(int damage, double frac) => (int)X87.Add(X87.Mul((float)Math.Max(0, frac), damage), 0.5f);
 
     /// <summary>Exe FUN_00a59c60: no drain from Undead (0xa, dynamic — Vampirism counts), Mechanical (9) or Elemental (0xc) targets.</summary>
     internal bool CanBeDrained(Unit t) =>
@@ -1121,6 +1130,12 @@ public sealed partial class Battle
             u.Effects.Clear();
         }
         Heal(u, amount, resurrect: true, "RESURRECT");
+    }
+
+    /// <summary>The retaliatory burns (Fire / Magma Shield, Chilling Bones): FST x; FCOMP 0.5 — below 0.5 nothing is dealt (no resistance roll).</summary>
+    void ShieldBurn(Unit t, float amount, string pseudoSpellId, int source, string by)
+    {
+        if (amount >= 0.5f) DealPerkElementalDamage(t, amount, pseudoSpellId, source, by);
     }
 
     void DealElementalDamage(Unit t, int amount, string element, int source, string by)

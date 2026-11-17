@@ -1,4 +1,5 @@
 using H5.Core.Data;
+using H5.Core.Numerics;
 
 namespace H5.Combat;
 
@@ -44,7 +45,8 @@ public sealed partial class Battle
     /// </summary>
     internal void FieryWrathAndHellfire(Unit a, Unit t, HeroState ah, int dmg, bool retaliation)
     {
-        float amount = ah.HasPerk(Sk.FieryWrath) || ah.HasPerk(Sk.BarbFieryWrath) ? dmg * 0.1f : 0f;
+        // x87 chop (00a5ee09 FILD · 0.1f, 00a5ef3d FILD fire FADD, 00a5ef77 · 1.5f): every step chopped.
+        float amount = ah.HasPerk(Sk.FieryWrath) || ah.HasPerk(Sk.BarbFieryWrath) ? X87.Mul(dmg, 0.1f) : 0f;
         bool hellfire = false;
         if (ah.HasPerk(Sk.Hellfire) && (!retaliation || ah.HasPerk(Sk.Hellwrath)))
         {
@@ -55,8 +57,8 @@ public sealed partial class Battle
                 ah.Mana -= cost;
                 Emit(new ManaChanged(Actor.Hero(a.Side), ah.Mana));
                 int fire = (int)ah.SpellPower * (int)Stats.Get(df + "DamagePerSpellPower", 10) + (int)Stats.Get(df + "BaseDamage", 10);
-                amount += Math.Max(0, fire);
-                if (ah.HasPerk(Sk.SearingFires)) amount *= 1.5f;
+                amount = X87.Add(amount, Math.Max(0, fire));
+                if (ah.HasPerk(Sk.SearingFires)) amount = X87.Mul(amount, 1.5f);
                 hellfire = true;
             }
         }

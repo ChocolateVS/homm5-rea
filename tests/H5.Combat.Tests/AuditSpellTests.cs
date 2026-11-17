@@ -344,6 +344,12 @@ public class AuditSpellTests(GameDataFixture f)
         Assert.Equal(8, Battle.DrainHeal(15, 0.5));      // 7.5 + 0.5 → 8 (engine truncated to 7)
         Assert.Equal(7, Battle.DrainHeal(14, 0.5));
         Assert.Equal(3, Battle.DrainHeal(10, 0.25));     // 2.5 + 0.5 → 3
+        // x87 chop (00a59d31..00a59d6e): Vampirism 50 % is 50 · 0.01f = 0.49999997, so 15 damage heal 7 (double 0.5: 8);
+        // with Life Drain's 0.5f on top, 0.99999994 · 15 = 14.999999, + 0.5 → 15.
+        Assert.Equal(MathF.BitDecrement(0.5f), Battle.DrainFraction(50, 0f));
+        Assert.Equal(7, Battle.DrainHeal(15, Battle.DrainFraction(50, 0f)));
+        Assert.Equal(15, Battle.DrainHeal(15, Battle.DrainFraction(50, 0.5f)));
+        Assert.Equal(0, Battle.DrainHeal(5, Battle.DrainFraction(10, 0f)));   // 0.099999994 · 5 + 0.5 = 0.99999997
         var s = Setup(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_SKELETON", 10), ("CREATURE_PEASANT", 10) });
         var b = new Battle(f.Db, s);
         Assert.False(b.CanBeDrained(s.Units.Single(x => x.CreatureId == "CREATURE_SKELETON")));
