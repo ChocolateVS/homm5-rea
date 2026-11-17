@@ -130,20 +130,42 @@ public static class ModelBuilder
     static Material CloudsMaterial(Texture2D? tex, float param, bool selfIllum, bool transparent, bool additive, bool twoSided)
     {
         var modes = new List<string> { twoSided ? "cull_disabled" : "cull_back" };
-        if (transparent) { modes.Add(additive ? "blend_add" : "blend_mix"); modes.Add("depth_draw_never"); }
-        if (selfIllum) modes.Add("unshaded");
+        if (transparent) { modes.Add(additive ? "blend_add" : "blend_mix"); modes.Add("depth_draw_never"); modes.Add("unshaded"); }
+        else if (selfIllum) modes.Add("unshaded");
         var key = string.Join(",", modes);
         if (!_cloudsShaders.TryGetValue(key, out var shader))
         {
+            // Blended cards (sunbeams Rays_*, cloud layers): the exe's ps_1_1 00f71e14 outputs t·c0 × v0 (v0 = the
+            // fog-of-war w) and D3D9 blends it on the 8-bit target in gamma space (additive: dst + t·w·α; mix:
+            // lerp(dst, t·w, α), blend states FUN_009ad560). Godot blends in linear space, which made a beam over
+            // the black unexplored ground about 2.5x brighter and showed the black scenery cut out of it. The
+            // card reads the opaque scene (screen texture, linear) and writes the linear value whose blend gives
+            // the gamma-space result: exact over every opaque background; overlapping cards add up in linear.
+            string blended = additive
+                ? """
+                        vec3 out_g = clamp(dst_g + src_g * c.a, 0.0, 1.0);
+                        ALBEDO = max(h5_srgb_to_linear(out_g) - dst_l, vec3(0.0));
+                        ALPHA = 1.0;
+                    """
+                : """
+                        vec3 target = h5_srgb_to_linear(mix(dst_g, src_g, c.a));
+                        ALBEDO = c.a > 0.001 ? max((target - dst_l * (1.0 - c.a)) / c.a, vec3(0.0)) : vec3(0.0);
+                        ALPHA = c.a;
+                    """;
             shader = new Shader
             {
-                Code = $$"""
+                Code = transparent ? $$"""
                     shader_type spatial;
                     render_mode {{key}};
                     #include "res://src/Render/H5Lit.gdshaderinc"
-                    uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_enable;
+                    uniform sampler2D tex : filter_linear_mipmap, repeat_enable;   // raw (gamma-space) texels
+                    uniform sampler2D screen_tex : hint_screen_texture, filter_nearest;
                     uniform float speed = 0.3;
                     varying float war;
+                    vec3 to_srgb(vec3 l) {
+                        l = clamp(l, 0.0, 1.0);
+                        return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+                    }
                     // Adventure fog of war (1 elsewhere): transparent objects are scaled by it too
                     // (FUN_00cf9a80 from the CTransparentRenderer).
                     void vertex() { war = h5_warfog_at((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz); }
@@ -152,8 +174,25 @@ public static class ModelBuilder
                         vec4 a = texture(tex, UV + drift);
                         vec4 b = texture(tex, UV * 0.9 - drift * 0.7);
                         vec4 c = (a + b) * 0.5;
+                        vec3 src_g = c.rgb * war;
+                        vec3 dst_l = textureLod(screen_tex, SCREEN_UV, 0.0).rgb;
+                        vec3 dst_g = to_srgb(dst_l);
+                    {{blended}}
+                    }
+                    """ : $$"""
+                    shader_type spatial;
+                    render_mode {{key}};
+                    #include "res://src/Render/H5Lit.gdshaderinc"
+                    uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_enable;
+                    uniform float speed = 0.3;
+                    varying float war;
+                    void vertex() { war = h5_warfog_at((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz); }
+                    void fragment() {
+                        vec2 drift = vec2(1.0, 0.6) * speed * 0.05 * TIME;
+                        vec4 a = texture(tex, UV + drift);
+                        vec4 b = texture(tex, UV * 0.9 - drift * 0.7);
+                        vec4 c = (a + b) * 0.5;
                         ALBEDO = c.rgb * h5_srgb_to_linear(vec3(war));
-                        {{(transparent ? "ALPHA = c.a;" : "")}}
                     }
                     """,
             };
