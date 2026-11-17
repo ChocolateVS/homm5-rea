@@ -56,6 +56,14 @@ public sealed partial class TavernScreen : TownSubScreen
         if (OS.GetCmdlineUserArgs().Contains("--tavern-dev-thieves")) _tab = 3;
         // `--tavern-dev-heroinfo`: presses HeroInfo (jog button 4) on the first hero page.
         if (OS.GetCmdlineUserArgs().Contains("--tavern-dev-heroinfo")) Callable.From(HeroInfo).CallDeferred();
+        // `--tavern-dev-heroinfo-next`: the same, then the hero screen's next button (jog button 3).
+        if (OS.GetCmdlineUserArgs().Contains("--tavern-dev-heroinfo-next"))
+            Callable.From(() =>
+            {
+                HeroInfo();
+                if (GetChildren().OfType<Hero.HeroScreen>().LastOrDefault() is { } hs)
+                    Callable.From(() => hs.DevSend("jd_button_3_reaction")).CallDeferred();
+            }).CallDeferred();
     }
 
     static string T(string key) => UiGameRoot.RelatedTextAt(Texts, key) ?? "";
@@ -183,10 +191,15 @@ public sealed partial class TavernScreen : TownSubScreen
     /// </summary>
     void HeroInfo()
     {
-        if (_tab > 1 || Offers()[_tab] is not { } id) return;
+        var offers = Offers();
+        if (_tab > 1 || offers[_tab] is not { } id) return;
+        Hero.HeroScreen.OpenPreview(Owner.Adv, BuildPreview(id), Owner, this, offers[0], offers[1], BuildPreview, id);
+    }
+
+    HeroState BuildPreview(string id)
+    {
         var sim = Owner.Session.Game.Simulation(H5.Adventure.AI.StateCopy.Of(Owner.Session.S));
-        var hero = sim.TavernHeroPreview(id, Me.Index, Owner.Session.Game.EntranceOf(Owner.Town));
-        Hero.HeroScreen.OpenPreview(Owner.Adv, hero, Owner, this);
+        return sim.TavernHeroPreview(id, Me.Index, Owner.Session.Game.EntranceOf(Owner.Town));
     }
 
     void SetBookmark(int i, bool enabled, string? hero)

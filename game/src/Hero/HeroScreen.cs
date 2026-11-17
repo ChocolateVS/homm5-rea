@@ -76,15 +76,28 @@ public partial class HeroScreen : Control
     /// built on a copy of the game (<see cref="H5.Adventure.Engine.Adventure.TavernHeroPreview"/>), so the screen shows
     /// that snapshot and its army and sends no commands. It opens over <paramref name="host"/> and closes back to it.
     /// </summary>
-    public static HeroScreen OpenPreview(AdventureScreen adv, HeroState hero, TownScreen town, Control host)
+    /// <remarks>
+    /// The two offers ride along (00636c95 passes +0x24 / +0x28 as the screen's +0x774 / +0x778): a hero that is not in
+    /// its player's hero list puts the screen in mode 1 (006cb700, +0x7dc), where previous / next (006c4a80 / 006c49c0
+    /// → 006c2550 / 006c25b0) open offer 1 / offer 2 when it exists and is not the hero shown (006c4880 reopens with the
+    /// same pair); 006c5380 enables the buttons on the same test.
+    /// </remarks>
+    public static HeroScreen OpenPreview(AdventureScreen adv, HeroState hero, TownScreen town, Control host,
+        string? offer1 = null, string? offer2 = null, Func<string, HeroState>? build = null, string? shown = null, string? startPage = null)
     {
-        var s = new HeroScreen(adv, hero, town) { _preview = true };
+        var s = new HeroScreen(adv, hero, town)
+        {
+            _preview = true, _previewOffers = (offer1, offer2), _previewBuild = build, _previewShown = shown, _startPage = startPage,
+        };
         host.AddChild(s);
         return s;
     }
 
     /// <summary>A hero that is not in the game state (a tavern offer): shown read-only, armies from the snapshot.</summary>
     bool _preview;
+    (string? Prev, string? Next) _previewOffers;
+    Func<string, HeroState>? _previewBuild;
+    string? _previewShown;
 
     /// <summary>Opens the meeting screen for two heroes of the same player standing next to each other.</summary>
     public static HeroScreen OpenMeeting(AdventureScreen adv, HeroState visitor, HeroState met)

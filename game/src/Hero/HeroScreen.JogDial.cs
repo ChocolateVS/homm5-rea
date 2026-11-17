@@ -30,11 +30,11 @@ public partial class HeroScreen
         SetJog("button_0", $"ExitWithDay_{day % 7 + 1}", (UiGameRoot.Text("ExitBtnTooltip") ?? "")
             .Replace("<value=Day>", (day % 7 + 1).ToString()).Replace("<value=Week>", (day / 7 % 4 + 1).ToString())
             .Replace("<value=Month>", (day / 28 + 1).ToString()).Replace("<value=WeekName>", AdvTexts.WeekName(w.MoonWeek)), true);
-        // A tavern offer (preview) is not in the player's hero list: dismiss needs player vf 0x74 → vf 0x3c(hero), which
-        // does not hold for it; previous / next are left off for it (their +0x1b4 test is not mapped for this case).
+        // A tavern offer (preview) is not in the player's hero list (mode 1): dismiss is off (006c5cfc); previous / next
+        // are enabled when 006c2550 / 006c25b0 give the other offer.
         bool single = _meet == null && !_preview;
-        SetJog("button_1", "ToLeft", HT("PrevHero"), single);
-        SetJog("button_3", "ToRight", HT("NextHero"), single);
+        SetJog("button_1", "ToLeft", HT("PrevHero"), _preview ? PreviewTarget(-1) != null : single);
+        SetJog("button_3", "ToRight", HT("NextHero"), _preview ? PreviewTarget(+1) != null : single);
         SetJog("button_2", "HeroScreen_DismissHero", HT("DismissHero_Tooltip"), single && CanDismiss());
         SetJog("button_4", "HeroScreen_CreatureInfo", HT("CreatureInfo_Tooltip"), true);
         _ui.Bus.On("jd_button_0_reaction", CloseHeroScreen);
@@ -43,6 +43,9 @@ public partial class HeroScreen
         _ui.Bus.On("jd_button_2_reaction", AskDismiss);
         _ui.Bus.On("jd_button_4_reaction", ShowCreatureInfo);
     }
+
+    /// <summary>Dev (screenshots): sends a message on the screen's bus as a click would.</summary>
+    public void DevSend(string message) => _ui.Bus.Send(message);
 
     void SetJog(string name, string rootId, string tooltip, bool enabled)
     {
@@ -66,6 +69,14 @@ public partial class HeroScreen
     void StepHero(int delta)
     {
         if (_meet != null) return;
+        if (_preview)
+        {
+            if (PreviewTarget(delta) is not { } id || _previewBuild == null) return;
+            var host = GetParent<Control>();
+            QueueFree();
+            OpenPreview(_adv, _previewBuild(id), _town!, host, _previewOffers.Prev, _previewOffers.Next, _previewBuild, id, _page);
+            return;
+        }
         var list = _adv.Session.S.Heroes.Where(h => h.Alive && h.Owner == _hero.Owner).ToList();
         int i = list.IndexOf(_hero);
         if (i < 0 || list.Count == 0) return;
@@ -78,6 +89,16 @@ public partial class HeroScreen
     }
 
     string? _startPage;
+
+    /// <summary>
+    /// 006c2550 (previous) / 006c25b0 (next) in mode 1: the screen's +0x774 / +0x778 hero (tavern offer 1 / 2) when it
+    /// exists and is not the hero shown, else none.
+    /// </summary>
+    string? PreviewTarget(int delta)
+    {
+        var id = delta < 0 ? _previewOffers.Prev : _previewOffers.Next;
+        return id != null && id != _previewShown ? id : null;
+    }
 
     /// <summary>
     /// 006c11a0: a question box (00679150, type 1) with the screen's related texts DismissHeader / DismissWarning.
