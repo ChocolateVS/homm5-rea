@@ -130,6 +130,12 @@ Code: `src/H5.Core/Ui/UiTextLayout.cs` (layout), `UiMarkup.Tokenize` (stream), `
 |---|---|---|---|
 | Mana | HeroAttributes/Mana = UI/HeroScreen3/HeroArmy/ManaValue, text minmaxvalue.txt "<value=Attribute>/<value=AttributeMax>" (current / maximum, as on the hero screen) | Attribute = AttributeMax = knowledge × HeroManaPerKnowledge (× Intelligence_ManaPointsBonus with the perk; Adventure.MaxMana) for the offered hero | FIXED (only Attribute was set: "10/") / the exe reads the offered hero object's mana (no object before hiring in ours) |
 
+## UIGameRoot id tables (`game/src/Ui/UiGameRoot.cs`)
+
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Id lookup | one table per kind in UIGameRoot (007c3f50 texts +0x74 stride 0x1c, 007c3e80 +0x68, 007c4b30 +0x11c, stride 0x18): linear search, equal length + strncmp (case-sensitive), first match | `Items` keyed by (element kind, ID), ordinal, first entry kept; `Text` = TextFileRef, `Texture` = Texture, `Button` = Button (jog dial), `RelatedText` = RelatedTexts | FIXED (was: one case-insensitive table, so "hire_creatures" (RelatedTexts) lost to "HIRE_CREATURES" (Screen) and returned nothing; the hire screen's growth tooltip now uses `RelatedText("hire_creatures", …)` instead of the `RelatedTextAt` path workaround). No unit test (needs the Godot `Game` instance) |
+
 ## Dev input for UI tests
 
 | Item | Original (evidence) | Ours | Status |

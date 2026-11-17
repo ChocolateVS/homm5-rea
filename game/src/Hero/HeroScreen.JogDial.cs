@@ -50,7 +50,7 @@ public partial class HeroScreen
     void SetJog(string name, string rootId, string tooltip, bool enabled)
     {
         if (_jog?.Find(name) is not { } btn) return;
-        if (UiGameRoot.Texture(rootId) is { } path && Game.Instance.Fs.Exists(path))
+        if (UiGameRoot.Button(rootId) is { } path && Game.Instance.Fs.Exists(path))
             UiDrawableHelper.Apply(btn, Game.Instance.Xdb.Load(path).Root!, path);
         btn.SetTooltip(tooltip);
         btn.Enabled = enabled;

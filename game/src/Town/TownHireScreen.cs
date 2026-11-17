@@ -225,8 +225,7 @@ public sealed partial class TownHireScreen : TownSubScreen
 
     static string GrowthTooltip(H5.Adventure.Engine.TownGrowth g, int days)
     {
-        // UIGameRoot "hire_creatures" = HireCreatures/RootText.
-        static string T(string key) => UiGameRoot.RelatedTextAt("UI/HireCreatures/RootText.(WindowRelatedTexts).xdb", key) ?? "";
+        static string T(string key) => UiGameRoot.RelatedText("hire_creatures", key) ?? "";
         var sb = new System.Text.StringBuilder(T("T_GROWTH_HEADER"));
         void Line(string key, int count) { if (count > 0) sb.Append(T(key).Replace("<value=count>", count.ToString())); }
         Line("T_GROWTH_WEEKLY", g.Weekly);
