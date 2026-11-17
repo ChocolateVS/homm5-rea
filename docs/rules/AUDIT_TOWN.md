@@ -11,6 +11,7 @@ Commits: 9153b62 (dwelling growth incl. moon weeks), afe1e7b + 844ce53 (build ch
 6690c81 (level-up offers, experience table, Enlightenment, perk effects, hero screen fixes),
 f65f434 + c6f0b5b (spell learning, blacksmith prices, zero-count transfers), 5d81148 (Town Portal, hover colour),
 51d3aa3 (map-start buildings), the user-report commit (hire screen, tavern + rumours, marketplace, town camera, army rows).
+Town sweep 9: da204e3 (build counter), 9bfa804 (forced-merge sort order), 3d2ce6d (building tooltip extras), aac55a4 (relearn box), ed4e87e (caravan row growth tooltip), 513d21e (MMH 5.5 Wisdom extras).
 Tests: `tests/H5.Adventure.Tests/TownGrowthTests.cs`, `SpellLearnTests.cs`, `LevelUpRulesTests.cs`, `TownBuildRulesTests.cs`, `TownInitialBuildingsTests.cs`, `TownHireTests.cs`, `TavernRumourTests.cs`, `WalkersHutTests.cs`, `MapDwellingGrowthTests.cs`, `TownDwellingFilterTests.cs`, `MageGuildTests.cs`, `WalkersHutTests.cs`, `TownBuildScreenTests.cs`;
 screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stock.
 
@@ -314,7 +315,7 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Experience bar | 006bed90, HeroExperience.(WindowProgressBar) Forward texture | fill (exp − T(L)) / (T(L+1) − T(L)) | `SetProgress` (was never filled) | FIXED |
 | Experience tooltip | 006bed90 keys current / next; ExpTooltip.txt | `<value=current>/<value=next>` = exp / T(L+1) | from ExpTooltip.txt (was hard-coded "a / b") | FIXED |
 | "Experience:" label placement | HeroDescription (pos 132,36, shared HIGH_END) | — | drawn over the Attributes header | GAP (UiLayout HIGH_END semantics, not traced) |
-| Attribute values | 006be820 / 006be780 | each value compared with a second value: `_red` below, `_green` above; source pair (likely total vs base) not traced | base stats, no colouring, worn artifacts not added | GAP |
+| Attribute values | 006be820 / 006be780; hero screen 006c99e0 (also 006240b0, 00636d20, 006c3220): EDX = snapshot +0xc8 (6 values, then Attribute / AttributeMax = +0xe0 / +0xe4), stack = snapshot +0x104 (6 compare values); second hero +0x124 / +0x160; snapshots at screen +0x1b8 / +0x338 (flag +0x4b8 flips them, 006c8de0) | 006be780(window, value, compare): compare = 0x80000000 → plain "Attribute" text, value < compare → `_red`, value > compare → `_green`; the snapshot ctor 006cd380 sets both arrays to 0x80000000, and no direct writer of +0xc8 / +0x104 was found (FindWrites over all functions; 006becb0 / 006c3610 fill other parts) — the filler (and so what the compare values are) is not identified | base stats, no colouring, worn artifacts not added | GAP |
 | Mana | 006be820 Attribute / AttributeMax | current / max | `Mana` / `MaxMana` | MATCH |
 | Artifact doll and backpack icons | Inventory/*.(WindowMSButton) with a Pic child | icon shown in the slot | icon was put under the Pic child (invisible); now on Pic | FIXED |
 | Doll slot mapping | 006bf940 (Helm, Necklace, Cloak, Cirase, Weapon, Shield, Ring_1/2, Boots, Additional) | per artifact Slot | same names | MATCH |
