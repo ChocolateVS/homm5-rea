@@ -132,6 +132,12 @@ public sealed class MissionRecord
     public int TownsOccupied;
     /// <summary>+0x20: towns taken from this player (same event, the old owner).</summary>
     public int TownsLost;
+    /// <summary>+0x24 / +0x28 / +0x2c: battles fought / won / lost (logger vf 0x18 = 00877570, raised by the combat end 00af6680).</summary>
+    public int BattlesFought, BattlesWon, BattlesLost;
+    /// <summary>+0x34: enemy heroes this player's hero beat (logger vf 0x28 = 00877680: hero death 004fe5b0, flee 004fe770, surrender 004fe890).</summary>
+    public int HeroesKilled;
+    /// <summary>+0x30: this player's heroes that went to the tavern (logger vf 0x2c = 00877700 from 00b52cd0: flee / surrender).</summary>
+    public int HeroesLost;
     /// <summary>+0x3c: the artifacts of the player's heroes at the map start (vf 0x8 = 00877d40 → 00877500) plus one per artifact a hero gained (vf 0x38 = 00877810, hero 00b4b610).</summary>
     public int Artifacts;
 }

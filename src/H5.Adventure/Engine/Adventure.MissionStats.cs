@@ -6,8 +6,8 @@ namespace H5.Adventure.Engine;
 /// Game statistics for the mission results window (UI/MissionResults, rows of 0079fcf0). H5_Game.exe keeps them in
 /// CMissionResultsLogger (world +0x170, ctor 00877f70), an IGameEventLogger fed through the world's event multiplexer
 /// (world vf 0x180), and builds the window's 0xa0-byte summary with its IMissionResults vf 0 = 00877dd0 for the
-/// human player. Counters whose event sources are not traced (battles, heroes, creatures and resources gained) are
-/// not recorded: their values are null.
+/// human player. Counters whose event sources are not traced (creatures and resources gained) are not recorded:
+/// their values are null.
 /// </summary>
 public sealed record MissionSummary(
     int Days, int Weeks, int Months,
@@ -35,7 +35,7 @@ public sealed partial class Adventure
         int enemies = S.Players.Where(o => o.Index != player && !Allied(player, o.Index)).Sum(o => MissionCreatures(o.Index));
         return new MissionSummary(d % 7 + 1, d / 7 % 4 + 1, d / 28 + 1,
             p?.Purse.R.ToArray() ?? new int[7], null,
-            null, null, null, null, null,
+            rec.BattlesFought, rec.BattlesWon, rec.BattlesLost, rec.HeroesKilled, rec.HeroesLost,
             rec.TownsOccupied, rec.TownsLost,
             MissionCreatures(player), null, enemies, null,
             MissionArtifacts(player), rec.Artifacts);
@@ -68,6 +68,30 @@ public sealed partial class Adventure
     void LogArtifactGained(HeroState h)
     {
         if (PlayerByIndex(h.Owner) is { } p) p.Mission.Artifacts++;
+    }
+
+    /// <summary>
+    /// The combat end 00af6680 (when the combat's vf 0x110 is 0) → logger vf 0x18 = 00877570(…, winner side, loser
+    /// side, …): each side's owner (side vf 4 → player vf 0x2c, players 1..8 only) counts a battle (+0x24), the winner's a
+    /// win (+0x28), the loser's a loss (+0x2c). A neutral side has no player and counts nothing.
+    /// </summary>
+    void LogBattle(int winner, int loser)
+    {
+        if (PlayerByIndex(winner) is { } w) { w.Mission.BattlesFought++; w.Mission.BattlesWon++; }
+        if (PlayerByIndex(loser) is { } l) { l.Mission.BattlesFought++; l.Mission.BattlesLost++; }
+    }
+
+    /// <summary>
+    /// A hero beaten in battle: the death 004fe5b0 (player vf 0x148), flight 004fe770 (vf 0x140) and surrender 004fe890
+    /// (vf 0x144) each call logger vf 0x28 = 00877680(killer's player, hero) when world vf 0x138 (+0x84) is clear and the
+    /// killer (argument 3) and its owner (vf 0) are live → +0x34 of the killer's player. The flight and the surrender then
+    /// run hero vf 0x1d8 / 0x1dc → 00b52cd0 → logger vf 0x2c = 00877700(the hero's owner) → +0x30; so does a death of a
+    /// hero in the pool's return set (pool vf 0x48), which 004fe5b0 hands to vf 0x140.
+    /// </summary>
+    void LogHeroBeaten(HeroState h, HeroState? killer, bool toTavern)
+    {
+        if (killer != null && PlayerByIndex(killer.Owner) is { } k) k.Mission.HeroesKilled++;
+        if ((toTavern || S.TavernReturnAfterDeath.Contains(h.DefId)) && PlayerByIndex(h.Owner) is { } o) o.Mission.HeroesLost++;
     }
 
     /// <summary>Town owner change (00cd5400) → logger vf 0x34 (00877780): the old owner lost, the new owner took a town.</summary>

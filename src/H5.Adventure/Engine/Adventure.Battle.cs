@@ -367,6 +367,7 @@ public sealed partial class Adventure
     /// </summary>
     void RetreatHero(HeroState h, bool surrender, List<ArmySlot> survivors, HeroState? winner)
     {
+        LogHeroBeaten(h, winner, toTavern: true);
         var p = PlayerByIndex(h.Owner);
         if (surrender)
         {
@@ -468,6 +469,10 @@ public sealed partial class Adventure
         if (c.EndReason.Length == 0 && c.AttackerFled && !attackerWon) c = c with { EndReason = "fled" };
         bool retreat = c.EndReason is "fled" or "surrender", surrender = c.EndReason == "surrender";
         bool attRetreated = retreat && !attackerWon, defRetreated = retreat && attackerWon && defHero != null;
+        // The defending side's owner (side vf 4): the hero's, else the caravan's, the town's or the army object's.
+        int defOwner = defHero?.Owner ?? (pb.DefenderCaravan >= 0 ? pb.DefenderCaravanOwner
+            : pb.DefenderObject >= 0 ? S.Town(pb.DefenderObject)?.Owner ?? (S.Objects.TryGetValue(pb.DefenderObject, out var dos) ? dos.Owner : -1) : -1);
+        if (attackerWon) LogBattle(att.Owner, defOwner); else LogBattle(defOwner, att.Owner);
         // Spell points spent in the battle stay spent (exe: the combat hero is the adventure hero).
         if (c.HeroMana is { Length: 2 } mana) { att.Mana = Math.Max(0, mana[0]); if (defHero != null) defHero.Mana = Math.Max(0, mana[1]); }
         // Wand charges spent in the battle (00bbf610 -> 00ca62f0 on the adventure hero's own charge objects).
@@ -532,7 +537,7 @@ public sealed partial class Adventure
         {
             Emit(new BattleResolved(0, expAtt) { Result = combatResult, Armies = savedArmies });
             if (defRetreated) RetreatHero(defHero!, surrender, c.DefenderSurvivors, att);
-            else if (defHero != null) RemoveHero(defHero, "defeated");
+            else if (defHero != null) { LogHeroBeaten(defHero, att, toTavern: false); RemoveHero(defHero, "defeated"); }
             if (pb.DefenderObject >= 0)
             {
                 var o = O(pb.DefenderObject);
@@ -582,7 +587,7 @@ public sealed partial class Adventure
             else if (pb.DefenderObject >= 0 && S.Town(pb.DefenderObject) is { } t && defHero == null)
                 SetArmy(t.Garrison, c.DefenderSurvivors);
             if (attRetreated) RetreatHero(att, surrender, c.AttackerSurvivors, defHero);
-            else RemoveHero(att, "defeated");
+            else { LogHeroBeaten(att, defHero, toTavern: false); RemoveHero(att, "defeated"); }
         }
         CheckEliminations();
         return null;
