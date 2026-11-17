@@ -23,8 +23,11 @@ from the description. Move an item to "Done" with the commit when fixed.
     *Progress:* the select marks now draw over the overlapping movement / target quads in the exe's order
     (material Priority → render layer 0x1f + priority, 00899720; Select.xdb / select_2.xdb = 1, others 0) and sit
     0.05 above the cell (0055bb60) — commit "combat grid: select marks drawn after the other marks". Still open: the
-    cyan blobs under a Deflect Missile target are spell-effect particles sorted with the grid (their render layer in
-    the exe not traced); the browser (Compatibility) renderer draws the grid fill brighter than the desktop one (not investigated).
+    cyan blobs under a Deflect Missile target are spell-effect particles sorted with the grid. Traced since: the exe
+    does not queue particles in the material layers at all (00464fd0 is only used by the NGScene materials); they go
+    through the scene's particle pass (00a904d0 → 0087f120, drawn with SEffTransparentParticles 0087e220) inside the
+    frame function at 00a91c00 — which pass draws the grid's layer-0x1f queue relative to it is not traced yet (GAP in
+    AUDIT_COMBAT_UI); the browser (Compatibility) renderer draws the grid fill brighter than the desktop one (not investigated).
 
 ## Done
 
