@@ -16,6 +16,9 @@ public static class TownLauncher
     public static bool OpenTown;
     public static string? Goto;
     public static bool BuildAll;
+    /// <summary>Dev only (`--town-tip=TB_…`): show that building's tooltip; `--town-sacrificed=N` sets the Ritual Pit total first.</summary>
+    public static string? Tip;
+    public static int? Sacrificed;
     /// <summary>Dev only (`--town-caravans=castles|dwellings|info|map|meet`): own every dwelling and one more town on the floor,
     /// send a caravan here, then open that caravan tab of the hire screen (with `--town-goto=fort`).</summary>
     public static string? CaravanTab;
@@ -32,6 +35,8 @@ public static class TownLauncher
         if (arg == "--town-open") { OpenTown = true; Callable.From(WaitForAdventure).CallDeferred(); return true; }
         if (arg.StartsWith("--town-goto=")) { Goto = arg["--town-goto=".Length..]; return true; }
         if (arg == "--town-build-all") { BuildAll = true; return true; }
+        if (arg.StartsWith("--town-tip=")) { Tip = arg["--town-tip=".Length..]; return true; }
+        if (arg.StartsWith("--town-sacrificed=")) { Sacrificed = int.Parse(arg["--town-sacrificed=".Length..]); return true; }
         if (arg.StartsWith("--town-caravans=")) { CaravanTab = arg["--town-caravans=".Length..]; return true; }
         if (arg.StartsWith("--town-type=")) { DevType = arg["--town-type=".Length..]; return true; }
         if (arg.StartsWith("--town-dev-hero=")) { DevHero = arg["--town-dev-hero=".Length..]; return true; }
@@ -260,8 +265,10 @@ public static class TownLauncher
                     GD.Print($"[H5] --town-caravans: caravan {car.Id} at {car.Pos}, days {car.DaysLeft}");
                     return;
                 }
+                if (Sacrificed is { } sac) town.SacrificedHitPoints = sac;
                 var screen = TownScreen.Open(adv, town);
                 if (Goto != null) screen.OpenSub(Goto);
+                if (Tip != null) Callable.From(() => screen.DevBuildingTooltip(Tip)).CallDeferred();
                 return;
             }
         }

@@ -46,17 +46,62 @@ public partial class TownScreen
         _buildingTip?.QueueFree();
         _buildingTip = null;
         if (!rb.Pressed || _hoverBuilding == null || ViewFor(_hoverBuilding) is not { } view) return;
+        ShowBuildingTooltip(view, rb.GlobalPosition);
+    }
+
+    void ShowBuildingTooltip(BuildingView view, Vector2 at)
+    {
         // Name and description are original markup texts: inserted as is, height measured with the stock fonts.
         var markup = (Ui.UiResources.Instance.Text("UI/Tooltips/TownHall/nameDesc.txt") ?? "")
-            .Replace("<value=name>", view.Name).Replace("<value=desc>", view.Description);
+            .Replace("<value=name>", view.Name).Replace("<value=desc>", TooltipDescription(view));
         var text = Interaction.AdvTooltip.Text(markup, 200);
         _buildingTip = Interaction.AdvTooltip.Frame("UI/Tooltips/TownHall/BuildingToolTip.(WindowGathering).xdb", text);
         AddChild(_buildingTip);
         var vp = GetViewportRect().Size;
-        var p = rb.GlobalPosition + new Vector2(16, 16);
-        if (p.X + _buildingTip.Size.X > vp.X) p.X = rb.GlobalPosition.X - _buildingTip.Size.X - 4;
-        if (p.Y + _buildingTip.Size.Y > vp.Y) p.Y = rb.GlobalPosition.Y - _buildingTip.Size.Y - 4;
+        var p = at + new Vector2(16, 16);
+        if (p.X + _buildingTip.Size.X > vp.X) p.X = at.X - _buildingTip.Size.X - 4;
+        if (p.Y + _buildingTip.Size.Y > vp.Y) p.Y = at.Y - _buildingTip.Size.Y - 4;
         _buildingTip.Position = p;
+    }
+
+    /// <summary>
+    /// The description part of 0061a5d0 (tooltip, param_3 ≠ 0): the built level's description (00cd4070 = level
+    /// record +0x50; the name is 00cd3fc0 = +0x44), then by the building's town ability (town vf 0x48):
+    /// 0x1c (Dungeon Ritual Pit) appends ritual_pit_info_witches / _minotaurs (UI/TownScreen texts, &lt;value=val&gt;)
+    /// for the town's vf 0x94 / 0x98 bonuses when non-zero; otherwise building type 5 (Blacksmith) takes 00664aa0's
+    /// text: the description with &lt;value=warmachine&gt; = the name of the town type's machine (town vf 0xe8 =
+    /// 00cceac0: type data +0xc4, 0 → 1; SWarMachine +0x9c visual, +0x44 name). Name, description and an empty third
+    /// string go to the 0x48 tooltip object (00585d40). GAP: abilities 0xc / 0xd (mystic pond) and 0x1d (trade guild)
+    /// use the 0x74 resource tooltip (0061f2b0, UI/Tooltips/TownHall/TradeGuild); the shipyard (type 3) appends
+    /// shipyard_deserted after a test (00e95610-side interface vf 0xc) that is not identified.
+    /// </summary>
+    string TooltipDescription(BuildingView view)
+    {
+        string desc = view.Description;
+        if (view.Def.Type == H5.Adventure.Engine.Adventure.RitualPit && Town.Type == "TOWN_DUNGEON")
+        {
+            var (witches, minotaurs) = H5.Adventure.Engine.Adventure.RitualPitBonus(Town.SacrificedHitPoints);
+            // UI/TownScreen/texts.(WindowRelatedTexts): ritual_pit_info_witches / _minotaurs.
+            if (witches != 0) desc += TownUi.Text("UI/TownScreen/ritual_pit_info_witches.txt", "").Replace("<value=val>", witches.ToString());
+            if (minotaurs != 0) desc += TownUi.Text("UI/TownScreen/ritual_pit_info_minotaurs.txt", "").Replace("<value=val>", minotaurs.ToString());
+        }
+        else if (view.Def.Type == "TB_BLACKSMITH")
+        {
+            var machine = Session.Db.NativeWarMachine.GetValueOrDefault(Town.Type) is { Length: > 0 } m ? m : "WAR_MACHINE_BALLISTA";
+            desc = desc.Replace("<value=warmachine>", Combat.CombatLogText.WarMachineName(machine) ?? "");
+        }
+        return desc;
+    }
+
+    /// <summary>Dev (`--town-tip=TB_…`): the tooltip of that building's built level, as on a right click at the screen centre.</summary>
+    public void DevBuildingTooltip(string type)
+    {
+        // Dev: a building the map does not allow is granted at the type's maximum level.
+        if (Town.Level(type) <= 0 && Session.Db.MaxLevel(Town.Type, type) is > 0 and var max) Town.Built[type] = max;
+        var view = TownData.Defs(Session.Db, Town).Where(d => d.Type == type && Town.Level(type) >= d.Level)
+            .OrderByDescending(d => d.Level).Select(TownData.View).FirstOrDefault();
+        if (view == null) { GD.PushWarning($"[H5] --town-tip: {type} not built"); return; }
+        ShowBuildingTooltip(view, GetViewportRect().Size / 2);
     }
 
     public override void _UnhandledInput(InputEvent e)
