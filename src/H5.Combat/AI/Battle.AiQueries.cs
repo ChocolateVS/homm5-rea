@@ -62,8 +62,11 @@ public sealed partial class Battle
     /// adds the stacks (FUN_00b3cf00, 0x00c52eae..0x00c52eeb) only for an actor that does not fly. The search is the walker search of
     /// <see cref="MoveSearch"/> (steps 2 / 3, FIFO cost buckets, MoveDirs order, strictly cheaper parents).
     /// Whole-path map think +0xfc: (own false, enemy true, flyerAsWalker false); think +0xe4: (true, true, true).
+    /// With <paramref name="moatStop"/> (map +0x10 = 2: FUN_00c52e20's first flag clear, i.e. think +0x1c8 clear through
+    /// FUN_008d0720) FUN_00b5f0d0 does not expand a cell other than the start whose flag bit 0x1000000 is set
+    /// (<see cref="AiMoatFlag"/>): the search enters the moat but goes no farther from it.
     /// </summary>
-    internal (Dictionary<Cell, int> Dist, Dictionary<Cell, Cell> Prev) AiPathMap(Unit u, bool own, bool enemy, bool flyerAsWalker)
+    internal (Dictionary<Cell, int> Dist, Dictionary<Cell, Cell> Prev) AiPathMap(Unit u, bool own, bool enemy, bool flyerAsWalker, bool moatStop = false)
     {
         bool flyer = u.Flying && !flyerAsWalker;
         bool Blocked(Cell c)
@@ -91,6 +94,7 @@ public sealed partial class Battle
             if (first.Value.Count == 0) buckets.Remove(first.Key);
             int cost = first.Key;
             if (cost > dist[cur]) continue;
+            if (moatStop && cur != u.Pos && AiMoatFlag(u, cur)) continue;
             foreach (var d in MoveDirs)
             {
                 var n = cur + d;
@@ -104,6 +108,69 @@ public sealed partial class Battle
             }
         }
         return (dist, prev);
+    }
+
+    /// <summary>
+    /// The second grid of the AI maps (FUN_00b3cf30(combat, grid, actor) → FUN_00b5ebd0: flag +7 bit 0 = bit 0x1000000 of the
+    /// cell word): the cells marked by the combat objects (combat vf 0x18 = +0x190, list +0x54, FUN_0085b370) of type 1
+    /// (CArenaMoat: its 14-entry interface 00e8df90 vf 0 = 008b1e10 → 1; vf 0x14 = 00c510b0 marks every cell of its list
+    /// +0xc) and type 2 (CArenaMoatMine, 00e8df24 vf 0 = 00a83aa0 → 2; vf 0x14 = 00c51c90 marks its one cell) whose vf 0x18(0, 0)
+    /// holds (00c50fa0 / 00c50ef0: the owner army +8, the defender from combat vf 0x84(0), is set; a mine also needs its
+    /// field −0x24 clear), minus the cells of the actor (vf 0xc4); the grid is then widened for the actor's size (FUN_00b3efb0)
+    /// as the obstacle grid is. Ours: the siege moat cells (the mines lie in them) other than the actor's own, tested over the
+    /// cells of a stack anchored at <paramref name="p"/>.
+    /// </summary>
+    internal bool AiMoatFlag(Unit u, Cell p) =>
+        S.Siege is { Moat.Count: > 0 } sg && u.CellsAt(p).Any(c => sg.Moat.Contains(c) && !u.Occupies(c));
+
+    /// <summary>
+    /// FUN_00c52cc0(stack, 0, 0), the move search the danger score FUN_00c53310 runs for an enemy walker: budget 2 × speed
+    /// (+0x14), map +0x10 = 2 (moat stop, <see cref="AiMoatFlag"/>) for a walker of the attacking army (army vf 0xac = 004d9380:
+    /// combat vf 0x84(1) is this army) in any battle, else 1 (no stop); otherwise the engine's move search (<see cref="MoveSearch"/>).
+    /// </summary>
+    internal Dictionary<Cell, int> AiDangerReach(Unit t, int budget)
+    {
+        bool stop = !t.Flying && t.Side == 0 && S.Siege != null;
+        var dist = new Dictionary<Cell, int> { [t.Pos] = 0 };
+        var buckets = new SortedDictionary<int, Queue<Cell>> { [0] = new Queue<Cell>(new[] { t.Pos }) };
+        while (buckets.Count > 0)
+        {
+            var first = buckets.First();
+            var cur = first.Value.Dequeue();
+            if (first.Value.Count == 0) buckets.Remove(first.Key);
+            int cost = first.Key;
+            if (cost > dist[cur]) continue;
+            if (stop && cur != t.Pos && AiMoatFlag(t, cur)) continue;
+            foreach (var d in MoveDirs)
+            {
+                var n = cur + d;
+                int nc = cost + (d.X != 0 && d.Y != 0 ? MoveDiag : MoveOrth);
+                if (budget >= 0 && nc > budget) continue;
+                if (dist.TryGetValue(n, out var old) && old <= nc) continue;
+                if (!Fits(t, n)) continue;
+                dist[n] = nc;
+                if (!buckets.TryGetValue(nc, out var q)) buckets[nc] = q = new Queue<Cell>();
+                q.Enqueue(n);
+            }
+        }
+        return dist;
+    }
+
+    /// <summary>
+    /// FUN_0085c2c0(unit) as value slot [16] uses it: Σ vf 0x1c(unit, 1, 0) over the combat objects of type 5 the unit stands
+    /// in (FUN_0085bbf0 on combat vf 0x18 = +0x190 from (−1, −1) to the unit's cells; an object counts when its vf 0x18 holds
+    /// and its vf 0x10 takes the unit's cells). Type 5 is CArenaStorm (14-entry interface 00e91e6c vf 0 = 00c99620 → 5; the
+    /// moat is type 1): vf 0x18 = 0098b2b0 (field −0x24 clear: still active), vf 0x10 = 00c99280 (a cell within 1 of the
+    /// centre: the 3 × 3 field), vf 0x1c = 00c993a0 = FUN_0097d600(the storm's spell, unit) — the damage its tick deals.
+    /// Ours: the engine's STORM fields (Call Storm) touching the unit, their damage (0 for an air-immune unit).
+    /// GAP-detail: FUN_0097d600's own terms (resistances beyond the immunity) are the engine's stored field damage.
+    /// </summary>
+    internal int AiStormDamage(Unit u)
+    {
+        int sum = 0;
+        foreach (var f in S.Fields)
+            if (f.Kind == "STORM" && f.Cells.Any(u.Occupies) && !ElementImmune(u, Elements.Air)) sum += (int)f.Damage;
+        return sum;
     }
 
     /// <summary>FUN_004babf0(stack) == 0x75 (CREATURE_GOBLIN family), as FUN_008d03a0 tests it.</summary>

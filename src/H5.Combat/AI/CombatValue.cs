@@ -34,7 +34,7 @@ public sealed class SideValue
     public double FlyerDamage, FlyerAttack;
     /// <summary>[14]/[15] walkers' damage·bonus and attack.</summary>
     public double WalkerDamage, WalkerAttack;
-    /// <summary>[16] the other army's moat damage (FUN_00bfa610, <see cref="CombatValue.MoatShare"/>).</summary>
+    /// <summary>[16] the other army's storm-field damage (FUN_00bfa610, <see cref="CombatValue.StormShare"/>).</summary>
     public double Additive;
 
     /// <summary>The engine's attack/defence damage factor (exe FUN_00a58d30): 1+0.05(A−D) or 1/(1+0.05(D−A)).</summary>
@@ -175,7 +175,7 @@ public sealed class CombatValue
     /// (integer division).
     /// GAP-details (not ported): X = FUN_0085b4a0(combat vf 0x18, army) — the sum of vf 0x1c(0,0,0) over the objects of
     /// that list (+0x54) of type 0 / 3 / 5 with vf 0x18(0,0) set owned by the army — is not identified (ours:
-    /// <see cref="HeroStrikePotential"/>); [16] is <see cref="MoatShare"/>; the [5] multiplier 1 + 0.05 · (hero unit vf 0x244(no spell) + hero
+    /// <see cref="HeroStrikePotential"/>); [16] is <see cref="StormShare"/>; the [5] multiplier 1 + 0.05 · (hero unit vf 0x244(no spell) + hero
     /// vf 0x40 = FUN_00bc0730) unless the hero holds effect 0x41 (vf 0x40 not identified); the think-record damage
     /// multiplier FUN_00a314c0 (1.0 unless set); FUN_00a5b780's health addend (unit vf 0x70 / vf 0x2d0 / vf 0x1a8,
     /// RPGStats +0x4cc / +0x4c0); Celestial Shield's ×2 branch (effect +0x20 / 100000 &gt; 2, field not identified); the
@@ -250,26 +250,26 @@ public sealed class CombatValue
         v.WalkerAttack = a6 != 0 ? waA / (float)a6 : waA;
         int n = (int)((float)s.Time + 1.0f);
         if (n <= 2) v.HeroPotential = (int)HeroStrikePotential(b, side, enemies) / Math.Max(1, n);
-        v.Additive = MoatShare(b, 1 - side);
+        v.Additive = StormShare(b, 1 - side);
         return v;
     }
 
     /// <summary>
-    /// Value slot [16] of a half: FUN_00bfa610(combat vf 0xe0(army)) — over the OTHER army's units (army vf 0x6c),
-    /// FUN_0085c2c0(unit): the combat objects at the unit's cell (FUN_0085bbf0 on combat vf 0x18 = +0x190) of type 5 add
-    /// their vf 0x1c(unit, 1, 0); × 2 for a unit that shoots (vf 0x1e0). Type 5 is the moat (CArenaMoat: the same objects'
-    /// cells are the moat cells of FUN_00b3e040); ours: a unit of the siege attacker standing on a moat cell counts the
-    /// moat damage (<see cref="SiegeState.MoatDamage"/>), the only side our moat hurts. GAP-detail: vf 0x1c is read as
-    /// that damage (not traced).
+    /// Value slot [16] of a half: FUN_00bfa610(combat vf 0xe0(army)) — over the OTHER army's units (army vf 0x6c = 004da670:
+    /// creature interfaces passing FUN_00a6d490, so no war machine, hero or hidden stack), FUN_0085c2c0(unit) =
+    /// <see cref="Battle.AiStormDamage"/>: the storm fields (combat objects of type 5 = CArenaStorm, Call Storm) the unit stands
+    /// in; × 2 for a unit that shoots (vf 0x1e0). (Was: the moat damage of attackers in the moat — the moat is combat object
+    /// type 1 (CArenaMoat 00e8df90 vf 0 → 1); the type-5 objects of FUN_00b3e040 are town BUILDINGS of kind 5 = MOAT
+    /// (building interface 00e8832c vf 0 = 00bfd260: SArenaBuilding +0x74, names 0092f3e0), a different list.)
     /// </summary>
-    internal static int MoatShare(Battle b, int side)
+    internal static int StormShare(Battle b, int side)
     {
-        if (b.State.Siege is not { Moat.Count: > 0 } sg || side != 0) return 0;
         int sum = 0;
         foreach (var u in b.State.Living)
         {
-            if (u.Side != side || u.IsObject || !u.CellsAt(u.Pos).Any(sg.Moat.Contains)) continue;
-            sum += b.CanShoot(u) ? sg.MoatDamage * 2 : sg.MoatDamage;
+            if (u.Side != side || u.IsObject || u.IsWarMachine || u.HasEffect(Fx.Invisible)) continue;
+            int d = b.AiStormDamage(u);
+            sum += b.CanShoot(u) ? d * 2 : d;
         }
         return sum;
     }

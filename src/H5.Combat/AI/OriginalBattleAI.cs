@@ -570,13 +570,24 @@ public sealed partial class OriginalBattleAI : IBattleAI
     /// 0xb0 rectangle a neighbour's neighbour (recursion, flag 0); the object behind actor vf 0xc is not identified) is not applied;
     /// a "Move-no-attack" record with Turns 0 (a strike without the return) has no command here and is left out; the enemy gates
     /// FUN_00b3e1c0 (think +0x1bc), the vf 0x80 record +0x1c == 2 skip (think +0x1b6) and the adjacency / think +0x1b7 /
-    /// FUN_008d0440 skip are not applied; the map's moat stop (map +0x10 = 2 when think +0x1c8 is clear: FUN_00b5f0d0 does not expand
-    /// a non-start cell whose flag bit 0x1000000 (+7 bit 0, the second grid FUN_00b3cf30(combat, actor) of FUN_00b5ebd0) is set) and
-    /// the siege attacker's second pass on FUN_00c52e20(0, 1, 1, 0) (think +0x1c8) are not modelled (the same map here).
+    /// FUN_008d0440 skip are not applied. The moat stop (map +0x10 = 2 when think +0x1c8 is clear) and the siege attacker's second
+    /// pass are ported (<see cref="IgnoresMoat"/>, <see cref="Battle.AiMoatFlag"/>).
     /// </summary>
     IEnumerable<Candidate> Attacks(Battle b, Unit u, int side, LegalActions la, List<Unit> enemies, CombatDifficulty diff, bool tooWeak, bool defensive)
     {
-        var map = b.AiPathMap(u, true, true, false);
+        // Think +0x1c8 (IgnoresMoat): set, map +0xcc does not stop at the moat, and a walker of the siege attacker (combat
+        // vf 0x50, army vf 0xac) gets a second FUN_008d4330 pass on FUN_00c52e20(0, 1, 1, 0) (every stack blocks, moat stop).
+        bool ignore = IgnoresMoat(b, u);
+        foreach (var c in AttackPass(b, u, side, la, enemies, diff, tooWeak, defensive, b.AiPathMap(u, true, true, false, !ignore), !ignore))
+            yield return c;
+        if (ignore && !u.Flying && b.State.Siege is { } sg && sg.Town != "TOWN_NO_TYPE" && u.Side == 0)
+            foreach (var c in AttackPass(b, u, side, la, enemies, diff, tooWeak, defensive, b.AiPathMap(u, true, true, false, true), true))
+                yield return c;
+    }
+
+    IEnumerable<Candidate> AttackPass(Battle b, Unit u, int side, LegalActions la, List<Unit> enemies, CombatDifficulty diff, bool tooWeak, bool defensive,
+        (Dictionary<Cell, int> Dist, Dictionary<Cell, Cell> Prev) map, bool moatStop)
+    {
         (Dictionary<Cell, int>, Dictionary<Cell, Cell>)? mapE4 = null;
         int Cost(Cell c) => map.Dist.TryGetValue(c, out var v) ? v : Unreachable;
         bool strikeAndReturn = u.Has(Ab.StrikeAndReturn);
@@ -592,7 +603,7 @@ public sealed partial class OriginalBattleAI : IBattleAI
                 {
                     if (PlanMove(b, u, cell, 2, map, true) == null) continue;
                     var plan = PlanMove(b, u, cell, 1, map, true);
-                    if (plan == null && u.Flying) plan = PlanMove(b, u, cell, 1, mapE4 ??= b.AiPathMap(u, true, true, true), true);
+                    if (plan == null && u.Flying) plan = PlanMove(b, u, cell, 1, mapE4 ??= b.AiPathMap(u, true, true, true, moatStop), true);
                     if (plan is not { } p) continue;
                     BattleCommand cmd;
                     if (p.Turns == 0)

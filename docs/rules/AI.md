@@ -49,6 +49,11 @@ Per-decision ledger with addresses and status: `docs/rules/AUDIT_AI.md`, section
   keeps the first per enemy), and the approach (FUN_008d5b90,
   same on the whole-path map, planned by FUN_00c540c0 → FUN_00c536f0: Turns, stop cell by danger FUN_00c53310) only when nothing else was added; then invisible enemies (FUN_008d4f70) and FUN_008d4ce0.
   "Too weak" (FUN_00a2f430) restricts spells to damage spells and a list (FUN_008d0bd0); empty → switches cleared, rerun.
+* **Siege** (FUN_00a30460 → think +0x1b8 / +0x1c8): a town-siege attacker takes FUN_008d4610 ("Move-no-attack" toward
+  (field width − 4, own row), stopping before the moat or rising danger) instead of the approach (FUN_00af3cc0, the
+  destroyed-wall test, is always false behind its own list filter); the maps stop at the moat (CArenaMoat type 1 / moat
+  mines type 2) unless the actor ignores it (strong enough or the gate standing and closed), which also adds a second
+  attack pass with the moat stop. **exact** (ported; the gate's open state is not modelled)
 * **Exclusions** (FUN_008d1cb0): type 1 dropped when the start is better, type 2 also when own HP drops ("…by start health
   value"), spells leaving the actor less mana than the limit FUN_00a2f280 (`ExeManaLimit`); the survivors are shuffled with the combat RNG (not ported)
   and scanned with the comparator; nothing left → "End of choose. Chose defend.".

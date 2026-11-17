@@ -587,22 +587,95 @@ public class AiCombatGapTests(GameDataFixture f)
     }
 
     [Fact]
-    public void TheMoatDamageOfEnemyStacksInTheMoatIsAddedToOurDamage()   // FUN_00bfbe50 → FUN_00bfa610 / FUN_0085c2c0 (type-5 objects)
+    public void StormFieldDamageOfEnemyStacksIsAddedToOurDamage()   // FUN_00bfbe50 → FUN_00bfa610 / FUN_0085c2c0 (type 5 = CArenaStorm 00e91e6c)
     {
+        // Type 5 among the combat objects is the storm field (vf 0 = 00c99620 → 5; the moat is type 1, 008b1e10), its vf 0x1c
+        // (00c993a0 = FUN_0097d600) the storm's damage; × 2 for a shooter; the moat adds nothing.
         var s = BattleSetup.Create(f.Db,
             new ArmySetup { Army = { new ArmySlot("CREATURE_ARCHER", 30), new ArmySlot("CREATURE_FOOTMAN", 30) } },
             new ArmySetup { Army = { new ArmySlot("CREATURE_FOOTMAN", 30) } },
             3, skipTactics: true, siege: new SiegeSetup { Town = "TOWN_HEAVEN", FortLevel = 3, TownLevel = 10, TownMaxLevel = 10 });
         var b = new Battle(f.Db, s);
-        var sg = s.Siege!;
-        Assert.True(sg.MoatDamage > 0);
         var archer = s.Units.First(u => u.Side == 0 && u.CreatureId == "CREATURE_ARCHER");
         var footman = s.Units.First(u => u.Side == 0 && u.CreatureId == "CREATURE_FOOTMAN");
-        Assert.Equal(0, CombatValue.Of(b, 1).My.Additive);
-        footman.Pos = sg.Moat.First(c => b.Fits(footman, c));
-        Assert.Equal(sg.MoatDamage, CombatValue.Of(b, 1).My.Additive);           // the defender's half: attackers in its moat
-        archer.Pos = sg.Moat.Last(c => c != footman.Pos && b.Fits(archer, c));
-        Assert.Equal(sg.MoatDamage * (b.CanShoot(archer) ? 3 : 2), CombatValue.Of(b, 1).My.Additive);   // × 2 for a shooter
-        Assert.Equal(0, CombatValue.Of(b, 0).My.Additive);                       // the moat never hurts the defenders
+        footman.Pos = s.Siege!.Moat.First(c => b.Fits(footman, c));
+        Assert.Equal(0, CombatValue.Of(b, 1).My.Additive);                       // the moat is not type 5
+        s.Fields.Add(new FieldObject { Id = 900, Kind = "STORM", Side = 1, Cells = footman.CellsAt(footman.Pos).ToList(), Damage = 40 });
+        Assert.Equal(40, CombatValue.Of(b, 1).My.Additive);
+        s.Fields.Add(new FieldObject { Id = 901, Kind = "STORM", Side = 1, Cells = archer.CellsAt(archer.Pos).ToList(), Damage = 25 });
+        Assert.Equal(40 + (b.CanShoot(archer) ? 50 : 25), CombatValue.Of(b, 1).My.Additive);
+        Assert.Equal(0, CombatValue.Of(b, 0).My.Additive);                       // no defender in a storm
+    }
+
+    BattleState Siege(int footmen, out Battle b)
+    {
+        var s = BattleSetup.Create(f.Db,
+            new ArmySetup { Army = { new ArmySlot("CREATURE_FOOTMAN", footmen) } },
+            new ArmySetup { Army = { new ArmySlot("CREATURE_PEASANT", 10) } },
+            3, skipTactics: true, siege: new SiegeSetup { Town = "TOWN_HEAVEN", FortLevel = 3, TownLevel = 10, TownMaxLevel = 10 });
+        b = new Battle(f.Db, s);
+        return s;
+    }
+
+    [Fact]
+    public void TheMoatIsIgnoredOnlyByAStrongAttackerBeforeAClosedGate()   // FUN_00a30460 settings +0xb4 → think +0x1c8
+    {
+        var s = Siege(1, out var b);
+        var sg = s.Siege!;
+        var fm = s.Units.First(u => u.CreatureId == "CREATURE_FOOTMAN");
+        var pz = s.Units.First(u => u.CreatureId == "CREATURE_PEASANT");
+        int m = sg.MoatDamage, hp = fm.MaxHealthCache;
+        Assert.True(m > 0);
+        void Count(Unit u, int total) { u.Count = (total + hp - 1) / hp; u.TopHealth = total - (u.Count - 1) * hp; }
+        Count(fm, 4 * m);
+        Assert.True(OriginalBattleAI.IgnoresMoat(b, fm));                    // attacker, gate standing and closed, h >= 4m
+        Count(fm, 4 * m - 1);
+        Assert.False(OriginalBattleAI.IgnoresMoat(b, fm));                   // h < 4m
+        Count(fm, 40 * m);
+        sg.Gate!.Destroyed = true;
+        Assert.False(OriginalBattleAI.IgnoresMoat(b, fm));                   // the gate is down: 0 unless h > 40m
+        Count(fm, 40 * m + 1);
+        Assert.True(OriginalBattleAI.IgnoresMoat(b, fm));
+        int phc = pz.MaxHealthCache;
+        pz.Count = 40 * m / phc + 1; pz.TopHealth = phc;
+        Assert.True(OriginalBattleAI.IgnoresMoat(b, pz));                    // a defender too, above 40m
+        pz.Count = 1;
+        Assert.False(OriginalBattleAI.IgnoresMoat(b, pz));
+    }
+
+    [Fact]
+    public void TheMoatStopsTheAiMapAndTheSiegeApproachStopsBeforeIt()   // FUN_00b3cf30 / FUN_0085b370 (types 1 / 2), FUN_00b5f0d0 +0x10 = 2, FUN_008d4610
+    {
+        var s = Siege(1, out var b);
+        var sg = s.Siege!;
+        sg.Gate!.Destroyed = true;
+        SiegeBuilder.RebuildObstacles(s);
+        var fm = s.Units.First(u => u.CreatureId == "CREATURE_FOOTMAN");
+        fm.Pos = new Cell(0, 3);                                                // a row the moat crosses (rows 6 / 7 are the gate's)
+        var goal = new Cell(s.Width - 2, fm.Pos.Y);
+        // Moat cells flag the map; the search enters them but does not go on (map +0x10 = 2).
+        var free = b.AiPathMap(fm, true, false, true);
+        var stopped = b.AiPathMap(fm, true, false, true, moatStop: true);
+        Assert.Contains(sg.Moat, c => b.AiMoatFlag(fm, c));
+        Assert.True(stopped.Dist.Keys.Count(c => b.AiMoatFlag(fm, c)) > 0);
+        Assert.True(stopped.Dist.Count < free.Dist.Count);
+        Assert.All(stopped.Dist.Keys.Where(c => stopped.Prev.TryGetValue(c, out _)), c => Assert.False(b.AiMoatFlag(fm, stopped.Prev[c]) && stopped.Prev[c] != fm.Pos));
+        // FUN_008d4610: the siege attacker heads for (Width − 2, y) and its record stops on the last path cell before the moat.
+        Assert.True(OriginalBattleAI.SiegeAttacker(b, 0));
+        Assert.False(OriginalBattleAI.SiegeAttacker(b, 1));
+        var path = new List<Cell>();
+        Assert.NotNull(OriginalBattleAI.PlanMove(b, fm, goal, 2, free, false, path));
+        int firstMoat = path.FindIndex(c => b.AiMoatFlag(fm, c));
+        var rec = OriginalBattleAI.SiegeApproach(b, fm, 0);
+        if (firstMoat > 1)
+        {
+            Assert.NotNull(rec);
+            Assert.StartsWith("Move-no-attack", rec!.Label);
+            var via = rec.Label.Split(' ')[^1].Split(',');
+            int idx = path.IndexOf(new Cell(int.Parse(via[0]), int.Parse(via[1])));
+            Assert.InRange(idx, 1, firstMoat - 1);
+            Assert.Equal(2, rec.Priority);
+        }
+        else Assert.Fail("the path crosses no moat");
     }
 }
