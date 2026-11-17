@@ -709,7 +709,7 @@ public sealed partial class Battle
             case "SPELL_ARMAGEDDON":
             {
                 double dmg = SpellBaseDamage(baseDef, sp, m, power);
-                double rock = baseDef.DurationAt(m).Eval(power);   // central 4x4 physical rock damage (p.189)
+                double rock = baseDef.DurationAt(m).EvalX87(power);   // central 4x4 physical rock damage (p.189)
                 int cx = S.Width / 2 - 2, cy = S.Height / 2 - 2;
                 foreach (var v in S.Living.Where(u => !u.IsObject).ToList())
                 {
@@ -746,7 +746,7 @@ public sealed partial class Battle
                 if (cell is not Cell c) return;
                 var cells = Enumerable.Range(-1, 3).Select(dy => new Cell(c.X, c.Y + dy)).Where(S.InBounds).ToList();
                 double dmg = SpellBaseDamage(baseDef, sp, m, power);
-                var f = AddField("FIREWALL", side, cells, baseDef.DurationAt(m).Eval(power), dmg);
+                var f = AddField("FIREWALL", side, cells, baseDef.DurationAt(m).EvalX87(power), dmg);
                 f.Power = power; f.Mastery = m; f.HeroCaster = hero != null;
                 // exe FUN_0085cda0 → FUN_0085b790: every creature stack (vf 0x6c) or spawn (vf 0x8c) on the cells — not war
                 // machines or siege objects — gets the field's damage (vf 0x1c, resistance rolled) and the fire rider (vf 0x24).
@@ -779,7 +779,7 @@ public sealed partial class Battle
             case "SPELL_RESURRECT":
             {
                 if (target == null) return;
-                double hp = baseDef.DamageAt(m).Eval(power);
+                double hp = baseDef.DamageAt(m).EvalX87(power);
                 Resurrect(target, (int)hp);
                 var pen = target.GetEffect(H5.Combat.Fx.ResurrectionPenalty);
                 AddEffect(target, new Effect { Id = H5.Combat.Fx.ResurrectionPenalty, Value = (pen?.Value ?? 0) + baseDef.DurationAt(m).Base, Dispellable = false });
@@ -1030,7 +1030,8 @@ public sealed partial class Battle
         if (id == "SPELL_DEEP_FREEZE")
         {
             var mult = Stats.Node("combat/Spells/DeepFreeze/DamageMultiplier")?.Elements("Item").ElementAtOrDefault((int)m);
-            double v = mult != null ? (mult.Dbl("Base") + mult.Dbl("PerPower") * power) / 100.0 : 1 + (power + 1) * 0.03;
+            // 00a5ab27..00a5ab2c: the defender stage reads chop(00a34c40(DamageMultiplier, mastery, power) · 0.01f), at least 1.
+            double v = mult != null ? X87.Mul(new PowerFormula(mult.Dbl("Base"), mult.Dbl("PerPower")).EvalX87(power), 0.01f) : 1 + (power + 1) * 0.03;
             AddEffect(t, new Effect { Id = H5.Combat.Fx.DeepFreeze, Value = v, Remaining = 1, SourceSide = side });
         }
         if (hero == null) return;
@@ -1059,8 +1060,8 @@ public sealed partial class Battle
         bool hostile = sp.Target == "TARGET_HOSTILE" || (id is "SPELL_BERSERK" or "SPELL_HYPNOTIZE" && Controller(t) != side);
         if (id == "SPELL_DISPEL") hostile = Controller(t) != side;
         if (!SpellHits(side, sp, t, hostile, hero)) return false;
-        double value = sp.DamageAt(m).Eval(power);
-        double duration = sp.Duration.Length > 0 ? sp.DurationAt(m).Eval(power) : double.PositiveInfinity;
+        double value = sp.DamageAt(m).EvalX87(power);
+        double duration = sp.Duration.Length > 0 ? sp.DurationAt(m).EvalX87(power) : double.PositiveInfinity;
         if (duration <= 0) duration = 0;   // exe 004e57d0: Eval ≤ 0 → 0; in force until the next clock tick (FUN_004e3d50, sweep 17)
 
         switch (id)
@@ -1095,19 +1096,19 @@ public sealed partial class Battle
             case "SPELL_CELESTIAL_SHIELD":
             {
                 var e = MakeSpellEffect(id, sp, m, power, side, casterLevel, sp.DamageAt(m).Base, double.PositiveInfinity, positive: true);
-                e.Value2 = sp.DurationAt(m).Eval(power);    // shield hit points
+                e.Value2 = sp.DurationAt(m).EvalX87(power);    // shield hit points
                 AddEffect(t, e);
                 return true;
             }
             case "SPELL_REGENERATION":
-                value = sp.DamageAt(m).Eval(power);
+                value = sp.DamageAt(m).EvalX87(power);
                 duration = sp.DurationAt(m).Base;
                 break;
             case "SPELL_PLAGUE":
                 duration = sp.DurationAt(m).Base;
                 break;
             case "SPELL_VAMPIRISM":
-                value = sp.DamageAt(m).Eval(power);   // the percent; the drain multiplies it by 0.01f (exe 00a59d31)
+                value = sp.DamageAt(m).EvalX87(power);   // the percent; the drain multiplies it by 0.01f (exe 00a59d31)
                 break;
             case "SPELL_BLIND":
                 break;
@@ -1223,7 +1224,7 @@ public sealed partial class Battle
                     u.CreatureId = "ARCANE_CRYSTAL"; u.Name = "Arcane Crystal"; u.Tier = 1;
                     u.BaseHealth = (int)Stats.Get("combat/Spells/ArcaneCrystal/Health", 1);
                     u.BaseDefence = (int)Stats.Get("combat/Spells/ArcaneCrystal/Defence", 0);
-                    u.Power = (int)sp.DamageAt(m).Eval(power);     // explosion damage
+                    u.Power = (int)sp.DamageAt(m).EvalX87(power);     // explosion damage
                     break;
                 case "SPELL_SUMMON_HIVE":
                 {

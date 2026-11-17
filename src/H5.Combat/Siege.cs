@@ -336,7 +336,8 @@ public sealed partial class Battle
         int min = wm != null && wm.MinDamageFactor.Length > 0 ? (int)wm.MinDamageFactor[Math.Min(m, wm.MinDamageFactor.Length - 1)] : 150;
         int max = wm != null && wm.MaxDamageFactor.Length > 0 ? (int)wm.MaxDamageFactor[Math.Min(m, wm.MaxDamageFactor.Length - 1)] : 200;
         double luck = CatapultLuck(u);
-        int damage = (int)Math.Round(S.Rng.Range(min, Math.Max(min, max)) * luck);
+        // exe 00b3b7d0: trunc(chop(roll · luck)) — FILD, FMUL, FISTP under an explicit chop control word.
+        int damage = (int)X87.Mul(S.Rng.Range(min, Math.Max(min, max)), (float)luck);
         Emit(new AbilityTriggered(u.Id, "CATAPULT_SHOT", null));
         DamageBuilding(target, damage, "CATAPULT");
     }

@@ -480,8 +480,10 @@ public sealed partial class OriginalBattleAI : IBattleAI
         if (t.IsObject) return 2;
         if (attacker != null && movePrice > 0 && turns > 0)
         {
-            int mine = (int)Math.Round(b.InitiativeOf(attacker) * b.SpeedOf(attacker));
-            int theirs = (int)Math.Round(b.InitiativeOf(t) * b.SpeedOf(t) * (2.0 / 3.0));
+            // 008d00d0: trunc(chop(initiative (vf 0x1bc) · speed (vf 0x48))) against trunc(chop(chop(…) · 0.6666667f (00e531a0)))
+            // — plain FISTPs under the chop control word.
+            int mine = (int)H5.Core.Numerics.X87.Mul((float)b.InitiativeOf(attacker), b.SpeedOf(attacker));
+            int theirs = (int)H5.Core.Numerics.X87.Mul(H5.Core.Numerics.X87.Mul((float)b.InitiativeOf(t), b.SpeedOf(t)), 0.6666667f);
             return mine < theirs ? 1 : 0;
         }
         return 0;

@@ -67,12 +67,23 @@ round-to-nearest conversions and the 0.5 roundings.
 | Strong Rune cost | FIXED | 009d0d10 | trunc(chop(resource · k)) (FISTP under OR AH,0xc). Ours rounded half to even (identical with the stock 3 / 2; 5 · 1.5 → 8, exe 7) | X87SitesTests.RuneCostScalingTruncates |
 | Earthquake range / Shake Ground damage | FIXED | 0097d7b0 case 0x29, 0097d7b0 (Shake Ground, RPGStats +0x66c / +0x670) | max / min = trunc(chopped 00a34c40 value) / 50, at least 0; Tremors damage trunc(chop(chop(power · +0x670) + +0x66c)) (explicit chop control word). Ours rounded doubles | |
 | Battle Rage duration | MATCH | 008a6e20 (effect 0x152) | trunc(chop(00a2d700 turn length · BattleRage_EffectDuration (+0x3c4))) ticks; with the shipped integer duration (2, not changed by MMH 5.5) a whole number of turns, as ours | |
+| Spell effect values through 00a34c40 | FIXED | 00a34ca0 / 00a34cd0 → 00a34c40 | every table value of the spell code (effect values and durations, Wasp Swarm's ATB drop, Summon Elementals' count, Armageddon's rock damage, Firewall duration, Animate Dead / Resurrect hit points, Celestial Shield points, Regeneration, Vampirism percent, Arcane Crystal damage, Earthquake range) now reads the chopped formula (`EvalX87`); the downstream conversions are as their own rows. Identical for integer Base / PerPower; a fractional one can lose the last bit | X87SitesTests.PowerFormulaChopsEachStep |
+| Wasp Swarm with Call of the Wasp | FIXED | 0097d7b0 case 0x27 | ATB drop = chop(chop(chop((level + 2) / 3 · +0x854) + 1) · chopped duration value). Ours multiplied in double | |
+| Deep Freeze vulnerability (effect 0x117) | FIXED | 00a5a900 (00a5aaff..00a5ab49) | the defender stage multiplies max(chop(00a34c40(DamageMultiplier, mastery, power) · 0.01f), 1.0) after the attack / defence factor. Ours divided the double Base + PerPower · power by 100 | |
+| Blade Barrier ranged resistance (ability 0x68) | FIXED | 00a5a900 (00a5ab87..00a5aba4), 0097af50 (0097b379) | ABILITY_BLADE_BARRIER (enum 0x68): a ranged hit × chop(1 − RPGStats +0xa48) after Large Shield; +0xa48 is BladeBarrier `RangedResistance` (0.75; the record at +0xa38 holds Object, ShieldStrength +0xa44, RangedResistance +0xa48, MagicProof +0xa4c, and 0097b379 reads +0xa4c for the same ability's spell protection). The engine had no ranged reduction for the barrier | X87SitesTests.BladeBarrierResistsRangedDamage |
+| Special 0x5e | N/A | 00a58de0 | the strike special 0x5e is SPELL_SKILL_ELVEN_VOLLEY (enum_spell): acc × chop(chop(hero level · 00e43ff0) + 00e12ff8). No shipped hero or engine path casts it (HERO_SPEC_ELVEN_VOLLEY: N/A in AUDIT_COMBAT.md) | |
+| Storm field shot penalty | UNVERIFIED | 00a58de0 (end): attacker vf 0x70 → field vf 0x78 | ranged with a field: acc × chop(1.0 − chop(n · 0.01f)), n the integer vf 0x78 of the field. Ours keeps the penalty as min(MaxShootPenalty, PerCreature · count) on FX_STORM_PENALTY and multiplies chop(1 − x); vf 0x78's value (count, cap) is not traced | |
+| Flamewave shares | GAP | 00a62030 (per-cell floats +0x54 / +0x58 of the pattern record, at least 0) | the wave's per-cell shares come from the pattern record and enter the strike loop's pattern share (00a67bf3, FILD damage · share, chop); ours multiplies 1 / (row + 1) first (`Hit.Multiplier`). The pattern record values are not mapped | |
+| Manoeuvre shot | UNVERIFIED | 00a629b0 (00a62e1b) | the ranged answer after the Manoeuvre run is ×0.5 in ours (`Hit.Multiplier`, multiplied first); the exe's call into 00a5c790 / 00a58de0 for it (which argument carries the half) is not traced | |
+| Catapult damage | FIXED | 00b3b7d0 | trunc(chop(roll · luck (vf 0x1d0))), explicit chop control word. Ours rounded the double | |
+| War machine damage factors | MATCH | 004bc710 / 004bc780 → 004bb8c0, 004bb770 | integer table values × (hero vf 0x1c + vf 0x10): integers, so the engine's `Math.Round` is exact | |
+| AI target priority (speed · initiative) | FIXED | 008d00d0 | trunc(chop(initiative (vf 0x1bc) · speed (vf 0x48))) < trunc(chop(chop(…) · 0.6666667f (00e531a0))). Ours rounded doubles with 2 / 3 | |
+| Health refresh ratio | UNVERIFIED | — | `RefreshHealth` keeps the damage ratio with round(total · new / old); not traced to the exe | |
 
 ## Not yet checked for x87 semantics
 
-The ATB tick (already single precision, see the ATB core row), the combat AI's estimates (out of scope here), the
-remaining `Math.Round` sites of the combat code that are not damage (mana / rage / summon counts, war machine damage
-factors, Shake Ground, siege moat), the effect formulas through 00a34c40 other than spell damage (durations, Berserk /
-Hypnotize thresholds, summoned counts). In the stages above: the storm field's n (vf 0x78 of the field, ours a
-precomputed min(0.9, 0.01 · count)), effect 0x117 (FUN_00a34c40 · 0.01f, max 1), ability 0x68 (1 − +0xa48) and special
-0x5e are not mapped to engine paths; the Maneuver shot and Flamewave strike specials are untraced.
+The ATB tick (already single precision, see the ATB core row). The combat AI's other estimates (src/H5.Combat/AI:
+expected damage, kill counts and value sums in double arithmetic) beyond the target priority above. The rows marked
+UNVERIFIED or GAP above (storm field n, Flamewave shares, Manoeuvre shot, health refresh). Integer `(int)` casts of
+double chains elsewhere in src/H5.Combat that carry no `Math.Round` (each needs its exe site). Prayer's duration
+(2 + 0.25 · level in ours, while MMH 5.5 sets PrayerLevelMultiplier to 0.05) is a data question, not an x87 one.

@@ -65,4 +65,23 @@ public class X87SitesTests(GameDataFixture f)
     {
         Assert.Equal(7, (int)X87.Mul(5, 1.5f));
     }
+
+    /// <summary>
+    /// 00a5ab87..00a5aba4: a ranged hit on a Blade Barrier (ABILITY_BLADE_BARRIER 0x68) is × chop(1 − RangedResistance)
+    /// (RPGStats +0xa48, 0.75 in the shipped data): 10000 shots with roll 1 at close range deal 2500. The engine had no
+    /// ranged reduction for the barrier.
+    /// </summary>
+    [Fact]
+    public void BladeBarrierResistsRangedDamage()
+    {
+        var b = f.Duel("CREATURE_ARCHER", 10000, "CREATURE_PEASANT", 100, 1, new Cell(5, 5), new Cell(7, 5));
+        var a = b.State.Units[0]; var t = b.State.Units[1];
+        a.BaseAttack = 0; t.BaseDefence = 0;
+        foreach (var h in b.State.Heroes) h.Present = false;
+        int plain = b.ComputeDamage(a, t, new Battle.Hit { Kind = AttackKind.Ranged, FixedRoll = 1 }, true);
+        t.CreatureId = "BLADE_BARRIER";
+        float keep = X87.Sub(1f, (float)f.Db.Stats.Get("combat/Spells/BladeBarrier/RangedResistance", 0.75));
+        Assert.Equal((int)X87.Add(X87.Mul(plain, keep), 1e-4f), b.ComputeDamage(a, t, new Battle.Hit { Kind = AttackKind.Ranged, FixedRoll = 1 }, true));
+        if (keep == 0.25f) Assert.Equal(2500, b.ComputeDamage(a, t, new Battle.Hit { Kind = AttackKind.Ranged, FixedRoll = 1 }, true));
+    }
 }

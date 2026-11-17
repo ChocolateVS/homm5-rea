@@ -118,7 +118,7 @@ public sealed partial class Battle
     /// </summary>
     internal static int SummonElementalsCount(SpellDef baseDef, Mastery m, double power, HeroState? hero)
     {
-        float e = (float)baseDef.DamageAt(m).Eval(power);
+        float e = baseDef.DamageAt(m).EvalX87(power);   // 00a34c40, chopped
         int count = (int)Math.Max(e, 1f);
         if (hero != null && hero.HasPerk("HERO_SKILL_FIRE_AFFINITY")) count = (int)(count * 1.4f);
         return count;

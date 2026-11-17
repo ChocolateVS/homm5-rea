@@ -524,10 +524,13 @@ public sealed partial class Battle
         }
         if (hit.IgnoreDefence) D = 0;
         M(AttackDefenceFactor(A, D, (float)Stats.Get("combat/DamageIncrease", 0.05), (float)Stats.Get("combat/DamageDecrease", 0.05)));
-        if (t.GetEffect(H5.Combat.Fx.DeepFreeze) is { } df) M(Math.Max(df.Value, 1));
+        if (t.GetEffect(H5.Combat.Fx.DeepFreeze) is { } df) M(Math.Max((float)df.Value, 1f));   // 00a5aaff..00a5ab49: effect 0x117
         if (ranged)
         {
             if (t.Has(Ab.LargeShield) || Adjacent(t).Any(o => o.Side == t.Side && o.Has(Ab.ShieldOther))) M(0.5);
+            // 00a5ab87..00a5aba4: ABILITY_BLADE_BARRIER (0x68) × chop(1 − BladeBarrier RangedResistance (RPGStats +0xa48, the
+            // field between ShieldStrength +0xa44 and MagicProof +0xa4c, which 0097b379 reads for the same ability)).
+            if (t.CreatureId == "BLADE_BARRIER") M(OneMinus((float)Stats.Get("combat/Spells/BladeBarrier/RangedResistance", 0.75)));
             if (th.HasPerk(Sk.Evasion)) M(OneMinus(Math.Clamp(Stats.Get("combat/HeroSkills/SkillDefence/Evasion_DamageReduce", 0.2), 0, 1)));
             // Evasive (00a5ad38): FILD level * per (+0x914) + base (+0x910), FSTP float, min 1, max 0, FSUBR 1.
             if (th.Present && th.Specialization == "HERO_SPEC_EVASIVE")

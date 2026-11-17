@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Core.Data;
 
 namespace H5.Combat;
@@ -115,12 +116,15 @@ public sealed partial class Battle
         return (level - 1) / div * (int)Stats.Get(node + "/PerDividedLevel", 0) + (int)Stats.Get(node + "/Base", 0);
     }
 
-    /// <summary>Wasp Swarm ATB reduction (exe FUN_0097d7b0, spell 0x27): duration value ×(1 + ((level+2)/3)·perLevel3) for Call of the Wasp.</summary>
+    /// <summary>
+    /// Wasp Swarm ATB reduction (exe FUN_0097d7b0, spell 0x27): the chopped duration value (00a34cd0 → 00a34c40), for Call
+    /// of the Wasp × chop(chop((level+2)/3 · perLevel3 (RPGStats +0x854)) + 1), each step chopped.
+    /// </summary>
     internal double WaspAtbDrop(SpellDef sp, Mastery m, double power, HeroState? hero)
     {
-        double drop = sp.DurationAt(m).Eval(power);
+        float drop = sp.DurationAt(m).EvalX87(power);
         if (hero != null && Spec(hero, "HERO_SPEC_CALL_OF_THE_WASP") is var wl && wl >= 0)
-            drop *= (wl + 2) / 3 * (double)(float)Stats.Get("combat/HeroSpecializations/Ranger/CallOfTheWasp_ATBReducePerLevel3", 0.02) + 1;
+            drop = X87.Mul(X87.Add(X87.Mul((wl + 2) / 3, (float)Stats.Get("combat/HeroSpecializations/Ranger/CallOfTheWasp_ATBReducePerLevel3", 0.02)), 1f), drop);
         return drop;
     }
 
