@@ -78,7 +78,7 @@ public sealed class AdventureSession
         var (game, opening) = H5.Adventure.Engine.Adventure.NewGame(_db, map, setup);
         H5Reborn.Dev.LoadTrace.Mark("new game");
         GD.Print($"[H5] adventure {map.Id} \"{map.Name}\" {map.TilesX}x{map.TilesY}, human player {human + 1}, seed {seed}");
-        return new AdventureSession(_db, map, game, opening, seed) { Files = files };
+        return new AdventureSession(_db, map, game, opening, seed) { Files = files, StartSetup = Copy(setup, seed) };
     }
 
     /// <summary>The map's own files (map-relative hrefs, user .h5m contents layered over the game data).</summary>
@@ -136,12 +136,54 @@ public sealed class AdventureSession
             Files = lm.Files ?? MapFiles.FromPak(H5Reborn.Game.Instance.Fs, "Maps/Generated/map.xdb"),
             Generator = generator,
             TimeLimitMinutes = timeLimitMinutes,
+            StartSetup = Copy(setup, seed),
         };
     }
 
     /// <summary>A local game the custom-game setup (UI/CustomGameWait) already created.</summary>
-    public static AdventureSession FromNewGame(MapFiles files, H5.Adventure.Engine.Adventure game, IEnumerable<AdvEvent> opening, ulong seed, H5.AdvNet.RmgSettings? generator, int timeLimitMinutes = 0) =>
-        new(game.Db, game.Map, game, opening, seed) { Files = files, Generator = generator, TimeLimitMinutes = timeLimitMinutes };
+    public static AdventureSession FromNewGame(MapFiles files, H5.Adventure.Engine.Adventure game, IEnumerable<AdvEvent> opening, ulong seed, H5.AdvNet.RmgSettings? generator, int timeLimitMinutes = 0,
+        GameSetup? setup = null) =>
+        new(game.Db, game.Map, game, opening, seed) { Files = files, Generator = generator, TimeLimitMinutes = timeLimitMinutes, StartSetup = setup == null ? null : Copy(setup, seed) };
+
+    /// <summary>
+    /// The start info this game began from (the exe's game info, game +0x624: the setup model with every slot's state,
+    /// colour, race, hero and bonus, the difficulty and flags); Restart Mission starts again from it. Null for games
+    /// loaded from a save.
+    /// </summary>
+    public GameSetup? StartSetup { get; private init; }
+
+    static GameSetup Copy(GameSetup s, ulong seed) => s.Restart(seed);
+
+    /// <summary>
+    /// Restart Mission for a local game (007581b0 → 0075b040 → 00759500 → 007593e0(1) → 007e09c0): the game info is
+    /// copied (0059fbc0: the setup model with every slot's choices, the start info), a new seed is taken (007df530,
+    /// time-based) and the game starts again (007e03c0). The map is read again (scripts change it while playing);
+    /// generated maps are regenerated from their options. Null when the start info is not known (a loaded game).
+    /// </summary>
+    public AdventureSession? Restarted(ulong seed)
+    {
+        if (StartSetup is not { } start || Remote != null) return null;
+        var setup = Copy(start, seed);
+        MapFiles files;
+        AdvMap map;
+        if (Generator is { } rmg)
+        {
+            var lm = H5Reborn.AdvNet.AdvNetGame.Maps.Load(new H5.AdvNet.AdvNetSettings { Rmg = rmg });
+            files = lm.Files ?? MapFiles.FromPak(H5Reborn.Game.Instance.Fs, "Maps/Generated/map.xdb");
+            map = lm.Map;
+        }
+        else
+        {
+            files = Files;
+            map = new MapLoader(H5Reborn.Game.Instance.Db, H5Reborn.Game.Instance.Fs).Load(files);
+        }
+        var (game, opening) = H5.Adventure.Engine.Adventure.NewGame(Db, map, setup);
+        GD.Print($"[H5] restart {map.Id}: seed {seed}");
+        return new AdventureSession(Db, map, game, opening, seed)
+        {
+            Files = files, Generator = Generator, TimeLimitMinutes = TimeLimitMinutes, StartSetup = setup,
+        };
+    }
 
     /// <summary>Turn time limit in minutes, 0 = none (CWorld +0x94; custom game wait screen +0x270, hot-seat options).</summary>
     public int TimeLimitMinutes { get; set; }

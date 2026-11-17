@@ -26,6 +26,16 @@ public sealed class GameSetup
     public bool Campaign;
     public ulong Seed = 1;
 
+    /// <summary>
+    /// The start info for Restart Mission (0059fbc0 copies the game info — the setup model with every slot's state,
+    /// colour, race, hero and bonus, the difficulty and flags — and 007df530 takes a new seed).
+    /// </summary>
+    public GameSetup Restart(ulong seed) => new()
+    {
+        Difficulty = Difficulty, Campaign = Campaign, Seed = seed,
+        Players = Players.Select(p => new PlayerSetup { MapPlayer = p.MapPlayer, Human = p.Human, Race = p.Race, StartHero = p.StartHero, Bonus = p.Bonus }).ToList(),
+    };
+
     /// <summary>Every active map player, humans for those that allow it.</summary>
     public static GameSetup AllPlayers(AdvMap map, int humans = 1, ulong seed = 1)
     {

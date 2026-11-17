@@ -288,6 +288,13 @@ public static class SaveManager
             CampaignFlow.StartMission(a.Campaign, a.Mission, a.BonusIndex, session.Game.Player(session.Human.Index)?.CampaignBonus ?? 0);
             return;
         }
+        // Custom game / hot-seat: every slot's choices again with a new seed (0059fbc0, 007df530).
+        if (session.Restarted((ulong)Time.GetTicksUsec()) is { } again)
+        {
+            AdventureScreen.Open(again);
+            return;
+        }
+        // A game loaded from a save: its start info is not kept (GAP); the map with the same human and difficulty.
         var source = session.Map.Source;
         var fresh = AdventureSession.Start(source, (ulong)Time.GetTicksUsec(), session.Human.Index, session.S.Difficulty);
         AdventureScreen.Open(fresh);
