@@ -265,7 +265,7 @@ public partial class ScriptUiBridge : Node
         if (active == null) return; // other maps: AdventureScreen shows the mission end (GameEnded)
         CampaignFlow.OnMissionEnded(won);
         var results = new MissionResultsScreen(won, active?.Campaign.InternalName ?? Screen.Session.Map.Name, active?.Mission.Index ?? -1,
-            () => CampaignFlow.Continue(Screen, won));
+            () => CampaignFlow.Continue(Screen, won), Screen.Session.Game.Summary(human.Index));
         Screen.DialogLayer.AddChild(results);
     }
 }

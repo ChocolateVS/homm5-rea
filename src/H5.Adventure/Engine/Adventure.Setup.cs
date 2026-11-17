@@ -40,6 +40,7 @@ public sealed partial class Adventure
         foreach (var h in s.Heroes) g.ResetHeroDay(h, newWeek: true);
         foreach (var p in s.Players) g.RevealOwned(p);
         s.CurrentPlayer = 0;
+        g.LogMapStarted();
         g.EmitTurnStarted();
         return (g, g._ev);
     }

@@ -1,6 +1,7 @@
 using System.Xml.Linq;
 using Godot;
 using H5.Assets.Scenes;
+using H5.Core.Ui;
 using H5.Core.Xdb;
 using H5Reborn.Ui;
 
@@ -405,8 +406,9 @@ public partial class MissionResultsScreen : UiScreen
     readonly Action _onClose;
 
     /// <summary>A campaign mission's end: the description is the mission's name (not traced against the log entry's message).</summary>
-    public MissionResultsScreen(bool won, string campaignOrMap, int mission, Action onClose) : this(won, onClose)
+    public MissionResultsScreen(bool won, string campaignOrMap, int mission, Action onClose, H5.Adventure.Engine.MissionSummary? stats = null) : this(won, onClose)
     {
+        if (stats != null) FillStatistics(stats);
         var c = CampaignFlow.Find(campaignOrMap);
         var m = c != null && mission >= 0 && mission < c.Missions.Count ? c.Missions[mission] : null;
         // Substituted values are plain text (not markup), so no <br> here.
@@ -415,8 +417,9 @@ public partial class MissionResultsScreen : UiScreen
     }
 
     /// <summary>The adventure map's end (005a5d90 case 0xd): <paramref name="message"/> is the log entry's message.</summary>
-    public MissionResultsScreen(bool won, string message, Action onClose) : this(won, onClose)
+    public MissionResultsScreen(bool won, string message, Action onClose, H5.Adventure.Engine.MissionSummary? stats = null) : this(won, onClose)
     {
+        if (stats != null) FillStatistics(stats);
         Find("Description")?.SetValue("text", message);
     }
 
@@ -442,6 +445,110 @@ public partial class MissionResultsScreen : UiScreen
         // UISSendGameMessage arguments arrive as written in the data ("0 close_mission_results0 0").
         foreach (var name in new[] { "close_mission_results0", "close_mission_results", "0 close_mission_results0 0" })
             Bus.On(name, Close);
+    }
+
+    const string ResultStrings = "UI/MissionResults/ResultStrings.(WindowRelatedTexts).xdb";
+
+    /// <summary>
+    /// The Statistics rows of 0079fcf0, in its order, as items of the Statistics scrollable container: text rows are
+    /// copies of StatisticsSlotTemplate with the ResultStrings text (0079ef50; &lt;value=count&gt; etc. filled), the two
+    /// resource rows copies of StatisticsResourcesSlotTemplate (0079f110). A counter the engine does not record
+    /// (its event source is not traced) keeps its row without a number.
+    /// </summary>
+    void FillStatistics(H5.Adventure.Engine.MissionSummary st)
+    {
+        if (Find("Statistics") is not UiScrollableContainer list || Find("StatisticsSlotTemplate") is not { } slot) return;
+        slot.Visible = slot.Window.Visible = false;
+        if (Find("StatisticsResourcesSlotTemplate") is { } resSlot) resSlot.Visible = resSlot.Window.Visible = false;
+        string T(string id) => UiGameRoot.RelatedTextAt(ResultStrings, id) ?? "";
+        void Row(string id, int? count, params (string Name, int Value)[] values)
+        {
+            var row = Instantiate(slot.Window, list.Window, Int2.Zero);
+            var text = T(id).Replace("<value=count>", count?.ToString() ?? "");
+            foreach (var (n, v) in values) text = text.Replace($"<value={n}>", v.ToString());
+            row.SetText(text);
+            list.AddItem(row);
+        }
+        Row("T_MISSION_TIME", null, ("days_count", st.Days), ("weeks_count", st.Weeks), ("months_count", st.Months));
+        ResourceRows(list, T("T_RESOURCES_AT_END_OF_MISSION"), st.ResourcesAtEnd);
+        ResourceRows(list, T("T_RESOURCES_DURING_MISSION"), st.ResourcesDuring);
+        Row("T_BATTLES_TAKE_PART", st.BattlesFought);
+        Row("T_BATTLES_WIN", st.BattlesWon);
+        Row("T_BATTLES_LOOSE", st.BattlesLost);
+        Row("T_HEROES_KILL", st.HeroesKilled);
+        Row("T_HEROES_LOST", st.HeroesLost);
+        Row("T_TOWNS_OCCUPY", st.TownsOccupied);
+        Row("T_TOWNS_LOST", st.TownsLost);
+        Row("T_CREATURES_AT_END_OF_MISSION", st.CreaturesAtEnd);
+        Row("T_CREATURES_DURING_MISSION", st.CreaturesDuring);
+        Row("T_ENEMY_CREATURES_AT_END_OF_MISSION", st.EnemyCreaturesAtEnd);
+        Row("T_ENEMY_CREATURES_DURING_MISSION", st.EnemyCreaturesDuring);
+        Row("T_ARTEFACTS_AT_END_OF_MISSION", st.ArtifactsAtEnd);
+        Row("T_ARTEFACTS_DURING_MISSION", st.ArtifactsDuring);
+    }
+
+    static readonly string[] ResourceIds = { "E_WOOD", "E_ORE", "E_MERCURY", "E_CRYSTAL", "E_SULFUR", "E_GEM", "E_GOLD" };
+
+    /// <summary>
+    /// 0079f110: a StatisticsResourcesSlotTemplate copy holding the title (a StatisticsSlotTemplate copy) and rows of
+    /// ResourceInfoSlotTemplate with three resources each (i, i + 1, i + 2 while ≤ 6): ResourceIcon / 02 / 03 = the
+    /// resource's icon (resource table 01024bd4 entry, 00ad5aa0; the Icon16_15 of ResourcesInfo by the row height 15),
+    /// ResourceText / 02 / 03 = ResourceCount.txt with count, each window placed right after the previous one + 2 by its
+    /// width (icon 16, text 60 in the data); rows one row height (15) apart under the title.
+    /// </summary>
+    void ResourceRows(UiScrollableContainer list, string title, int[]? purse)
+    {
+        if (Find("StatisticsResourcesSlotTemplate") is not { } tpl || Find("StatisticsSlotTemplate") is not { } slot) return;
+        var item = Instantiate(tpl.Window, list.Window, Int2.Zero);
+        var rowTpl = item.Window.Find("ResourceInfoSlotTemplate");
+        if (rowTpl != null) { rowTpl.Visible = false; if (NodeOf(rowTpl) is { } rn) rn.Visible = false; }
+        var head = Instantiate(slot.Window, item.Window, Int2.Zero);
+        head.SetText(title);
+        int y = head.Window.Rect.H, rowH = rowTpl?.Rect.H ?? 15;
+        if (purse != null && rowTpl != null)
+            for (int i = 0; i < 7; i += 3)
+            {
+                var row = Instantiate(rowTpl, item.Window, new Int2(0, y));
+                string[] icons = { "ResourceIcon", "ResourceIcon02", "ResourceIcon03" }, texts = { "ResourceText", "ResourceText02", "ResourceText03" };
+                int x = 0;
+                void Place(UiNode n)
+                {
+                    n.Window.Placement = n.Window.Placement.MergedWith(new UiPlacement { Position = (new Int2(x, 0), true) });
+                    x += n.Window.Placement.Size.Value.X + 2;
+                }
+                for (int k = 0; k < 3; k++)
+                {
+                    var icon = row.Window.Find(icons[k]) is { } iw ? NodeOf(iw) : null;
+                    var text = row.Window.Find(texts[k]) is { } tw ? NodeOf(tw) : null;
+                    bool used = i + k <= 6;
+                    if (icon != null) icon.Visible = icon.Window.Visible = used;
+                    if (text != null) text.Visible = text.Window.Visible = used;
+                    if (!used) continue;
+                    if (icon != null) Place(icon);
+                    if (text != null) Place(text);
+                    text?.SetValue("count", purse[i + k].ToString());
+                    if (icon != null && ResourceIcon(ResourceIds[i + k]) is { } tex)
+                        icon.AddChild(new TextureRect
+                        {
+                            Texture = tex, AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore,
+                            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale,
+                        });
+                }
+                y += rowH;
+            }
+        item.Window.Placement = item.Window.Placement.MergedWith(new UiPlacement { Size = (new Int2(item.Window.Rect.W, y), true) });
+        list.AddItem(item);
+    }
+
+    /// <summary>A resource's Icon16_15 (GameMechanics/RefTables/ResourcesInfo.xdb).</summary>
+    static Texture2D? ResourceIcon(string id)
+    {
+        const string table = "GameMechanics/RefTables/ResourcesInfo.xdb";
+        if (!Game.Instance.Fs.Exists(table) || Game.Instance.Xdb.Load(table).Root is not XElement r) return null;
+        foreach (var item in r.Descendants("Item"))
+            if ((string?)item.Element("ID") == id && (string?)item.Element("obj")?.Element("Icon16_15")?.Attribute("href") is { Length: > 0 } h)
+                return UiResources.Instance.Texture(XdbRef.Parse(h, table).Path);
+        return null;
     }
 
     /// <summary>A texture of a WindowRelatedTextures xdb (TextureName → texture), or null.</summary>

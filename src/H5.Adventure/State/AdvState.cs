@@ -118,6 +118,22 @@ public sealed class PlayerState
     public double? AiMoneyAverage;
     /// <summary>The demand and supply of the same pass (CPlayerAIInformation +0x8 / +0x24, zero until then): the market trade reads supply − demand.</summary>
     public int[]? AiDemand, AiSupply;
+    /// <summary>This player's record of the mission results logger (CMissionResultsLogger, world +0x170; 0x5c bytes per player 1..8).</summary>
+    public MissionRecord Mission = new();
+}
+
+/// <summary>
+/// A player's record of the mission results logger (CMissionResultsLogger, ctor 00877f70): only the counters whose
+/// sources are traced are kept (see AUDIT_ADVENTURE, Mission end window).
+/// </summary>
+public sealed class MissionRecord
+{
+    /// <summary>+0x1c: towns this player took (logger vf 0x34 = 00877780, from the town owner change 00cd5400).</summary>
+    public int TownsOccupied;
+    /// <summary>+0x20: towns taken from this player (same event, the old owner).</summary>
+    public int TownsLost;
+    /// <summary>+0x3c: the artifacts of the player's heroes at the map start (vf 0x8 = 00877d40 → 00877500) plus one per artifact a hero gained (vf 0x38 = 00877810, hero 00b4b610).</summary>
+    public int Artifacts;
 }
 
 /// <summary>An AI attractor entry {object, priority -1..2} (exe list of {objId, priority}, FUN_00b4e880).</summary>

@@ -1160,7 +1160,7 @@ public partial class AdventureScreen : Control
     /// default messages stand in.)
     /// </summary>
     Task MissionEnd(bool won) => Dialog(done => _dialogLayer.AddChild(new Campaign.MissionResultsScreen(won,
-        AdvTexts.Get(won ? AdvTexts.Victory : AdvTexts.Defeat), () => { done(); ReturnToMainMenu(); })));
+        AdvTexts.Get(won ? AdvTexts.Victory : AdvTexts.Defeat), () => { done(); ReturnToMainMenu(); }, Session.Game.Summary(Session.Human.Index))));
 
     Task Dialog(Action<Action> open)
     {

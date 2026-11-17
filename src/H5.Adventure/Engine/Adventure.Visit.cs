@@ -752,6 +752,7 @@ public sealed partial class Adventure
         h.Artifacts.Add(id);
         if (HasInstanceSpell(id)) h.ArtifactInstances.Add(NewArtifactInstance(id, worn: true, mapSpell));
         Emit(new ArtifactGained(h.Id, id));
+        LogArtifactGained(h);
         RumourArtifactGained(h, id);
     }
 

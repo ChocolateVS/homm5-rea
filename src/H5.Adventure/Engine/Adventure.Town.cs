@@ -40,6 +40,7 @@ public sealed partial class Adventure
     {
         var prev = t.Owner;
         if (prev != h.Owner) RumourCaptured(O(t.Object), h.Owner);
+        LogTownOwner(prev, h.Owner);
         t.Owner = h.Owner;
         t.OwnedSinceDay = S.Day;
         h.InTown = t.Object;
