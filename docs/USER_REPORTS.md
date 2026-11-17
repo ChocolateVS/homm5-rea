@@ -48,6 +48,11 @@ from the description. Move an item to "Done" with the commit when fixed.
     under a stack flicker against the green movement grid — looks like z-fighting between overlapping
     grid-mark quads (select/target kinds vs the movement area, commits 9537a77 / 84b052b); check the
     exe's draw order / depth state for the CombatSelectionDesc layers (0055c480) and match it.
+    *Progress:* the select marks now draw over the overlapping movement / target quads in the exe's order
+    (material Priority → render layer 0x1f + priority, 00899720; Select.xdb / select_2.xdb = 1, others 0) and sit
+    0.05 above the cell (0055bb60) — commit "combat grid: select marks drawn after the other marks". Still open: the
+    cyan blobs under a Deflect Missile target are spell-effect particles sorted with the grid (their render layer in
+    the exe not traced); the browser (Compatibility) renderer draws the grid fill brighter than the desktop one (not investigated).
 20. **Griffin Battle Dive:** "just doesn't work at all" in play. The rules were ported in sweeps 14–16
     (landing FUN_00979680, strike timing 00985474.., finish 0x9b); check the player-facing path —
     ability button / cursor / target click in the combat UI, and the AI's use — end to end in a duel.

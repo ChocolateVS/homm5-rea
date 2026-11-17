@@ -20,7 +20,8 @@ public partial class GridOverlay : Node3D
 {
     const string SelectionDescPath = "UI/CombatArena-Heavy/SelectionDesc.(CombatSelectionDesc).xdb";
     const int Subdiv = 4;
-    const float Lift = 0.03f;
+    // Height of the quad corners above the cell (0055bb60: every corner has z = 0.05, 0x3d4ccccd).
+    const float Lift = 0.05f;
     // Quad half extents in cells: single ±1.09 units, double −3.09..+1.09 units around the anchor cell centre
     // (0055bb60; 2 world units per cell).
     const float SingleHalf = 1.09f / ArenaGrid.TileSize, DoubleLow = 3.09f / ArenaGrid.TileSize, DoubleHigh = 1.09f / ArenaGrid.TileSize;
@@ -165,11 +166,17 @@ public partial class GridOverlay : Node3D
             var path = H5.Core.Xdb.XdbRef.Parse(href, SelectionDescPath).Path;
             if (Game.Instance.Fs.Exists(path))
             {
-                var texRef = (string?)Game.Instance.Xdb.Load(path).Root!.Element("Texture")?.Attribute("href");
+                var matRoot = Game.Instance.Xdb.Load(path).Root!;
+                var texRef = (string?)matRoot.Element("Texture")?.Attribute("href");
                 if (texRef != null && Game.Instance.LoadTexture(H5.Core.Xdb.XdbRef.Parse(texRef, path).Path) is { } tex)
                 {
                     var sm = Render.OverlayMaterial.Create(tex);
                     sm.SetShaderParameter("fade", fade);
+                    // Draw order: the material's Priority (reader 00c7b1b9, +0x7c → descriptor +0x3c, 00b83010) is set on the
+                    // generic material (00898e10 → vfunc 0x84 = 0089b130, byte +0x69), and 00899720 queues blended modes 1..3
+                    // in layer 0x1f + priority. Select.xdb / select_2.xdb carry 1, every other grid material 0, so the
+                    // select marks are always drawn after (over) the movement / target / affected quads they overlap.
+                    sm.RenderPriority = Math.Clamp((int?)matRoot.Element("Priority") ?? 0, -128, 127);
                     result = sm;
                 }
             }
