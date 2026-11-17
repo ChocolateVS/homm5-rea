@@ -678,4 +678,69 @@ public class AiCombatGapTests(GameDataFixture f)
         }
         else Assert.Fail("the path crosses no moat");
     }
+
+    [Fact]
+    public void AStackNextToAShooterGuardsItAndStays()   // FUN_00a2fa20(actor, 1) → think +0x1bd; FUN_008d58c0 tail (CDefendCreatureCmd 00e17db8, Turns 1), FUN_008a16b0
+    {
+        var st = CombatAiStats.Load(f.Db);
+        var row = Enum.GetValues<AiDifficulty>().First(r => st.Difficulty[(int)r].UseDefendShootersMoves);
+        (Battle B, Unit Footman) Setup(Cell footmanAt, Cell peasantAt)
+        {
+            var s = BattleSetup.Create(f.Db,
+                new ArmySetup { Army = { new ArmySlot("CREATURE_FOOTMAN", 10), new ArmySlot("CREATURE_ARCHER", 60), new ArmySlot("CREATURE_PEASANT", 5) } },
+                new ArmySetup { Army = { new ArmySlot("CREATURE_ARCHER", 2), new ArmySlot("CREATURE_PEASANT", 10) } },
+                1, obstacles: Array.Empty<Cell>(), skipTactics: true);
+            var b = new Battle(f.Db, s);
+            var footman = s.Units.First(u => u.CreatureId == "CREATURE_FOOTMAN");
+            footman.Pos = footmanAt;
+            s.Units.First(u => u.Side == 0 && u.CreatureId == "CREATURE_ARCHER").Pos = new Cell(0, 5);
+            s.Units.First(u => u.Side == 0 && u.CreatureId == "CREATURE_PEASANT").Pos = peasantAt;
+            s.Units.First(u => u.Side == 1 && u.CreatureId == "CREATURE_ARCHER").Pos = new Cell(7, 5);
+            s.Units.First(u => u.Side == 1 && u.CreatureId == "CREATURE_PEASANT").Pos = new Cell(11, 1);
+            return (b, footman);
+        }
+        // Next to the archer: guards. Next to a peasant next to the archer: guards only inside the deployment columns.
+        var (b1, f1) = Setup(new Cell(1, 5), new Cell(5, 9));
+        Assert.True(OriginalBattleAI.GuardsShooter(b1, f1, true));
+        var (b2, f2) = Setup(new Cell(1, 7), new Cell(1, 6));
+        Assert.True(OriginalBattleAI.GuardsShooter(b2, f2, true));
+        Assert.False(OriginalBattleAI.GuardsShooter(b2, f2, false));
+        var (b3, f3) = Setup(new Cell(2, 7), new Cell(1, 6));
+        Assert.True(b3.State.DeployColumns0 <= 2);
+        Assert.False(OriginalBattleAI.GuardsShooter(b3, f3, true));                // (2, 7) is outside the two deployment columns
+        // The guard gets the extra "Defend shooter" record: a defend command with Turns 1.
+        b1.Begin();
+        for (int i = 0; i < 50 && b1.State.Active != f1.Id; i++)
+        {
+            var la = b1.GetLegalActions();
+            if (la == null) break;
+            b1.Apply(la.IsHero ? new WaitCmd(la.Actor) { Side = b1.SideToAct!.Value } : new DefendCmd(la.Actor) { Side = b1.SideToAct!.Value });
+        }
+        Assert.Equal(f1.Id, b1.State.Active);
+        var ai = new OriginalBattleAI { RowOverride = row, HumanSides = new[] { false, false } };
+        ai.Decide(b1, 0);
+        var stay = Assert.Single(ai.LastCandidates, c => c.Label == "defend shooter (stay)");
+        Assert.IsType<DefendCmd>(stay.Command);
+        Assert.Equal(1, stay.Turns);
+        Assert.False(b1.AiBloodRage(f1));
+    }
+
+    [Fact]
+    public void TheSiegeDefenderOutShootingFromInsideTargetsOnlyEnemiesInTheTown()   // FUN_00a2f180 → think +0x1bc, 004dade0, FUN_00b3e1c0 → FUN_00b3de90
+    {
+        var s = BattleSetup.Create(f.Db,
+            new ArmySetup { Army = { new ArmySlot("CREATURE_FOOTMAN", 10) } },
+            new ArmySetup { Army = { new ArmySlot("CREATURE_ARCHER", 60), new ArmySlot("CREATURE_FOOTMAN", 10) } },
+            3, skipTactics: true, siege: new SiegeSetup { Town = "TOWN_HEAVEN", FortLevel = 3, TownLevel = 10, TownMaxLevel = 10 });
+        var b = new Battle(f.Db, s);
+        var mine = s.Units.Where(u => u.Side == 1 && !u.IsObject && !u.IsWarMachine).ToList();
+        Assert.All(mine, u => Assert.True(b.InsideTown(u.Pos)));
+        var start = CombatValue.Of(b, 1);
+        Assert.True(SideValue.OutShoots(start.My, start.Enemy));
+        Assert.True(OriginalBattleAI.InsideTownOnly(b, 1, start));
+        Assert.False(OriginalBattleAI.InsideTownOnly(b, 0, CombatValue.Of(b, 0)));   // never for the attacker
+        var outCell = Enumerable.Range(0, s.Height).Select(y => new Cell(0, y)).First(c => !b.InsideTown(c) && b.Fits(mine[1], c));
+        mine[1].Pos = outCell;                                                     // a defender outside the walls: army vf 0x12c
+        Assert.False(OriginalBattleAI.InsideTownOnly(b, 1, CombatValue.Of(b, 1)));
+    }
 }

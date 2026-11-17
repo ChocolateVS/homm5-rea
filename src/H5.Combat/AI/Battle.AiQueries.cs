@@ -173,6 +173,14 @@ public sealed partial class Battle
         return sum;
     }
 
+    /// <summary>
+    /// FUN_008a16b0(unit): Blood Rage applies — a living Stronghold creature (town 10, FUN_004ba910) other than the Wyvern family
+    /// (FUN_004babf0 ≠ 0x7f) whose army's hero has HERO_SKILL_DEMONIC_RAGE (vf 0x290(0xac)); ours: ABILITY_DEMON_RAGED (the same
+    /// set, AUDIT_COMBAT.md) and the side's hero with the skill.
+    /// </summary>
+    internal bool AiBloodRage(Unit u) =>
+        u.Has(Ab.DemonRaged) && S.Heroes[u.Side] is { Present: true } h && h.SkillLevel(Sk.BloodRage) != Mastery.None;
+
     /// <summary>FUN_004babf0(stack) == 0x75 (CREATURE_GOBLIN family), as FUN_008d03a0 tests it.</summary>
     internal bool AiGoblinFamily(Unit o) => IsGoblinFamily(o);
 

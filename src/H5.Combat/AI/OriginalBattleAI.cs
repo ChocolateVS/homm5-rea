@@ -352,23 +352,62 @@ public sealed partial class OriginalBattleAI : IBattleAI
         // combat length evaluation FUN_00b393a0 below 3) and while WE out-shoot the enemy (FUN_00bf9eb0 on the start value:
         // our FUN_00bf9d30 above the enemy's). GAP-detail: the actor vf 0x6c → vf 0x58 (field +0x48) test is not applied.
         bool shortCombat = ShortCombat(b, side, start);
+        // Think +0x1bc (settings +0xa8 = FUN_00a2f180): FUN_008d4330 and the shooter block FUN_008d4500 take only enemies
+        // FUN_00b3e1c0 lets through (inside the town); think +0x1bd (settings +0xa9 = FUN_00a2fa20(actor, 1)): the actor guards a shooter.
+        var targets = InsideTownOnly(b, side, start) ? enemies.Where(e => b.InsideTown(e.Pos)).ToList() : enemies;
+        bool guard = GuardsShooter(b, u, true);
         void GuardAndBlock()
         {
             if (!SideValue.OutShoots(start.My, start.Enemy)) return;
-            if (diff.UseDefendShootersMoves) list.AddRange(DefendShooterMoves(b, u, side, reach));
-            if (diff.UseBlockEnemyMoves) list.AddRange(BlockEnemyMoves(b, u, side, reach, enemies, diff));
+            if (diff.UseDefendShootersMoves) list.AddRange(DefendShooterMoves(b, u, side, reach, guard));
+            if (diff.UseBlockEnemyMoves) list.AddRange(BlockEnemyMoves(b, u, side, reach, targets, diff));
         }
         if (!shortCombat) GuardAndBlock();
         bool defensive = Defensive(b, side, start);
-        list.AddRange(Attacks(b, u, side, la, enemies, diff, tooWeak, defensive));
+        list.AddRange(Attacks(b, u, side, la, targets, diff, tooWeak, defensive, guard));
         list.AddRange(GoblinGuardMoves(b, u, side, reach));
         // FUN_008d5b90: approach records only while the strategy is not defensive (think +0x1ac).
         if (list.Count == before && la.Moves.Count > 0 && !defensive)
-            list.AddRange(ApproachMoves(b, u, side, la, enemies, diff));
+            list.AddRange(ApproachMoves(b, u, side, la, targets, diff));
         // FUN_008d68c0: a short combat that added nothing after the spells clears think +0x1b7 and runs FUN_008d64e0 again.
         if (shortCombat && list.Count == before) GuardAndBlock();
         return list;
     }
+
+    /// <summary>
+    /// Think +0x1bd = settings +0xa9 = FUN_00a2fa20(actor, 1): over the units of the actor's army (actor vf 0xc → army vf 0x60,
+    /// FUN_00b3e620 → FUN_00b3e5c0 with FUN_00a6d4d0: not removed vf 0x5c, not hidden vf 0x4c, vf 0x70 set) adjacent to the actor
+    /// (FUN_00b3e4e0 → FUN_00b3d4e0), the actor itself left out, with a creature interface (vf 0x6c: no war machine): one that
+    /// shoots (vf 0x1e0) → true; with the flag and the actor's cell inside its army's rectangle (army vf 0xb0 = 004da340: the
+    /// deployment columns — attacker exe x 2 .. d + 1, defender w − d − 2 .. w − 3, rows 1 .. h − 2, d = 2 + army +0x78; ours
+    /// <see cref="BattleState.DeployColumns0"/> / <see cref="BattleState.DeployColumns1"/>, every row) a neighbour for which
+    /// FUN_00a2fa20(neighbour, 0) holds → true. GAP-detail: with combat vf 0x64 (00af2230: the attacker army's vf 0xc4 list is not
+    /// empty) d comes from FUN_0085a2a0 (not decoded); ours keeps the deployment columns.
+    /// </summary>
+    internal static bool GuardsShooter(Battle b, Unit u, bool deep)
+    {
+        var s = b.State;
+        bool inRect = deep && (u.Side == 0 ? u.Pos.X <= s.DeployColumns0 - 1 : u.Pos.X >= s.Width - s.DeployColumns1);
+        foreach (var n in s.Living)
+        {
+            if (n.Id == u.Id || n.Side != u.Side || n.IsObject || n.IsWarMachine || n.HasEffect(Fx.Invisible) || !Battle.AreAdjacent(u, n)) continue;
+            if (b.CanShoot(n)) return true;
+            if (inRect && GuardsShooter(b, n, false)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Think +0x1bc = settings +0xa8 = FUN_00a2f180: settings +0xa5 (FUN_00a30460: combat vf 0x58 ≠ 2 and the army is not the
+    /// attacker, i.e. the siege defender), FUN_00af3cc0 false (always), army vf 0x12c = 004dade0 false (every creature of the army,
+    /// vf 0x6c, inside the town: FUN_00b3e1c0 = FUN_00b3de90 on its cell, <see cref="Battle.InsideTown(Cell)"/>), then — the
+    /// cross-product branch needs our half's [0] &gt; 0, never here — FUN_00bf9eb0: we out-shoot the enemy. Set, the attack /
+    /// approach scan FUN_008d4330 and the shooter block FUN_008d4500 skip enemies outside the town.
+    /// </summary>
+    internal static bool InsideTownOnly(Battle b, int side, CombatValue start) =>
+        b.State.Siege is { } sg && sg.Town != "TOWN_NO_TYPE" && side == 1
+        && b.State.Living.Where(u => u.Side == side && !u.IsObject && !u.IsWarMachine && !u.HasEffect(Fx.Invisible)).All(u => b.InsideTown(u.Pos))
+        && SideValue.OutShoots(start.My, start.Enemy);
 
     /// <summary>
     /// The defensive strategy flag (think +0x1ac = settings +0x98, FUN_00a30460 → FUN_00a2fd40 with the think's nested
@@ -565,27 +604,26 @@ public sealed partial class OriginalBattleAI : IBattleAI
     /// and Return and No Enemy Retaliation (FUN_00a2f130) and the record is not "Move-no-attack", or when think +0x1bd is set.
     /// With Strike and Return and not too weak (think +0x1b4) a second pass over the ring makes the "Move-no-attack" records
     /// (FUN_008d3c40 arg 4 = 1). ConsiderOnlyShortestPathToEnemy (row +0xb) or think level 2 ends a pass at its first record.
-    /// GAP-details: think +0x1bd (settings +0xa9 = FUN_00a2fa20(actor, 1): a unit next to the actor (FUN_00b3e620 → list of actor
-    /// vf 0xc's vf 0x60 filtered by FUN_00a6d4d0, adjacency FUN_00b3d4e0) that shoots, or with the actor inside that object's vf
-    /// 0xb0 rectangle a neighbour's neighbour (recursion, flag 0); the object behind actor vf 0xc is not identified) is not applied;
-    /// a "Move-no-attack" record with Turns 0 (a strike without the return) has no command here and is left out; the enemy gates
-    /// FUN_00b3e1c0 (think +0x1bc), the vf 0x80 record +0x1c == 2 skip (think +0x1b6) and the adjacency / think +0x1b7 /
+    /// Think +0x1bd (<see cref="GuardsShooter"/>) and the think +0x1bc enemy filter (<see cref="InsideTownOnly"/>, applied by the
+    /// caller) are ported. GAP-details: a "Move-no-attack" record with Turns 0 (a strike without the return) has no command here and
+    /// is left out; the war-machine record +0x1c == 2 skip (unit vf 0x80, think +0x1b6 = catapult attacking 00a2fbe0) and the
+    /// adjacency / think +0x1b7 /
     /// FUN_008d0440 skip are not applied. The moat stop (map +0x10 = 2 when think +0x1c8 is clear) and the siege attacker's second
     /// pass are ported (<see cref="IgnoresMoat"/>, <see cref="Battle.AiMoatFlag"/>).
     /// </summary>
-    IEnumerable<Candidate> Attacks(Battle b, Unit u, int side, LegalActions la, List<Unit> enemies, CombatDifficulty diff, bool tooWeak, bool defensive)
+    IEnumerable<Candidate> Attacks(Battle b, Unit u, int side, LegalActions la, List<Unit> enemies, CombatDifficulty diff, bool tooWeak, bool defensive, bool guard = false)
     {
         // Think +0x1c8 (IgnoresMoat): set, map +0xcc does not stop at the moat, and a walker of the siege attacker (combat
         // vf 0x50, army vf 0xac) gets a second FUN_008d4330 pass on FUN_00c52e20(0, 1, 1, 0) (every stack blocks, moat stop).
         bool ignore = IgnoresMoat(b, u);
-        foreach (var c in AttackPass(b, u, side, la, enemies, diff, tooWeak, defensive, b.AiPathMap(u, true, true, false, !ignore), !ignore))
+        foreach (var c in AttackPass(b, u, side, la, enemies, diff, tooWeak, defensive, guard, b.AiPathMap(u, true, true, false, !ignore), !ignore))
             yield return c;
         if (ignore && !u.Flying && b.State.Siege is { } sg && sg.Town != "TOWN_NO_TYPE" && u.Side == 0)
-            foreach (var c in AttackPass(b, u, side, la, enemies, diff, tooWeak, defensive, b.AiPathMap(u, true, true, false, true), true))
+            foreach (var c in AttackPass(b, u, side, la, enemies, diff, tooWeak, defensive, guard, b.AiPathMap(u, true, true, false, true), true))
                 yield return c;
     }
 
-    IEnumerable<Candidate> AttackPass(Battle b, Unit u, int side, LegalActions la, List<Unit> enemies, CombatDifficulty diff, bool tooWeak, bool defensive,
+    IEnumerable<Candidate> AttackPass(Battle b, Unit u, int side, LegalActions la, List<Unit> enemies, CombatDifficulty diff, bool tooWeak, bool defensive, bool guard,
         (Dictionary<Cell, int> Dist, Dictionary<Cell, Cell> Prev) map, bool moatStop)
     {
         (Dictionary<Cell, int>, Dictionary<Cell, Cell>)? mapE4 = null;
@@ -615,7 +653,7 @@ public sealed partial class OriginalBattleAI : IBattleAI
                     else
                     {
                         if (p.Stop == u.Pos) continue;
-                        if (defensive && owned && (harpy && !moveNoAttack)) continue;
+                        if (defensive && owned && (harpy && !moveNoAttack || guard)) continue;
                         cmd = new MoveCmd(u.Id, p.Stop) { Side = side };
                     }
                     yield return new Candidate
@@ -676,9 +714,9 @@ public sealed partial class OriginalBattleAI : IBattleAI
     /// <summary>
     /// Defend shooter (FUN_008d58c0 → FUN_008d4070): for every other friendly stack that can shoot and lacks
     /// NO_MELEE_PENALTY, a move to each ring cell around it reachable this turn; Turns = 0 + 1, Priority 2 (default),
-    /// MovePrice = path cost. GAP-detail: the extra rage candidate (settings +0xa9) is not ported.
+    /// MovePrice = path cost. With think +0x1bd and no Blood Rage (FUN_008a16b0) one more record: the actor defends (CDefendCreatureCmd), Turns 1.
     /// </summary>
-    IEnumerable<Candidate> DefendShooterMoves(Battle b, Unit u, int side, Dictionary<Cell, int> reach)
+    IEnumerable<Candidate> DefendShooterMoves(Battle b, Unit u, int side, Dictionary<Cell, int> reach, bool guard = false)
     {
         int Cost(Cell c) => reach.TryGetValue(c, out var v) ? v : Unreachable;
         foreach (var f in b.State.Living.Where(f => f.Id != u.Id && !f.IsObject && b.Controller(f) == side && b.CanShoot(f) && !f.Has(Ab.NoMeleePenalty)))
@@ -690,5 +728,9 @@ public sealed partial class OriginalBattleAI : IBattleAI
                     Command = new MoveCmd(u.Id, cell) { Side = side }, Turns = 1, MovePrice = cost, Label = $"guard shooter {f.Id}",
                 };
             }
+        // FUN_008d58c0's tail: with think +0x1bd and no Blood Rage (FUN_008a16b0) one more "Defend shooter" record whose two
+        // commands are CDefendCreatureCmd (vtable 00e17db8) for the actor, Turns 1.
+        if (guard && !b.AiBloodRage(u))
+            yield return new Candidate { Command = new DefendCmd(u.Id) { Side = side }, Turns = 1, Label = "defend shooter (stay)" };
     }
 }
