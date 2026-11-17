@@ -476,6 +476,7 @@ public sealed partial class Adventure
             Attack = h.Attack, Defence = h.Defence, SpellPower = h.SpellPower, Knowledge = h.Knowledge,
             Skills = h.Skills.ToList(), Perks = h.Perks.ToList(), Spells = ManaBookSpells(h),
             Wands = WandEntries(h).Select(w => new SpellCharge { Spell = w.Spell!, Charges = w.Charges }).ToList(),
+            Book = BookEntries(h),
             Ballista = h.Ballista, FirstAidTent = h.FirstAidTent, AmmoCart = h.AmmoCart, Mana = h.Mana,
             FavoriteEnemies = h.FavoriteEnemies.Where(e => e.Length > 0).ToList(),
             // Morale and luck ([0], [1]) are added to the combat heroes by CreatePendingBattle.

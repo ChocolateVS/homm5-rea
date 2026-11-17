@@ -203,6 +203,25 @@ public sealed partial class Adventure
         return l;
     }
 
+    /// <summary>
+    /// The book's entries as the combat hero reads them (FUN_00bc1fa0 → FUN_00b5aa20, +0x1e0): the learned and sourced
+    /// entries (h.Spells with their sources), the worn artifacts' entries not already there (FUN_00b541f0, the
+    /// artifact named), then the wands' (FUN_00b53730, keyed by the wand) — the same spells as <see cref="BookSpells"/>.
+    /// </summary>
+    public List<H5.Core.Data.BookEntry> BookEntries(HeroState h)
+    {
+        var l = h.Spells.Select(s => new H5.Core.Data.BookEntry { Spell = s, Sources = h.SpellSources.TryGetValue(s, out var src) ? src.ToList() : new() }).ToList();
+        if (h.Class != "HERO_CLASS_BARBARIAN")
+            foreach (var (a, inst) in WornWithInstances(h))
+            {
+                if (a == WandArtifact) continue;
+                foreach (var sp in SpellsOfArtifact(a, inst))
+                    if (SpellFitsRage(h, sp) && !l.Any(e => e.Spell == sp)) l.Add(new H5.Core.Data.BookEntry { Spell = sp, Artifact = a });
+            }
+        foreach (var w in WandEntries(h)) l.Add(new H5.Core.Data.BookEntry { Spell = w.Spell!, Artifact = WandArtifact });
+        return l;
+    }
+
     /// <summary>The book without the wand entries: what the combat hero casts with mana.</summary>
     public List<string> ManaBookSpells(HeroState h)
     {

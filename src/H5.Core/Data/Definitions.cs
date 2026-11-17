@@ -210,8 +210,23 @@ public sealed class HeroInstance
     /// Cast for a charge instead of mana (CCombatHero vf 0x220 / 0x224 = 00bc0030 / 00bbf610).
     /// </summary>
     public List<SpellCharge> Wands = new();
+    /// <summary>
+    /// The adventure hero's book (+0x1e0, read by the combat hero through vf 0x248 = FUN_00bc1fa0 → CHero vf 0xcc =
+    /// FUN_00b5aa20): every entry {artifact, spell, sources} — known, perk-sourced and worn-artifact ones, wands included —
+    /// as the adventure keeps it. Null when no adventure hero stands behind the instance (duels, presets): the combat
+    /// then derives the mass / empowered versions itself.
+    /// </summary>
+    public List<BookEntry>? Book;
     public string Class => Shared?.Class ?? "";
     public string Town => Shared?.Town ?? "";
+}
+
+/// <summary>A hero book entry (+0x1e0): its spell, the worn artifact it comes from (none for a learned entry) and its sources (perks).</summary>
+public sealed class BookEntry
+{
+    public string Spell = "";
+    public string? Artifact;
+    public List<string> Sources = new();
 }
 
 /// <summary>A wand book entry: its spell and the charges of its charge object (+0x20).</summary>

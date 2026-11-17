@@ -80,14 +80,19 @@ public sealed partial class Battle
     IEnumerable<string> HeroSpells(HeroState h, List<H5.Core.Data.SpellCharge> wands)
     {
         var set = new List<string>();
-        foreach (var s in h.Spells.Concat(wands.Select(w => w.Spell)))
+        // With the adventure hero's book (h.Book) its entries are cast as they are: the mass / empowered versions are
+        // entries there (FUN_00b4bb40 at each rebuild), so a version the book lacks — a starting artifact's right after
+        // the set-up FUN_00b56cd0, whose artifact entries (00b541f0) come after the rebuild — is not offered.
+        bool book = h.Book != null;
+        var mana = book ? h.Book!.Where(e => e.Artifact != WandArtifact).Select(e => e.Spell).Distinct().ToList() : h.Spells;
+        foreach (var s in mana.Concat(wands.Select(w => w.Spell)))
         {
             var sp = Db.Spell(s);
             // SPELL_ABILITY_AVATAR_OF_DEATH (school SPECIAL) is cast from the book like a spell (0097c320 → 00862470,
             // 00984a00 case 0xc8; combat_sweep_18.md).
             if (sp == null || !sp.IsCombatSchool && s != AvatarOfDeathSpell) continue;
-            if (h.Spells.Contains(s) || wands.Any(w => w.Spell == s && w.Charges > 0)) set.Add(s);
-            if (MassSpells.TryGetValue(s, out var mass) && h.HasPerk(mass.Perk)) set.Add(mass.Mass);
+            if (mana.Contains(s) || wands.Any(w => w.Spell == s && w.Charges > 0)) set.Add(s);
+            if (!book && MassSpells.TryGetValue(s, out var mass) && h.HasPerk(mass.Perk)) set.Add(mass.Mass);
         }
         // Perk-granted spells (Power of Speed / Power of Endurance / Teleport Assault, p.108/p.111/p.123).
         if (h.HasPerk(Sk.PowerOfSpeed)) set.Add("SPELL_MASS_HASTE");
@@ -95,7 +100,7 @@ public sealed partial class Battle
         if (h.HasPerk(Sk.TeleportAssault)) set.Add("SPELL_TELEPORT");
         if (h.HasPerk(Sk.RuneArmour)) set.Add("SPELL_CELESTIAL_SHIELD");
         // Empowered Spells: empowered versions of the known damaging Destructive spells (double mana, +50% damage).
-        if (h.HasPerk(Sk.EmpoweredSpells))
+        if (!book && h.HasPerk(Sk.EmpoweredSpells))
             foreach (var s in set.Concat(wands.Select(w => w.Spell)).ToList())
                 if (Db.Spell("SPELL_EMPOWERED_" + s["SPELL_".Length..]) is { } emp) set.Add(emp.Id);
         if (h.SkillLevel(Sk.Runelore) > Mastery.None)
@@ -106,6 +111,7 @@ public sealed partial class Battle
     }
 
     const string MindCleanerBlock = "MIND_CLEANER:";
+    const string WandArtifact = "WAND_OF_X";
 
     /// <summary>
     /// The wand entry a cast of <paramref name="spell"/> uses: none when the spell is in the hero's book otherwise (a

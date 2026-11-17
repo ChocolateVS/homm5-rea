@@ -27,6 +27,11 @@ public class DuelHeroTests(Fixture f)
             Assert.Contains(a.Spells, fromArtifacts.Contains);
             var battle = BattleSetup.CreateDuel(f.Core, a, Engine.Adventure.DuelHeroes(f.Db, p, 0, 5).B, 5, skipTactics: true, arena: "Grass_Big_01");
             Assert.Contains(battle.Heroes[0].Spells, fromArtifacts.Contains);
+            // the book entries handed over (00bc1fa0 → 00b5aa20): the record's spells and the worn artifacts' entries
+            Assert.NotNull(a.Book);
+            Assert.True(rec.Spells.All(s => a.Book!.Any(e => e.Spell == s)));
+            Assert.Contains(a.Book!, e => e.Artifact != null && fromArtifacts.Contains(e.Spell));
+            Assert.Equal(a.Spells.OrderBy(s => s), a.Book!.Where(e => e.Artifact != "WAND_OF_X").Select(e => e.Spell).Distinct().OrderBy(s => s));
         }
         Assert.True(found > 0, "no preset wears a spell artifact");
     }

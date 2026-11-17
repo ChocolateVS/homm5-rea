@@ -178,6 +178,8 @@ public sealed class HeroState
     public List<string> Spells = new();
     /// <summary>Worn wands' book entries (spell, charges left): cast for a charge (00bc0030 / 00bbf610), not mana.</summary>
     public List<H5.Core.Data.SpellCharge> Wands = new();
+    /// <summary>The adventure hero's book entries (HeroInstance.Book); null without an adventure hero.</summary>
+    public List<H5.Core.Data.BookEntry>? Book;
     public List<string> Artifacts = new();
     public List<string> FavoriteEnemies = new();
     /// <summary>Equipped pieces per artifact set effect id.</summary>

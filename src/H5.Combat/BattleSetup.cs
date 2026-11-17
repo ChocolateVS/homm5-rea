@@ -168,6 +168,7 @@ public static class BattleSetup
         h.Perks = hi.Perks.ToList();
         h.Spells = hi.Spells.ToList();
         h.Wands = hi.Wands.Select(w => new SpellCharge { Spell = w.Spell, Charges = w.Charges }).ToList();
+        h.Book = hi.Book?.Select(e => new BookEntry { Spell = e.Spell, Artifact = e.Artifact, Sources = e.Sources.ToList() }).ToList();
         h.Artifacts = hi.Artifacts.ToList();
         SkillAuditH.ApplyPendantOfMastery(h);
         h.FavoriteEnemies = hi.FavoriteEnemies.ToList();
