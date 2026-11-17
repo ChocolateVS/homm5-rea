@@ -199,8 +199,8 @@ public sealed partial class Adventure
                 double sum = 0;
                 foreach (var s in h.Army.Live())
                 {
-                    // TODO(exe): stack power is FUN_004e9b90 (with the hero's modifiers) × count; creature Power × count stands in.
-                    double sp = Core.Creatures.TryGetValue(s.Creature, out var cd) ? (double)cd.Power * s.Count : 0;
+                    // 00504797: stack value 004e9b90 (ECX = stack, EDX = the hero), count included.
+                    double sp = StackPower(s, h);
                     if (bestStack == null || bestStackP < sp) { bestStack = s; bestStackP = sp; }
                     sum += sp;
                 }

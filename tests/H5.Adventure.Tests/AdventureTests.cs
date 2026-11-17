@@ -236,18 +236,6 @@ public class MovementTests(Fixture f)
 [Collection("adv")]
 public class RulesTests(Fixture f)
 {
-    /// <summary>Fan manual p.320 worked example without the artifact factor: 100 Peasants, +5 morale, +3 luck.</summary>
-    [StockFact]
-    public void ArmyPowerFollowsManualFormula()
-    {
-        var g = f.NewGame();
-        var h = new HeroState { NextBattleMorale = 5, NextBattleLuck = 3 };
-        var power = g.ArmyPower(new[] { new Stack("CREATURE_PEASANT", 100) }, h);
-        int basePower = f.Core.Creatures["CREATURE_PEASANT"].Power;
-        Assert.Equal(basePower * 100 * (1 + 5 * 0.0173) * (1 + 3 * 0.0173), power, 3);
-        Assert.Equal(5060, Math.Floor(power * (1 + 0.8 / 10)));   // manual figure (truncated) with the +10% initiative artifact
-    }
-
     [Fact]
     public void ExperienceLevelsAndOffersFollowTheRules()
     {

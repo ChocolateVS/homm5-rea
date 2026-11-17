@@ -207,6 +207,28 @@ public static class BattleSetup
         return h;
     }
 
+    /// <summary>
+    /// A context for the exe's army stat getters outside a battle (004bc470 hit points, 004bbfb0 / 004bc020 min / max
+    /// damage, 004bb170 / 004bb2a0 attack / defence, 004bc190 initiative): side 0 carries <paramref name="hero"/> (or none),
+    /// as the adventure army value 004e9b90 calls them. Read a stack's values with <see cref="GetterStack"/>.
+    /// </summary>
+    public static BattleState GetterContext(GameDatabase db, HeroInstance? hero, string? week)
+    {
+        var s = new BattleState { Week = week ?? MoonWeek.Nothing };
+        s.Heroes[0] = MakeHero(db, hero, 0);
+        s.Heroes[1] = MakeHero(db, null, 1);
+        return s;
+    }
+
+    /// <summary>One creature of <paramref name="creatureId"/> with its artifact under the context's hero: the base values
+    /// <see cref="AddCreature"/> gives it (the getters' results); the context keeps no unit.</summary>
+    public static Unit GetterStack(GameDatabase db, BattleState ctx, string creatureId, MicroArtifact? micro)
+    {
+        var u = AddCreature(db, ctx, 0, creatureId, 1, default, false, micro);
+        ctx.Units.Clear();
+        return u;
+    }
+
     public static Unit AddCreature(GameDatabase db, BattleState s, int side, string creatureId, int count, Cell pos, bool summoned,
         MicroArtifact? micro = null)
     {

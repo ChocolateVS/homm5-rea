@@ -208,7 +208,7 @@ public sealed partial class Battle
                 // caster (00989fd0 case 0x36, see MoraleOf).
                 double prayer = (int)Stats.Get("combat/HeroSkills/Knight/Prayer_DefenceBonus", 1);
                 foreach (var u in S.LivingOf(c.Side).Where(u => u.Kind == UnitKind.Creature && !IsUndeadLike(u) && !u.Has(Ab.Mechanical)).ToList())
-                    AddEffect(u, new Effect { Id = H5.Combat.Fx.Benediction, Value = prayer, Remaining = 2 + 0.25 * h.Level, Positive = true, SourceSide = c.Side });
+                    AddEffect(u, new Effect { Id = H5.Combat.Fx.Benediction, Value = prayer, Remaining = PrayerTurns(h.Level), Positive = true, SourceSide = c.Side });
                 break;
             case "BANSHEE_HOWL":
                 h.AbilityUses["BANSHEE_HOWL"] = 1;
@@ -705,5 +705,18 @@ public sealed partial class Battle
         u.Atb = atb;
         Emit(new UnitSummoned(u.Id, creature, count, near.Side, u.Pos, by));
         return u;
+    }
+
+    /// <summary>
+    /// Prayer's duration (exe 004e57d0 case 0x36 SPELL_PRAYER, 004e5868..004e58a7): turns = chop(chop(level ·
+    /// combat/HeroSkills/PrayerLevelMultiplier (RPGStats +0x7ac)) + 2.0f (00e15a94)); ticks = trunc(chop(turns · 00a2d700
+    /// (ATBBaseTime / SpellInitiative))); returned in turns (ticks / turn length), as TableTurns. Stock 0.25, MMH 5.5 0.05.
+    /// </summary>
+    public double PrayerTurns(int level)
+    {
+        float turns = X87.Add(X87.Mul(level, (float)Stats.Get("combat/HeroSkills/PrayerLevelMultiplier", 0.25)), 2f);
+        float len = (float)SpellTurnLength();
+        int ticks = (int)X87.Mul(turns, len);
+        return (float)(ticks / len);
     }
 }

@@ -91,4 +91,22 @@ public class AuditSpecTests(GameDataFixture f)
         float mult = (float)f.Db.Stats.Get("combat/HeroSkills/Knight/WhiteKnight_PrayerMultiplier", 2);
         Assert.Equal((int)H5.Core.Numerics.X87.Add(H5.Core.Numerics.X87.Mul(bonus, mult), mor), b.MoraleOf(footman));
     }
+
+    // exe 004e57d0 case 0x36 (004e5868): Prayer lasts chop(chop(level · PrayerLevelMultiplier) + 2.0f) turns, cut to whole
+    // ticks of the 00a2d700 turn length. Stock 0.25: level 10 → 4.5, level 3 → 2.75 (was 2 + 0.25 · level hard-coded).
+    [StockFact]
+    public void PrayerDurationUsesPrayerLevelMultiplier()
+    {
+        var s = Setup(f.Db, h => h.Perks.Add(Sk.Benediction), ("CREATURE_FOOTMAN", 10));
+        var b = new Battle(f.Db, s);
+        Assert.Equal(0.25, f.Db.Stats.Get("combat/HeroSkills/PrayerLevelMultiplier", -1), 6);
+        Assert.Equal(4.5, b.PrayerTurns(10), 6);
+        Assert.Equal(2.75, b.PrayerTurns(3), 6);
+        Assert.Equal(2.25, b.PrayerTurns(1), 6);
+        // the effect starts with that duration (BENEDICTION, Battle.Abilities)
+        b.Begin();
+        s.Active = Actor.Hero(0);
+        Assert.True(b.Apply(new UseAbilityCmd(Actor.Hero(0), "BENEDICTION") { Side = 0 }).Ok);
+        Assert.True(s.Units.Single(u => u.CreatureId == "CREATURE_FOOTMAN").GetEffect(H5.Combat.Fx.Benediction)!.Remaining <= b.PrayerTurns(s.Heroes[0].Level));
+    }
 }

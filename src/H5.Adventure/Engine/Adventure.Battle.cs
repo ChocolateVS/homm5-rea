@@ -3,6 +3,7 @@ using H5.Adventure.State;
 using H5.Combat;
 using HeroState = H5.Adventure.State.HeroState;
 using H5.Core.Data;
+using H5.Core.Numerics;
 
 namespace H5.Adventure.Engine;
 
@@ -11,22 +12,7 @@ public sealed partial class Adventure
 {
     // ------------------------------------------------------------------ army power
 
-    /// <summary>
-    /// Army power for diplomacy and stack splitting (fan manual p.320): sum of creature Power × count,
-    /// each stack scaled by (1 + C·Morale)(1 + C·Luck) with C = 0.0173 for positive and 0.0122 for
-    /// negative values (also DefaultStats AI/Adventure Creature{Good,Bad}{Morale,Luck}Coef).
-    /// TODO(exe): artifact initiative modifier (1 + ΔInitiative/10).
-    /// </summary>
-    public double ArmyPower(IEnumerable<Stack> army, HeroState? hero)
-    {
-        double total = 0;
-        int morale = hero != null ? HeroMorale(hero) : 0, luck = hero != null ? HeroLuck(hero) : 0;
-        static double F(int v) => 1 + (v > 0 ? 0.0173 : 0.0122) * v;
-        foreach (var s in army)
-            if (Core.Creatures.TryGetValue(s.Creature, out var c))
-                total += (double)c.Power * s.Count * (hero != null ? F(morale) * F(luck) : 1);
-        return total;
-    }
+    // Army power: Adventure.ArmyPower.cs (exe 004e9b90 / 004eaaa0 / 004eabb0).
 
     int HeroMorale(HeroState h) =>
         (int)h.MasteryOf("HERO_SKILL_LEADERSHIP") + h.NextBattleMorale + h.ScriptMorale +
@@ -52,7 +38,6 @@ public sealed partial class Adventure
     /// affordable, else the monsters fight; a zero price (Week of Diplomacy, d ≥ 3) joins for free.
     /// The join offer (008dd0d0, <see cref="JoinOffer"/>) comes first: result 0 → the free join box at once, 1 → fight,
     /// 2 → the check above (mixed armies included).
-    /// TODO(exe): the Courtier factor on R (hero vcall 0x190(0x3b), RPGStats +0x928 per level).
     /// </summary>
     void StartNeutralEncounter(HeroState h, MapObject mon)
     {
@@ -64,12 +49,12 @@ public sealed partial class Adventure
         if (offer.Mode == 1) { StartBattle(h, -1, mon.Index, mon.Pos, guards, siege: false); return; }
 
         int diplomacy = DiplomacyLevel(h);
-        double moodCoef = new[] { 0.5, 1.0, 1.5, 2.0 }[MoodIndex(mon.Mood)];
-        if (diplomacy > 0) moodCoef -= 0.2 * diplomacy;
-        double ratio = ArmyPower(h.Army.Live(), h) / Math.Max(1, ArmyPower(guards, null));
-        double threshold = S.Rng.Range(40, 100) * 0.1 * moodCoef;
+        float moodCoef = MoodCoef(MoodIndex(mon.Mood), diplomacy);
+        float threshold = X87.Mul(X87.Mul(S.Rng.Range(40, 100), 0.1f), moodCoef);   // 008e1ced: FILD · 0.1f (00e12f10) · M
+        float ratio = StrengthRatio(h, guards);
+        // 008e1e2d: R < T (or unordered) → not the flee case; 008e1e56: T − 3.0f / M (00e13280) > R (or unordered) → fight.
         bool fleeCase = ratio >= threshold;
-        if (!fleeCase && threshold - 3.0 / moodCoef > ratio) { StartBattle(h, -1, mon.Index, mon.Pos, guards, siege: false); return; }
+        if (!fleeCase && !(X87.Sub(threshold, X87.Div(3f, moodCoef)) <= ratio)) { StartBattle(h, -1, mon.Index, mon.Pos, guards, siege: false); return; }
         int chance = ChanceToJoin(h, guards, mon.Mood, diplomacy);
         if (S.Rng.Range(1, 100) <= chance)
         {
@@ -86,6 +71,29 @@ public sealed partial class Adventure
         }
         else StartBattle(h, -1, mon.Index, mon.Pos, guards, siege: false);
     }
+
+    /// <summary>008da210: M = 0.5f / 1.0f / 1.5f / 2.0f by mood (4 and above → 2.0f), minus chop(d · 0.2f) when d &gt; 0.</summary>
+    static float MoodCoef(int mood, int diplomacy)
+    {
+        float m = mood switch { 0 => 0.5f, 1 => 1f, 2 => 1.5f, _ => 2f };
+        return diplomacy > 0 ? X87.Sub(m, X87.Mul(diplomacy, 0.2f)) : m;
+    }
+
+    /// <summary>
+    /// The hero / creature strength ratio of the join decision (008e1d75): R = <see cref="ArmyPowerRatio"/> stored as a
+    /// float; a HERO_SPEC_COURTIER hero (vf 0x190(0x3b)) multiplies it by chop(chop(chop(level) · RPGStats +0x928) + 1.0f)
+    /// (008e1da7..008e1dc8).
+    /// </summary>
+    public float StrengthRatio(HeroState h, IEnumerable<Stack?> guards)
+    {
+        float r = ArmyPowerRatio(h, guards);
+        if (h.Specialization == "HERO_SPEC_COURTIER")
+            r = X87.Mul(X87.Add(X87.Mul(X87.Chop(h.Level), (float)CourtierCoef()), 1f), r);
+        return r;
+    }
+
+    /// <summary>RPGStats +0x928 = combat/HeroSpecializations/Runemage/Courtier_DiplomacyBonusPerLevel (float).</summary>
+    double CourtierCoef() => Core.Stats.Get("combat/HeroSpecializations/Runemage/Courtier_DiplomacyBonusPerLevel", 0.1);
 
     /// <summary>008e1ad0: hero vcall 0x174(0x1e) (Diplomacy) &gt; 0 → 1 + (Crown of Leadership, vcall 0x310 &gt; 0), else 0.</summary>
     public int DiplomacyLevel(HeroState h) =>

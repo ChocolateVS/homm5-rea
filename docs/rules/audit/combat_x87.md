@@ -79,11 +79,12 @@ round-to-nearest conversions and the 0.5 roundings.
 | War machine damage factors | MATCH | 004bc710 / 004bc780 → 004bb8c0, 004bb770 | integer table values × (hero vf 0x1c + vf 0x10): integers, so the engine's `Math.Round` is exact | |
 | AI target priority (speed · initiative) | FIXED | 008d00d0 | trunc(chop(initiative (vf 0x1bc) · speed (vf 0x48))) < trunc(chop(chop(…) · 0.6666667f (00e531a0))). Ours rounded doubles with 2 / 3 | |
 | Health refresh ratio | UNVERIFIED | — | `RefreshHealth` keeps the damage ratio with round(total · new / old); not traced to the exe | |
+| `HERO_SKILL_PRAYER` | FIXED | 00989fd0, 00989790, 0098a430, 004e57d0 (004e5868..004e58a7), 00a2d700 | bonus = the integer Prayer_DefenceBonus (RPGStats +0x59c) on attack / defence, White Knight scaling on morale only; duration: 004e57d0 case 0x36 reads combat/HeroSkills/PrayerLevelMultiplier (RPGStats +0x7ac, the only reader of that field): turns = chop(chop(level · mult) + 2.0f), ticks = trunc(chop(turns · 00a2d700)) (00a2d700 = ATBBaseTime / SpellInitiative), kept as ticks / turn length — stock 0.25, MMH 5.5 0.05 (level 10: 4.5 vs 2.5 turns). Ours hard-coded 2 + 0.25 · level. UNVERIFIED: the level argument at the BENEDICTION call site (00984a00 → 009857bd) is taken as the hero level, as for Death Scream | AuditSpecTests.WhiteKnightScalesOnlyPrayersMorale, AuditSpecTests.PrayerDurationUsesPrayerLevelMultiplier |
 
 ## Not yet checked for x87 semantics
 
 The ATB tick (already single precision, see the ATB core row). The combat AI's other estimates (src/H5.Combat/AI:
 expected damage, kill counts and value sums in double arithmetic) beyond the target priority above. The rows marked
 UNVERIFIED or GAP above (storm field n, Flamewave shares, Manoeuvre shot, health refresh). Integer `(int)` casts of
-double chains elsewhere in src/H5.Combat that carry no `Math.Round` (each needs its exe site). Prayer's duration
-(2 + 0.25 · level in ours, while MMH 5.5 sets PrayerLevelMultiplier to 0.05) is a data question, not an x87 one.
+double chains elsewhere in src/H5.Combat that carry no `Math.Round` (each needs its exe site). Prayer's duration: see the
+`HERO_SKILL_PRAYER` row (now read from PrayerLevelMultiplier).
