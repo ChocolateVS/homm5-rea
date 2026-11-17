@@ -1265,6 +1265,7 @@ public partial class CombatScreen : Control
             UpdateDeployGhost();
             CombatCursors.Set(CombatCursor.Default);
             ShowStaticHighlights(null);
+            HighlightUnits(null);
             return;
         }
         // Border cells too: the war machines stand there (exe FUN_00c551f0), and the exe picks without a bounds test.
@@ -1279,6 +1280,7 @@ public partial class CombatScreen : Control
         CombatCursors.Set(cursor);
         DrawFakeCursor(cursor);
         ShowStaticHighlights(hl);
+        HighlightUnits(action);
         // Moves show no prediction in the original; attacks, shots, spells and abilities do; a refused
         // spell target shows the refusal reason instead.
         _hoverPrediction = action?.Pred ?? _refusal;
@@ -1291,7 +1293,64 @@ public partial class CombatScreen : Control
     /// <summary>Refusal text for the hovered target (set by Resolve when it returns no action).</summary>
     CombatPredictions.Prediction? _refusal;
 
-    void ClearHighlights() => Arena.Overlay.ClearMarks();
+    void ClearHighlights()
+    {
+        Arena.Overlay.ClearMarks();
+        foreach (var v in _units.Values) v.SetHighlight(null);
+    }
+
+    static Color? _selectedCreature;
+
+    /// <summary>CombatSelectionDesc SelectedCreature (desc +0xa0, read by 0055c6a0): (0.396, 0.220, 0).</summary>
+    static Color SelectedCreatureColor => _selectedCreature ??= LoadSelectedCreature();
+
+    static Color LoadSelectedCreature()
+    {
+        const string desc = "UI/CombatArena-Heavy/SelectionDesc.(CombatSelectionDesc).xdb";
+        var e = Game.Instance.Fs.Exists(desc) ? Game.Instance.Xdb.Load(desc).Root?.Element("SelectedCreature") : null;
+        float F(string n) => float.TryParse((string?)e?.Element(n), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0f;
+        return new Color(F("x"), F("y"), F("z"));
+    }
+
+    /// <summary>
+    /// The stacks the hovered action affects glow in SelectedCreature (H5_Game.exe: the selection state's unit list +8,
+    /// copied from the hover action's list +0x6c (005498c0 from screen +0x358) that the command builders fill — melee
+    /// 00b3b6c0, shot 008cfde0, spell / ability 00982010 — is drawn each frame by 0055c6a0 through the closure 0054d520
+    /// handed to the render 0066ca80). Ours: the units an attack / shot strikes (Battle.PredictionTargets), a hero
+    /// attack's target, a unit-aimed spell or ability's target, the living stacks on a cell-aimed spell's area; nothing
+    /// for moves. setvar combat_highlighting is read into 0055b7f0, an empty function in 3.1, so it gates nothing.
+    /// </summary>
+    void HighlightUnits(PlannedAction? action)
+    {
+        var b = Session.Battle;
+        var s = b.State;
+        var hit = new HashSet<int>();
+        switch (action?.Command)
+        {
+            case AttackCmd ac when s.Unit(ac.UnitId) is { } a && s.Unit(ac.TargetId) is { } t:
+                foreach (var (u, _) in b.PredictionTargets(a, t, ac.From, AttackKind.Melee, 0, false)) hit.Add(u.Id);
+                break;
+            case ShootCmd sc when s.Unit(sc.UnitId) is { } a && s.Unit(sc.TargetId) is { } t:
+                foreach (var (u, _) in b.PredictionTargets(a, t, null, AttackKind.Ranged, 0, true)) hit.Add(u.Id);
+                break;
+            case HeroAttackCmd ha:
+                hit.Add(ha.TargetId);
+                break;
+            case CastSpellCmd cs when cs.TargetId is int st:
+                hit.Add(st);
+                break;
+            case CastSpellCmd cs when cs.Cell is { } cc:
+                var area = Battle.AreaCells(cs.Spell, cc);
+                if (area.Count == 0) area.Add(cc);
+                foreach (var c in area) if (s.InBounds(c) && s.At(c) is { Alive: true } u) hit.Add(u.Id);
+                break;
+            case UseAbilityCmd ua when ua.TargetId is int at:
+                hit.Add(at);
+                break;
+        }
+        foreach (var (id, v) in _units) v.SetHighlight(hit.Contains(id) && !v.Dead ? SelectedCreatureColor : null);
+    }
 
     /// <summary>
     /// Grid marks in the exe's layer order (0055c480): base layer (combat_show_grid), the acting stack's movement area as

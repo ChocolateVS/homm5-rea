@@ -18,7 +18,7 @@ from the description. Move an item to "Done" with the commit when fixed.
 7. **Browser — F11:** the game captures key input, so F11 full screen does not work in the browser.
 8. **Cursor:** there may be a different cursor when hovering a castle's entrance.
 10. **Ownership / selection marks:** a captured mine (or other object) should show something on top
-    (owner flag/banner); troops normally have something around them (ring/base marker).
+    (owner flag/banner). (The combat half, "troops normally have something around them", is in Done.)
 13. **Fog of war:** unexplored areas are black, but tilting the camera down shows the outlines of
     things in the darkness. Earlier finding (docs/rules/ADVENTURE_RENDER.md, 7be9d21): the original
     also draws unexplored geometry black rather than hiding it, but our blending (linear vs gamma)
@@ -29,11 +29,6 @@ from the description. Move an item to "Done" with the commit when fixed.
     exe's handlers, in the desktop and the browser build (the browser may swallow keys).
 15. **Duel setup screen:** the UI for starting a duel looks broken ("a bit cooked") — compare the
     duel preset / duel start screens with the exe's screen code and UI data.
-17. **Combat hover highlight:** the user asks whether a hovered stack should be highlighted. Known so far
-    (AUDIT_COMBAT_UI, commit 84b052b): hovering another stack draws its movement range as grid kind 7.
-    Not yet traced: whether the hovered unit itself gets an outline / glow / base marker (likely related
-    to item 10, "troops normally have something around them") — trace the exe's hover/selection
-    rendering of units (CombatSelectionDesc, unit materials) and match it.
 19. **Combat graphics glitches:** "a little bit glitchy" in battle (browser build) — details not given;
     reproduce in a browser duel (smoke harness) and compare with the desktop build to find what
     looks wrong (z-fighting, overlay blend, shadows, flicker). Detail from the user: the blue squares
@@ -79,6 +74,16 @@ from the description. Move an item to "Done" with the commit when fixed.
    their next turn); now specability1 plays and they leave the field, and the finish shows them landing with
    specability2 and the strike (exe FUN_008a9220 cases 0x9a / 0x9b). The ability button, target click and the
    AI's use were checked in duels — commit b985569. Not traced: the exe's target rule for 0x9a (ours: any cell).
+10. **Troops' marks in combat** (combat half of 10) **and 17. combat hover highlight:** no ring or base marker
+    under every stack turned up in the exe's selection code (0055c480 / 0055c6a0); its per-stack marks are the grid's select quad under the acting stack and
+    aimable quads, plus a glow on the stacks the hovered action affects: the selection state's unit list (filled by
+    the attack / shot / spell builders) is drawn each frame with CombatSelectionDesc SelectedCreature
+    (0.396, 0.220, 0) — the model's visible surface with the colour added, then eight passes pushed out by
+    k × ui_combat_hilight_radius (0.03), k = 2..9, adding colour × 0.08 around the silhouette (0055c6a0, 008f71b0).
+    Hovering a stack with no action on it highlights nothing beyond its movement range (kind 7). Now the attacked
+    / shot / spell-targeted stacks get that tint and glow — commit "combat: hovered action's targets glow in
+    SelectedCreature". (The browser renderer adds the glow in sRGB, so it looks brighter there, closer to the
+    exe's gamma-space add.)
 11. **Minimap icons:** objects were coloured into the terrain tile by tile; now the exe's icon layer (005acd80:
     172×172 layer, transform 005ac8d0, blit 00c1cae0) draws the MinimapTextures icons — Town_/Mine_/Object_ in the
     owner's colour (0 = neutral) for flagged objects, UnderworldExitEnter, Town_1 for the citadels, caravans, Hero_ — and

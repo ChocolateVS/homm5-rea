@@ -91,6 +91,76 @@ public partial class UnitView : Node3D
         if (Model is MeshInstance3D self) self.Transparency = 1f - alpha;
     }
 
+    // ---- target highlight (H5_Game.exe 0055c6a0 / 008f71b0) ------------------------------------------------------
+
+    const string HighlightShader = @"
+shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, shadows_disabled, CULL;
+uniform vec3 color;          // gamma-space highlight colour
+uniform float alpha = 1.0;
+uniform float offset = 0.0;  // world units along the normal
+void vertex() {
+	VERTEX += normalize(NORMAL) * offset / max(length(MODEL_MATRIX[0].xyz), 1e-4);
+}
+void fragment() {
+	vec3 c = clamp(color, 0.0, 1.0);
+	ALBEDO = OUTPUT_IS_SRGB ? c : mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+	ALPHA = alpha;
+}
+";
+    static Shader? _tintShader, _shellShader;
+    static readonly Dictionary<Color, Material> HighlightMaterials = new();
+    Color? _highlight;
+
+    /// <summary>
+    /// The exe's highlight of the stacks the hovered action affects (0055c6a0: each unit of the selection state's list
+    /// gets scene vfunc 0x30 with CombatSelectionDesc SelectedCreature and w = 0; drawn by 008f71b0, second loop): the
+    /// model's visible surface (ZFUNC EQUAL, depth mode 2) once with the colour, then — gfx_glow_selection on (default
+    /// 1) — passes k = 2..9 with the colour × 0.08 (0x3da3d70a), the vertex offset k · ui_combat_hilight_radius (0.03:
+    /// render params +0x30 → 008f6fc0 → 00ff7da0, vertex constant c10) and LESSEQUAL without depth writes (mode 4),
+    /// stencilled off the model (009ae9f0 {9,1,−1} / {5,0,−1}). Blend state 8 (009ad560) is ONE / INVSRCALPHA with the
+    /// colour premultiplied by the pass alpha and alpha = w · pass alpha = 0 (009b1210), i.e. additive. Here: an
+    /// additive tint and eight back-face shells pushed out along the normals by k · 0.03 world units (the back faces
+    /// stand in for the stencil). The first loop (glow behind occluders, ZFUNC GREATER) is not reproduced; that the
+    /// vertex shader offsets along the normal is inferred (the shader itself is not decoded).
+    /// </summary>
+    public void SetHighlight(Color? color)
+    {
+        if (_highlight == color) return;
+        _highlight = color;
+        if (Model == null) return;
+        var mat = color is { } c ? HighlightMaterial(c) : null;
+        foreach (var mi in Model.FindChildren("*", nameof(MeshInstance3D), true, false))
+            ((MeshInstance3D)mi).MaterialOverlay = mat;
+        if (Model is MeshInstance3D self) self.MaterialOverlay = mat;
+    }
+
+    static Material HighlightMaterial(Color c)
+    {
+        if (HighlightMaterials.TryGetValue(c, out var m)) return m;
+        _tintShader ??= new Shader { Code = HighlightShader.Replace("CULL", "cull_back") };
+        _shellShader ??= new Shader { Code = HighlightShader.Replace("CULL", "cull_front") };
+        ShaderMaterial Pass(Shader sh, float alpha, float offset)
+        {
+            var p = new ShaderMaterial { Shader = sh };
+            p.SetShaderParameter("color", new Vector3(c.R, c.G, c.B));
+            p.SetShaderParameter("alpha", alpha);
+            p.SetShaderParameter("offset", offset);
+            return p;
+        }
+        const float Radius = 0.03f;   // ui_combat_hilight_radius default (0054ed50)
+        var tint = Pass(_tintShader, 1f, 0f);
+        var last = tint;
+        for (int k = 2; k < 10; k++)
+        {
+            var shell = Pass(_shellShader, 0.08f, k * Radius);
+            last.NextPass = shell;
+            last = shell;
+        }
+        HighlightMaterials[c] = tint;
+        return tint;
+    }
+
     Node3D BuildModel(ArenaScene arena)
     {
         string? characterPath = IsWarMachine ? WarMachineCharacter(CreatureId) : CreatureModels.CharacterPathFor(CreatureId);
