@@ -75,8 +75,12 @@ public sealed partial class Adventure
             {
                 // The owner's visit opens the garrison screen (CGarrisonDialogLogEntry, 005a5d90 case 0x1c) to leave guards.
                 bool own = os.Owner == p.Index;
+                // CAdvMapMine 00b08d40 / CAdvMapMineBase (and the Warren) 00ce3310: a mine of an allied player
+                // (00a85030: the old and new owners' teams, world vf 0x68 → vf 0x14) is left as it is.
+                if (!own && o.Kind != ObjectKind.AbandonedMine && Allied(os.Owner, p.Index)) break;
                 Capture(o, os, p);
                 if (own) Emit(new ObjectVisited(h.Id, o.Index, "garrison"));
+                else HauntMine(h, o, os);
                 break;
             }
             case ObjectKind.Garrison:
@@ -913,8 +917,29 @@ public sealed partial class Adventure
         return null;
     }
 
+    /// <summary>
+    /// Haunt Mine (00afa9c0, called after a capture by CAdvMapMine 00b08d40, CAdvMapMineBase / CAdvMapDwarvenWarren
+    /// 00ce3310 and CAdvMapAbanMine 008b5a80): when the visiting army's hero has HERO_SKILL_HAUNT_MINE (vf 0x174(0x6e)),
+    /// n = min(((day counter (world vf 0xa8, 0-based) / 7 + 2) / 2) · 5, 25) CREATURE_MANES (0x21) are logged (vf 0x1c,
+    /// 00afab01) and put into the mine's army (vf 0xc(stack, −1)); when they fit, RPGRoot ADVENTURE_HAUNT_MINE
+    /// (`&lt;value=number&gt;`) flies over the hero (009c9120 type 2).
+    /// </summary>
+    void HauntMine(HeroState h, MapObject o, ObjState os)
+    {
+        if (!h.HasPerk("HERO_SKILL_HAUNT_MINE")) return;
+        int n = Math.Min(((S.Day - 1) / 7 + 2) / 2 * 5, 25);
+        LogCreaturesGained(h.Owner, n);
+        if (!os.Army.TryAdd("CREATURE_MANES", n)) return;
+        Emit(new ArmyChanged(-1, o.Index));
+        Emit(new ObjectVisited(h.Id, o.Index, "haunt:" + n));
+    }
+
     void JoinArmy(HeroState h, List<Stack> creatures)
     {
+        // CRemoveJoinMonsterCmd (0042c0f0) with the join flag (+0x34): every stack of the monster with a count > 0 is
+        // logged (vf 0x1c, 0042c1f8) and then added (00b4c200).
+        foreach (var s in creatures)
+            if (s.Count > 0) LogCreaturesGained(h.Owner, s.Count);
         foreach (var s in creatures)
             if (!h.Army.TryAdd(s.Creature, s.Count)) break;
         Emit(new ArmyChanged(h.Id, -1));

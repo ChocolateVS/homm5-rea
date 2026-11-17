@@ -373,6 +373,8 @@ public sealed partial class Adventure
         if (!p.Purse.CanAfford(cost)) return "not enough resources";
         var trial = target.Select(s => s == null ? null : new Stack(s.Creature, s.Count)).ToArray();
         if (!trial.TryAdd(creature, c.Count)) return "no free army slot";
+        // CHireCreaturesCmd (004f4dd0): logger vf 0x1c with the count (004f4faa) before the stack is added.
+        LogCreaturesGained(p.Index, c.Count);
         target.TryAdd(creature, c.Count);
         pool[slot] -= c.Count;
         Give(p, Purse.Scale(cost, -1));
@@ -431,7 +433,9 @@ public sealed partial class Adventure
         if (slot < 0) return "no free town hero slot";
         int cost = HireCost(p, t);
         if (p.Purse[Purse.Gold] < cost) return "not enough gold";
+        bool kept = S.Heroes.Any(x => !x.Alive && x.Retreat == 2 && x.DefId == defId);
         var h = HireHero(defId, p.Index, entrance, out bool returning);
+        LogHiredArmy(h, kept);
         h.InTown = t.Object;
         if (slot == 1)
         {

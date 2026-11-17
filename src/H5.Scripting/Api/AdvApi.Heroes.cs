@@ -216,6 +216,8 @@ public sealed partial class AdventureScripting
             var cr = CreatureOrNull(id) ?? throw c.Error($"Invalid creature ID {id}");
             int n = c.Int(2), slot = c.Int(3);
             if (n <= 0) throw c.Error("Quantity cannot be negative");
+            // CGiveCreaturesCmd (0042ed90): logger vf 0x1c (count) before the add.
+            Game.LogCreaturesGained(h.Owner, n);
             bool added;
             if (slot >= 0 && slot < h.Army.Length && h.Army[slot] is not { Count: > 0 })
             {

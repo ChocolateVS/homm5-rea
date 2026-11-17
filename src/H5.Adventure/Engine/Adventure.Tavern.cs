@@ -95,7 +95,9 @@ public sealed partial class Adventure
         if (tiles.Count == 0) return "no place for hero";
         var tile = tiles[^1];
         int cost = HireCost(p);
+        bool kept = S.Heroes.Any(x => !x.Alive && x.Retreat == 2 && x.DefId == defId);
         var h = HireHero(defId, p.Index, tile, out bool returning);
+        LogHiredArmy(h, kept);
         h.MaxMovePoints = ComputeMaxMovePoints(h);
         h.MovePoints = h.MaxMovePoints;
         if (!returning) S.Heroes.Add(h);

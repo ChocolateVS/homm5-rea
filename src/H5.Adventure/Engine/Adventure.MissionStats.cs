@@ -6,8 +6,7 @@ namespace H5.Adventure.Engine;
 /// Game statistics for the mission results window (UI/MissionResults, rows of 0079fcf0). H5_Game.exe keeps them in
 /// CMissionResultsLogger (world +0x170, ctor 00877f70), an IGameEventLogger fed through the world's event multiplexer
 /// (world vf 0x180), and builds the window's 0xa0-byte summary with its IMissionResults vf 0 = 00877dd0 for the
-/// human player. Counters whose event sources are not traced (creatures and resources gained) are not recorded:
-/// their values are null.
+/// human player. The resources gained (logger vf 0x3c from player vf 0xdc) are not recorded: their value is null.
 /// </summary>
 public sealed record MissionSummary(
     int Days, int Weeks, int Months,
@@ -32,12 +31,14 @@ public sealed partial class Adventure
         var p = PlayerByIndex(player);
         var rec = p?.Mission ?? new MissionRecord();
         int d = S.Day - 1;
-        int enemies = S.Players.Where(o => o.Index != player && !Allied(player, o.Index)).Sum(o => MissionCreatures(o.Index));
+        var foes = S.Players.Where(o => o.Index != player && !Allied(player, o.Index)).ToList();
+        int enemies = foes.Sum(o => MissionCreatures(o.Index));
+        int enemiesDuring = foes.Sum(o => o.Mission.Creatures);
         return new MissionSummary(d % 7 + 1, d / 7 % 4 + 1, d / 28 + 1,
             p?.Purse.R.ToArray() ?? new int[7], null,
             rec.BattlesFought, rec.BattlesWon, rec.BattlesLost, rec.HeroesKilled, rec.HeroesLost,
             rec.TownsOccupied, rec.TownsLost,
-            MissionCreatures(player), null, enemies, null,
+            MissionCreatures(player), rec.Creatures, enemies, enemiesDuring,
             MissionArtifacts(player), rec.Artifacts);
     }
 
@@ -61,7 +62,33 @@ public sealed partial class Adventure
     /// <summary>CLogMapStartedCmd (vtable 00e0e954, execute 00428ad0) → logger vf 0x8 (00877d40): every player's artifact count.</summary>
     void LogMapStarted()
     {
-        foreach (var p in S.Players) p.Mission.Artifacts = MissionArtifacts(p.Index);
+        foreach (var p in S.Players)
+        {
+            p.Mission.Artifacts = MissionArtifacts(p.Index);
+            p.Mission.Creatures = MissionCreatures(p.Index);
+        }
+    }
+
+    /// <summary>
+    /// Logger vf 0x1c (00877610): +0x38 of the player += count (argument 4), raised before the creatures are added:
+    /// town / dwelling hire (CHireCreaturesCmd, 004f4faa), neutrals joining (CRemoveJoinMonsterCmd 0042c0f0, each
+    /// joining stack), the script AddHeroCreatures (CGiveCreaturesCmd 0042ed90, from 005c6140), a hired hero's army
+    /// (player vf 0x15c = 004fec50), Haunt Mine (00afa9c0), Forest Guard Emblem and Defend Us All (00b54770).
+    /// </summary>
+    public void LogCreaturesGained(int player, int count)
+    {
+        if (PlayerByIndex(player) is { } p) p.Mission.Creatures += count;
+    }
+
+    /// <summary>
+    /// Player vf 0x15c = 004fec50 (CHireHeroInTownCmd 004f5310 / CHireHeroInTavernCmd 004f5700): unless the hero's +0x22e
+    /// (vf 0x1e8; set only by the surrender to the tavern, vf 0x1dc = 00b52e50) is set, every stack of its army is
+    /// logged (vf 0x1c); then vf 0x1ec clears the flag.
+    /// </summary>
+    void LogHiredArmy(HeroState h, bool keptBySurrender)
+    {
+        if (keptBySurrender) return;
+        foreach (var s in h.Army.Live()) LogCreaturesGained(h.Owner, s.Count);
     }
 
     /// <summary>Hero gains an artifact (00b4b610) → logger vf 0x38 (00877810): +1 for the hero's owner.</summary>

@@ -62,7 +62,7 @@ public class MissionStatsTests(Fixture f)
         var s = g.Summary(me);
         Assert.Equal(mine, s.CreaturesAtEnd);
         Assert.Equal(g.S.Players.Where(p => p.Team != g.S.Players[0].Team).Sum(p => g.Summary(p.Index).CreaturesAtEnd), s.EnemyCreaturesAtEnd);
-        Assert.Null(s.CreaturesDuring);   // the creature sources of logger vf 0x1c are not mapped
+        Assert.Equal(g.S.Players[0].Mission.Creatures, s.CreaturesDuring);   // the map-start count (vf 0x8) so far
     }
 
     (Engine.Adventure G, HeroState Att, HeroState Def) HeroBattle()

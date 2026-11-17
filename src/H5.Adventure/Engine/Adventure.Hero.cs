@@ -329,6 +329,7 @@ public sealed partial class Adventure
         if (id == "HERO_SKILL_LEARNING") { ApplyLearningBonus(h); return; }
         if (PerkStat(id) is { } st) AddStat(h, st.Stat, st.Amount);
         if (id == "HERO_SKILL_DEFEND_US_ALL") DefendUsAllOnLearn(h);
+        if (id == "HERO_SKILL_FOREST_GUARD_EMBLEM") ForestGuardEmblemOnLearn(h);
         if (id == "HERO_SKILL_BODYBUILDING") BodybuildingOnLearn(h);
         PerkSpellsOnLearn(h, id);
         if (id is not ("HERO_SKILL_STUDENT_AWARD" or "HERO_SKILL_ACADEMY_AWARD" or "HERO_SKILL_DARK_REVELATION")) return;
@@ -364,7 +365,26 @@ public sealed partial class Adventure
         if (!h.PerkRewardsClaimed.Add("HERO_SKILL_DEFEND_US_ALL")) return;
         int n = Math.Min(120, ((S.Day - 1) / 7 + 1) * 15);
         if (DefendUsAllCreature(h.Army, "CREATURE_GOBLIN") is not { } c || n <= 0) return;
+        bool added = h.Army.TryAdd(c, n);
+        if (added) Emit(new ArmyChanged(h.Id, -1));
+        LogCreaturesGained(h.Owner, n);   // vf 0x1c after the add (00b55972), whether or not it fitted
+    }
+
+    /// <summary>
+    /// Forest Guard Emblem (00b54770 case 0x73, 00b54af0..00b54c75): +2 (FUN_00b4cbc0(1, 2)) and, once per hero (flag
+    /// +0x2aa, set even when nothing is given), with w = day counter (world vf 0xa8, 0-based) / 7 + 1:
+    /// n = 10 (w &lt; 3), 20 (w &lt; 5), 30 (w &lt; 7), 40 (w &lt; 9), else 50 creatures of FUN_0045b8e0(army,
+    /// 0x2d CREATURE_BLADE_JUGGLER) join the army (vf 0x378(stack, −1)); logger vf 0x1c (00b54c67) after the add. The
+    /// flyoff of the count (009c9120) is not shown.
+    /// </summary>
+    void ForestGuardEmblemOnLearn(HeroState h)
+    {
+        if (!h.PerkRewardsClaimed.Add("HERO_SKILL_FOREST_GUARD_EMBLEM")) return;
+        int w = (S.Day - 1) / 7 + 1;
+        int n = w < 3 ? 10 : w < 5 ? 20 : w < 7 ? 30 : w < 9 ? 40 : 50;
+        if (DefendUsAllCreature(h.Army, "CREATURE_BLADE_JUGGLER") is not { } c) return;
         if (h.Army.TryAdd(c, n)) Emit(new ArmyChanged(h.Id, -1));
+        LogCreaturesGained(h.Owner, n);
     }
 
     string? DefendUsAllCreature(Stack?[] army, string creature)

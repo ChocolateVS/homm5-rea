@@ -140,6 +140,8 @@ public sealed class MissionRecord
     public int HeroesLost;
     /// <summary>+0x3c: the artifacts of the player's heroes at the map start (vf 0x8 = 00877d40 → 00877500) plus one per artifact a hero gained (vf 0x38 = 00877810, hero 00b4b610).</summary>
     public int Artifacts;
+    /// <summary>+0x38: the creatures at the map start (vf 0x8 → 00877bf0) plus every count logged by vf 0x1c (00877610).</summary>
+    public int Creatures;
 }
 
 /// <summary>An AI attractor entry {object, priority -1..2} (exe list of {objId, priority}, FUN_00b4e880).</summary>

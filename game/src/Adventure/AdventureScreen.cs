@@ -744,6 +744,10 @@ public partial class AdventureScreen : Control
                 // A visit text that flies over the hero instead of a box (00ce14d0(n) → 009c90e0).
                 FlyTextAt(World.TileCenter(flier.Pos), ObjectMessage(fv.Object, flyMsg));
                 break;
+            case ObjectVisited hauntVisit when hauntVisit.What.StartsWith("haunt:") && HumanCaused(player) && !Autoplay && s.Hero(hauntVisit.HeroId) is { } haunter:
+                // Haunt Mine (00afa9c0): ADVENTURE_HAUNT_MINE with the count flies over the hero.
+                FlyTextAt(World.TileCenter(haunter.Pos), AdvTexts.Rpg("ADVENTURE_HAUNT_MINE").Replace("<value=number>", hauntVisit.What["haunt:".Length..]));
+                break;
             case ObjectVisited { What: "prison:noexit" } pn when HumanCaused(player) && !Autoplay && s.Hero(pn.HeroId) is { } jailer:
                 FlyTextAt(World.TileCenter(jailer.Pos), AdvTexts.Rpg("ADVENTURE_HERO_CANT_EXIT_BUILDING"));
                 break;
