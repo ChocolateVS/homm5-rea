@@ -6,7 +6,6 @@ from the description. Move an item to "Done" with the commit when fixed.
 
 ## Open — reported 2026-11-10 (browser build 3c4ea8b)
 
-1. **Victory/defeat screen:** the text under "Victory" overlaps and can't be read.
 2. **Start-of-week message:** the left part of the dialog is empty, with the text on the right —
    probably a missing picture (week/creature image?).
 3. **Moving troops:**
@@ -57,3 +56,10 @@ from the description. Move an item to "Done" with the commit when fixed.
 20. **Griffin Battle Dive:** "just doesn't work at all" in play. The rules were ported in sweeps 14–16
     (landing FUN_00979680, strike timing 00985474.., finish 0x9b); check the player-facing path —
     ability button / cursor / target click in the combat UI, and the AI's use — end to end in a duel.
+
+## Done
+
+1. **Victory/defeat screen** (combat results): the outcome and experience lines were one text block drawn over
+   the container; now DescriptionText / DescriptionExp are filled separately and added as items of the HeaderCont
+   scrollable container, which stacks them (exe 005836a0 → container slot 8; init 00581a70) — commit "combat
+   results: stack DescriptionText/DescriptionExp in HeaderCont".

@@ -732,26 +732,34 @@ public partial class CombatHud : Control
         string outcome = won
             ? (r.Contains("surrender") ? "EnemySurrender" : r.Contains("fled") || r.Contains("retreat") ? "EnemyFled" : "EnemyDefated")
             : (r.Contains("surrender") ? "HeroSurrender" : r.Contains("fled") || r.Contains("retreat") ? "HeroFled" : "HeroDefeated");
-        // Exe FUN_005836a0: DescriptionText_Format with the outcome text (type 1 defeated / 2 fled /
-        // 3 surrendered) and, when the enemy was destroyed but the winner kept no troops, <value=no_army> =
-        // WINNER_HAS_NO_ARMY; below it DescriptionExp_Format with HeroExp (own victory) or EnemyExp and the
-        // winner's experience (only when the winning side has a hero).
-        if (res.Find("HeaderCont") is { } cont)
+        // Exe FUN_005836a0: DescriptionText (DescriptionText_Format) gets the outcome text (type 1 defeated / 2 fled /
+        // 3 surrendered) as val and, when the enemy was destroyed but the winner kept no troops, no_army =
+        // WINNER_HAS_NO_ARMY; DescriptionExp (DescriptionExp_Format, hidden by the init 00581a70) is shown with HeroExp
+        // (own victory) or EnemyExp and the winner's experience only when the winning side has a hero. Both are then
+        // added as items of the HeaderCont scrollable container (slot 8 at 00583da3 / 00583dc4), which stacks them
+        // (008888e0) — they all sit at (0,0) in the xdb.
+        // The init (00581a70) also hides SpentResources and ResourceBlock (the sacrifice/spent block, not used here).
+        res.SetVisible("SpentResources", false);
+        res.SetVisible("ResourceBlock", false);
+        if (res.Find("HeaderCont") is UiScrollableContainer cont)
         {
             string Txt(string n) => UiResources.Instance.Text(ResultTexts + n + ".txt") ?? "";
             bool destroyed = outcome is "EnemyDefated" or "HeroDefeated";
             bool winnerNoArmy = destroyed && winner is int ws && !s.Units.Any(u => u.Side == ws && u.Alive && u.Kind == UnitKind.Creature);
-            var desc = (Txt("DescriptionText_Format") is { Length: > 0 } fmt ? fmt : "<body_bright><center><value=val>")
-                .Replace("<value=player_hint>", "")
-                .Replace("<value=val>", Txt(outcome))
-                .Replace("<value=no_army>", winnerNoArmy ? Txt("WINNER_HAS_NO_ARMY") : "");
-            long exp = winner is int wi ? _screen.Session.WinnerExperience(wi) : -1;
-            if (exp >= 0)
+            if (res.Find("DescriptionText") is { } text)
             {
-                var expLine = (won ? Txt("HeroExp") : Txt("EnemyExp")).Replace("<value=exp>", exp.ToString());
-                desc += "<br>" + (Txt("DescriptionExp_Format") is { Length: > 0 } ef ? ef : "<body_bright><left><value=val>").Replace("<value=val>", expLine);
+                text.SetValue("player_hint", "");
+                text.SetValue("val", Txt(outcome));
+                text.SetValue("no_army", winnerNoArmy ? Txt("WINNER_HAS_NO_ARMY") : "");
+                cont.AddItem(text);
             }
-            cont.AddChild(new BitmapText { Markup = desc, AnchorRight = 1, AnchorBottom = 1 });
+            if (res.Find("DescriptionExp") is { } expView)
+            {
+                long exp = winner is int wi ? _screen.Session.WinnerExperience(wi) : -1;
+                if (exp >= 0) expView.SetValue("val", (won ? Txt("HeroExp") : Txt("EnemyExp")).Replace("<value=exp>", exp.ToString()));
+                cont.AddItem(expView);
+                expView.Visible = expView.Window.Visible = exp >= 0;
+            }
         }
         var h = s.Heroes[me];
         if (h.Present) SetTex(res.Find("Header/Icon"), UiResources.Instance.Texture(CombatIcons.Hero(h.HeroId, true)));
