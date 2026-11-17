@@ -90,14 +90,15 @@ public sealed class LocalCombatSession : CombatSession
     readonly int[] _presets;
     readonly ulong _seed;
 
-    public LocalCombatSession(GameDatabase db, int presetA, int presetB, ulong seed, IEnumerable<int> humanSides)
-        : this(db, DuelState(db, presetA, presetB, seed), presetA, presetB, seed, humanSides) { }
+    /// <param name="arena">The duel arena's scene name (the hot-seat arena selector), or null for the engine's pick.</param>
+    public LocalCombatSession(GameDatabase db, int presetA, int presetB, ulong seed, IEnumerable<int> humanSides, string? arena = null)
+        : this(db, DuelState(db, presetA, presetB, seed, arena), presetA, presetB, seed, humanSides) { }
 
     /// <summary>The duel heroes are made by the map-hero creation (H5_Game.exe 009aacb0, <c>Adventure.DuelHeroes</c>).</summary>
-    static BattleState DuelState(GameDatabase db, int presetA, int presetB, ulong seed)
+    static BattleState DuelState(GameDatabase db, int presetA, int presetB, ulong seed, string? arena)
     {
         var (a, b) = H5.Adventure.Engine.Adventure.DuelHeroes(H5Reborn.Adventure.AdventureSession.SharedDb, presetA, presetB, seed);
-        return BattleSetup.CreateDuel(db, a, b, seed);
+        return BattleSetup.CreateDuel(db, a, b, seed, arena: arena != null && db.Arenas.ContainsKey(arena) ? arena : null);
     }
 
     /// <summary>A local battle on a prepared state (e.g. a siege built with BattleSetup.Create(..., siege:)).</summary>
