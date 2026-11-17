@@ -1,0 +1,16 @@
+# Combat audit — sweep 19b: Howl's summoned count, the hero's set-up book in combat
+
+Per-ID rows merged into `docs/rules/AUDIT_COMBAT.md` by `tools/re/audit/ledger.py` (natural order: after
+combat_sweep_19.md, whose rows these override). Exe references are H5_Game.exe (GOG 3.1) addresses, read from the raw
+disassembly (Ghidra 12.1.4 headless, private project copy). Tests: `tests/H5.Combat.Tests/AuditHowlTests.cs`.
+
+Facts used below. The creature constructor 008ab890 (object 0x15c bytes) has the vbtable 00e4ff6c at +4 (offsets 0x134,
+0x144, 0x150: virtual bases at +0x138 vtable 00e4fe7c, +0x148 vtable 00e4fba4 — the unit base —, +0x154 00e4fb94) and the
+creature interface at +0xa0 (vtable 00e4fe9c, the pointer FUN_00c56750 returns) with its own vbtable 00e4ff60 at +0xa4
+(−4, 0x94, 0xa4): the interface's second virtual base ([vbtable + 8] = 0xa4) is the unit base at +0x148, not the
++0x138 one sweep 19 used (00e4fe7c has only seven slots; its "vf 0x1c" is the next vtable's locator). On 00e4fba4:
+vf 0xc = 008aeae0 (no argument, the unit's army), vf 0x1c = 008aec10 → 008a42c0 (one argument, RET 4).
+
+| ID | Status | Exe functions | Original behaviour / note | Regression test |
+|---|---|---|---|---|
+| `ABILITY_HOWL` | FIXED | 00a5cbc0 (00a5cbe6..00a5cdd5), 00a65260 (00a65653), 004e9280, 00c558b0, 00b3fac0, 00b3e1e0, 00c56750, 00c550f0, 008ab890, 008aec10 → 008a42c0 → 008acdd0, 008a4190, 008a4250, 00a73e70, 00a2d6a0 | not an activated ability: on the attack routine's call @ 00a65653 (after the Rune of Magic Control 00a5ca80, before the strikes; not on retaliations) a living attacker with HasAbility(0x60), a charge (creature interface vf 0x2c = +0x20; Wolf SpellPoints1 = 1) and a living target (004e9280) looks for the free placement for its size (vf 0x44) nearest to the TARGET's cell (vf 0x40): FUN_00c558b0(flag 0) → FUN_00b3fac0(0, size, 0, 0) and FUN_00b3e1e0 with the battle RNG for ties (`ExePlacement`); none → nothing happens and the charge is kept. Else the charge is spent (vf 0x30(c − 1)) and FUN_00c56750(count, x, y, 01023010, t, 0, 0) creates the same creature (record +0x1c) there. The count, settled from the disassembly 00a5cd39..00a5cd7c: the pushes 0, 0, EBX, 01023010, y, x, EBX are followed by the unit base's vf 0x1c, which takes one argument (008a42c0 RET 4) — the last EBX, the event time t — and returns the count of the stack's history entry at t (008acdd0: the last 16-byte entry with time ≤ t; the same entry's count / top health give the health 008a4190 and death 008a4250); that result is FUN_00c56750's count, and vf 0xc (no argument) its army. So the new stack has the wolves' own count at the attack's start. It gets no charge (vf 0x30(0)); the constructor's ATB draw (00a73e70, [0, 0.25)) is replaced by the battle RNG's vf 8(0, HowlMaxATBValueAtStart) through 00a2d6a0 (min 1.25). The engine offered a once-per-battle activated summon next to the wolves. Not compared: FUN_00c558b0 flag 0 first removes Invisibility (0x13d) from the units listed at the requested footprint (00a744f0 / combat vf 0xe0 / 00b3d850 — the attacked target, which cannot be invisible); the new stack's constructor flag +0xd8 is 0 here (1 for the Balors and the Guardian Angel; not identified), the engine marks it summoned as before | AuditHowlTests.HowlSummonsTheWolvesCountNextToTheTargetOnTheAttack |

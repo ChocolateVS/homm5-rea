@@ -136,6 +136,7 @@ public sealed partial class Battle
         if (!u.Alive) return;
 
         RuneOfMagicControlSteal(u, t);   // exe FUN_00a65260 @ 00a65646, before the strike loop
+        HowlOnAttack(u, t);              // exe FUN_00a65260 @ 00a65653, right after it
         var hit = new Hit { Kind = AttackKind.Melee, CellsWalked = walked };
         // Strikes per action (creature vtable slot 0x1c0 = FUN_008a0f90): 1, Double Attack 2, Rune of Berserking +1.
         int strikes = 1;
@@ -239,6 +240,7 @@ public sealed partial class Battle
     {
         RemoveEffect(u, H5.Combat.Fx.Invisible);
         RuneOfMagicControlSteal(u, t);   // exe FUN_00a65260 @ 00a65646, before the strike loop
+        HowlOnAttack(u, t);              // exe FUN_00a65260 @ 00a65653, right after it
         // Strikes per action (vtable slot 0x1c0): Double Shot for creatures, perks/ring for the Ballista.
         int shots = u.IsWarMachine ? WarMachineShotsPerAction(u) : HasAbilityNow(u, Ab.DoubleShot) ? 2 : 1;
         int targetHpBefore = t.TotalHealth;

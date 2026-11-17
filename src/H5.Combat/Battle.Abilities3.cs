@@ -3,7 +3,7 @@ using H5.Core.Data;
 namespace H5.Combat;
 
 // Creature abilities added from the executable and the game's own ability texts:
-// Treachery, Pack Hunter, Taunt, Eldritch Aura, Bond of Light, Power Feed, Howl, Set Snares,
+// Treachery, Pack Hunter, Taunt, Eldritch Aura, Bond of Light, Power Feed, Set Snares,
 // Defile Magic, Treant Union, Flamewave, Pack Dive, Battle Dive, Magic Magnetism.
 // See docs/rules/EXE_FINDINGS.md for which parts are confirmed against H5_Game.exe.
 public sealed partial class Battle
@@ -16,7 +16,6 @@ public sealed partial class Battle
         var h = HeroOf(u);
         if (u.Has(Ab.PowerFeed) && PowerFeedAvailable(u, h))
             yield return new(Ab.PowerFeed, AbilityTargeting.None);
-        if (u.Has(Ab.Howl) && Once(Ab.Howl)) yield return new(Ab.Howl, AbilityTargeting.None);
         if (u.Has(Ab.SetSnares)) yield return new(Ab.SetSnares, AbilityTargeting.Cell);
         if (u.Has(Ab.DefileMagic)) yield return new(Ab.DefileMagic, AbilityTargeting.Enemy);
         if (u.Has(Ab.TreeantUnion) && Once(Ab.TreeantUnion)) yield return new(Ab.TreeantUnion, AbilityTargeting.Friend);
@@ -40,16 +39,6 @@ public sealed partial class Battle
                 h.Links[Ab.PowerFeed] = u.Id;
                 h.Links[PowerFeedValue] = (int)Math.Min(CreatureSpellPower(u.Count, Math.Max(1, u.WeeklyGrowth)), h.Knowledge);
                 Emit(new AbilityTriggered(u.Id, c.Ability));
-                return null;
-            }
-            case Ab.Howl:
-            {
-                // Once per battle: a friendly stack of equal power (same creature and size) appears next to
-                // the wolves with a random ATB in [0, HowlMaxATBValueAtStart] (exe 00a5cbc0).
-                u.AbilityUses[Ab.Howl] = 1;
-                double atb = S.Rng.RangeD(0, Stats.Get("combat/Creatures/Neutral/HowlMaxATBValueAtStart", 0.5));
-                Emit(new AbilityTriggered(u.Id, c.Ability));
-                if (SummonStackNear(u, u.CreatureId, u.Count, c.Ability, atb) == null) return "no room to summon";
                 return null;
             }
             case Ab.SetSnares:
