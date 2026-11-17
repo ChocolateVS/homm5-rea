@@ -174,6 +174,11 @@ public sealed partial class TownHireScreen
             : r.Creatures[0] is { } c0 && Game.Instance.Db.Creatures.TryGetValue(c0, out var cd) ? cd.WeeklyGrowth : 0).ToString());
         def?.SetValue("days_travel", r.Days.ToString());
         node.SetTooltip(TownUi.Text(Hire + "CaravanDaysTravel.txt", "").Replace("<value=count>", r.Days.ToString()));
+        // 006e23a0 passes the tab's town flag (006e1360 arg 12 → +0x68: 1 for Hire in Castles / Hire in Dwellings, 0
+        // for Caravans Statistics) on to each row's item (006ddb60 arg 4 → +0x3c), so 006db6b0 sets the growth tooltip
+        // on these rows too, with the travel days. A town source's parts are its own rows' (GrowthOf); GAP: a map
+        // dwelling's entry (006e46e0) growth parts are not traced, so its rows get none.
+        if (r.IsTown && G.S.Town(r.Source) is { } src) def?.SetTooltip(GrowthTooltip(G.GrowthOf(src, r.Tier), r.Days));
     }
 
     void FillInfoRow(UiNode node, CaravanState c)
