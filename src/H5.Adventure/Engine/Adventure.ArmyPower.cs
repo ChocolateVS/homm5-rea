@@ -26,7 +26,9 @@ public sealed partial class Adventure
     /// result = count (stack +0x20) · v (64-bit __allmul).
     /// GAP-details: the ×140 / 100 shooter step (creature +0x4c &gt; 0 and hero vf 0x324 = CHero +0x264 &gt; 0) is not
     /// applied — the only writers of +0x264 found are the constructors (00b58950 / 00b58dc0, zero); the stack's own
-    /// morale / luck bases (army stack +0x28 / +0x24) are taken as 0; hero vf 0x54 is read as the town the hero stands in.
+    /// morale / luck bases (army stack +0x28 / +0x24) are taken as 0 apart from the tavern +1 of the morale base (0045b7b0);
+    /// hero vf 0x54 (+0x17c) is the town the hero stands in, visitor or garrison hero (0086d750 tests both town slots
+    /// against it; the new-day handler 00b50470 refills the mana when it has a mage guild).
     /// </summary>
     public long StackPower(Stack s, HeroState? hero, AI.AdventureAiStats? st = null) => StackPower(new PowerContext(this, hero, st), s);
 
@@ -194,14 +196,16 @@ public sealed partial class Adventure
         v = Ftol(X87.AddExact(v, X87.Mul(M(MicroEffect.ArmorCrushing), (float)st.CreatureMaeDefenceCrush)));
         v = Ftol(X87.AddExact(v, X87.Mul(M(MicroEffect.MagicProtection), (float)st.CreatureMaeSpellReduce)));
         v = Ftol(X87.AddExact(v, X87.Mul(M(MicroEffect.Speed), (float)st.CreatureMaeMovement)));
-        // 004e9dcb: −1 morale when the hero's vf 0x54 object (its town) has a tavern (vf 0x34(4)).
-        int tavern = hero != null && hero.InTown >= 0 && g.S.Town(hero.InTown) is { } ht && ht.Level("TB_TAVERN") > 0 ? -1 : 0;
+        // 004e9dcb: −1 morale when the hero's vf 0x54 object (its town) has a tavern (vf 0x34(4)); the stack's base morale
+        // (+0x28, set by 0045b7b0 → 0045b4d0) holds the same tavern's +1, so the two cancel.
+        bool inTavernTown = hero != null && hero.InTown >= 0 && g.S.Town(hero.InTown) is { } ht && ht.Level("TB_TAVERN") > 0;
+        int tavern = inTavernTown ? -1 : 0;
         // 004e9e1d: luck 004bb3c0 × good (+0x26c) / bad (+0x270), + 1.0, × v.
         int luck = StackLuck(c, s.Artifact, week);
         float fl = X87.Add(X87.Mul(luck, (float)(luck >= 0 ? st.CreatureGoodLuckCoef : st.CreatureBadLuckCoef)), 1f);
         v = Ftol(X87.Mul(v, fl));
         // 004e9e73: morale 004bb3f0 (+ the tavern −1) × good (+0x274) / bad (+0x278).
-        int morale = StackMorale(c, s.Artifact, hero, week) + tavern;
+        int morale = StackMorale(c, s.Artifact, hero, week, inTavernTown ? 1 : 0) + tavern;
         float mp = X87.Mul(morale, (float)(morale >= 0 ? st.CreatureGoodMoraleCoef : st.CreatureBadMoraleCoef));
         // 004e9e98: initiative 004bc190 (hero) FISUB record +0x5c, FSTP float, × +0x268, + 1.0.
         float di = X87.Chop((double)(float)w.BaseInitiative - c.Initiative);
@@ -217,14 +221,17 @@ public sealed partial class Adventure
         Math.Clamp(MoonWeek.MoraleLuck(0, c.Town, week) + (art?.Bonus(MicroEffect.Luck) ?? 0), -5, 5);
 
     /// <summary>
-    /// 004bb3f0 → 004ba9d0(hero, week): ABILITY_UNDEAD → 0; m = week (00bcdd00) on the stack's base morale (0 here) + the
-    /// artifact's morale; ABILITY_MECHANICAL → max(0, m) with a hero having HERO_SKILL_ARTIFICIAL_GLORY (vf 0x174(0x80)),
-    /// else 0; ABILITY_BRAVERY → at least 1; clamped −5..5.
+    /// 004bb3f0 → 004ba9d0(hero, week): ABILITY_UNDEAD → 0; m = week (00bcdd00) on the stack's base morale (army stack
+    /// +0x28) + the artifact's morale; ABILITY_MECHANICAL → max(0, m) with a hero having HERO_SKILL_ARTIFICIAL_GLORY
+    /// (vf 0x174(0x80)), else 0; ABILITY_BRAVERY → at least 1; clamped −5..5.
+    /// The base of a hero's army (0045b7b0 → 0045b4d0): the hero's morale (vf 0xc), + 1 when the hero's town (vf 0x54)
+    /// has a tavern (vf 0x34(4) &gt; 0), then the army's mixed-race / undead adjustments. Only the tavern +1 is given
+    /// (<paramref name="baseMorale"/>); GAP-detail: the hero's morale and 0045b4d0's adjustments are taken as 0.
     /// </summary>
-    static int StackMorale(CreatureDef c, MicroArtifact? art, HeroState? hero, string week)
+    static int StackMorale(CreatureDef c, MicroArtifact? art, HeroState? hero, string week, int baseMorale = 0)
     {
         if (c.Has("ABILITY_UNDEAD")) return 0;
-        int m = MoonWeek.MoraleLuck(0, c.Town, week) + (art?.Bonus(MicroEffect.Morale) ?? 0);
+        int m = MoonWeek.MoraleLuck(baseMorale, c.Town, week) + (art?.Bonus(MicroEffect.Morale) ?? 0);
         if (c.Has("ABILITY_MECHANICAL"))
             m = hero != null && hero.HasPerk("HERO_SKILL_ARTIFICIAL_GLORY") ? Math.Max(0, m) : 0;
         else if (c.Has("ABILITY_BRAVERY") && m < 2) m = 1;

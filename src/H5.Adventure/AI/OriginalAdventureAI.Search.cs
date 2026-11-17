@@ -299,10 +299,13 @@ public sealed partial class OriginalAdventureAI
         var sh = sim.S.Hero(h.Id);
         if (sh == null) return (0, 0);
         sh.MovePoints = cost > sh.MovePoints ? sh.MaxMovePoints : sh.MovePoints - cost;
+        // 00bc5480 only sets the move points (vf 0x100) before the visit (vf 0x74): the hero's town (vf 0x54 = +0x17c,
+        // read by the stack value's tavern term) stays what it was; our visit needs the hero on the tile.
         sh.Pos = tile;
-        sh.InTown = -1;
         sh.Garrisoned = false;
-        sim.Apply(new MoveHeroCmd(h.Id, tile) { Player = h.Owner });
+        // Visiting an allied hero is the meeting (MeetHero), not a visit of its tile.
+        var friend = o.Kind == ObjectKind.Hero ? sim.S.Heroes.FirstOrDefault(x => x.Alive && x.Id != h.Id && x.Pos == o.Pos && SameTeam(sim, x.Owner, h.Owner)) : null;
+        if (friend == null) sim.Apply(new MoveHeroCmd(h.Id, tile) { Player = h.Owner });
         for (int guard = 0; guard < 4 && (sim.S.Battle != null || sim.S.Choice != null); guard++)
         {
             if (sim.S.Battle is { } pb)
@@ -317,7 +320,30 @@ public sealed partial class OriginalAdventureAI
             else if (sim.S.Choice is { } c)
                 if (!sim.Apply(new AnswerChoiceCmd(Accept: c.Kind != "join_paid" || sim.Current.Purse[Purse.Gold] >= c.Gold * 2) { Player = sim.Current.Index }).Ok) break;
         }
+        // The town's provider (vf 0x6c → the sub-object at +0xac: vf 0 = 004f3680 zero, vf 4 = 00a332c0 false) sends a town
+        // here; the visit (00cd1010) of an allied town queues the enter-town command (00609580, execute 0042ce30), whose
+        // tail runs the AI's town stay 009c4710 for a computer owner (player vf 0x18c) — purchase included, in the
+        // simulation too.
+        if (o.Kind == ObjectKind.Town && sim.S.Hero(h.Id) is { Alive: true } vh && vh.InTown == o.Index && sim.S.Town(o.Index) is { } vt && vt.Owner == h.Owner &&
+            sim.Player(h.Owner) is { Human: false } && sim.S.Battle == null && sim.S.Choice == null)
+            InOwnTown(sim, st, diff, vh, vt);
+        // A friendly hero of the same player: the AI's meeting message 004e6d30 case 0x28 runs the exchange FUN_00c5ad90
+        // in the simulation too (only its log is skipped there); its role updates (FUN_00c5ab30) count for the after
+        // value and are rolled back with the simulation.
+        Dictionary<int, HeroRole>? keptRoles = null;
+        Dictionary<int, int>? keptPartners = null;
+        if (friend != null && friend.Owner == h.Owner && sim.S.Hero(h.Id) is { Alive: true } mh && sim.S.Hero(friend.Id) is { } mate)
+        {
+            keptRoles = new(_role);
+            keptPartners = new(_partner);
+            HeroesMeet(sim, st, mh, mate);
+        }
         var after = PositionValue(sim, _stats!, diff, h.Owner, q);
+        if (keptRoles != null)
+        {
+            _role.Clear(); foreach (var kv in keptRoles) _role[kv.Key] = kv.Value;
+            _partner.Clear(); foreach (var kv in keptPartners!) _partner[kv.Key] = kv.Value;
+        }
         int s = after.State;
         if (sim.S.Hero(h.Id) == null && s >= -1) s = -1;
         return (s, after.Value - before.Value);

@@ -76,8 +76,12 @@ public abstract record AdvCommand
 public sealed record MoveHeroCmd(int HeroId, Tile To) : AdvCommand;
 public sealed record EndTurnCmd : AdvCommand;
 public sealed record BuildCmd(int TownObject, string Building) : AdvCommand;
-/// <summary>Recruit from a town dwelling tier (1..7); Upgraded picks the upgraded creature.</summary>
-public sealed record RecruitCmd(int TownObject, int Tier, int Count, int Variant = 0) : AdvCommand;
+/// <summary>
+/// Recruit from a town dwelling tier (1..7); Upgraded picks the upgraded creature. <paramref name="Hero"/> ≥ 0 (the AI
+/// purchase, exe 00cdd630 → 00cdd180: the stacks go to the buyer hero's army) hires into that hero, who must stand in
+/// the town; −1 hires as the town screen does.
+/// </summary>
+public sealed record RecruitCmd(int TownObject, int Tier, int Count, int Variant = 0, int Hero = -1) : AdvCommand;
 /// <summary>
 /// CHireAllCreaturesCmd: hire every town dwelling's creatures (<see cref="Adventure.HireAllPlan"/>), or at a map dwelling
 /// every row into the visiting hero (<see cref="Adventure.DwellingHireAllPlan"/>); Variants = the hire

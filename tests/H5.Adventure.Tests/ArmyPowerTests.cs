@@ -40,7 +40,7 @@ public class ArmyPowerTests(Fixture f)
     }
 
     [StockFact]
-    public void Hero_bonuses_enter_through_the_hit_point_and_damage_getters_and_the_tavern_lowers_morale()
+    public void Hero_bonuses_enter_through_the_hit_point_and_damage_getters_and_the_tavern_morale_cancels()
     {
         var g = f.NewGame();
         g.S.MoonWeek = MoonWeek.Nothing;
@@ -52,11 +52,12 @@ public class ArmyPowerTests(Fixture f)
         h.Perks.Clear();
         h.NextBattleMorale = 3;
         Assert.Equal(410000, g.StackPower(new Stack("CREATURE_PEASANT", 100), h));
-        // 004e9dcb: the hero's town (vf 0x54) has a tavern (vf 0x34(4)) → morale −1: ftol(4100 · chop(1 − chop(0.0833f))) = 3758.
+        // 004e9dcb: the hero's town (vf 0x54) has a tavern (vf 0x34(4)) → morale −1, but the army's morale base (+0x28,
+        // 0045b7b0) has + 1 for the same tavern: they cancel (−1 alone would give ftol(4100 · chop(1 − chop(0.0833f))) = 3758).
         var t = g.S.Towns.First();
         t.Built["TB_TAVERN"] = 1;
         h.InTown = t.Object;
-        Assert.Equal(375800, g.StackPower(new Stack("CREATURE_PEASANT", 100), h));
+        Assert.Equal(410000, g.StackPower(new Stack("CREATURE_PEASANT", 100), h));
     }
 
     [StockFact]

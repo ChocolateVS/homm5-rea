@@ -353,6 +353,13 @@ public sealed partial class Adventure
             // vf 0x18(1) → hero vf 0x48) when there is one, else into the town's own army (town vf 0x2c, the garrison).
             visitor = GarrisonHeroOf(t);
             target = TownRecruitArmy(t);
+            if (c.Hero >= 0)
+            {
+                // The AI purchase (00cde4c0 → 00cdd630 → 00cdd180): into the buyer hero's army.
+                visitor = S.Hero(c.Hero);
+                if (visitor is not { Alive: true } || visitor.Owner != p.Index || visitor.InTown != t.Object) return "hero not in the town";
+                target = visitor.Army;
+            }
         }
         else if (S.Objects.TryGetValue(c.TownObject, out var os) && O(c.TownObject).Kind == ObjectKind.Dwelling)
         {

@@ -226,10 +226,11 @@ public sealed partial class OriginalAdventureAI
     }
 
     /// <summary>
-    /// Build period (town vf 0x80 = 00ccedf0 feeding vf 0x9c = 00cce4e0): a computer owner's town waits
-    /// TownBuildPeriodInDays (row +0x2c) between builds, a human's 1.
-    /// UNVERIFIED-detail: the counter town +0x80 is not traced; taken as "(day − 1) % period ≠ 0, or built today".
+    /// Build period (town vf 0x9c = 00cce4e0): the town's build counter (+0x80; reset by a build 00cd4a40, + 1 a day up to
+    /// the period, 00cce2b0) is below the period (vf 0x80 = 00ccedf0: TownBuildPeriodInDays for a computer owner, else 1):
+    /// the engine's <see cref="Engine.Adventure.BuildPeriodRunning"/>, as the build check uses it (was: (day − 1) % period,
+    /// which held computer towns back a second time).
     /// </summary>
     static bool BuildBlocked(Engine.Adventure g, TownState t, AdventureDifficulty diff) =>
-        t.BuiltToday || (g.S.Day - 1) % Math.Max(1, diff.TownBuildPeriodInDays) != 0;
+        t.BuiltToday || g.BuildPeriodRunning(t);
 }

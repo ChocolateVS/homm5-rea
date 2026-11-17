@@ -83,7 +83,7 @@ public sealed partial class OriginalAdventureAI
                 for (int v = 0; v <= 2; v++) if (g.DwellingCreature(t, tier, v) is { } c && !ids.Contains(c)) ids.Add(c);
                 int idx = ids.Count switch { 0 => -1, 1 => 0, 2 => 1, _ => UpgradeChoice(army, ids[1], ids[2]) };
                 if (idx < 0) continue;
-                yield return (new RecruitCmd(t.Object, tier, n, idx) { Player = p.Index }, ids[idx]);
+                yield return (new RecruitCmd(t.Object, tier, n, idx, hero?.Id ?? -1) { Player = p.Index }, ids[idx]);
             }
         }
         else if (g.S.Objects.TryGetValue(buyer, out var os) && g.Map.Objects[buyer] is { Kind: ObjectKind.Dwelling } o)

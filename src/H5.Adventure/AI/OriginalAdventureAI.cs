@@ -48,6 +48,7 @@ public sealed partial class OriginalAdventureAI
         SetMoneyValues(g, st, me);
         SolvePuzzleMap(g, st, diff, me);
         CheckThreats(g, st, diff, me);
+        RevisitTowns(g, st, diff, me);
 
         // Phase order of the exe's state machine (CPlayerAI +0x128, dispatcher at 0x0086dea0): day start and
         // threats (0, FUN_0086d750) → roles (12, FUN_00869ad0) → heroes one by one (1..5, FUN_0086b400 …) →
@@ -95,7 +96,11 @@ public sealed partial class OriginalAdventureAI
                 ResolvePending(g, battleSeedBase + (ulong)actions);
                 LevelUps(g, h, st);
                 ForgetReachedTarget(h);
-                var target = ChooseDestination(g, h, roles, diff, st, claimed);
+                // 0086b400 → 00868f70: a valid remembered target not yet reached is walked to without a search; the
+                // search runs only when no route to it is found.
+                var walk = RememberedRoute(g, h);
+                if (walk != null) _spellFlood = null;
+                var target = walk?.Target ?? ChooseDestination(g, h, roles, diff, st, claimed);
                 if (target == null) break;
                 var mate = g.S.Heroes.FirstOrDefault(x => x.Alive && x.Owner == me && x.Id != h.Id && !x.Garrisoned && x.Pos == target.Value.Tile);
                 // 0086c760: a one-cell route to a destination without an object (the grail guess) digs.
@@ -105,8 +110,15 @@ public sealed partial class OriginalAdventureAI
                 actions++;
                 if (r is not { Ok: true }) break;
                 if (whole) claimed.Add(target.Value.Object);
-                _lastTarget[h.Id] = target.Value.Tile;
-                _lastCost[h.Id] = target.Value.Cost;
+                if (walk == null)
+                {
+                    _lastTarget[h.Id] = target.Value.Tile;
+                    _lastCost[h.Id] = target.Value.Cost;
+                    _lastObject[h.Id] = target.Value.Object;
+                }
+                // 00868f70 tail: the route ends on the target and the hero walks all of it today (hero vf 0x118 =
+                // 00b4d030 ≥ nodes − 1) → the target is forgotten (0086e810 → 0042bc00) with the move.
+                else if (walk.Value.Today) _lastTarget.Remove(h.Id);
                 ResolvePending(g, battleSeedBase + (ulong)actions);
                 LevelUps(g, h, st);
                 // Visiting an own hero (004e6d30 → FUN_00c5ad90): the army exchange by roles and the role update.
@@ -115,14 +127,10 @@ public sealed partial class OriginalAdventureAI
                     HeroesMeet(g, st, h, mate);
                     foreach (var x in new[] { h, mate }) if (_role.TryGetValue(x.Id, out var nr)) roles[x.Id] = nr;
                 }
-                // BlockTownGarrisonForAI: no creature exchange with that garrison (exe reader 0x008687a0).
-                if (h.InTown >= 0 && g.S.Town(h.InTown) is { } home && home.Owner == me && !home.AiGarrisonBlocked) TakeGarrison(g, h, home);
                 // A hero in an own town buys creatures (009c4710 step 6), at an own external dwelling too (004e6d30 case 5).
                 if (h.Alive && h.InTown >= 0 && g.S.Town(h.InTown) is { } shop && shop.Owner == me)
                 {
-                    Purchase(g, st, shop.Object, h, false);
-                    BuyTalismanLevel(g, h, shop);
-                    GarrisonHeroInTown(g, st, diff, h, shop);
+                    InOwnTown(g, st, diff, h, shop);
                     if (h.Garrisoned) break;
                 }
                 else if (h.Alive && DwellingAt(g, h.Pos) is { } dw
@@ -131,6 +139,68 @@ public sealed partial class OriginalAdventureAI
             }
             if (h.Alive && !g.S.Finished) FinishHero(g, h, roles[h.Id]);
         }
+    }
+
+    /// <summary>
+    /// The AI's part of a hero's stay in an own town (exe FUN_009c4710, run by the enter-town command 0042ce30 for a
+    /// computer player (player vf 0x18c) and by CAIRevisitTownCmd 00428640): the garrison exchange (skipped for the
+    /// garrison hero itself and, BlockTownGarrisonForAI, for a blocked town: exe reader 0x008687a0), the creature
+    /// purchase (00cde4c0), the Talisman of Adventure, the garrison move (009c3f20, not for the garrison hero).
+    /// GAP-detail: the exchange is our <see cref="TakeGarrison"/> (009c3080 / 00cdef70 / 00cde140 / 00c5ad90 not
+    /// decoded); 009c41c0 / 009c4130 / 009c3930 / 009c3b00 are not ported.
+    /// </summary>
+    void InOwnTown(Engine.Adventure g, AdventureAiStats st, AdventureDifficulty diff, HeroState h, TownState t)
+    {
+        if (!h.Garrisoned && !t.AiGarrisonBlocked) TakeGarrison(g, h, t);
+        if (!h.Alive) return;
+        Purchase(g, st, t.Object, h, false);
+        BuyTalismanLevel(g, h, t);
+        if (!h.Garrisoned) GarrisonHeroInTown(g, st, diff, h, t);
+    }
+
+    /// <summary>
+    /// Phase 0 tail (exe FUN_0086d750): for each of the player's heroes in list order whose town (hero vf 0x54 =
+    /// +0x17c, the town it stands in) has it as the visitor (town vf 0x18(0)), then for each that is the garrison hero
+    /// (vf 0x18(1)), a CAIRevisitTownCmd (0086e8b0; execute 00428640: hero vf 0x54 still that town → 009c4710). 009c4710
+    /// returns for a town not allied (00a85030) and buys only in an own one.
+    /// </summary>
+    void RevisitTowns(Engine.Adventure g, AdventureAiStats st, AdventureDifficulty diff, int me)
+    {
+        foreach (bool garrison in new[] { false, true })
+            foreach (var h in g.S.Heroes.Where(x => x.Alive && x.Owner == me && x.InTown >= 0 && x.Garrisoned == garrison).ToList())
+                if (h.Alive && h.InTown >= 0 && h.Garrisoned == garrison && g.S.Town(h.InTown) is { } t && t.Owner == me)
+                    InOwnTown(g, st, diff, h, t);
+    }
+
+    readonly Dictionary<int, int> _lastObject = new();
+
+    /// <summary>
+    /// The walk to a remembered target (exe FUN_00868f70, flag 1, from 0086b400): the hero's route to the target tile
+    /// (FUN_00cebcb0); none → null (the step searches). <c>Today</c>: the route ends on the target and the hero's move
+    /// points cover every step (hero vf 0x118 = 00b4d030: the last node whose step cost still fits, ≥ nodes − 1).
+    /// GAP-detail: the route is our <see cref="Engine.Adventure.FindPath"/> (pathfinder mode 3 of 00cebcb0 and the boat
+    /// argument 00cea350 are not decoded).
+    /// </summary>
+    (Destination Target, bool Today)? RememberedRoute(Engine.Adventure g, HeroState h)
+    {
+        if (!_lastTarget.TryGetValue(h.Id, out var t) || t == h.Pos) return null;
+        if (g.FindPath(h, t) is not { Count: > 1 } route) return null;
+        int left = h.MovePoints;
+        bool today = route[^1] == t;
+        for (int i = 1; i < route.Count && today; i++)
+        {
+            int c = g.StepCost(h, route[i - 1], route[i], left);
+            if (left < c) today = false;
+            else left -= c;
+        }
+        return (new Destination(_lastObject.GetValueOrDefault(h.Id, -1), t, 0, _lastCost.GetValueOrDefault(h.Id)), today);
+    }
+
+    /// <summary>Test hook: <see cref="RememberedRoute"/> with <paramref name="target"/> as the remembered target.</summary>
+    public (int Object, Tile Tile, bool Today)? RememberedRouteForTest(Engine.Adventure g, HeroState h, Tile target)
+    {
+        _lastTarget[h.Id] = target;
+        return RememberedRoute(g, h) is { } r ? (r.Target.Object, r.Target.Tile, r.Today) : null;
     }
 
     /// <summary>
