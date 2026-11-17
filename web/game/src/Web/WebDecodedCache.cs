@@ -9,7 +9,8 @@ static partial class H5CacheJs
 {
     [JSImport("globalThis.h5cache.enabled")] internal static partial bool Enabled();
     [JSImport("globalThis.h5cache.prefetch")] internal static partial Task<int> Prefetch(string keys);
-    [JSImport("globalThis.h5cache.get")] [return: JSMarshalAs<JSType.Array<JSType.Number>>] internal static partial byte[]? Get(string key);
+    [JSImport("globalThis.h5cache.size")] internal static partial int Size(string key);
+    [JSImport("globalThis.h5cache.copy")] internal static partial bool Copy(string key, [JSMarshalAs<JSType.MemoryView>] Span<byte> dst);
     [JSImport("globalThis.h5cache.put")] internal static partial void Put(string key, [JSMarshalAs<JSType.MemoryView>] ArraySegment<byte> data);
     [JSImport("globalThis.h5cache.release")] internal static partial int Release();
     [JSImport("globalThis.h5cache.stats")] internal static partial string Stats();
@@ -38,7 +39,15 @@ sealed class WebDecodedCache : IDecodedCache
 
     Task Prefetch(IReadOnlyCollection<string> keys) => H5CacheJs.Prefetch(string.Join('\n', keys.Select(k => Prefix + k)));
 
-    public byte[]? Get(string key) => H5CacheJs.Get(Prefix + key);
+    // Size, then a copy into the new array (a byte[] return would be marshalled element by element as a JS number array).
+    public byte[]? Get(string key)
+    {
+        key = Prefix + key;
+        int n = H5CacheJs.Size(key);
+        if (n < 0) return null;
+        var data = new byte[n];
+        return n == 0 || H5CacheJs.Copy(key, data) ? data : null;
+    }
 
     public void Put(string key, byte[] data) => H5CacheJs.Put(Prefix + key, new ArraySegment<byte>(data));
 }

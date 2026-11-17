@@ -95,7 +95,13 @@ public partial class AdvWorld : Node3D
             }
             yield return 1;
         }
+        // Browser build: the statics' geometry and textures are fetched in the background while they are built (see the
+        // object pass below).
+        if (H5.Core.IO.RandomAccessSources.ReadAhead != null)
+            foreach (var _ in HintReadAhead(Map.OfKind(ObjectKind.Static).Where(o => o.Pos.Floor is 0 or 1).Select(o => (o.Shared.ModelPath, (string?)null))))
+                yield return 1;
         foreach (var _ in BuildStatics()) yield return 1;
+        H5.Core.IO.RandomAccessSources.ReadAheadDone?.Invoke();
         H5Reborn.Dev.LoadTrace.Mark("statics");
         // Browser build: fetch the objects' decoded skeletons and clips from the browser's store first (asynchronous;
         // the page keeps drawing meanwhile). The objects built below are the same either way.
@@ -105,12 +111,20 @@ public partial class AdvWorld : Node3D
             while (!fetch.IsCompleted) yield return 1;
             H5Reborn.Dev.LoadTrace.Mark("decoded prefetch");
         }
+        // Browser build: the pak entries the object pass decodes (geometry, and skeletons / clips the store above did not
+        // have) are fetched in the background in build order while it runs, instead of one synchronous read at a time.
+        if (H5.Core.IO.RandomAccessSources.ReadAhead != null)
+        {
+            foreach (var _ in HintReadAhead(ObjectVisuals())) yield return 1;
+            H5Reborn.Dev.LoadTrace.Mark("read-ahead list");
+        }
         foreach (var o in Map.Objects)
             if (o.Kind != ObjectKind.Static && o.Kind != ObjectKind.Hero) { SyncObject(o.Index); yield return 1; }
         H5Reborn.Dev.LoadTrace.Mark("objects");
         foreach (var h in _session.S.Heroes.ToList()) { SyncHero(h); yield return 1; }
         H5Reborn.Dev.LoadTrace.Mark("heroes");
         CharacterBuilder.DecodedRelease?.Invoke();
+        H5.Core.IO.RandomAccessSources.ReadAheadDone?.Invoke();
         for (int f = 0; f < 2; f++)
         {
             AddChild(_floors[f]);
@@ -697,6 +711,44 @@ public partial class AdvWorld : Node3D
             for (int i = 0; i < list.Count; i++) mm.SetInstanceTransform(i, ObjectTransform(list[i]));
             _floors[group.Key.Floor].AddChild(new MultiMeshInstance3D { Name = System.IO.Path.GetFileNameWithoutExtension(group.Key.ModelPath), Multimesh = mm });
         }
+    }
+
+    /// <summary>The model and animation set of every object the object pass builds, in its order (see <see cref="Build"/>).</summary>
+    IEnumerable<(string? Model, string? AnimSet)> ObjectVisuals()
+    {
+        foreach (var o in Map.Objects)
+        {
+            if (o.Kind == ObjectKind.Static || o.Kind == ObjectKind.Hero || o.Pos.Floor is < 0 or > 1) continue;
+            _session.S.Objects.TryGetValue(o.Index, out var os);
+            if (os?.Removed == true) continue;
+            (string?, string?) v;
+            try { v = VisualFor(o, os); } catch (Exception) { continue; /* the object pass reports it */ }
+            yield return v;
+        }
+    }
+
+    /// <summary>
+    /// Hands the pak entries these visuals are built from (a model alone: geometry and textures; with an animation set:
+    /// also the skeleton and clips the decoded store lacks) to <see cref="H5.Core.IO.PakFileSystem.HintReadAhead"/>, in
+    /// order and in parts, so the background reads start while the rest of the list is still being worked out (the list
+    /// needs the visuals' xdb files, read here instead of later).
+    /// </summary>
+    IEnumerable<int> HintReadAhead(IEnumerable<(string? Model, string? AnimSet)> visuals)
+    {
+        var done = new HashSet<string>(StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var part = new List<string>();
+        foreach (var (model, animSet) in visuals)
+        {
+            if (model == null || !done.Add(model + "|" + animSet)) continue;
+            try { part.AddRange(animSet == null ? CharacterBuilder.ModelReadAheadPaths(model) : CharacterBuilder.ReadAheadPaths(model, animSet)); }
+            catch (Exception) { /* reported when built */ }
+            if (part.Count < 32) continue;
+            Game.Instance.Fs.HintReadAhead(part, seen);
+            part.Clear();
+            yield return 1;
+        }
+        if (part.Count > 0) Game.Instance.Fs.HintReadAhead(part, seen);
     }
 
     /// <summary>Decoded-cache keys of every animated object the object pass will build (see <see cref="Build"/>).</summary>

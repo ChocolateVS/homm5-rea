@@ -113,6 +113,28 @@ public sealed class PakFileSystem : IDisposable
         }
     }
 
+    /// <summary>
+    /// Tells <see cref="RandomAccessSources.ReadAhead"/> (if set) which entries are about to be read, in this order: each
+    /// entry's local header and data (the local header's extra field is not known yet, so the range has some slack).
+    /// Unknown paths are skipped. A no-op on the desktop.
+    /// </summary>
+    /// <param name="seen">Paths hinted before (skipped; the new ones are added), for a list given in several parts.</param>
+    public void HintReadAhead(IEnumerable<string> paths, ISet<string>? seen = null)
+    {
+        if (RandomAccessSources.ReadAhead is not { } readAhead) return;
+        var ranges = new List<ReadAheadRange>();
+        seen ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in paths)
+        {
+            var path = Normalize(raw);
+            if (!seen.Add(path) || _prefetched.ContainsKey(path) || !_index.TryGetValue(path, out var e)) continue;
+            var src = e.Archive.Source;
+            long need = 30 + System.Text.Encoding.UTF8.GetByteCount(e.Entry.Name) + e.Entry.CompressedSize;
+            ranges.Add(new ReadAheadRange(src, e.Entry.LocalHeaderOffset, Math.Min(need + 1024, src.Length - e.Entry.LocalHeaderOffset), need));
+        }
+        if (ranges.Count > 0) readAhead(ranges);
+    }
+
     /// <summary>Total bytes held by <see cref="PrefetchAsync"/>.</summary>
     public long PrefetchedBytes => _prefetched.Values.Sum(b => (long)b.LongLength);
 

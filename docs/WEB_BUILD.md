@@ -147,7 +147,7 @@ Deploying = `rsync -a --delete web/dist/ server:/srv/h5reborn/dist/`.
 ### Page-only changes (no rebuild)
 
 A change to the page alone (`web/game/H5Reborn.web/wwwroot/`: `index.html`, `h5*.js`, `h5shaders.json`) does not need
-the 5�15 minute build:
+the 5–15 minute build:
 
 ```sh
 tools/web/patch-page.sh [--dist web/dist] [--dry-run] [--force]
@@ -179,7 +179,9 @@ install at `/h5install` in the wasm file system with empty placeholders for them
 `H5.Core.IO.RandomAccessSources.Opener` routes `PakArchive` (and map archives, music) to
 `H5Reborn.Web.BrowserFileSource`. Each read is a **synchronous `Range` request on the file's `blob:` URL** (the
 only synchronous file read a browser main thread has), so all of the game's synchronous loaders run unchanged
-and `data.pak` (1.4 GB) is never read whole; reads go through a 16 MB cache of 256 KB blocks. Small loose files
+and `data.pak` (1.4 GB) is never read whole; reads go through a 16 MB cache of 64 KB blocks (a synchronous request
+costs ~1 ms plus ~10 ms per MB: 64 KB blocks made the scattered small xdb reads about twice as cheap as 256 KB ones), and
+ranges the game announces ahead are read in the background (*Read-ahead* below). Small loose files
 (Maps, profiles, hwcursors, DuelPresets, video descriptors; ~12 MB) are copied into the wasm file system at start.
 
 ### Saves, profiles and settings
@@ -382,6 +384,55 @@ Measured (headless Chromium with the GPU, A2M1, busy machine; `smoke.mjs --only 
 | page opened → adventure on screen | 75 s | 60 s |
 | wasm heap after load | 820 MB | 724 MB |
 
+### Read-ahead (first visit)
+
+A first visit's map load spent ~40 % of its object pass in synchronous reads (A2M1: 2 057 requests, ~6 ms each on a
+busy machine). Now the loaders say what they are about to read: `PakFileSystem.HintReadAhead(paths)` turns pak entries
+into byte ranges (local header + data, with slack for the local extra field) and hands them to
+`RandomAccessSources.ReadAhead` (null on the desktop: nothing happens there). In the browser (`BrowserData`, `h5data.js`
+`readAhead`) the page reads them with asynchronous `Blob.slice().arrayBuffer()` calls, 32 at a time and at most 96 MB
+ahead, in the order given; a synchronous read the game makes later is first offered to `readAheadTake`, which copies it
+out of a held range (no request at all) and drops the range once its bytes were read. Blob reads complete only between
+frames, which the staged loaders provide. The bytes are the same either way (a range not read yet, or never announced,
+is read synchronously as before); `ReadAheadDone` lets go of anything left.
+
+Announced: the adventure map's statics (geometry and textures of each model, before `BuildStatics`) and its object pass
+(geometry, textures, and the skeletons and clips the decoded store does not have, in build order; the list is worked out
+in parts between frames, so reading starts while it is still being made), and the main menu's backdrop characters.
+`[H5] web: read-ahead N ranges (… MB) read ahead, … reads came too early …, M reads served` is logged at each end.
+
+| headless Chromium, GPU, A2M1 first visit, `--interp` build (same machine, same hour) | before | now |
+|---|---|---|
+| synchronous file reads during the load | 2 057 / 12.7 s | 957 / 5.8 s (256 KB blocks) → ~800 / 2.8 s (64 KB blocks) |
+| statics stage | 4.4 s | 2.0 s |
+| object pass (`load: objects`) | 31.0 s | 19.5–21 s |
+| decoded store second visit: object pass | – | 7.2 s |
+
+The rest of a first visit's object pass is CPU: decoding the Granny animations (`ch anim set`, Oodle1 in C#, ~60 %),
+converting clips to Godot animations, building meshes.
+
+### Main menu (engine start → first frame)
+
+The main menu's 3D backdrop (`MainMenuBackground`: 11 animated characters, the camera rig, ~10 effects) was built in
+`_Ready`, the same frame as the engine start and the menu UI: no frame for ~10 s after the engine started (16.6 s from
+the page, `--interp`, GPU). In the browser it is now built over frames like an adventure map (40 ms of work per frame,
+one character or effect per step, `MainMenuBackground.Staged`), behind a black cover that `MainMenu` removes three frames
+after the backdrop is complete (`MainMenu.IsLoaded`; `WebProbe` waits for it before `main menu on screen`). Pieces added
+while building do not process (animations, effects) until the last step, which then sets the scene clock exactly as the
+one-step build did (the 10 s pre-roll), so the menu shows the same scene. The characters' decoded skeletons and clips
+come from the decoded store (second visit) and their pak entries are read ahead. The desktop builds it in one step as
+before. Characters of the same model share their decoded data (`CharacterBuilder.ShareScope`).
+
+| headless Chromium, GPU, `--interp`, cold browser | before | now |
+|---|---|---|
+| page → first frame (`2dog: first frame`) | 14.3–17.3 s | 5.5 s |
+| longest frame gap up to the menu | 16.6 s | 4.9 s (engine start: Godot's own shader compiles + pak mount; then ≤ ~0.6 s steps) |
+| page → `main menu on screen` | 17.9 s | 12.4 s |
+
+When the shader warm-up (*Shaders*) has finished before the engine starts, Godot's renderer start takes 0.1 s instead of
+~2 s. The decoded store is read with a size call and a copy into the C# array (`h5cache.js` `size` / `copy`) instead of
+returning the bytes as a JS number array (marshalled element by element).
+
 ### Shaders (first visit)
 
 Godot compiles a WebGL program the first time something is drawn with it and waits for it; on Chrome / Windows (ANGLE
@@ -555,11 +606,11 @@ page time in s, length in ms) next to `maxFrameGapMs`.
 **No WebGL 2 = environment failure, not a page failure.** Headless Chromium on Windows often has no WebGL 2 for the first
 second after it starts (its GPU process is not up yet: on this machine the first context failed about 3 times in 4), and on
 some machines (remote sessions, a busy or blocklisted GPU) not at all; the page then stops with Godot's "features required
-� are missing: WebGL2". `browsers.mjs` therefore asks a blank page for a WebGL 2 context (up to 6 times, a second apart)
+… are missing: WebGL2". `browsers.mjs` therefore asks a blank page for a WebGL 2 context (up to 6 times, a second apart)
 before any scenario runs, and walks a list of flag sets until one has it: with `--gpu` the GPU (`--use-angle=d3d11` /
 `vulkan`), then SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`), SwiftShader-WebGL
 (`--use-gl=angle --use-angle=swiftshader-webgl`) and SwiftShader in the browser process (`--in-process-gpu`). The chosen
-set and the GL renderer are printed (`browser: chromium (gpu), WebGL 2 renderer: �`) and stored in results.json
+set and the GL renderer are printed (`browser: chromium (gpu), WebGL 2 renderer: …`) and stored in results.json
 (`environment`). A page that still reports missing WebGL 2 ends its scenario at once as `env:webgl2-missing` and runs it
 again in a newly probed browser (twice at most). Browsers opened later (persistent profiles, audio, lobby) are probed the
 same way. When no flag set gives WebGL 2 the run stops with `ENVIRONMENT FAILURE (not a page failure)` and **exit code 3**
@@ -591,9 +642,11 @@ is virtual.
 
 1. **Performance (CPU).** The adventure map runs at ~50 fps headless (was ~10: see *Frame rate*); map loading is
    spread over frames behind the loading picture, shaders are compiled ahead on a first visit (*Shaders*) and decoded
-   characters are kept between visits (*Loading an adventure map*). Still open: a first visit's object pass (~30 s on a
-   busy machine: synchronous range reads of the picked files, ~1-2 ms each, Granny decode, Godot resource building),
-   and ~8 s of engine start and main menu loading before the first menu frame.
+   characters are kept between visits (*Loading an adventure map*); the reads of a load are announced and read in the
+   background (*Read-ahead*); the main menu's backdrop is built over frames (*Main menu*). Still open: a first visit's
+   object pass is CPU-bound (Granny decode, clip conversion, mesh building); the engine start (Godot's renderer start,
+   pak mount) and a dev-arg map launch (`?args=--adventure=`: database, map parse, new game and the first terrain step
+   run before the first frame) are still single long frames.
 2. ~~Adventure AI turns (threads)~~ — fixed: computer turns run one per frame (see *Computer players' turns*).
 3. ~~Saves, profiles and settings do not persist~~ — fixed: `user://` persists in IndexedDB, with export / import
    (see *Saves, profiles and settings*).

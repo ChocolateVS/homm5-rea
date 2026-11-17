@@ -13,6 +13,8 @@ public interface IDecodedCache
 {
     byte[]? Get(string key);
     void Put(string key, byte[] data);
+    /// <summary>Whether <see cref="Get"/> would return the entry (without reading it).</summary>
+    bool Contains(string key) => Get(key) != null;
 }
 
 /// <summary>

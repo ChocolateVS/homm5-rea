@@ -39,12 +39,60 @@ public partial class MainMenuBackground : Node3D
     int _cameraBone = -1;
     float _fovDeg = 54.4322f;
 
+    /// <summary>
+    /// Browser build: the backdrop is built over several frames (<see cref="BuildBudgetMs"/> of work per frame) instead of
+    /// in one step that held the page for seconds without a frame; <see cref="MainMenu"/> keeps the screen black until
+    /// <see cref="IsBuilt"/>. The built scene is the same: what is added while building does not process (animations,
+    /// effects) until the end, where the scene clock is set exactly as the one-step build sets it.
+    /// </summary>
+    public static bool Staged => OperatingSystem.IsBrowser();
+    const double BuildBudgetMs = 40;
+    IEnumerator<int>? _build;
+    readonly List<EffectPlayer> _effects = new();
+
+    public bool IsBuilt => _build == null;
+    /// <summary>Raised once the backdrop is complete (at once in <see cref="_Ready"/> when not <see cref="Staged"/>).</summary>
+    public event Action? Built;
+
     public override void _Ready()
+    {
+        _build = Build().GetEnumerator();
+        if (!Staged) StepBuild(double.PositiveInfinity);
+    }
+
+    // Left before the build finished (another screen took over): close its share scope and prefetch.
+    public override void _ExitTree()
+    {
+        _build?.Dispose();
+        _build = null;
+    }
+
+    void StepBuild(double budgetMs)
+    {
+        var start = System.Diagnostics.Stopwatch.GetTimestamp();
+        while (_build != null && System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds < budgetMs)
+        {
+            if (_build.MoveNext()) continue;
+            _build.Dispose();
+            _build = null;
+            Built?.Invoke();
+        }
+    }
+
+    /// <summary>Adds a piece of the backdrop; while staged it does not process until the whole scene is there.</summary>
+    void AddPiece(Node node)
+    {
+        if (Staged) node.ProcessMode = ProcessModeEnum.Disabled;
+        AddChild(node);
+    }
+
+    IEnumerable<int> Build()
     {
         var xdb = Game.Instance.Xdb;
         var desc = xdb.Load(DescPath).Root!;
         var loader = new ModelLoader(xdb);
 
+        var objects = new List<(string ObjPath, XElement Obj, string ModelPath, string? AnimSetPath)>();
         foreach (var item in desc.Element("objects")?.Elements("Item") ?? Enumerable.Empty<XElement>())
         {
             var objPath = XdbRef.Parse((string?)item.Attribute("href"), DescPath).Path;
@@ -54,33 +102,77 @@ public partial class MainMenuBackground : Node3D
             if (string.IsNullOrEmpty(modelPath) || !Game.Instance.Fs.Exists(modelPath)) continue;
             var animSetHref = (string?)obj.Element("AnimSet")?.Attribute("href");
             var animSetPath = string.IsNullOrEmpty(animSetHref) ? null : XdbRef.Parse(animSetHref, objPath).Path;
-            var name = System.IO.Path.GetFileNameWithoutExtension(objPath);
-            try
-            {
-                Node3D node;
-                if (animSetPath != null && Game.Instance.Fs.Exists(animSetPath))
-                    node = CharacterBuilder.BuildFromModel(modelPath, animSetPath, name);
-                else
+            objects.Add((objPath, obj, modelPath, animSetPath));
+        }
+        var role = desc.Element("cameraFlyupRole");
+        // Browser build: the characters' decoded skeletons and clips from the browser's store first (asynchronous; frames
+        // keep coming meanwhile), as an adventure map does (AdvWorld.Build). The built characters are the same either way.
+        if (CharacterBuilder.DecodedPrefetch is { } prefetch)
+        {
+            var keys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var o in objects)
+                if (o.AnimSetPath != null && Game.Instance.Fs.Exists(o.AnimSetPath))
+                    try { keys.UnionWith(CharacterBuilder.DecodedCacheKeys(o.ModelPath, o.AnimSetPath)); } catch (Exception) { /* reported when built */ }
+            if (CameraRolePaths(role) is { } rp)
+                try { keys.UnionWith(CharacterBuilder.DecodedCacheKeys(rp.Model, rp.Set)); } catch (Exception) { /* reported when built */ }
+            var fetch = prefetch(keys);
+            while (!fetch.IsCompleted) yield return 0;
+            Dev.LoadTrace.Mark("menu decoded prefetch");
+        }
+        // ... and the pak entries the characters are built from, fetched in the background while they are built.
+        if (H5.Core.IO.RandomAccessSources.ReadAhead != null)
+        {
+            var paths = new List<string>();
+            foreach (var o in objects)
+                try
                 {
-                    var model = loader.Load(modelPath);
-                    node = new MeshInstance3D { Name = name, Mesh = ModelBuilder.BuildMesh(model, skinned: false) };
+                    var set = o.AnimSetPath != null && Game.Instance.Fs.Exists(o.AnimSetPath) ? o.AnimSetPath : null;
+                    paths.AddRange(set == null ? CharacterBuilder.ModelReadAheadPaths(o.ModelPath) : CharacterBuilder.ReadAheadPaths(o.ModelPath, set));
                 }
-                node.Transform = ParsePlacement(obj.Element("placement")?.Value);
-                AddChild(node);
-            }
-            catch (Exception e) { GD.PushWarning($"[H5] menu object {objPath}: {e.Message}"); }
+                catch (Exception) { /* reported when built */ }
+            if (CameraRolePaths(role) is { } crp)
+                try { paths.AddRange(CharacterBuilder.ReadAheadPaths(crp.Model, crp.Set)); } catch (Exception) { /* reported when built */ }
+            Game.Instance.Fs.HintReadAhead(paths);
         }
 
-        var lightRef = desc.Element("AmbientLights")?.Elements("Item").FirstOrDefault();
-        if (xdb.Resolve(lightRef, DescPath) is { } light) AddLighting(light);
+        using (CharacterBuilder.ShareScope())
+        {
+            foreach (var (objPath, obj, modelPath, animSetPath) in objects)
+            {
+                var name = System.IO.Path.GetFileNameWithoutExtension(objPath);
+                try
+                {
+                    Node3D node;
+                    if (animSetPath != null && Game.Instance.Fs.Exists(animSetPath))
+                        node = CharacterBuilder.BuildFromModel(modelPath, animSetPath, name);
+                    else
+                    {
+                        var model = loader.Load(modelPath);
+                        node = new MeshInstance3D { Name = name, Mesh = ModelBuilder.BuildMesh(model, skinned: false) };
+                    }
+                    node.Transform = ParsePlacement(obj.Element("placement")?.Value);
+                    AddPiece(node);
+                }
+                catch (Exception e) { GD.PushWarning($"[H5] menu object {objPath}: {e.Message}"); }
+                yield return 0;
+            }
+            Dev.LoadTrace.Mark("menu objects");
 
-        var cam = desc.Element("initialCamPos");
-        float G(string a, float d) => cam?.Element(a) is { } e ? float.Parse(e.Value, CultureInfo.InvariantCulture) : d;
-        _fovDeg = G("FOV", 54.4322f);
-        Camera = new Camera3D { Name = "Camera", Near = G("ClipDistanceMin", 0.5f), Far = G("ClipDistanceMax", 10000f) };
-        AddChild(Camera);
-        Camera.MakeCurrent();
-        BuildCameraRole(desc.Element("cameraFlyupRole"));
+            var lightRef = desc.Element("AmbientLights")?.Elements("Item").FirstOrDefault();
+            if (xdb.Resolve(lightRef, DescPath) is { } light) AddLighting(light);
+
+            var cam = desc.Element("initialCamPos");
+            float G(string a, float d) => cam?.Element(a) is { } e ? float.Parse(e.Value, CultureInfo.InvariantCulture) : d;
+            _fovDeg = G("FOV", 54.4322f);
+            Camera = new Camera3D { Name = "Camera", Near = G("ClipDistanceMin", 0.5f), Far = G("ClipDistanceMax", 10000f) };
+            AddChild(Camera);
+            Camera.MakeCurrent();
+            BuildCameraRole(role);
+            Dev.LoadTrace.Mark("menu light + camera");
+        }
+        CharacterBuilder.DecodedRelease?.Invoke();
+        H5.Core.IO.RandomAccessSources.ReadAheadDone?.Invoke();
+        yield return 0;
 
         foreach (var fx in desc.Element("effects")?.Elements("Item") ?? Enumerable.Empty<XElement>())
         {
@@ -89,8 +181,16 @@ public partial class MainMenuBackground : Node3D
             var player = EffectPlayer.Play(href, this);
             if (player == null) continue;
             player.AutoFree = false;
-            player.Seek(PreRoll);
+            if (Staged) { player.ProcessMode = ProcessModeEnum.Disabled; _effects.Add(player); }
+            else player.Seek(PreRoll);
+            yield return 0;
         }
+        Dev.LoadTrace.Mark("menu effects");
+        // Staged: everything starts processing now, from the same clock the one-step build gives it.
+        if (Staged)
+            foreach (var n in GetChildren()) n.ProcessMode = ProcessModeEnum.Inherit;
+        foreach (var player in _effects) player.Seek(PreRoll);
+        _effects.Clear();
         // The scene clock starts at 10 s (00694610 updates the scene to 10000 then 10001 ms before the
         // track camera starts at that moment), so smoke, fire and idles are already running while the
         // camera clip begins at 0.
@@ -105,20 +205,30 @@ public partial class MainMenuBackground : Node3D
 
     const float PreRoll = 10f;
 
-    public override void _Process(double delta) => UpdateCamera();
+    public override void _Process(double delta)
+    {
+        if (_build != null) { StepBuild(BuildBudgetMs); if (_build != null) return; }
+        UpdateCamera();
+    }
+
+    static (string Model, string? Set)? CameraRolePaths(XElement? role)
+    {
+        if (role == null) return null;
+        var modelPath = XdbRef.Parse((string?)role.Element("Model")?.Attribute("href"), DescPath).Path;
+        var setPath = XdbRef.Parse((string?)role.Element("AnimSet")?.Attribute("href"), DescPath).Path;
+        if (string.IsNullOrEmpty(modelPath) || !Game.Instance.Fs.Exists(modelPath)) return null;
+        return (modelPath, Game.Instance.Fs.Exists(setPath) ? setPath : null);
+    }
 
     /// <summary>The flyup role: an animated model whose bone "camera" carries the view.</summary>
     void BuildCameraRole(XElement? role)
     {
-        if (role == null) return;
-        var modelPath = XdbRef.Parse((string?)role.Element("Model")?.Attribute("href"), DescPath).Path;
-        var setPath = XdbRef.Parse((string?)role.Element("AnimSet")?.Attribute("href"), DescPath).Path;
-        if (string.IsNullOrEmpty(modelPath) || !Game.Instance.Fs.Exists(modelPath)) return;
-        var rig = CharacterBuilder.BuildFromModel(modelPath, Game.Instance.Fs.Exists(setPath) ? setPath : null, "CameraRole");
+        if (CameraRolePaths(role) is not { } p) return;
+        var rig = CharacterBuilder.BuildFromModel(p.Model, p.Set, "CameraRole");
         // The camera model carries a small frustum mesh used only in the editor; never drawn in game.
         foreach (var mi in rig.FindChildren("*", nameof(MeshInstance3D), recursive: true, owned: false).OfType<MeshInstance3D>())
             mi.Visible = false;
-        AddChild(rig);
+        AddPiece(rig);
         _cameraSkeleton = rig.Skeleton;
         _cameraBone = rig.Skeleton.FindBone("camera");
     }

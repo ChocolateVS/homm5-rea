@@ -101,6 +101,19 @@
       if (v) hits++; else misses++;
       return v || null;
     },
+    // get in two calls without converting the bytes to a JS array: the size (-1: absent), then a copy straight into
+    // the caller's wasm buffer.
+    size: (key) => {
+      const v = enabled ? mem.get(key) : undefined;
+      if (v) hits++; else misses++;
+      return v ? v.length : -1;
+    },
+    copy: (key, view) => {
+      const v = mem.get(key);
+      if (!v || v.length !== view.length) return false;
+      view.set(v);
+      return true;
+    },
     put: (key, bytes) => {
       if (!enabled) return;
       const v = bytes.slice(); // the view points into wasm memory: copy

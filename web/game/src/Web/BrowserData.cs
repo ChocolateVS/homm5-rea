@@ -21,6 +21,14 @@ static partial class H5DataJs
     /// </summary>
     [JSImport("globalThis.h5data.readSync")]
     internal static partial int ReadSync(int file, double offset, int length, [JSMarshalAs<JSType.MemoryView>] Span<byte> dst);
+
+    /// <summary>Background reads of ranges about to be read: lines "file offset length need" (see h5data.js readAhead).</summary>
+    [JSImport("globalThis.h5data.readAhead")] internal static partial void ReadAhead(string ranges);
+    /// <summary>Copies a range out of a background read that holds all of it; false when none does (yet).</summary>
+    [JSImport("globalThis.h5data.readAheadTake")]
+    internal static partial bool ReadAheadTake(int file, double offset, int length, [JSMarshalAs<JSType.MemoryView>] Span<byte> dst);
+    /// <summary>Drops every background read; returns a summary for the log.</summary>
+    [JSImport("globalThis.h5data.readAheadDone")] internal static partial string ReadAheadDone();
 }
 
 /// <summary>
@@ -30,7 +38,7 @@ static partial class H5DataJs
 /// </summary>
 sealed class BrowserFileSource(int index, string name, long length) : IRandomAccessSource
 {
-    const int Block = 256 << 10, MaxCachedBlocks = 64, Chunk = 8 << 20;
+    const int Block = 64 << 10, MaxCachedBlocks = 256, Chunk = 8 << 20;
     // Shared by every source opened for the same file (PakArchive and map loaders open their own).
     static readonly Dictionary<(int, long), byte[]> Cache = new();
     static readonly LinkedList<(int, long)> Lru = new();
@@ -40,9 +48,16 @@ sealed class BrowserFileSource(int index, string name, long length) : IRandomAcc
     public long Length { get; } = length;
     public bool SupportsSyncRead => true;
 
+    /// <summary>Background reads are pending or held (<see cref="RandomAccessSources.ReadAhead"/>): ask the page first.</summary>
+    internal static bool ReadingAhead;
+    public static long ReadAheadHits;
+
+    internal int Index => index;
+
     public void ReadAt(long offset, Span<byte> buffer)
     {
         if (offset < 0 || offset + buffer.Length > Length) throw new EndOfStreamException($"{Name}: read past end at {offset}");
+        if (ReadingAhead && buffer.Length > 0 && H5DataJs.ReadAheadTake(index, offset, buffer.Length, buffer)) { ReadAheadHits++; return; }
         if (buffer.Length <= Block)
         {
             for (int done = 0; done < buffer.Length;)
@@ -77,7 +92,8 @@ sealed class BrowserFileSource(int index, string name, long length) : IRandomAcc
 
     void Fetch(long offset, Span<byte> dst)
     {
-        int got = H5DataJs.ReadSync(index, offset, dst.Length, dst);
+        int got;
+        using (H5Reborn.Dev.LoadTrace.Time("file read")) got = H5DataJs.ReadSync(index, offset, dst.Length, dst);
         Requests++;
         BytesRequested += got;
         if (got != dst.Length) throw new EndOfStreamException($"{Name}: short read at {offset}: {got}/{dst.Length}");
@@ -137,6 +153,25 @@ public static class BrowserData
         }
         RandomAccessSources.Opener = p =>
             virtualFiles.TryGetValue(Normalize(p), out var f) ? new BrowserFileSource(f.Index, f.Name, f.Length) : null;
+        // Ranges about to be read (a map's or the menu's characters) are fetched by the page in the background, several
+        // at a time, while the game works; the synchronous reads then copy them from memory.
+        RandomAccessSources.ReadAhead = ranges =>
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var r in ranges)
+                if (r.Source is BrowserFileSource b)
+                    sb.Append(b.Index).Append(' ').Append(r.Offset).Append(' ').Append(r.Length).Append(' ').Append(r.Need).Append('\n');
+            if (sb.Length == 0) return;
+            BrowserFileSource.ReadingAhead = true;
+            H5DataJs.ReadAhead(sb.ToString());
+        };
+        RandomAccessSources.ReadAheadDone = () =>
+        {
+            if (!BrowserFileSource.ReadingAhead) return;
+            BrowserFileSource.ReadingAhead = false;
+            Console.WriteLine($"[H5] web: read-ahead {H5DataJs.ReadAheadDone()}, {BrowserFileSource.ReadAheadHits} reads served");
+            BrowserFileSource.ReadAheadHits = 0;
+        };
         Environment.SetEnvironmentVariable("H5_GAME_DIR", Root);
         var msg = $"[H5] web: {n} files ({virtualFiles.Count} streamed, {copied / 1048576.0:F1} MB copied) in {(DateTime.UtcNow - started).TotalSeconds:F2}s";
         Console.WriteLine(msg);

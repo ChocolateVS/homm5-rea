@@ -27,12 +27,24 @@ public interface IRandomAccessSource : IDisposable
 /// wasm file system; it sets <see cref="Opener"/> so archives under those paths read slices on demand.
 /// Desktop leaves it null and every path opens as a <see cref="FileRandomAccessSource"/>.
 /// </summary>
+/// <summary>A range of <paramref name="Source"/> that will be read soon; <paramref name="Need"/> bytes of it are expected to be read.</summary>
+public readonly record struct ReadAheadRange(IRandomAccessSource Source, long Offset, long Length, long Need);
+
 public static class RandomAccessSources
 {
     /// <summary>Returns a source for <c>path</c>, or null to use the file system.</summary>
     public static Func<string, IRandomAccessSource?>? Opener { get; set; }
 
     public static IRandomAccessSource Open(string path) => Opener?.Invoke(path) ?? new FileRandomAccessSource(path);
+
+    /// <summary>
+    /// Optional hint that these byte ranges are about to be read, in this order (the browser build fetches them in the
+    /// background so the synchronous reads that follow find them in memory; <see cref="PakFileSystem.HintReadAhead"/>).
+    /// Null (the desktop) = nothing happens. Reads return the same bytes either way.
+    /// </summary>
+    public static Action<IReadOnlyList<ReadAheadRange>>? ReadAhead { get; set; }
+    /// <summary>Lets go of whatever <see cref="ReadAhead"/> fetched and nobody read yet.</summary>
+    public static Action? ReadAheadDone { get; set; }
 
     /// <summary>
     /// Size of a file: the <see cref="Opener"/>'s source when it serves the path (the browser build's install files

@@ -32,6 +32,8 @@ public partial class WebProbe : Node
         }
         // The adventure screen builds its map over several frames: count from when it is loaded.
         if (cur is H5Reborn.Adventure.AdventureScreen { IsLoaded: false }) _framesInScene = 0;
+        // So does the main menu's backdrop (MainMenuBackground.Staged).
+        if (cur is H5Reborn.MainMenu { IsLoaded: false }) _framesInScene = 0;
         _framesInScene++;
         // A few frames after a screen became current it has been built and drawn at least once.
         if (_framesInScene == 5)

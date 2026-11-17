@@ -159,6 +159,9 @@ public partial class Game : Node
         return released;
     }
 
+    /// <summary>Whether <see cref="LoadTexture"/> has this .dds loaded (a later call reads nothing).</summary>
+    public bool HasTexture(string ddsPath) => _textures.ContainsKey(ddsPath);
+
     /// <summary>Loads a texture from the paks. Accepts a .dds path or a (Texture) .xdb path/href.</summary>
     public Texture2D? LoadTexture(string pathOrHref)
     {

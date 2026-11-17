@@ -62,6 +62,19 @@ public sealed class AnimSetLoader
         foreach (var e in ReadAnimSet(animSetPath)) yield return ClipCacheKey(e.Uid);
     }
 
+    /// <summary>
+    /// The pak entries the skeleton and clips of a model + animation set are decoded from, leaving out what the
+    /// <see cref="DecodedCache"/> holds (to read them ahead, <see cref="PakFileSystem.HintReadAhead"/>).
+    /// </summary>
+    public IEnumerable<string> BinaryPaths(string modelPath, string? animSetPath)
+    {
+        var cache = DecodedCache;
+        if (SkeletonUidForModel(modelPath) is { } su && cache?.Contains(SkeletonCacheKey(su)) != true) yield return "bin/Skeletons/" + su;
+        if (animSetPath == null) yield break;
+        foreach (var e in ReadAnimSet(animSetPath))
+            if (cache?.Contains(ClipCacheKey(e.Uid)) != true) yield return "bin/animations/" + e.Uid;
+    }
+
     public AnimSetLoader(XdbLoader xdb)
     {
         _xdb = xdb;

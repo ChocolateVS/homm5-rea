@@ -59,6 +59,27 @@ public sealed class ModelLoader(XdbLoader xdb)
         return asset;
     }
 
+    /// <summary>The pak entry of a (Model)'s geometry (bin/Geometries/&lt;uid&gt;), or null.</summary>
+    public string? GeometryBinPath(string modelXdbPath)
+    {
+        modelXdbPath = PakFileSystem.Normalize(modelXdbPath);
+        var (geomEl, _) = ResolveWithFile(xdb.Load(modelXdbPath).Root?.Element("Geometry"), modelXdbPath);
+        return geomEl == null ? null : ReadGeometryDesc(geomEl).BinPath;
+    }
+
+    /// <summary>The .dds files of a (Model)'s materials' diffuse and bump textures (what the renderer loads).</summary>
+    public IEnumerable<string> TexturePaths(string modelXdbPath)
+    {
+        modelXdbPath = PakFileSystem.Normalize(modelXdbPath);
+        foreach (var item in xdb.Load(modelXdbPath).Root?.Element("Materials")?.Elements("Item") ?? Enumerable.Empty<XElement>())
+        {
+            var (mat, matFile) = ResolveWithFile(item, modelXdbPath);
+            if (mat == null) continue;
+            if (TexturePath(mat.Element("Texture"), matFile) is { } diffuse) yield return diffuse;
+            if (TexturePath(mat.Element("Bump"), matFile) is { } bump) yield return bump;
+        }
+    }
+
     /// <summary>Loads the clips of an "(AnimSet)" xdb, keyed by Kind (idle00, move, attack00, ...).</summary>
     public Dictionary<string, AnimationClip> LoadAnimSet(string animSetXdbPath)
     {

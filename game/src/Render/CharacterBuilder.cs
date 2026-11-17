@@ -85,6 +85,25 @@ public static class CharacterBuilder
     /// <summary>The decoded-cache keys a <see cref="BuildFromModel"/> of this model and set reads.</summary>
     public static IEnumerable<string> DecodedCacheKeys(string modelPath, string? setPath) => Anims.CacheKeys(modelPath, setPath);
 
+    /// <summary>
+    /// The pak entries a <see cref="BuildFromModel"/> of this model and set reads in bulk (geometry, and the skeleton and
+    /// clips the decoded cache does not hold), to read them ahead (<see cref="H5.Core.IO.PakFileSystem.HintReadAhead"/>).
+    /// </summary>
+    public static IEnumerable<string> ReadAheadPaths(string modelPath, string? setPath)
+    {
+        foreach (var p in ModelReadAheadPaths(modelPath)) yield return p;
+        foreach (var p in Anims.BinaryPaths(modelPath, setPath)) yield return p;
+    }
+
+    /// <summary>The pak entries a model's mesh is built from: its geometry and the textures not loaded yet.</summary>
+    public static IEnumerable<string> ModelReadAheadPaths(string modelPath)
+    {
+        var loader = new ModelLoader(Game.Instance.Xdb);
+        if (loader.GeometryBinPath(modelPath) is { } geometry) yield return geometry;
+        foreach (var tex in loader.TexturePaths(modelPath))
+            if (!Game.Instance.HasTexture(tex)) yield return tex;
+    }
+
     /// <summary>Forgets the decoded skeletons and animations (decoded again on next use); see <see cref="Game.ReleaseUnused"/>.</summary>
     public static void ReleaseDecoded() { if (_shareDepth == 0) _anims = null; }
 
@@ -173,8 +192,11 @@ public static class CharacterBuilder
     static Template BuildTemplate(string modelPath, string? setPath)
     {
         var asset = new ModelLoader(Game.Instance.Xdb).Load(modelPath);
-        var skeleton = Anims.LoadSkeletonForModel(modelPath);
-        var animations = setPath == null ? new() : _shareDepth > 0 ? SharedAnimSet(setPath) : Anims.LoadAnimSet(setPath);
+        SkeletonData? skeleton;
+        using (Dev.LoadTrace.Time("ch skeleton")) skeleton = Anims.LoadSkeletonForModel(modelPath);
+        Dictionary<string, LoadedAnimation> animations;
+        using (Dev.LoadTrace.Time("ch anim set"))
+            animations = setPath == null ? new() : _shareDepth > 0 ? SharedAnimSet(setPath) : Anims.LoadAnimSet(setPath);
         if (skeleton == null || skeleton.Bones.Count == 0)
             return new Template { SetPath = setPath, Mesh = ModelBuilder.BuildMesh(asset, skinned: false) };
 
@@ -184,6 +206,7 @@ public static class CharacterBuilder
         t.Skin = new Skin();
         for (int i = 0; i < skeleton.Bones.Count; i++)
             t.Skin.AddNamedBind(SafeBoneName(skeleton.Bones[i].Name, i), ModelBuilder.ToGodot(skeleton.Bones[i].InverseBind));
+        using var clipsTime = Dev.LoadTrace.Time("ch clips to Godot");
         foreach (var (kind, loaded) in animations)
         {
             float speed = loaded.Entry.MovementSpeed;

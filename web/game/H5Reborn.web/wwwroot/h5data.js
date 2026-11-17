@@ -206,6 +206,44 @@
     });
   }
 
+  // Read-ahead (C#: RandomAccessSources.ReadAhead): ranges the game is about to read, in that order, are read here with
+  // asynchronous Blob reads, several at a time and up to AHEAD_BYTES ahead of the game, while the game's own work goes on;
+  // its synchronous reads then copy them from memory (readAheadTake) instead of a synchronous request each (1-6 ms).
+  // A range is dropped once its expected bytes (`need`) were read, or when the game says it is done (readAheadDone).
+  // Blob reads complete only while the page is between frames, so the queue runs ahead of the game's frame-sized steps.
+  const AHEAD_BYTES = 96 << 20, AHEAD_PARALLEL = 32;
+  const ahead = { queue: [], byFile: new Map(), inFlight: 0, held: 0, fetched: 0, fetchedBytes: 0, served: 0, late: 0, gen: 0 };
+  function aheadPump() {
+    while (ahead.inFlight < AHEAD_PARALLEL && ahead.queue.length && ahead.held < AHEAD_BYTES) {
+      const r = ahead.queue.shift();
+      if (r.dead) continue;
+      ahead.inFlight++; ahead.held += r.length;
+      const gen = ahead.gen;
+      files[r.file].blob.slice(r.start, r.start + r.length).arrayBuffer().then((buf) => {
+        if (gen !== ahead.gen) return;
+        ahead.inFlight--;
+        if (r.dead) { ahead.held -= r.length; } else { r.data = new Uint8Array(buf); ahead.fetched++; ahead.fetchedBytes += buf.byteLength; }
+        aheadPump();
+      }, (e) => { if (gen !== ahead.gen) return; ahead.inFlight--; ahead.held -= r.length; aheadDrop(r); console.warn('h5data: read-ahead failed', e); aheadPump(); });
+    }
+  }
+  function aheadDrop(r) {
+    r.dead = true;
+    const list = ahead.byFile.get(r.file);
+    const i = list ? list.indexOf(r) : -1;
+    if (i >= 0) list.splice(i, 1);
+    if (r.data) { ahead.held -= r.length; r.data = null; }
+  }
+  // The held range of `file` that contains [offset, offset + length), or null (ranges sorted by start).
+  function aheadFind(file, offset, length) {
+    const list = ahead.byFile.get(file);
+    if (!list || !list.length) return null;
+    let lo = 0, hi = list.length - 1, at = -1;
+    while (lo <= hi) { const m = (lo + hi) >> 1; if (list[m].start <= offset) { at = m; lo = m + 1; } else hi = m - 1; }
+    for (let k = at; k >= 0 && k > at - 4; k--) { const r = list[k]; if (r.start + r.length >= offset + length) return r; }
+    return null;
+  }
+
   const urls = new Map();
   const urlOf = (i) => { let u = urls.get(i); if (!u) { u = URL.createObjectURL(files[i].blob); urls.set(i, u); } return u; };
 
@@ -230,6 +268,37 @@
       for (let k = 0; k < n; k++) buf[k] = s.charCodeAt(k) & 0xff;
       view.set(buf, 0);
       return n;
+    },
+    readAhead: (text) => {
+      for (const line of text.split('\n')) {
+        if (!line) continue;
+        const [file, start, length, need] = line.split(' ').map(Number);
+        if (!(file >= 0 && file < files.length) || !(length > 0)) continue;
+        const r = { file, start, length, need, served: 0, data: null, dead: false };
+        ahead.queue.push(r);
+        let list = ahead.byFile.get(file);
+        if (!list) ahead.byFile.set(file, (list = []));
+        let i = list.length;
+        while (i > 0 && list[i - 1].start > start) i--;
+        list.splice(i, 0, r);
+      }
+      aheadPump();
+    },
+    readAheadTake: (file, offset, length, view) => {
+      const r = aheadFind(file, offset, length);
+      if (!r) return false;
+      // Still being read: its data can only arrive after the game yields, so read synchronously now and forget it.
+      if (!r.data) { ahead.late++; aheadDrop(r); return false; }
+      view.set(r.data.subarray(offset - r.start, offset - r.start + length));
+      ahead.served++;
+      if ((r.served += length) >= r.need) { aheadDrop(r); aheadPump(); }
+      return true;
+    },
+    readAheadDone: () => {
+      const s = `${ahead.fetched} ranges (${(ahead.fetchedBytes / 1048576).toFixed(1)} MB) read ahead, ${ahead.late} reads came too early, ${ahead.queue.filter((r) => !r.dead).length} not started`;
+      ahead.gen++; ahead.queue = []; ahead.byFile.clear(); ahead.inFlight = 0; ahead.held = 0;
+      ahead.fetched = ahead.fetchedBytes = ahead.served = ahead.late = 0;
+      return s;
     },
     // --- test hooks ---
     params,
