@@ -38,6 +38,48 @@ public class TownBuildRulesTests(Fixture f)
         Assert.Equal(BuildDenial.TownPoints, g.BuildCheck(t, def.Type, g.Current.Purse));
     }
 
+    static void NextDay(Engine.Adventure g)
+    {
+        int day = g.S.Day;
+        for (int i = 0; i < 20 && g.S.Day == day; i++) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
+    }
+
+    [Fact]
+    public void ComputerTownsWaitTheirBuildPeriodAfterAPaidBuild()
+    {
+        // 00cd6460: counter (CAdvMapTown +0x178) = vf 0x80 (00ccedf0) at placement; 00cd4a40 at 00cd4e0f clears it on a
+        // paid build; 00cce2b0 (new day 009949d0) raises it to at most the period; 00cce4e0: counter < period → code 6.
+        var (g, t) = Town();   // every player is a computer here
+        var p = g.Current;
+        Assert.False(p.Human);
+        int period = H5.Adventure.AI.AdventureAiStats.Load(f.Core).Difficulty[Math.Clamp(g.S.Difficulty, 0, 3)].TownBuildPeriodInDays;
+        Assert.True(period > 1);
+        Assert.Equal(period, g.TownBuildPeriod(t));
+        Assert.Equal(period, t.BuildCounter);   // placed for a computer owner
+        p.Human = true;
+        Assert.Equal(1, g.TownBuildPeriod(t));
+        p.Human = false;
+        var open = t.MaxLevel.Keys.OrderBy(k => k).Where(k => g.BuildCheck(t, k, p.Purse) == BuildDenial.CanBuild).ToList();
+        Assert.True(open.Count >= 2);
+        Assert.True(g.Apply(new BuildCmd(t.Object, open[0]) { Player = p.Index }).Ok);
+        var type = open[1];
+        Assert.Equal(0, t.BuildCounter);
+        for (int day = 1; day < period; day++)
+        {
+            NextDay(g);   // the engine runs no AI on its own
+            Assert.Equal(day, t.BuildCounter);
+            Assert.False(t.BuiltToday);
+            Assert.Equal(BuildDenial.BuiltThisTurn, g.BuildCheck(t, type, p.Purse));
+        }
+        NextDay(g);
+        Assert.Equal(period, t.BuildCounter);
+        Assert.NotEqual(BuildDenial.BuiltThisTurn, g.BuildCheck(t, type, p.Purse));
+        // The period is read at each tick: under a human owner (period 1) the counter is capped at 1.
+        p.Human = true;
+        NextDay(g);
+        Assert.Equal(1, t.BuildCounter);
+    }
+
     [Fact]
     public void MoneyIsCheckedBeforeBuiltToday()
     {

@@ -379,6 +379,11 @@ public sealed class TownState
     /// <summary>Maximum level allowed per building type by the map (BLD_UPG_n).</summary>
     public Dictionary<string, int> MaxLevel = new();
     public bool BuiltToday;
+    /// <summary>
+    /// Days since the last paid build, capped at the build period (exe CAdvMapTown +0x178 = CTown +0x80): set to the
+    /// period at placement (00cd6460), raised by the new day (00cce2b0), cleared by a paid build (00cd4a40).
+    /// </summary>
+    public int BuildCounter;
     /// <summary>Recruitable creatures per dwelling tier (index 0 = tier 1). Base and upgrades share the pool.</summary>
     public int[] Available = new int[7];
     public Stack?[] Garrison = Army.Empty();

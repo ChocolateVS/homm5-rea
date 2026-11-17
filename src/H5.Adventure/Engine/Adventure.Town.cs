@@ -84,6 +84,7 @@ public sealed partial class Adventure
         if (HasTradeGuild(t) && c.Building == "TB_SPECIAL_4") RollTradeGuild(t);   // 00cd4a40 at 00cd4d89: ability 0x1d
         TrainingPointsAfterBuild(t, trainingBefore);
         t.BuiltToday = true;
+        t.BuildCounter = 0;   // 00cd4a40 at 00cd4e0f: a paid build (the command's arg 4 = not free, 0042fd40) clears CTown +0x80
         // A new dwelling's pool starts with its base creature's WeeklyGrowth (00cd4a40 at 00cd4e2c: when
         // FUN_00cd0710 creates the pool, creature +0xa8); no fort, horde or week bonuses.
         if (c.Building.StartsWith("TB_DWELLING_") && next == 1 && int.TryParse(c.Building[^1..], out var tier)

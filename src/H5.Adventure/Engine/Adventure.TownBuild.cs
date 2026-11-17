@@ -40,7 +40,7 @@ public sealed partial class Adventure
     /// magic guild); the special cases of 00cd0e20 (shipyard without water, a second capitol, the grail without a
     /// Tear of Asha); the building's last level → already_build; the map's level limit → limit_upgrade; the town
     /// level (sum of built levels, 00cd2120) below DevLevelNeeded → town_points; a prerequisite missing → prereq;
-    /// not affordable (00cd4880) → no_money; already built today (00cce4e0) → build_thisturn.
+    /// not affordable (00cd4880) → no_money; already built today or within the build period (00cce4e0) → build_thisturn.
     /// <paramref name="purse"/> null skips the money test.
     /// </summary>
     public BuildDenial BuildCheck(TownState t, string type, Purse? purse)
@@ -66,9 +66,23 @@ public sealed partial class Adventure
         foreach (var (dep, dl) in def.Dependencies)
             if (t.Level(dep) < dl) return BuildDenial.Prereq;
         if (purse != null && !purse.CanAfford(def.Cost)) return BuildDenial.NoMoney;
-        if (t.BuiltToday) return BuildDenial.BuiltThisTurn;
+        if (t.BuiltToday || BuildPeriodRunning(t)) return BuildDenial.BuiltThisTurn;
         return BuildDenial.CanBuild;
     }
+
+    /// <summary>
+    /// CTown vf 0x80 = 00ccedf0: the town's owner (world vf 0x68) is a computer player (vf 0x184 false) → the
+    /// difficulty row's TownBuildPeriodInDays (FUN_00c02a90 +0x2c); a human or no owner → 1.
+    /// </summary>
+    public int TownBuildPeriod(TownState t) =>
+        t.Owner >= 0 && PlayerByIndex(t.Owner) is { Human: false }
+            ? AiStats.Difficulty[Math.Clamp(S.Difficulty, 0, 3)].TownBuildPeriodInDays : 1;
+
+    /// <summary>CTown vf 0x9c = 00cce4e0: the counter (+0x80) is below the build period.</summary>
+    public bool BuildPeriodRunning(TownState t) => t.BuildCounter < TownBuildPeriod(t);
+
+    /// <summary>CTown vf 0x70 = 00cce2b0, run for every town by the new day 009949d0 (after the new week): counter + 1, at most the period.</summary>
+    void TickBuildCounter(TownState t) => t.BuildCounter = Math.Min(t.BuildCounter + 1, TownBuildPeriod(t));
 
     /// <summary>Player vcall +0xd4 in 00cd0e20: one of the player's towns has a Capitol (town ability 0x2e = hall level 4).</summary>
     bool PlayerHasCapitol(int player) => player >= 0 && S.Towns.Any(x => x.Owner == player && x.Level("TB_TOWN_HALL") >= 4);
