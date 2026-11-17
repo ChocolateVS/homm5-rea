@@ -17,8 +17,6 @@ from the description. Move an item to "Done" with the commit when fixed.
    make it readable and themed like the game.
 7. **Browser — F11:** the game captures key input, so F11 full screen does not work in the browser.
 8. **Cursor:** there may be a different cursor when hovering a castle's entrance.
-10. **Ownership / selection marks:** a captured mine (or other object) should show something on top
-    (owner flag/banner). (The combat half, "troops normally have something around them", is in Done.)
 13. **Fog of war:** unexplored areas are black, but tilting the camera down shows the outlines of
     things in the darkness. Earlier finding (docs/rules/ADVENTURE_RENDER.md, 7be9d21): the original
     also draws unexplored geometry black rather than hiding it, but our blending (linear vs gamma)
@@ -90,3 +88,9 @@ from the description. Move an item to "Done" with the commit when fixed.
     the terrain shows the map without its border. Open: the flagged-object set is the engine's capture set, icons are
     masked by the explored tiles (fog order not traced), and the world list drawn as Object_%d (vf 0x84) is not
     identified — commit "adventure: minimap icon layer".
+10. **Ownership marks on the adventure map** (adventure half of 10): flagged objects now carry the possession marker
+    of CAdvMapFlagged 00452320 — the PossesionMarker effect of the owner's colour scheme (UI/RefTables/
+    PlayerColourSchemes) for the owner's race (TownType − 3, else 8; no owner: the neutral _BuildingFree_S glow) at the
+    object's PossessionMarkerTile turned by its rotation; it is replaced when the owner changes. Open: the
+    FLAGGED_CHANGEOWNER sound of the same function; the flagged set is the engine's capture set — commit
+    "adventure: possession markers on flagged objects".

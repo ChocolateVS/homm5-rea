@@ -450,7 +450,7 @@ public partial class AdvHud : Control
     /// Flagged map objects (IAdvMapFlagged): the kinds whose visit captures them in the engine (towns, mines, abandoned
     /// mines, dwarven warrens, garrisons, dwellings, shipyards, lighthouses, dens of thieves).
     /// </summary>
-    static bool IsFlagged(MapObject o) => o.Kind is ObjectKind.Town or ObjectKind.Mine or ObjectKind.AbandonedMine
+    internal static bool IsFlagged(MapObject o) => o.Kind is ObjectKind.Town or ObjectKind.Mine or ObjectKind.AbandonedMine
         or ObjectKind.DwarvenWarren or ObjectKind.Garrison or ObjectKind.Dwelling or ObjectKind.Shipyard
         || o.Kind == ObjectKind.Building && o.Shared.Type is "BUILDING_LIGHTHOUSE" or H5.Adventure.Engine.Adventure.DenOfThieves;
 

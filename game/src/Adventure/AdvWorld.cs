@@ -710,17 +710,18 @@ public partial class AdvWorld : Node3D
         if (removed)
         {
             if (_objects.Remove(index, out var gone)) gone.QueueFree();
+            SyncMarker(index, o, os, null);
             return;
         }
         var (model, animSet) = VisualFor(o, os);
         var key = model + "|" + animSet;
         if (_objects.TryGetValue(index, out var existing))
         {
-            if ((string?)existing.GetMeta("visual", "") == key) return;
+            if ((string?)existing.GetMeta("visual", "") == key) { SyncMarker(index, o, os, existing); return; }
             existing.QueueFree();
             _objects.Remove(index);
         }
-        if (model == null || o.Pos.Floor is < 0 or > 1) return;
+        if (model == null || o.Pos.Floor is < 0 or > 1) { SyncMarker(index, o, os, null); return; }
         Node3D node;
         if (animSet != null)
         {
@@ -747,6 +748,80 @@ public partial class AdvWorld : Node3D
         node.SetMeta("object", index);
         _floors[o.Pos.Floor].AddChild(node);
         _objects[index] = node;
+        SyncMarker(index, o, os, node);
+    }
+
+    // ---------------------------------------------------------------- possession markers
+
+    readonly Dictionary<int, (string Href, Effects.EffectPlayer? Fx)> _markers = new();
+    static Dictionary<string, List<string>>? _markerSchemes;
+
+    /// <summary>
+    /// The owner's marker on a flagged object (CAdvMapFlagged 00452320): the effect is the PossesionMarker of the
+    /// owner's colour scheme (UI/RefTables/PlayerColourSchemes, table 01022ce8 via 00a55b10) at the owner's race
+    /// (008c0910: TownType − 3 for TOWN_HEAVEN..TOWN_STRONGHOLD, else 8; no owner → item 0 of the neutral scheme,
+    /// _BuildingFree_S), played at the object's position plus its shared PossessionMarkerTile (+0x84/+0x88, read by
+    /// 009ff010) turned by the object's rotation (vf 0xa8), at the object's height, with the object's angle (004b6170).
+    /// Not ported: the FLAGGED_CHANGEOWNER sound the same function plays on a change of owner.
+    /// </summary>
+    void SyncMarker(int index, MapObject o, ObjState? os, Node3D? node)
+    {
+        string? href = null;
+        if (node != null && AdvHud.IsFlagged(o))
+        {
+            var s = _session.S;
+            int owner = s.Town(index)?.Owner ?? (os != null && os.Owner >= 0 ? os.Owner : o.Owner);
+            var player = owner >= 0 ? s.Players.Find(p => p.Index == owner) : null;
+            int race = player == null ? 0 : TownTypeValue(player.Race) is int t and >= 3 and < 11 ? t - 3 : 8;
+            var schemes = MarkerSchemes();
+            if (schemes.TryGetValue(player?.Colour is { Length: > 0 } c ? c : "PCOLOR_NEUTRAL", out var list) && race < list.Count)
+                href = list[race] is { Length: > 0 } m ? m : null;
+        }
+        if (_markers.TryGetValue(index, out var cur))
+        {
+            if (cur.Href == href && cur.Fx != null && IsInstanceValid(cur.Fx)) return;
+            if (cur.Fx != null && IsInstanceValid(cur.Fx)) cur.Fx.QueueFree();
+            _markers.Remove(index);
+        }
+        if (href == null || node == null) return;
+        var tile = o.Shared.Raw?.Element("PossessionMarkerTile");
+        int mx = (int?)tile?.Element("x") ?? 0, my = (int?)tile?.Element("y") ?? 0;
+        var at = H5.Adventure.Map.Footprint.Place(o.Pos, (mx, my), o.Rot);
+        var origin = node.Position;
+        var pos = new Vector3(origin.X + (at.X - o.Pos.X) * Unit, origin.Y, origin.Z - (at.Y - o.Pos.Y) * Unit);
+        var fx = Effects.EffectPlayer.PlayAt(href, _floors[o.Pos.Floor], pos, o.Rot);
+        if (fx != null) fx.AutoFree = false;
+        _markers[index] = (href, fx);
+    }
+
+    static readonly string[] TownTypes =
+        { "TOWN_SPECIAL", "TOWN_RANDOM_TYPE", "TOWN_NO_TYPE", "TOWN_HEAVEN", "TOWN_PRESERVE", "TOWN_ACADEMY", "TOWN_DUNGEON",
+          "TOWN_NECROMANCY", "TOWN_INFERNO", "TOWN_FORTRESS", "TOWN_STRONGHOLD" };
+
+    /// <summary>types.xml TownType value of a TOWN_* id, or null.</summary>
+    static int? TownTypeValue(string race)
+    {
+        int i = Array.IndexOf(TownTypes, race);
+        return i < 0 ? null : i;
+    }
+
+    /// <summary>PlayerColourSchemes.xdb: per PCOLOR_* id the PossesionMarker effect of each race scheme, in order.</summary>
+    static Dictionary<string, List<string>> MarkerSchemes()
+    {
+        if (_markerSchemes != null) return _markerSchemes;
+        _markerSchemes = new(StringComparer.Ordinal);
+        const string table = "UI/RefTables/PlayerColourSchemes.xdb";
+        try
+        {
+            if (Game.Instance.Fs.Exists(table))
+                foreach (var item in Game.Instance.Xdb.Load(table).Root?.Elements().SelectMany(e => e.Elements("Item")) ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+                    if ((string?)item.Element("ID") is { Length: > 0 } id)
+                        _markerSchemes[id] = item.Descendants("PossesionMarker")
+                            .Select(m => (string?)m.Attribute("href") is { Length: > 0 } h ? XdbRef.Parse(h, table).Path : "")
+                            .ToList();
+        }
+        catch (Exception e) { GD.PushWarning($"[H5] PlayerColourSchemes: {e.Message}"); }
+        return _markerSchemes;
     }
 
     Node3D StaticNode(string model)
