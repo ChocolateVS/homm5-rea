@@ -274,4 +274,30 @@ public class Mmh55FeatureTests(Mmh55Install m) : IClassFixture<Mmh55Install>
         foreach (var t in towns)
             Assert.Equal(0, t.MaxLevel[t.Type == "TOWN_ACADEMY" ? "TB_SPECIAL_3" : "TB_SPECIAL_4"]);
     }
+
+    /// <summary>
+    /// The 5.5 Wisdom extras are script behaviour (H55-Core.lua H55_ContinuesEvent, lines 9226–9264): a hero with
+    /// PERK_WISDOM learns one of the two H55_UnusualSpells of circle 4 of each of his unusual schools (H55_GetUnusualSchools)
+    /// he has the skill of at level 15 (circle 5 at 25), once per school. They run on our script host.
+    /// </summary>
+    [Fact]
+    public void Mmh55WisdomTeachesACircleFourUnusualSpellAtLevelFifteen()
+    {
+        if (!m.Present) return;
+        var (g, host) = m.Start(Map);
+        var h = HumanHero(g);
+        h.Level = 15;
+        if (!h.HasPerk("HERO_SKILL_WISDOM")) h.Perks.Add("HERO_SKILL_WISDOM");
+        host.L.DoString($@"local s1, s2 = H55_GetUnusualSchools(""{h.DefId}"");
+            H55TEST_SPELLS = H55_UnusualSpells[s1][4];
+            GiveHeroSkill(""{h.DefId}"", s1);
+            H55_WisdomOwners[4][s1][""{h.DefId}""] = nil;
+            H55TEST_BEFORE = (KnowHeroSpell(""{h.DefId}"", H55TEST_SPELLS[1]) or KnowHeroSpell(""{h.DefId}"", H55TEST_SPELLS[2])) and 1 or 0;
+            H55_ContinuesEvent(GetObjectOwner(""{h.DefId}""));
+            H55TEST_KNOWS = (KnowHeroSpell(""{h.DefId}"", H55TEST_SPELLS[1]) or KnowHeroSpell(""{h.DefId}"", H55TEST_SPELLS[2])) and 1 or 0;", "test");
+        host.Tick(10);
+        Assert.Empty(Mmh55Install.OwnErrors(host));
+        Assert.Equal(0, host.L.GetGlobal("H55TEST_BEFORE").N);
+        Assert.Equal(1, host.L.GetGlobal("H55TEST_KNOWS").N);
+    }
 }
