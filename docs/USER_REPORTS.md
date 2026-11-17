@@ -17,6 +17,10 @@ from the description. Move an item to "Done" with the commit when fixed.
    make it readable and themed like the game.
 7. **Browser — F11:** the game captures key input, so F11 full screen does not work in the browser.
 8. **Cursor:** there may be a different cursor when hovering a castle's entrance.
+   *Progress:* in the exe (00600e70) an allied town picked under the mouse gives the own-town cursor before a hero
+   standing on the entrance is considered (a picked hero model gives the finger); we test the hero on the tile first and
+   cannot model-pick heroes, so over a town gate with a hero in it we show the finger. Needs hero model picking and the
+   object order of 00cea350 (GAP row in AUDIT_ADVENTURE, "Own town against the hero on its entrance").
 13. **Fog of war:** unexplored areas are black, but tilting the camera down shows the outlines of
     things in the darkness. Earlier finding (docs/rules/ADVENTURE_RENDER.md, 7be9d21): the original
     also draws unexplored geometry black rather than hiding it, but our blending (linear vs gamma)
