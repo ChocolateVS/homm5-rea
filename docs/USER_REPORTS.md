@@ -10,8 +10,6 @@ from the description. Move an item to "Done" with the commit when fixed.
    - the town screen does not let troops be put into empty slots;
    - Shift while dragging should split a stack;
    - combining stacks within a hero's own army does not work.
-4. **Adventure map creatures:** unsure whether creatures spawn properly on adventure maps
-   (check weekly neutral growth / random monster resolution / week-of events).
 5. **Town:** double-clicking to buy does not work.
 6. **Browser — data picker page:** the first screen (choosing the game files) is very hard to read;
    make it readable and themed like the game.
@@ -21,16 +19,9 @@ from the description. Move an item to "Done" with the commit when fixed.
    standing on the entrance is considered (a picked hero model gives the finger); we test the hero on the tile first and
    cannot model-pick heroes, so over a town gate with a hero in it we show the finger. Needs hero model picking and the
    object order of 00cea350 (GAP row in AUDIT_ADVENTURE, "Own town against the hero on its entrance").
-13. **Fog of war:** unexplored areas are black, but tilting the camera down shows the outlines of
-    things in the darkness. Earlier finding (docs/rules/ADVENTURE_RENDER.md, 7be9d21): the original
-    also draws unexplored geometry black rather than hiding it, but our blending (linear vs gamma)
-    makes the shapes ~2.5× more visible; re-check with the user's view (camera tilted down, not
-    only through light beams) and match the original's look.
 14. **Keyboard shortcuts:** some don't work, e.g. Space to move (continue the hero's route) on the
     adventure map. Check every shortcut against the stock input bindings (input_a2.cfg etc.) and the
     exe's handlers, in the desktop and the browser build (the browser may swallow keys).
-15. **Duel setup screen:** the UI for starting a duel looks broken ("a bit cooked") — compare the
-    duel preset / duel start screens with the exe's screen code and UI data.
 19. **Combat graphics glitches:** "a little bit glitchy" in battle (browser build) — details not given;
     reproduce in a browser duel (smoke harness) and compare with the desktop build to find what
     looks wrong (z-fighting, overlay blend, shadows, flicker). Detail from the user: the blue squares
@@ -98,3 +89,20 @@ from the description. Move an item to "Done" with the commit when fixed.
     object's PossessionMarkerTile turned by its rotation; it is replaced when the owner changes. Open: the
     FLAGGED_CHANGEOWNER sound of the same function; the flagged set is the engine's capture set — commit
     "adventure: possession markers on flagged objects".
+
+4. **Adventure map creatures:** neutral stacks now follow the exe — the stack-count generator 004ee750 (Respawn
+    MonstersMin/Max, √tier × growth, random-upgrade sub, downgrade ×2, custom Amount..Amount2, x87 chop), the
+    CountCoefs difficulty scaling when a monster enters the world (004ef500, also for custom amounts, not with
+    DoesNotDependOnDifficulty) and the weekly growth with its hundredths remainder (004eec20) — commit "adventure:
+    neutral stack sizes, difficulty scaling and weekly growth from the exe". Open: creature-week monster spawns
+    (009919a0, traced in AUDIT_ADVENTURE, not implemented); script-created monsters are not difficulty-scaled
+    (unverified); the RNG stream is ours.
+13. **Fog of war outlines:** the sunbeam/cloud cards over the unexplored black blended in linear space and were ~2×
+    brighter than the exe's gamma-space blend, outlining the black scenery behind them; they now blend in gamma
+    space (A2M1: 48–64 → 22–31 levels over black) — commit "render: sunbeam / cloud cards blend in gamma space like
+    the exe". Unexplored geometry itself stays black as in the exe. Open: distance fog on these cards (FOGENABLE
+    state untraced), overlapping cards add in linear space.
+15. **Duel setup screen:** the hot-seat duel screen now works as the exe's (00733680 / 00732930 / 007447f0): "Hot-Seat
+    Chess Mode", one page per player with Next/Start and Back/Previous, the arena selector with the arena picture and
+    town background (the pink boxes were the additive highlights over bare parchment), the chosen arena used in the
+    battle — commit "ui: hot-seat duel screen as the exe's". Open: the network duel screen has no arena selector.
