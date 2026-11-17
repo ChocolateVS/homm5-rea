@@ -68,6 +68,8 @@
       if (/\.pak$/i.test(p)) return 'data/' + p;
       if (/\.h5u$/i.test(p)) return 'UserMODs/' + p;
       if (/\.h5m$/i.test(p)) return 'Maps/' + p;
+      // The stock key bindings (and options) the game copies into each new profile; no .pak holds them.
+      if (/^(input|user)_a2\.cfg$/i.test(p)) return 'profiles/default_profile/' + p;
     }
     return p;
   }
@@ -168,14 +170,15 @@
       '<p class="h5-sub">Heroes of Might and Magic V: Tribes of the East</p>' +
       '<hr>' +
       '<p>To play, choose your own installed game folder (the one that contains the <code>data</code> folder), ' +
-      'or select the <code>.pak</code> files from inside its <code>data</code> folder.</p>' +
+      'or select the <code>.pak</code> files from inside its <code>data</code> folder ' +
+      '(add <code>profiles/default_profile/input_a2.cfg</code> to them for the keyboard shortcuts).</p>' +
       '<p>Your files stay on this computer. Nothing is uploaded.</p>' +
       '<div class="h5-actions">' +
       (window.showDirectoryPicker ? '<button id="h5-fsa" class="h5-btn" type="button">Choose game folder</button>' : '') +
       '<label class="h5-btn">' + (window.showDirectoryPicker ? 'Select folder (alternative)' : 'Choose game folder') +
       '<input id="h5-dir" class="h5-hidden-input" type="file" webkitdirectory></label>' +
       '<label class="h5-btn">Select .pak files' +
-      '<input id="h5-paks" class="h5-hidden-input" type="file" multiple accept=".pak,.h5u,.h5m"></label>' +
+      '<input id="h5-paks" class="h5-hidden-input" type="file" multiple accept=".pak,.h5u,.h5m,.cfg"></label>' +
       '</div>' +
       '<p class="h5-check"><input id="h5-opfs" type="checkbox" checked>' +
       '<label for="h5-opfs">Remember the game files in this browser (about 2 GB), so you only choose them once.</label></p>' +

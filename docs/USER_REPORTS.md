@@ -116,6 +116,12 @@ from the description. Move an item to "Done" with the commit when fixed.
    and a page key on its own page closes the screen (006c1f70). Every binding of the adventure, town, hero and
    combat sections was checked against our handlers (AUDIT_INPUT). Browser: the game only gets keys while its
    canvas has the focus (Godot cancels Space / Tab defaults there); the data picker now hands the focus back to the
-   canvas. Open: the route is kept per screen as a destination (not saved); a browser session that picked only the
-   .pak files has no profiles/…/input_a2.cfg and therefore no key bindings; Ctrl+1–8 / Ctrl+T may stay with the
+   canvas. Open: the route is kept per screen as a destination (not saved); Ctrl+1–8 / Ctrl+T may stay with the
    browser — same commit.
+   Note (key bindings source): the exe has no built-in bindings and no cfg in its paks; a new profile gets copies of
+   profiles\default_profile\user_a2.cfg / input_a2.cfg (00834a30) and start-up executes the profile's input_a2.cfg,
+   or default_profile's when the profile has no user_a2.cfg (008352a0 → 00834200). We now do the same with
+   user:// profiles (IndexedDB in the browser): the copy is made when a profile is created or first used, so a
+   browser that once saw the game folder keeps its keys on later .pak-only visits. A browser session with only the
+   .pak files and no earlier copy still has no keys (as the exe without the file); the .pak picker now also takes
+   `input_a2.cfg` (placed as profiles/default_profile/) and says so — commit "input: key bindings per profile as the exe".

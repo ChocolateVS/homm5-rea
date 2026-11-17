@@ -9,14 +9,29 @@ Ground truth, in priority order:
    Across all 78 stock `(WindowScreen)` files there are 262 distinct trigger/command pairs; **no** button
    has right-click commands and **no** button carries a hotkey (only `DefaultSubState`) — keys come from
    the input config, right-click behaviour from code.
-3. **Key bindings**: the install's `profiles/default_profile/input_a2.cfg` (the file the game loads),
-   read at runtime by `game/src/Input/KeyBindings.cs` — sections `adventure_screen`, `town_screen`,
+3. **Key bindings**: `input_a2.cfg`, read at runtime by `game/src/Input/KeyBindings.cs` (which file: see
+   *Key binding source* below, `src/H5.Core/IO/ProfileInputConfig.cs`) — sections `adventure_screen`, `town_screen`,
    `hero_screen`, `fort_screen`, `mage_guild_screen`, `tavern_screen`, `market_screen`, `town_build`,
    `buy_war_machine_screen`, `saveload`, `mpcreate`, global.
 4. **Stock manual** (`Game Manual 3.0.pdf`): p.8 tooltips/right-click, p.10 creature info, p.17 hero
    management, p.20 town, p.46 control tables.
 
 Status: **MATCH** (already right), **FIXED** (changed in this audit), **GAP** (not yet original).
+
+## Key binding source
+| Item | Original (evidence) | Ours | Status |
+|---|---|---|---|
+| Built-in defaults | None: the exe holds no bind table and the data paks hold no `.cfg`; bindings exist only by executing an `input_a2.cfg` from disk (00c12930 "Executing …"; a missing file executes nothing) | Same: no file → no bindings, logged `[H5] input: no input_a2.cfg …` | MATCH |
+| New profile | 00834a30 creates the profile folder, then `CopyFileA(Profiles\default_profile\user_a2.cfg → profile)` and the same for input_a2.cfg (file names: globals 00fe6d04 / 00fe6d10, static init 00dc16c0 / 00dc16e0) | `ProfileManager.Create` / `Select` of a new name copy both from the install's `profiles/default_profile/` into `user://profiles/<name>/` (IndexedDB in the browser) | FIXED |
+| Which file runs | Start-up 008352a0 (also 00835000): when `<profile>\user_a2.cfg` exists (004835e0, CreateFileA) 00834200 executes the profile's user_a2.cfg, `unbindall`, the profile's input_a2.cfg, `bind_update`, `..\profiles\p2pdir.cfg`; otherwise the same for default_profile (00834690) | `ProfileInputConfig.Resolve`: the profile's input_a2.cfg when its user_a2.cfg exists, else the install's default_profile copy | FIXED (was: install `profiles/<name>/`, then default_profile; our profiles are not in the install) |
+| Profile switch | 00835530 (called from 0069c680 / 0069cd30 / 0069d390) → 00834a30 → 00834200 executes the new profile's files | `ProfileManager.Changed` → `KeyBindings.Reload` | FIXED |
+| Profiles made before the copy | — (exe profiles always have it) | Port migration: a profile without the copies gets them on first load when the install's default_profile has them, so a browser that once saw the game folder keeps its keys on .pak-only visits | PORT NOTE |
+| Browser, .pak files only, no earlier copy | — (the exe always has its install) | No bindings, as the exe without the file; the .pak picker also accepts `input_a2.cfg` / `user_a2.cfg` (placed as `profiles/default_profile/`) and says so (`web/game/H5Reborn.web/wwwroot/h5data.js`) | PORT NOTE |
+
+Verified off-screen (stock install, fresh `user://` via APPDATA, A2M1): no profile → bindings from the install's
+default_profile; an existing profile without the files → both copied, bindings from the profile copy; route plotted,
+Space moved the hero. Test `ProfileInputConfigTests` (fallback, copy, copy used without the install, no overwrite,
+no file, user_a2.cfg only). The web build was not rebuilt (shared code path; `h5data.js` passes `node --check`).
 
 ## Double-click timing
 | Item | Original | Ours | Status |

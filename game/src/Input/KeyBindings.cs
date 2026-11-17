@@ -3,8 +3,9 @@ using Godot;
 namespace H5Reborn.Interaction;
 
 /// <summary>
-/// The original keyboard bindings, read at runtime from the install's
-/// profiles/default_profile/input_a2.cfg (the file the stock game itself loads).
+/// The original keyboard bindings, read at runtime from the current profile's input_a2.cfg (copied from the
+/// install's profiles/default_profile/ like the exe does), else default_profile's own — see
+/// <see cref="H5.Core.IO.ProfileInputConfig"/> for the exe's lookup.
 /// Each <c>bindsection</c> (adventure_screen, town_screen, hero_screen, …) maps a key
 /// chord to one or more action names; screens dispatch those names to the same
 /// handlers their UI buttons use, so keys and buttons can never disagree.
@@ -59,19 +60,35 @@ public static class KeyBindings
         return result;
     }
 
+    /// <summary>The file the bindings were read from (null: none, so no key bindings — as the exe).</summary>
+    public static string? SourcePath { get; private set; }
+
+    static bool _hooked;
+
+    /// <summary>Drops the parsed bindings; the next lookup reads the current profile's file again.</summary>
+    public static void Reload() { _sections = null; _rawKeys = null; }
+
     static Dictionary<string, List<(Chord, string)>> Load()
     {
+        // A profile switch re-executes the new profile's files (00835530 → 00834a30 → 00834200).
+        if (!_hooked) { _hooked = true; Profiles.ProfileManager.Changed += Reload; }
         var map = new Dictionary<string, List<(Chord, string)>>(StringComparer.OrdinalIgnoreCase) { [Global] = new() };
         string? path = null;
         try
         {
             var root = Game.Instance.Install.Root;
-            // A profile's own copy wins when present (the stock game writes one per profile).
-            var profile = Profiles.ProfileManager.CurrentName;
-            path = (profile != null ? H5.Core.IO.InstallPath.ResolveFile(root, "profiles", profile, "input_a2.cfg") : null)
-                ?? H5.Core.IO.InstallPath.ResolveFile(root, "profiles", "default_profile", "input_a2.cfg");
+            var dir = ProjectSettings.GlobalizePath(Profiles.ProfileManager.CurrentDir);
+            // The exe copies the stock files into every new profile (00834a30). Profiles made before this
+            // port did so, or while the install's default_profile was not available (browser, .pak files
+            // only), get the copy now, so it persists with the profile (user://; IndexedDB in the browser).
+            if (Profiles.ProfileManager.Exists(Profiles.ProfileManager.CurrentName))
+                H5.Core.IO.ProfileInputConfig.CopyStockFiles(root, dir);
+            path = H5.Core.IO.ProfileInputConfig.Resolve(root, dir);
         }
-        catch { /* no install: no bindings */ }
+        catch (Exception e) when (e is not OutOfMemoryException) { /* no install: no bindings */ }
+        SourcePath = path;
+        GD.Print(path != null ? $"[H5] input: key bindings from {path}"
+            : "[H5] input: no input_a2.cfg (profile or install profiles/default_profile): no key bindings");
         if (path == null) return map;
         Parse(System.IO.File.ReadAllLines(path), map);
         return map;

@@ -69,12 +69,24 @@ public static class ProfileManager
     {
         name = name.Trim();
         if (Validate(name) != null) return false;
-        return DirAccess.MakeDirRecursiveAbsolute(SavesDir(name)) == Error.Ok;
+        if (DirAccess.MakeDirRecursiveAbsolute(SavesDir(name)) != Error.Ok) return false;
+        CopyStockFiles(name);
+        return true;
+    }
+
+    /// <summary>
+    /// A new profile gets the install's profiles/default_profile/user_a2.cfg and input_a2.cfg (exe 00834a30
+    /// CopyFileA), so its key bindings live with the profile (see H5.Core.IO.ProfileInputConfig).
+    /// </summary>
+    static void CopyStockFiles(string name)
+    {
+        try { H5.Core.IO.ProfileInputConfig.CopyStockFiles(H5Reborn.Game.Instance.Install.Root, ProjectSettings.GlobalizePath(Dir(name))); }
+        catch (Exception e) when (e is not OutOfMemoryException) { /* no install yet: KeyBindings copies on load */ }
     }
 
     public static void Select(string name)
     {
-        if (!Exists(name)) DirAccess.MakeDirRecursiveAbsolute(SavesDir(name));
+        if (!Exists(name)) { DirAccess.MakeDirRecursiveAbsolute(SavesDir(name)); CopyStockFiles(name); }
         _current = name;
         var cfg = new ConfigFile();
         cfg.SetValue("profile", "name", name);
