@@ -77,15 +77,21 @@ public sealed class ArenaGrid
 
     public Vector3 GridCenter => CellCenter(Width * 0.5f, Height * 0.5f);
 
-    public Vector2I? CellAtWorld(Vector3 world)
+    /// <summary>
+    /// The cell under a world point. <paramref name="bordered"/>: anywhere on the engine's bordered field (MarginX / MarginY
+    /// cells round the playable grid) — the exe's world → cell (combat vf 0x70 = FUN_00af15a0) floors the point with no
+    /// bounds test, and the war machines and heroes stand on those border cells (BattleSetup.WarMachineCell).
+    /// </summary>
+    public Vector2I? CellAtWorld(Vector3 world, bool bordered = false)
     {
         var m = WorldToMap(world);
         var c = new Vector2I(Mathf.FloorToInt(m.X - OriginTileX), Mathf.FloorToInt(m.Y - OriginTileY));
+        if (bordered) return c.X >= -MarginX && c.Y >= -MarginY && c.X < Width + MarginX && c.Y < Height + MarginY ? c : null;
         return InBounds(c) ? c : null;
     }
 
     /// <summary>Intersects a picking ray with the terrain under the grid (march, then bisect).</summary>
-    public Vector2I? CellAtRay(Vector3 origin, Vector3 dir)
+    public Vector2I? CellAtRay(Vector3 origin, Vector3 dir, bool bordered = false)
     {
         if (dir.Y >= -1e-4f) return null;
         dir = dir.Normalized();
@@ -105,7 +111,7 @@ public sealed class ArenaGrid
                     var mq = WorldToMap(q);
                     if (q.Y <= HeightAt(mq.X, mq.Y)) hi = mid; else lo = mid;
                 }
-                return CellAtWorld(origin + dir * hi);
+                return CellAtWorld(origin + dir * hi, bordered);
             }
             prevT = t;
             t += step;

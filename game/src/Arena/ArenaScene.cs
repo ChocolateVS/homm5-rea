@@ -307,8 +307,8 @@ public partial class ArenaScene : Node3D
     }
 
     /// <summary>Picks the grid cell under a screen position, or null.</summary>
-    public Vector2I? CellAtScreen(Vector2 screenPos) =>
-        Grid.CellAtRay(Camera.ProjectRayOrigin(screenPos), Camera.ProjectRayNormal(screenPos));
+    public Vector2I? CellAtScreen(Vector2 screenPos, bool bordered = false) =>
+        Grid.CellAtRay(Camera.ProjectRayOrigin(screenPos), Camera.ProjectRayNormal(screenPos), bordered);
 }
 
 /// <summary>Resolves creature IDs to their original visual assets.</summary>

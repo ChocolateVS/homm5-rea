@@ -97,7 +97,18 @@ public partial class CombatScreen : Control
         _signs.Attach(Arena.Camera);
 
         foreach (var u in Session.Battle.State.Units)
-            if (!u.IsObject && !IsTowerUnit(u) && (u.Alive || u.IsWarMachine)) AddUnitView(u);
+            if (!u.IsObject && !IsTowerUnit(u) && (u.Alive || u.IsWarMachine))
+            {
+                var uv = AddUnitView(u);
+                // A stack up in a dive (FX_DIVING) is off the field until it lands.
+                if (u.HasEffect("FX_DIVING"))
+                {
+                    uv.Visible = false;
+                    uv.UpdatePlaque();
+                    foreach (var f in Session.Battle.State.Fields)
+                        if (f.Kind is "BATTLE_DIVE" or "PACK_DIVE" && f.SourceUnit == u.Id) _diveFields[f.Id] = u.Id;
+                }
+            }
         for (int side = 0; side < 2; side++) AddHeroView(side);
 
         Hud = new CombatHud(this);
@@ -274,11 +285,11 @@ public partial class CombatScreen : Control
         {
             var c = CharacterBuilder.Build(characterPath);
             c.Name = $"Hero{side}";
-            // The stock manual's combat screenshot (Game Manual 3.0 p.14) shows a hero standing in
-            // a ~2-cell square just outside the grid's left edge beside the far rows; with the
-            // armies deployed along the 12-cell edges, each hero stands off the left end of its
-            // own deployment rows (attacker: near rows, defender: far rows), facing the field.
-            var pos = Arena.Grid.CellCenter(-1.0f, side == 0 ? 1.0f : ArenaGrid.Height - 1.0f);
+            // exe FUN_00c56b90: the hero stands at the mean of the world positions of two border cells (combat vf 0x6c)
+            // behind its own army at the far rows — the attacker's at the left border, the defender's at the right
+            // (BattleSetup.HeroCells), clear of the war machines (FUN_00c551f0). Both heroes are set up (FUN_00853e70).
+            var (ca, cb) = BattleSetup.HeroCells(Session.Battle.State, side);
+            var pos = (Arena.Grid.CellCenter(new Vector2I(ca.X, ca.Y)) + Arena.Grid.CellCenter(new Vector2I(cb.X, cb.Y))) * 0.5f;
             c.Position = pos;
             // Models face Godot +Z at yaw 0 (see UnitView.FaceTowards).
             var d = Arena.Grid.GridCenter - pos;
@@ -418,6 +429,20 @@ public partial class CombatScreen : Control
             _pendingAbility = abo;
             id = abo.Targets.Where(t => ak.Length < 2 || (Session.Battle.State.Unit(t)?.CreatureId.Contains(ak[1]) ?? false)).Cast<int?>().FirstOrDefault();
         }
+        else if (kind.StartsWith("shoot:") || kind.StartsWith("melee:"))
+        {
+            // "shoot:CREATURE_PART" / "melee:CREATURE_PART": defend until a stack can shoot / strike a target whose creature id
+            // contains the part (e.g. WAR_MACHINE), then hover it.
+            var part = kind[6..];
+            var ids = kind.StartsWith("shoot:") ? la.Shoot : la.Melee.Keys.ToList();
+            id = ids.Where(t => Session.Battle.State.Unit(t)?.CreatureId.Contains(part) ?? false).Cast<int?>().FirstOrDefault();
+            if (id == null)
+            {
+                if (!la.IsHero && !Session.Busy && !_playing) Session.Submit(new DefendCmd(la.Actor) { Side = la.Side });
+                else if (la.IsHero && !Session.Busy && !_playing) Session.Submit(new WaitCmd(la.Actor) { Side = la.Side });
+                return;
+            }
+        }
         else id = kind == "shoot" ? la.Shoot.Cast<int?>().FirstOrDefault() : la.Melee.Keys.Cast<int?>().FirstOrDefault();
         if (id is not int tid || Session.Battle.State.Unit(tid) is not { } t) return;
         var p = Arena.Camera.UnprojectPosition(Arena.Grid.StackCenter(new Vector2I(t.Pos.X, t.Pos.Y), t.Size) + new Vector3(0, 0.3f, 0));
@@ -508,6 +533,10 @@ public partial class CombatScreen : Control
         }
         CombatLogText.SetViewSide(Session.ViewSide);
         FlushCastLine(e);
+        // A dive's landing shows with the finishing strike (AnimateAttack); with no strike, at the next other event.
+        if (_diveLanding is int landing && e is not (EffectAdded or EffectRemoved or Teleported or AttackStarted or AtbChanged)
+            && !(e is AbilityTriggered lat && lat.UnitId == landing))
+            await LandDiver(null);
         switch (e)
         {
             case TurnStarted t:
@@ -670,6 +699,10 @@ public partial class CombatScreen : Control
                 }
                 break;
 
+            case FieldChanged { Kind: "BATTLE_DIVE" or "PACK_DIVE" } fc:
+                await DiveField(fc);
+                break;
+
             case BuildingDamaged bd:
                 await FinishAttack();
                 _siege?.OnDamaged(bd);
@@ -819,7 +852,13 @@ public partial class CombatScreen : Control
             AttackKind.Hero => "attack00",
             _ => "attack00",
         };
-        if (attackerNode is UnitView u)
+        if (attackerNode is UnitView diver && _diveLanding == diver.UnitId)
+        {
+            // Battle Dive finish (exe 008a9220 case 0x9b): the griffins dive down at the landing cell with specability2
+            // and strike; the hit lands at the clip's action moment.
+            await LandDiver(target);
+        }
+        else if (attackerNode is UnitView u)
         {
             if (!u.Has(kind)) kind = u.Has("attack00") ? "attack00" : "attack";
             if (a.Kind is AttackKind.Melee or AttackKind.Retaliation && u.Has("attack01") && (Session.Battle.State.TurnCounter + a.Target) % 2 == 1)
@@ -1004,6 +1043,55 @@ public partial class CombatScreen : Control
     int _shotCount, _spellCount, _moveCount, _heroStrikeCount;
 
     /// <summary>The catapult hurls its boulder at the building hit next (the following BuildingDamaged event).</summary>
+    /// <summary>Dive fields in play → the diving stack (the AbilityTriggered just before the field is added names it).</summary>
+    readonly Dictionary<int, int> _diveFields = new();
+    /// <summary>A stack whose dive just finished: shown again when it lands (<see cref="LandDiver"/>).</summary>
+    int? _diveLanding;
+
+    /// <summary>
+    /// Battle Dive / Pack Dive take-off and finish (exe FUN_008a9220, the creature's visual reaction to its own spell:
+    /// case 0x9a / 0x15a plays "specability1" — the griffins fly up off the field (vf 0xe8(1) takes them off it); case
+    /// 0x9b plays "specability2" at the landing). The take-off clip runs, then the stack is hidden until it lands.
+    /// </summary>
+    async Task DiveField(FieldChanged fc)
+    {
+        if (!fc.Removed)
+        {
+            if (_lastAbility is not { } ab || ab.Ability is not ("ABILITY_BATTLE_DIVE" or "ABILITY_PACK_DIVE") || View(ab.UnitId) is not { } v) return;
+            _diveFields[fc.FieldId] = ab.UnitId;
+            await FinishAttack();
+            if (fc.Cells.Count > 0)
+                await v.TurnTo(v.YawTowards(Arena.Grid.CellCenter(new Vector2I(fc.Cells[0].X, fc.Cells[0].Y))));
+            if (v.Has("specability1"))
+            {
+                v.PlayAction("specability1");
+                await Delay(Math.Max(0.2f, v.Length("specability1")));
+            }
+            v.Visible = false;
+            v.UpdatePlaque();
+            return;
+        }
+        if (_diveFields.Remove(fc.FieldId, out var unit)) _diveLanding = unit;
+    }
+
+    /// <summary>The landing of a finished dive: the stack reappears at its (new) cell and plays "specability2".</summary>
+    async Task LandDiver(UnitView? target)
+    {
+        if (_diveLanding is not int id) return;
+        _diveLanding = null;
+        if (View(id) is not { } v || v.Dead) return;
+        await FinishAttack();
+        if (target != null) v.FaceTowards(target.GlobalPosition);
+        v.Visible = true;
+        v.UpdatePlaque();
+        const string kind = "specability2";
+        if (!v.Has(kind)) { v.Idle(); return; }
+        v.PlayAction(kind);
+        float action = target != null ? v.ActionTime(kind) : v.Length(kind), length = v.Length(kind);
+        await Delay(Math.Max(0.15f, action));
+        _attackRemainderUntil = Now + Math.Max(0, length - action);
+    }
+
     async Task AnimateCatapult(UnitView cat)
     {
         await FinishAttack();
@@ -1179,7 +1267,8 @@ public partial class CombatScreen : Control
             ShowStaticHighlights(null);
             return;
         }
-        var cell = Arena.CellAtScreen(mouse);
+        // Border cells too: the war machines stand there (exe FUN_00c551f0), and the exe picks without a bounds test.
+        var cell = Arena.CellAtScreen(mouse, bordered: true);
         if (cell == _lastHover && mouse.DistanceTo(_lastMouse) < 2) return;
         _lastHover = cell;
         _lastMouse = mouse;
@@ -1363,6 +1452,8 @@ public partial class CombatScreen : Control
         var s = b.State;
         var cell = new Cell(hc.X, hc.Y);
         var occupant = s.At(cell);
+        // Off the playable grid only a unit standing there (a war machine) can be the target.
+        if (!s.InBounds(cell) && (occupant == null || s.Phase == BattlePhase.Tactics)) return null;
         if (occupant is { Alive: true } && _mode == InputMode.Normal) _rangeStack = occupant.Id;
 
         if (s.Phase == BattlePhase.Tactics)
@@ -1409,6 +1500,7 @@ public partial class CombatScreen : Control
                     cursor = CombatCursor.CantCast;
                     return null;
                 case Battle.SpellTargeting.Cell:
+                    if (!s.InBounds(cell)) { cursor = CombatCursor.CantCast; return null; }
                     cursor = CombatCursor.Cast;
                     // Area spells mark the cells they will hit (the engine's area for the spell), others the aimed cell.
                     var area = Battle.AreaCells(sp.Spell, cell);
@@ -1434,6 +1526,7 @@ public partial class CombatScreen : Control
             }
             if (ab.Targeting == Battle.AbilityTargeting.Cell)
             {
+                if (!s.InBounds(cell)) { cursor = CombatCursor.CantCast; return null; }
                 cursor = CombatCursor.Ability;
                 hl.Add((cell, 1, CellMark.Affected));
                 var useC = new UseAbilityCmd(la.Actor, ab.Ability, null, cell) { Side = side };
@@ -1584,7 +1677,7 @@ public partial class CombatScreen : Control
             // Right click (not a camera drag) shows the small creature tooltip next to the cursor
             // (exe 00575430); repeated right-clicks on the same stack cycle info → info → active
             // effects (click count mod 3; fan manual p.304).
-            if (!_camera.RightDragged && !_playing && _mode == InputMode.Normal && Arena.CellAtScreen(rel.Position) is { } rc
+            if (!_camera.RightDragged && !_playing && _mode == InputMode.Normal && Arena.CellAtScreen(rel.Position, bordered: true) is { } rc
                 && Session.Battle.State.At(new Cell(rc.X, rc.Y)) is { } info && !info.IsObject)
                 ShowTooltip(info, rel.Position);
             return;
@@ -1593,7 +1686,7 @@ public partial class CombatScreen : Control
         if (e is not InputEventMouseButton { Pressed: true } mb) return;
         if (mb.ButtonIndex == MouseButton.Left) HideTooltip();
         if (_playing) return;
-        var cell = Arena.CellAtScreen(mb.Position);
+        var cell = Arena.CellAtScreen(mb.Position, bordered: true);
         if (mb.ButtonIndex == MouseButton.Right)
         {
             if (_mode != InputMode.Normal) CancelTargeting();

@@ -321,15 +321,14 @@ public static class BattleSetup
         int maxD = wm != null && wm.MaxDamageFactor.Length > 0 ? (int)Math.Round(wm.MaxDamageFactor[Math.Min(m, wm.MaxDamageFactor.Length - 1)] * mult) : 0;
         minD = MoonWeek.MightDamage(minD, s.Week); maxD = MoonWeek.MightDamage(maxD, s.Week);   // exe 004bc710 / 004bc780
         double init = SkillAuditH.WarMachineInitiative(db, h, wm?.Initiative ?? 10);   // exe 00a75930 → 004bae60
-        // War machines stand just outside the grid behind their army (column -1 / Width).
-        int x = side == 0 ? -1 : s.Width;
-        int y = machineId switch { "WAR_MACHINE_BALLISTA" => 1, "WAR_MACHINE_FIRST_AID_TENT" => s.Height - 2, _ => s.Height / 2 };
+        int size = Math.Max(1, wm?.CombatSize ?? 1);
+        var (x, y) = WarMachineCell(s, side, machineId, size);
         var u = new Unit
         {
             Id = s.NextId++, Side = side, Kind = UnitKind.WarMachine, CreatureId = machineId,
             Name = machineId.Replace("WAR_MACHINE_", "").Replace('_', ' '), Town = Towns.Neutral, Tier = 1, Level = 1,
             BaseAttack = att, BaseDefence = def, BaseMinDamage = minD, BaseMaxDamage = maxD, BaseHealth = hp,
-            BaseSpeed = 0, BaseInitiative = init, MaxShots = wm?.Shots ?? 0, Shots = wm?.Shots ?? 0, Size = 1, Power = 1,
+            BaseSpeed = 0, BaseInitiative = init, MaxShots = wm?.Shots ?? 0, Shots = wm?.Shots ?? 0, Size = size, Power = 1,
             Abilities = new List<string> { Ab.Mechanical },
             Count = 1, InitialCount = 1, Pos = new Cell(x, y), StartPos = new Cell(x, y),
         };
@@ -337,6 +336,59 @@ public static class BattleSetup
         u.RetaliationsLeft = 0;
         s.Units.Add(u);
         return u;
+    }
+
+    /// <summary>
+    /// The exe's battlefield type (combat +0xa4, combat vf 0x40 = FUN_00af7e80; vf 0x44 = FUN_00af1450 gives its bordered
+    /// size): 1 → 7×7 (11×9), 2 → 12×14 (16×16), 3 → 14×14 (18×16), 4 → 12×10 (16×12). Ours by the playable size.
+    /// </summary>
+    public static int ExeFieldType(BattleState s) => (s.Width, s.Height) switch { (7, 7) => 1, (12, 14) => 2, (14, 14) => 3, _ => 4 };
+
+    /// <summary>
+    /// War machine rows (exe table 00e8e010, FUN_00c55190): row index = position of the field type in {1, 4, 2, 3}
+    /// (00e8e060), column = position of the machine type in {1 Ballista, 2 Catapult, 3 First Aid Tent, 4 Ammo Cart}
+    /// (00e8e050). Exe (bordered) row of the machine's maximum corner.
+    /// </summary>
+    static readonly int[,] WarMachineRows = { { 3, 4, 5, 1 }, { 6, 5, 4, 2 }, { 5, 8, 11, 2 }, { 5, 8, 11, 2 } };
+
+    /// <summary>
+    /// A war machine's cell (lowest corner) — exe FUN_00c551f0 (called for each machine of the hero by the hero setup
+    /// FUN_00c56b90): with the bordered field W×H of combat vf 0x44, x = 1 for the army set up with flag 1 (FUN_00853e70:
+    /// the first army, ours the attacker, side 0) else W − 2; y from <see cref="WarMachineRows"/>. A machine of size 2
+    /// (the WarMachines.xdb CombatSize, record +0x8c via FUN_004baf30; the unit's size vf 0x44 = FUN_00a757f0 reads it)
+    /// also covers x − 1 (flag 1) or x + 1, and y − 1. The exe cell (x, y) is ours (x − 2, y − 1) (ExeAutoPlacement).
+    /// So the machines stand in the two border columns behind their army, outside the playable grid.
+    /// </summary>
+    public static (int X, int Y) WarMachineCell(BattleState s, int side, string machineId, int size)
+    {
+        int type = machineId switch
+        {
+            "WAR_MACHINE_BALLISTA" => 0, "WAR_MACHINE_CATAPULT" => 1, "WAR_MACHINE_FIRST_AID_TENT" => 2, _ => 3,
+        };
+        int row = ExeFieldType(s) switch { 1 => 0, 4 => 1, 2 => 2, _ => 3 };
+        int w = s.Width + 4;
+        bool first = side == 0;
+        int ex = first ? 1 : w - 2, ey = WarMachineRows[row, type];
+        if (size == 2)
+        {
+            if (first) ex -= 1;
+            ey -= 1;
+        }
+        return (ex - 2, ey - 1);
+    }
+
+    /// <summary>
+    /// The hero's stand (exe FUN_00c56b90, before the war machines): the centre of exe cells (x, H − 2) and (x − 1, H − 3)
+    /// with x = 1 for the flag-1 army (ours side 0) else W − 1 (W×H = combat vf 0x44's bordered field) — i.e. the 2×2
+    /// border square at the far rows (high y) behind the army: ours x −2..−1 (side 0) or Width..Width+1, y Height−2..Height−1.
+    /// Both armies' heroes are set up this way (FUN_00853e70 calls it for each army that has a hero). Returns the two cells
+    /// whose world positions the exe averages.
+    /// </summary>
+    public static (Cell A, Cell B) HeroCells(BattleState s, int side)
+    {
+        int w = s.Width + 4, h = s.Height + 2;
+        int ex = side == 0 ? 1 : w - 1;
+        return (new Cell(ex - 2, h - 2 - 1), new Cell(ex - 1 - 2, h - 3 - 1));
     }
 
     /// <summary>

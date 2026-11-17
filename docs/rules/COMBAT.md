@@ -31,7 +31,8 @@ IBattleAI ai = new GreedyBattleAI(); BattleCommand cmd = ai.Decide(battle, side)
 ## Implemented
 
 * Battlefield 12x10 (x = attacker→defender axis, as in the Lua combat API), 1x1 and 2x2 creatures, obstacles
-  (random per `combat/Obstacles` until arena layouts are decoded), war machines just outside the grid.
+  (random per `combat/Obstacles` until arena layouts are decoded), war machines and heroes on the
+  engine's border cells behind their army (exe FUN_00c551f0 / FUN_00c56b90, `BattleSetup.WarMachineCell` / `HeroCells`).
 * ATB (p.309-313): start 0..0.25, rate = Initiative/10, wait → 0.5, defend → 0 (+30% defence, ×2 with Stand Your Ground),
   good morale → 0.5 after acting, bad morale → 0.5 and skip, hero initiative 10, spell durations in initiative-10 turns,
   Sorcery/mass-spell hero ATB resets, Swift Mind, Divine Guidance, Teleport Assault, Wasp Swarm/Lightning/Ice ATB effects.
@@ -57,7 +58,6 @@ IBattleAI ai = new GreedyBattleAI(); BattleCommand cmd = ai.Decide(battle, side)
 ## Not implemented yet
 
 * Hero: Power Bargain. Summoned elemental type by terrain.
-* Exact original hero / war machine cells (not located in the exe).
 * Siege: the ×1.5 tower damage condition of `00bcdf10` (ids 0x49/0x4b from the battle object) is unidentified;
   town building combat bonuses (Tavern morale, grail luck, Infernal Loom, …) belong to the adventure layer and are
   not applied by `SiegeSetup` yet.
