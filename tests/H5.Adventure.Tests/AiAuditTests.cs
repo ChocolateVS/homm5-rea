@@ -229,8 +229,11 @@ public class AiAuditTests(Fixture f)
         Assert.Equal(2, OriginalAdventureAI.HeroLevelFactor(new HeroState { Level = 10 }, diff));
         // 00bc3f90: Lanchester survival, quartered losses when no human sees the tile.
         Assert.Equal(1.0, OriginalAdventureAI.Survival(100, 10, false));
-        Assert.Equal(System.Math.Sqrt(3) / 2, OriginalAdventureAI.Survival(2, 1, false), 12);
-        Assert.Equal(1 - (1 - System.Math.Sqrt(3) / 2) * 0.25, OriginalAdventureAI.Survival(2, 1, true), 12);
+        // 00bc3fb6..00bc3fdb: every step chopped to 24 bits: chop(sqrt(3)) / 2 = 0.86602538824 (the double gave 0.86602540378).
+        float s = H5.Core.Numerics.X87.Div(H5.Core.Numerics.X87.Sqrt(3), 2.0);
+        Assert.Equal(0.86602538824081421, (double)s, 15);
+        Assert.Equal(s, OriginalAdventureAI.Survival(2, 1, false));
+        Assert.Equal(H5.Core.Numerics.X87.Sub(1f, H5.Core.Numerics.X87.Mul(H5.Core.Numerics.X87.Sub(1f, s), 0.25)), OriginalAdventureAI.Survival(2, 1, true));
         // 004e9fe0: ValueOfHeroLevelPow2 · (level + progress)².
         Assert.Equal(st.ValueOfHeroLevelPow2, OriginalAdventureAI.LevelValue(g, st, 0));
         Assert.Equal((long)(st.ValueOfHeroLevelPow2 * 1.5 * 1.5), OriginalAdventureAI.LevelValue(g, st, 500));

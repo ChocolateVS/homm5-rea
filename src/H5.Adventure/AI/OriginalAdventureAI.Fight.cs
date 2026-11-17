@@ -43,27 +43,29 @@ public sealed partial class OriginalAdventureAI
     }
 
     /// <summary>
-    /// Share of the army that survives (exe FUN_00bc3f90): 1 when A ≥ 10·E, else sqrt(A² − E²) / A; when no human
-    /// player sees the battle tile (FUN_0098dbf0) the loss is quartered: 1 − (1 − s) · 0.25.
+    /// Share of the army that survives (exe FUN_00bc3f90): 1 when A ≥ chop(10·E), else chop(chop(sqrt(chop(chop(A²) − chop(E²))))
+    /// / A); when no human player sees the battle tile (FUN_0098dbf0) the loss is quartered: 1 − (1 − s) · 0.25 — the
+    /// operands are doubles in memory, every FMUL / FSUBP / FSQRT / FDIVRP / FSUBR chopped to 24 bits (00bc3f98..00bc3fdb).
     /// </summary>
     public static double Survival(double a, double e, bool unseen)
     {
-        if (a >= e * 10.0) return 1.0;
-        double s = Math.Sqrt(a * a - e * e) / a;
-        return unseen ? 1.0 - (1.0 - s) * 0.25 : s;
+        if (!(a < X87.Mul(e, 10.0))) return 1.0;
+        float s = X87.Div(X87.Sqrt(X87.Sub(X87.Mul(a, a), X87.Mul(e, e))), a);
+        return unseen ? X87.Sub(1f, X87.Mul(X87.Sub(1f, s), 0.25)) : s;
     }
 
     /// <summary>
     /// Value of a hero's experience (exe FUN_004e9fe0): L = level of the experience (00b4c840), progress
-    /// p = (exp − t[L]) / (t[L+1] − t[L]) + L, value = ftol(ValueOfHeroLevelPow2 · p · p).
+    /// p = chop(chop((exp − t[L]) / (t[L+1] − t[L])) + L) (FILD, FDIVR, FIADD; 004ea002..004ea024), value =
+    /// ftol(chop(chop(ValueOfHeroLevelPow2 (int +0x2bc) · p) · p)) (004ea02d..004ea041).
     /// </summary>
     public static long LevelValue(Engine.Adventure g, AdventureAiStats st, int exp)
     {
         var t = g.Core.Experience;
         int l = t.LevelFor(exp);
         long baseExp = t.For(l), next = l >= 40 ? int.MaxValue : t.For(l + 1);
-        double p = (double)(exp - (int)baseExp) / (int)(next - baseExp) + l;
-        return (long)(st.ValueOfHeroLevelPow2 * p * p);
+        float p = X87.Add(X87.Div(exp - (int)baseExp, (int)(next - baseExp)), l);
+        return (long)X87.Mul(X87.Mul(st.ValueOfHeroLevelPow2, p), p);
     }
 
     /// <summary>

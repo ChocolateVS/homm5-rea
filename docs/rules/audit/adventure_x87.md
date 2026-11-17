@@ -29,6 +29,8 @@ round-to-nearest conversions where the exe truncates, and from `+ 0.5` roundings
 | Army power for diplomacy (neutral join / flee, stack splitting) | GAP | 004eabb0 / 004eab10 → 004eaaa0 → 004e9b90 | not the fan manual formula: R = FILD qword Σ(hero army) / FILD qword Σ(other army) (004eabb0, FDIVR, chopped) or / ftol(max(Power, 1) · 100.0) of one creature (004eab10); the per-stack value 004e9b90 is count (stack +0x20) · ftol(a chain of stat-delta terms): ftol(max(Power (+0x84), 1) · 100.0), × 140 / 100 for a shooter (+0x4c > 0) of a hero with vf 0x324 > 0, + chop((attack 004bc470 − base +0x64) · RPGStats-AI +0x250), + chop((defence-type sum 004bbfb0 − +0x54 − +0x50 + 004bc020) · +0x254), then damage (004bb170 / 004bb2a0), spells (00c0a200 / 00c0a2c0), +0x270 / +0x274 terms (004bb3c0, 004bb3f0, 004bc190), each FADD of FILD qword and ftol. Not ported (the engine keeps Σ Power · count · (1 + C·morale)(1 + C·luck)); a full trace of 004e9b90 is open | double | |
 | AI army sum (fight estimate) | FIXED | 004ea5c0 (004ea676..004ea684, 004ea72e), 00c02ac0 | per stack FILD qword v · k (double 1.0, or SiegeShootersCoef / SiegeFlyerCoef), FILD qword total, FADDP, `_ftol`: chopped to 24 bits, so sums above 2^24 lose their low bits (2^24 + 1 + 2 → 16777218); the human factor ftol(chop(total · chop(+0xc + 1.0f))) | exact 64-bit sum | AdventureX87Tests.AiArmySumChopsAbove2To24 |
 | AI hero level factor | MATCH | 004ea520 | ftol(chop(chop(level · +0x1c) + 1.0)): chopping never crosses an integer, so the double port's truncation is the same | double | |
+| AI survival share | FIXED | 00bc3f90 (00bc3f98..00bc3fdb) | 1.0 unless A < chop(E · 10.0); s = chop(chop(sqrt(chop(chop(A²) − chop(E²)))) / A); unseen: chop(1 − chop(chop(1 − s) · 0.25)). Operands doubles, every step chopped: A 2, E 1 → 0.86602539 | double (0.86602540) | AiAuditTests.Fight_estimate_uses_power_sums_square_law_survival_and_experience_value |
+| AI experience value | FIXED | 004e9fe0 (004ea002..004ea041) | p = chop(chop((exp − t[L]) / (t[L+1] − t[L])) + L), ftol(chop(chop(ValueOfHeroLevelPow2 · p) · p)) | double | |
 | AI danger reach | FIXED | 00872330 (explicit chop control word) | trunc(chop(chop(move points (vf 0xfc) · +0x220) + +0x224)); which move points vf 0xfc returns (ours: the maximum) is not separated | `Math.Round` (half to even) | |
 | Morale / luck sums | MATCH | — | integer sums (`HeroMorale`, `HeroLuck`) | integer | |
 | Power Bargain spell cost | FIXED | 00a34740 (00a3490b..00a34973) | f = chop(chop(1.0f − reduce (+0x8f4 block +0xc)) − chop(level · per (+0x14))), clamp 0.5..1 (004738f0), FIMUL cost, FISTP under OR AH,0xc. r 0.1, per 0.05, level 1, cost 20 → 0.84999996 → 16 | the double 1 − r − level · per rounded to a float (17) | AdventureX87Tests.PowerBargainCostChopsEachStep |
@@ -40,5 +42,5 @@ round-to-nearest conversions where the exe truncates, and from `+ 0.5` roundings
 ## Not yet checked
 
 `GameDatabase` / `MapLoader` position rounding, the AI's other value formulas in src/H5.Adventure/AI (threat values,
-the survival share and experience value (double ports of 00bc3f90 / 004e9fe0), recruit / build scoring), and the
-per-stack army power 004e9b90 above.
+the battle estimate's rival-army adjustment and the defender-hero share (00bc3af0), hero attribute values, recruit /
+build scoring), and the per-stack army power 004e9b90 above.
