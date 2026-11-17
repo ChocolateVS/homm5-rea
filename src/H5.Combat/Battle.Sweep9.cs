@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Core.Data;
 
 namespace H5.Combat;
@@ -73,14 +74,15 @@ public sealed partial class Battle
 
     /// <summary>
     /// Guardian Angel's resurrection (exe FUN_00988860 → FUN_00984a00 case 0xf1 → FUN_009789b0 case 0xf1 @ 00978be8..00978bf2):
-    /// the hit points are round(max(0, FUN_00a34ca0(ECX = 0x30 SPELL_RESURRECT, EDX = 3 Expert, power = hero level vf 0x23c)))
+    /// the hit points are trunc(max(0, FUN_00a34ca0(ECX = 0x30 SPELL_RESURRECT, EDX = 3 Expert, power = hero level vf 0x23c)))
+    /// (00978be8..00978bf2: a compare with 0.0, a plain FISTP under the chop control word; the formula chopped, 00a34c40)
     /// — Resurrect's damage table at Expert (Base 240, PerPower 30 in the stock data, which MMH55 does not override), not
     /// SPELL_EFFECT_GUARDIAN_ANGEL's own table. FUN_00a34c40 clamps the mastery index to the table length.
     /// </summary>
     internal int GuardianAngelAmount(HeroState h)
     {
         var sp = Db.Spell("SPELL_RESURRECT");
-        double v = sp != null && sp.Damage.Length > 0 ? sp.DamageAt(Mastery.Expert).Eval(h.Level) : 0;
-        return (int)Math.Round(Math.Max(0, v), MidpointRounding.ToEven);
+        float v = sp != null && sp.Damage.Length > 0 ? sp.DamageAt(Mastery.Expert).EvalX87(h.Level) : 0f;
+        return v <= 0f ? 0 : (int)v;
     }
 }

@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 namespace H5.Combat;
 
 // Creature ability trigger chance and roll, as H5_Game.exe computes them (docs/rules/audit/combat_abilities.md).
@@ -37,16 +38,16 @@ public sealed partial class Battle
 
     /// <summary>
     /// Paw Strike chance for <paramref name="walked"/> tiles (exe FUN_00a5d1b0): p = ProcPercent(PawStrike_ProcFactor, Soldier's
-    /// Luck doubles); in single precision fail = Π (100 − p)·0.01 over the tiles; result = round-to-nearest((1 − fail)·100 + 0.5)
-    /// (FISTP in the default rounding mode, not truncation). No tiles, no chance.
+    /// Luck doubles); fail = chop(chop((100 − p) · fail) · 0.01f) per tile; result = trunc(chop(chop(chop(1 − fail) · 100) + 0.5))
+    /// (every FMUL chopped, the plain FISTP truncates under the game's control word). No tiles, no chance.
     /// </summary>
     internal int PawStrikePercent(Unit attacker, Unit target, int walked, int? targetHpOverride = null)
     {
         if (walked <= 0) return 0;
         int p = ProcPercent(attacker, target, Stats.Get("combat/Creatures/Fortress/PawStrike_ProcFactor", 1), targetHpOverride, soldiersLuckDoubles: true);
         float fail = 1f, q = 100f - p;
-        for (int i = 0; i < walked; i++) fail = q * fail * 0.01f;
-        return (int)Math.Round((double)((1f - fail) * 100f + 0.5f), MidpointRounding.ToEven);
+        for (int i = 0; i < walked; i++) fail = X87.Mul(X87.Mul(q, fail), 0.01f);
+        return (int)X87.Add(X87.Mul(X87.Sub(1f, fail), 100f), 0.5f);
     }
 
     /// <summary>

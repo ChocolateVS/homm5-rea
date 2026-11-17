@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Core.Data;
 
 namespace H5.Combat;
@@ -111,12 +112,13 @@ public static class SiegeBuilder
             if (def.Type == "MOAT")
             {
                 sg.Moat = def.BlockedTiles.Select(F).Where(s.InBounds).Distinct().ToList();
-                // exe FUN_0085b6d0: 0 for TOWN_NO_TYPE (owner vf 0x58 = 2), else round(TownTypesInfo <Moat><MoatMaxDamage>
+                // exe FUN_0085b6d0: 0 for TOWN_NO_TYPE (owner vf 0x58 = 2), else trunc(TownTypesInfo <Moat><MoatMaxDamage>
                 // (the record's +0xcc: Moat at obj +0xc8 per the loader FUN_00413e00, MaxDamage at +4 per FUN_00413b60) ·
-                // the town's vf 0x74 factor) — FPU rounding (half to even), not truncation; vf 0x74 is the factor the
+                // the town's vf 0x74 factor) — FILD, FMUL, a plain FISTP that truncates under the game's chop control word
+                // (the earlier "half to even" reading took Ghidra's ROUND literally); vf 0x74 is the factor the
                 // tower damage FUN_00bfdfb0 uses (the engine's TownLevelRatio).
                 if (db.Moats.TryGetValue(setup.Town, out var moat) && setup.Town != "TOWN_NO_TYPE")
-                    sg.MoatDamage = (int)Math.Round(moat.MaxDamage * (double)(float)sg.TownLevelRatio, MidpointRounding.ToEven);
+                    sg.MoatDamage = (int)X87.Mul(moat.MaxDamage, (float)sg.TownLevelRatio);
                 continue;
             }
             int hp = db.ArenaBuildingStats.TryGetValue(def.Type, out var st) ? st.HealthAt(sg.FortLevel) : 200;
@@ -487,19 +489,21 @@ public sealed partial class Battle
 
     /// <summary>
     /// Earthquake (exe 0097d7b0): every standing structure takes 50 × Range(min/50, max/50), where max is the
-    /// spell's damage value and min its duration value for the mastery. With Tremors (HERO_SKILL_SHAKE_GROUND)
-    /// every creature inside the walls also takes round(ShakeGroundDamage + ShakeGroundDamagePerPower × SP)
+    /// spell's damage value and min its duration value for the mastery (0097d7b0 case 0x29: trunc of the chopped 00a34c40
+    /// formulas, / 50, at least 0). With Tremors (HERO_SKILL_SHAKE_GROUND) every creature inside the walls also takes
+    /// trunc(chop(chop(SP × ShakeGroundDamagePerPower) + ShakeGroundDamage)) (RPGStats +0x670, +0x66c; FILD, FMUL, FADD,
+    /// FISTP with the control word's chop)
     /// and loses ShakeGroundATBReduce ATB.
     /// </summary>
     void SiegeEarthquake(int side, HeroState? hero, SpellDef sp, Mastery m, double power)
     {
         if (S.Siege is not { } sg) return;
-        int max = Math.Max(0, (int)Math.Round(sp.DamageAt(m).Eval(power)) / 50);
-        int min = Math.Max(0, (int)Math.Round(sp.DurationAt(m).Eval(power)) / 50);
+        int max = Math.Max(0, (int)sp.DamageAt(m).EvalX87(power) / 50);
+        int min = Math.Max(0, (int)sp.DurationAt(m).EvalX87(power) / 50);
         foreach (var b in sg.Buildings.Where(b => b.IsSolid && !b.Destroyed).ToList())
             DamageBuilding(b, 50 * S.Rng.Range(Math.Min(min, max), max), "SPELL_EARTHQUAKE");
         if (hero == null || !hero.HasPerk("HERO_SKILL_SHAKE_GROUND")) return;
-        int dmg = (int)Math.Round(power * Stats.Get("combat/HeroSkills/Warlock/ShakeGroundDamagePerPower", 5) + Stats.Get("combat/HeroSkills/Warlock/ShakeGroundDamage", 10));
+        int dmg = (int)X87.Add(X87.Mul(power, (float)Stats.Get("combat/HeroSkills/Warlock/ShakeGroundDamagePerPower", 5)), (float)Stats.Get("combat/HeroSkills/Warlock/ShakeGroundDamage", 10));
         double atb = Stats.Get("combat/HeroSkills/Warlock/ShakeGroundATBReduce", 0.1);
         foreach (var u in S.Living.Where(o => o.Kind == UnitKind.Creature && InsideTown(o)).ToList())
         {

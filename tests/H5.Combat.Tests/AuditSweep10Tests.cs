@@ -71,10 +71,10 @@ public class AuditSweep10Tests(GameDataFixture f)
         Assert.Equal(new Cell(5, 4), b.ExePlacement(probe, new Cell(5, 5), null));   // (5,4), (4,5), (6,5), (5,6) tie: row 4 first
     }
 
-    // exe FUN_0085b6d0: round(MoatMaxDamage · town factor) with FPU rounding (half to even): 170 · 0.75 = 127.5 → 128
-    // (the engine truncated to 127).
+    // exe FUN_0085b6d0: trunc(MoatMaxDamage · town factor): FILD, FMUL, a plain FISTP — under the game's chop control word
+    // it truncates (Ghidra prints ROUND): 170 · 0.75 = 127.5 → 127.
     [Fact]
-    public void MoatDamageIsRoundedNotTruncated()
+    public void MoatDamageTruncates()
     {
         var attacker = new ArmySetup { Army = { new ArmySlot("CREATURE_ARCHER", 30) } };
         var defender = new ArmySetup { Army = { new ArmySlot("CREATURE_ARCHER", 30) } };
@@ -83,7 +83,7 @@ public class AuditSweep10Tests(GameDataFixture f)
             Town = "TOWN_PRESERVE", FortLevel = 2, TownLevel = 3, TownMaxLevel = 4,
         });
         Assert.Equal(170, f.Db.Moats["TOWN_PRESERVE"].MaxDamage);
-        Assert.Equal(128, s.Siege!.MoatDamage);
+        Assert.Equal(127, s.Siege!.MoatDamage);
     }
 
     // exe FUN_00984a00 common tail 00984cb6 after case 0x34: the hero's vf 0x1cc (FUN_00412b40, constant 0 on the combat

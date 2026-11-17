@@ -67,5 +67,11 @@ public sealed record Resources(int Wood, int Ore, int Mercury, int Crystal, int 
 public readonly record struct PowerFormula(double Base, double PerPower)
 {
     public double Eval(double power) => Base + PerPower * power;
+
+    /// <summary>
+    /// The exe's evaluation (H5_Game.exe 00a34c40): FILD power · PerPower + Base, both stored as floats, each step chopped
+    /// under the game's x87 control word (24-bit precision, round toward zero).
+    /// </summary>
+    public float EvalX87(double power) => H5.Core.Numerics.X87.Add(H5.Core.Numerics.X87.Mul(power, (float)PerPower), (float)Base);
     public static PowerFormula Parse(XElement e) => new(e.Dbl("Base"), e.Dbl("PerPower"));
 }

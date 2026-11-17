@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Core.Data;
 
 namespace H5.Combat;
@@ -341,11 +342,24 @@ public sealed partial class Battle
         if (NeutralMorale(u)) m = Math.Max(0, m);
         int weekBase = m;
         m -= (int)Fx(u, "SPELL_SORROW");
-        if (u.GetEffect(H5.Combat.Fx.Benediction) is { } prayer) m += (int)prayer.Value;
+        if (u.GetEffect(H5.Combat.Fx.Benediction) is { } prayer)
+        {
+            // exe 00989fd0 case 0x36: a White Knight caster's prayer gives trunc(chop(chop(bonus · WhiteKnight_PrayerMultiplier)
+            // + morale)) (RPGStats +0x59c, +0x5a4), else morale + bonus.
+            var ph = prayer.SourceSide >= 0 ? S.Heroes[prayer.SourceSide] : h;
+            m = ph.Present && ph.Specialization == "HERO_SPEC_WHITE_KNIGHT"
+                ? (int)X87.Add(X87.Mul((int)prayer.Value, (float)Stats.Get("combat/HeroSkills/Knight/WhiteKnight_PrayerMultiplier", 2)), m)
+                : m + (int)prayer.Value;
+        }
         m += (int)Fx(u, H5.Combat.Fx.RallyingCry);
         if (u.HasEffect(H5.Combat.Fx.BearRoar)) m += (int)Stats.Get("combat/Creatures/Fortress/BearRoar_MoraleBonus", 1);
         if (u.HasEffect(H5.Combat.Fx.RunicAttunement)) m += (int)Stats.Get("combat/HeroSkills/Runemage/RunicAttunement_MoraleBonus", 2);
-        if (u.HasEffect(H5.Combat.Fx.BansheeHowl)) m -= (int)Fx(u, H5.Combat.Fx.BansheeHowl);
+        if (u.GetEffect(H5.Combat.Fx.BansheeHowl) is { } scream)
+        {
+            m = DeathScreamOn(m, scream.Value);   // exe 00989fd0 case 0x3b, then Howl of Terror (perk 0x6f of the screamer) -6
+            var sh = scream.SourceSide >= 0 ? S.Heroes[scream.SourceSide] : h;
+            if (sh.Present && sh.HasPerk(Sk.HowlOfTerror)) m -= 6;
+        }
         if (u.HasEffect(LionsDemoralized)) m -= (int)Stats.Get("ArtifactsSetsEffectsConsts/Lions_2_HeroAttack_DeMorale", 2);   // exe 00989fd0 case 0x129
         if (u.HasEffect(H5.Combat.Fx.Sacrifice)) m += (int)Fx(u, H5.Combat.Fx.Sacrifice);
         m += SkillAuditH.EnemyArtifactMorale(Enemy(u.Side));   // exe 00989fd0: Nightmarish Ring, Cloak of Mourning
@@ -379,7 +393,7 @@ public sealed partial class Battle
         l -= (int)Fx(u, "SPELL_SORROW");
         l -= (int)Fx(u, H5.Combat.Fx.EvilEye);
         l += (int)Fx(u, "FX_WHEEL_OF_FORTUNE");
-        if (u.GetEffect(H5.Combat.Fx.BansheeHowl) is { } howl) l -= DeathScreamLuckPenalty(howl);
+        if (u.GetEffect(H5.Combat.Fx.BansheeHowl) is { } howl) l = DeathScreamOn(l, howl.Value2);   // exe 00989c40 case 0x3b
         return l;
     }
 

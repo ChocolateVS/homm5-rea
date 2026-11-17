@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Core.Data;
 
 namespace H5.Combat;
@@ -84,8 +85,9 @@ public sealed partial class Battle
 
     /// <summary>
     /// Magic Mirror (exe 00983150): a hostile single-target spell on a stack whose hero has Magic Mirror is
-    /// reflected with chance round(level·MagicMirrorLevelMultiplier + 10)%. With Spell Twister (HERO_SPEC_RADIANT)
-    /// a second roll of round((Radiant_MirrorProb + level·Radiant_MirrorProbPerLevel)·100)% sends it to one of the
+    /// reflected with chance trunc(chop(chop(level·MagicMirrorLevelMultiplier) + 10))% (00983150: FILD, FMUL,
+    /// FADD 10.0f, FISTP with the control word's chop). With Spell Twister (HERO_SPEC_RADIANT)
+    /// a second roll of trunc(chop(chop(chop(level·Radiant_MirrorProbPerLevel) + Radiant_MirrorProb)·100))% sends it to one of the
     /// caster's own stacks; otherwise the new target is any random stack.
     /// </summary>
     Unit? MagicMirror(int casterSide, SpellDef sp, Unit target)
@@ -93,13 +95,13 @@ public sealed partial class Battle
         if (sp.Target != "TARGET_HOSTILE" || IsMass(sp.Id) || TargetingOf(sp) != SpellTargeting.Unit) return target;
         var h = S.Heroes[Controller(target)];
         if (!h.Present || Controller(target) == casterSide || !h.HasPerk(Sk.MagicMirror)) return target;
-        int chance = (int)Math.Round(h.Level * Stats.Get("combat/HeroSkills/MagicMirrorLevelMultiplier", 2) + 10);
+        int chance = (int)X87.Add(X87.Mul(h.Level, (float)Stats.Get("combat/HeroSkills/MagicMirrorLevelMultiplier", 2)), 10f);
         if (!RollPercent(chance)) return target;
         List<Unit> pool = new();
         if (h.Specialization == "HERO_SPEC_RADIANT")
         {
-            int twist = (int)Math.Round((Stats.Get("combat/HeroSpecializations/Wizard/Radiant_MirrorProb", 0.4)
-                                        + Stats.Get("combat/HeroSpecializations/Wizard/Radiant_MirrorProbPerLevel", 0.02) * h.Level) * 100);
+            int twist = (int)X87.Mul(X87.Add(X87.Mul(h.Level, (float)Stats.Get("combat/HeroSpecializations/Wizard/Radiant_MirrorProbPerLevel", 0.02)),
+                                             (float)Stats.Get("combat/HeroSpecializations/Wizard/Radiant_MirrorProb", 0.4)), 100f);
             if (RollPercent(twist)) pool = S.Living.Where(u => !u.IsObject && !u.IsWarMachine && Controller(u) == casterSide).ToList();
         }
         if (pool.Count == 0) pool = S.Living.Where(u => !u.IsObject && !u.IsWarMachine && u.Id != target.Id).ToList();

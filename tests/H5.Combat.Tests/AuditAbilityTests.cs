@@ -342,15 +342,15 @@ public class AuditProcChanceTests(GameDataFixture f)
     }
 
     [Fact]
-    public void PawStrikeRollsOncePerTileWalked()   // fail = Π (100 − p)·0.01 in floats; round-to-nearest((1 − fail)·100 + 0.5)
+    public void PawStrikeRollsOncePerTileWalked()   // fail = Π (100 − p)·0.01 chopped; trunc(chop((1 − fail)·100) + 0.5) (00a5d1b0)
     {
         var b = Peasants(100, 300);
         var (a, t) = (b.State.Units[0], b.State.Units[1]);
         Assert.Equal(0, b.PawStrikePercent(a, t, 0));
         int p = b.ProcPercent(a, t, f.Db.Stats.Get("combat/Creatures/Fortress/PawStrike_ProcFactor", 1), soldiersLuckDoubles: true);
         float fail = 1f;
-        for (int i = 0; i < 3; i++) fail = (100f - p) * fail * 0.01f;
-        Assert.Equal((int)Math.Round((double)((1f - fail) * 100f + 0.5f), MidpointRounding.ToEven), b.PawStrikePercent(a, t, 3));
+        for (int i = 0; i < 3; i++) fail = H5.Core.Numerics.X87.Mul(H5.Core.Numerics.X87.Mul(100f - p, fail), 0.01f);
+        Assert.Equal((int)H5.Core.Numerics.X87.Add(H5.Core.Numerics.X87.Mul(H5.Core.Numerics.X87.Sub(1f, fail), 100f), 0.5f), b.PawStrikePercent(a, t, 3));
         Assert.True(b.PawStrikePercent(a, t, 3) > b.PawStrikePercent(a, t, 1));
     }
 }

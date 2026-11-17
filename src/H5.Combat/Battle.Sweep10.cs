@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Core.Data;
 
 namespace H5.Combat;
@@ -197,7 +198,8 @@ public sealed partial class Battle
     /// <summary>
     /// A rune's resource cost (exe FUN_00419ad0 → the cast record +0xac): the spell's sSpellCost for a first activation
     /// on the stack (FUN_009d0a10), nothing when the Fine Rune roll succeeded (FUN_009d09c0); a Strong Rune
-    /// re-activation costs round(resource · StrongRuneCostConstant) each (FUN_009d0d10, RPGStats +0x94c), or
+    /// re-activation costs trunc(chop(resource · StrongRuneCostConstant)) each (FUN_009d0d10: FILD, FMUL, FISTP under
+    /// OR AH,0xc; RPGStats +0x94c), or
     /// · StrongAndFineRuneCostConstant (+0x950) after a successful Fine Rune roll.
     /// </summary>
     internal int[] RuneCost(HeroState h, SpellDef sp, int? target, bool fineRune)
@@ -208,7 +210,7 @@ public sealed partial class Battle
         bool again = h.AbilityUses.ContainsKey($"{sp.Id}:{target}");
         if (!again) return fineRune ? new int[7] : v;
         float k = (float)Stats.Get(fineRune ? "combat/HeroSpecializations/Runemage/StrongAndFineRuneCostConstant" : "combat/HeroSpecializations/Runemage/StrongRuneCostConstant", fineRune ? 2 : 3);
-        return v.Select(x => (int)Math.Round((float)x * k, MidpointRounding.ToEven)).ToArray();
+        return v.Select(x => (int)X87.Mul(x, k)).ToArray();
     }
 
     static bool CanPay(int[] have, int[] cost)

@@ -65,15 +65,15 @@ public sealed partial class Battle
     /// <paramref name="powerfulBlow"/> = the Powerful Blow follow-up (SPELL_EFFECT_POWERFULL_BLOW).
     /// </summary>
     /// <summary>
-    /// Death Scream morale penalty (exe 00989fd0 case 0x3b): trunc(DeathScream_MoralePenalty · f) with f = the Dark
-    /// Emissary multiplier (else 1) plus BansheeWhail_DeMorale when the screaming hero has 2+ Necromancers pieces
-    /// (Howl of Terror's −6 is added separately).
+    /// Death Scream factor (exe 00989fd0 / 00989c40 case 0x3b): f = the Dark Emissary multiplier (RPGStats +0x65c, else 1),
+    /// chop(f + the integer set constant) with 2+ Necromancers pieces (FUN_004d8d60): BansheeWhail_DeMorale (+0x1188) for
+    /// morale, BansheeWhail_DeLuck (+0x118c, the next field) for luck.
     /// </summary>
-    internal int DeathScreamMoralePenalty(HeroState h)
+    internal float DeathScreamFactor(HeroState h, string setConstant)
     {
-        double f = (h.Specialization == "HERO_SPEC_DARK_EMISSARY" ? Stats.Get("combat/HeroSkills/Necromancer/DarkEissary_DeathScreamMultiplier", 2) : 1)
-                   + (Specials.Pieces(h, Specials.Necromancers) > 1 ? (int)Stats.Get("ArtifactsSetsEffectsConsts/Necromancers_2Necromancer_BansheeWhail_DeMorale", 1) : 0);
-        return (int)((int)Stats.Get("combat/HeroSkills/Necromancer/DeathScream_MoralePenalty", 1) * f);
+        float f = h.Specialization == "HERO_SPEC_DARK_EMISSARY" ? (float)Stats.Get("combat/HeroSkills/Necromancer/DarkEissary_DeathScreamMultiplier", 2) : 1f;
+        if (Specials.Pieces(h, Specials.Necromancers) > 1) f = X87.Add((int)Stats.Get(setConstant, 1), f);
+        return f;
     }
 
     /// <summary>Lions set (exe 008cf7ff): a Knight (class 1) with 2+ Lions pieces marks the strike's target with
@@ -203,23 +203,21 @@ public sealed partial class Battle
             case "POWERFUL_BLOW": h.Links[Sk.PowerfulBlow] = t!.Id; reset = 0.5; break;
             case "BENEDICTION":
                 h.AbilityUses["BENEDICTION"] = 1;
-                // Prayer bonus (attack/defence/morale) = Prayer_DefenceBonus, ×WhiteKnight_PrayerMultiplier (rounded) for the
-                // White Knight specialisation (exe FUN_00989fd0 / FUN_00989790 / FUN_0098a430, effect SPELL_PRAYER).
-                double prayer = Stats.Get("combat/HeroSkills/Knight/Prayer_DefenceBonus", 1);
-                if (h.Specialization == "HERO_SPEC_WHITE_KNIGHT")
-                    prayer = ExeRound(prayer * Stats.Get("combat/HeroSkills/Knight/WhiteKnight_PrayerMultiplier", 2));
+                // Prayer bonus (attack/defence/morale) = the integer Prayer_DefenceBonus (RPGStats +0x59c): attack and
+                // defence add it plainly (exe 00989790 / 0098a430 case 0x36); only morale scales it for a White Knight
+                // caster (00989fd0 case 0x36, see MoraleOf).
+                double prayer = (int)Stats.Get("combat/HeroSkills/Knight/Prayer_DefenceBonus", 1);
                 foreach (var u in S.LivingOf(c.Side).Where(u => u.Kind == UnitKind.Creature && !IsUndeadLike(u) && !u.Has(Ab.Mechanical)).ToList())
                     AddEffect(u, new Effect { Id = H5.Combat.Fx.Benediction, Value = prayer, Remaining = 2 + 0.25 * h.Level, Positive = true, SourceSide = c.Side });
                 break;
             case "BANSHEE_HOWL":
                 h.AbilityUses["BANSHEE_HOWL"] = 1;
             {
-                double howl = 1;
-                if (h.Specialization == "HERO_SPEC_DARK_EMISSARY") howl *= Stats.Get("combat/HeroSkills/Necromancer/DarkEissary_DeathScreamMultiplier", 2);
-                if (Specials.Pieces(h, Specials.Necromancers) >= 2) howl = Math.Max(howl, 2);
-                int moralePenalty = DeathScreamMoralePenalty(h);
+                // Value / Value2: the morale / luck factors of exe 00989fd0 / 00989c40 case 0x3b (MoraleOf, LuckOf).
+                float moraleF = DeathScreamFactor(h, "ArtifactsSetsEffectsConsts/Necromancers_2Necromancer_BansheeWhail_DeMorale");
+                float luckF = DeathScreamFactor(h, "ArtifactsSetsEffectsConsts/Necromancers_2Necromancer_BansheeWhail_DeLuck");
                 foreach (var u in S.LivingOf(1 - c.Side).Where(IsLiving).ToList())
-                    AddEffect(u, new Effect { Id = H5.Combat.Fx.BansheeHowl, Value = moralePenalty + (h.HasPerk(Sk.HowlOfTerror) ? 6 : 0), Value2 = howl,
+                    AddEffect(u, new Effect { Id = H5.Combat.Fx.BansheeHowl, Value = moraleF, Value2 = luckF,
                         Remaining = 2 + Stats.Get("combat/HeroSkills/DeathScreamLevelMultiplier", 0.25) * h.Level, SourceSide = c.Side, Dispellable = false });
                 if (Specials.Pieces(h, Specials.Necromancers) >= 2) reset = 0.5;
             }
@@ -239,9 +237,13 @@ public sealed partial class Battle
             {
                 var corpse = t!;
                 int hp = corpse.InitialCount * corpse.BaseHealth;
-                // Mana = round(max(1, HP / clamp(HPForOneMana, 0.1, 1000))), capped by the missing mana (exe FUN_0097b690).
-                double perMana = Math.Clamp(Stats.Get("combat/HeroSkills/DemonLord/ConsumeCorpseHPForOneMana", 30), 0.1, 1000);
-                int mana = (int)Math.Round(Math.Min(Math.Max(1.0, hp / perMana), Math.Max(0, h.MaxMana - h.Mana)), MidpointRounding.ToEven);
+                // exe FUN_0097b690 (0097b6f0..0097b7e0): r = chop(1 / clamp(HPForOneMana, 0.1, 1000)); v = max(1, chop(HP · r));
+                // the missing mana when it is <= v, else trunc(v) (FISTP under the chop control word).
+                float perMana = Math.Clamp((float)Stats.Get("combat/HeroSkills/DemonLord/ConsumeCorpseHPForOneMana", 30), 0.1f, 1000f);
+                float v = X87.Mul(hp, X87.Div(1.0, perMana));
+                if (v <= 1f) v = 1f;
+                int missing = Math.Max(0, h.MaxMana - h.Mana);
+                int mana = missing <= v ? missing : (int)v;
                 h.Mana = Math.Min(h.MaxMana, h.Mana + mana);
                 corpse.Removed = true;
                 Emit(new ManaChanged(actor, h.Mana));

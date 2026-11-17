@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Core.Data;
 
 namespace H5.Combat;
@@ -9,7 +10,8 @@ public sealed partial class Battle
     /// <summary>
     /// Corrupted Soil damage for an enemy stack that moves (exe FUN_00a61a60, called by the move routine
     /// FUN_00a66050 once per move): none for flying stacks (unit vfunc 0x190, the "moves by endpoints only" test the
-    /// flee/move code also uses), otherwise round(level · clamp(SoilBurnDamagePerHeroLevel, 0.1, 1000)).
+    /// flee/move code also uses), otherwise trunc(chop(level · clamp(SoilBurnDamagePerHeroLevel, 0.1, 1000))) (plain FISTP
+    /// under the chop control word).
     /// The damage then goes through the usual stack damage pipeline (FUN_00a61600: Arcane Armor, Last Stand).
     /// </summary>
     internal int SoilBurnDamage(Unit u)
@@ -18,18 +20,19 @@ public sealed partial class Battle
         var eh = Enemy(u.Side);
         if (!eh.Present || !(eh.HasPerk(Sk.CorruptedSoil) || eh.HasPerk(Sk.BarbCorruptedSoil))) return 0;
         float perLevel = Math.Clamp((float)Stats.Get("combat/HeroSkills/Ranger/SoilBurnDamagePerHeroLevel", 3), 0.1f, 1000f);
-        return (int)Math.Round((double)(eh.Level * perLevel), MidpointRounding.ToEven);
+        return (int)X87.Mul(eh.Level, perLevel);
     }
 
     /// <summary>
-    /// Death Scream luck penalty (exe FUN_00989c40, effect 0x3b): round(DeathScream_MoralePenalty · multiplier), with the
-    /// multiplier the Dark Emissary factor kept on the effect (Value2). The engine used a flat −1, so a Dark Emissary's
-    /// scream only took one luck point instead of two.
+    /// Death Scream on a running morale / luck value (exe 00989fd0 / 00989c40 case 0x3b): trunc(chop(v − chop(
+    /// DeathScream_MoralePenalty (integer, RPGStats +0x654) · f))) with f the factor kept on the effect
+    /// (<see cref="DeathScreamFactor"/>). The subtraction from the running value comes before the truncation, so a
+    /// fractional penalty takes a whole point less from a positive value than from a negative one.
     /// </summary>
-    internal int DeathScreamLuckPenalty(Effect howl)
+    internal int DeathScreamOn(int v, double factor)
     {
-        double mult = howl.Value2 > 0 ? howl.Value2 : 1;
-        return (int)Math.Round(Stats.Get("combat/HeroSkills/Necromancer/DeathScream_MoralePenalty", 1) * mult, MidpointRounding.ToEven);
+        float f = factor > 0 ? (float)factor : 1f;
+        return (int)X87.Sub(v, X87.Mul((int)Stats.Get("combat/HeroSkills/Necromancer/DeathScream_MoralePenalty", 1), f));
     }
 
     /// <summary>

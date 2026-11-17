@@ -1004,8 +1004,10 @@ public sealed partial class Battle
     /// <summary>
     /// Specialisation summons when a (non-summoned) stack dies (exe FUN_00a61310):
     /// Master of Elements (the dead stack's hero, FUN_00a5a5a0) brings terrain elementals:
-    /// max(1, round(count·HP·0.25 / elementalHP)) + ((level−1)/div)·per + base;
-    /// Soulhunter (the opposing hero, FUN_00a5b440) raises min(count, round(level·perLevel + base)) Manes.
+    /// max(1, trunc(chop(chop(chop(count·HP) · 0.25f) / elementalHP))) + ((level−1)/div)·per + base (00a5a5a0: FILD, FMUL,
+    /// FIDIV, plain FISTP under the chop control word);
+    /// Soulhunter (the opposing hero, FUN_00a5b440) raises min(count, trunc(chop(chop(level·perLevel) + base))) Manes
+    /// (RPGStats +0x870 float, +0x86c integer).
     /// </summary>
     void DeathSummons(Unit t)
     {
@@ -1013,8 +1015,8 @@ public sealed partial class Battle
         if (own.Present && own.Specialization == "HERO_SPEC_MASTER_OF_ELEMENTS")
         {
             string kind = TerrainElemental();
-            double elemHp = Math.Max(1, Db.Creature(kind).Health);
-            int n = Math.Max(1, (int)Math.Round(t.InitialCount * (double)t.BaseHealth * 0.25 / elemHp, MidpointRounding.ToEven));
+            int elemHp = Math.Max(1, Db.Creature(kind).Health);
+            int n = Math.Max(1, (int)X87.Div(X87.Mul(X87.Mul(t.InitialCount, (float)t.BaseHealth), 0.25f), elemHp));
             const string k = "combat/HeroSpecializations/Wizard/MasterOfElements_NumElementals/";
             n += (own.Level - 1) / Math.Max(1, (int)Stats.Get(k + "LevelDivisor", 3)) * (int)Stats.Get(k + "PerDividedLevel", 1) + (int)Stats.Get(k + "Base", 1);
             SummonStackNear(t, kind, n, "HERO_SPEC_MASTER_OF_ELEMENTS", 0);
@@ -1022,8 +1024,8 @@ public sealed partial class Battle
         var enemy = S.Heroes[1 - t.Side];
         if (enemy.Present && enemy.Specialization == "HERO_SPEC_SOULHUNTER")
         {
-            int n = (int)Math.Round(enemy.Level * Stats.Get("combat/HeroSpecializations/Necromancer/Soulhunter_ManesSummonedPerLevel", 1)
-                                    + Stats.Get("combat/HeroSpecializations/Necromancer/Soulhunter_ManesSummonedBase", 0), MidpointRounding.ToEven);
+            int n = (int)X87.Add(X87.Mul(enemy.Level, (float)Stats.Get("combat/HeroSpecializations/Necromancer/Soulhunter_ManesSummonedPerLevel", 1)),
+                                 (int)Stats.Get("combat/HeroSpecializations/Necromancer/Soulhunter_ManesSummonedBase", 0));
             n = Math.Min(t.InitialCount, n);
             if (n > 0)
             {
@@ -1331,10 +1333,11 @@ public sealed partial class Battle
     internal void AddRage(Unit u, int rp)
     {
         var h = HeroOf(u);
-        // Rage gain (exe FUN_008a2c20): ×RPCoefUnderBerserk while berserk, ×RPCoefPowerOfBlood (both rounded), then
+        // Rage gain (exe FUN_008a2c20): ×RPCoefUnderBerserk while berserk, ×RPCoefPowerOfBlood (each trunc(chop(rp · coef)):
+        // FILD, FMUL, plain FISTP under the chop control word, 008a2d1e..008a2d9b), then
         // + DemonHunter_RPBonusPerHeroLevel for the Demon Hunter specialisation when demons are in the battle.
-        if (u.HasEffect("SPELL_BERSERK")) rp = (int)Math.Round(rp * Stats.Get("combat/Creatures/Stronghold/DemonRage/RPCoefUnderBerserk", 1), MidpointRounding.ToEven);
-        if (h.HasPerk(Sk.Bloodfire)) rp = (int)Math.Round(rp * Stats.Get("combat/Creatures/Stronghold/DemonRage/RPCoefPowerOfBlood", 1.5), MidpointRounding.ToEven);
+        if (u.HasEffect("SPELL_BERSERK")) rp = (int)X87.Mul(rp, (float)Stats.Get("combat/Creatures/Stronghold/DemonRage/RPCoefUnderBerserk", 1));
+        if (h.HasPerk(Sk.Bloodfire)) rp = (int)X87.Mul(rp, (float)Stats.Get("combat/Creatures/Stronghold/DemonRage/RPCoefPowerOfBlood", 1.5));
         if (h.Present && h.Specialization == "HERO_SPEC_DEMON_HUNTER" && S.Living.Any(d => d.Kind == UnitKind.Creature && d.Town == Towns.Inferno))
         {
             const string k = "combat/Creatures/Stronghold/DemonRage/DemonHunter_RPBonusPerHeroLevel/";

@@ -74,22 +74,26 @@ public class AuditSpecSetTests(GameDataFixture f)
         Assert.Equal(portions[1] * (1 + pct * 0.01) + gk, b.GatingPortion(imp, h), 9);
     }
 
-    // exe 00989fd0 case 0x3b: Death Scream morale = trunc(MoralePenalty · f), f = Dark Emissary multiplier (else 1)
-    // plus BansheeWhail_DeMorale with 2+ Necromancers pieces — so Dark Emissary with the set gives 1·(2+1) = 3.
+    // exe 00989fd0 case 0x3b: Death Scream morale = trunc(chop(m − chop(MoralePenalty · f))), f = Dark Emissary multiplier
+    // (else 1) plus BansheeWhail_DeMorale with 2+ Necromancers pieces — so Dark Emissary with the set gives 1·(2+1) = 3.
+    // The running value is subtracted before the truncation: a 1.5 penalty takes 2 from −3 (−4.5 → −4) but 2 from 3 (1.5 → 1).
     [StockFact]
     public void DeathScreamMoraleCombinesDarkEmissaryAndTheSet()
     {
         var (s, b) = Setup();
         var h = s.Heroes[0];
+        const string key = "ArtifactsSetsEffectsConsts/Necromancers_2Necromancer_BansheeWhail_DeMorale";
         h.SetPieces = new();
         h.Specialization = "";
-        Assert.Equal(1, b.DeathScreamMoralePenalty(h));
+        Assert.Equal(-1, b.DeathScreamOn(0, b.DeathScreamFactor(h, key)));
         h.Specialization = "HERO_SPEC_DARK_EMISSARY";
-        Assert.Equal(2, b.DeathScreamMoralePenalty(h));
+        Assert.Equal(-2, b.DeathScreamOn(0, b.DeathScreamFactor(h, key)));
         h.SetPieces[Specials.Necromancers] = 2;
-        Assert.Equal(3, b.DeathScreamMoralePenalty(h));
+        Assert.Equal(-3, b.DeathScreamOn(0, b.DeathScreamFactor(h, key)));
         h.Specialization = "";
-        Assert.Equal(2, b.DeathScreamMoralePenalty(h));
+        Assert.Equal(-2, b.DeathScreamOn(0, b.DeathScreamFactor(h, key)));
+        Assert.Equal(1, b.DeathScreamOn(3, 1.5));
+        Assert.Equal(-4, b.DeathScreamOn(-3, 1.5));
     }
 
     // exe 004e4270 (Death Scream effect): initiative factor 1 − InitiativePenalty × (screaming hero has 2+

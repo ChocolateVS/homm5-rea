@@ -72,19 +72,23 @@ public class AuditSpecTests(GameDataFixture f)
         Assert.Equal(fireball.ManaCost / 2, b.HeroManaCost(h, fireball));
     }
 
-    // exe FUN_00989fd0 / FUN_00989790 / FUN_0098a430: White Knight doubles Prayer's bonus.
+    // exe FUN_00989790 / FUN_0098a430 case 0x36: Prayer adds the integer bonus (RPGStats +0x59c) to attack and defence for any
+    // caster; only morale (00989fd0 case 0x36) takes trunc(chop(chop(bonus · WhiteKnight_PrayerMultiplier) + morale)).
     [StockFact]
-    public void WhiteKnightDoublesPrayer()
+    public void WhiteKnightScalesOnlyPrayersMorale()
     {
         var s = Setup(f.Db, h => { h.Specialization = "HERO_SPEC_WHITE_KNIGHT"; h.Perks.Add(Sk.Benediction); }, ("CREATURE_FOOTMAN", 10));
         var b = new Battle(f.Db, s);
         b.Begin();
         var footman = s.Units.Single(u => u.CreatureId == "CREATURE_FOOTMAN");
-        int att = b.AttackOf(footman), def = b.DefenceOf(footman);
+        int att = b.AttackOf(footman), def = b.DefenceOf(footman), mor = b.MoraleOf(footman);
         s.Active = Actor.Hero(0);
         var r = b.Apply(new UseAbilityCmd(Actor.Hero(0), "BENEDICTION") { Side = 0 });
         Assert.True(r.Ok, r.Error);
-        Assert.Equal(att + 2, b.AttackOf(footman));
-        Assert.Equal(def + 2, b.DefenceOf(footman));
+        int bonus = (int)f.Db.Stats.Get("combat/HeroSkills/Knight/Prayer_DefenceBonus", 1);
+        Assert.Equal(att + bonus, b.AttackOf(footman));
+        Assert.Equal(def + bonus, b.DefenceOf(footman));
+        float mult = (float)f.Db.Stats.Get("combat/HeroSkills/Knight/WhiteKnight_PrayerMultiplier", 2);
+        Assert.Equal((int)H5.Core.Numerics.X87.Add(H5.Core.Numerics.X87.Mul(bonus, mult), mor), b.MoraleOf(footman));
     }
 }

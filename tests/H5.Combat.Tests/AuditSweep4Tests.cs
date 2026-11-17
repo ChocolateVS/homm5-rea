@@ -206,9 +206,10 @@ public class AuditSweep4Tests(GameDataFixture f)
         Assert.Equal(0, b.CreatureCastAtb(u, f.Db.Spell("SPELL_BLESS")!));
     }
 
-    // exe FUN_00419730: Tap Runes restores round(knowledge · 0.5) mana (round half even), not the truncation.
+    // exe FUN_00419730: Tap Runes restores trunc(chop(knowledge · 0.5)) mana — a plain FISTP, which truncates under the game's
+    // chop control word (Ghidra's ROUND), so 7 knowledge gives 3, not 4.
     [Fact]
-    public void TapRunesRounds()
+    public void TapRunesTruncates()
     {
         var b = Make(new[] { ("CREATURE_FOOTMAN", 10) }, new[] { ("CREATURE_PEASANT", 20) });
         var h = b.State.Heroes[0];
@@ -216,7 +217,7 @@ public class AuditSweep4Tests(GameDataFixture f)
         h.MaxMana = 100;
         (h.Knowledge, h.Mana) = (7, 0);
         b.TapRunes(h);
-        Assert.Equal(4, h.Mana);
+        Assert.Equal(3, h.Mana);
         (h.Knowledge, h.Mana) = (5, 0);
         b.TapRunes(h);
         Assert.Equal(2, h.Mana);

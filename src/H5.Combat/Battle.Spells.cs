@@ -266,8 +266,6 @@ public sealed partial class Battle
         return ShatterWeakenPower(h, sp, p);   // exe 004e6190 from 00a6a7e0 (Shatter / Weaken, subtractive)
     }
 
-    // Rounding helpers matching the x87 code: ROUND is round-half-even, int division truncates.
-    static int ExeRound(double v) => (int)Math.Round(v, MidpointRounding.ToEven);
     // The spell code converts float → int with the FPU in chop mode (FNSTCW; OR AH,0x0C; FLDCW; FISTP — exe
     // 00976c0d, 0097d6ad, 0097d5c4, 00a34836, 00978290), i.e. truncation toward zero, not round-to-nearest.
     static int ExeChop(double v) => (int)Math.Truncate(v);
@@ -489,8 +487,9 @@ public sealed partial class Battle
     internal void TapRunes(HeroState h)
     {
         if (!h.HasPerk(Sk.TapRunes)) return;
-        // exe FUN_00419730: round(knowledge · TapRunes_ManaRestorePerKnowledge) (round half even), capped at the maximum.
-        h.Mana = Math.Min(h.MaxMana, h.Mana + ExeRound((float)h.Knowledge * (float)Stats.Get("combat/HeroSkills/Runemage/TapRunes_ManaRestorePerKnowledge", 0.5)));
+        // exe FUN_00419730 (ability 0x9d): trunc(chop(knowledge · TapRunes_ManaRestorePerKnowledge)) — a plain FISTP under the
+        // chop control word — capped at the maximum.
+        h.Mana = Math.Min(h.MaxMana, h.Mana + (int)X87.Mul(h.Knowledge, (float)Stats.Get("combat/HeroSkills/Runemage/TapRunes_ManaRestorePerKnowledge", 0.5)));
         Emit(new ManaChanged(Actor.Hero(h.Side), h.Mana));
     }
 
