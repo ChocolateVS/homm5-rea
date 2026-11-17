@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Adventure.Map;
 using H5.Adventure.State;
 
@@ -43,7 +44,7 @@ public sealed partial class Adventure
         {
             // 00b500a0..00b500c2: FILD level, × the float field, × 100.0f, FISTP with the chop control word.
             float f = (float)Core.Stats.Get("combat/HeroSpecializations/Barbarian/Rash_MovementPenaltyReducePerLevel", 0.02);
-            int v = (int)Math.Truncate(h.Level * (double)f * 100.0);
+            int v = (int)X87.Mul(X87.Mul(h.Level, f), 100.0f);   // each FMUL chopped (x87 _PC_24 | _RC_CHOP)
             pct = v > 99 ? 100 : Math.Max(0, v);
         }
         return new MoveCostSettings(half, none, NativeGround(h.Town), pct);

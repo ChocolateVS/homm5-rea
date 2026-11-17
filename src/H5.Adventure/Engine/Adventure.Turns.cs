@@ -346,9 +346,10 @@ public sealed partial class Adventure
 
     /// <summary>
     /// Owner adjustment of a town's weekly growth (exe FUN_00cd27b0, town vtable slot 0x00e95828): for a town of a
-    /// computer player (player vf 0x184 false) n = round((float)n·c + ((week)·c − round(0.01f + week·c))) with
+    /// computer player (player vf 0x184 false) n = trunc(n·c + (week·c − trunc(0.01f + week·c))) with
     /// c = clamp(AI/Adventure Difficulty*/TownCreatureGrowthCoef, 0, 10) (FUN_00465610 / FUN_00465640; stock Easy
-    /// 0.5, others 1) and week = day counter / 7 + 1 (x87 rounding, half to even); then a positive count of a
+    /// 0.5, others 1) and week = day counter / 7 + 1; both conversions are FISTP under OR AH,0xc (00cd2900, 00cd2930)
+    /// and every FMUL / FADD / FSUBR is chopped (x87 _PC_24 | _RC_CHOP); then a positive count of a
     /// neutral town (owner 0) is halved. GAP-detail: the exe's day counter is taken as 0-based (= S.Week here).
     /// </summary>
     public int OwnerAdjustedGrowth(TownState t, int n)
@@ -363,9 +364,9 @@ public sealed partial class Adventure
     public static int ComputerTownGrowth(int n, double coef, int week)
     {
         float c = Math.Clamp((float)coef, 0f, 10f);
-        float f2 = week * c;
-        float carry = f2 - (float)Math.Round(0.01f + f2, MidpointRounding.ToEven);
-        return (int)Math.Round((float)n * c + carry, MidpointRounding.ToEven);
+        float f2 = X87.Mul(week, c);                                  // 00cd28e9
+        float carry = X87.Sub(f2, (int)X87.Add(0.01f, f2));           // 00cd28fa..00cd2925
+        return (int)X87.Add(X87.Mul(n, c), carry);                    // 00cd292c..00cd2941
     }
 
     /// <summary>Weekly growth of a town dwelling tier: the total of its growth record (<see cref="GrowthOf"/>).</summary>
@@ -447,34 +448,35 @@ public sealed partial class Adventure
         {
             int div = Math.Max((int)Spec($"{race}/{name}_LevelDivisor", 1), 1);
             int q = (h.Level + div - 1) / div;
-            float p = (float)(q * (double)Spec($"{race}/{name}_MPBonusPerLevel", 0) + Spec($"{race}/{name}_MPBonusBase", 0));
+            // 00b4ddb0..00b4ddf1 / 00b4de31..00b4de72: FILD q · PerLevel + Base, FSTP float, clamp, FADD, FIMUL B — chopped.
+            float p = X87.Add(X87.Mul(q, Spec($"{race}/{name}_MPBonusPerLevel", 0)), Spec($"{race}/{name}_MPBonusBase", 0));
             p = Math.Max(0f, Math.Min(p, 100f));
-            return Chop(((double)p + add) * b);
+            return (int)X87.Mul(X87.Add(p, add), b);
         }
         int start = h.Specialization switch
         {
             "HERO_SPEC_LOGISTICS" => SpecBase("Knight", "Wanderer", Eps),
             "HERO_SPEC_BEATER" => SpecBase("Demonlord", "Beater", 1.0f),
-            "HERO_SPEC_RASH" => Chop((h.Level * (double)Spec("Barbarian/Rash_MovePointsIncreasePerPevel", 0.01) + Eps) * b),
+            "HERO_SPEC_RASH" => (int)X87.Mul(X87.Add(X87.Mul(h.Level, Spec("Barbarian/Rash_MovePointsIncreasePerPevel", 0.01)), Eps), b),   // 00b4de99..00b4dec1
             _ => b,
         };
         int Week(int mp, bool sea) => S.MoonWeek == "WEEK_OF_FLAME" || (sea && S.MoonWeek == "WEEK_OF_WINDS") ? mp + mp / 2 : mp;
         if (h.InBoat)
         {
             int sea = Week(start, true);
-            if (h.HasPerk("HERO_SKILL_NAVIGATION") || EffectiveMastery(h, "HERO_SKILL_NAVIGATION") != 0) sea = Chop(sea * (double)1.5f);
-            sea = Chop((h.Artifacts.Count(a => a == "GOLDEN_SEXTANT") * (double)0.25f + 1.0f) * sea);
+            if (h.HasPerk("HERO_SKILL_NAVIGATION") || EffectiveMastery(h, "HERO_SKILL_NAVIGATION") != 0) sea = (int)X87.Mul(sea, 1.5f);   // 00b4dfba
+            sea = (int)X87.Mul(X87.Add(X87.Mul(h.Artifacts.Count(a => a == "GOLDEN_SEXTANT"), 0.25f), 1.0f), sea);                     // 00b4dff5
             int lighthouses = S.Objects.Count(kv => kv.Value.Owner == h.Owner && h.Owner >= 0 && !kv.Value.Removed && O(kv.Key).Shared.Type == "BUILDING_LIGHTHOUSE");
             return sea + lighthouses * adv.Int("LighthouseMaxSeaMovementBonus", 500);
         }
         int land = Week(start, false);
-        land = Chop((EffectiveMastery(h, "HERO_SKILL_LOGISTICS") * (double)0.1f + Eps) * land);
-        land = Chop((h.Artifacts.Count(a => a == "BOOTS_OF_SPEED") * (double)0.25f + 1.0f) * land);
+        // 00b4defb..00b4df28 / 00b4df3d..00b4df69: FILD n · k (FMUL), FADD, FIMUL L — each chopped (x87 _PC_24 | _RC_CHOP).
+        land = (int)X87.Mul(X87.Add(X87.Mul((int)EffectiveMastery(h, "HERO_SKILL_LOGISTICS"), 0.1f), Eps), land);
+        land = (int)X87.Mul(X87.Add(X87.Mul(h.Artifacts.Count(a => a == "BOOTS_OF_SPEED"), 0.25f), 1.0f), land);
         if (h.StablesThisWeek) land += adv.Int("ForWeekStablesMaxLandMovementBonus", 600);
         return land;
     }
 
-    static int Chop(double x) => (int)Math.Truncate(x);
 
     /// <summary>
     /// The weekly and initial tavern refill, FUN_00990550 (from 00993cd0 each new week and from 0041ecd0 at the game

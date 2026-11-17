@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Adventure.State;
 
 namespace H5.Adventure.Engine;
@@ -21,15 +22,16 @@ public sealed partial class Adventure
 
     /// <summary>
     /// Experience of a winning hero (exe FUN_00af3430): killed creatures' experience, +500 when the enemy hero is
-    /// lost (not fled / surrendered, 004d99b0), × trunc(level·0.02 + 1) for HERO_SPEC_TALENTED_WARRIOR (double, chop),
+    /// lost (not fled / surrendered, 004d99b0), × (level·0.02 + 1) for HERO_SPEC_TALENTED_WARRIOR (FILD level, FMUL /
+    /// FADD the doubles 00e79ac8 / 00e12e00, FIMUL exp — each step chopped to 24 bits by the x87 control word — then chop),
     /// × the neutral-army coefficient (chop), the hero modifier (vcall 0x19c), then Week of Folly / 2 and Week of
     /// Honor × 2 (FUN_00bcdc60) on the final amount.
     /// </summary>
     public long BattleExperience(HeroState h, long exp, bool opponentHeroLost, double neutralCoef)
     {
         if (opponentHeroLost) exp += 500;
-        if (h.Specialization == "HERO_SPEC_TALENTED_WARRIOR") exp = (long)((h.Level * 0.02 + 1.0) * exp);
-        if (neutralCoef != 1) exp = (long)(exp * (double)(float)neutralCoef);
+        if (h.Specialization == "HERO_SPEC_TALENTED_WARRIOR") exp = (long)X87.Mul(X87.Add(X87.Mul(h.Level, 0.02), 1f), exp);
+        if (neutralCoef != 1) exp = (long)X87.Mul(exp, (float)neutralCoef);   // 00af358e: FILD exp, FMUL float, chop
         exp = ExperienceModifiers(h, exp);
         return S.MoonWeek switch { "WEEK_OF_FOLLY" => exp / 2, "WEEK_OF_HONOR" => exp * 2, _ => exp };
     }

@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Adventure.Engine;
 using H5.Adventure.State;
 
@@ -46,6 +47,9 @@ public sealed partial class OriginalAdventureAI
     ///     c = trunc(c · Weak + 0.5); v = max(v, x), the town's demand part = max over its buildings of c; demand += it;
     /// (3) supply = purse + daily income × SupplyDayIncomes; where demand &lt; supply: v ·= demand / supply (FUN_00a31c20);
     /// (4) average = (v0 + … + v5) · (1/7) (FUN_00a31bb0, gold left out); (5) v = max(1.0, v) (FUN_00a31d10).
+    /// The values are doubles in memory, but every FMUL / FDIV / FIDIV / FADD runs under the x87 control word (_PC_24 |
+    /// _RC_CHOP, <see cref="X87"/>): each step is chopped to a float (00a31a69..00a31af1, 00a31f82, 00a321b6, 00a32466,
+    /// 00a324a7..00a324fa, 00a31c34.., 00a31bbd..00a31bdb).
     /// GAP-detail: the town's dwelling list behind P (town +0x154, read by creature source vf 4 = 00cd4860) is taken as
     /// every dwelling tier of the town type with its base and upgraded creatures; who fills it is not traced.
     /// </summary>
@@ -57,7 +61,7 @@ public sealed partial class OriginalAdventureAI
         var towns = g.S.Towns.Where(t => t.Owner == player).ToList();
 
         // (1) FUN_00a31eb0
-        double week = (double)g.S.DayOfWeek * (1.0 / 7.0);
+        double week = X87.Mul(g.S.DayOfWeek, 1.0 / 7.0);   // 00a31f82: FILD, FMUL double 1/7 (00e6e488)
         foreach (var t in towns)
         {
             for (int tier = 1; tier <= 7; tier++) AddCreature(g, v, demand, OfferIds(g, t, tier), t.Available[tier - 1], 1.0);
@@ -86,12 +90,12 @@ public sealed partial class OriginalAdventureAI
                 {
                     int c = cost[i];
                     if (c <= 0 || total[i] <= 0) continue;
-                    double x = pot / total[i];
+                    double x = X87.Div(pot, total[i]);                                   // 00a32466: FILD, FDIVR
                     if (r != BuildDenial.CanBuild)
                     {
                         int need = PointsNeeded(g, t, key), mx = MaxTownPoints(g, t);
-                        x = (double)(mx - need) / mx * x * weak;
-                        c = (int)(c * weak + 0.5);
+                        x = X87.Mul(weak, X87.Mul(X87.Div(mx - need, mx), x));             // 00a324a7..00a324bf
+                        c = (int)X87.Add(X87.Mul(c, weak), 0.5f);                          // 00a324ca..00a324fa
                     }
                     if (v[i] <= x) v[i] = x;
                     if (maxc[i] <= c) maxc[i] = c;
@@ -108,8 +112,9 @@ public sealed partial class OriginalAdventureAI
             for (int i = 0; i < 7; i++) supply[i] = unchecked(inc[i] * st.SupplyDayIncomes + p.Purse[i]);
         }
         for (int i = 0; i < 7; i++)
-            if (demand[i] < supply[i]) v[i] = (double)demand[i] / supply[i] * v[i];
-        double avg = (v[0] + v[1] + v[2] + v[3] + v[4] + v[5]) * (1.0 / 7.0);
+            if (demand[i] < supply[i]) v[i] = X87.Mul(X87.Div(demand[i], supply[i]), v[i]);   // 00a31c34: FILD, FIDIV, FMUL
+        double avg = X87.Mul(X87.Add(X87.Add(X87.Add(X87.Add(X87.Add((float)v[0], (float)v[1]), (float)v[2]), (float)v[3]),
+                                                 (float)v[4]), (float)v[5]), 1.0 / 7.0);           // 00a31bbd..00a31bdb
         for (int i = 0; i < 7; i++) if (!(1.0 < v[i])) v[i] = 1.0;
         return (v, avg, demand, supply);
     }
@@ -128,7 +133,7 @@ public sealed partial class OriginalAdventureAI
         for (int i = 0; i < 7; i++)
         {
             if (cost[i] <= 0) continue;
-            double x = best.Value * factor / cost[i];
+            double x = X87.Div(X87.Mul(factor, best.Value), cost[i]);   // 00a31a69: FMUL, FIDIV — chopped
             if (!(x < v[i])) v[i] = x;
             demand[i] = unchecked(demand[i] + cost[i] * n);
         }
@@ -168,7 +173,7 @@ public sealed partial class OriginalAdventureAI
                 if (up.Creature is { } c1 && !ids.Contains(c1)) ids.Add(c1);
                 if (up.Creature2 is { } c2 && !ids.Contains(c2)) ids.Add(c2);
             }
-            if (BestCreature(g, ids) is { } b) pot = (double)b.Def.WeeklyGrowth * b.Value + pot;
+            if (BestCreature(g, ids) is { } b) pot = X87.Add(X87.Mul(b.Def.WeeklyGrowth, b.Value), (float)pot);   // 00a321b6
         }
         return pot;
     }

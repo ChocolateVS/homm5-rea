@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Adventure.Map;
 using H5.Adventure.State;
 using H5.Core.Data;
@@ -39,8 +40,8 @@ public sealed partial class Adventure
 
     static Resources Round(Resources r, float k)
     {
-        // FUN_009d0d10: each resource (int)ROUND((float)v * k), x87 round-to-nearest-even.
-        int R(int v) => (int)MathF.Round(v * k, MidpointRounding.ToEven);
+        // FUN_009d0d10 (009d0d63..009d0d85): each resource FILD v, FMUL k, FISTP under OR AH,0xc — truncated.
+        int R(int v) => (int)X87.Mul(v, k);
         return new(R(r.Wood), R(r.Ore), R(r.Mercury), R(r.Crystal), R(r.Sulfur), R(r.Gem), R(r.Gold));
     }
 

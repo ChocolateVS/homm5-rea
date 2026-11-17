@@ -36,7 +36,8 @@ public class AuditBattleExpTests(Fixture f)
         Assert.Equal(1001 * 2, g.BattleExperience(h, 1001, opponentHeroLost: false, 1));
         g.S.MoonWeek = "WEEK_OF_NOTHING";
         h.Specialization = "HERO_SPEC_TALENTED_WARRIOR"; h.Level = 10;
-        Assert.Equal((long)((10 * 0.02 + 1.0) * 1500), g.BattleExperience(h, 1000, opponentHeroLost: true, 1));
+        // x87 _PC_24 | _RC_CHOP: 10 · 0.02 chops to 0.19999999, + 1 to 1.1999999, · 1500 to 1799.9999 → 1799 (double: 1800).
+        Assert.Equal(1799, g.BattleExperience(h, 1000, opponentHeroLost: true, 1));
     }
 
     // exe FUN_00bbf610: the hero's cast subtracts from the CHero's own mana field — the combat hero is the adventure

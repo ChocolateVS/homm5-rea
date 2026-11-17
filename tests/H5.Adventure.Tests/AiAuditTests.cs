@@ -96,12 +96,13 @@ public class AiAuditTests(Fixture f)
     [Fact]
     public void Computer_town_growth_scales_with_the_difficulty_coefficient()
     {
-        // FUN_00cd27b0: round(n·c + (week·c − round(0.01 + week·c))), x87 half-to-even, c clamped to [0, 10].
+        // FUN_00cd27b0: trunc(n·c + (week·c − trunc(0.01 + week·c))), c clamped to [0, 10]; both FISTP under OR AH,0xc
+        // (00cd2900, 00cd2930), so the carry is week·c's fraction (half-to-even rounding gave 1, 2, 2, 2 below).
         Assert.Equal(7, Engine.Adventure.ComputerTownGrowth(7, 1.0, 3));
-        Assert.Equal(1, Engine.Adventure.ComputerTownGrowth(3, 0.5, 1));   // 1.5 − 0.5 → 1
-        Assert.Equal(2, Engine.Adventure.ComputerTownGrowth(3, 0.5, 2));   // 1.5 + 0 → 2 (half to even)
+        Assert.Equal(2, Engine.Adventure.ComputerTownGrowth(3, 0.5, 1));   // 1.5 + 0.5 → 2
+        Assert.Equal(1, Engine.Adventure.ComputerTownGrowth(3, 0.5, 2));   // 1.5 + 0 → 1
         Assert.Equal(2, Engine.Adventure.ComputerTownGrowth(5, 0.5, 2));   // 2.5 → 2
-        Assert.Equal(2, Engine.Adventure.ComputerTownGrowth(5, 0.5, 1));   // 2.5 − 0.5 → 2
+        Assert.Equal(3, Engine.Adventure.ComputerTownGrowth(5, 0.5, 1));   // 2.5 + 0.5 → 3
         Assert.Equal(0, Engine.Adventure.ComputerTownGrowth(5, -3, 1));
         Assert.Equal(50, Engine.Adventure.ComputerTownGrowth(5, 20, 1));
     }

@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Adventure.State;
 using H5.Core.Data;
 
@@ -58,24 +59,30 @@ public sealed partial class Adventure
             case MicroEffect.Luck: case MicroEffect.Morale: return k / 10 + 1;
             case MicroEffect.Haste: return k;
             case MicroEffect.MagicProtection:
-                double v = Math.Log(k * 10.0) / Math.Log(600.0);   // 00e22a78 = 10.0, 00e88640 = 600.0
-                v = v * v * v;
-                if (v >= 1.0) v = 1.0;                              // 00e12e00
-                double s = TableSin((float)(v * 1.5707963705062866));   // 00e62098
-                return (int)(s * 85.0);                              // 00e88638, FISTP with truncation
+                // 00c0a340..00c0a3a3: FYL2X is not under the precision control (extended, here double); FMUL / FDIVP are
+                // chopped to 24 bits.
+                float v = X87.Div(Math.Log(X87.Mul(k, 10.0)), Math.Log(600.0));   // 00e22a78 = 10.0, 00e88640 = 600.0
+                v = X87.Mul(v, X87.Mul(v, v));
+                if (v >= 1.0f) v = 1.0f;                                         // 00e12e00
+                float s = TableSin(X87.Mul(v, 1.5707963705062866));              // 00e62098
+                return (int)X87.Mul(s, 85.0);                                    // 00e88638, FISTP with truncation
             default: return -1;
         }
     }
 
     static readonly float[] SinTable = Enumerable.Range(0, 514).Select(i => (float)Math.Sin(i * 2 * Math.PI / 512)).ToArray();
 
-    /// <summary>FUN_0046eae0: 512-entry sine table (00e11de8), i = round(x·81.48733 − 0.5), linear interpolation.</summary>
-    static double TableSin(float x)
+    /// <summary>
+    /// FUN_0046eae0: 512-entry sine table (00e11de8), t = x·81.48733f, i = trunc(t − 0.5) (FSUBR, FISTP under OR AH,0xc),
+    /// linear interpolation (T[j+1] − T[j])·(t − i) + T[j], every step chopped. GAP-detail: the table is ours
+    /// ((float)sin, e.g. T[1] 0.012271538), the exe's differs in the last bits (T[1] = 0.0122715).
+    /// </summary>
+    static float TableSin(float x)
     {
-        double t = x * (double)81.48733f;
-        int i = (int)Math.Round(t - 0.5, MidpointRounding.ToEven);
+        float t = X87.Mul(x, 81.48733f);
+        int i = (int)X87.Sub(t, 0.5f);
         int j = i & 0x1ff;
-        return (SinTable[j + 1] - SinTable[j]) * (t - i) + SinTable[j];
+        return X87.Add(X87.Mul(X87.Sub(SinTable[j + 1], SinTable[j]), X87.Sub(t, i)), SinTable[j]);
     }
 
     /// <summary>
