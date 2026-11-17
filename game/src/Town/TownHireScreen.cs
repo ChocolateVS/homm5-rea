@@ -186,6 +186,15 @@ public sealed partial class TownHireScreen : TownSubScreen
             def?.SetText(UiResources.Instance.Text(Item + "definition.txt"));
             def?.SetValue("count", Pool(i).ToString());
             def?.SetValue("growth", G.WeeklyGrowthOf(Owner.Town, tier).ToString());
+            def?.SetTooltip(GrowthTooltip(G.GrowthOf(Owner.Town, tier), 0));
+            // Dev (screenshots): `--hire-dev-growth-tooltip` shows the first row's growth tooltip next to it.
+            if (i == 0 && _devTip == null && def != null && OS.GetCmdlineUserArgs().Contains("--hire-dev-growth-tooltip"))
+            {
+                _devTip = StockTooltip.Build(GrowthTooltip(G.GrowthOf(Owner.Town, tier), 0), 1f);
+                AddChild(_devTip);
+                var at = def;
+                Callable.From(() => _devTip.GlobalPosition = at.GlobalPosition + new Vector2(at.Size.X, 0)).CallDeferred();
+            }
         }
         var sel = CreatureAt(_row, _column[TierOf(_row) - 1]);
         if (sel != null && db.Creatures.TryGetValue(sel, out var cd))
@@ -201,6 +210,37 @@ public sealed partial class TownHireScreen : TownSubScreen
         if (_jog.Find("button_4") is { } all) all.Enabled = InCaravanHire ? _crow < CaravanRows.Count : G.HireAllPlan(Owner.Town, Me.Purse, G.TownRecruitArmy(Owner.Town), Selection()).Count > 0;
         if (_jog.Find("button_1") is { } minus) minus.Enabled = _count > 0;
         if (_jog.Find("button_3") is { } plus) plus.Enabled = _count < max;
+    }
+
+    /// <summary>
+    /// The town rows' growth tooltip on the "definition" text (006db6b0 at 006dc193: with the item's town flag +0x3c an
+    /// SHireCreatureGrowthTooltip holding the eight growth parts and the travel days is set on window +0x20 =
+    /// "definition"; drawn by 006dc430 into SIMPLE_TEXT_TOOLTIP: name = T_GROWTH_HEADER, strings = the lines of the
+    /// UIGameRoot "hire_creatures" texts (HireCreatures/RootText), each added by 006d9990 only when its count is above 0:
+    /// weekly, castle, horde, dwelling, specialization, grail, sacrifice, then the moon week (POSITIVE with the part,
+    /// NEGATIVE with −part), the total (T_GROWTH_TOTAL when it equals the weekly part, else _MODIFIED), and
+    /// T_CARAVAN_DAYS_TRAVEL when the days are above 0.
+    /// </summary>
+    Control? _devTip;
+
+    static string GrowthTooltip(H5.Adventure.Engine.TownGrowth g, int days)
+    {
+        // UIGameRoot "hire_creatures" = HireCreatures/RootText.
+        static string T(string key) => UiGameRoot.RelatedTextAt("UI/HireCreatures/RootText.(WindowRelatedTexts).xdb", key) ?? "";
+        var sb = new System.Text.StringBuilder(T("T_GROWTH_HEADER"));
+        void Line(string key, int count) { if (count > 0) sb.Append(T(key).Replace("<value=count>", count.ToString())); }
+        Line("T_GROWTH_WEEKLY", g.Weekly);
+        Line("T_GROWTH_CASTLE", g.Castle);
+        Line("T_GROWTH_HORDE", g.Horde);
+        Line("T_GROWTH_DWELLING", g.Dwelling);
+        Line("T_GROWTH_SPECIALIZATION", g.Specialization);
+        Line("T_GROWTH_GRAIL", g.Grail);
+        Line("T_GROWTH_SACRIFICE", g.Sacrifice);
+        if (g.MoonWeek >= 0) Line("T_GROWTH_MOONWEEK_POSITIVE", g.MoonWeek);
+        else Line("T_GROWTH_MOONWEEK_NEGATIVE", -g.MoonWeek);
+        Line(g.Total == g.Weekly ? "T_GROWTH_TOTAL" : "T_GROWTH_TOTAL_MODIFIED", g.Total);
+        Line("T_CARAVAN_DAYS_TRAVEL", days);
+        return sb.ToString();
     }
 
     /// <summary>The dwelling's building icon (TownBuildingSharedStats Icon of its built level).</summary>
