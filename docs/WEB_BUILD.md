@@ -144,6 +144,26 @@ Locally: `node tools/web/harness/serve.mjs web/dist 8080 [--host 0.0.0.0] [--coi
 
 Deploying = `rsync -a --delete web/dist/ server:/srv/h5reborn/dist/`.
 
+### Page-only changes (no rebuild)
+
+A change to the page alone (`web/game/H5Reborn.web/wwwroot/`: `index.html`, `h5*.js`, `h5shaders.json`) does not need
+the 5–15 minute build:
+
+```sh
+tools/web/patch-page.sh [--dist web/dist] [--dry-run] [--force]
+rsync -a web/dist/ server:/srv/h5reborn/dist/      # only the changed files travel
+```
+
+It copies the page files that differ into the existing build, rewrites their `.br` / `.gz` siblings (a server with
+`precompressed br gzip` would otherwise keep serving the old page), keeps `twodog.sizes.json` exact if it lists one of
+them, and records the patch in `build-info.json` (`"page": { commit, dirty, patched, files }`; `commit` stays the
+engine build's). Every file is written beside its target first and then renamed into place, so a running server never
+serves half a file. It refuses (exit 1; `--force` overrides) when the build's commit is unknown or when anything the page
+talks to changed since that commit: `web/game/` outside `wwwroot/` (the `[JSImport]` bindings in `src/Web/*.cs`,
+`Program.cs`, `emscripten/`, the project files) or `tools/web/build.sh`, since page and compiled code must agree. Game
+code changes since the build (`game/`, `src/`) are reported as *not deployed*. No hashes to update: the .NET boot
+manifest (`_framework/dotnet.boot.js`) only covers `_framework/`, and the page files are served `no-cache`.
+
 ## Using it
 
 1. Open the page. A panel asks for the game: **Choose game folderâ€¦** (Chromium's File System Access picker), or the
@@ -510,7 +530,7 @@ reads, parsed xdb documents and their size) to the browser console.
 cd tools/web/harness && npm install
 node smoke.mjs ../../../web/dist --install "/path/to/Tribes of the East" [--gpu] [--coi] \
      [--only menu,duel,adventure,endturn,persist,decoded,audio,lobby,remember] [--map-arg --adventure=A2M1] \
-     [--server src/H5.Server/bin/.../H5.Server.dll] [--out DIR] [--pick-delay s] [--init extra.js] [--record-shaders file]
+     [--server src/H5.Server/bin/.../H5.Server.dll] [--out DIR] [--pick-delay s] [--init extra.js] [--record-shaders file]      [--browser chromium|firefox] [--query noshaderwarm&nodecoded]
 ```
 
 It serves the folder, picks the install through the page's folder input, waits for each screen's log marker and
@@ -529,7 +549,24 @@ from IndexedDB (visit 2), round-trips it through the export zip and import, and 
 before / after a key press (`?audiotest` taps the Web Audio output); `intro` plays the intro movies.
 `lobby` starts the desktop dedicated server (`--server <H5.Server.dll>`) on a random local port and joins it from
 the page over WebSocket (`--goto=create --connect=ws://127.0.0.1:<port>/`).
-Exit code 0 = every scenario reached its marker without a page error. Screenshots contain original game art:
+`--query` adds page flags to every scenario. results.json also lists each page's frames longer than 400 ms (`longFrames`:
+page time in s, length in ms) next to `maxFrameGapMs`.
+
+**No WebGL 2 = environment failure, not a page failure.** Headless Chromium on Windows often has no WebGL 2 for the first
+second after it starts (its GPU process is not up yet: on this machine the first context failed about 3 times in 4), and on
+some machines (remote sessions, a busy or blocklisted GPU) not at all; the page then stops with Godot's "features required
+… are missing: WebGL2". `browsers.mjs` therefore asks a blank page for a WebGL 2 context (up to 6 times, a second apart)
+before any scenario runs, and walks a list of flag sets until one has it: with `--gpu` the GPU (`--use-angle=d3d11` /
+`vulkan`), then SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`), SwiftShader-WebGL
+(`--use-gl=angle --use-angle=swiftshader-webgl`) and SwiftShader in the browser process (`--in-process-gpu`). The chosen
+set and the GL renderer are printed (`browser: chromium (gpu), WebGL 2 renderer: …`) and stored in results.json
+(`environment`). A page that still reports missing WebGL 2 ends its scenario at once as `env:webgl2-missing` and runs it
+again in a newly probed browser (twice at most). Browsers opened later (persistent profiles, audio, lobby) are probed the
+same way. When no flag set gives WebGL 2 the run stops with `ENVIRONMENT FAILURE (not a page failure)` and **exit code 3**
+(results.json: `environment.failure`). `prof.mjs` uses the same probe.
+
+Exit code 0 = every scenario reached its marker without a page error; 3 = only environment failures; 1 = a real failure.
+Screenshots contain original game art:
 they stay local (git-ignored).
 
 ## Verified (November 2026, headless Chromium, stock 3.1 install)

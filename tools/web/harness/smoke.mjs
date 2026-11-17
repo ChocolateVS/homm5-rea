@@ -6,9 +6,11 @@
 // --pick-delay <s>: seconds between the page being ready and the folder being picked.
 // --record-shaders: records every WebGL program the game links in the scenarios run (menu,duel,adventure make a good
 // list) and writes the page's shader warm-up list (wwwroot/h5shaders.js; docs/WEB_BUILD.md, Shaders).
-// Chromium: $CHROMIUM, else the playwright cache (npx playwright-core install chromium).
-// Exit code 0 only if every scenario reached its marker without a page error.
-import { chromium } from 'playwright-core';
+// --browser firefox: Playwright's Firefox ($FIREFOX, else `npx playwright-core install firefox`); default Chromium
+// ($CHROMIUM, else the playwright cache: npx playwright-core install chromium).
+// Exit code 0 only if every scenario reached its marker without a page error; 3 = environment failure (the headless
+// browser has no WebGL 2 with any flag set, browsers.mjs; results.json `environment`); 1 = anything else.
+import { browserType, launchOptions, launchWithWebGL2, probeWebGL2, WEBGL2_MISSING } from './browsers.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -33,26 +35,41 @@ const SCENARIOS = {
 };
 const only = opt('--only', 'menu,duel,adventure').split(',');
 
-function findChromium() {
-  if (process.env.CHROMIUM) return process.env.CHROMIUM;
-  const base = process.env.PLAYWRIGHT_BROWSERS_PATH || (process.platform === 'win32'
-    ? path.join(os.homedir(), 'AppData/Local/ms-playwright') : path.join(os.homedir(), '.cache/ms-playwright'));
-  const dirs = fs.existsSync(base) ? fs.readdirSync(base).filter((d) => /^chromium-\d+$/.test(d)).sort().reverse() : [];
-  for (const d of dirs)
-    for (const rel of ['chrome-win64/chrome.exe', 'chrome-win/chrome.exe', 'chrome-linux64/chrome', 'chrome-linux/chrome']) {
-      const p = path.join(base, d, rel);
-      if (fs.existsSync(p)) return p;
-    }
-  throw new Error('no Chromium found: set CHROMIUM or run `npx playwright-core install chromium`');
+// Browser: Chromium (default) or --browser firefox (Playwright's Firefox build). Default renderer: SwiftShader (software
+// WebGL 2; works on any machine and server, slow for 3D scenes). --gpu: the machine's GPU through ANGLE (still headless,
+// no window), falling back to SwiftShader when that browser has no WebGL 2 (browsers.mjs).
+const GPU = argv.includes('--gpu');
+const KIND = opt('--browser', 'chromium');
+const BT = browserType(KIND);
+let env = await launchWithWebGL2(KIND, { gpu: GPU });
+const environment = { browser: KIND, attempts: [...env.attempts] };
+if (!env.browser) envFailure('no flag set gave this headless browser WebGL 2');
+let LAUNCH = launchOptions(KIND, env.set);
+environment.flags = env.set.name; environment.renderer = env.renderer;
+
+// Every further browser (persistent profiles, the audio and lobby browsers) is opened through these: they wait until its
+// GPU process gives WebGL 2 (a fresh browser's first context often fails, browsers.mjs), else it is an environment failure.
+async function persistent(profile) {
+  const ctx = await BT.launchPersistentContext(profile, { ...LAUNCH, viewport: { width: 1280, height: 720 } });
+  if (!(await probeWebGL2(ctx)).ok) { await ctx.close(); envFailure('a new browser profile got no WebGL 2'); }
+  return ctx;
+}
+async function launch(opts) {
+  const b = await BT.launch(opts);
+  if (!(await probeWebGL2(b)).ok) { await b.close(); envFailure('a new browser got no WebGL 2'); }
+  return b;
 }
 
-// Default: SwiftShader (software WebGL 2; works on any machine and server, slow for 3D scenes).
-// --gpu: the machine's GPU through ANGLE (still headless, no window).
-const GPU = argv.includes('--gpu');
-const LAUNCH = { executablePath: findChromium(), headless: true,
-  args: [...(GPU ? ['--enable-gpu', '--ignore-gpu-blocklist', process.platform === 'win32' ? '--use-angle=d3d11' : '--use-angle=vulkan']
-                 : ['--enable-unsafe-swiftshader', '--use-angle=swiftshader']),
-    '--enable-precise-memory-info', '--autoplay-policy=no-user-gesture-required'] };
+// The machine, not the build: results.json says so and the exit code is 3 (1 = a real page failure).
+function envFailure(why) {
+  fs.mkdirSync(outDir, { recursive: true });
+  const r = { environment: { ...environment, failure: 'WebGL2 missing', detail: why } };
+  fs.writeFileSync(path.join(outDir, 'results.json'), JSON.stringify(r, null, 2));
+  console.log(`ENVIRONMENT FAILURE (not a page failure): ${why}. Tried: ` +
+    environment.attempts.map((a) => `${a.flags}=${a.webgl2 ? 'webgl2' : a.error ? 'error' : 'no webgl2'}`).join(', ') +
+    '. The GPU is not available to headless browsers on this machine right now; rerun later or on another machine.');
+  process.exit(3);
+}
 
 fs.mkdirSync(outDir, { recursive: true });
 // --coi: serve with COOP/COEP like the deployment (Caddy on the LAN server); the build must work with and without.
@@ -76,14 +93,20 @@ async function run(name, page, { pick = true, query, marker, then = [], settle, 
     if (/\[H5\] web: engine started/.test(t)) page.mouse.move(640, 360).catch(() => {});
   });
   page.on('pageerror', (e) => { errors.push(e.message); log.push(`[${stamp()}] PAGEERROR ${e.message}`); });
+  // The browser lost WebGL 2 (headless GPU process unavailable): an environment failure, reported at once.
+  let envHit; const envMissing = new Promise((r) => (envHit = r));
+  page.on('console', (m) => { if (WEBGL2_MISSING.test(m.text())) envHit('env:webgl2-missing'); });
   // Longest gap between two animation frames: how long the page was frozen by one synchronous piece of work.
-  await page.addInitScript(() => { let last = 0; globalThis.h5MaxFrameGapMs = 0;
-    const f = (t) => { if (last) globalThis.h5MaxFrameGapMs = Math.max(globalThis.h5MaxFrameGapMs, t - last); last = t; requestAnimationFrame(f); };
+  // Every gap over 400 ms is kept (page time it ended, length) for results.json `longFrames`.
+  await page.addInitScript(() => { let last = 0; globalThis.h5MaxFrameGapMs = 0; globalThis.h5LongFrames = [];
+    const f = (t) => { if (last) { globalThis.h5MaxFrameGapMs = Math.max(globalThis.h5MaxFrameGapMs, t - last); if (t - last > 400) globalThis.h5LongFrames.push([Math.round(t / 100) / 10, Math.round(t - last)]); } last = t; requestAnimationFrame(f); };
     requestAnimationFrame(f); globalThis.h5ResetFrameGap = () => { globalThis.h5MaxFrameGapMs = 0; }; });
   // --init <file.js>: an extra script that runs before the page's own (instrumentation for experiments).
   if (opt('--init')) await page.addInitScript({ path: path.resolve(opt('--init')) });
   if (opt('--record-shaders')) await page.addInitScript(() => { globalThis.H5_RECORD_SHADERS = true; });
-  await page.goto(pageBase + query);
+  // --query <a&b>: extra page flags for every scenario (e.g. noshaderwarm, nodecoded).
+  const extraQ = opt('--query');
+  await page.goto(pageBase + (extraQ ? query.replace('?', '?' + extraQ + '&') : query));
   // Memory timeline: the wasm heap (linear memory, never shrinks) every 2 s, next to the game's log lines.
   let peakMB = 0;
   const memTimer = setInterval(() => page.evaluate(() => globalThis.h5WasmHeapBytes?.()).then((b) => {
@@ -97,7 +120,7 @@ async function run(name, page, { pick = true, query, marker, then = [], settle, 
     await page.setInputFiles('#h5-dir', install);
     log.push(`[${stamp()}] picked ${install}`);
   }
-  const res = await Promise.race([reached.then(() => 'ok'), new Promise((r) => setTimeout(() => r('timeout'), timeoutS * 1000))]);
+  const res = await Promise.race([reached.then(() => 'ok'), envMissing, new Promise((r) => setTimeout(() => r('timeout'), timeoutS * 1000))]);
   if (res === 'ok') await page.waitForTimeout(settle * 1000);
   const extra = res === 'ok' && after ? await after(page, log, stamp) : undefined;
   if (opt('--record-shaders')) recordShaders(await page.evaluate(() => globalThis.h5shaders?.recorded()).catch(() => null), name);
@@ -107,10 +130,10 @@ async function run(name, page, { pick = true, query, marker, then = [], settle, 
   const fps = await page.evaluate(() => new Promise((r) => { let n = 0; const s = performance.now();
     const f = () => { n++; if (performance.now() - s < 3000) requestAnimationFrame(f); else r(n / ((performance.now() - s) / 1000)); };
     requestAnimationFrame(f); }));
-  const mem = await page.evaluate(() => ({ js: performance.memory?.usedJSHeapSize, wasm: globalThis.h5WasmHeapBytes?.(), gap: globalThis.h5MaxFrameGapMs }));
+  const mem = await page.evaluate(() => ({ js: performance.memory?.usedJSHeapSize, wasm: globalThis.h5WasmHeapBytes?.(), gap: globalThis.h5MaxFrameGapMs, long: globalThis.h5LongFrames }));
   const shaderWarm = await page.evaluate(() => globalThis.h5shaders?.status()).catch(() => null);
   results[name] = { result: res, seconds: +((Date.now() - t0) / 1000).toFixed(1), screenshot: shot, pageErrors: errors.length,
-    rafFps: Math.round(fps * 10) / 10, maxFrameGapMs: Math.round(mem.gap), ...(extra || {}), wasmHeapMB: mem.wasm && Math.round(mem.wasm / 2 ** 20), jsHeapMB: mem.js && Math.round(mem.js / 2 ** 20), ...(shaderWarm ? { shaderWarm } : {}) };
+    rafFps: Math.round(fps * 10) / 10, maxFrameGapMs: Math.round(mem.gap), longFrames: (mem.long || []).slice(0, 40), ...(extra || {}), wasmHeapMB: mem.wasm && Math.round(mem.wasm / 2 ** 20), jsHeapMB: mem.js && Math.round(mem.js / 2 ** 20), ...(shaderWarm ? { shaderWarm } : {}) };
   fs.writeFileSync(path.join(outDir, `${name}.log`), log.join('\n') + '\n');
   if (extra?.result && extra.result !== 'ok') results[name].result = extra.result;
   console.log(`${name}: ${results[name].result} in ${results[name].seconds}s -> ${shot}`);
@@ -146,12 +169,24 @@ async function writeShaderList(file) {
   console.log(`shaders: wrote ${programs.length} programs, ${shaders.length} shaders, ${lines.length} lines -> ${file}`);
 }
 
-const browser = await chromium.launch(LAUNCH);
+let browser = env.browser;
 for (const name of only.filter((n) => SCENARIOS[n])) {
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  const page = await ctx.newPage();
-  try { await run(name, page, SCENARIOS[name]); } catch (e) { results[name] = { result: 'error', error: String(e) }; console.log(name, e); }
-  await ctx.close();
+  // A scenario whose page found no WebGL 2 runs again in a freshly probed browser (the next flag set when this one
+  // no longer has it); twice at most.
+  for (let attempt = 0; ; attempt++) {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const page = await ctx.newPage();
+    try { await run(name, page, SCENARIOS[name]); } catch (e) { results[name] = { result: 'error', error: String(e) }; console.log(name, e); }
+    await ctx.close();
+    if (results[name].result !== 'env:webgl2-missing' || attempt >= 2) break;
+    console.log(`${name}: the page found no WebGL 2 (environment) - relaunching the browser and running it again`);
+    await browser.close();
+    env = await launchWithWebGL2(KIND, { gpu: GPU, from: env.index });
+    environment.attempts.push(...env.attempts);
+    if (!env.browser) envFailure(`the page lost WebGL 2 during "${name}" and no flag set got it back`);
+    browser = env.browser; LAUNCH = launchOptions(KIND, env.set); environment.flags = env.set.name; environment.renderer = env.renderer;
+    (environment.retries ??= []).push(name);
+  }
 }
 await browser.close();
 
@@ -160,13 +195,13 @@ if (only.includes('remember')) {
   // start the game without any picking.
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'h5web-'));
   try {
-    let ctx = await chromium.launchPersistentContext(profile, { ...LAUNCH, viewport: { width: 1280, height: 720 } });
+    let ctx = await persistent(profile);
     let page = ctx.pages()[0] || await ctx.newPage();
     const copied = new Promise((r) => page.on('console', (m) => { if (/H5DATA_OPFS_CACHED/.test(m.text())) r(); }));
     await run('remember-first', page, SCENARIOS.menu);
     await Promise.race([copied, new Promise((r) => setTimeout(r, timeoutS * 1000))]);
     await ctx.close();
-    ctx = await chromium.launchPersistentContext(profile, { ...LAUNCH, viewport: { width: 1280, height: 720 } });
+    ctx = await persistent(profile);
     page = ctx.pages()[0] || await ctx.newPage();
     await run('remember-second', page, { ...SCENARIOS.menu, pick: false });
     await ctx.close();
@@ -186,7 +221,7 @@ if (only.includes('decoded')) {
   };
   try {
     for (const visit of ['decoded-first', 'decoded-second']) {
-      const ctx = await chromium.launchPersistentContext(profile, { ...LAUNCH, viewport: { width: 1280, height: 720 } });
+      const ctx = await persistent(profile);
       const page = ctx.pages()[0] || await ctx.newPage();
       await run(visit, page, q);
       // Let the background IndexedDB writes finish before the browser closes.
@@ -200,7 +235,8 @@ if (only.includes('decoded')) {
 if (only.includes('audio')) {
   // Sound: a browser with the normal autoplay policy (sound only after a user gesture). The menu music must be
   // silent before the first key press and audible after it; the intro movies (played without --skip-intro) must run.
-  const b = await chromium.launch({ ...LAUNCH, args: LAUNCH.args.filter((a) => !a.startsWith('--autoplay-policy')) });
+  const b = await launch(KIND === 'firefox' ? { ...LAUNCH, firefoxUserPrefs: { ...LAUNCH.firefoxUserPrefs, 'media.autoplay.default': 1 } }
+    : { ...LAUNCH, args: LAUNCH.args.filter((a) => !a.startsWith('--autoplay-policy')) });
   const sample = (pg) => pg.evaluate(async () => { let peak = 0;
     for (let i = 0; i < 30; i++) { peak = Math.max(peak, globalThis.h5audio?.level() ?? 0); await new Promise((r) => setTimeout(r, 100)); }
     return { peak, states: globalThis.h5audio?.states() }; });
@@ -247,7 +283,7 @@ async function withServer(name, fn) {
 const LOBBY_MARKER = /\[H5\] web: lobby: Connected to smoke server/;
 if (only.includes('lobby')) {
   await withServer('lobby', async (port) => {
-    const b = await chromium.launch(LAUNCH);
+    const b = await launch(LAUNCH);
     const ctx = await b.newContext({ viewport: { width: 1280, height: 720 } });
     const page = await ctx.newPage();
     await run('lobby', page, { query: '?nocache&args=' + encodeURIComponent(`--goto=create --connect=ws://127.0.0.1:${port}/`), marker: LOBBY_MARKER, settle: 3 });
@@ -258,7 +294,7 @@ if (only.includes('lobby-wss')) {
   await withServer('lobby-wss', async (port) => {
     const tlsServer = await serve(dist, 0, { coi: argv.includes('--coi'), tls: selfSignedCert(), proxy: { '/h5host/': `127.0.0.1:${port}` } });
     const tlsBase = `https://127.0.0.1:${tlsServer.address().port}/`;
-    const b = await chromium.launch({ ...LAUNCH, args: [...LAUNCH.args, '--ignore-certificate-errors'] });
+    const b = await launch(KIND === 'firefox' ? LAUNCH : { ...LAUNCH, args: [...LAUNCH.args, '--ignore-certificate-errors'] });
     try {
       const ctx = await b.newContext({ viewport: { width: 1280, height: 720 }, ignoreHTTPSErrors: true });
       const page = await ctx.newPage();
@@ -273,12 +309,12 @@ if (only.includes('persist')) {
   // export it as a zip and import it back under a new name (applied on the reload of visit 3).
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'h5web-'));
   try {
-    let ctx = await chromium.launchPersistentContext(profile, { ...LAUNCH, viewport: { width: 1280, height: 720 } });
+    let ctx = await persistent(profile);
     let page = ctx.pages()[0] || await ctx.newPage();
     await run('persist-save', page, { query: '?nocache&args=' + encodeURIComponent(opt('--map-arg', '--adventure=A2M1') + ' --save-dev=quicksave'),
       marker: /\[H5\] web: adventure on screen/, then: [/\[H5\] saved "/, /user data changed/], settle: 2 });
     await ctx.close();
-    ctx = await chromium.launchPersistentContext(profile, { ...LAUNCH, viewport: { width: 1280, height: 720 } });
+    ctx = await persistent(profile);
     page = ctx.pages()[0] || await ctx.newPage();
     await run('persist-reload', page, { query: '?nocache&args=--skip-intro', marker: /\[H5\] web: user data .*saves\/[^,]+\.sav/, then: [/\[H5\] web: main menu on screen/], settle: 2,
       after: async (pg) => {
@@ -299,7 +335,11 @@ if (only.includes('persist')) {
   } finally { fs.rmSync(profile, { recursive: true, force: true }); }
 }
 server.close();
-fs.writeFileSync(path.join(outDir, 'results.json'), JSON.stringify(results, null, 2));
+fs.writeFileSync(path.join(outDir, 'results.json'), JSON.stringify({ ...results, environment }, null, 2));
 if (opt('--record-shaders')) await writeShaderList(path.resolve(opt('--record-shaders')));
-console.log(JSON.stringify(results, null, 2));
-process.exit(Object.values(results).every((r) => r.result === 'ok' && !r.pageErrors) ? 0 : 1);
+console.log(JSON.stringify({ ...results, environment }, null, 2));
+// 0 = all ok; 3 = only environment failures (no WebGL 2 in this browser); 1 = a real failure.
+const all = Object.values(results);
+const real = all.filter((r) => !(r.result === 'ok' && !r.pageErrors) && !String(r.result).startsWith('env:'));
+if (!real.length && all.some((r) => String(r.result).startsWith('env:'))) console.log('ENVIRONMENT FAILURE (not a page failure): the page found no WebGL 2 in this headless browser.');
+process.exit(real.length ? 1 : all.some((r) => String(r.result).startsWith('env:')) ? 3 : 0);

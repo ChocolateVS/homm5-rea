@@ -6,7 +6,7 @@
 //   (e.g. "load: decoded prefetch" ... STOP="load: objects" profiles the map's object pass).
 // Writes <out.txt> (top self / inclusive functions), <out.txt>.log (console) and <out.txt>.cpuprofile (Chrome DevTools).
 // Uses the GPU (still headless) like smoke.mjs --gpu; Chromium: $CHROMIUM, else the playwright cache.
-import { chromium } from 'playwright-core';
+import { launchWithWebGL2 } from './browsers.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,23 +15,10 @@ import { serve } from './serve.mjs';
 const [dist, install, query, marker, settle, secs, out] = process.argv.slice(2);
 if (!out) { console.error('usage: node prof.mjs <dist> <install> <query> <marker> <settle s> <profile s> <out.txt>'); process.exit(2); }
 
-function findChromium() {
-  if (process.env.CHROMIUM) return process.env.CHROMIUM;
-  const base = process.env.PLAYWRIGHT_BROWSERS_PATH || (process.platform === 'win32'
-    ? path.join(os.homedir(), 'AppData/Local/ms-playwright') : path.join(os.homedir(), '.cache/ms-playwright'));
-  const dirs = fs.existsSync(base) ? fs.readdirSync(base).filter((d) => /^chromium-\d+$/.test(d)).sort().reverse() : [];
-  for (const d of dirs)
-    for (const rel of ['chrome-win64/chrome.exe', 'chrome-win/chrome.exe', 'chrome-linux64/chrome', 'chrome-linux/chrome']) {
-      const p = path.join(base, d, rel);
-      if (fs.existsSync(p)) return p;
-    }
-  throw new Error('no Chromium found: set CHROMIUM or run `npx playwright-core install chromium`');
-}
-
 const server = await serve(path.resolve(dist), 0, {});
 const base = `http://127.0.0.1:${server.address().port}/`;
-const browser = await chromium.launch({ executablePath: findChromium(), headless: true,
-  args: ['--enable-gpu', '--ignore-gpu-blocklist', process.platform === 'win32' ? '--use-angle=d3d11' : '--use-angle=vulkan', '--autoplay-policy=no-user-gesture-required'] });
+const { browser } = await launchWithWebGL2('chromium', { gpu: true });
+if (!browser) { console.error('ENVIRONMENT FAILURE: headless Chromium has no WebGL 2 with any flag set (browsers.mjs)'); process.exit(3); }
 const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
 const log = []; const t0 = Date.now();
 const stopRe = process.env.STOP && new RegExp(process.env.STOP); let stopHit; const stopped = new Promise((r) => (stopHit = r));
