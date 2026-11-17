@@ -14,21 +14,6 @@ from the description. Move an item to "Done" with the commit when fixed.
 6. **Browser — data picker page:** the first screen (choosing the game files) is very hard to read;
    make it readable and themed like the game.
 7. **Browser — F11:** the game captures key input, so F11 full screen does not work in the browser.
-19. **Combat graphics glitches:** "a little bit glitchy" in battle (browser build) — details not given;
-    reproduce in a browser duel (smoke harness) and compare with the desktop build to find what
-    looks wrong (z-fighting, overlay blend, shadows, flicker). Detail from the user: the blue squares
-    under a stack flicker against the green movement grid — looks like z-fighting between overlapping
-    grid-mark quads (select/target kinds vs the movement area, commits 9537a77 / 84b052b); check the
-    exe's draw order / depth state for the CombatSelectionDesc layers (0055c480) and match it.
-    *Progress:* the select marks now draw over the overlapping movement / target quads in the exe's order
-    (material Priority → render layer 0x1f + priority, 00899720; Select.xdb / select_2.xdb = 1, others 0) and sit
-    0.05 above the cell (0055bb60) — commit "combat grid: select marks drawn after the other marks". Still open: the
-    cyan blobs under a Deflect Missile target are spell-effect particles sorted with the grid. Traced since: the exe
-    does not queue particles in the material layers at all (00464fd0 is only used by the NGScene materials); they go
-    through the scene's particle pass (00a904d0 → 0087f120, drawn with SEffTransparentParticles 0087e220) inside the
-    frame function at 00a91c00 — which pass draws the grid's layer-0x1f queue relative to it is not traced yet (GAP in
-    AUDIT_COMBAT_UI); the browser (Compatibility) renderer draws the grid fill brighter than the desktop one (not investigated).
-
 ## Done
 
 1. **Victory/defeat screen** (combat results): the outcome and experience lines were one text block drawn over
@@ -129,3 +114,11 @@ from the description. Move an item to "Done" with the commit when fixed.
    browser that once saw the game folder keeps its keys on later .pak-only visits. A browser session with only the
    .pak files and no earlier copy still has no keys (as the exe without the file); the .pak picker now also takes
    `input_a2.cfg` (placed as profiles/default_profile/) and says so — commit "input: key bindings per profile as the exe".
+19. **Combat graphics glitches:** the select marks now draw over the overlapping movement / target quads in the exe's
+   order (material Priority → render layer 0x1f + priority, 00899720; Select.xdb / select_2.xdb = 1, others 0) and sit
+   0.05 above the cell (0055bb60) — commit "combat grid: select marks drawn after the other marks". The cyan blobs under a
+   Deflect Missile target are the spell's effect particles: the scene frame FUN_00a91900 (the call at 00a91c00) draws the
+   whole material queue first (00465040 → 009ba810 → 009ba6a0, the grid's layer 0x1f + priority among it) and only then
+   the particle pass (0087ed90 → 0087e7e0 → 0087e220; 00a904d0 only fills the batches), so particles are always over the
+   grid. Our particle material now has the top render priority — commit "combat sweep 19: particles after the material
+   layers, Summon Other destination". (The browser renderer's brighter grid fill is not investigated.)

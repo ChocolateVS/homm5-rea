@@ -144,7 +144,12 @@ internal partial class ParticleInstanceNode : MeshInstance3D, EffectPlayer.IEffe
         _def = def;
         _bake = bake;
         _atlas = EffectAssets.GetAtlas(def.Textures);
-        _material = new ShaderMaterial { Shader = EffectAssets.ParticleShader };
+        // Draw order: the scene frame FUN_00a91900 draws the whole material queue first (00465040 → 009ba810 →
+        // 009ba6a0, every queued item sorted by its layer — the combat grid's blended marks in layer 0x1f + priority,
+        // 00899720) and only then the particle pass (0087ed90 → 0087e7e0 → 0087e220, gathered by 00a904d0 →
+        // 0087f120), so particles are always over the grid marks and the other blended materials. Godot sorts
+        // transparent surfaces by render priority before depth, so the top priority keeps that order.
+        _material = new ShaderMaterial { Shader = EffectAssets.ParticleShader, RenderPriority = (int)Material.RenderPriorityMax };
         if (_atlas != null) _material.SetShaderParameter("atlas", _atlas.Texture);
         Mesh = _mesh;
         CastShadow = ShadowCastingSetting.Off;

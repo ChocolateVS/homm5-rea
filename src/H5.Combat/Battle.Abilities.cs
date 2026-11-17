@@ -546,7 +546,9 @@ public sealed partial class Battle
             case Ab.SummonOther:
             {
                 if (t!.Id == u.Id || t.HasEffect("SPELL_ANTI_MAGIC") || t.Has(Ab.HoldGround) && !t.HasMovedFromStart) return "cannot teleport this unit";
-                var spot = NearestFree(t, u.Pos);
+                // exe FUN_00979d50 (sweep 19): the ring around the caster walked towards the moved stack, nearest by
+                // footprint gap, ties by the angle to the moved stack, drawn with the battle RNG.
+                var spot = ExeSummonOtherDestination(u, t);
                 if (spot == null) return "no free spot";
                 Emit(new AbilityTriggered(u.Id, c.Ability, t.Id));
                 Teleport(t, spot.Value);
