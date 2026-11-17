@@ -10,7 +10,8 @@ public sealed class CampaignBonus
 {
     /// <summary>E_BONUS_NONE, E_BONUS_ARTIFACT, E_BONUS_CREATURE, E_BONUS_RESOURCE, E_BONUS_SPELL, E_BONUS_BUILDING, …</summary>
     public string Type = "E_BONUS_NONE";
-    /// <summary>Script name of the hero receiving it; empty = the player's main hero.</summary>
+    /// <summary>Target/Hero: pak path of the SAdvMapHeroShared receiving it (00c49d10 +4, resolved by 00c65a80);
+    /// empty = the player's main hero.</summary>
     public string TargetHero = "";
     public string Creature = "CREATURE_UNKNOWN";
     public int Count;
@@ -125,7 +126,7 @@ public static class CampaignLoader
             var parts = mission.MapTag.Split('/');
             mission.MapId = parts.Length >= 2 ? parts[^2] : "";
             foreach (var b in m.Element("Bonuses")?.Elements("Item") ?? Enumerable.Empty<XElement>())
-                mission.Bonuses.Add(ReadBonus(b));
+                mission.Bonuses.Add(ReadBonus(b, path));
             var pool = m.Element("HeroesPool");
             mission.HeroesPoolCount = int.TryParse((string?)pool?.Element("Count"), out var cnt) ? cnt : 0;
             foreach (var h in pool?.Element("Heroes")?.Elements("Item") ?? Enumerable.Empty<XElement>())
@@ -139,12 +140,12 @@ public static class CampaignLoader
         return c;
     }
 
-    static CampaignBonus ReadBonus(XElement b)
+    static CampaignBonus ReadBonus(XElement b, string path)
     {
         var bonus = new CampaignBonus
         {
             Type = (string?)b.Element("Type") ?? "E_BONUS_NONE",
-            TargetHero = (string?)b.Element("Target")?.Element("Hero") ?? "",
+            TargetHero = Href(b.Element("Target")?.Element("Hero"), path) ?? "",
             Creature = (string?)b.Element("BonusArmy")?.Element("Creature") ?? "CREATURE_UNKNOWN",
             Count = int.TryParse((string?)b.Element("BonusArmy")?.Element("Count"), out var n) ? n : 0,
             Artifact = (string?)b.Element("BonusArtifactID") ?? "ARTIFACT_NONE",

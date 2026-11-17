@@ -198,7 +198,14 @@ public sealed partial class AdventureScripting
         });
         Reg("WarpToMap", c => Emit("warp_to_map", ("map", c.Str(0))));
         Reg("WarpHeroExp", c => Emit("warp_hero_exp", ("hero", c.Str(0))));
-        Reg("GetPlayerSelectedCampaignBonusIndex", c => c.Return(World.GameVars.TryGetValue("__campaign_bonus", out var v) && int.TryParse(v, out var i) ? i : 0));
+        // 0x005d2830: the player's vf 0x234 (CPlayer +0x678, the 1-based position of the chosen bonus among the offered ones).
+        Reg("GetPlayerSelectedCampaignBonusIndex", c =>
+        {
+            int id = c.Int(0);
+            if (id < 1 || id > 8) throw c.Error("Invalid player ID!");
+            var p = Game.Player(id - 1) ?? throw c.Error($"No player in world with ID {id}!");
+            c.Return(p.CampaignBonus);
+        });
 
         // Players (table 0x00f34c28)
         Reg("GetPlayerState", c => c.Return(ScriptPlayerState(PlayerId18(c))));

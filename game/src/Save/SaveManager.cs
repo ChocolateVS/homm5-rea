@@ -285,7 +285,7 @@ public static class SaveManager
         var session = screen.Session;
         if (CampaignFlow.Active is { } a && a.Session == session)
         {
-            CampaignFlow.StartMission(a.Campaign, a.Mission, a.BonusIndex);
+            CampaignFlow.StartMission(a.Campaign, a.Mission, a.BonusIndex, session.Game.Player(session.Human.Index)?.CampaignBonus ?? 0);
             return;
         }
         var source = session.Map.Source;

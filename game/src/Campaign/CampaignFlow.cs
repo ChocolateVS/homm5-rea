@@ -65,16 +65,29 @@ public static class CampaignFlow
     }
 
     /// <summary>
-    /// Loads the mission's map and opens the adventure screen. Runs on the main thread (no
-    /// worker threads, see docs/WEB_PORT.md); the PWL screen draws its progress bar first.
+    /// Loads the mission's map (world, carried heroes) before the bonus is chosen: the exe builds the world first and
+    /// only then lets the PWL screen offer the bonuses, which are checked against it (005a1a50 → 006b38d0).
     /// </summary>
-    public static AdventureScreen StartMission(CampaignDef c, CampaignMission m, int bonusIndex)
+    public static AdventureSession LoadMission(CampaignDef c, CampaignMission m)
     {
-        var profile = CampaignProfile.Current;
         var seed = (ulong)Time.GetTicksUsec();
         var session = AdventureSession.Start(m.MapId, seed, difficulty: CampaignMenu.Difficulty, campaign: true);
-        ApplyCarryOver(session, c, m, profile);
-        if (bonusIndex >= 0 && bonusIndex < m.Bonuses.Count) ApplyBonus(session, m.Bonuses[bonusIndex]);
+        ApplyCarryOver(session, c, m, CampaignProfile.Current);
+        return session;
+    }
+
+    /// <summary>Data indices of the bonuses the PWL screen offers for this world, in order (006b38d0 / 006b25e0).</summary>
+    public static List<int> OfferedBonuses(AdventureSession s, CampaignMission m) =>
+        Enumerable.Range(0, m.Bonuses.Count).Where(i => s.Game.CampaignBonusOffered(s.Human.Index, m.Bonuses[i])).ToList();
+
+    /// <summary>
+    /// Gives the chosen bonus and opens the adventure screen. <paramref name="bonusNumber"/> is the 1-based position of
+    /// the bonus among the offered ones (006b29d0), stored on the player (vf 0x230) by the bonus command (0042bcb0).
+    /// </summary>
+    public static AdventureScreen OpenMission(CampaignDef c, CampaignMission m, AdventureSession session, int bonusIndex, int bonusNumber)
+    {
+        if (bonusIndex >= 0 && bonusIndex < m.Bonuses.Count)
+            session.Game.ApplyCampaignBonus(session.Human.Index, m.Bonuses[bonusIndex], bonusNumber);
         Active = new ActiveMission(c, m, bonusIndex, session);
         var screen = AdventureScreen.Open(session);
         // Campaign maps are scripted: host their scripts even before AdventureScreen does it itself.
@@ -83,41 +96,9 @@ public static class CampaignFlow
         return screen;
     }
 
-    static HeroState? MainHero(AdventureSession s, string targetHero)
-    {
-        if (targetHero.Length > 0 && s.Game.HeroByName(targetHero) is { } named) return named;
-        return s.S.Heroes.FirstOrDefault(h => h.Alive && h.Owner == s.Human.Index);
-    }
-
-    /// <summary>Gives the chosen pre-mission bonus (E_BONUS_*) to the player's main hero / town / treasury.</summary>
-    public static void ApplyBonus(AdventureSession s, CampaignBonus b)
-    {
-        var g = s.Game;
-        var hero = MainHero(s, b.TargetHero);
-        var player = s.Human.Index;
-        g.RunScriptAction(() =>
-        {
-            switch (b.Type)
-            {
-                case "E_BONUS_ARTIFACT" when hero != null && b.Artifact != "ARTIFACT_NONE":
-                    g.ScriptGiveArtifact(hero, b.Artifact);
-                    break;
-                case "E_BONUS_CREATURE" when hero != null && b.Count > 0:
-                    hero.Army.TryAdd(b.Creature, b.Count);
-                    break;
-                case "E_BONUS_SPELL" when hero != null && b.Spell != "SPELL_NONE":
-                    g.ScriptLearnSpell(hero, b.Spell);
-                    break;
-                case "E_BONUS_RESOURCE":
-                    for (int r = 0; r < 7; r++)
-                        if (b.Resources[r] != 0) g.ScriptGive(player, r, b.Resources[r]);
-                    break;
-                case "E_BONUS_BUILDING" when s.S.Towns.FirstOrDefault(t => t.Owner == player) is { } town:
-                    g.ScriptUpgradeBuilding(town, b.Building);
-                    break;
-            }
-        });
-    }
+    /// <summary>Loads and opens the mission with a bonus chosen earlier (Restart Mission).</summary>
+    public static AdventureScreen StartMission(CampaignDef c, CampaignMission m, int bonusIndex, int bonusNumber) =>
+        OpenMission(c, m, LoadMission(c, m), bonusIndex, bonusNumber);
 
     /// <summary>
     /// Restores the heroes saved for this mission (CCampaign vf 0x20 = 0045f920 → 0045f080: records whose

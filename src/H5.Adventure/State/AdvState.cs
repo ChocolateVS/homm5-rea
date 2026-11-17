@@ -90,6 +90,10 @@ public sealed class PlayerState
     /// <summary>Objects already visited by any hero of this player (e.g. Eye/Hut of Magi reveals, Keymaster tents).</summary>
     public HashSet<int> VisitedObjects = new();
     public HashSet<int> Keys = new();
+    /// <summary>The chosen campaign bonus: CPlayer +0x694 (interface +0x678), set by vf 0x230 = 00500e70 with the 1-based
+    /// position among the offered bonuses (006b29d0 → 0042bcb0), read by vf 0x234 = 00500e90
+    /// (GetPlayerSelectedCampaignBonusIndex, 005d2830, returned as is); -1 at creation (004ff2a0 / 00500860).</summary>
+    public int CampaignBonus = -1;
 
     // ---- map-script AI directives (CPlayerAIInformation; set by the AI natives, see AdvApi.Ai.cs) ----
     /// <summary>SetAIPlayerAttractor: object priorities for all this AI player's heroes (vf 0x1e4/0x1e8).</summary>

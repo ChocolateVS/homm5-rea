@@ -20,8 +20,9 @@ public partial class PwlScreen : UiScreen
     readonly CampaignMission _mission;
     readonly List<int> _bonusSlots = new();
     int _selected = -1;
-    enum Phase { Choose, Loading, PressKey }
-    Phase _phase = Phase.Choose;
+    enum Phase { LoadingWorld, Choose, Loading, PressKey }
+    Phase _phase = Phase.LoadingWorld;
+    Adventure.AdventureSession? _session;
     double _blink;
 
     const double PressAnyKeyPeriod = 1.0, PressAnyKeyFade = 0.5;
@@ -44,28 +45,9 @@ public partial class PwlScreen : UiScreen
         Find("ProgressBarText")?.SetValue("val", "");
         ShowPicture(MapPicture(mission.MapTag));
 
-        // 006b38d0: only the valid bonuses (006b25e0) are offered, packed into Bonus_0.. in order; no
-        // valid bonus → no selection panel. Nothing is preselected: Start stays disabled with the
-        // NO_BONUS tooltip until a bonus is chosen (006b1eb0, CAN_START once one is).
-        var bonuses = mission.Bonuses;
-        var valid = Enumerable.Range(0, bonuses.Count).Where(i => IsValidBonus(bonuses[i])).ToList();
-        SetVisible("BonusSelection", true);
-        for (int w = 0; w < 3; w++)
-        {
-            var slot = Find($"Bonus_{w}");
-            if (slot == null) continue;
-            if (w >= valid.Count) { slot.Visible = false; continue; }
-            int i = valid[w];
-            slot.Visible = true;
-            slot.SetMeta("bonus", i);
-            _bonusSlots.Add(i);
-            var b = bonuses[i];
-            FindIn(slot, "BonusDesc")?.SetText(BonusText(b));
-            if (FindIn(slot, "BonusIcon") is { } icon && BonusIcon(b) is { } tex)
-                icon.AddChild(new TextureRect { Texture = tex, AnchorRight = 1, AnchorBottom = 1, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = MouseFilterEnum.Ignore });
-        }
-        if (_bonusSlots.Count == 0) SetVisible("BonusSelection", false);
-        UpdateStart();
+        // 005a1a50: the world is built first, under the progress bar; the bonuses are offered afterwards (ShowBonuses).
+        SetVisible("BonusSelection", false);
+        Find("ProgressBarText")?.SetValue("val", UiResources.StripMarkup(Text("UI/pwlscreen/Loading.txt")));
 
         void OnBonus(Node? node, bool start)
         {
@@ -86,10 +68,61 @@ public partial class PwlScreen : UiScreen
         base._Ready();
         FitBriefing();
         // Dev: `--pwl-autostart` picks the first bonus, starts, and dismisses "press any key".
-        if (OS.GetCmdlineUserArgs().Contains("--pwl-autostart"))
+        _autostart = OS.GetCmdlineUserArgs().Contains("--pwl-autostart");
+        // Let the loading text draw before the (main-thread) world load blocks.
+        GetTree().ProcessFrame += LoadWorldNextFrame;
+    }
+
+    int _worldFrames = 2;
+
+    void LoadWorldNextFrame()
+    {
+        if (--_worldFrames > 0) return;
+        GetTree().ProcessFrame -= LoadWorldNextFrame;
+        try
         {
-            if (_bonusSlots.Count > 0) Select(_bonusSlots[0]);
-            _autostart = true;
+            _session = CampaignFlow.LoadMission(_campaign, _mission);
+        }
+        catch (Exception e)
+        {
+            GD.PushError($"[H5] could not start {_mission.MapId}: {e}");
+            Find("ProgressBarText")?.SetValue("val", $"Could not load {_mission.MapId}");
+            return;
+        }
+        ShowBonuses(_session);
+    }
+
+    /// <summary>
+    /// 006b38d0, once the world exists: only the bonuses valid for it (006b25e0) are offered, packed into Bonus_0.. in
+    /// order. No valid bonus → no selection panel and the mission starts (005a1a50 → 006b21c0). Nothing is preselected:
+    /// Start stays disabled with the NO_BONUS tooltip until a bonus is chosen (006b1eb0, CAN_START once one is).
+    /// </summary>
+    void ShowBonuses(Adventure.AdventureSession session)
+    {
+        var bonuses = _mission.Bonuses;
+        var valid = CampaignFlow.OfferedBonuses(session, _mission);
+        for (int w = 0; w < 3; w++)
+        {
+            var slot = Find($"Bonus_{w}");
+            if (slot == null) continue;
+            if (w >= valid.Count) { slot.Visible = false; continue; }
+            int i = valid[w];
+            slot.Visible = true;
+            slot.SetMeta("bonus", i);
+            _bonusSlots.Add(i);
+            var b = bonuses[i];
+            FindIn(slot, "BonusDesc")?.SetText(BonusText(b));
+            if (FindIn(slot, "BonusIcon") is { } icon && BonusIcon(b) is { } tex)
+                icon.AddChild(new TextureRect { Texture = tex, AnchorRight = 1, AnchorBottom = 1, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = MouseFilterEnum.Ignore });
+        }
+        _phase = Phase.Choose;
+        if (_bonusSlots.Count == 0) { Start(); return; }
+        Find("ProgressBarText")?.SetValue("val", "");
+        SetVisible("BonusSelection", true);
+        UpdateStart();
+        if (_autostart)
+        {
+            Select(_bonusSlots[0]);
             Callable.From(Start).CallDeferred();
         }
     }
@@ -149,24 +182,6 @@ public partial class PwlScreen : UiScreen
         start.TooltipText = UiResources.StripMarkup(Text(CanStart ? "UI/pwlscreen/CAN_START.txt" : "UI/pwlscreen/NO_BONUS.txt"));
     }
 
-    /// <summary>
-    /// 006b25e0: a bonus is offered when its payload exists — artifact / creature / spell known to the
-    /// database, a positive resource amount; buildings always (006b2270 not traced); E_BONUS_NONE never.
-    /// </summary>
-    static bool IsValidBonus(CampaignBonus b)
-    {
-        var db = Game.Instance.Db;
-        return b.Type switch
-        {
-            "E_BONUS_ARTIFACT" => db.Artifacts.ContainsKey(b.Artifact),
-            "E_BONUS_CREATURE" => db.Creatures.ContainsKey(b.Creature),
-            "E_BONUS_RESOURCE" => b.Resources.Any(r => r > 0),
-            "E_BONUS_SPELL" => db.Spells.ContainsKey(b.Spell),
-            "E_BONUS_BUILDING" => true,
-            _ => false,
-        };
-    }
-
     static string Text(string path) => UiResources.Instance.Text(path) ?? "";
 
     void Start()
@@ -188,7 +203,8 @@ public partial class PwlScreen : UiScreen
         GetTree().ProcessFrame -= LoadNextFrame;
         try
         {
-            _loading = CampaignFlow.StartMission(_campaign, _mission, _selected);
+            // 006b29d0: the bonus's 1-based position among the offered ones goes to the player (vf 0x230).
+            _loading = CampaignFlow.OpenMission(_campaign, _mission, _session!, _selected, _bonusSlots.IndexOf(_selected) + 1);
         }
         catch (Exception e)
         {
@@ -308,7 +324,7 @@ public partial class PwlScreen : UiScreen
                     .Select(r => Fill("RESOURCE", ResourceName(r), b.Resources[r].ToString()));
                 return string.Join("<br>", lines);
             case "E_BONUS_BUILDING":
-                return Fill("BUILDING", b.Building);
+                return Fill("BUILDING", BonusBuilding(b)?.Name is { Length: > 0 } bn ? bn : b.Building);
             default:
                 return "";
         }
@@ -327,7 +343,19 @@ public partial class PwlScreen : UiScreen
         return CampaignBonus.ResourceNames[r];
     }
 
-    static Texture2D? BonusIcon(CampaignBonus b)
+    /// <summary>
+    /// 006b2270 (after the check passes): the BUILDING slot shows the main town's building record (FUN_00bd1150) at level
+    /// index min(current level, levels − 1) — the level the bonus builds: name 00cd3fc0, description 00cd4070, icon 00cd4120.
+    /// </summary>
+    H5.Adventure.Data.BuildingDef? BonusBuilding(CampaignBonus b)
+    {
+        if (_session is not { } s || s.Game.MainTownOf(s.Human.Index) is not { } town) return null;
+        int max = s.Game.Db.MaxLevel(town.Type, b.Building);
+        if (max <= 0) return null;
+        return s.Game.Db.Building(town.Type, b.Building, Math.Min(town.Level(b.Building), max - 1) + 1);
+    }
+
+    Texture2D? BonusIcon(CampaignBonus b)
     {
         var xdb = Game.Instance.Xdb;
         var db = Game.Instance.Db;
@@ -352,6 +380,10 @@ public partial class PwlScreen : UiScreen
                     var spell = db.Spells.GetValueOrDefault(b.Spell)?.SourcePath;
                     return spell != null && Game.Instance.Fs.Exists(spell) && Href(xdb.Load(spell).Root?.Element("Texture"), spell) is { } si
                         ? Game.Instance.LoadTexture(si) : null;
+                case "E_BONUS_BUILDING":
+                    var bp = BonusBuilding(b)?.Path;
+                    return bp != null && Game.Instance.Fs.Exists(bp) && Href(xdb.Load(bp).Root?.Element("Icon"), bp) is { } bi
+                        ? Game.Instance.LoadTexture(bi) : null;
             }
         }
         catch (Exception e) { GD.PushWarning($"[H5] bonus icon {b.Type}: {e.Message}"); }
