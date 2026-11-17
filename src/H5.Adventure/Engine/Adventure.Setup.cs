@@ -76,7 +76,7 @@ public sealed partial class Adventure
             var mp = Map.Players[ps.MapPlayer];
             var race = ps.Race ?? mp.Race;
             if (!PlayableRaces.Contains(race)) race = PlayableRaces[S.Rng.Next(PlayableRaces.Length)];
-            var p = new PlayerState { Index = mp.Index, Team = teams[mp.Index] >= 0 ? teams[mp.Index] : mp.Team, Race = race, Colour = mp.Colour, Human = ps.Human && mp.CanBeHuman };
+            var p = new PlayerState { Index = mp.Index, Team = teams[mp.Index] >= 0 ? teams[mp.Index] : mp.Team, Race = race, Colour = PlayerColour(mp), Human = ps.Human && mp.CanBeHuman };
             // Starting resources by difficulty (DefaultStats adventure/StartHuman|ComputerResources, fan manual p.325).
             var list = Db.Stats.Node(p.Human ? "adventure/StartHumanResources" : "adventure/StartComputerResources")?.Elements("Item").ToList();
             if (list is { Count: > 0 }) p.Purse = new Purse(Resources.Parse(list[Math.Min(S.Difficulty, list.Count - 1)]));
@@ -85,6 +85,18 @@ public sealed partial class Adventure
             S.Players.Add(p);
         }
     }
+
+    /// <summary>Player colours by player number, PCOLOR_RED = 1 … PCOLOR_BROWN = 8 (UI/MPWait/PlayersList/Item TeamColors order).</summary>
+    static readonly string[] NumberColours =
+        { "PCOLOR_RED", "PCOLOR_BLUE", "PCOLOR_GREEN", "PCOLOR_YELLOW", "PCOLOR_ORANGE", "PCOLOR_TEAL", "PCOLOR_PURPLE", "PCOLOR_BROWN" };
+
+    /// <summary>
+    /// 00ca0240 (the game's player slots): a slot's colour starts as its player number and the map player's Colour
+    /// (+0x84) replaces it only when it is not 0 (PCOLOR_NEUTRAL). Multiplayer and RMG maps leave every player NEUTRAL.
+    /// </summary>
+    public static string PlayerColour(MapPlayer mp) =>
+        NumberColours.Contains(mp.Colour, StringComparer.OrdinalIgnoreCase) ? mp.Colour.ToUpperInvariant()
+            : NumberColours[Math.Clamp(mp.Index, 0, NumberColours.Length - 1)];
 
     void SetupTowns()
     {

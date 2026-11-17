@@ -189,7 +189,8 @@ public partial class AdvTooltip : Control
     string OwnerName(int owner)
     {
         if (owner < 0) return "";
-        var colour = _adv.Session.Map.Players.FirstOrDefault(p => p.Index == owner)?.Colour ?? "";
+        // The game player's colour (00ca0240: the player number unless the map gives one), not the map record's NEUTRAL.
+        var colour = _adv.Session.S.Players.Find(p => p.Index == owner)?.Colour ?? "";
         var n = AdvColors.TextName(colour);
         var who = T($"Text/Game/Player/Colors/{n}_color.txt").Trim() + T($"Text/Game/Player/Colors/{n}.txt").Trim();
         return Fill(T(Common + "owned.txt"), ("who", who)) + T(Common + "owned_by_player.txt");
