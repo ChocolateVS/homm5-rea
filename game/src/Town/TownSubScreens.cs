@@ -525,6 +525,14 @@ public sealed partial class BlacksmithScreen : TownSubScreen
                 choice.SetState(buyable && i == _choice && choice.Window.ButtonStates.Count > 1 ? 1 : 0);
                 choice.Enabled = buyable;
                 choice.SetTooltip(ChoiceTooltip(i, buyable, enoughGold));
+                // Dev (screenshots): `--blacksmith-dev-tooltip=N` shows choice N's tooltip beside it.
+                if (_devTip == null && OS.GetCmdlineUserArgs().FirstOrDefault(a => a.StartsWith("--blacksmith-dev-tooltip=")) is { } dt && dt.EndsWith("=" + i))
+                {
+                    _devTip = StockTooltip.Build(ChoiceTooltip(i, buyable, enoughGold), 1f);
+                    AddChild(_devTip);
+                    var at = choice;
+                    Callable.From(() => _devTip.GlobalPosition = at.GlobalPosition + new Vector2(at.Size.X, 0)).CallDeferred();
+                }
             }
             anyBuyable |= buyable;
         }
@@ -546,8 +554,14 @@ public sealed partial class BlacksmithScreen : TownSubScreen
     /// 006ee270: each choice's tooltip (object 00585cb0, vtable 00e1564c) holds the machine's name, description and,
     /// for a disabled choice, one denial reason — assigned in turn (0040e960), so the last applying one stays:
     /// ID_DENIAL_REASON_NOT_ENOUGH_GOLD (gold short and a hero, gold ≥ 0), _ALREDY_HAVE, _ONLY_VISITING_HERO_CAN_BUY.
-    /// The tooltip window's layout is not traced; the three parts are stacked here.
+    /// The record is an SObjCommonTooltip, so it is drawn like a map object's: CTooltipConvertFun 005f8af0 → 005f8a50
+    /// (registered 00dad0a0) → window 005f8b20 (vtable 00e287ac, its slot 7 = 005f8ca0): Name = CommonAdvObjTooltip
+    /// name.txt, then TOOLTIP_COMMON_OBJ_INFO_TEXT with object_info = the description and, with a reason (the record's
+    /// third string, the map objects' "visited" marker), visited_text = TOOLTIP_VISITED_TEXT with visited = the reason —
+    /// the same text as <c>AdvTooltip.ObjectContent</c>, shown in the stock tooltip.
     /// </summary>
+    Control? _devTip;
+
     string ChoiceTooltip(int i, bool buyable, bool enoughGold)
     {
         var (name, desc) = MachineTexts(Machines[i]);
@@ -564,7 +578,19 @@ public sealed partial class BlacksmithScreen : TownSubScreen
             if (!(Owner.Town.Level("TB_BLACKSMITH") > 0 && Owner.VisitingHero() != null))
                 reason = UiGameRoot.RelatedTextAt(Texts, "ID_DENIAL_REASON_ONLY_VISITING_HERO_CAN_BUY") ?? "";
         }
-        return string.Join("<br>", new[] { name, desc, reason }.Where(x => x.Trim().Length > 0).Select(x => x.Trim()));
+        static string Fill(string template, params (string K, string V)[] values)
+        {
+            foreach (var (k, v) in values) template = template.Replace($"<value={k}>", v);
+            return template.Trim();
+        }
+        const string Common = "UI/Tooltips/CommonAdvObjTooltip/";
+        reason = reason.Trim();
+        desc = desc.Trim();
+        var title = Fill(UiResources.Instance.Text(Common + "name.txt") ?? "", ("name", name.Trim()));
+        var visited = reason.Length > 0 ? Fill(UiGameRoot.Text("TOOLTIP_VISITED_TEXT") ?? "", ("visited", reason)) : "";
+        var info = desc.Length == 0 && visited.Length == 0 ? ""
+            : Fill(UiGameRoot.Text("TOOLTIP_COMMON_OBJ_INFO_TEXT") ?? "", ("object_info", desc), ("visited_text", visited));
+        return info.Length > 0 ? title + "<br>" + info : title;
     }
 
     /// <summary>Name and description from the machine's CreatureVisual (GameMechanics/CreatureVisual/WarMachines).</summary>
