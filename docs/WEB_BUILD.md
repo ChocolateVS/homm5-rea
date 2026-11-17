@@ -638,6 +638,28 @@ covered the map on the Compatibility renderer (desktop `--rendering-method gl_co
 `TargetPrompt` also reads `H5_GAME_DIR` from the managed environment; music loads from a buffer when its file
 is virtual.
 
+### Firefox
+
+`smoke.mjs --browser firefox` (Playwright's Firefox 142, headless, `npx playwright-core install firefox`; WebGL 2 through
+ANGLE / Direct3D 11 on the GPU) runs **menu, duel and adventure (A2M1) without errors**, picking the folder through the
+`webkitdirectory` input (Firefox has no folder picker API). Nothing blocking was found. It is slower than Chromium
+(`--interp` build, same machine and hour):
+
+| | Chromium | Firefox |
+|---|---|---|
+| page → `main menu on screen` | 30 s | 48.5 s |
+| A2M1 object pass (first visit) | ~21 s | 65 s (the C# runs ~3× slower) |
+| A2M1 map warm-up (shader compiles) | ~1.5 s | 62 s |
+| frame rate on the map | 28 fps | 9 fps |
+
+Shaders: Firefox has no `KHR_parallel_shader_compile`, so `h5shaders.js` skips the warm-up (`state: "no parallel
+compile"`). Submitting the compiles without waiting does not block in Firefox (10 programs in 3 ms), but Firefox does not
+find a program compiled in another context again (measured: links of 10 pre-compiled programs 0.3–7 s, same as cold
+ones), so a warm-up cannot help there; a first visit's map waits for Godot's own compiles. Console warnings, harmless:
+WebGL `getBufferSubData` pipeline stalls (Godot), and "the WebAssembly exception handling 'try' instruction is
+deprecated" (Emscripten 3.1.56 emits the legacy exception-handling instructions; gone with a toolchain that uses the new
+`try_table`).
+
 ## Not working yet in the browser (ranked)
 
 1. **Performance (CPU).** The adventure map runs at ~50 fps headless (was ~10: see *Frame rate*); map loading is

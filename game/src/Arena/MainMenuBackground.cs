@@ -88,6 +88,9 @@ public partial class MainMenuBackground : Node3D
 
     IEnumerable<int> Build()
     {
+        // The lighting's global shader parameters exist before the first material (staged, frames are drawn while the
+        // characters come in, before AddLighting; materials updated against missing globals warn every update).
+        H5Lighting.EnsureRegistered();
         var xdb = Game.Instance.Xdb;
         var desc = xdb.Load(DescPath).Root!;
         var loader = new ModelLoader(xdb);
