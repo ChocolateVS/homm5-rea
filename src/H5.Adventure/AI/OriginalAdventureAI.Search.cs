@@ -50,7 +50,7 @@ public sealed partial class OriginalAdventureAI
         // With Instant Travel available the flood has the spell edges (exe 00ceb670 → 00ceb190 flag 1, see SpellFlood).
         _dd = DimensionDoorSettingsFor(g, h, st);
         _spellFlood = _dd.Enabled || _dd.TownPortal || _dd.SummonBoat ? g.SpellFlood(h, limits.Max(), _dd) : null;
-        var costs = _spellFlood?.Costs() ?? g.ReachableCosts(h, limits.Max());
+        var costs = _spellFlood?.Costs() ?? g.ReachableCosts(h, limits.Max(), attacks: true);
         var danger = diff.CheckHeroesDanger ? DangerTiles(g, h, st, myPower) : new HashSet<Tile>();
         var cache = new Dictionary<int, (int, long)>();
         _before = null;

@@ -65,12 +65,15 @@ public sealed partial class Adventure
     /// (the pathfinder flood of FUN_00c08be0 as used by 009c20a0). Every tile that could end a move
     /// counts; the flood continues only through tiles a path may cross, and stops at guarded tiles.
     /// TODO(exe): pathfinder mode 6 (FUN_00c076d0) is not decoded; flight/levitation are not modelled.
+    /// With <paramref name="attacks"/> (the AI's destination flood) a guarded tile also reaches the tile of a monster
+    /// next to it, as <see cref="FindPath"/> routes an attack (a guarded step onto the target): the monster's own tile is
+    /// then a destination at the cost of its cheapest guarded tile, where the move stops and the fight starts.
     /// </summary>
-    public Dictionary<Tile, int> ReachableCosts(HeroState h, int limit)
+    public Dictionary<Tile, int> ReachableCosts(HeroState h, int limit, bool attacks = false)
     {
         var f = Map.Floor(h.Pos.Floor);
         if (f == null) return new Dictionary<Tile, int> { [h.Pos] = 0 };
-        if (!f.InBounds(h.Pos.X, h.Pos.Y)) return ReachableCostsSlow(h, limit);
+        if (!f.InBounds(h.Pos.X, h.Pos.Y)) return ReachableCostsSlow(h, limit, attacks);
         // The same Dijkstra on pooled per-tile arrays (FloodScratch) with the tile tests memoised: the queue sees the same
         // operations in the same order, and the result lists the tiles in first-reached order as the dictionary did.
         var fs = FloodScratch.Rent(f.Width * f.Height);
@@ -88,14 +91,18 @@ public sealed partial class Adventure
             {
                 if (pri.Item1 > fs.Dist[ci]) continue;
                 var cur = new Tile(ci % w, ci / w, fl);
-                if (ci != start && (fs.Guarded(ci, this, cur) || !fs.Cross(ci, this, h, cur))) continue;
+                bool guarded = ci != start && fs.Guarded(ci, this, cur);
+                if (ci != start && ((guarded && !attacks) || !fs.Cross(ci, this, h, cur))) continue;
                 foreach (var (dx, dy) in Dirs)
                 {
                     var nx = cur.Offset(dx, dy);
                     if (!f.InBounds(nx.X, nx.Y)) continue;
+                    if (guarded && MonsterAt(nx) == null) continue;
                     int ni = nx.Y * w + nx.X;
                     if (!fs.Enter(ni, this, h, nx, nx)) continue;
-                    int nd = pri.Item1 + cost.Cost(cur, nx, h.MovePoints - pri.Item1);
+                    // An attack from a guarded tile: the move ends there and the fight starts (DoMove), so the
+                    // monster costs what its guarded tile costs.
+                    int nd = guarded ? pri.Item1 : pri.Item1 + cost.Cost(cur, nx, h.MovePoints - pri.Item1);
                     if (nd > limit) continue;
                     if (fs.Has(ni)) { if (fs.Dist[ni] <= nd) continue; }
                     else order.Add(ni);
@@ -111,7 +118,7 @@ public sealed partial class Adventure
     }
 
     /// <summary>The dictionary form of <see cref="ReachableCosts"/>, kept for a hero standing outside its floor.</summary>
-    Dictionary<Tile, int> ReachableCostsSlow(HeroState h, int limit)
+    Dictionary<Tile, int> ReachableCostsSlow(HeroState h, int limit, bool attacks = false)
     {
         var dist = new Dictionary<Tile, int> { [h.Pos] = 0 };
         var f = Map.Floor(h.Pos.Floor);
@@ -123,12 +130,14 @@ public sealed partial class Adventure
         while (pq.TryDequeue(out var cur, out var pri))
         {
             if (pri.Item1 > dist[cur]) continue;
-            if (cur != h.Pos && (GuardingMonster(cur) != null || !Passable(h, cur, new Tile(-1, -1, cur.Floor)))) continue;
+            bool guarded = cur != h.Pos && GuardingMonster(cur) != null;
+            if (cur != h.Pos && ((guarded && !attacks) || !Passable(h, cur, new Tile(-1, -1, cur.Floor)))) continue;
             foreach (var (dx, dy) in Dirs)
             {
                 var nx = cur.Offset(dx, dy);
+                if (guarded && MonsterAt(nx) == null) continue;
                 if (!Passable(h, nx, nx)) continue;
-                int nd = pri.Item1 + cost.Cost(cur, nx, h.MovePoints - pri.Item1);
+                int nd = guarded ? pri.Item1 : pri.Item1 + cost.Cost(cur, nx, h.MovePoints - pri.Item1);
                 if (nd > limit) continue;
                 if (dist.TryGetValue(nx, out var od) && od <= nd) continue;
                 dist[nx] = nd;
