@@ -70,6 +70,7 @@ public sealed partial class Adventure
         Map = map;
         S = state;
         if (state.RandomObjects.Count > 0) ApplyRandomObjects();
+        RestoreSpawnedMonsters();
     }
 
     void Emit(AdvEvent e) => _ev.Add(e);
@@ -80,7 +81,7 @@ public sealed partial class Adventure
     /// </summary>
     public Adventure Simulation(AdvState state)
     {
-        var a = new Adventure(Db, Map, state);
+        var a = new Adventure(Db, Map, state) { _simulation = true };
         a._activeIndex = _activeIndex;
         // The indexes and grids come from the map, not the state: the copy shares them (each is rebuilt on its own when
         // the scripts drop it).

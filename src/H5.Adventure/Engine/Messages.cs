@@ -175,6 +175,8 @@ public sealed record WeekStarted(int Week, string MoonWeek) : AdvEvent;
 public sealed record HeroMoved(int HeroId, IReadOnlyList<Tile> Path, int MovePointsLeft) : AdvEvent;
 public sealed record ObjectVisited(int HeroId, int Object, string What) : AdvEvent;
 public sealed record ObjectRemoved(int Object) : AdvEvent;
+/// <summary>The creature-week spawn (009919a0) put these new map objects on the map.</summary>
+public sealed record MonstersSpawned(IReadOnlyList<int> Objects) : AdvEvent;
 public sealed record ObjectCaptured(int Object, int Player) : AdvEvent;
 public sealed record ResourcesChanged(int Player, int[] Delta, int[] Total) : AdvEvent;
 public sealed record HeroStatChanged(int HeroId, string Stat, int Delta) : AdvEvent;

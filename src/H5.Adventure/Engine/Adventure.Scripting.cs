@@ -456,6 +456,7 @@ public sealed partial class Adventure
     /// <summary>Adds a script-created object (CreateMonster, CreateArtifact…) and rolls its state.</summary>
     public MapObject ScriptAddObject(MapObject o, bool setup = true)
     {
+        RestoreSpawnedMonsters();
         o.Index = Map.Objects.Count;
         Map.Objects.Add(o);
         o.ScriptCreated = true;
@@ -463,6 +464,7 @@ public sealed partial class Adventure
         RefreshBlocking(o.BlockedTiles);
         _activeIndex = null;
         _actionIndex = null;
+        RestoreSpawnedMonsters();
         return o;
     }
 

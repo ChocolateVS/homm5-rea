@@ -408,6 +408,15 @@ public sealed class TownState
 }
 
 /// <summary>Dynamic state of a visitable map object (by map index).</summary>
+/// <summary>A monster of the creature-week spawn: its map object index, cell, facing and creature.</summary>
+public sealed class SpawnedMonster
+{
+    public int Index;
+    public int X, Y, Floor;
+    public float Rot;
+    public string Creature = "";
+}
+
 public sealed class ObjState
 {
     public int Object;
@@ -628,6 +637,11 @@ public sealed class AdvState
     /// <summary>Caravans on the map (TotE, Adventure.Caravans.cs).</summary>
     public List<CaravanState> Caravans = new();
     public int NextCaravanId = 1;
+    /// <summary>
+    /// Neutral stacks the creature-week spawn (009919a0) put on the map, in creation order: the map object is rebuilt from
+    /// this on load (<c>Adventure.RestoreSpawnedMonsters</c>); its stacks live in <see cref="Objects"/>.
+    /// </summary>
+    public List<SpawnedMonster> SpawnedMonsters = new();
 
     [JsonIgnore] public int DayOfWeek => (Day - 1) % 7 + 1;
     [JsonIgnore] public int Week => (Day - 1) / 7 + 1;

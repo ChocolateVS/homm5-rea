@@ -1045,6 +1045,10 @@ public partial class AdventureScreen : Control
                 World.SyncObject(or_.Object);
                 Hud.UpdateMinimap();
                 break;
+            case MonstersSpawned ms:
+                foreach (int i in ms.Objects) World.SyncObject(i);
+                Hud.UpdateMinimap();
+                break;
             case ObjectCaptured oc:
                 World.SyncObject(oc.Object);
                 Hud.UpdateMinimap();

@@ -70,10 +70,12 @@ public sealed partial class Adventure
         // 009949d0: a week bought at a Tower of Astrologer that takes effect on days 2..7 runs the towns' weekly
         // update with full = false (00994a5c → 00993bf0(0) → IAdvMapWeeklyUpdate vf 4 = 00cd27b0): pool reduction and
         // the moon part only.
-        if (boughtMidWeek) { TownWeeklyGrowth(full: false); MapDwellingWeeklyGrowth(full: false); }
+        // 00993bf0 ends with the creature-week spawn 009919a0 (both calls).
+        if (boughtMidWeek) { TownWeeklyGrowth(full: false); MapDwellingWeeklyGrowth(full: false); CreatureWeekSpawns(); }
         if (newWeek)
         {
             WeeklyGrowthAll();
+            CreatureWeekSpawns();
             RefillTavernsWeekly();
             RestockTownArtifactMerchants();
             if (S.WeekOfMonth == 1) StockSpellShops();
