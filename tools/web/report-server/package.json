@@ -1,0 +1,11 @@
+{
+  "name": "h5reborn-report-server",
+  "private": true,
+  "description": "Receives bug reports from the H5Reborn browser / desktop build (no dependencies)",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/server.test.mjs"
+  }
+}
