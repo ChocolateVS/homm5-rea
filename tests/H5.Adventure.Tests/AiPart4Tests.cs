@@ -93,6 +93,21 @@ public class AiPart4Tests(Fixture f)
     }
 
     [Fact]
+    public void Market_trade_uses_the_week_of_trade_rates()
+    {
+        // FUN_008e70d0 takes its rates from FUN_008e7b80 (0x008e7264), which halves them in WEEK_OF_TRADE (00bcdf70).
+        var (g, p, m) = MarketGame(f);
+        g.S.MoonWeek = "WEEK_OF_TRADE";
+        p.Purse.R = new[] { 100, 0, 0, 0, 0, 0, 0 };
+        Assert.True(OriginalAdventureAI.MarketTrade(g, p.Index, new[] { 0, 0, 0, 0, 0, 0, 500 }));
+        int q = Engine.Adventure.MarketRates(Purse.Wood, m, Engine.Adventure.WeekOfTrade)[Purse.Gold];
+        Assert.NotEqual(Engine.Adventure.MarketRates(Purse.Wood, m)[Purse.Gold], q);
+        int give = (500 - 1) / q + 1;
+        Assert.Equal(100 - give, p.Purse[Purse.Wood]);
+        Assert.Equal(give * q, p.Purse[Purse.Gold]);
+    }
+
+    [Fact]
     public void Market_trade_buys_whole_lots_and_fails_without_enough_to_sell()
     {
         // Non-gold target: q · d of the source, at most the surplus rounded down to whole lots; nothing left → false.

@@ -13,14 +13,16 @@ public sealed partial class OriginalAdventureAI
     /// FUN_008e70d0: have = the purse; already affordable (FUN_009d0500 ≥ 1) → true. Without marketplaces: count the
     /// marketplaces the purse can pay for (<see cref="BuildMarketplaces"/>, nothing built); none → false; else their
     /// cost is taken off <c>have</c>. Then for each resource r in order with a deficit d = cost − have: among the other
-    /// resources s with a surplus x = have − cost &gt; 0 and a rate q = MarketRates(s, markets)[r] &gt; 0, give
+    /// resources s with a surplus x = have − cost &gt; 0 and a rate q = MarketRates(s, markets, week)[r] &gt; 0, give
     /// (d − 1) / q + 1 (gold) or q · d (else) — at most x (non-gold rounded down to whole lots, none → skip, and r is
     /// tried again afterwards) — for give · q (gold) or give / q; the source with the highest
     /// weight(s) · max(0, supply − demand)[s] · 0.5 (the AI money values of the day; strict &gt;, the first on ties)
     /// is taken; no source → false. Marketplaces counted before are then built for real (the count must agree, else
     /// false) and the purse is set to <c>have</c>.
-    /// GAP-details: the rates are halved when the world's vf 0xb0 is 0x34 (FUN_00bcdf70), not identified, not applied;
-    /// the exe's two resource values of each trial (004ea050 ×4) are computed and unused, as here.
+    /// The rate row is the exe's shared FUN_008e7b80 (called at 0x008e7264 with the marketplace count), which
+    /// runs FUN_00bcdf70: in WEEK_OF_TRADE (MoonWeekID 0x34) every rate is halved, below 2 → 1 — the same function as the
+    /// market screen and command (<see cref="Engine.Adventure.MarketRates"/> with the current week).
+    /// GAP-details: the exe's two resource values of each trial (004ea050 ×4) are computed and unused, as here.
     /// </summary>
     public static bool MarketTrade(Engine.Adventure g, int player, int[] cost)
     {
@@ -39,6 +41,7 @@ public sealed partial class OriginalAdventureAI
         var surplus = new int[7];
         for (int i = 0; i < 7; i++) surplus[i] = Math.Max(0, unchecked((p.AiSupply?[i] ?? 0) - (p.AiDemand?[i] ?? 0)));
         var w = ResourceWeights(g, player);
+        int week = g.CurrentMoonWeekIndex;
         for (int to = 0, guard = 0; to < 7 && guard < 256; to++, guard++)
         {
             int d = cost[to] - have[to];
@@ -51,7 +54,7 @@ public sealed partial class OriginalAdventureAI
                 if (src == to) continue;
                 int x = have[src] - cost[src];
                 if (x <= 0) continue;
-                int q = Engine.Adventure.MarketRates(src, markets)[to];
+                int q = Engine.Adventure.MarketRates(src, markets, week)[to];
                 if (q <= 0) continue;
                 bool partial = false;
                 int give = to == Purse.Gold ? (d - 1) / q + 1 : unchecked(q * d);
