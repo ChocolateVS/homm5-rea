@@ -5,7 +5,7 @@ original UI layouts / data. Status: **MATCH** (already as the exe), **FIXED** (c
 difference or not built), **UNVERIFIED** (implemented from data, exe path not traced). Rows carrying two statuses
 count once for each.
 
-Rows at 2026-11-18: 163 FIXED, 52 MATCH, 26 GAP, 35 UNVERIFIED (before town sweep 9: 160 / 52 / 27 / 35; before town sweep 8: 153 / 49 / 31 / 40).
+Rows at 2026-11-18: 164 FIXED, 52 MATCH, 25 GAP, 35 UNVERIFIED (before town sweep 9: 160 / 52 / 27 / 35; before town sweep 8: 153 / 49 / 31 / 40).
 
 Commits: 9153b62 (dwelling growth incl. moon weeks), afe1e7b + 844ce53 (build check codes, town income),
 6690c81 (level-up offers, experience table, Enlightenment, perk effects, hero screen fixes),
@@ -335,6 +335,6 @@ screens checked off-screen with the default MMH 5.5 data and with H5_TARGET=stoc
 | Header text | 006a8f50 (N_LEVEL_UP_WINDOW_ID related text "levelup" / "relearning", values name, level, profession) | "<name> is now a level <level> <profession>…" | related text + values (was an invented English line) | FIXED |
 | Attribute row | 006a8f50 SkillBack: UI/HeroAttributes (UIHeroAttributes) entry: heroattribute = DescriptionFileRef, Face_1 = Texture | e.g. "Attack<br>Skill +1" with its icon | same (was "+1 defence" text, no icon) | FIXED |
 | Options | 006a8f50 Skill%d, Choose / heroskill, FaceSkill | skills left, perks right | same | MATCH |
-| Relearning header | 006a8f50 (level −1 → relearning_header + tooltip, SkillBack hidden) | relearn mode | relearn offers shown through the normal box | GAP |
+| Relearning header | 006a8f50 with level −1 — the Memory Mentor path of 00597d70 (005984f2: 006aa110 with EDX = −1 and the hero's vf 0x348 offer; the level-up path 00598622 passes vf 0x2f0): level_up_header text = the box's related text relearning_header (vf 0xb8) with tooltip relearning_header_tooltip (TTSkillRestoration, vf 0x68); Who = relearning instead of levelup; SkillBack hidden (vf 0x44(0)) | relearn mode | `AdvDialogs.LevelUp(…, relearn: true)` from the Memory Mentor relearn loop (checked off-screen with `--town-relearn-box`) | FIXED (relearn offers used the plain level-up box) |
 | Sound | 006a8f50 HERO_LEVEL_UP_SOUND / HERO_RELEARNING_SOUND | — | audio pass (AUDIO.md) | MATCH |
 | MMH 5.5 box | MMH55 LevelUpBox override | extra skill-wheel button | box works; the extra button is unbound | GAP |

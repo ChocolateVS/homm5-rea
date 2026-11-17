@@ -19,6 +19,8 @@ public static class TownLauncher
     /// <summary>Dev only (`--town-tip=TB_…`): show that building's tooltip; `--town-sacrificed=N` sets the Ritual Pit total first.</summary>
     public static string? Tip;
     public static int? Sacrificed;
+    /// <summary>Dev only (`--town-relearn-box`): the level-up box in its relearn mode for the town's first hero (a sample offer).</summary>
+    public static bool RelearnBox;
     /// <summary>Dev only (`--town-caravans=castles|dwellings|info|map|meet`): own every dwelling and one more town on the floor,
     /// send a caravan here, then open that caravan tab of the hire screen (with `--town-goto=fort`).</summary>
     public static string? CaravanTab;
@@ -35,6 +37,7 @@ public static class TownLauncher
         if (arg == "--town-open") { OpenTown = true; Callable.From(WaitForAdventure).CallDeferred(); return true; }
         if (arg.StartsWith("--town-goto=")) { Goto = arg["--town-goto=".Length..]; return true; }
         if (arg == "--town-build-all") { BuildAll = true; return true; }
+        if (arg == "--town-relearn-box") { RelearnBox = true; return true; }
         if (arg.StartsWith("--town-tip=")) { Tip = arg["--town-tip=".Length..]; return true; }
         if (arg.StartsWith("--town-sacrificed=")) { Sacrificed = int.Parse(arg["--town-sacrificed=".Length..]); return true; }
         if (arg.StartsWith("--town-caravans=")) { CaravanTab = arg["--town-caravans=".Length..]; return true; }
@@ -269,6 +272,13 @@ public static class TownLauncher
                 var screen = TownScreen.Open(adv, town);
                 if (Goto != null) screen.OpenSub(Goto);
                 if (Tip != null) Callable.From(() => screen.DevBuildingTooltip(Tip)).CallDeferred();
+                if (RelearnBox && adv.Session.S.Heroes.FirstOrDefault(h => h.Alive && h.Owner == town.Owner) is { } rh)
+                {
+                    var offer = new H5.Adventure.State.LevelUpOffer { NewLevel = rh.Level };
+                    offer.Skills.Add(new H5.Core.Data.SkillEntry("HERO_SKILL_LOGISTICS", H5.Core.Data.Mastery.Basic));
+                    offer.Perks.Add("HERO_SKILL_PATHFINDING");
+                    Callable.From(() => Adventure.AdvDialogs.LevelUp(screen, rh, offer, _ => { }, relearn: true)).CallDeferred();
+                }
                 return;
             }
         }

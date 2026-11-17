@@ -134,25 +134,45 @@ public static partial class AdvDialogs
         if (initial is 0 or 1 && choicesEnabled) Pick(initial);
     }
 
-    /// <summary>The level-up box: the gained attribute, up to two skills and two perks to choose from.</summary>
-    public static void LevelUp(Control parent, HeroState hero, LevelUpOffer offer, Action<int> picked)
+    /// <summary>
+    /// The level-up box: the gained attribute, up to two skills and two perks to choose from. <paramref name="relearn"/>:
+    /// the Memory Mentor's relearn offer (00597d70 at 005984f2 opens 006aa110 → 006a8f50 with level −1 and the hero's
+    /// vf 0x348 offer; the level-up path at 00598622 passes vf 0x2f0, the new level).
+    /// </summary>
+    public static void LevelUp(Control parent, HeroState hero, LevelUpOffer offer, Action<int> picked, bool relearn = false)
     {
         Control? blocker = null;
         var s = Open(parent, LevelUpBox, b => blocker = b);
         var db = Game.Instance.Db;
-        // 006a8f50: Who = the box's related text "levelup" with name, level and profession (class name); SkillBack shows
-        // the gained attribute's UI/HeroAttributes entry (DescriptionFileRef as heroattribute, Texture on Face_1).
+        // The box's own related texts (FUN_00a50e00 on the window: LevelUpBox relatedTexts).
+        static string? BoxText(string name) => UiGameRoot.RelatedTextAt("UI/LevelUPBox/texts.(WindowRelatedTexts).xdb", name)
+            ?? UiGameRoot.RelatedText("N_LEVEL_UP_WINDOW_ID", name);
+        // 006a8f50 with level −1: level_up_header takes the related text relearning_header (window vf 0xb8) and the
+        // tooltip relearning_header_tooltip (vf 0x68).
+        if (relearn && s.Find("level_up_header") is { } header)
+        {
+            if (BoxText("relearning_header") is { } ht) header.SetText(ht);
+            if (BoxText("relearning_header_tooltip") is { } tt) header.SetTooltip(tt);
+        }
+        // 006a8f50: Who = the box's related text "levelup" ("relearning" at level −1) with name, level and profession
+        // (class name); SkillBack shows the gained attribute's UI/HeroAttributes entry (DescriptionFileRef as
+        // heroattribute, Texture on Face_1); at level −1 SkillBack is hidden (vf 0x44(0)).
         if (s.Find("Who") is { } who)
         {
-            who.SetText(UiGameRoot.RelatedText("N_LEVEL_UP_WINDOW_ID", "levelup") ?? UiResources.Instance.Text("UI/LevelUPBox/levelup.txt") ?? "");
+            string key = relearn ? "relearning" : "levelup";
+            who.SetText(BoxText(key) ?? UiResources.Instance.Text($"UI/LevelUPBox/{key}.txt") ?? "");
             who.SetValue("name", hero.Name);
-            who.SetValue("level", offer.NewLevel.ToString());
+            who.SetValue("level", relearn ? "-1" : offer.NewLevel.ToString());
             who.SetValue("profession", Hero.HeroScreen.ClassName(hero.Class));
         }
         SetFace(s, "Face", HeroFace(hero));
-        var (attrText, attrIcon) = HeroAttribute(offer.Attribute);
-        s.Find("SkillBack/Skill")?.SetValue("heroattribute", attrText);
-        SetFace(s, "SkillBack/Face_1", attrIcon);
+        if (relearn) s.Find("SkillBack")?.Hide();
+        else
+        {
+            var (attrText, attrIcon) = HeroAttribute(offer.Attribute);
+            s.Find("SkillBack/Skill")?.SetValue("heroattribute", attrText);
+            SetFace(s, "SkillBack/Face_1", attrIcon);
+        }
         // Options are numbered skills first, then perks, as ChooseLevelUpCmd expects.
         var options = new List<(string Name, Texture2D? Icon)>();
         foreach (var sk in offer.Skills)

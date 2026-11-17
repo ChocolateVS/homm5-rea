@@ -826,13 +826,13 @@ public partial class AdventureScreen : Control
             case ObjectVisited { What: H5.Adventure.Engine.Adventure.MemoryMentor } mv when HumanCaused(player) && !Autoplay && s.Hero(mv.HeroId) is { } pupil:
             {
                 // Memory Mentor: the hero screen in its unlearn mode (006c4460); forgotten points are then spent on
-                // relearn offers (CRelearnHeroSkillCmd; the exe's relearn UI is not traced — the level-up box here).
+                // relearn offers (CRelearnHeroSkillCmd) in the level-up box's relearn mode (006a8f50 with level −1).
                 var mentor = Hero.HeroScreen.OpenMentor(this, pupil);
                 await ToSignal(mentor, Node.SignalName.TreeExited);
                 while (pupil.UnlearnedPoints > 0 && pupil.RelearnOffer is { } offer)
                 {
                     int pick = 0;
-                    await Dialog(done => AdvDialogs.LevelUp(_dialogLayer, pupil, offer, p => { pick = p; done(); }));
+                    await Dialog(done => AdvDialogs.LevelUp(_dialogLayer, pupil, offer, p => { pick = p; done(); }, relearn: true));
                     if (!Session.Apply(new H5.Adventure.Engine.RelearnHeroSkillCmd(pupil.Id, pick) { Player = pupil.Owner }).Ok) break;
                 }
                 Hud.Refresh();
