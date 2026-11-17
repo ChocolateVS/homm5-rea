@@ -1093,10 +1093,12 @@ public partial class AdventureScreen : Control
                 if (Session.IsHumanTurn)
                 {
                     // 009946e0: START_OF_WEEK with weektype = the week's name and its description; a creature week
-                    // shows the creature's icon (00bcd640).
+                    // shows the creature's icon (00bcd640), any other week the RPGRoot texture TEXTURE_INFO
+                    // (00bcb8b0: UI/MessageBox/Message).
                     var week = AdvTexts.WeekName(ws.MoonWeek);
                     int cw = H5.Adventure.Engine.MoonCalendar.CreatureOf(Session.Db.MoonWeekIndex(ws.MoonWeek));
-                    var icon = cw != 0 && Session.Db.EnumName("CreatureType", cw) is { } cid ? H5Reborn.Town.TownUi.CreatureIcon(cid) : null;
+                    var icon = cw != 0 && Session.Db.EnumName("CreatureType", cw) is { } cid ? H5Reborn.Town.TownUi.CreatureIcon(cid)
+                        : AdvTexts.RpgIcon("TEXTURE_INFO");
                     await Dialog(done => Message(AdvTexts.Get(AdvTexts.StartOfWeek, ("weektype", week)), AdvTexts.WeekDescription(ws.MoonWeek), icon, done));
                 }
                 break;

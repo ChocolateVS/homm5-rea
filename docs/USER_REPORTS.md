@@ -6,8 +6,6 @@ from the description. Move an item to "Done" with the commit when fixed.
 
 ## Open — reported 2026-11-10 (browser build 3c4ea8b)
 
-2. **Start-of-week message:** the left part of the dialog is empty, with the text on the right —
-   probably a missing picture (week/creature image?).
 3. **Moving troops:**
    - the town screen does not let troops be put into empty slots;
    - Shift while dragging should split a stack;
@@ -63,3 +61,7 @@ from the description. Move an item to "Done" with the commit when fixed.
    the container; now DescriptionText / DescriptionExp are filled separately and added as items of the HeaderCont
    scrollable container, which stacks them (exe 005836a0 → container slot 8; init 00581a70) — commit "combat
    results: stack DescriptionText/DescriptionExp in HeaderCont".
+2. **Start-of-week message:** a week without a creature passed no picture, so the stock Box0p's Face stayed
+   empty; the exe (009946e0) uses the RPGRoot texture TEXTURE_INFO (UI/MessageBox/Message) then. (MMH55's Box0p
+   has no Face window, so there the box shows no picture at all, as in MMH55.) — commit "adventure: start-of-week
+   box shows TEXTURE_INFO for non-creature weeks".
