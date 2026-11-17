@@ -385,19 +385,37 @@ public sealed partial class Adventure
     /// <summary>
     /// Town hiring status, exe 004f4570 (the town tavern's action button is enabled only at 0, 00636d20): 2 = no
     /// tavern (town vfunc 0x34(4) &lt; 1), 3 = gold below <see cref="HireCost"/> with the town, 4 = no free town hero
-    /// slot (004f41b0), 5 = too many heroes. Status 1 (player vfunc 0x150 on the hero) is not modelled.
-    /// GAP: 004f41b0 also accepts a free second slot when the first is taken; the hire command (00639060, vtable
-    /// 00e1976c) is not traced, so the engine keeps needing a free entrance (<see cref="DoHire"/>).
+    /// slot (004f41b0, called with player vf 0x18c = a computer player: <see cref="HireTownSlot"/>), 5 = too many heroes.
+    /// Status 1 (player vfunc 0x150 on the hero) is not modelled.
     /// </summary>
     public int TownHireStatus(PlayerState p, TownState t)
     {
         if (t.Level("TB_TAVERN") < 1) return 2;
         if (p.Purse[Purse.Gold] < HireCost(p, t)) return 3;
-        if (HeroAt(EntranceOf(t)) != null) return 4;
+        if (HireTownSlot(p, t) < 0) return 4;
         if (S.Heroes.Count(h => h.Alive && h.Owner == p.Index) >= HiringHeroLimit(p)) return 5;
         return 0;
     }
 
+    /// <summary>
+    /// 004f41b0 (the town hero slot a hire takes): the visiting slot (town vf 0x18(0)) empty → 0; else, unless the player
+    /// is a computer (player vf 0x18c) and the town is blocked for the AI (town vf 0x114, BlockTownGarrisonForAI), the
+    /// garrison slot (vf 0x18(1)) empty → 1; else −1 (no free slot).
+    /// </summary>
+    public int HireTownSlot(PlayerState p, TownState t)
+    {
+        if (HeroAt(EntranceOf(t)) == null) return 0;
+        if (!p.Human && t.AiGarrisonBlocked) return -1;
+        return S.Heroes.Any(h => h.Alive && h.InTown == t.Object && h.Garrisoned) ? -1 : 1;
+    }
+
+    /// <summary>
+    /// CHireHeroInTownCmd (ctor 00639060, vtable 00e1976c, execute 004f5310): owner check (player vf 0x2c = town
+    /// vf 0xbc), the slot (<see cref="HireTownSlot"/>, the same test as 004f41b0, done first), the cost (00b4ced0,
+    /// affordable 009d0500 ≥ 1), the status 004f4570 (flag 0) = 0, player vf 0x15c (pay, take the offer), then
+    /// 004f4200(town, slot, force 1) puts the hero in: into the garrison slot the town's garrison army is merged into
+    /// his (<see cref="MergeGarrisonForced"/>), then town vf 0x14(hero, slot, 1, …) seats him.
+    /// </summary>
     string? DoHire(HireHeroCmd c)
     {
         var t = S.Town(c.TownObject);
@@ -409,11 +427,17 @@ public sealed partial class Adventure
         if (c.TavernSlot < 0 || c.TavernSlot >= offers.Length || offers[c.TavernSlot] is not { } defId) return "no hero in that slot";
         if (S.Heroes.Count(h => h.Alive && h.Owner == p.Index) >= HiringHeroLimit(p)) return "too many heroes";
         var entrance = EntranceOf(t);
-        if (HeroAt(entrance) != null) return "the town entrance is occupied";
+        int slot = HireTownSlot(p, t);
+        if (slot < 0) return "no free town hero slot";
         int cost = HireCost(p, t);
         if (p.Purse[Purse.Gold] < cost) return "not enough gold";
         var h = HireHero(defId, p.Index, entrance, out bool returning);
         h.InTown = t.Object;
+        if (slot == 1)
+        {
+            MergeGarrisonForced(h, t);
+            h.Garrisoned = true;
+        }
         h.MaxMovePoints = ComputeMaxMovePoints(h);
         h.MovePoints = h.MaxMovePoints;
         if (!returning) S.Heroes.Add(h);
@@ -421,9 +445,43 @@ public sealed partial class Adventure
         foreach (var other in S.Players) for (int i = 0; i < other.Tavern.Length; i++) if (other.Tavern[i] == defId) other.Tavern[i] = null;
         GiveOne(p, Purse.Gold, -cost);
         Emit(new HeroHired(h.Id, defId, t.Object));
+        if (slot == 1) Emit(new ArmyChanged(h.Id, t.Object));
         LearnFromGuild(h, t);
         RevealAround(h);
         return null;
+    }
+
+    /// <summary>
+    /// 004f4200 with the garrison slot and force set: the town's garrison (town vf 0x2c) fits the hero's army (0045add0)
+    /// → moved; else his duplicate stacks are combined (0045a900) and tested again; still not → 0045af10 drops garrison
+    /// stacks: their stack values (004e9b90 with the hero, hero vf 0x22c) sorted highest first (009c8060 with 0045a0c0,
+    /// a &gt; b), stacks whose creature the hero has are taken off the list (they join for free), the first n of the rest
+    /// are kept (n = his free slots) and the others removed from the garrison; then 0045a2c0 moves every garrison
+    /// stack into him. GAP-details: the sort's order on equal values is not traced (ours: stable, garrison order).
+    /// </summary>
+    void MergeGarrisonForced(HeroState h, TownState t)
+    {
+        if (!GarrisonFits(h.Army, t.Garrison))
+        {
+            CombineDuplicateStacks(h.Army);
+            if (!GarrisonFits(h.Army, t.Garrison))
+            {
+                var has = new HashSet<string>(h.Army.Live().Select(s => s.Creature));
+                int free = h.Army.Count(s => s is not { Count: > 0 });
+                var order = Enumerable.Range(0, t.Garrison.Length)
+                    .Where(i => t.Garrison[i] is { Count: > 0 })
+                    .Select(i => (Slot: i, Value: (double)AI.OriginalAdventureAI.StackValue(this, AiStats, t.Garrison[i]!, h)))
+                    .OrderByDescending(x => x.Value).ToList();
+                foreach (var (slot, _) in order)
+                {
+                    if (has.Contains(t.Garrison[slot]!.Creature)) continue;
+                    if (free > 0) { free--; continue; }
+                    t.Garrison[slot] = null;
+                }
+            }
+        }
+        foreach (var s in t.Garrison.Live()) h.Army.TryAdd(s.Creature, s.Count);
+        Array.Fill(t.Garrison, null);
     }
 
     /// <summary>

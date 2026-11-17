@@ -96,4 +96,80 @@ public class TownHireTests(Fixture f)
         var hired = g.S.Heroes.Last(h => h.DefId == offers[0]);
         Assert.Equal(preview.Army.Select(s => (s?.Creature, s?.Count)), hired.Army.Select(s => (s?.Creature, s?.Count)));
     }
+    (Engine.Adventure G, TownState T, HeroState Visitor) VisitedTown()
+    {
+        var (g, t) = Town(1);
+        t.Built["TB_TAVERN"] = 1;
+        var gate = g.EntranceOf(t);
+        var v = g.S.Heroes.First(h => h.Alive && h.Owner == g.Current.Index);
+        foreach (var h in g.S.Heroes.Where(h => h != v && (h.Pos.Equals(gate) || h.InTown == t.Object))) h.Alive = false;
+        v.Pos = gate;
+        v.InTown = t.Object;
+        v.Garrisoned = false;
+        return (g, t, v);
+    }
+
+    [Fact]
+    public void HireTakesTheGarrisonSlotWhenAHeroVisits()
+    {
+        // 004f5310 → 004f41b0: the visiting slot (town vf 0x18(0)) is taken → the garrison slot (vf 0x18(1)); 004f4200
+        // (slot 1, force) merges the garrison army into the hired hero. Both taken → status 4 and the command fails.
+        var (g, t, v) = VisitedTown();
+        t.Garrison[0] = new Stack(g.Core.Creatures.Values.First(c => c.Power > 0).Id, 5);
+        string garrisonCreature = t.Garrison[0]!.Creature;
+        Assert.Equal(1, g.HireTownSlot(g.Current, t));
+        Assert.Equal(0, g.TownHireStatus(g.Current, t));
+        var offer = g.TownTavernOffers(g.Current, t)[0]!;
+        Assert.True(g.Apply(new HireHeroCmd(t.Object, 0) { Player = g.Current.Index }).Ok);
+        var hired = g.S.Heroes.Last(h => h.DefId == offer);
+        Assert.True(hired.Garrisoned);
+        Assert.Equal(t.Object, hired.InTown);
+        Assert.False(v.Garrisoned);
+        Assert.All(t.Garrison, s => Assert.Null(s));
+        Assert.Contains(hired.Army.Live(), s => s.Creature == garrisonCreature);
+        Assert.Equal(-1, g.HireTownSlot(g.Current, t));
+        Assert.Equal(4, g.TownHireStatus(g.Current, t));
+        Assert.False(g.Apply(new HireHeroCmd(t.Object, 1) { Player = g.Current.Index }).Ok);
+    }
+
+    [Fact]
+    public void ComputerPlayerSkipsTheGarrisonSlotOfABlockedTown()
+    {
+        // 004f41b0: with player vf 0x18c (computer) and town vf 0x114 (BlockTownGarrisonForAI) the garrison slot is not used.
+        var (g, t, _) = VisitedTown();
+        t.AiGarrisonBlocked = true;
+        g.Current.Human = true;
+        Assert.Equal(1, g.HireTownSlot(g.Current, t));
+        g.Current.Human = false;
+        Assert.Equal(-1, g.HireTownSlot(g.Current, t));
+        Assert.Equal(4, g.TownHireStatus(g.Current, t));
+        t.AiGarrisonBlocked = false;
+        Assert.Equal(1, g.HireTownSlot(g.Current, t));
+    }
+
+    [Fact]
+    public void ForcedGarrisonMergeKeepsTheStrongestStacksThatFit()
+    {
+        // 004f4200 force → 0045af10: garrison stacks by stack value (004e9b90) highest first; the hero's own creatures
+        // join for free, the first (free slots) of the rest are kept, the others dropped; then all are moved (0045a2c0).
+        var (g, t, _) = VisitedTown();
+        var offer = g.TownTavernOffers(g.Current, t)[0]!;
+        var preview = g.Simulation(H5.Adventure.AI.StateCopy.Of(g.S)).TavernHeroPreview(offer, g.Current.Index, g.EntranceOf(t));
+        var own = preview.Army.Live().Select(s => s.Creature).ToHashSet();
+        var others = g.Core.Creatures.Values.Where(c => c.Power > 0 && !own.Contains(c.Id)).Select(c => c.Id).Take(7).ToArray();
+        Assert.Equal(7, others.Length);
+        for (int i = 0; i < 7; i++) t.Garrison[i] = new Stack(others[i], i + 1);
+        var st = H5.Adventure.AI.AdventureAiStats.Load(g.Core);
+        // The hero's duplicate stacks are combined first (0045a900), so his free slots are 7 − his creature kinds.
+        int free = 7 - own.Count;
+        var kept = Enumerable.Range(0, 7)
+            .OrderByDescending(i => (double)H5.Adventure.AI.OriginalAdventureAI.StackValue(g, st, t.Garrison[i]!, preview))
+            .Take(free).Select(i => others[i]).ToHashSet();
+        Assert.True(free < 7);
+        Assert.True(g.Apply(new HireHeroCmd(t.Object, 0) { Player = g.Current.Index }).Ok);
+        var hired = g.S.Heroes.Last(h => h.DefId == offer);
+        var got = hired.Army.Live().Select(s => s.Creature).Where(c => !own.Contains(c)).ToHashSet();
+        Assert.Equal(kept.OrderBy(x => x), got.OrderBy(x => x));
+        Assert.All(t.Garrison, s => Assert.Null(s));
+    }
 }

@@ -96,9 +96,9 @@ public sealed partial class OriginalAdventureAI
                 total.Add(tb.Cost);
             }
             if (!Enumerable.Range(0, 7).All(i => me.Purse[i] >= total[i])) continue;
-            // The engine's hire also needs a free town entrance (HireHeroCmd).
-            var gate = g.EntranceOf(t);
-            if (g.S.Heroes.Any(x => x.Alive && x.Pos == gate && !(x.InTown >= 0 && x.Garrisoned))) continue;
+            // The hire command needs a free town hero slot (004f5310 → 004f41b0: visiting, else the garrison unless
+            // the town is blocked for the AI); whether 0086b0a0 itself tests it is not traced.
+            if (g.HireTownSlot(me, t) < 0) continue;
             double f = def.Town == t.Type ? 1.0 : 0.1;
             double s = f * hv / ((double)ResourceValue(g, me.Index, total) + 1.0);
             if (best == null || !(s < best.Value.Item1)) best = (s, t, tavern);
