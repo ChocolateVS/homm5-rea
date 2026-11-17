@@ -24,6 +24,8 @@ public partial class AdvHud : Control
     readonly List<TextureRect> _heroIcons = new(), _townIcons = new();
     readonly List<Control> _mpBars = new(), _manaBars = new();
     TextureRect? _minimap;
+    /// <summary>The 172×172 icon layer (minimap +0x12c, cleared by 00c1c4f0 and filled by 005acd80) drawn over the terrain.</summary>
+    TextureRect? _minimapIcons;
     Control? _minimapOverlay;
     Image? _minimapBase;
     int _minimapFloor = -1;
@@ -298,6 +300,12 @@ public partial class AdvHud : Control
             ClipContents = true,
         };
         frame.AddChild(_minimap);
+        _minimapIcons = new TextureRect
+        {
+            Name = "Icons", AnchorRight = 1, AnchorBottom = 1, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.Scale, TextureFilter = TextureFilterEnum.Nearest, MouseFilter = MouseFilterEnum.Ignore,
+        };
+        _minimap.AddChild(_minimapIcons);
         _minimapOverlay = new MinimapOverlay(this) { Name = "View", AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore };
         _minimap.AddChild(_minimapOverlay);
         _minimap.GuiInput += e =>
@@ -331,11 +339,19 @@ public partial class AdvHud : Control
     {
         if (_minimap == null) return;
         var map = _screen.Session.Map;
-        float mx = local.X / _minimap.Size.X * map.TilesX;
-        float my = (1f - local.Y / _minimap.Size.Y) * map.TilesY;
+        int b = map.BorderSize;
+        float mx = b + local.X / _minimap.Size.X * (map.TilesX - 2 * b);
+        float my = b + (1f - local.Y / _minimap.Size.Y) * (map.TilesY - 2 * b);
         _screen.World.Camera.CenterOn(new Tile((int)mx, (int)my, _screen.World.Floor));
     }
 
+    /// <summary>
+    /// The minimap (window class around 005acd80). The terrain buffer (+0x110) has one pixel per tile of the map without its
+    /// border (size: world +0x4c − 2·border +0x1dc, ctor 005ad810); unexplored tiles are black. The objects are not
+    /// coloured into it: they are icons of UI/AdventureScreen-FPP-2/MinimapTextures copied into a separate 172×172 layer
+    /// (+0x12c, size 0xac; 00c1cae0 centres the icon on the point and overwrites the pixels whose alpha is not 0), placed
+    /// by the transform 005ac8d0: x' = (x − border)·172 / (width − 2·border), y' = 172 − (y − border)·172 / (height − 2·border).
+    /// </summary>
     public void UpdateMinimap()
     {
         if (_minimap == null) return;
@@ -355,37 +371,144 @@ public partial class AdvHud : Control
                         _minimapBase.SetPixel(x, y, _minimapBase.GetPixel(x, y).Darkened(0.45f));
         }
         var img = (Image)_minimapBase.Duplicate();
-        var s = session.S;
-        foreach (var o in map.Objects)
-        {
-            if (o.Pos.Floor != f || o.Kind is ObjectKind.Static or ObjectKind.Hero) continue;
-            s.Objects.TryGetValue(o.Index, out var os);
-            int owner = s.Town(o.Index)?.Owner ?? os?.Owner ?? o.Owner;
-            if (owner < 0 || os?.Removed == true) continue;
-            var c = AdvColors.Rgb(s.Players.Find(p => p.Index == owner)?.Colour ?? "");
-            foreach (var t in o.BlockedTiles.Append(o.Pos))
-                if (t.X >= 0 && t.Y >= 0 && t.X < map.TilesX && t.Y < map.TilesY) img.SetPixel(t.X, t.Y, c);
-        }
-        foreach (var h in s.Heroes)
-        {
-            if (!h.Alive || h.Garrisoned || h.Pos.Floor != f) continue;
-            var c = AdvColors.Rgb(s.Players.Find(p => p.Index == h.Owner)?.Colour ?? "");
-            for (int dy = -1; dy <= 1; dy++)
-            for (int dx = -1; dx <= 1; dx++)
-            {
-                int x = h.Pos.X + dx, y = h.Pos.Y + dy;
-                if (x >= 0 && y >= 0 && x < map.TilesX && y < map.TilesY) img.SetPixel(x, y, c);
-            }
-        }
-        // Unexplored tiles are black.
         var me = session.Human;
-        if (!AdvWorld.RevealAll && f < me.Explored.Count && me.Explored[f] is { } bits)
-            for (int y = 0; y < map.TilesY; y++)
-            for (int x = 0; x < map.TilesX; x++)
-                if (!bits[y * map.TilesX + x]) img.SetPixel(x, y, Colors.Black);
+        var bits = !AdvWorld.RevealAll && f < me.Explored.Count ? me.Explored[f] : null;
+        bool Explored(int x, int y) => bits == null || x < 0 || y < 0 || x >= map.TilesX || y >= map.TilesY || bits[y * map.TilesX + x];
+        // Unexplored tiles are black.
+        if (bits != null)
+            for (int y = 0; y < Math.Min(map.TilesY, img.GetHeight()); y++)
+            for (int x = 0; x < Math.Min(map.TilesX, img.GetWidth()); x++)
+                if (!Explored(x, y)) img.SetPixel(x, y, Colors.Black);
+        int b = map.BorderSize;
+        int iw = Math.Max(1, map.TilesX - 2 * b), ih = Math.Max(1, map.TilesY - 2 * b);
+        if (img.GetWidth() >= b + iw && img.GetHeight() >= b + ih)
+            img = img.GetRegion(new Rect2I(b, b, iw, ih));
         img.FlipY();   // map y grows upwards on screen
         _minimap.Texture = ImageTexture.CreateFromImage(img);
+        if (_minimapIcons != null)
+        {
+            var icons = MinimapIconLayer(f, b, iw, ih);
+            // Icons over unexplored ground are not shown (the layer is masked with the explored tiles).
+            if (bits != null)
+                for (int y = 0; y < IconLayerSize; y++)
+                for (int x = 0; x < IconLayerSize; x++)
+                {
+                    int tx = b + (int)(x * iw / (float)IconLayerSize), ty = b + (int)((IconLayerSize - 1 - y) * ih / (float)IconLayerSize);
+                    if (!Explored(tx, ty)) icons.SetPixel(x, y, Colors.Transparent);
+                }
+            _minimapIcons.Texture = ImageTexture.CreateFromImage(icons);
+        }
         _minimapOverlay?.QueueRedraw();
+    }
+
+    const int IconLayerSize = 172;
+
+    /// <summary>
+    /// The icon layer as 005acd80 fills it for a player (the branch where the viewing player's vf 0x44 ≠ 2), in its order:
+    /// underground gates (list +0x140: objects whose building part is BUILDING_SUBTERRA_GATE, 00c1d2c0) as
+    /// UnderworldExitEnter (00c1cf80); the citadels BUILDING_BIARA_CITADEL / BUILDING_DEMON_SOVEREIGN_CITADEL (list +0x14c)
+    /// as Town_1 (00c1d090); flagged objects (list +0x134: neutral or owned by a player, 00c1d2c0) through 00c1cd70 —
+    /// a town Town_%d, a mine or abandoned mine (type ids 0x16130cc3 / 0x16130cc5 = AdvMapMineShared / AdvMapAbanMineShared)
+    /// Mine_%d, anything else Object_%d, %d being the owner's colour (0 neutral); the viewing player's caravans
+    /// (Caravan_%d / Caravan_stopped_%d); the heroes on the floor (Hero_%d, owner's colour, at their tile, 005ac2e0).
+    /// Objects are placed at their footprint centre (00c1c720: tile + the mean of the object's cell offsets).
+    /// </summary>
+    Image MinimapIconLayer(int floor, int border, int iw, int ih)
+    {
+        var layer = Image.CreateEmpty(IconLayerSize, IconLayerSize, false, Image.Format.Rgba8);
+        var session = _screen.Session;
+        var s = session.S;
+        var map = session.Map;
+        Vector2I At(Vector2 p) => new(
+            (int)Math.Round((p.X - border) * IconLayerSize / iw),
+            (int)Math.Round(IconLayerSize - (p.Y - border) * IconLayerSize / ih));
+        int Colour(int player) => player < 0 ? 0 : AdvColors.ColourModelIndex(s.Players.Find(p => p.Index == player)?.Colour ?? "");
+        var live = map.Objects.Where(o => o.Pos.Floor == floor && !(s.Objects.TryGetValue(o.Index, out var os) && os.Removed)).ToList();
+
+        foreach (var o in live.Where(o => o.Kind == ObjectKind.Building && o.Shared.Type == "BUILDING_SUBTERRA_GATE" && !IsFlagged(o)))
+            Blit(layer, "UnderworldExitEnter", At(Centre(o)));
+        foreach (var o in live.Where(o => o.Shared.Type is "BUILDING_BIARA_CITADEL" or "BUILDING_DEMON_SOVEREIGN_CITADEL"))
+            Blit(layer, "Town_1", At(Centre(o)));
+        foreach (var o in live.Where(IsFlagged))
+        {
+            s.Objects.TryGetValue(o.Index, out var os);
+            int owner = s.Town(o.Index)?.Owner ?? (os != null && os.Owner >= 0 ? os.Owner : o.Owner);
+            string kind = o.Kind == ObjectKind.Town ? "Town_" : o.Kind is ObjectKind.Mine or ObjectKind.AbandonedMine ? "Mine_" : "Object_";
+            Blit(layer, kind + Colour(owner), At(Centre(o)));
+        }
+        int me = session.Human.Index;
+        foreach (var cv in s.Caravans)
+            if (cv.Owner == me && cv.Pos.Floor == floor)
+                Blit(layer, (cv.Stopped ? "Caravan_stopped_" : "Caravan_") + Colour(me), At(new Vector2(cv.Pos.X, cv.Pos.Y)));
+        foreach (var h in s.Heroes)
+            if (h.Alive && !h.Garrisoned && h.Pos.Floor == floor)
+                Blit(layer, "Hero_" + Colour(h.Owner), At(new Vector2(h.Pos.X, h.Pos.Y)));
+        return layer;
+    }
+
+    /// <summary>
+    /// Flagged map objects (IAdvMapFlagged): the kinds whose visit captures them in the engine (towns, mines, abandoned
+    /// mines, dwarven warrens, garrisons, dwellings, shipyards, lighthouses, dens of thieves).
+    /// </summary>
+    static bool IsFlagged(MapObject o) => o.Kind is ObjectKind.Town or ObjectKind.Mine or ObjectKind.AbandonedMine
+        or ObjectKind.DwarvenWarren or ObjectKind.Garrison or ObjectKind.Dwelling or ObjectKind.Shipyard
+        || o.Kind == ObjectKind.Building && o.Shared.Type is "BUILDING_LIGHTHOUSE" or H5.Adventure.Engine.Adventure.DenOfThieves;
+
+    /// <summary>00c1c720: the object's tile plus the mean of its passable and blocked cell offsets (no division for one cell).</summary>
+    static Vector2 Centre(MapObject o)
+    {
+        var cells = o.Shared.Passable.Select(c => H5.Adventure.Map.Footprint.Place(o.Pos, c, o.Rot))
+            .Concat(o.BlockedTiles).ToList();
+        float sx = 0, sy = 0;
+        foreach (var t in cells) { sx += t.X - o.Pos.X; sy += t.Y - o.Pos.Y; }
+        if (cells.Count > 1) { sx /= cells.Count; sy /= cells.Count; }
+        return new Vector2(o.Pos.X + sx, o.Pos.Y + sy);
+    }
+
+    /// <summary>00c1cae0: the icon centred on the point (top-left at point − size/2), pixels with alpha 0 skipped.</summary>
+    static void Blit(Image layer, string icon, Vector2I at)
+    {
+        if (MinimapIconImage(icon) is not { } src) return;
+        int w = src.GetWidth(), h = src.GetHeight();
+        int x0 = at.X - w / 2, y0 = at.Y - h / 2;
+        for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++)
+        {
+            int px = x0 + x, py = y0 + y;
+            if (px < 0 || py < 0 || px >= IconLayerSize || py >= IconLayerSize) continue;
+            var c = src.GetPixel(x, y);
+            if (c.A8 != 0) layer.SetPixel(px, py, c);
+        }
+    }
+
+    static Dictionary<string, string>? _iconPaths;
+    static readonly Dictionary<string, Image?> _iconImages = new();
+
+    static Image? MinimapIconImage(string name)
+    {
+        if (_iconImages.TryGetValue(name, out var cached)) return cached;
+        if (_iconPaths == null)
+        {
+            _iconPaths = new();
+            const string list = "UI/AdventureScreen-FPP-2/MinimapTextures.(WindowRelatedTextures).xdb";
+            try
+            {
+                if (Game.Instance.Fs.Exists(list))
+                    foreach (var item in Game.Instance.Xdb.Load(list).Root?.Element("textures")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
+                        if ((string?)item.Element("TextureName") is { } n && (string?)item.Element("Texture")?.Attribute("href") is { Length: > 0 } h)
+                            _iconPaths[n] = XdbRef.Parse(h, list).Path;
+            }
+            catch { /* no data: no icons */ }
+        }
+        Image? img = null;
+        if (_iconPaths.TryGetValue(name, out var path) && Ui.UiResources.Instance.Texture(path)?.GetImage() is { } i)
+        {
+            img = (Image)i.Duplicate();
+            if (img.IsCompressed()) img.Decompress();
+            if (img.GetFormat() != Image.Format.Rgba8) img.Convert(Image.Format.Rgba8);
+        }
+        _iconImages[name] = img;
+        return img;
     }
 
     /// <summary>Draws the camera's view footprint on the minimap.</summary>
@@ -411,7 +534,8 @@ public partial class AdvHud : Control
                 // Rays at or above the horizon never meet the ground: stop them at the far plane.
                 if (t < 0 || t > cam.Far) t = cam.Far;
                 var p = AdvWorld.WorldToMap(o + d * t);
-                pts.Add(new Vector2(p.X / map.TilesX * Size.X, (1 - p.Y / map.TilesY) * Size.Y));
+                int b = map.BorderSize;
+                pts.Add(new Vector2((p.X - b) / (map.TilesX - 2 * b) * Size.X, (1 - (p.Y - b) / (map.TilesY - 2 * b)) * Size.Y));
             }
             // The view footprint is a trapezoid that can reach past the map edge; only the part
             // over the minimap is drawn, so the frame never spills onto the HUD around it.
@@ -421,51 +545,6 @@ public partial class AdvHud : Control
                 clipped.Add(clipped[0]);
                 DrawPolyline(clipped.ToArray(), new Color(1, 1, 1, 0.9f), 1f);
             }
-            DrawCaravans(map);
-        }
-
-        /// <summary>
-        /// 005acd80: every caravan of the world's list (vf 0x90) owned by the viewing player (vf 0x24 = player vf 0x2c)
-        /// on the shown floor (vf 0xac = +0x118) gets the minimap icon "Caravan_%d" — "Caravan_stopped_%d" when stopped
-        /// (vf 0x38: days −1) — with the viewing player's colour number (vf 0x30, taken as the ColourModels order),
-        /// from UI/AdventureScreen-FPP-2/MinimapTextures, drawn centred on the caravan's tile (00c1cae0).
-        /// </summary>
-        void DrawCaravans(H5.Adventure.Map.AdvMap map)
-        {
-            var session = hud._screen.Session;
-            int me = session.Human.Index, floor = hud._screen.World.Floor;
-            int colour = AdvColors.ColourModelIndex(session.Human.Colour);
-            foreach (var c in session.S.Caravans)
-            {
-                if (c.Owner != me || c.Pos.Floor != floor) continue;
-                if (MinimapIcon((c.Stopped ? "Caravan_stopped_" : "Caravan_") + colour) is not { } tex) continue;
-                var at = new Vector2((c.Pos.X + 0.5f) / map.TilesX * Size.X, (1 - (c.Pos.Y + 0.5f) / map.TilesY) * Size.Y);
-                DrawTexture(tex, (at - tex.GetSize() / 2).Round());
-            }
-        }
-
-        static Dictionary<string, string>? _iconPaths;
-        static readonly Dictionary<string, Texture2D?> _icons = new();
-
-        static Texture2D? MinimapIcon(string name)
-        {
-            if (_icons.TryGetValue(name, out var t)) return t;
-            if (_iconPaths == null)
-            {
-                _iconPaths = new();
-                const string list = "UI/AdventureScreen-FPP-2/MinimapTextures.(WindowRelatedTextures).xdb";
-                try
-                {
-                    if (Game.Instance.Fs.Exists(list))
-                        foreach (var item in Game.Instance.Xdb.Load(list).Root?.Element("textures")?.Elements("Item") ?? Enumerable.Empty<System.Xml.Linq.XElement>())
-                            if ((string?)item.Element("TextureName") is { } n && (string?)item.Element("Texture")?.Attribute("href") is { Length: > 0 } h)
-                                _iconPaths[n] = H5.Core.Xdb.XdbRef.Parse(h, list).Path;
-                }
-                catch { /* no data: no icons */ }
-            }
-            t = _iconPaths.TryGetValue(name, out var path) ? Ui.UiResources.Instance.Texture(path) : null;
-            _icons[name] = t;
-            return t;
         }
 
         /// <summary>Sutherland–Hodgman clip of a convex polygon to an axis-aligned rectangle.</summary>

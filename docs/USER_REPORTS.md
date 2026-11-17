@@ -19,7 +19,6 @@ from the description. Move an item to "Done" with the commit when fixed.
 8. **Cursor:** there may be a different cursor when hovering a castle's entrance.
 10. **Ownership / selection marks:** a captured mine (or other object) should show something on top
     (owner flag/banner); troops normally have something around them (ring/base marker).
-11. **Minimap icons:** the icons for castles and other objects are wrong.
 13. **Fog of war:** unexplored areas are black, but tilting the camera down shows the outlines of
     things in the darkness. Earlier finding (docs/rules/ADVENTURE_RENDER.md, 7be9d21): the original
     also draws unexplored geometry black rather than hiding it, but our blending (linear vs gamma)
@@ -80,3 +79,9 @@ from the description. Move an item to "Done" with the commit when fixed.
    their next turn); now specability1 plays and they leave the field, and the finish shows them landing with
    specability2 and the strike (exe FUN_008a9220 cases 0x9a / 0x9b). The ability button, target click and the
    AI's use were checked in duels — commit b985569. Not traced: the exe's target rule for 0x9a (ours: any cell).
+11. **Minimap icons:** objects were coloured into the terrain tile by tile; now the exe's icon layer (005acd80:
+    172×172 layer, transform 005ac8d0, blit 00c1cae0) draws the MinimapTextures icons — Town_/Mine_/Object_ in the
+    owner's colour (0 = neutral) for flagged objects, UnderworldExitEnter, Town_1 for the citadels, caravans, Hero_ — and
+    the terrain shows the map without its border. Open: the flagged-object set is the engine's capture set, icons are
+    masked by the explored tiles (fog order not traced), and the world list drawn as Object_%d (vf 0x84) is not
+    identified — commit "adventure: minimap icon layer".
