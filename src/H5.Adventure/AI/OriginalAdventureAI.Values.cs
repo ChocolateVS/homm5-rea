@@ -28,61 +28,19 @@ public sealed partial class OriginalAdventureAI
     // ------------------------------------------------------------------ stacks, armies
 
     /// <summary>
-    /// Stack value (exe FUN_004e9b90): v = ftol(max(Power, 1) · 100); then, each step truncated, + (hit points − record
-    /// health) · CreatureOverHealthCoef, + (min + max damage − record min − max) · CreatureOverDamageCoef, + (attack +
-    /// defence without the hero − record) · CreatureOverAttributesCoef, + the creature artifact's armor crushing / magic
-    /// protection / speed levels × their CreatureMAECoef_*, × (1 + luck · Good/BadLuckCoef), × (1 + morale ·
-    /// Good/BadMoraleCoef) (−1 morale for a hero in a town with a tavern, hero vf 0x54 → town vf 0x34(4)), ×
-    /// (1 + (initiative − record) · CreatureOverInitiativeCoef); × count.
-    /// GAP-details: the ×1.4 shooter factor behind hero vf 0x324 (+0x248, unidentified) is not applied; the hero's
-    /// damage bonuses (skill 0x24, Werewolf Claw Necklace, skill 0x75) and initiative bonuses are not applied (week and
-    /// creature artifact only); the hit points use <c>CreatureHitPoints</c> (no next-battle percentage).
+    /// Stack value (exe FUN_004e9b90, ECX = stack, EDX = hero or 0): the exact port <see cref="Engine.Adventure.StackPower"/>
+    /// (x87 chop, hero getters through BattleSetup.GetterStack; adventure_x87.md "Army power") with this AI's stats. Every
+    /// caller here passes EDX as the exe does: the hero estimate / hire score / town value / rumour statistics the army's
+    /// hero (004eb050 0x004eb21f, 004eae60 0x004eaf99, 004eb480 0x004eb697 the garrison hero, 008e8de7 / 008e8e83 /
+    /// 008e90fb), the supplier slot test the taker (00cdac75), the forced garrison merge the hero (0045afbe), the
+    /// hero-less purchase score 0 (00cde23b / 00cde2d3).
     /// </summary>
     public static long StackValue(Engine.Adventure g, AdventureAiStats st, Stack s, HeroState? hero)
-    {
-        if (!g.Core.Creatures.TryGetValue(s.Creature, out var c)) return 1;
-        string week = g.S.MoonWeek;
-        var mae = s.Artifact;
-        int M(MicroEffect e) => mae?.Bonus(e) ?? 0;
-        long v = (long)(Math.Max((double)c.Power, 1.0) * 100.0);
-        float hp = g.CreatureHitPoints(hero, c.Id) + M(MicroEffect.Health) - c.Health;
-        v = (long)(hp * (double)(float)st.CreatureOverHealthCoef + v);
-        int minD = MoonWeek.MightDamage(c.MinDamage, week), maxD = MoonWeek.MightDamage(c.MaxDamage, week);
-        float dmg = minD - c.MaxDamage - c.MinDamage + maxD;
-        v = (long)(dmg * (double)(float)st.CreatureOverDamageCoef + v);
-        int atk = c.Attack + M(MicroEffect.Piercing), def = MoonWeek.Defence(c.Defence, c.Town, week) + M(MicroEffect.Defence);
-        int attr = atk - c.Defence - c.Attack + def;
-        v = (long)(attr * (double)(float)st.CreatureOverAttributesCoef + v);
-        v = (long)(M(MicroEffect.ArmorCrushing) * (double)(float)st.CreatureMaeDefenceCrush + v);
-        v = (long)(M(MicroEffect.MagicProtection) * (double)(float)st.CreatureMaeSpellReduce + v);
-        v = (long)(M(MicroEffect.Speed) * (double)(float)st.CreatureMaeMovement + v);
-        int luck = Math.Clamp(MoonWeek.MoraleLuck(0, c.Town, week) + M(MicroEffect.Luck), -5, 5);
-        v = (long)((luck * (luck >= 0 ? (double)(float)st.CreatureGoodLuckCoef : (double)(float)st.CreatureBadLuckCoef) + 1.0) * v);
-        int extra = hero != null && hero.InTown >= 0 && g.S.Town(hero.InTown) is { } ht && ht.Level("TB_TAVERN") > 0 ? -1 : 0;
-        int morale = Math.Clamp(CreatureMorale(c, week) + M(MicroEffect.Morale), -5, 5) + extra;
-        double m = morale * (morale >= 0 ? (double)(float)st.CreatureGoodMoraleCoef : (double)(float)st.CreatureBadMoraleCoef);
-        double init = MicroArtifacts.HasteInitiative(MoonWeek.Initiative(c.Initiative, c.Town, week), M(MicroEffect.Haste));
-        float di = (float)(init - c.Initiative);
-        double fi = di * (double)(float)st.CreatureOverInitiativeCoef + 1.0;
-        v = (long)((m + 1.0) * v);
-        v = (long)(v * fi);
-        return s.Count * v;
-    }
-
-    /// <summary>Base morale of a creature as the army getter 004ba9d0 sees it (week-adjusted, 0 for undead / mechanical).</summary>
-    static int CreatureMorale(CreatureDef c, string week)
-    {
-        if (c.Has("ABILITY_UNDEAD") || c.Has("ABILITY_MECHANICAL")) return 0;
-        return MoonWeek.MoraleLuck(0, c.Town, week);
-    }
+        => g.StackPower(s, hero, st);
 
     /// <summary>Army value (exe FUN_004eaaa0): Σ <see cref="StackValue"/> over the live stacks in slot order.</summary>
     public static long ArmyValue(Engine.Adventure g, AdventureAiStats st, IEnumerable<Stack?> army, HeroState? hero)
-    {
-        long v = 0;
-        foreach (var s in army) if (s is { Count: > 0 }) v += StackValue(g, st, s, hero);
-        return v;
-    }
+        => g.ArmyPowerSum(army, hero, st);
 
     // ------------------------------------------------------------------ heroes
 

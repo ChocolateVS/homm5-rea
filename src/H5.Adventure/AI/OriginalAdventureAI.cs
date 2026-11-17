@@ -94,6 +94,7 @@ public sealed partial class OriginalAdventureAI
             {
                 ResolvePending(g, battleSeedBase + (ulong)actions);
                 LevelUps(g, h, st);
+                ForgetReachedTarget(h);
                 var target = ChooseDestination(g, h, roles, diff, st, claimed);
                 if (target == null) break;
                 var mate = g.S.Heroes.FirstOrDefault(x => x.Alive && x.Owner == me && x.Id != h.Id && !x.Garrisoned && x.Pos == target.Value.Tile);
@@ -130,6 +131,18 @@ public sealed partial class OriginalAdventureAI
             }
             if (h.Alive && !g.S.Finished) FinishHero(g, h, roles[h.Id]);
         }
+    }
+
+    /// <summary>
+    /// The hero step's arrival test (exe FUN_0086b400 at 0x0086b47d..0x0086b4f4): when the hero's AI record (hero
+    /// vf 0x2ac) holds a valid remembered target (record +4, FUN_004b94b0) equal to the hero's position (vf 0xa4), the
+    /// step queues the command 00e0e36c (FUN_0086e810; execute FUN_0042bc00), which rewrites the record with the target
+    /// tile set to the invalid (0x39c, 0x39c) (AND 0xfffe739c / OR 0xe739c) through vf 0x2b0; the next step then searches
+    /// afresh with no remembered target (no previous best, no old-target bonus, no raised search limit).
+    /// </summary>
+    void ForgetReachedTarget(HeroState h)
+    {
+        if (_lastTarget.TryGetValue(h.Id, out var t) && t == h.Pos) _lastTarget.Remove(h.Id);
     }
 
     /// <summary>The first map dwelling (map order) with an active tile at <paramref name="t"/>.</summary>

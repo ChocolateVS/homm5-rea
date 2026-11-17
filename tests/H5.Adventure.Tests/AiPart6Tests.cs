@@ -1,5 +1,6 @@
 using H5.Adventure.AI;
 using H5.Adventure.Map;
+using H5.Adventure.Engine;
 using H5.Adventure.State;
 
 namespace H5.Adventure.Tests;
@@ -97,5 +98,24 @@ public class AiPart6Tests(Fixture f)
         foreach (var x in g.S.Heroes.Where(x => x.Owner != p.Index)) x.Alive = false;
         ai.PlayTurn(g, 77);
         Assert.True(g.S.GrailFound || g.S.Holes.Contains(g.S.Grail!.Value), $"value {state.Value}, probability {state.Probability}");
+    }
+
+    [Fact]
+    public void A_hero_on_its_remembered_target_forgets_it_instead_of_moving_onto_its_own_tile()
+    {
+        // FUN_0086b400 (0x0086b47d..0x0086b4f4): the AI record's target (hero vf 0x2ac, +4) equal to the hero's
+        // position queues 00e0e36c (FUN_0042bc00: the target becomes the invalid tile 0x39c, 0x39c); the next step
+        // searches afresh. Ours kept the target, so the search started from it (00a7b630 previous best) and the hero
+        // was sent onto its own tile until the step bound.
+        var g = f.NewGame("A2M1", 5);
+        var noOps = new List<string>();
+        g.CommandSink = c =>
+        {
+            if (c is MoveHeroCmd m && g.S.Hero(m.HeroId) is { } mh && mh.Pos == m.To) noOps.Add($"day {g.S.Day} hero {m.HeroId} at {m.To}");
+            return g.Apply(c);
+        };
+        var ai = new OriginalAdventureAI();
+        for (int i = 0; i < 3 * g.S.Players.Count && !g.S.Finished; i++) ai.PlayTurn(g, 77 + (ulong)i);
+        Assert.Empty(noOps);
     }
 }
