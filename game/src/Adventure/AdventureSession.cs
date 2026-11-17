@@ -56,7 +56,9 @@ public sealed class AdventureSession
 
     /// <summary>Loads a map (catalogue id, short name or .h5m path) and starts a game with one human player.</summary>
     /// <param name="campaign">a campaign mission: 006948c0 sets the setup model's campaign flag +0x1c (vf 0x5c).</param>
-    public static AdventureSession Start(string mapQuery, ulong seed, int humanMapPlayer = -1, int difficulty = 1, bool campaign = false)
+    /// <param name="campaignExtras">a campaign mission's carried extra heroes (start info +0x18, 0045f080), as stored.</param>
+    public static AdventureSession Start(string mapQuery, ulong seed, int humanMapPlayer = -1, int difficulty = 1, bool campaign = false,
+        IReadOnlyList<CampaignHeroRecord>? campaignExtras = null)
     {
         var fs = H5Reborn.Game.Instance.Fs;
         var core = H5Reborn.Game.Instance.Db;
@@ -71,6 +73,7 @@ public sealed class AdventureSession
         H5Reborn.Dev.LoadTrace.Mark("map parse");
 
         var setup = new GameSetup { Seed = seed, Difficulty = difficulty, Campaign = campaign };
+        if (campaignExtras != null) setup.CampaignExtras = CampaignHeroRecord.InMapOrder(campaignExtras);
         var active = map.Players.Where(p => p.Active).ToList();
         int human = humanMapPlayer >= 0 ? humanMapPlayer : active.FirstOrDefault(p => p.CanBeHuman)?.Index ?? active[0].Index;
         foreach (var p in active)

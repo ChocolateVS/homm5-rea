@@ -71,8 +71,11 @@ public static class CampaignFlow
     public static AdventureSession LoadMission(CampaignDef c, CampaignMission m)
     {
         var seed = (ulong)Time.GetTicksUsec();
-        var session = AdventureSession.Start(m.MapId, seed, difficulty: CampaignMenu.Difficulty, campaign: true);
-        ApplyCarryOver(session, c, m, CampaignProfile.Current);
+        var profile = CampaignProfile.Current;
+        // 0045f080: the previous mission's extra heroes reach this mission's start info (+0x18).
+        var extras = profile.CarriedExtras.GetValueOrDefault(CampaignProfile.CarryKey(c.InternalName, m.Index));
+        var session = AdventureSession.Start(m.MapId, seed, difficulty: CampaignMenu.Difficulty, campaign: true, campaignExtras: extras);
+        ApplyCarryOver(session, c, m, profile);
         return session;
     }
 

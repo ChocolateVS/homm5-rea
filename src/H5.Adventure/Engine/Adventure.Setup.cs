@@ -23,6 +23,7 @@ public sealed partial class Adventure
         g.ResolveRandomObjects();
         g.SetupTowns();
         g.SetupObjects();
+        g._campaignExtras = setup.Campaign ? setup.CampaignExtras : new();
         g.SetupHeroes();
         g.ApplyStartBonuses(setup);
         g.SetupBoats();
@@ -278,6 +279,17 @@ public sealed partial class Adventure
             if (o.Hero == null) continue;
             var owner = PlayerByIndex(o.Owner) != null ? o.Owner : -1;
             if (owner < 0) continue;   // heroes of absent players are not placed
+            // 0041ce20: a map hero whose shared hero has Class 0 (HERO_CLASS_NONE, MapObjects/Utility/EntryPoint.xdb) is
+            // a placeholder for the next campaign extra hero (0041cc60); with none left it makes no hero.
+            if (o.Hero.Class == "HERO_CLASS_NONE")
+            {
+                if (NextCampaignExtra(owner, o.Pos) is { } extra)
+                {
+                    if (TownAt(o.Pos) is { } et && et.Owner == owner) extra.InTown = et.Object;
+                    S.Heroes.Add(extra);
+                }
+                continue;
+            }
             var h = HeroFromInstance(o.Hero, owner, o.Pos);
             if (TownAt(o.Pos) is { } t && t.Owner == owner) h.InTown = t.Object;
             S.Heroes.Add(h);

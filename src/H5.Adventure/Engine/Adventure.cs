@@ -25,6 +25,12 @@ public sealed class GameSetup
     public int Difficulty = 1;
     public bool Campaign;
     public ulong Seed = 1;
+    /// <summary>
+    /// Campaign start info +0x18 (0045f080: the previous mission's extra heroes, HeroesPool Count beyond its entries),
+    /// in the iteration order of the exe's hash map (<see cref="CampaignHeroRecord.InMapOrder"/>); placed on the map's
+    /// class-NONE heroes (EntryPoint) by 0041cc60.
+    /// </summary>
+    public List<CampaignHeroRecord> CampaignExtras = new();
 
     /// <summary>
     /// The start info for Restart Mission (0059fbc0 copies the game info — the setup model with every slot's state,
@@ -32,7 +38,7 @@ public sealed class GameSetup
     /// </summary>
     public GameSetup Restart(ulong seed) => new()
     {
-        Difficulty = Difficulty, Campaign = Campaign, Seed = seed,
+        Difficulty = Difficulty, Campaign = Campaign, Seed = seed, CampaignExtras = CampaignExtras.ToList(),
         Players = Players.Select(p => new PlayerSetup { MapPlayer = p.MapPlayer, Human = p.Human, Race = p.Race, StartHero = p.StartHero, Bonus = p.Bonus }).ToList(),
     };
 

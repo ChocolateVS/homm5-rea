@@ -1,3 +1,4 @@
+using H5.Adventure.Map;
 using H5.Adventure.State;
 using H5.Core.Data;
 
@@ -58,10 +59,70 @@ public sealed class CampaignHeroRecord
         for (int k = 0; k < extra; k++) result.Add(sorted[sorted.Count - 1 - k]);
         return result;
     }
+
+    /// <summary>The bucket counts of 00cef2a0 (table 00e0c020, the first eight entries read; more than 1543 extras cannot occur).</summary>
+    static readonly uint[] Primes = { 13, 29, 53, 97, 193, 389, 769, 1543 };
+
+    /// <summary>Hash of the key (00421a30): the shared hero's InternalName (+0xec), h = h · 5 + c over signed chars.</summary>
+    public static uint KeyHash(string internalName)
+    {
+        uint h = 0;
+        foreach (var b in System.Text.Encoding.Latin1.GetBytes(internalName)) h = unchecked(h * 5 + (uint)(sbyte)b);
+        return h;
+    }
+
+    /// <summary>
+    /// The order 0041cc60 reads the extras in: the record's hash map keyed by hero (0045f460 inserts them most
+    /// experienced first through 00461950 → 00461520: resize 00460a50 to 00cef2a0(n + 1) buckets when needed, which
+    /// re-links each bucket's nodes in order to the head of their new bucket; a new key goes to the head of bucket
+    /// hash % buckets; 13 buckets at first, 006fa080); iteration (00c44170 / 00422770) walks the buckets in order and
+    /// each chain from its head. A key already present is not inserted again.
+    /// </summary>
+    public static List<CampaignHeroRecord> InMapOrder(IReadOnlyList<CampaignHeroRecord> inserted)
+    {
+        var buckets = new List<List<CampaignHeroRecord>>();
+        for (int i = 0; i < Primes[0]; i++) buckets.Add(new());
+        int n = 0;
+        foreach (var r in inserted)
+        {
+            if (buckets.Any(b => b.Any(x => x.ScriptName == r.ScriptName))) continue;
+            if (buckets.Count < n + 1)
+            {
+                uint size = Primes.FirstOrDefault(p => p >= n + 1, Primes[^1]);
+                var grown = new List<List<CampaignHeroRecord>>();
+                for (int i = 0; i < size; i++) grown.Add(new());
+                foreach (var b in buckets)
+                    foreach (var x in b) grown[(int)(KeyHash(x.ScriptName) % size)].Insert(0, x);
+                buckets = grown;
+            }
+            buckets[(int)(KeyHash(r.ScriptName) % (uint)buckets.Count)].Insert(0, r);
+            n++;
+        }
+        return buckets.SelectMany(b => b).ToList();
+    }
 }
 
 public sealed partial class Adventure
 {
+    List<CampaignHeroRecord> _campaignExtras = new();
+    int _campaignExtraNext;
+
+    /// <summary>
+    /// 0041cc60: with the campaign flag (setup model vf 0x54) and the counter below the start info's extras count
+    /// (+0x18 map, count +0x28), the counter-th entry in map order is taken and the counter advances — even when its
+    /// hero (the key's AdvMapHeroShared) does not resolve, which then makes no hero; else 009aafa0 makes the hero from
+    /// its shared hero with the record (as for named carry-over) at the placeholder's place for the placeholder's owner.
+    /// </summary>
+    HeroState? NextCampaignExtra(int owner, Tile pos)
+    {
+        if (_campaignExtraNext >= _campaignExtras.Count) return null;
+        var r = _campaignExtras[_campaignExtraNext++];
+        if (!Core.Heroes.TryGetValue(r.ScriptName, out var def)) return null;
+        var h = HeroFromDef(def, owner, pos);
+        ApplyCampaignRecord(h, r);
+        return h;
+    }
+
     /// <summary>
     /// Gives a placed hero its carried record (009aacb0 with the record of 0045f080): experience and level, the
     /// attributes, skills, perks, spells and talisman level replace the map's; artifacts, army, war machines, name
