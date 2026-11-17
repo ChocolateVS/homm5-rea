@@ -31,17 +31,11 @@ from the description. Move an item to "Done" with the commit when fixed.
     exe's handlers, in the desktop and the browser build (the browser may swallow keys).
 15. **Duel setup screen:** the UI for starting a duel looks broken ("a bit cooked") — compare the
     duel preset / duel start screens with the exe's screen code and UI data.
-16. **Start of combat:** the user's hero stood inside his war machines, and both heroes were shown
-    (check hero model placement vs war machine positions per the exe's arena setup, and which heroes
-    the exe shows at battle start / in duels).
 17. **Combat hover highlight:** the user asks whether a hovered stack should be highlighted. Known so far
     (AUDIT_COMBAT_UI, commit 84b052b): hovering another stack draws its movement range as grid kind 7.
     Not yet traced: whether the hovered unit itself gets an outline / glow / base marker (likely related
     to item 10, "troops normally have something around them") — trace the exe's hover/selection
     rendering of units (CombatSelectionDesc, unit materials) and match it.
-18. **Attacking war machines:** the user could not attack the enemy's war machines in combat. Check the
-    exe's attack / shoot target rules for war-machine units (ballista, ammo cart, first aid tent;
-    catapult) and our Battle legality + cursor/click handling for them.
 19. **Combat graphics glitches:** "a little bit glitchy" in battle (browser build) — details not given;
     reproduce in a browser duel (smoke harness) and compare with the desktop build to find what
     looks wrong (z-fighting, overlay blend, shadows, flicker). Detail from the user: the blue squares
@@ -53,10 +47,6 @@ from the description. Move an item to "Done" with the commit when fixed.
     0.05 above the cell (0055bb60) — commit "combat grid: select marks drawn after the other marks". Still open: the
     cyan blobs under a Deflect Missile target are spell-effect particles sorted with the grid (their render layer in
     the exe not traced); the browser (Compatibility) renderer draws the grid fill brighter than the desktop one (not investigated).
-20. **Griffin Battle Dive:** "just doesn't work at all" in play. The rules were ported in sweeps 14–16
-    (landing FUN_00979680, strike timing 00985474.., finish 0x9b); check the player-facing path —
-    ability button / cursor / target click in the combat UI, and the AI's use — end to end in a duel.
-
 ## Done
 
 1. **Victory/defeat screen** (combat results): the outcome and experience lines were one text block drawn over
@@ -73,3 +63,15 @@ from the description. Move an item to "Done" with the commit when fixed.
    (one folder per report; read-only list at `/api/reports/view`); deploy steps in docs/WEB_BUILD.md,
    "Bug reports" — commits "tools/web/report-server: bug-report receiver …" (5aebbf7) and
    "web: Report a problem dialog …".
+16. **Start of combat:** both heroes and the war machines now stand where the exe's setup puts them
+   (hero FUN_00c56b90 for each army: the far-row border square behind its own army — attacker left, defender
+   right; machines FUN_00c551f0: border columns, rows from table 00e8e010, 2×2 Ballista / Tent / Catapult by
+   CombatSize). Before, both heroes were at the left border and the attacker's stood inside its Ballista.
+   Both heroes are shown in duels too, as in the exe — commit b985569 "combat: war machine / hero stands …".
+18. **Attacking war machines:** the engine allowed it, but the combat screen only picked cells inside the 12×10
+   grid while the machines stand on the border cells; the pick now covers the bordered field like the exe's
+   world → cell (FUN_00af15a0, no bounds test) — commit b985569.
+20. **Griffin Battle Dive:** the take-off left the griffins standing on the field (nothing seemed to happen until
+   their next turn); now specability1 plays and they leave the field, and the finish shows them landing with
+   specability2 and the strike (exe FUN_008a9220 cases 0x9a / 0x9b). The ability button, target click and the
+   AI's use were checked in duels — commit b985569. Not traced: the exe's target rule for 0x9a (ours: any cell).
