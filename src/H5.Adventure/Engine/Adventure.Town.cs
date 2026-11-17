@@ -457,12 +457,48 @@ public sealed partial class Adventure
     }
 
     /// <summary>
+    /// The exe's merge sort 009c8060 (pointer buffers ping-ponged through 00a3efe0, then copied back by 005051e0): for
+    /// each stride w from the largest power of two below n down to 1, 00a3efe0(w, src, dst, n) first copies the last w
+    /// entries when n &lt; 2w, then for every start j &lt; min(w, n − w) merges src[j], src[j+2w], … with src[j+w],
+    /// src[j+3w], … into dst[j], dst[j+w], …, taking the first run's entry only when <paramref name="before"/>(first,
+    /// second) holds (00a3f058: ECX = first, EDX = second) — so equal entries come second-run first.
+    /// </summary>
+    public static List<T> ExeMergeSort<T>(IReadOnlyList<T> items, Func<T, T, bool> before)
+    {
+        int n = items.Count;
+        var src = items.ToArray();
+        if (n <= 1) return src.ToList();
+        var dst = new T[n];
+        int w = 0x40000000;
+        while (w >= n) w >>= 1;
+        for (; w > 0; w >>= 1)
+        {
+            if (n < 2 * w) Array.Copy(src, n - w, dst, n - w, w);
+            int runs = Math.Min(w, n - w);
+            for (int j = 0; j < runs; j++)
+            {
+                int i1 = j, i2 = j + w, o = j;
+                while (i1 < n && i2 < n)
+                {
+                    if (before(src[i1], src[i2])) { dst[o] = src[i1]; i1 += 2 * w; }
+                    else { dst[o] = src[i2]; i2 += 2 * w; }
+                    o += w;
+                }
+                for (; i1 < n; i1 += 2 * w, o += w) dst[o] = src[i1];
+                for (; i2 < n; i2 += 2 * w, o += w) dst[o] = src[i2];
+            }
+            (src, dst) = (dst, src);
+        }
+        return src.ToList();
+    }
+
+    /// <summary>
     /// 004f4200 with the garrison slot and force set: the town's garrison (town vf 0x2c) fits the hero's army (0045add0)
     /// → moved; else his duplicate stacks are combined (0045a900) and tested again; still not → 0045af10 drops garrison
     /// stacks: their stack values (004e9b90 with the hero, hero vf 0x22c) sorted highest first (009c8060 with 0045a0c0,
     /// a &gt; b), stacks whose creature the hero has are taken off the list (they join for free), the first n of the rest
     /// are kept (n = his free slots) and the others removed from the garrison; then 0045a2c0 moves every garrison
-    /// stack into him. GAP-details: the sort's order on equal values is not traced (ours: stable, garrison order).
+    /// stack into him. The sort is the exe's strided merge sort (<see cref="ExeMergeSort{T}"/>), not stable.
     /// </summary>
     void MergeGarrisonForced(HeroState h, TownState t)
     {
@@ -473,10 +509,10 @@ public sealed partial class Adventure
             {
                 var has = new HashSet<string>(h.Army.Live().Select(s => s.Creature));
                 int free = h.Army.Count(s => s is not { Count: > 0 });
-                var order = Enumerable.Range(0, t.Garrison.Length)
+                var order = ExeMergeSort(Enumerable.Range(0, t.Garrison.Length)
                     .Where(i => t.Garrison[i] is { Count: > 0 })
                     .Select(i => (Slot: i, Value: (double)AI.OriginalAdventureAI.StackValue(this, AiStats, t.Garrison[i]!, h)))
-                    .OrderByDescending(x => x.Value).ToList();
+                    .ToList(), (a, b) => b.Value < a.Value);   // 0045a0c0
                 foreach (var (slot, _) in order)
                 {
                     if (has.Contains(t.Garrison[slot]!.Creature)) continue;

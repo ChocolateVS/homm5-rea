@@ -172,4 +172,29 @@ public class TownHireTests(Fixture f)
         Assert.Equal(kept.OrderBy(x => x), got.OrderBy(x => x));
         Assert.All(t.Garrison, s => Assert.Null(s));
     }
+
+    [Fact]
+    public void ForcedMergeSortsLikeTheExeMergeSort()
+    {
+        // 009c8060 / 00a3efe0 with 0045a0c0 (a > b): sorted highest first; equal values come out in the exe's order
+        // (the second run's entry is taken on a tie), e.g. three equal stacks in slots 0, 1, 2 → 1, 2, 0.
+        int[][] equal = { new[] { 0 }, new[] { 1, 0 }, new[] { 1, 2, 0 }, new[] { 3, 1, 2, 0 }, new[] { 3, 1, 2, 4, 0 },
+            new[] { 3, 5, 1, 2, 4, 0 }, new[] { 3, 5, 1, 6, 2, 4, 0 } };
+        for (int n = 1; n <= 7; n++)
+        {
+            var items = Enumerable.Range(0, n).Select(i => (Slot: i, Value: 5.0)).ToList();
+            var r = H5.Adventure.Engine.Adventure.ExeMergeSort(items, (a, b) => b.Value < a.Value);
+            Assert.Equal(equal[n - 1], r.Select(x => x.Slot).ToArray());
+        }
+        var mixed = new List<(int Slot, double Value)> { (0, 1), (1, 3), (2, 1), (3, 3), (4, 2) };
+        Assert.Equal(new[] { 3, 1, 4, 2, 0 },
+            H5.Adventure.Engine.Adventure.ExeMergeSort(mixed, (a, b) => b.Value < a.Value).Select(x => x.Slot).ToArray());
+        var rng = new Random(3);
+        for (int k = 0; k < 500; k++)
+        {
+            var v = Enumerable.Range(0, rng.Next(1, 8)).Select(i => (Slot: i, Value: (double)rng.Next(4))).ToList();
+            var r = H5.Adventure.Engine.Adventure.ExeMergeSort(v, (a, b) => b.Value < a.Value);
+            Assert.Equal(v.Select(x => x.Value).OrderByDescending(x => x), r.Select(x => x.Value));
+        }
+    }
 }
