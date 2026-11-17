@@ -49,6 +49,42 @@ public sealed partial class Adventure
         return b == 0 ? (float)((double)a / b) : X87.Div(a, b);
     }
 
+    /// <summary>
+    /// Hero / one creature ratio (exe FUN_004eab10, ECX = hero, EDX = creature id): FILD qword Σ(hero's army, with the
+    /// hero, the hero's week vf 0x22c) stored as a double; no creature record (0089fbf0) → FDIVR by FILD 1; else by
+    /// ftol(max(Power (record +0x84), 1.0f) · 100.0) (00d11a60), chopped. Only use: the hero trace 008e28c0 (creature 1).
+    /// </summary>
+    public float ArmyPowerPerCreature(HeroState hero, string creature)
+    {
+        long a = ArmyPowerSum(hero.Army.Live(), hero);
+        if (!Core.Creatures.TryGetValue(creature, out var c)) return X87.Div(a, 1);
+        return X87.Div(a, Ftol(X87.Mul(Math.Max((double)c.Power, 1.0), 100.0)));
+    }
+
+    /// <summary>The floats 00f78f2c[0..2] of 00c030e0: 0, 1100, 1600.</summary>
+    static readonly float[] HeroTraceThresholds = { 0f, 1100f, 1600f };
+
+    /// <summary>
+    /// 00c030e0: the highest i of 2, 1, 0 with 00f78f2c[i] &lt; r (float compare), none (r ≤ 0 or NaN) → −1.
+    /// </summary>
+    public static int HeroTraceLevel(float r)
+    {
+        for (int i = 2; i >= 0; i--) if (HeroTraceThresholds[i] < r) return i;
+        return -1;
+    }
+
+    /// <summary>
+    /// The hero's trace (path effect) level (exe FUN_008e28c0, reached through the this-adjusting thunk 008e5510; the hero
+    /// is this − 0x1ac's interface +0x14 vf 0x14): nothing when this − 0x58 vf 0x104 is 2 (read as the hero's movement
+    /// type, not verified) or without a trace set (the hero shared 004a6740 +0x1e0 → SAdvMapHeroTraceSet, 00a150c0) with a
+    /// non-empty traces list (+0x44, 8-byte items); otherwise <see cref="HeroTraceLevel"/> of
+    /// <see cref="ArmyPowerPerCreature"/>(hero, creature 1 = CREATURE_PEASANT) — the army in peasants: &gt; 1600 → 2,
+    /// &gt; 1100 → 1, &gt; 0 → 0 — and the traces item min(level, count − 1) (00a16340 → SAdvMapHeroTrace) is shown.
+    /// GAP: the render side (the trace's Objects effects and Decals, ObjectsDensity) is not drawn, and when the exe calls
+    /// 008e28c0 is not traced. Returns the level (−1 = none) before the clamp to the list.
+    /// </summary>
+    public int HeroTrace(HeroState hero) => HeroTraceLevel(ArmyPowerPerCreature(hero, "CREATURE_PEASANT"));
+
     /// <summary>The army power of the exe (<see cref="ArmyPowerSum"/>, 004eaaa0) as a double for comparisons.</summary>
     public double ArmyPower(IEnumerable<Stack> army, HeroState? hero) => ArmyPowerSum(army, hero);
 

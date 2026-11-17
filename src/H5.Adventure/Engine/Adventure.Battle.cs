@@ -231,7 +231,7 @@ public sealed partial class Adventure
 
     void StartBattle(HeroState attacker, int defenderHero, int defenderObject, Tile where, List<Stack> defenderArmy, bool siege)
     {
-        // Neutral monsters are split into 2–4 stacks by relative power (p.321).
+        // Neutral monsters are split by relative power (00855240, from the battle start 00856460).
         if (defenderHero < 0 && defenderObject >= 0 && O(defenderObject).Kind == ObjectKind.Monster)
             defenderArmy = SplitNeutrals(attacker, defenderArmy);
         S.Battle = new PendingBattle
@@ -243,28 +243,45 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// Stack splitting (p.321): 4 stacks if power ratio &lt; 0.5, 3 if &lt; 1, else 2; then 30% +1, 30% −1;
-    /// finally a 50% chance that one stack is upgraded. Only single-creature armies are split.
+    /// Neutral stack splitting (exe FUN_00855240, called twice by the battle start 00856460 with the monster army and the
+    /// hero). Two or more live stacks are copied as they are (creature +0x1c, count +0x20). One stack: the maximum is 4,
+    /// 2 when the creature's combat size (record +0xdc, 004bacc0) is above 2; R = <see cref="ArmyPowerRatio"/> (004eabb0,
+    /// the hero's army with the hero / the monsters); from the maximum down to 3 the doubles 00f43e80 = 0.5 and 00f43e78
+    /// = 1.0 are tested (n · 8 + 00f43e60): R below the value keeps n, else n − 1, so 4 (R &lt; 0.5), 3 (R &lt; 1), else 2
+    /// (an unordered compare also steps down). Then roll Range(1, 100): ≤ 30 → n − 1; ≥ 70 and n below the maximum →
+    /// n + 1; n = max(1, min(n, count)). With n &gt; 2 and an upgrade (record +0x104 list non-empty, 004bb420) a second
+    /// roll Range(1, 100) &lt; 50 picks Upgrades[Range(1, size) − 1] (004babc0 / 004bb540). Stack i of n gets
+    /// count / n + (i &lt; count % n), the upgrade for 0 &lt; i &lt; n − 1 (the middle stacks), the base creature otherwise.
+    /// UNVERIFIED: the rolls are drawn from the combat's RNG (combat vf 0xc → vf 0xc(1, 100)) in the exe; ours from the
+    /// adventure RNG at the encounter, in the same order.
     /// </summary>
-    List<Stack> SplitNeutrals(HeroState attacker, List<Stack> army)
+    public List<Stack> SplitNeutrals(HeroState attacker, List<Stack> army)
     {
-        if (army.Count != 1) return army;
+        if (army.Count >= 2 || army.Count == 0) return army;
         var s = army[0];
-        double ratio = ArmyPower(attacker.Army.Live(), attacker) / Math.Max(1, ArmyPower(army, null));
-        int n = ratio < 0.5 ? 4 : ratio < 1 ? 3 : 2;
-        int r = S.Rng.Next(100);
-        if (r < 30) n++; else if (r < 60) n--;
-        n = Math.Clamp(n, 1, Math.Min(7, s.Count));
-        var result = new List<Stack>();
+        Core.Creatures.TryGetValue(s.Creature, out var cd);
+        int max = cd != null && cd.CombatSize > 2 ? 2 : 4;
+        float ratio = ArmyPowerRatio(attacker, army);
+        int n = max;
+        while (n > 2 && !(ratio < SplitThreshold(n))) n--;
+        int r = S.Rng.Range(1, 100);
+        if (r <= 30) n--;
+        else if (r >= 70 && n < max) n++;
+        int count = s.Count;
+        if (count <= n) n = count;
+        if (n < 1) n = 1;
+        string? upgrade = null;
+        if (n > 2 && cd is { Upgrades.Count: > 0 } && S.Rng.Range(1, 100) < 50)
+            upgrade = cd.Upgrades[S.Rng.Range(1, cd.Upgrades.Count) - 1];
+        var result = new List<Stack>(n);
+        int each = count / n, rest = count % n;
         for (int i = 0; i < n; i++)
-        {
-            int count = s.Count / n + (i < s.Count % n ? 1 : 0);
-            if (count > 0) result.Add(new Stack(s.Creature, count));
-        }
-        if (S.Rng.Next(2) == 0 && Core.Creatures.TryGetValue(s.Creature, out var cd) && cd.Upgrades.Count > 0 && result.Count > 0)
-            result[S.Rng.Next(result.Count)].Creature = cd.Upgrades[S.Rng.Next(cd.Upgrades.Count)];
+            result.Add(new Stack(upgrade != null && i > 0 && i < n - 1 ? upgrade : s.Creature, each + (i < rest ? 1 : 0)));
         return result;
     }
+
+    /// <summary>The doubles of 00855240's table (n · 8 + 00f43e60): n = 4 → 0.5 (00f43e80), n = 3 → 1.0 (00f43e78).</summary>
+    static double SplitThreshold(int n) => n == 4 ? 0.5 : 1.0;
 
     /// <summary>
     /// Builds the H5.Combat battle for the pending encounter. Side 0 is the attacking hero, side 1 the
