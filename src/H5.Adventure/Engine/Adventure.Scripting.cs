@@ -236,6 +236,7 @@ public sealed partial class Adventure
         p.Purse[resource] = Math.Max(0, p.Purse[resource] + amount);
         var delta = new int[7];
         delta[resource] = amount;
+        LogPurseChange(p, delta);   // the script's money commands go through player vf 0xdc
         Emit(new ResourcesChanged(p.Index, delta, p.Purse.R.ToArray()));
     }
 

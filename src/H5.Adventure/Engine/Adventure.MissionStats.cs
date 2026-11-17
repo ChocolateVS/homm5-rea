@@ -6,7 +6,7 @@ namespace H5.Adventure.Engine;
 /// Game statistics for the mission results window (UI/MissionResults, rows of 0079fcf0). H5_Game.exe keeps them in
 /// CMissionResultsLogger (world +0x170, ctor 00877f70), an IGameEventLogger fed through the world's event multiplexer
 /// (world vf 0x180), and builds the window's 0xa0-byte summary with its IMissionResults vf 0 = 00877dd0 for the
-/// human player. The resources gained (logger vf 0x3c from player vf 0xdc) are not recorded: their value is null.
+/// human player.
 /// </summary>
 public sealed record MissionSummary(
     int Days, int Weeks, int Months,
@@ -35,7 +35,7 @@ public sealed partial class Adventure
         int enemies = foes.Sum(o => MissionCreatures(o.Index));
         int enemiesDuring = foes.Sum(o => o.Mission.Creatures);
         return new MissionSummary(d % 7 + 1, d / 7 % 4 + 1, d / 28 + 1,
-            p?.Purse.R.ToArray() ?? new int[7], null,
+            p?.Purse.R.ToArray() ?? new int[7], rec.Resources.ToArray(),
             rec.BattlesFought, rec.BattlesWon, rec.BattlesLost, rec.HeroesKilled, rec.HeroesLost,
             rec.TownsOccupied, rec.TownsLost,
             MissionCreatures(player), rec.Creatures, enemies, enemiesDuring,
@@ -78,6 +78,21 @@ public sealed partial class Adventure
     public void LogCreaturesGained(int player, int count)
     {
         if (PlayerByIndex(player) is { } p) p.Mission.Creatures += count;
+    }
+
+    /// <summary>
+    /// Player vf 0xdc = 004fc3e0 sets the purse to a new value (then clamps it, 009d0770 / 009d08c0) and hands logger vf
+    /// 0x3c (00877890) the change new − old (009d0ad0); the logger adds it to +0 when no component is negative
+    /// (009d0750). Spending through vf 0xe0 (004fc530) and setting through vf 0xe4 (004fc490) log nothing here. The
+    /// gains: commands (CAddPlayerMoneyCmd 00427350, CTakeChestCmd 00426c60, CSetPlayerMoneyCmd 004273f0,
+    /// CExchangeResourcesCmd 004f4c10, slave market 004298b0, artifact sale 0042cc10 …), map buildings 00b02740,
+    /// treasures 00a80a80 / 00a80ed0, the new day's income (009949d0: vf 0xdc(purse + vf 0xe8)), the town's weekly bonus
+    /// (00cd2b90), the combat end 00af64b0, perks 00b54770.
+    /// </summary>
+    void LogPurseChange(PlayerState p, int[] delta)
+    {
+        if (delta.Any(v => v < 0)) return;
+        for (int i = 0; i < 7; i++) p.Mission.Resources[i] += delta[i];
     }
 
     /// <summary>

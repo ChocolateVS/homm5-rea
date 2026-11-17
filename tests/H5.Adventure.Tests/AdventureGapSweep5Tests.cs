@@ -120,4 +120,19 @@ public class AdventureGapSweep5Tests(Fixture f)
         Assert.True(g.Apply(new HireHeroCmd(t.Object, Array.IndexOf(g.TownTavernOffers(p, t), defId)) { Player = p.Index }).Ok);
         Assert.Equal(before + army, p.Mission.Creatures);
     }
+
+    [Fact]
+    public void ResourcesDuringSumTheGainsOnly()
+    {
+        // vf 0xdc (004fc3e0) → logger vf 0x3c (00877890): + (new − old) when no component is negative.
+        var g = f.NewGame("A2M1");
+        var p = g.Current;
+        var before = g.Summary(p.Index).ResourcesDuring!.ToArray();
+        g.ScriptGive(p.Index, Purse.Gold, 700);
+        g.ScriptGive(p.Index, Purse.Gold, -300);
+        g.ScriptGive(p.Index, Purse.Wood, 4);
+        var s = g.Summary(p.Index).ResourcesDuring!;
+        Assert.Equal(before[Purse.Gold] + 700, s[Purse.Gold]);
+        Assert.Equal(before[Purse.Wood] + 4, s[Purse.Wood]);
+    }
 }

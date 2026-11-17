@@ -142,6 +142,8 @@ public sealed class MissionRecord
     public int Artifacts;
     /// <summary>+0x38: the creatures at the map start (vf 0x8 → 00877bf0) plus every count logged by vf 0x1c (00877610).</summary>
     public int Creatures;
+    /// <summary>+0: the sum of every purse change made through player vf 0xdc (004fc3e0) whose delta has no negative component (logger vf 0x3c = 00877890).</summary>
+    public int[] Resources = new int[7];
 }
 
 /// <summary>An AI attractor entry {object, priority -1..2} (exe list of {objId, priority}, FUN_00b4e880).</summary>

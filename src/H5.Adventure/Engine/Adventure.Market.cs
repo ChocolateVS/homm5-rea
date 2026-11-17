@@ -130,6 +130,10 @@ public sealed partial class Adventure
         d[c.To] = received;
         p.Purse[c.From] -= cost;
         p.Purse[c.To] += received;
+        // CExchangeResourcesCmd (004f4c10): two vf 0xdc calls (004f4cdc / 004f4cfb); only the gain logs.
+        var gain = new int[7];
+        gain[c.To] = received;
+        LogPurseChange(p, gain);
         Emit(new ResourcesChanged(p.Index, d, (int[])p.Purse.R.Clone()));
         return null;
     }

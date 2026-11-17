@@ -185,6 +185,7 @@ public sealed partial class Adventure
         p.Purse.Add(r, mul);
         var d = new Purse(r);
         if (mul != 1) for (int i = 0; i < 7; i++) d[i] *= mul;
+        LogPurseChange(p, d.R);
         Emit(new ResourcesChanged(p.Index, d.R, (int[])p.Purse.R.Clone()));
     }
 
@@ -193,6 +194,7 @@ public sealed partial class Adventure
         var d = new int[7];
         d[kind] = amount;
         p.Purse[kind] += amount;
+        LogPurseChange(p, d);
         Emit(new ResourcesChanged(p.Index, d, (int[])p.Purse.R.Clone()));
     }
 

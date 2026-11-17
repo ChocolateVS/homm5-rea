@@ -112,6 +112,7 @@ public sealed partial class Adventure
         if (inc.R.Any(v => v != 0))
         {
             for (int i = 0; i < 7; i++) p.Purse[i] += inc[i];
+            LogPurseChange(p, inc.R);   // 009949d0 → vf 0xdc
             Emit(new ResourcesChanged(p.Index, inc.R, (int[])p.Purse.R.Clone()));
         }
     }
