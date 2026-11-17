@@ -150,7 +150,14 @@
     if (el) el.textContent = text;
   }
 
-  function hidePanel() { const p = document.getElementById('h5-picker'); if (p) p.style.display = 'none'; }
+  // The picker's buttons had the focus; the game only receives keys while its canvas has it (Godot listens for keydown on
+  // the canvas and cancels the browser's default there, e.g. Space scrolling or Tab moving the focus), so hand it back.
+  function hidePanel() {
+    const p = document.getElementById('h5-picker');
+    if (p) p.style.display = 'none';
+    const c = document.getElementById('canvas');
+    if (c) { if (c.tabIndex < 0) c.tabIndex = 0; c.focus(); }
+  }
 
   function buildUi() {
     const panel = document.createElement('div');

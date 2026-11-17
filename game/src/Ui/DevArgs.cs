@@ -19,7 +19,7 @@ public static class DevArgs
     /// Further synthetic mouse input for UI tests (repeatable, same `@seconds` timing): `--wheel=x,y,notches`
     /// (positive = down), `--press=x,y` / `--release=x,y` (left button held between them, e.g. scroll-bar arrow or
     /// track repeat), `--move=x,y` (motion, with the left button down while pressed: lever drags), `--key=NAME@s`
-    /// (a key press and release, Godot key name such as K or Escape).
+    /// (a key press and release, Godot key name such as K or Escape), `--keydown=NAME@s` / `--keyup=NAME@s` (hold / let go).
     /// </summary>
     public static readonly List<(string Op, Vector2 Pos, float Arg, double At)> MouseOps = new();
     public static readonly List<(string Key, double At)> Keys = new();
@@ -53,10 +53,13 @@ public static class DevArgs
                     v.Length > 2 ? float.Parse(v[2], System.Globalization.CultureInfo.InvariantCulture) : 0,
                     parts.Length > 1 ? double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture) : 1));
             }
-            else if (a.StartsWith("--key="))
+            else if (a.StartsWith("--key=") || a.StartsWith("--keydown=") || a.StartsWith("--keyup="))
             {
-                var parts = V("--key=").Split('@');
-                Keys.Add((parts[0], parts.Length > 1 ? double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture) : 1));
+                int eq = a.IndexOf('=');
+                var parts = a[(eq + 1)..].Split('@');
+                // --keydown= / --keyup= hold or release a key (e.g. Shift around a drag); --key= presses and releases it.
+                var prefix = a.StartsWith("--keydown=") ? "+" : a.StartsWith("--keyup=") ? "-" : "";
+                Keys.Add((prefix + parts[0], parts.Length > 1 ? double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture) : 1));
             }
             else if (a.StartsWith("--master=")) Master = V("--master=");
             else if (a.StartsWith("--join-code=")) JoinCode = V("--join-code=");
@@ -89,8 +92,8 @@ public static class DevArgs
             tree.CreateTimer(at, processAlways: true, ignoreTimeScale: true).Timeout += () =>
             {
                 GD.Print($"[H5] dev input key {key}");
-                var code = OS.FindKeycodeFromString(key);
-                foreach (var pressed in new[] { true, false })
+                var code = OS.FindKeycodeFromString(key.TrimStart('+', '-'));
+                foreach (var pressed in key[0] == '+' ? new[] { true } : key[0] == '-' ? new[] { false } : new[] { true, false })
                     Input.ParseInputEvent(new InputEventKey { Keycode = code, PhysicalKeycode = code, Pressed = pressed });
             };
     }

@@ -512,8 +512,8 @@ public sealed partial class SphinxScreen : MapBuildingScreen
 /// <summary>
 /// Garrison screen (UI/Garrison, CGarrisonDialogLogEntry → 005a5d90 case 0x1c → 006d3010): the visiting hero's army
 /// (armyholder0) and the troops left in the own garrison / mine (armyholder1, "Here you can leave some of your creatures
-/// in order to control the building"); a click on a stack and then on another slot moves, swaps or merges them
-/// (SwapStacksCmd with the building as the second army); OK (confirm) closes.
+/// in order to control the building"); a click on a stack and then on another slot moves, swaps or merges them, with
+/// Shift held opens the split window (ArmySplit rules with the building as the second army); OK (confirm) closes.
 /// </summary>
 public sealed partial class GarrisonScreen : MapBuildingScreen
 {
@@ -543,11 +543,17 @@ public sealed partial class GarrisonScreen : MapBuildingScreen
             return;
         }
         _picked = null;
-        if (from != (row, slot))
-            Apply(new SwapStacksCmd(from.Row == 0 ? HeroId : -1, from.Row == 1 ? Object : -1, from.Slot,
-                row == 0 ? HeroId : -1, row == 1 ? Object : -1, slot));
+        if (from == (row, slot)) { Refresh(); return; }
+        // The garrison screen's drop (00652b70): Shift opens the split window (00587bd0), the same creature merges
+        // (0061f970), anything else moves / exchanges (0061f8b0).
+        var a = SideOf(from.Row, from.Slot);
+        var b = SideOf(row, slot);
+        if (ArmyMove.ShiftHeld) { ArmyMove.OpenSplit(this, a, b, Apply, Refresh); return; }
+        if (ArmySplit.Drop(a, b) is { } cmd) Apply(cmd);
         else Refresh();
     }
+
+    ArmySplit.Side SideOf(int row, int slot) => new(row == 0 ? HeroId : -1, row == 1 ? Object : -1, -1, slot, Row(row));
 
     public override void Refresh()
     {

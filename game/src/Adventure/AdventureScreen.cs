@@ -26,6 +26,13 @@ public partial class AdventureScreen : Control
     public int SelectedHeroId { get; private set; } = -1;
 
     Tile? _plotted;               // destination of the currently shown path
+    /// <summary>
+    /// Each hero's route (the exe keeps it on the hero: MB_Move_Hero 00599bd0 → 006049d0 moves the selected hero along
+    /// hero vf 0x1c, its stored path). Kept after a move that ends short of the destination, shown again when the hero is
+    /// selected, so Space continues it on later turns. Stored as the destination and re-pathed (see AUDIT_INPUT).
+    /// </summary>
+    readonly Dictionary<int, (Tile Dest, bool Fight)> _routes = new();
+    bool _routeDirty;             // re-show the selected hero's kept route once the move has played
     Tile? _hover;
     bool _playing;                // an event is being animated
     int _modal;                   // open dialogs
@@ -267,8 +274,19 @@ public partial class AdventureScreen : Control
         if (h.Pos.Floor != World.Floor) World.SetFloor(h.Pos.Floor);
         World.Camera.CenterOn(h.Pos);
         World.ShowSelection(h);
+        ShowKeptRoute(h);
         Hud.Refresh();
     }
+
+    /// <summary>Shows the hero's kept route again (selection, start of turn, after a move that stopped short).</summary>
+    void ShowKeptRoute(HeroState h)
+    {
+        if (!_routes.TryGetValue(h.Id, out var r)) return;
+        if (h.Pos == r.Dest || !h.Alive || h.Owner != Session.Human.Index) { _routes.Remove(h.Id); return; }
+        if (r.Dest.Floor != World.Floor) return;
+        Plot(h, r.Dest, r.Fight);
+    }
+
 
     public void SelectHeroAt(int i)
     {
@@ -301,10 +319,17 @@ public partial class AdventureScreen : Control
         }
     }
 
+    /// <summary>
+    /// MB_Move_Hero (Space / the HUD button, 00599bd0): wakes the selected hero if it sleeps (hero list vf 0x3c / 0x38(hero, 0)),
+    /// then moves it along its route (006049d0) — the one shown, or the one kept from an earlier turn.
+    /// </summary>
     public void MoveSelectedHero()
     {
-        if (InputLocked || Selected is not { } h || _plotted is not { } dest) return;
-        SendMove(h, dest);
+        if (InputLocked || Selected is not { } h) return;
+        if (_sleepingHeroes.Remove(h.Id)) Hud.Refresh();
+        Tile? dest = _plotted ?? (_routes.TryGetValue(h.Id, out var r) ? r.Dest : null);
+        if (dest is not { } d) return;
+        SendMove(h, d);
     }
 
     public void FlipFloor()
@@ -538,9 +563,10 @@ public partial class AdventureScreen : Control
     {
         var path = Session.Game.FindPath(hero, dest);
         if (Verbose) GD.Print($"[H5] plot hero {hero.Id} at {hero.Pos} → {dest}: {(path == null ? "no path" : $"{path.Count} steps")}");
-        if (path == null || path.Count == 0) { World.ClearPath(); _plotted = null; return; }
+        if (path == null || path.Count == 0) { World.ClearPath(); _plotted = null; _routes.Remove(hero.Id); return; }
         _plotted = dest;
         bool fight = fightAtEnd ?? IsFight(hero, dest);
+        _routes[hero.Id] = (dest, fight);
         // 005b0c10 / 005b08e0: Gray from today's end, Contested from the first guarded cell, else Available.
         var kinds = Session.Game.RouteMarkers(hero, path, fight && Session.Game.GuardingMonster(dest) == null);
         var tiles = path.Where(t => t != hero.Pos).ToList();
@@ -584,6 +610,8 @@ public partial class AdventureScreen : Control
         World.ClearPath();
         _plotted = null;
         Session.Apply(new MoveHeroCmd(hero.Id, dest));
+        // The rest of the route stays with the hero (shown again once the move has played).
+        if (hero.Alive && hero.Pos != dest) _routeDirty = true; else _routes.Remove(hero.Id);
     }
 
     void UpdateHover()
@@ -664,6 +692,11 @@ public partial class AdventureScreen : Control
         {
             Play(ev, player);
             return;
+        }
+        if (_routeDirty && !InputLocked)
+        {
+            _routeDirty = false;
+            if (Selected is { } rh && _plotted == null) ShowKeptRoute(rh);
         }
         // Idle: drive whoever is to move.
         if (Session.S.Finished) return;
@@ -1084,7 +1117,9 @@ public partial class AdventureScreen : Control
                 if (ts.Player == Session.Human.Index)
                 {
                     foreach (var h in s.Heroes) World.SyncHero(h);
-                    if (Selected is { } h2) World.Camera.CenterOn(h2.Pos);
+                    // Routes kept from the last turn: shown again with today's move points.
+                    foreach (var id in _routes.Keys.Where(id => s.Hero(id) is not { Alive: true } rh || rh.Owner != Session.Human.Index).ToList()) _routes.Remove(id);
+                    if (Selected is { } h2) { World.Camera.CenterOn(h2.Pos); _plotted = null; World.ClearPath(); ShowKeptRoute(h2); }
                     else if (MyHeroes().FirstOrDefault() is { } fh) Select(fh);
                     Hud.Refresh();
                 }

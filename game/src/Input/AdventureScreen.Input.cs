@@ -54,7 +54,8 @@ public partial class AdventureScreen
         bus.On("hero_abilities", () => OpenSelectedHeroPage("Abilities"));
         bus.On("hero_biography", () => OpenSelectedHeroPage("Biography"));
         bus.On("input_adv_show_objectives", ShowScenarioInfo);
-        bus.On("input_adv_show_objectives_log", ShowScenarioInfo);
+        // 0058c790: the mission box on its second tab (FUN_00603a90(…, 1, …)), the log; 0058c710 ("information") uses tab 0.
+        bus.On("input_adv_show_objectives_log", () => ShowMissionBox("TabLog"));
         bus.On("adv_show_town", ShowSelectedHeroTown);
         bus.On("sleep_wake_hero", ToggleSleepSelected);
         Hud.RegisterInputAudit();
@@ -104,8 +105,14 @@ public partial class AdventureScreen
     {
         if (_modal > 0) return;
         if (_pendingSpell != null) { _pendingSpell = null; return; }
-        if (_plotted != null) { _plotted = null; World.ClearPath(); return; }
+        if (_plotted != null) { if (Selected is { } h) _routes.Remove(h.Id); _plotted = null; World.ClearPath(); return; }
         ShowEscMenu();
+    }
+
+    /// <summary>Test helper (`--input-test=…;plot:dx,dy`): plots the selected hero's route to the tile at that offset.</summary>
+    internal void DevPlot(int dx, int dy)
+    {
+        if (Selected is { } h) Plot(h, h.Pos.Offset(dx, dy));
     }
 
     void OpenGameOptions()

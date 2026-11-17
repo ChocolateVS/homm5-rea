@@ -76,6 +76,7 @@ public partial class AdventureScreen
             World.ClearPath();
             _plotted = null;
             _plotPick = null;
+            _routes.Remove(hero.Id);
             return;
         }
         Plot(hero, target.Dest, target.Action == AdvAction.Attack);

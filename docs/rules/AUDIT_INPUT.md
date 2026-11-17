@@ -42,7 +42,7 @@ Status: **MATCH** (already right), **FIXED** (changed in this audit), **GAP** (n
 ## Adventure map — keyboard (`adventure_screen`)
 | Key | Action | Status |
 |---|---|---|
-| Space | MB_Move_Hero | MATCH |
+| Space | MB_Move_Hero (00599bd0): wakes the selected hero if it sleeps (hero list 0x5f0 vf 0x3c / vf 0x38(hero, 0)), then 006049d0 moves it along its stored route (hero vf 0x1c) — the route stays with the hero after a move that ends short and is shown again when the hero is selected / its turn starts | FIXED (the route was dropped after each move, so Space did nothing on later turns; the wake was missing) / GAP (the route is kept as the destination per hero on the screen and re-pathed, not the exe's stored tile path; not saved with the game) |
 | N, Tab | MB_Next_Hero (skips sleeping heroes) | FIXED (sleep) |
 | 1–8 / Ctrl+1–8 | select hero / town | MATCH |
 | Enter, NumEnter, E | JogDialButton (end turn) | MATCH |
@@ -50,7 +50,7 @@ Status: **MATCH** (already right), **FIXED** (changed in this audit), **GAP** (n
 | F4 | input_game_options | FIXED |
 | C | SpellBookWindow | FIXED |
 | A / I / S / V / H | hero screen pages (Army, Inventory, Skills, Abilities, Biography) | FIXED |
-| O, Q / L | objectives / objectives log | FIXED (opens scenario info; the objectives screen itself is a GAP) |
+| O, Q / L | objectives / objectives log: L = 0058c790 → mission box tab 1 (FUN_00603a90(…, 1, …)); "information" 0058c710 tab 0, K 0058c810 tab 2; input_adv_show_objectives (O/Q) has no adventure observer — only the mission screen FUN_005bb180 references it | FIXED (L opened the objectives tab, now the log) / UNVERIFIED (O/Q opening the objectives from the map) |
 | T | adv_show_town (town of the selected hero, @0058c320) **and** flip_floor (both bound in the file) | FIXED (both dispatched; exact precedence not traced — GAP) |
 | U | flip_floor | MATCH |
 | M | show_heroes_mana (toggle mana bars in the hero list, @0058deb0) | FIXED |
@@ -79,7 +79,7 @@ Status: **MATCH** (already right), **FIXED** (changed in this audit), **GAP** (n
 | Click visiting/garrison hero portrait | Nothing (click_pointer) | FIXED (was: opened hero screen on any top-row slot click) |
 | Double click hero portrait | Hero screen (@00619a30 → @00619320; manual p.10 "heroes exchange screen … double-clicking") | FIXED |
 | Double click a stack | Creature info (manual p.10) | FIXED (`CreatureInfoWindow`, stock UI/CreatureInfo) |
-| Drag / Shift-drag stacks | Move/merge / Split Army | MATCH |
+| Drag / Shift-drag stacks | town drop 00615670 (hero screen 006c5e60, garrison 00652b70, meeting 00649e70): Shift (the screen's "shift" flag, 00492a40) → split window 00587bd0 / 00587cf0; same creature → merge 0061f970 (inside one army too); else move / exchange 0061f8b0 | FIXED (stacks of one creature inside an army were exchanged, not merged; the split window was a "number to move" box without the controller's rules — see AUDIT_TOWN "Split window"; garrison / caravan screens had no split) |
 | Keys B R G T M Q X Y Z F, N/P, U, Space, A/I/S/V/H, Esc/Enter/E | town_screen section | FIXED (were missing) — Space: the town hero command 004f58e0 also swaps two heroes (AUDIT_TOWN "Garrison ↔ visiting") |
 | Right click building | Building tooltip while held (UIGameRoot ID_TOWN_HALL_TOOLTIP = Tooltips/TownHall/BuildingToolTip, nameDesc.txt) | FIXED (name + description; the cost/prerequisite rows of that window are a GAP) |
 | Sub-screens (fort, guild, tavern, market, blacksmith, hall) | Close with their section keys / Esc (jd_button_0); right click does **not** close | FIXED (right click used to close them) |
@@ -90,7 +90,9 @@ Status: **MATCH** (already right), **FIXED** (changed in this audit), **GAP** (n
 | Esc | close_window | MATCH |
 | Right click | Description (never closes) | FIXED (right click used to close the screen) |
 | A / I / V / H | page keys (hero_screen) | FIXED |
-| W / S, F | input_hero_page_up/down, hero_unlearn_skill | GAP |
+| W / S | input_hero_page_up / _down (006c3160 / 006c31c0): previous / next of the five bookmarks, wrapping (in mode 0x7dc = 6 only 3 ↔ 4) | FIXED (were unhandled) / GAP (mode 6 not identified) |
+| A / I / V / H on the page shown | 006c2ec0 / 006c2f50 / 006c30c0 / 006c30d0 → 006c1f70(page, 1): the key of the page already shown closes the screen (close_screen 006d0960) | FIXED (only switched pages) |
+| F | hero_unlearn_skill (006c1dc0): only in mode 6, calls 006c11a0 | GAP |
 | Double click a stack | Creature info | FIXED |
 | Artifact slot double click (`slot_dbl_click`) | Handled @006c6790 (behaviour not decoded) | GAP |
 

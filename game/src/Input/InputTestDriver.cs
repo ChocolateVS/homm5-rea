@@ -6,9 +6,9 @@ namespace H5Reborn.Interaction;
 /// <summary>
 /// Dev/test: `-- --input-test=STEP;STEP;…` replays real input events on the adventure map and saves
 /// screenshots, to verify interactions off-screen. Each STEP is `seconds:op[:arg]`, where op is
-/// click|dbl|rclick (arg = "x,y", "hero", "town", "herolist0", "townlist0") — dbl sends a press,
+/// click|dbl|dbl2|rclick (arg = "x,y", "hero", "town", "herolist0", "townlist0") — dbl sends a press,
 /// release, then a press flagged as double click like the OS does — key (arg such as "ctrl+1", "t",
-/// "escape", "f4"), or shot (arg = PNG path). Times are seconds after the map opened.
+/// "escape", "f4"), shot (arg = PNG path), plot (arg = "dx,dy": the selected hero's route to that tile offset). Times are seconds after the map opened.
 /// </summary>
 public partial class InputTestDriver : Node
 {
@@ -61,6 +61,8 @@ public partial class InputTestDriver : Node
                 Mouse(Pos(arg), MouseButton.Left, dbl: true);
                 break;
             case "rclick": Mouse(Pos(arg), MouseButton.Right, dbl: false); break;
+            // The second click of a double click alone (after a "click" step, so frames pass in between as with a real mouse).
+            case "dbl2": Mouse(Pos(arg), MouseButton.Left, dbl: true); break;
             case "move":
                 var mp = Pos(arg);
                 Godot.Input.ParseInputEvent(new InputEventMouseMotion { Position = mp, GlobalPosition = mp });
@@ -78,7 +80,11 @@ public partial class InputTestDriver : Node
                 GD.Print($"[input-test] screenshot {arg}");
                 break;
             case "log":
-                GD.Print($"[input-test] dialogs={_adv.DialogLayer.GetChildCount()} town={(Town.TownScreen.Current != null)} selected={_adv.SelectedHeroId}");
+                GD.Print($"[input-test] dialogs={_adv.DialogLayer.GetChildCount()} town={(Town.TownScreen.Current != null)} selected={_adv.SelectedHeroId} hero={(_adv.Session.S.Hero(_adv.SelectedHeroId) is { } lh ? $"{lh.Pos} mp={lh.MovePoints}" : "-")} day={_adv.Session.S.Day}");
+                break;
+            case "plot":
+                var d = arg.Split(',');
+                _adv.DevPlot(int.Parse(d[0]), int.Parse(d[1]));
                 break;
             case "quit": GetTree().Quit(); break;
         }

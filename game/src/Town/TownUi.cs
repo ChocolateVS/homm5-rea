@@ -2,6 +2,7 @@ using Godot;
 using H5.Adventure.State;
 using H5Reborn.Combat;
 using H5Reborn.Ui;
+using Side = H5.Adventure.Engine.ArmySplit.Side;
 
 namespace H5Reborn.Town;
 
@@ -79,9 +80,10 @@ public sealed class ArmySlotView
 }
 
 /// <summary>
-/// Drag-and-drop between army slots, like the stock screens: drag a stack onto another slot to move,
-/// swap or merge it (SwapStacksCmd); hold Shift while dropping to split (original SplitStack window);
-/// click a stack, then another slot, does the same as dragging.
+/// Drag-and-drop between army slots, like the stock screens (town 00615670, hero screen 006c5e60, garrison 00652b70):
+/// with Shift held (the screens' "shift" key flag, 00492a40) the stock SplitStack window opens (<see cref="ArmyMove.OpenSplit"/>);
+/// otherwise a stack dropped on a stack of the same creature merges into it — inside one army too — and anything else
+/// moves or exchanges (<see cref="ArmyMove.Drop"/>). Click a stack, then another slot, does the same as dragging.
 /// </summary>
 public sealed class ArmySlots
 {
@@ -121,7 +123,7 @@ public sealed class ArmySlots
         _infoState = s; // for CreatureInfoWindow on double click
         foreach (var v in _slots)
         {
-            var army = v.Snapshot?.Army ?? (v.Hero >= 0 ? s.Hero(v.Hero)?.Army : v.Town >= 0 ? s.Town(v.Town)?.Garrison : null);
+            var army = ArmyOf(v);
             var stack = army != null && v.Slot < army.Length ? army[v.Slot] : null;
             // The 'Pic' window is hidden in the data and shown by code when the slot holds a stack.
             v.PicHost.Visible = stack is { Count: > 0 };
@@ -155,7 +157,7 @@ public sealed class ArmySlots
                 _dragIcon = null;
                 var target = SlotAt(mb.GlobalPosition);
                 bool dragged = (mb.GlobalPosition - _pressPos).Length() > 6;
-                if (dragged && target != null && target != from) Drop(from, target, Input.IsKeyPressed(Key.Shift));
+                if (dragged && target != null && target != from) Drop(from, target, ArmyMove.ShiftHeld);
                 else if (!dragged) ClickSlot(v);
             }
         }
@@ -172,11 +174,10 @@ public sealed class ArmySlots
 
     H5.Adventure.State.AdvState? _infoState;
 
-    H5.Adventure.State.Stack? StackOf(ArmySlotView v)
-    {
-        var army = v.Snapshot?.Army ?? (v.Hero >= 0 ? _infoState?.Hero(v.Hero)?.Army : v.Town >= 0 ? _infoState?.Town(v.Town)?.Garrison : null);
-        return army != null && v.Slot < army.Length ? army[v.Slot] : null;
-    }
+    H5.Adventure.State.Stack?[]? ArmyOf(ArmySlotView v) =>
+        v.Snapshot?.Army ?? (v.Hero >= 0 ? _infoState?.Hero(v.Hero)?.Army : v.Town >= 0 ? _infoState?.Town(v.Town)?.Garrison : null);
+
+    H5.Adventure.State.Stack? StackOf(ArmySlotView v) => ArmyOf(v) is { } army && v.Slot < army.Length ? army[v.Slot] : null;
 
     ArmySlotView? SlotAt(Vector2 global) =>
         _slots.LastOrDefault(s => s.Node.IsVisibleInTree() && s.Node.GetGlobalRect().HasPoint(global));
@@ -186,61 +187,95 @@ public sealed class ArmySlots
         if (_selected == null) { _selected = v; Changed?.Invoke(); return; }
         var from = _selected;
         _selected = null;
-        if (from != v) Drop(from, v, Input.IsKeyPressed(Key.Shift));
+        if (from != v) Drop(from, v, ArmyMove.ShiftHeld);
         else Changed?.Invoke();
     }
+
+    Side SideOf(ArmySlotView v) => new(v.Hero, v.Town, -1, v.Slot, ArmyOf(v));
 
     void Drop(ArmySlotView from, ArmySlotView to, bool split)
     {
         var sink = _sink();
+        var a = SideOf(from);
+        var b = SideOf(to);
         if (split)
         {
-            SplitDialog.Open(_overlay, from, to, count =>
-            {
-                sink(new H5.Adventure.Engine.TransferStackCmd(from.Hero, from.Town, from.Slot, to.Hero, to.Town, to.Slot, count));
-                Changed?.Invoke();
-            });
+            ArmyMove.OpenSplit(_overlay, a, b, cmd => sink(cmd), () => Changed?.Invoke());
             return;
         }
-        sink(new H5.Adventure.Engine.SwapStacksCmd(from.Hero, from.Town, from.Slot, to.Hero, to.Town, to.Slot));
+        if (ArmyMove.Drop(a, b) is { } cmd) sink(cmd);
         Changed?.Invoke();
     }
 }
 
-/// <summary>The stock "Split Army" window (UI/SplitStack/SplitStack): type the number to move, then Split.</summary>
-public static class SplitDialog
+/// <summary>
+/// The army-slot rules shared by the town rows, the hero screen (one or two heroes), the garrison and caravan screens;
+/// the pure parts live in the engine (<see cref="H5.Adventure.Engine.ArmySplit"/>, tested there).
+/// </summary>
+public static class ArmyMove
 {
-    public static void Open(Control parent, ArmySlotView from, ArmySlotView to, Action<int> split)
-    {
-        var s = (TownScreen.Current?.Session.S);
-        var army = from.Hero >= 0 ? s?.Hero(from.Hero)?.Army : s?.Town(from.Town)?.Garrison;
-        var stack = army?[from.Slot];
-        if (stack is not { Count: > 1 }) return;
-        var screen = new UiScreen("UI/SplitStack/SplitStack.(WindowSimple).xdb");
-        var dim = new ColorRect { Color = new Color(0, 0, 0, 0.35f), AnchorRight = 1, AnchorBottom = 1 };
-        parent.AddChild(dim);
-        parent.AddChild(screen);
-        // Centre the box (authored at 0,0).
-        var box = screen.Find("SplitStack");
-        if (box != null) box.Position = (parent.Size - box.Size) / 2;
-        TownUi.SetPicture(screen.Find("Icon1"), TownUi.CreatureIcon(stack.Creature));
-        TownUi.SetPicture(screen.Find("Icon2"), TownUi.CreatureIcon(stack.Creature));
-        int half = stack.Count / 2;
-        screen.Find("Cell")?.SetText($"<center>{stack.Count - half}");
-        if (screen.Find("Edit") is UiEditLine edit)
-        {
-            edit.Value = half.ToString();
-            edit.Changed += v => screen.Find("Cell")?.SetText($"<center>{stack.Count - Math.Clamp(Parse(v), 0, stack.Count)}");
-        }
-        void Close() { screen.QueueFree(); dim.QueueFree(); }
-        screen.Bus.On("split", () =>
-        {
-            int n = Math.Clamp(Parse((screen.Find("Edit") as UiEditLine)?.Value ?? "0"), 0, stack.Count);
-            Close();
-            if (n > 0) split(n);
-        });
-        screen.Bus.On("split_close", Close);
-    }
+    /// <summary>The "shift" key flag the army screens register (bind +shift 'SHIFT'; read by 00492a40).</summary>
+    public static bool ShiftHeld => Input.IsKeyPressed(Key.Shift);
 
-    static int Parse(string s) => int.TryParse(s.Trim(), out var v) ? v : 0;
+    /// <summary>A plain drop (see <see cref="H5.Adventure.Engine.ArmySplit.Drop"/>).</summary>
+    public static H5.Adventure.Engine.AdvCommand? Drop(Side a, Side b) => H5.Adventure.Engine.ArmySplit.Drop(a, b);
+
+    /// <summary>
+    /// The stock "Split Army" window (UI/SplitStack, CSplitStackWindow 005872b0 / 00587800): Edit holds the target's new size,
+    /// Cell the dragged side's rest (total − value, 00587230), the Scroll slider runs over [min, max] with page 1 (005872b0);
+    /// typed text is clamped to the range (00587060); Split applies (00587140), split_close closes. Nothing opens when
+    /// the controller refuses (00587cf0 returns 0: <see cref="H5.Adventure.Engine.ArmySplit.CanSplit"/>).
+    /// </summary>
+    public static void OpenSplit(Control parent, Side from, Side to, Func<H5.Adventure.Engine.AdvCommand, bool> sink, Action? done)
+    {
+        var a = from;
+        var b = to;
+        if (!H5.Adventure.Engine.ArmySplit.CanSplit(a, b)) { done?.Invoke(); return; }
+        var src = a.Stack!;
+        int total = src.Count + (b.Stack?.Count ?? 0);
+        int value = H5.Adventure.Engine.ArmySplit.StartValue(a, b, out int lo, out int hi);
+        var dim = new ColorRect { Color = new Color(0, 0, 0, 0), AnchorRight = 1, AnchorBottom = 1, MouseFilter = Control.MouseFilterEnum.Stop };
+        var ui = new UiScreen("UI/SplitStack/SplitStack.(WindowSimple).xdb");
+        var size = new Vector2(ui.Root.Rect.W, ui.Root.Rect.H);
+        ui.AnchorRight = 0;
+        ui.AnchorBottom = 0;
+        ui.Size = size;
+        dim.AddChild(ui);
+        parent.AddChild(dim);
+        void Center() => ui.Position = ((dim.Size - size) * 0.5f).Floor();
+        dim.Resized += Center;
+        Callable.From(Center).CallDeferred();
+        // 005872b0: both icons show the dragged side's creature.
+        TownUi.SetPicture(ui.Find("Icon1"), TownUi.CreatureIcon(src.Creature));
+        TownUi.SetPicture(ui.Find("Icon2"), TownUi.CreatureIcon(src.Creature));
+        var edit = ui.Find("Edit") as UiEditLine;
+        var scroll = ui.Find("Scroll") as UiScrollBar;
+        bool syncing = false;
+        void Show(bool setEdit)
+        {
+            syncing = true;
+            if (setEdit && edit != null) edit.Value = value.ToString();
+            ui.Find("Cell")?.SetText($"<center>{total - value}");
+            scroll?.SetValue(value);
+            syncing = false;
+        }
+        if (scroll != null)
+        {
+            scroll.SetRange(lo, hi + 1, 1);
+            scroll.ValueChanged += v => { if (syncing) return; value = Math.Clamp((int)MathF.Round(v), lo, hi); Show(true); };
+        }
+        // 00587060: a value in range is taken, anything else is clamped to [lo, hi] (text that is not a number counts as 0).
+        if (edit != null)
+            edit.Changed += t => { if (syncing) return; value = Math.Clamp(int.TryParse(t.Trim(), out var n) ? n : 0, lo, hi); Show(false); };
+        Show(true);
+        bool closed = false;
+        void Close() { if (closed) return; closed = true; dim.QueueFree(); done?.Invoke(); }
+        ui.Bus.On("split", () =>
+        {
+            var cmds = H5.Adventure.Engine.ArmySplit.SplitCommands(a, b, value);
+            foreach (var c in cmds) sink(c);
+            Close();
+        });
+        ui.Bus.On("split_close", Close);
+    }
 }

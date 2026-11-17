@@ -169,19 +169,26 @@ public partial class TownScreen : Control
     internal HeroState? GarrisonHero() => Session.S.Heroes.FirstOrDefault(h => h.Alive && h.InTown == Town.Object && h.Garrisoned);
 
     /// <summary>
-    /// The town army rows' drop handler (the code at 0061591b..006159ff): moving a stack from a hero's army into the other
-    /// army when the hero holds fewer than two stacks (FUN_0045a320 &lt; 2) shows T_LEFT_LAST_CREATURE / T_MSGBOX_TITLE
-    /// (00679150) and sends nothing. The guard's flag ([esp+0x13]) is read here as "the stack would leave the hero"
-    /// (empty or same-creature destination) — UNVERIFIED.
+    /// The town army rows' drop handler (00615670): a plain drop from a hero's army into the other army, on an empty slot
+    /// or the same creature, when the hero holds fewer than two stacks (FUN_0045a320 &lt; 2) shows T_LEFT_LAST_CREATURE /
+    /// T_MSGBOX_TITLE (00679150) and sends nothing; the check applies only when the dragged row is a hero's (the garrison
+    /// row without a hero skips it) and the armies differ. Splits (Shift) go through the split window, whose minimum
+    /// keeps the hero's creature (ArmySplit.Min).
     /// </summary>
     bool ApplyArmyMove(AdvCommand cmd)
     {
-        if (cmd is SwapStacksCmd m && m.FromHero >= 0 && m.FromHero != m.ToHero && Session.S.Hero(m.FromHero) is { } h
-            && h.Army.StackCount() < 2)
+        var (fromHero, fromSlot, toHero, toTown, toSlot, whole) = cmd switch
         {
-            Stack?[]? to = m.ToHero >= 0 ? Session.S.Hero(m.ToHero)?.Army : m.ToTown >= 0 ? Session.S.Town(m.ToTown)?.Garrison : null;
-            var dest = to?[m.ToSlot];
-            if (dest is not { Count: > 0 } || dest.Creature == h.Army[m.FromSlot]?.Creature)
+            SwapStacksCmd sw => (sw.FromHero, sw.FromSlot, sw.ToHero, sw.ToTown, sw.ToSlot, true),
+            TransferStackCmd tr => (tr.FromHero, tr.FromSlot, tr.ToHero, tr.ToTown, tr.ToSlot,
+                Session.S.Hero(tr.FromHero) is { } fh && fh.Army[tr.FromSlot] is { } fs && fs.Count == tr.Count),
+            _ => (-1, 0, -1, -1, 0, false),
+        };
+        if (whole && fromHero >= 0 && fromHero != toHero && Session.S.Hero(fromHero) is { } h && h.Army.StackCount() < 2)
+        {
+            Stack?[]? to = toHero >= 0 ? Session.S.Hero(toHero)?.Army : toTown >= 0 ? Session.S.Town(toTown)?.Garrison : null;
+            var dest = to?[toSlot];
+            if (dest is not { Count: > 0 } || dest.Creature == h.Army[fromSlot]?.Creature)
             {
                 var texts = "UI/TownScreen/texts.(WindowRelatedTexts).xdb";
                 Notice(UiGameRoot.RelatedTextAt(texts, "T_MSGBOX_TITLE") ?? "", UiGameRoot.RelatedTextAt(texts, "T_LEFT_LAST_CREATURE") ?? "");

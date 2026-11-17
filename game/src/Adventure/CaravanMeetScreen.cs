@@ -10,8 +10,8 @@ namespace H5Reborn.Adventure;
 /// 00e42bd4): the garrison screen UI/Garrison (ID_GARRISON_SCREEN, 007b6330) with the caravan as the second army.
 /// Its description is T_SCREEN_CARAVAN_DESC (007b5c00, ScreenCaravanDesc.txt), the header tooltip
 /// T_HEADER_TOOLTIP_CARAVAN (007b5cf0, HeaderTooltipCaravan.txt). Row 0 is the meeting hero, row 1 the caravan; a click on
-/// a stack and then on another slot swaps, moves or merges them (SwapStacksCmd with FromCaravan / ToCaravan, the same
-/// garrison exchange as <see cref="GarrisonScreen"/>); OK closes. UNVERIFIED: the second row taken as the meeting hero
+/// a stack and then on another slot swaps, moves or merges them, with Shift held opens the split window (ArmySplit rules
+/// with FromCaravan / ToCaravan, the same garrison exchange as <see cref="GarrisonScreen"/>); OK closes. UNVERIFIED: the second row taken as the meeting hero
 /// (0043cdb0 keeps the caravan and the player only); the header text as the caravan's name (Caravan_Name.txt).
 /// </summary>
 public sealed partial class CaravanMeetScreen : MapBuildingScreen
@@ -48,14 +48,16 @@ public sealed partial class CaravanMeetScreen : MapBuildingScreen
             return;
         }
         _picked = null;
-        if (from != (row, slot))
-            Apply(new SwapStacksCmd(from.Row == 0 ? HeroId : -1, -1, from.Slot, row == 0 ? HeroId : -1, -1, slot)
-            {
-                FromCaravan = from.Row == 1 ? _caravan : -1,
-                ToCaravan = row == 1 ? _caravan : -1,
-            });
+        if (from == (row, slot)) { Refresh(); return; }
+        // The army-screen rules (00649e70): Shift opens the split window, the same creature merges, else move / exchange.
+        var a = SideOf(from.Row, from.Slot);
+        var b = SideOf(row, slot);
+        if (ArmyMove.ShiftHeld) { ArmyMove.OpenSplit(this, a, b, Apply, Refresh); return; }
+        if (ArmySplit.Drop(a, b) is { } cmd) Apply(cmd);
         else Refresh();
     }
+
+    ArmySplit.Side SideOf(int row, int slot) => new(row == 0 ? HeroId : -1, -1, row == 1 ? _caravan : -1, slot, Row(row));
 
     public override void Refresh()
     {

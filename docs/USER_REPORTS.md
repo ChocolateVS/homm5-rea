@@ -6,11 +6,13 @@ from the description. Move an item to "Done" with the commit when fixed.
 
 ## Open — reported 2026-11-10 (browser build 3c4ea8b)
 
-3. **Moving troops:**
-   - the town screen does not let troops be put into empty slots;
-   - Shift while dragging should split a stack;
-   - combining stacks within a hero's own army does not work.
+4. **Adventure map creatures:** unsure whether creatures spawn properly on adventure maps
+   (check weekly neutral growth / random monster resolution / week-of events).
 5. **Town:** double-clicking to buy does not work.
+   Checked (rep-input): a double click on a hire row buys in off-screen desktop runs (both clicks in one frame and
+   frames apart) and in headless Chromium with real mouse events (Playwright dblclick); the rows follow the exe's
+   CHireItem double-click flag (006ddb60 +0x84) and every data-defined dbl command is handled. Not reproduced — need
+   the screen / row the user double-clicked.
 6. **Browser — data picker page:** the first screen (choosing the game files) is very hard to read;
    make it readable and themed like the game.
 7. **Browser — F11:** the game captures key input, so F11 full screen does not work in the browser.
@@ -19,9 +21,13 @@ from the description. Move an item to "Done" with the commit when fixed.
    standing on the entrance is considered (a picked hero model gives the finger); we test the hero on the tile first and
    cannot model-pick heroes, so over a town gate with a hero in it we show the finger. Needs hero model picking and the
    object order of 00cea350 (GAP row in AUDIT_ADVENTURE, "Own town against the hero on its entrance").
-14. **Keyboard shortcuts:** some don't work, e.g. Space to move (continue the hero's route) on the
-    adventure map. Check every shortcut against the stock input bindings (input_a2.cfg etc.) and the
-    exe's handlers, in the desktop and the browser build (the browser may swallow keys).
+13. **Fog of war:** unexplored areas are black, but tilting the camera down shows the outlines of
+    things in the darkness. Earlier finding (docs/rules/ADVENTURE_RENDER.md, 7be9d21): the original
+    also draws unexplored geometry black rather than hiding it, but our blending (linear vs gamma)
+    makes the shapes ~2.5× more visible; re-check with the user's view (camera tilted down, not
+    only through light beams) and match the original's look.
+15. **Duel setup screen:** the UI for starting a duel looks broken ("a bit cooked") — compare the
+    duel preset / duel start screens with the exe's screen code and UI data.
 19. **Combat graphics glitches:** "a little bit glitchy" in battle (browser build) — details not given;
     reproduce in a browser duel (smoke harness) and compare with the desktop build to find what
     looks wrong (z-fighting, overlay blend, shadows, flicker). Detail from the user: the blue squares
@@ -90,19 +96,19 @@ from the description. Move an item to "Done" with the commit when fixed.
     FLAGGED_CHANGEOWNER sound of the same function; the flagged set is the engine's capture set — commit
     "adventure: possession markers on flagged objects".
 
-4. **Adventure map creatures:** neutral stacks now follow the exe — the stack-count generator 004ee750 (Respawn
-    MonstersMin/Max, √tier × growth, random-upgrade sub, downgrade ×2, custom Amount..Amount2, x87 chop), the
-    CountCoefs difficulty scaling when a monster enters the world (004ef500, also for custom amounts, not with
-    DoesNotDependOnDifficulty) and the weekly growth with its hundredths remainder (004eec20) — commit "adventure:
-    neutral stack sizes, difficulty scaling and weekly growth from the exe". Open: creature-week monster spawns
-    (009919a0, traced in AUDIT_ADVENTURE, not implemented); script-created monsters are not difficulty-scaled
-    (unverified); the RNG stream is ours.
-13. **Fog of war outlines:** the sunbeam/cloud cards over the unexplored black blended in linear space and were ~2×
-    brighter than the exe's gamma-space blend, outlining the black scenery behind them; they now blend in gamma
-    space (A2M1: 48–64 → 22–31 levels over black) — commit "render: sunbeam / cloud cards blend in gamma space like
-    the exe". Unexplored geometry itself stays black as in the exe. Open: distance fog on these cards (FOGENABLE
-    state untraced), overlapping cards add in linear space.
-15. **Duel setup screen:** the hot-seat duel screen now works as the exe's (00733680 / 00732930 / 007447f0): "Hot-Seat
-    Chess Mode", one page per player with Next/Start and Back/Previous, the arena selector with the arena picture and
-    town background (the pink boxes were the additive highlights over bare parchment), the chosen arena used in the
-    battle — commit "ui: hot-seat duel screen as the exe's". Open: the network duel screen has no arena selector.
+3. **Moving troops:** the army screens now follow the exe's drop handlers (town 00615670, hero screen 006c5e60,
+   garrison 00652b70, meeting 00649e70): a stack dropped on the same creature merges whole into it — inside one
+   army too (it used to exchange the two stacks) —, anything else moves or exchanges; Shift opens the stock Split
+   Army window with the exe's split controller (opens only for an empty slot or the same creature; the value is the
+   target's new size, starting at half rounded up; Edit / Cell / slider; a hero keeps one creature), now also on the
+   garrison and caravan screens. Drops into empty town slots worked in off-screen runs (hero ↔ garrison, inside a
+   row, click-click); no failing case was found — commit "army screens: merge, split window and keys per the exe".
+14. **Keyboard shortcuts:** Space (MB_Move_Hero) had nothing to move once a route was partly walked: the hero now
+   keeps its route (shown again when selected and at the start of its turn) and Space also wakes a sleeping hero
+   (00599bd0 → 006049d0); L opens the mission log tab (0058c790), W / S page the hero screen (006c3160 / 006c31c0)
+   and a page key on its own page closes the screen (006c1f70). Every binding of the adventure, town, hero and
+   combat sections was checked against our handlers (AUDIT_INPUT). Browser: the game only gets keys while its
+   canvas has the focus (Godot cancels Space / Tab defaults there); the data picker now hands the focus back to the
+   canvas. Open: the route is kept per screen as a destination (not saved); a browser session that picked only the
+   .pak files has no profiles/…/input_a2.cfg and therefore no key bindings; Ctrl+1–8 / Ctrl+T may stay with the
+   browser — same commit.
