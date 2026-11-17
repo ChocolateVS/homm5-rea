@@ -94,7 +94,7 @@ public sealed partial class Battle
         RemoveEffect(u, H5.Combat.Fx.Invisible);
         if (land != u.Pos) Teleport(u, land);
         if (v is { Alive: true } && u.Alive)
-            Strike(u, v, new Hit { Kind = AttackKind.Melee, Multiplier = 2, BattleDiveFinish = true }, pattern: false);
+            Strike(u, v, new Hit { Kind = AttackKind.Melee, Multiplier = 2, Special = 0x9b, BattleDiveFinish = true }, pattern: false);
         return true;
     }
 

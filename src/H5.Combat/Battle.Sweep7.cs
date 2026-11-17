@@ -84,6 +84,7 @@ public sealed partial class Battle
     internal void Sweep7TurnStart(Unit u)
     {
         u.FrenzyMultiplier = 1;
+        u.FrenzyStacks = 0;
         RemoveEffect(u, H5.Combat.Fx.BerserkerRage);   // exe 00bbc951: vf 0x270(0xf5, time, force 1)
         if (HasAbilityNow(u, Ab.DefileMagic)) ReleaseDefiled(u);   // Battle.Sweep18.cs
     }

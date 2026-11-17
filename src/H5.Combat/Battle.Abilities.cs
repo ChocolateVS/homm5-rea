@@ -1,4 +1,5 @@
 using H5.Core.Data;
+using H5.Core.Numerics;
 
 namespace H5.Combat;
 
@@ -511,7 +512,7 @@ public sealed partial class Battle
                 double luck = victims.Count > 0 ? RollLuck(u, S.At(center) ?? victims[0]) : 1;
                 foreach (var v in victims)
                 {
-                    int dmg = ComputeDamage(u, v, new Hit { Kind = AttackKind.Ranged, Multiplier = 0.5 }, ranged: true, luck);
+                    int dmg = ComputeDamage(u, v, new Hit { Kind = AttackKind.Ranged, Multiplier = 0.5, Special = 0x9e }, ranged: true, luck);
                     DealDamage(v, dmg, u.Id, AttackKind.Ranged, c.Ability);
                 }
                 break;
@@ -529,14 +530,14 @@ public sealed partial class Battle
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
                 Teleport(u, land);
                 // exe FUN_00a58de0 special 0x140: ×(1 + Base + PerPathCell·cells), the retaliation with its own pair.
-                var hit = new Hit { Kind = AttackKind.Melee, Multiplier = 1 + Stats.Get("combat/Creatures/Inferno/Leap_AttackDamageBonusBase", 0)
-                                                                          + Stats.Get("combat/Creatures/Inferno/Leap_AttackDamageBonusPerPathCell", 0.1) * cells };
+                var hit = new Hit { Kind = AttackKind.Melee, Special = 0x140, Multiplier = LeapFactor(cells,
+                    Stats.Get("combat/Creatures/Inferno/Leap_AttackDamageBonusPerPathCell", 0.1), Stats.Get("combat/Creatures/Inferno/Leap_AttackDamageBonusBase", 0)) };
                 Strike(u, t!, hit, pattern: true);
                 if (u.Alive && t!.Alive && CanRetaliate(t, u))
                 {
                     if (t.RetaliationsLeft != int.MaxValue) t.RetaliationsLeft--;
-                    Strike(t, u, new Hit { Kind = AttackKind.Retaliation, Multiplier = 1 + Stats.Get("combat/Creatures/Inferno/Leap_RetaliateDamageBonusBase", 2)
-                                                                             + Stats.Get("combat/Creatures/Inferno/Leap_RetaliateDamageBonusPerPathCell", 0) * cells }, pattern: true);
+                    Strike(t, u, new Hit { Kind = AttackKind.Retaliation, Special = 0x140, Multiplier = LeapFactor(cells,
+                        Stats.Get("combat/Creatures/Inferno/Leap_RetaliateDamageBonusPerPathCell", 0), Stats.Get("combat/Creatures/Inferno/Leap_RetaliateDamageBonusBase", 2)) }, pattern: true);
                 }
                 break;
             }
@@ -578,7 +579,7 @@ public sealed partial class Battle
                 u.AbilityUses[c.Ability] = 1;
                 // exe FUN_00a60be0: base roll → FUN_00a5c790 with luck multiplier 1.0 (no luck roll) and special 0x159 (the
                 // ×Flamestrike multiplier of 00a58de0), dealt directly — no strike effects (Flamewave …), no retaliation.
-                DealDamage(t, ComputeDamage(u, t, new Hit { Kind = AttackKind.Ability, Multiplier = Stats.Get("combat/Creatures/Fortress/Flamestrike_DamageMultipiler", 1.2) }, ranged: false, luckMult: 1),
+                DealDamage(t, ComputeDamage(u, t, new Hit { Kind = AttackKind.Ability, Special = 0x159, Multiplier = Stats.Get("combat/Creatures/Fortress/Flamestrike_DamageMultipiler", 1.2) }, ranged: false, luckMult: 1),
                     u.Id, AttackKind.Ability, c.Ability);
                 if (t.Alive && !MarkOfFireRefused(t)) AddEffect(t, new Effect { Id = H5.Combat.Fx.MarkOfFire, Remaining = Stats.Get("combat/Creatures/Fortress/MarkOfFire_EffectDurationInRounds", 2), SourceSide = u.Side });
                 break;
@@ -609,7 +610,7 @@ public sealed partial class Battle
                 if (!HasAmmoCart(u.Side)) u.Shots--;
                 // Damage: the attack special SPELL_ABILITY_HARPOON_STRIKE scales by 1 + HarpoonStrike_DamageBonus in the
                 // attacker stage (exe FUN_00a58de0, special 0x14b).
-                Strike(u, t, new Hit { Kind = AttackKind.Ranged, Multiplier = 1 + Stats.Get("combat/Creatures/Fortress/HarpoonStrike_DamageBonus", 0) },
+                Strike(u, t, new Hit { Kind = AttackKind.Ranged, Special = 0x14b, Multiplier = X87.Add((float)Stats.Get("combat/Creatures/Fortress/HarpoonStrike_DamageBonus", 0), 1f) },
                     pattern: false, rangedRetaliation: false);
                 if (t.Alive && HarpoonPullDestination(u, t) is { } pull && pull != t.Pos) Teleport(t, pull);
                 break;

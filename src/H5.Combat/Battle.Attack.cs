@@ -18,6 +18,12 @@ public sealed partial class Battle
         public double? TotalRoll;          // the stack's base roll fixed by the caller (Lightning Breath's shared roll)
         public bool NoLuck;                // strike without a luck roll (FUN_00a673c0 flag param_5: helper strikes)
         public bool BattleDiveFinish;      // strike special 0x9b (SPELL_ABILITY_BATTLE_DIVE_FINISH)
+        /// <summary>
+        /// The exe's strike special (00a58de0 arg 4) for a traced <see cref="Multiplier"/>: the factor then enters the
+        /// attacker stage at the exe's position (0x142 Incinerate, 0xb5 Lizard Bite, 0x9e / 0x9b / 0x15b / 0x159,
+        /// 0x140 Leap, 0x14b Harpoon Strike). 0 = an untraced multiplier, applied first.
+        /// </summary>
+        public int Special;
     }
 
     // ------------------------------------------------------------------ commands
@@ -217,11 +223,14 @@ public sealed partial class Battle
     void Retaliate(Unit t, Unit attacker)
     {
         if (t.RetaliationsLeft != int.MaxValue) t.RetaliationsLeft--;
-        var hit = new Hit { Kind = AttackKind.Retaliation, Multiplier = t.FrenzyMultiplier };
+        var hit = new Hit { Kind = AttackKind.Retaliation };   // Battle Frenzy: ComputeDamage multiplies FrenzyStacks times
         Strike(t, attacker, hit, pattern: true);
         if (t.Alive) StrikeHelpers(t, attacker, retaliation: true);   // Pack Hunter after a retaliation (exe FUN_00a646b0)
         if (HasAbilityNow(t, Ab.BattleFrenzy))
+        {
             t.FrenzyMultiplier *= Stats.Get("combat/Creatures/Haven/BattleFrenzyBoostFactor", 1.5);   // p.172
+            t.FrenzyStacks++;
+        }
     }
 
     // ------------------------------------------------------------------ ranged
@@ -445,35 +454,52 @@ public sealed partial class Battle
             Emit(new AbilityTriggered(a.Id, "FAVOURED_ENEMY_CRITICAL", t.Id));   // the log's "Favored" texts (FUN_00a5ae40 result)
         }
 
-        // ---- attacker stage (exe 00a58de0), starting from the luck multiplier
-        M(luckMult);
-        M(hit.Multiplier);
+        // ---- attacker stage (exe 00a58de0, order of 00a58e2b..00a5931c). The luck multiplier is the 4th argument of
+        // 00a5a900, multiplied in after the defender factors (00a5ae15), see below.
+        int sp = hit.Special;
+        bool retal = hit.Kind == AttackKind.Retaliation;
+        if (sp == 0) M(hit.Multiplier);   // untraced special: position not compared
         if (melee ? isShooter && !HasAbilityNow(a, Ab.NoMeleePenalty) : HasAbilityNow(a, Ab.RangePenalty)) M(0.5);
+        if (sp == 0x142) M(hit.Multiplier);                                   // 00a58e45: x IncinerateCoef (+0x348)
         if (melee) M(OnePlus(Math.Clamp(OffenceBonus(ah), 0, 10)));
         else if (ah.HasPerk(Sk.Archery)) M(OnePlus(Math.Clamp(Stats.Get("combat/HeroSkills/SkillOffence/Archery_DamageBonus", 0.2), 0, 10)));
-        if (hit.Kind == AttackKind.Retaliation)
+        if (retal)
         {
             if (ah.Class == "HERO_CLASS_KNIGHT" || ah.SkillLevel(Sk.Training) > 0) M(OnePlus(Math.Clamp(TrainingBonus(ah), 0, 10)));
         }
         else if (ah.HasPerk(Sk.Retribution))
         {
+            // 00a58f55: FILD max(morale, 0) * per (+0x5ac), FSTP float - chopped - then min 10, max 0, FADD 1.
             int morale = MoraleOf(a);
-            if (morale > 0) M(OnePlus(Math.Clamp(Stats.Get("combat/HeroSkills/Knight/Retribution_DamageBonusPerMorale", 0.05) * morale, 0, 10)));
+            if (morale > 0) M(X87.Add(Math.Clamp(X87.Mul(morale, F("combat/HeroSkills/Knight/Retribution_DamageBonusPerMorale", 0.05)), 0f, 10f), 1f));
         }
+        if (sp == 0xb5) acc = X87.Mul(X87.Mul((float)hit.Multiplier, acc), 0.5f);   // 00a59070: f * acc * 0.5, f = Lizard Bite's
         if (melee && HasAbilityNow(a, Ab.Jousting) && hit.Kind == AttackKind.Melee && hit.CellsWalked > 0)
         {
-            double per = Math.Clamp(Stats.Get("combat/Creatures/Haven/Jousting_DamageBonusPerPathCell", 0.05), 0, 10);
-            double j = 1 + Math.Clamp(per, 0, 100) * hit.CellsWalked;
-            // Cavalry Commander multiplies the jousting factor by (1 + bonus + perLevel*level), exe 00a58f60.
+            // 00a590ac: per clamped to [0, 10] then [0, 100], FIMUL cells, FADD 1, FSTP float - each step chopped.
+            float per = Math.Clamp(Math.Clamp(F("combat/Creatures/Haven/Jousting_DamageBonusPerPathCell", 0.05), 0f, 10f), 0f, 100f);
+            float j = X87.Add(X87.Mul(per, hit.CellsWalked), 1f);
+            // Cavalry Commander (00a59123): (bonus + chop(perLevel * level) + 1) * j, chopped step by step.
             if (ah.Specialization == "HERO_SPEC_JOUSTING")
-                j *= 1 + Math.Clamp(Stats.Get("combat/HeroSpecializations/Knight/CavalryCommander_JoustingBonus", 0.1), 0, 1000)
-                       + Math.Clamp(Stats.Get("combat/HeroSpecializations/Knight/CavalryCommander_JoustingBonusPerLevel", 0.01), 0, 1000) * ah.Level;
+            {
+                float perLevel = Math.Clamp(F("combat/HeroSpecializations/Knight/CavalryCommander_JoustingBonusPerLevel", 0.01), 0f, 1000f);
+                float bonus = Math.Clamp(F("combat/HeroSpecializations/Knight/CavalryCommander_JoustingBonus", 0.1), 0f, 1000f);
+                j = X87.Mul(X87.Add(X87.Add(bonus, X87.Mul(perLevel, ah.Level)), 1f), j);
+            }
             M(j);
         }
-        if (hit.Kind == AttackKind.Retaliation)
+        if (sp is 0x9e or 0x9b or 0x15b or 0x159) M(hit.Multiplier);          // 00a5919f..00a591f3 (0x9b: FADD ST0,ST0)
+        if (retal)
         {
+            // Battle Frenzy (00a59204): FMUL BoostFactor (+0x210) once per stack of effect 0x112, each chopped.
+            if (a.FrenzyStacks > 0)
+            {
+                float k = F("combat/Creatures/Haven/BattleFrenzyBoostFactor", 1.5);
+                for (int i = 0; i < a.FrenzyStacks; i++) acc = X87.Mul(acc, k);
+            }
             if (HasAbilityNow(a, Ab.FierceRetaliation)) M(Stats.Get("combat/Creatures/Stronghold/FierceRetaliationCoef", 1.5));
         }
+        if (sp is 0x140 or 0x14b) M(hit.Multiplier);                          // 00a59297..00a592e1: Leap / Harpoon, 1 + x
         if (a.HasEffect("FX_STORM_PENALTY") && ranged) M(OneMinus(Fx(a, "FX_STORM_PENALTY")));
 
         // ---- range penalty (exe 00a5c5a0): nearest-cell squared distance > (width/2)^2
@@ -503,10 +529,10 @@ public sealed partial class Battle
         {
             if (t.Has(Ab.LargeShield) || Adjacent(t).Any(o => o.Side == t.Side && o.Has(Ab.ShieldOther))) M(0.5);
             if (th.HasPerk(Sk.Evasion)) M(OneMinus(Math.Clamp(Stats.Get("combat/HeroSkills/SkillDefence/Evasion_DamageReduce", 0.2), 0, 1)));
+            // Evasive (00a5ad38): FILD level * per (+0x914) + base (+0x910), FSTP float, min 1, max 0, FSUBR 1.
             if (th.Present && th.Specialization == "HERO_SPEC_EVASIVE")
-                M(OneMinus(Math.Clamp(Stats.Get("combat/HeroSpecializations/Warlock/Evasive_DamageReduceBase", 0)
-                                     + Stats.Get("combat/HeroSpecializations/Warlock/Evasive_DamageReducePerLevel", 0.01) * th.Level, 0, 1)));
-            if (t.GetEffect("SPELL_DEFLECT_ARROWS") is { } da) M(OneMinus(Math.Clamp(da.Value, 0, 0.95)));
+                M(X87.Sub(1f, Math.Clamp(X87.Add(X87.Mul(th.Level, F("combat/HeroSpecializations/Warlock/Evasive_DamageReducePerLevel", 0.01)),
+                                                 F("combat/HeroSpecializations/Warlock/Evasive_DamageReduceBase", 0)), 0f, 1f)));
         }
         else
         {
@@ -519,11 +545,16 @@ public sealed partial class Battle
             M(OneMinus(Math.Clamp(DefenceReduction(th), 0, 1)));
         }
         if (t.Summoned && ah.HasPerk(Sk.BackToTheVoid)) M(Stats.Get("combat/HeroSkills/Barbarian/DeathToNonexistent_DamageToSummonsMult", 3));
+        // Deflect Arrows (effect 0x1d, 00a5ade1..00a5ae04): after Death to Nonexistent, ranged only.
+        if (ranged && t.GetEffect("SPELL_DEFLECT_ARROWS") is { } da) M(OneMinus(Math.Clamp(da.Value, 0, 0.95)));
 
-        // Forest Guardian (exe 00a59340): Sylvan creatures vs the hero's favoured enemies.
+        // 00a5ae11: FLD acc, FMUL the luck multiplier (4th argument), FMULP the Forest Guardian factor.
+        M(luckMult);
+        // Forest Guardian (exe 00a59340, 00a59408): Sylvan creatures vs the hero's favoured enemies;
+        // FILD level * per (+0x10) + base (+0xc), FSTP float, clamp [0, 10], FADD 1.
         if (ah.Present && ah.Specialization == "HERO_SPEC_FOREST_GUARDIAN" && a.Town == Towns.Sylvan && IsFavoredEnemy(ah, t))
-            M(OnePlus(Math.Clamp(Stats.Get("combat/HeroSpecializations/Ranger/ForestGuardian_DamageBonus", 0)
-                                 + Stats.Get("combat/HeroSpecializations/Ranger/ForestGuardian_DamageBonusPerHeroLevel", 0.02) * ah.Level, 0, 10)));
+            M(X87.Add(Math.Clamp(X87.Add(X87.Mul(ah.Level, F("combat/HeroSpecializations/Ranger/ForestGuardian_DamageBonusPerHeroLevel", 0.02)),
+                                         F("combat/HeroSpecializations/Ranger/ForestGuardian_DamageBonus", 0)), 0f, 10f), 1f));
 
         int result = Math.Max(1, (int)X87.Add(acc, 1e-4f));   // 00a5ae1b: FADD 1e-4f (00e3dee4), _ftol (00d11a60) truncates
         // Blade of Slaughter: +2 per creature in the target stack, after multipliers (p.172).
@@ -548,6 +579,12 @@ public sealed partial class Battle
         float p = X87.Mul(k, d);
         return d > 0 ? X87.Add(p, 1f) : X87.Div(1, X87.Sub(1f, p));
     }
+
+    /// <summary>Leap's factor (00a5929f..00a592dd): FILD cells · per + base, FADD 1, each step chopped.</summary>
+    internal static float LeapFactor(int cells, double per, double @base) => X87.Add(X87.Add(X87.Mul(cells, (float)per), (float)@base), 1f);
+
+    /// <summary>An RPGStats value as the exe holds it (a float).</summary>
+    float F(string path, double def) => (float)Stats.Get(path, def);
 
     /// <summary>A 1 + x factor of the damage chain: FADD of the float x and 1.0, chopped.</summary>
     static float OnePlus(double x) => X87.Add(1f, (float)x);

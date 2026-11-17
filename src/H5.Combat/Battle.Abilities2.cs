@@ -148,7 +148,7 @@ public sealed partial class Battle
             {
                 // Fly up and strike an adjacent enemy for +50% damage without retaliation (p.176).
                 Emit(new AbilityTriggered(u.Id, c.Ability, t!.Id));
-                Strike(u, t, new Hit { Kind = AttackKind.Melee, Multiplier = Stats.Get("combat/Creatures/Dungeon/IncinerateCoef", 1.5) }, pattern: true);
+                Strike(u, t, new Hit { Kind = AttackKind.Melee, Special = 0x142, Multiplier = Stats.Get("combat/Creatures/Dungeon/IncinerateCoef", 1.5) }, pattern: true);
                 return null;
             }
             case Ab.AmmoSteal:

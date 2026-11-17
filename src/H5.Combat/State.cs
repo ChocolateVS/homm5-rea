@@ -84,6 +84,7 @@ public sealed class Unit
     public bool HasMovedFromStart;
     public int Frags;
     public double FrenzyMultiplier = 1;
+    public int FrenzyStacks;   // Battle Frenzy (effect 0x112) stacks: the exe multiplies the boost once per stack (00a59204)
     public int RagePoints;
     public int RageLevel;
     public List<Effect> Effects = new();

@@ -341,7 +341,7 @@ public sealed partial class Battle
             for (int x = 0; x < S.Width; x++)
                 for (int y = target.Y; y < target.Y + 2; y++)
                     if (S.At(new Cell(x, y)) is { } v && v.Id != u.Id && Controller(v) != Controller(u) && !v.IsObject && seen.Add(v.Id) && u.Alive)
-                        Strike(u, v, new Hit { Kind = AttackKind.Melee, Multiplier = mult }, pattern: false);
+                        Strike(u, v, new Hit { Kind = AttackKind.Melee, Multiplier = mult, Special = 0x15b }, pattern: false);
         }
     }
 

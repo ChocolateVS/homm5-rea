@@ -1,4 +1,5 @@
 using H5.Core.Data;
+using H5.Core.Numerics;
 
 namespace H5.Combat;
 
@@ -167,13 +168,16 @@ public sealed partial class Battle
             if (!u.Alive || !HasAbilityNow(u, ability) || u.Side == target.Side || u.Id == striker.Id || u.Id == target.Id
                 || !AreAdjacent(u, target) || DisabledForHelperStrike(u)) continue;
             Emit(new AbilityTriggered(u.Id, ability, target.Id));
-            double mult = 1;
+            // Lizard Bite: special 0xb5, 00a5901e..00a5907e: f · acc · 0.5 with f = chop(level · 0.01f (00e15a80) + 1.2f
+            // (00e12f1c)) for the Riders specialist (perk 0x32), else 1.
+            var hit = new Hit { Kind = AttackKind.Melee, NoLuck = true };
             if (ability == Ab.LizardBite)
             {
                 var rh = HeroOf(u);
-                mult = 0.5 * (rh.Present && rh.Specialization == "HERO_SPEC_RIDERS" ? 1.2 + 0.01 * rh.Level : 1.0);
+                hit.Special = 0xb5;
+                hit.Multiplier = rh.Present && rh.Specialization == "HERO_SPEC_RIDERS" ? X87.Add(X87.Mul(rh.Level, 0.01f), 1.2f) : 1f;
             }
-            Strike(u, target, new Hit { Kind = AttackKind.Melee, Multiplier = mult, NoLuck = true }, pattern: true);
+            Strike(u, target, hit, pattern: true);
         }
     }
 
