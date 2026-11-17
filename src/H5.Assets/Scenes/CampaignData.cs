@@ -92,6 +92,23 @@ public static class CampaignLoader
         return result;
     }
 
+    /// <summary>
+    /// The user campaigns (009d2ad0): every <c>#xpointer(/Campaign)</c> resource under <c>UserCampaigns</c> — the
+    /// folder the mounted <c>UserCampaigns/*.h5c</c> archives fill (00c8bd00). Listed in path order (the order of the
+    /// exe's resource enumeration 009b1000 is not traced).
+    /// </summary>
+    public static List<CampaignDef> LoadUserCampaigns(XdbLoader xdb)
+    {
+        var fs = xdb.FileSystem;
+        var result = new List<CampaignDef>();
+        foreach (var p in fs.Enumerate("UserCampaigns/").Where(p => p.EndsWith(".xdb", StringComparison.OrdinalIgnoreCase)).Order(StringComparer.OrdinalIgnoreCase))
+        {
+            if (xdb.Load(p).Root is not { Name.LocalName: "Campaign" }) continue;
+            result.Add(Load(xdb, p));
+        }
+        return result;
+    }
+
     public static CampaignDef Load(XdbLoader xdb, string path)
     {
         path = PakFileSystem.Normalize(path);

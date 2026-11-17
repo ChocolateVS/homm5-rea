@@ -180,5 +180,6 @@ public sealed class GameInstall
 
     /// <summary>Archives in the original engine's mount order (see <see cref="PakLoadOrder"/>).</summary>
     public IEnumerable<string> EnumeratePaks() =>
-        PakLoadOrder.Enumerate(DataDir, InstallPath.ResolveDirectory(Root, "UserMODs") ?? Path.Combine(Root, "UserMODs"));
+        PakLoadOrder.Enumerate(DataDir, InstallPath.ResolveDirectory(Root, "UserMODs") ?? Path.Combine(Root, "UserMODs"),
+            InstallPath.ResolveDirectory(Root, "UserCampaigns") ?? Path.Combine(Root, "UserCampaigns"));
 }

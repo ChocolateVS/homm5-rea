@@ -6,8 +6,10 @@ namespace H5.Core.IO;
 /// <c>UserMODs\*.h5u</c> and <c>UserMODs\*.zip</c> (priority −1); FUN_009e01b0 enumerates each pattern with
 /// FindFirstFile/FindNextFile (alphabetical on NTFS). Every pak in data/ is mounted, MMH55-*.pak included.
 /// The order only breaks ties: a path present in several archives resolves to the newest zip entry
-/// (FUN_009def50, implemented in <see cref="PakFileSystem"/>). Maps (*.h5m), duel presets (*.h5p) and
-/// user campaigns (*.h5c) are also registered by the exe but are opened by their own loaders here.
+/// (FUN_009def50, implemented in <see cref="PakFileSystem"/>). FUN_00c8bd00 registers the user patterns, all at
+/// priority −1, in the order <c>Maps\*.h5m</c>, <c>DuelPresets\*.h5p</c>, <c>UserCampaigns\*.h5c</c>,
+/// <c>UserMODs\*.h5u</c>, <c>UserMODs\*.zip</c>. User campaigns are mounted with the mods (their
+/// <c>UserCampaigns/*.xdb</c> campaigns are read by 009d2ad0); maps and duel presets are opened by their own loaders here.
 /// </summary>
 public static class PakLoadOrder
 {
@@ -19,9 +21,10 @@ public static class PakLoadOrder
     public static bool StockOnlyRequested =>
         string.Equals(Environment.GetEnvironmentVariable("H5_TARGET"), "stock", StringComparison.OrdinalIgnoreCase);
 
-    public static IEnumerable<string> Enumerate(string dataDir, string userModsDir)
+    public static IEnumerable<string> Enumerate(string dataDir, string userModsDir, string? userCampaignsDir = null)
     {
         foreach (var p in Files(dataDir, "*.pak")) yield return p;
+        if (userCampaignsDir != null) foreach (var p in Files(userCampaignsDir, "*.h5c")) yield return p;
         foreach (var p in Files(userModsDir, "*.h5u")) yield return p;
         foreach (var p in Files(userModsDir, "*.zip")) yield return p;
     }
