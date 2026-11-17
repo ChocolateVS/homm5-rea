@@ -21,6 +21,44 @@ public class MarketTests(Fixture f)
     }
 
     [Fact]
+    public void WeekOfTradeHalvesEveryRate()
+    {
+        // 008e7b80 → 00bcdf70 with MoonWeekID 0x34: rate / 2 (009d0e00), below 2 → 1.
+        Assert.Equal(new[] { 5, 5, 10, 10, 10, 10, 12 }, Engine.Adventure.MarketRates(Purse.Wood, 1, Engine.Adventure.WeekOfTrade));
+        Assert.Equal(new[] { 1, 1, 2, 2, 2, 2, 60 }, Engine.Adventure.MarketRates(Purse.Ore, 9, Engine.Adventure.WeekOfTrade));
+        Assert.Equal(new[] { 1, 1, 1, 1, 1, 1, 125 }, Engine.Adventure.MarketRates(Purse.Crystal, 9, Engine.Adventure.WeekOfTrade));
+        Assert.Equal(new[] { 625, 625, 1250, 1250, 1250, 1250, 1 }, Engine.Adventure.MarketRates(Purse.Gold, 3, Engine.Adventure.WeekOfTrade));
+        Assert.Equal(Engine.Adventure.WeekOfTrade, f.Db.MoonWeekIndex("WEEK_OF_TRADE"));
+        // The command reads the world's week (004f4c10 gets it from 0062bb40).
+        var g = f.NewGame();
+        var p = g.Current;
+        var town = g.S.Towns.First(t => t.Owner == p.Index);
+        foreach (var t in g.S.Towns.Where(t => t.Owner == p.Index)) { t.Built.Remove("TB_MARKETPLACE"); t.Specialization = ""; }
+        town.Built["TB_MARKETPLACE"] = 1;
+        g.S.MoonWeek = "WEEK_OF_TRADE";
+        p.Purse = new Purse(new Resources(30, 30, 10, 10, 10, 10, 20000));
+        Assert.True(g.Apply(new ExchangeResourcesCmd(Purse.Gold, Purse.Ore, 2500) { Player = p.Index }).Ok);
+        Assert.Equal(32, p.Purse[Purse.Ore]);
+        Assert.Equal(20000 - 2500, p.Purse[Purse.Gold]);
+    }
+
+    [Fact]
+    public void MarketplaceCountIsThePlayersF8Count()
+    {
+        // FUN_004fbd80: +1 per town with a marketplace, +1 per town with TOWN_BONUS_MARKETPLACE (marketplace or not).
+        var g = f.NewGame();
+        var p = g.Current;
+        var mine = g.S.Towns.Where(t => t.Owner == p.Index).ToList();
+        foreach (var t in mine) { t.Built.Remove("TB_MARKETPLACE"); t.Specialization = ""; }
+        Assert.Equal(0, g.MarketplaceCount(p));
+        mine[0].Specialization = "/GameMechanics/TownSpecialization/Fortress/Random/Market.xdb";
+        Assert.Equal("TOWN_BONUS_MARKETPLACE", g.SpecializationBonus(mine[0]));
+        Assert.Equal(1, g.MarketplaceCount(p));
+        mine[0].Built["TB_MARKETPLACE"] = 1;
+        Assert.Equal(2, g.MarketplaceCount(p));
+    }
+
+    [Fact]
     public void QuotesFollowTheExchangeCommand()
     {
         // 1 marketplace: 25 wood buy 2 ore at 10:1 (5 wood kept back), 3 wood sell for 75 gold.

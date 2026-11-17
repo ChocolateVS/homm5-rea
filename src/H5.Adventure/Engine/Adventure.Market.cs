@@ -26,11 +26,14 @@ public sealed record ArtifactSold(int HeroId, string Artifact, int Gold) : AdvEv
 // received = offered / rate and the cost is received × rate (the remainder stays with the player);
 // for gold, received = offered × rate and the cost is the whole offer.
 //
-// Marketplace count: each owned town with a marketplace counts once, a town whose specialisation has
-// TOWN_BONUS_MARKETPLACE ("Merchant's Fair", fan manual p.244+) counts twice. A Trading Post trades at
-// the 3-marketplace rates (fan manual "Adventure Map Locations": "the trade rates are the same as when
-// owning 3 Marketplaces"). TODO(exe): the player's count getter (CPlayer vtable +0xb0, read at
-// FUN_008e70d0) is not traced; the counting rule above follows the manual.
+// Marketplace count: the town market screen (0062d690 → 0062c870 → model 0062b870 +0x2c) takes
+// max(1, CPlayer vf 0xf8 = FUN_004fbd80): over the player's towns (vf 0xc4) +1 for a built marketplace
+// (town vf 0x34(2)) and +1 for the specialisation TOWN_BONUS_MARKETPLACE (town vf 0xdc = 6), the latter
+// whether or not that town has a marketplace. A Trading Post trades at the 3-marketplace rates (fan
+// manual "Adventure Map Locations"; its opener 005a5d90 → 0062d770 passes the count, not traced here).
+// Week: the rate row gets the world's week (vf 0xb0, MoonWeekID) — the screen (0062b760) and the
+// command (0062bb40 stores it at +0x20, 004f4c10 passes it) alike; 0x34 WEEK_OF_TRADE (00bcdf70) halves
+// every rate (009d0e00, integer division) and raises any result below 2 to 1.
 //
 // Artifact selling: price = round(gold cost × Marketplace_ArtifactSellCostOfGoldCoef) — the
 // adventure constant at RPGStats+0x1c8 (data 0.5) as used by the market screen tooltip FUN_00623160.
@@ -59,35 +62,38 @@ public sealed partial class Adventure
         new[] { 500, 500, 1000, 1000, 1000, 1000, 0 },
     };
 
-    /// <summary>Marketplaces counted for the exchange rates (0 = the player cannot trade in towns).</summary>
-    public int MarketplaceCount(PlayerState p)
-    {
-        int n = 0;
-        foreach (var t in S.Towns)
-        {
-            if (t.Owner != p.Index || t.Level("TB_MARKETPLACE") < 1) continue;
-            n += SpecializationBonus(t) == "TOWN_BONUS_MARKETPLACE" ? 2 : 1;
-        }
-        return n;
-    }
+    /// <summary>
+    /// Marketplaces counted for the exchange rates (CPlayer vf 0xf8 = FUN_004fbd80, the same count the Slave Market
+    /// uses): +1 per owned town with a marketplace, +1 per owned town with TOWN_BONUS_MARKETPLACE. 0 = no trading.
+    /// </summary>
+    public int MarketplaceCount(PlayerState p) => SlaveMarketMarketplaces(p);
 
-    /// <summary>Rate row for giving <paramref name="give"/> with <paramref name="marketplaces"/> counted (FUN_008e7b80).</summary>
-    public static int[] MarketRates(int give, int marketplaces)
+    /// <summary>MoonWeekID 0x34, the week whose rates 00bcdf70 halves.</summary>
+    public const int WeekOfTrade = 0x34;
+
+    /// <summary>
+    /// Rate row for giving <paramref name="give"/> with <paramref name="marketplaces"/> counted in week
+    /// <paramref name="week"/> (MoonWeekID; FUN_008e7b80 → 00bcdf70).
+    /// </summary>
+    public static int[] MarketRates(int give, int marketplaces, int week = 0)
     {
         if (give is < 0 or > 6 || marketplaces < 1) return new int[7];
         int row = Math.Min(marketplaces, 9) - 1;
         var table = give < 2 ? RatesCommon : give < 6 ? RatesRare : RatesGold;
-        return (int[])table[row].Clone();
+        var r = (int[])table[row].Clone();
+        if (week == WeekOfTrade)
+            for (int i = 0; i < 7; i++) r[i] = r[i] / 2 < 2 ? 1 : r[i] / 2;
+        return r;
     }
 
     /// <summary>
     /// What an exchange yields: how much of <paramref name="to"/> is received and how much of
     /// <paramref name="from"/> it costs (FUN_004f4c10). Received is 0 when the offer is too small.
     /// </summary>
-    public static (int Received, int Cost) MarketQuote(int from, int to, int amount, int marketplaces)
+    public static (int Received, int Cost) MarketQuote(int from, int to, int amount, int marketplaces, int week = 0)
     {
         if (from == to || amount <= 0) return (0, 0);
-        int rate = MarketRates(from, marketplaces)[to];
+        int rate = MarketRates(from, marketplaces, week)[to];
         if (rate <= 0) return (0, 0);
         if (to == Purse.Gold) return (amount * rate, amount);
         int received = amount / rate;
@@ -117,7 +123,7 @@ public sealed partial class Adventure
         int markets = ExchangeMarketplaces(p, c.MarketObject, out var err);
         if (err != null) return err;
         if (c.Amount <= 0 || c.Amount > p.Purse[c.From]) return "not enough resources";
-        var (received, cost) = MarketQuote(c.From, c.To, c.Amount, markets);
+        var (received, cost) = MarketQuote(c.From, c.To, c.Amount, markets, CurrentMoonWeekIndex);
         if (received <= 0) return "offer too small";
         var d = new int[7];
         d[c.From] = -cost;

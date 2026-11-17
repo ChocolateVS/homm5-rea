@@ -31,11 +31,13 @@ public sealed partial class UpgradeCreaturesScreen : TownSubScreen
 
     Stack?[]? RowArmy(int row) => row == 0 ? Owner.Town.Garrison : RowHero(1)?.Army;
 
+    /// <summary>The town provider's vf 0 / vf 8 (<see cref="H5.Adventure.Engine.Adventure.TownCanUpgrade"/>) for the option leading to <paramref name="target"/>.</summary>
     bool Allowed(string creature, string target)
     {
         var game = Owner.Session.Game;
-        int tier = Game.Instance.Db.Creatures.TryGetValue(creature, out var cd) ? cd.Tier : 0;
-        return game.DwellingCreature(Owner.Town, tier, 1) == target || game.DwellingCreature(Owner.Town, tier, 2) == target;
+        for (int u = 1; u <= 2; u++)
+            if (game.UpgradeQuote(creature, u, 1, false).Target == target) return game.TownCanUpgrade(Owner.Town, creature, u);
+        return false;
     }
 
     public override void Refresh()

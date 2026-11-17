@@ -141,11 +141,14 @@ public sealed class MarketController
 
     int Markets() => _marketObject >= 0 ? 3 : _session.Game.MarketplaceCount(_me());
 
+    /// <summary>0062b760: the rate row with the world's week (vf 0xb0), as the exchange command gets it.</summary>
+    int[] Rates(int give, int markets) => AdventureEngine.MarketRates(give, markets, _session.Game.CurrentMoonWeekIndex);
+
     int MaxReceivable()
     {
         if (_give < 0 || _get < 0) return 0;
         int have = _me().Purse[_give];
-        int rate = AdventureEngine.MarketRates(_give, Markets())[_get];
+        int rate = Rates(_give, Markets())[_get];
         if (rate <= 0) return 0;
         return _get == H5.Adventure.State.Purse.Gold ? have * rate : have / rate;
     }
@@ -154,7 +157,7 @@ public sealed class MarketController
     int CostOf(int received)
     {
         if (_give < 0 || _get < 0 || received <= 0) return 0;
-        int rate = AdventureEngine.MarketRates(_give, Markets())[_get];
+        int rate = Rates(_give, Markets())[_get];
         if (rate <= 0) return 0;
         return _get == H5.Adventure.State.Purse.Gold ? (received + rate - 1) / rate : received * rate;
     }
@@ -165,7 +168,7 @@ public sealed class MarketController
         // For gold the amount moves in whole units of the resource given (received = given × rate).
         if (_get == H5.Adventure.State.Purse.Gold && _give >= 0)
         {
-            int rate = Math.Max(1, AdventureEngine.MarketRates(_give, Markets())[_get]);
+            int rate = Math.Max(1, Rates(_give, Markets())[_get]);
             n = fromScroll ? n * rate : n / rate * rate;
         }
         _received = Math.Clamp(n, 0, max);
@@ -199,7 +202,7 @@ public sealed class MarketController
     {
         var me = _me();
         int markets = Markets();
-        var rates = _give >= 0 ? AdventureEngine.MarketRates(_give, markets) : new int[7];
+        var rates = _give >= 0 ? Rates(_give, markets) : new int[7];
         string prefix = TownUi.Text("UI/Marketplace2/Resource/ratePrefix.txt", "1/");
         string suffix = TownUi.Text("UI/Marketplace2/Resource/rateSuffix.txt", "/1");
         string disabled = TownUi.Text("UI/Marketplace2/Resource/rateDisabled.txt", "-------");

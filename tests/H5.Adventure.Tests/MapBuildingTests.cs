@@ -100,6 +100,47 @@ public class MapBuildingTests(Fixture f)
         Assert.Equal(7, town.Garrison[0]!.Count);
         Assert.Equal(99999 - cost.Gold, p.Purse[Purse.Gold]);
     }
+
+    [Fact]
+    public void WeekOfForgeryHalvesUpgradePrices()
+    {
+        // 004bb570: (upgraded − base) × count, then 00bcdf50 halves (009d0e00, integer division) when the world's week is
+        // 0x33 WEEK_OF_FORGERY; 004bbce0 halves the per-creature regrade price before the × count.
+        var g = f.NewGame();
+        var c = f.Db.Core.Creatures;
+        var normal = g.UpgradeQuote("CREATURE_FOOTMAN", 1, 7, false).Cost;
+        int each = (int)MathF.Round(c["CREATURE_VINDICATOR"].Cost.Gold * 0.1f, MidpointRounding.ToEven);
+        g.S.MoonWeek = "WEEK_OF_FORGERY";
+        Assert.Equal(0x33, f.Db.MoonWeekIndex("WEEK_OF_FORGERY"));
+        Assert.Equal(normal.Gold / 2, g.UpgradeQuote("CREATURE_FOOTMAN", 1, 7, false).Cost.Gold);
+        Assert.Equal(normal.Wood / 2, g.UpgradeQuote("CREATURE_FOOTMAN", 1, 7, false).Cost.Wood);
+        Assert.Equal(3 * (each / 2), g.UpgradeQuote("CREATURE_SWORDSMAN", 2, 3, false).Cost.Gold);
+        // Hill Fort (008b4360): the halved price, then the tier ratio (tier 3: 1).
+        Assert.Equal(normal.Gold / 2, g.UpgradeQuote("CREATURE_FOOTMAN", 1, 7, true).Cost.Gold);
+    }
+
+    [Fact]
+    public void TownUpgradeAppliesTheTownsUpgradesFilter()
+    {
+        // The town provider (00cd2df0 → 004bb440 with CAdvMapTown +0x2e4): NotUpgradeable stops the upgrade even with
+        // the upgraded dwelling built.
+        var g = f.NewGame();
+        var p = g.Current;
+        var town = g.S.Towns.First(x => x.Owner == p.Index);
+        var basic = f.Db.Core.Creatures.Values.First(x => x.Town == town.Type && x.Tier == 1 && !x.Upgrade && x.Upgrades.Count > 0);
+        town.Built["TB_DWELLING_1"] = 2;
+        var target = g.DwellingCreature(town, 1, 1)!;
+        int up = basic.Upgrades.IndexOf(target) + 1;
+        Assert.True(g.TownCanUpgrade(town, basic.Id, up));
+        var obj = g.Map.Objects[town.Object];
+        var had = obj.TownFilter;
+        try
+        {
+            obj.TownFilter = new(new HashSet<int>(), new HashSet<int>(), new HashSet<string> { basic.Id }, new HashSet<string>());
+            Assert.False(g.TownCanUpgrade(town, basic.Id, up));
+        }
+        finally { obj.TownFilter = had; }
+    }
 }
 
 /// <summary>Witch Hut and Tree of Knowledge on A2M1 (both stock objects).</summary>

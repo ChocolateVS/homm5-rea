@@ -45,6 +45,10 @@ public sealed partial class Adventure
         return new(R(r.Wood), R(r.Ore), R(r.Mercury), R(r.Crystal), R(r.Sulfur), R(r.Gem), R(r.Gold));
     }
 
+    /// <summary>009d0e00(2): every resource divided by 2 (C integer division).</summary>
+    static Resources Halve(Resources r) =>
+        new(r.Wood / 2, r.Ore / 2, r.Mercury / 2, r.Crystal / 2, r.Sulfur / 2, r.Gem / 2, r.Gold / 2);
+
     static Resources Diff(Resources a, Resources b) =>
         // FUN_009d0ad0 then FUN_009d0770 (negative components become 0).
         new(Math.Max(0, a.Wood - b.Wood), Math.Max(0, a.Ore - b.Ore), Math.Max(0, a.Mercury - b.Mercury),
@@ -55,8 +59,11 @@ public sealed partial class Adventure
     /// Target creature and price of upgrading <paramref name="count"/> creatures of <paramref name="creature"/>
     /// to upgrade <paramref name="upgrade"/> (1-based). Normal upgrade (FUN_004bb570): max(0, upgraded cost -
     /// base cost) × count. Regrade of an upgraded creature to its base's other upgrade (FUN_004bbce0):
-    /// ROUND(target cost × UpgradesParams/RegradeCostCoef) × count. At a Hill Fort the result is then scaled by
-    /// <see cref="HillFortRatio"/> of the tier, rounded per resource.
+    /// ROUND(target cost × UpgradesParams/RegradeCostCoef) × count. In WEEK_OF_FORGERY (MoonWeekID 0x33, the world's
+    /// week, vf 0xb0, handed to both by CUpgradeCreatureCmd 004f47e0 / CRegradeCreatureCmd 004f4940 and by the town /
+    /// Hill Fort providers) 00bcdf50 halves the price per resource (009d0e00: integer division): 004bb570 after the
+    /// × count (004bb631), 004bbce0 before it (004bbdb0). At a Hill Fort the result is then scaled by
+    /// <see cref="HillFortRatio"/> of the tier, rounded per resource (008b4360 / 008b4430).
     /// </summary>
     public (string? Target, Resources Cost) UpgradeQuote(string creature, int upgrade, int count, bool hillFort)
     {
@@ -70,12 +77,18 @@ public sealed partial class Adventure
         string target = baseDef.Upgrades[upgrade - 1];
         if (target == creature || !Core.Creatures.TryGetValue(target, out var td)) return none;
         Resources cost;
+        bool forgery = S.MoonWeek == "WEEK_OF_FORGERY";
         if (regrade)
         {
             float coef = (float)Core.Stats.Get("UpgradesParams/RegradeCostCoef", 0.333);
-            cost = Purse.Scale(Round(td.Cost, coef), count);
+            var each = Round(td.Cost, coef);
+            cost = Purse.Scale(forgery ? Halve(each) : each, count);
         }
-        else cost = Purse.Scale(Diff(td.Cost, cd.Cost), count);
+        else
+        {
+            cost = Purse.Scale(Diff(td.Cost, cd.Cost), count);
+            if (forgery) cost = Halve(cost);
+        }
         if (hillFort) cost = Round(cost, HillFortRatio[Math.Clamp(baseDef.Tier, 1, 7) - 1]);
         return (target, cost);
     }
@@ -85,11 +98,13 @@ public sealed partial class Adventure
     /// upgrade, is not NotUpgradeable, its tier is not forbidden for that upgrade (1 basic, 2 alternative) and the
     /// target is not a ForbiddenUpgrade.
     /// </summary>
-    public bool HillFortCanUpgrade(MapObject fort, string creature, int upgrade)
+    public bool HillFortCanUpgrade(MapObject fort, string creature, int upgrade) => FilterCanUpgrade(fort.HillFortFilter, creature, upgrade);
+
+    /// <summary>004bb440 over a CreaturesUpgradesFilter (the Hill Fort's, or a town's at CAdvMapTown +0x2e4).</summary>
+    bool FilterCanUpgrade(UpgradesFilter? f, string creature, int upgrade)
     {
         if (!Core.Creatures.TryGetValue(creature, out var cd) || cd.Upgrades.Count == 0) return false;
         if (upgrade < 1 || upgrade > cd.Upgrades.Count) return false;
-        var f = fort.HillFortFilter;
         if (f == null) return true;
         if (f.NotUpgradeable.Contains(creature)) return false;
         if (upgrade == 1 && f.ForbiddenBasicUpgradeTiers.Contains(cd.Tier)) return false;
@@ -103,13 +118,15 @@ public sealed partial class Adventure
     /// creature leaves (the other index) is not forbidden for its tier, the creature is not a ForbiddenUpgrade, and the
     /// target upgrade is allowed for the tier and not a ForbiddenUpgrade.
     /// </summary>
-    public bool HillFortCanRegrade(MapObject fort, string creature, int upgrade)
+    public bool HillFortCanRegrade(MapObject fort, string creature, int upgrade) => FilterCanRegrade(fort.HillFortFilter, creature, upgrade);
+
+    /// <summary>004bbb10 over a CreaturesUpgradesFilter (the Hill Fort's, or a town's at CAdvMapTown +0x2e4).</summary>
+    bool FilterCanRegrade(UpgradesFilter? f, string creature, int upgrade)
     {
         if (!Core.Creatures.TryGetValue(creature, out var cd)) return false;
         var baseDef = cd.Upgrade ? Core.Creatures.GetValueOrDefault(cd.BaseCreature) ?? Core.Creatures.Values.FirstOrDefault(b => b.Upgrades.Contains(creature)) : cd;
         if (baseDef == null || baseDef.Upgrades.Count < 2 || upgrade < 1 || upgrade > baseDef.Upgrades.Count) return false;
         if (baseDef.Upgrades[upgrade - 1] == creature) return false;
-        var f = fort.HillFortFilter;
         if (f == null) return true;
         if (f.NotUpgradeable.Contains(baseDef.Id)) return false;
         if (upgrade == 1 && f.ForbiddenAlterUpgradeTiers.Contains(cd.Tier)) return false;
@@ -156,6 +173,26 @@ public sealed partial class Adventure
         return best;
     }
 
+    /// <summary>
+    /// The town as upgrade provider (CAdvMapTown's IAdvMapUpgrader, vtable 00e955f4 at +0x360, handed to the command
+    /// by CUpgradeCreaturesScreen 00661b40 from 00649ab0): vf 0 = 00cd2df0 upgrade — 00cd0340 (the stack is in the
+    /// town's army or its garrison / visiting hero's), 004bb440 with the town's CreaturesUpgradesFilter (+0x2e4), and
+    /// 00cd2ce0: the target is in one of the town's dwelling records (vf 0x10 = 00cd5180, the creatures of every built
+    /// dwelling level); vf 8 = 00cd2e60 regrade — the same with 004bbb10 and 004bb6c0's target. vf 4 / vf 0xc
+    /// (00cd03c0 / 00cd0440) price it with 004bb570 / 004bbce0 when vf 0 / vf 8 allows it, else 0.
+    /// </summary>
+    public bool TownCanUpgrade(TownState t, string creature, int upgrade)
+    {
+        if (!Core.Creatures.TryGetValue(creature, out var cd)) return false;
+        var f = Map.Objects.ElementAtOrDefault(t.Object)?.TownFilter;
+        bool ok = cd.Upgrade ? FilterCanRegrade(f, creature, upgrade) : FilterCanUpgrade(f, creature, upgrade);
+        if (!ok || UpgradeQuote(creature, upgrade, 1, false).Target is not { } target) return false;
+        for (int tier = 1; tier <= 7; tier++)
+            for (int v = 0; v < 3; v++)
+                if (DwellingCreature(t, tier, v) == target) return true;
+        return false;
+    }
+
     string? DoUpgradeCreature(UpgradeCreatureCmd c)
     {
         var p = Current;
@@ -191,14 +228,7 @@ public sealed partial class Adventure
         }
         var (target, cost) = UpgradeQuote(s.Creature, c.Upgrade, s.Count, c.HillFort >= 0);
         if (target == null) return "cannot upgrade";
-        if (t != null)
-        {
-            // Town: the creature must belong to the town and the dwelling must offer the target creature.
-            var td = Core.Creatures[target];
-            int tier = Core.Creatures[s.Creature].Tier;
-            if (td.Town != t.Type) return "creature of another faction";
-            if (DwellingCreature(t, tier, 1) != target && DwellingCreature(t, tier, 2) != target) return "no upgraded dwelling";
-        }
+        if (t != null && !TownCanUpgrade(t, s.Creature, c.Upgrade)) return "no upgraded dwelling";
         if (!p.Purse.CanAfford(cost)) return "not enough resources";
         Give(p, Purse.Scale(cost, -1));
         string from = s.Creature;

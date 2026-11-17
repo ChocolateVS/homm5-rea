@@ -177,6 +177,7 @@ public sealed partial class TownBuildScreen : TownSubScreen
     public override void Refresh()
     {
         base.Refresh();
+        _checkNow = false;
         var t = Owner.Town;
         Ui.Find("town_level")?.SetValue("level", t.DevLevel.ToString());
         for (int x = 1; x <= 5; x++)
@@ -340,15 +341,41 @@ public sealed partial class TownBuildScreen : TownSubScreen
 
     /// <summary>
     /// 0065c530 case 2: the build command (005e91f0) for the selection, then the selection is cleared, jog button 2
-    /// disabled, the town refreshed (town vf 0xd4) and a sound played (00818c40 / 0081af90); the screen stays open. The
-    /// +0x1ac object (0065dc00, vtable 00e2d934) is the cells' blink timer: 0065d3c0 (each frame from 0065b680) swaps
-    /// its two highlight sets once a second (GetTickCount, +0x40) or at once when +0x3c is set — the build sets it so
-    /// the blink restarts at once; 0065bab0 clears it. The blink itself is not drawn here (GAP).
+    /// disabled, the watcher's "check now" flag set (+0x1ac +0x3c, 0065c65d) and a sound played (00818c40 /
+    /// 0081af90); the screen stays open and the watcher (<see cref="_Process"/>) redraws it.
     /// </summary>
     void Build()
     {
         if (SelectedBuildable() is not { } def) return;
-        if (Apply(new BuildCmd(Owner.Town.Object, def.Type))) { _selected = null; Refresh(); }
+        if (Apply(new BuildCmd(Owner.Town.Object, def.Type))) { _selected = null; _checkNow = true; UpdateJog(); UpdateFrames(); }
+    }
+
+    // The building watcher, build screen +0x1ac (0065dc00, vtable 00e2d934, made by 0065b300 over the screen's
+    // interface +0x184 = vtable 00e2d9b0). 0065d3c0, run every frame by 0065b680: on the first run (+0x3d) 0065c6d0
+    // takes both snapshots and refreshes; afterwards, once 1000 ms have passed since the last check (GetTickCount,
+    // +0x40) or at once when +0x3c is set, the other snapshot is taken (vf 0 = 006595b0: the town's building → level
+    // map, town vf 0x30) and compared with the previous one (0065ca00: same size, same level per building); when they
+    // differ the timer restarts and the screen is redrawn (vf 4 = 0065c6c0 → 0065bab0, which clears +0x3c).
+    Dictionary<string, int>? _snapshot;
+    ulong _lastCheck;
+    bool _checkNow;
+
+    Dictionary<string, int> TakeSnapshot() => new(Owner.Town.Built);
+
+    public override void _Process(double delta)
+    {
+        ulong now = Time.GetTicksMsec();
+        if (_snapshot == null) { _snapshot = TakeSnapshot(); _lastCheck = now; return; }
+        bool due = now - _lastCheck > 999;
+        if (due) _lastCheck = now;
+        if (!due && !_checkNow) return;
+        var snap = TakeSnapshot();
+        bool same = snap.Count == _snapshot.Count && snap.All(kv => _snapshot.TryGetValue(kv.Key, out var v) && v == kv.Value);
+        _snapshot = snap;
+        if (same) return;
+        _lastCheck = now;
+        _checkNow = false;
+        Refresh();
     }
 }
 
