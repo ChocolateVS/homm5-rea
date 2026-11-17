@@ -47,6 +47,7 @@ from the description. Move an item to "Done" with the commit when fixed.
     0.05 above the cell (0055bb60) — commit "combat grid: select marks drawn after the other marks". Still open: the
     cyan blobs under a Deflect Missile target are spell-effect particles sorted with the grid (their render layer in
     the exe not traced); the browser (Compatibility) renderer draws the grid fill brighter than the desktop one (not investigated).
+
 ## Done
 
 1. **Victory/defeat screen** (combat results): the outcome and experience lines were one text block drawn over
