@@ -17,7 +17,6 @@ from the description. Move an item to "Done" with the commit when fixed.
    make it readable and themed like the game.
 7. **Browser — F11:** the game captures key input, so F11 full screen does not work in the browser.
 8. **Cursor:** there may be a different cursor when hovering a castle's entrance.
-9. **Combat spell book:** looks greyed out; mana is hard to read.
 10. **Ownership / selection marks:** a captured mine (or other object) should show something on top
     (owner flag/banner); troops normally have something around them (ring/base marker).
 11. **Minimap icons:** the icons for castles and other objects are wrong.
@@ -58,6 +57,11 @@ from the description. Move an item to "Done" with the commit when fixed.
    empty; the exe (009946e0) uses the RPGRoot texture TEXTURE_INFO (UI/MessageBox/Message) then. (MMH55's Box0p
    has no Face window, so there the box shows no picture at all, as in MMH55.) — commit "adventure: start-of-week
    box shows TEXTURE_INFO for non-creature weeks".
+9. **Combat spell book:** looked greyed out because the book used Godot PBR lighting with a guessed sun; it is now
+   lit by its own AmbientLight record (SpellBookDesc Light) with the original formula, in the desktop and browser
+   renderers. The mana bookmark text is drawn into its own 128×128 texture at (6.4, 16) as in the exe (00685380), not
+   the 512×256 spell outliner, so it is four times larger — commit "spellbook: original lighting from its
+   AmbientLight record, mana mark in its own 128x128 texture".
 12. **Browser — bug reports:** "Report a problem" in the page (faded button bottom-right, F9, `?report`;
    `wwwroot/h5report.js`): text + optional canvas screenshot, newest save and console log tail, plus build,
    browser and current scene/map (`globalThis.h5game` from WebProbe). Stored by `tools/web/report-server`

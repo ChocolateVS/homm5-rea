@@ -55,7 +55,8 @@ public partial class SpellBook3D : Control
     int _bookmark;
     int _page;
     bool _turning;
-    readonly Dictionary<int, (Entry? E, StandardMaterial3D Mat)> _slots = new();
+    readonly Dictionary<int, (Entry? E, ShaderMaterial Mat)> _slots = new();
+    BookLit.Light _light;
     int? _hoverPart;
 
     /// <summary>
@@ -286,29 +287,22 @@ public partial class SpellBook3D : Control
         container.AddChild(_vp);
         AddChild(container);
 
-        var env = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.ClearColor, AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = new Color(0.55f, 0.55f, 0.55f) };
-        var sun = new DirectionalLight3D { LightEnergy = 0.9f, ShadowEnabled = false };
-        if (_d.Light is { Length: > 0 } lp && Game.Instance.Fs.Exists(lp))
-        {
-            var l = Game.Instance.Xdb.Load(lp).Root!;
-            Color V(string n, Color def) => l.Element(n) is { } e
-                ? new Color(float.Parse(e.Element("x")!.Value, CultureInfo.InvariantCulture), float.Parse(e.Element("y")!.Value, CultureInfo.InvariantCulture), float.Parse(e.Element("z")!.Value, CultureInfo.InvariantCulture))
-                : def;
-            env.AmbientLightColor = V("AmbientColor", env.AmbientLightColor);
-            sun.LightColor = V("LightColor", Colors.White);
-        }
+        var env = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.ClearColor };
         _vp.AddChild(new WorldEnvironment { Environment = env });
-        _vp.AddChild(sun);
-        sun.RotationDegrees = new Vector3(-70, 20, 0);
 
-        // The book is drawn in its own viewport over a live battle/map, so it keeps Godot-lit
-        // materials instead of publishing its light to the shared H5Lit globals.
+        // The book's own AmbientLight record (SpellBookDesc Light) with the original lighting formula (BookLit): the
+        // book is drawn in its own viewport over a live battle / map whose light owns the shared H5Lit globals, so the
+        // record goes into material uniforms. (Godot-lit materials with a guessed sun made the book grey and dim.)
+        _light = BookLit.Load(_d.Light is { Length: > 0 } lp && Game.Instance.Fs.Exists(lp) ? Game.Instance.Xdb.Load(lp).Root : null);
         bool original = ModelBuilder.UseOriginalLighting;
         ModelBuilder.UseOriginalLighting = false;
         try { _book = CharacterBuilder.BuildFromModel(_d.Model, _d.AnimSet, "SpellBook"); }
         finally { ModelBuilder.UseOriginalLighting = original; }
         _vp.AddChild(_book);
         _mesh = _book.FindChild("Mesh", recursive: true, owned: false) as MeshInstance3D;
+        foreach (var mi in _book.FindChildren("*", nameof(MeshInstance3D), true, false).Cast<MeshInstance3D>())
+            for (int i = 0; i < mi.GetSurfaceOverrideMaterialCount(); i++)
+                if (mi.GetActiveMaterial(i) is StandardMaterial3D sm) mi.SetSurfaceOverrideMaterial(i, BookLit.From(_light, sm));
         if (_book.Has(IdleKind)) _book.Play(IdleKind, loop: true);
 
         // Top-down camera framing the book (model Z-up → Godot Y-up; page top is model +Y = Godot −Z).
@@ -350,30 +344,35 @@ public partial class SpellBook3D : Control
         foreach (var part in _d.First.Concat(_d.Second).Append(_d.SP))
         {
             if (part < 0 || part >= mesh.GetSurfaceCount()) continue;
-            var mat = new StandardMaterial3D
-            {
-                Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
-                CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-                Roughness = 1,
-            };
+            var mat = BookLit.Create(_light, null, blend: true, twoSided: true);
+            mat.SetShaderParameter("opacity", 0f);
             _mesh.SetSurfaceOverrideMaterial(part, mat);
             _slots[part] = (null, mat);
         }
     }
 
+    /// <summary>
+    /// The mana bookmark's texture (00685380): its own 128x128 texture (0x80 x 0x80, not OutlinerSize) with the
+    /// SpellBookMark text placed at (128*0.05, 128*0.125) (constants 00e12f18 / 00e11c84); the text box is taken to
+    /// run to the texture's edge (its extent is not decoded).
+    /// </summary>
+    static readonly Vector2I MarkSize = new(128, 128);
+    static readonly Vector2 MarkTextPos = new(128 * 0.05f, 128 * 0.125f);
+
     /// <summary>Renders an outliner texture: icon + markup text, transparent elsewhere.</summary>
-    Texture2D Outline(Texture2D? icon, string? markup, bool centerText = false)
+    Texture2D Outline(Texture2D? icon, string? markup, bool markText = false)
     {
-        var vp = new SubViewport { Size = _d.Outliner, TransparentBg = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Once, Disable3D = true };
-        var root = new Control { Size = _d.Outliner };
+        var size = markText ? MarkSize : _d.Outliner;
+        var vp = new SubViewport { Size = size, TransparentBg = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Once, Disable3D = true };
+        var root = new Control { Size = size };
         vp.AddChild(root);
         if (icon != null)
             root.AddChild(new TextureRect { Texture = icon, Position = _d.IconRect.Position, Size = _d.IconRect.Size, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale });
         if (!string.IsNullOrEmpty(markup))
         {
-            // Spell slots put the text at SpellTextPosition; the mana bookmark centres it.
-            var text = centerText
-                ? new BitmapText { Markup = markup, Position = Vector2.Zero, Size = _d.Outliner, VerticalAlign = H5.Core.Ui.UiAlign.Center }
+            // Spell slots put the text at SpellTextPosition; the mana bookmark draws it at MarkTextPos in its own texture.
+            var text = markText
+                ? new BitmapText { Markup = markup, Position = MarkTextPos, Size = size - MarkTextPos }
                 : new BitmapText { Markup = markup, Position = _d.TextPos - new Vector2(0, 8), Size = new Vector2(_d.Outliner.X - _d.TextPos.X, _d.Outliner.Y - _d.TextPos.Y + 8) };
             root.AddChild(text);
         }
@@ -406,8 +405,7 @@ public partial class SpellBook3D : Control
                     .Replace("<value=spell_name>", CombatLogText.Escape(def.Name)).Replace("<value=spell_cost>", cost);
                 tex = Outline(icon, markup);
             }
-            slot.Mat.AlbedoTexture = tex;
-            slot.Mat.AlbedoColor = tex == null ? new Color(1, 1, 1, 0) : Colors.White;
+            BookLit.SetTexture(slot.Mat, tex);
             _slots[set[i]] = (e, slot.Mat);
         }
     }
@@ -469,7 +467,7 @@ public partial class SpellBook3D : Control
         {
             var markup = (Text(_orcs ? "OrcSpellBookMark" : "SpellBookMark") is { Length: > 0 } t ? t : Text("SpellBookMark") ?? "")
                 .Replace("<value=sp_current>", _mana.ToString()).Replace("<value=sp_maximum>", _maxMana.ToString());
-            sp.Mat.AlbedoTexture = Outline(null, markup, centerText: true);
+            BookLit.SetTexture(sp.Mat, Outline(null, markup, markText: true));
         }
         SetPartVisible(_d.Next, _page + 1 < PageCount);
         SetPartVisible(_d.Prev, _page > 0);
@@ -479,6 +477,8 @@ public partial class SpellBook3D : Control
     }
 
     readonly Dictionary<int, Material?> _baseMaterials = new();
+    /// <summary>The book's own (unhighlighted) material per bookmark part.</summary>
+    readonly Dictionary<int, ShaderMaterial> _litParts = new();
 
     void SetPartVisible(int part, bool visible)
     {
@@ -496,14 +496,16 @@ public partial class SpellBook3D : Control
         if (_mesh?.Mesh is not ArrayMesh mesh || part < 0 || part >= mesh.GetSurfaceCount()) return;
         if (_slots.TryGetValue(part, out var slot))
         {
-            slot.Mat.EmissionEnabled = glow != null;
-            if (glow is { } g) slot.Mat.Emission = g;
+            BookLit.SetGlow(slot.Mat, glow);
             return;
         }
-        if (mesh.SurfaceGetMaterial(part) is not StandardMaterial3D baseMat) return;
-        var m = (StandardMaterial3D)baseMat.Duplicate();
-        m.EmissionEnabled = glow != null;
-        if (glow is { } c) { m.Emission = c; m.EmissionEnergyMultiplier = 0.12f; }
+        if (!_litParts.TryGetValue(part, out var baseMat))
+        {
+            if (_mesh.GetSurfaceOverrideMaterial(part) is not ShaderMaterial lit) return;
+            _litParts[part] = baseMat = lit;
+        }
+        var m = (ShaderMaterial)baseMat.Duplicate();
+        BookLit.SetGlow(m, glow, 0.12f);
         _mesh.SetSurfaceOverrideMaterial(part, m);
     }
 
@@ -588,13 +590,11 @@ public partial class SpellBook3D : Control
             var hover = PartAt(mm.Position, SpellParts);
             if (hover != _hoverPart)
             {
-                if (_hoverPart is int old && _slots.TryGetValue(old, out var o)) o.Mat.EmissionEnabled = false;
+                if (_hoverPart is int old && _slots.TryGetValue(old, out var o)) BookLit.SetGlow(o.Mat, null);
                 _hoverPart = hover;
                 if (hover is int h && _slots.TryGetValue(h, out var s) && s.E?.Option != null)
                 {
-                    s.Mat.EmissionEnabled = true;
-                    s.Mat.Emission = _d.Highlight;
-                    s.Mat.EmissionEnergyMultiplier = _d.OverBright * 0.15f;
+                    BookLit.SetGlow(s.Mat, _d.Highlight, _d.OverBright * 0.15f);
                 }
             }
             return;
@@ -649,8 +649,7 @@ public partial class SpellBook3D : Control
             for (int i = 0; i < _d.First.Length && i < _d.Second.Length; i++)
                 if (_slots.TryGetValue(_d.Second[i], out var from) && _slots.TryGetValue(_d.First[i], out var to))
                 {
-                    to.Mat.AlbedoTexture = from.Mat.AlbedoTexture;
-                    to.Mat.AlbedoColor = from.Mat.AlbedoColor;
+                    BookLit.SetTexture(to.Mat, BookLit.Texture(from.Mat));
                     _slots[_d.First[i]] = (from.E, to.Mat);
                 }
         // The sheet keeps its faces: idle00 blends in from the turn's last pose, where they are still visible.
