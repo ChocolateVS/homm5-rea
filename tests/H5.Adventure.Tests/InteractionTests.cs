@@ -97,18 +97,44 @@ public class InteractionTests(Fixture f)
     {
         var g = f.NewGame("A2M1");
         var h = MyHero(g);
-        Assert.Equal(AdvAction.SelfHero, g.Target(h.Owner, h, h.Pos, null).Action);
-        Assert.Equal(AdvAction.NoHero, g.Target(h.Owner, null, h.Pos.Offset(1, 0), null).Action);
+        Assert.Equal(AdvAction.SelfHero, g.Target(h.Owner, h, h.Pos, null, h).Action); // the hero model picked
         var fl = g.Map.Floor(h.Pos.Floor)!;
         foreach (var (dx, dy) in Around)
         {
             var n = h.Pos.Offset(dx, dy);
             if (!fl.InBounds(n.X, n.Y) || fl.IsBlocked(n.X, n.Y) || fl.IsWater(n.X, n.Y) || g.ObjectAtTile(n) != null || g.GuardingMonster(n) != null) continue;
+            Assert.Equal(AdvAction.NoHero, g.Target(h.Owner, null, n, null).Action);
             var t = g.Target(h.Owner, h, n, null);
             Assert.Equal(AdvAction.Move, t.Action);
             Assert.Equal(0, t.Days);
             return;
         }
+    }
+
+    /// <summary>
+    /// User report 8: over a town's entrance with a hero standing in it, 00600e70 tests the picked allied town first
+    /// (OWN_TOWN, also without a selected hero); only a picked hero model gives the finger (selected) / meet.
+    /// </summary>
+    [Fact]
+    public void OwnTownPickWinsOverTheHeroInItsEntrance()
+    {
+        var g = f.NewGame("A2M1");
+        var h = MyHero(g);
+        var town = g.S.Towns.First(tn => g.Map.Objects[tn.Object].ActiveTiles.Any());
+        town.Owner = h.Owner;
+        var o = g.Map.Objects[town.Object];
+        var gate = o.ActiveTiles.First();
+        h.Pos = gate;
+        Assert.Equal(o.Index, g.PickAtTile(gate).Object?.Index);
+        Assert.Equal(AdvAction.OwnTown, g.Target(h.Owner, h, gate, o, null).Action);
+        Assert.Equal(AdvAction.OwnTown, g.Target(h.Owner, null, gate, o, null).Action);
+        Assert.Equal(AdvAction.OwnTown, g.Target(h.Owner, h, gate, null).Action); // tile fallback: the town's entrance cell
+        Assert.Equal(AdvAction.SelfHero, g.Target(h.Owner, h, gate, null, h).Action);
+        Assert.Equal(AdvAction.MeetHero, g.Target(h.Owner, null, gate, null, h).Action);
+        // An enemy town is not tested first: the hero picked in its entrance decides.
+        var mine = g.S.Players.First(p => p.Index == h.Owner);
+        town.Owner = g.S.Players.First(p => p.Team != mine.Team).Index;
+        Assert.Equal(AdvAction.SelfHero, g.Target(h.Owner, h, gate, null, h).Action);
     }
 
     [Fact]

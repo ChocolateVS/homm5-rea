@@ -278,16 +278,17 @@ public partial class AdvWorld : Node3D
     readonly Dictionary<Mesh, TriangleMesh?> _pickMeshes = new();
 
     /// <summary>
-    /// The map object whose model the mouse ray hits first (the visual pick of 005913b0, which the
-    /// adventure hover/click handlers prefer over the tile under the cursor), or −1. Models are tested
-    /// in their bind pose; static decorations (MultiMesh) are not pickable, as the exe ignores statics.
+    /// The map object or hero whose model the mouse ray hits first (the visual pick of 005913b0, which the
+    /// adventure hover/click handlers prefer over the tile under the cursor; the exe's pick list holds every
+    /// visual object, heroes included), or (−1, −1). Models are tested in their bind pose; static decorations
+    /// (MultiMesh) are not pickable, as the exe ignores statics.
     /// </summary>
-    public int PickObject(Vector3 origin, Vector3 dir)
+    public (int Object, int Hero) PickModel(Vector3 origin, Vector3 dir)
     {
         // The screen (cursor) and the tooltip ask with the same ray every frame: answer the second from the first.
         ulong frame = Engine.GetProcessFrames();
         if (_lastPick is { } last && last.Frame == frame && last.Origin == origin && last.Dir == dir) return last.Result;
-        int best = -1;
+        int best = -1, bestHero = -1;
         float bestDist = float.MaxValue;
         foreach (var (index, node) in _objects)
         {
@@ -299,23 +300,39 @@ public partial class AdvWorld : Node3D
             foreach (var (mi, mesh, aabb, _) in PickMeshInstances(node))
             {
                 if (mesh == null) continue;
-                var inv = mi.GlobalTransform.AffineInverse();
-                var lo = inv * origin;
-                var ld = inv.Basis * dir;
-                if (aabb.IntersectsSegment(lo, lo + ld * 100000f) == null) continue;
-                if (!_pickMeshes.TryGetValue(mesh, out var tri)) _pickMeshes[mesh] = tri = mesh.GenerateTriangleMesh();
-                if (tri == null) continue;
-                var hit = tri.IntersectRay(lo, ld);
-                if (hit.Count == 0 || !hit.ContainsKey("position")) continue;
-                float d = (mi.GlobalTransform * hit["position"].AsVector3() - origin).Length();
-                if (d < bestDist) { bestDist = d; best = index; }
+                if (RayHit(mi, mesh, aabb, origin, dir) is { } d && d < bestDist) { bestDist = d; best = index; }
             }
         }
-        _lastPick = (frame, origin, dir, best);
-        return best;
+        // Heroes move, so their bounds are taken from the current transforms.
+        foreach (var (heroId, node) in _heroes)
+        {
+            if (!node.IsInsideTree() || !node.IsVisibleInTree() || node.GetParent() != _floors[Floor]) continue;
+            foreach (var (mi, mesh, aabb, _) in PickMeshInstances(node))
+            {
+                if (mesh == null || mi == _selection || !mi.IsVisibleInTree()) continue; // the selection symbol is not the model
+                if (RayHit(mi, mesh, aabb, origin, dir) is { } d && d < bestDist) { bestDist = d; best = -1; bestHero = heroId; }
+            }
+        }
+        var result = bestHero >= 0 ? (-1, bestHero) : (best, -1);
+        _lastPick = (frame, origin, dir, result);
+        return result;
     }
 
-    (ulong Frame, Vector3 Origin, Vector3 Dir, int Result)? _lastPick;
+    /// <summary>Distance along the ray to a mesh instance's triangles, or null.</summary>
+    float? RayHit(MeshInstance3D mi, Mesh mesh, Aabb aabb, Vector3 origin, Vector3 dir)
+    {
+        var inv = mi.GlobalTransform.AffineInverse();
+        var lo = inv * origin;
+        var ld = inv.Basis * dir;
+        if (aabb.IntersectsSegment(lo, lo + ld * 100000f) == null) return null;
+        if (!_pickMeshes.TryGetValue(mesh, out var tri)) _pickMeshes[mesh] = tri = mesh.GenerateTriangleMesh();
+        if (tri == null) return null;
+        var hit = tri.IntersectRay(lo, ld);
+        if (hit.Count == 0 || !hit.ContainsKey("position")) return null;
+        return (mi.GlobalTransform * hit["position"].AsVector3() - origin).Length();
+    }
+
+    (ulong Frame, Vector3 Origin, Vector3 Dir, (int Object, int Hero) Result)? _lastPick;
     /// <summary>
     /// The mesh instances under each object node with their mesh and its bounds (searched once; any mesh instance entering
     /// or leaving the tree clears the lists; the adventure map never swaps the mesh of an existing instance).

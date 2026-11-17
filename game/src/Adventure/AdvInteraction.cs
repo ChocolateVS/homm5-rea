@@ -16,19 +16,30 @@ public partial class AdventureScreen
 {
     (Tile Tile, int Object, int Hero)? _plotPick;
 
-    /// <summary>The object under the mouse: model pick first, then the object on / covering the tile (005913b0).</summary>
-    public MapObject? PickAt(Vector2 screen, Tile tile)
+    /// <summary>
+    /// The object or hero under the mouse (005913b0): the model the ray hits first (heroes included), else — nothing
+    /// or a static hit — the tile fallback (<see cref="H5.Adventure.Engine.Adventure.PickAtTile"/>).
+    /// </summary>
+    public (MapObject? Object, HeroState? Hero) PickFull(Vector2 screen, Tile tile)
     {
-        int idx = World.PickObject(World.Camera.ProjectRayOrigin(screen), World.Camera.ProjectRayNormal(screen));
+        var (idx, heroId) = World.PickModel(World.Camera.ProjectRayOrigin(screen), World.Camera.ProjectRayNormal(screen));
+        if (heroId >= 0 && Session.S.Heroes.Find(h => h.Id == heroId) is { Alive: true, Garrisoned: false } ph)
+            return (null, ph);
         if (idx >= 0 && idx < Session.Map.Objects.Count && Session.Map.Objects[idx] is { } o && o.Kind != ObjectKind.Static
             && (o.ActiveTiles.Any(World.IsExplored) || World.IsExplored(o.Pos)))
-            return o;
-        return Session.Game.ObjectAtTile(tile);
+            return (o, null);
+        return Session.Game.PickAtTile(tile);
     }
 
+    /// <summary>The object under the mouse (<see cref="PickFull"/>; null when a hero is picked).</summary>
+    public MapObject? PickAt(Vector2 screen, Tile tile) => PickFull(screen, tile).Object;
+
     /// <summary>The action for the selected hero pointing at a screen position over a map tile.</summary>
-    AdvTarget HoverTarget(Vector2 screen, Tile tile) =>
-        Session.Game.Target(Session.Human.Index, Selected, tile, PickAt(screen, tile));
+    AdvTarget HoverTarget(Vector2 screen, Tile tile)
+    {
+        var (o, h) = PickFull(screen, tile);
+        return Session.Game.Target(Session.Human.Index, Selected, tile, o, h);
+    }
 
     /// <summary>
     /// Boat cases of the cursor switch (0059e594, byte table 0059e6bc): action 6 (visit) goes to 0059e5a7, which
@@ -84,14 +95,28 @@ public partial class AdventureScreen
     }
 
     /// <summary>Dev/test (`--adventure-hover=Kind[:body]`): points the fake mouse at the entrance (or the body
-    /// cell farthest from it) of the object of that kind nearest to the selected hero.</summary>
+    /// cell farthest from it) of the object of that kind nearest to the selected hero; `SelectedHero` at that hero's model.</summary>
     public static string? DevHover;
     int _devHoverFrames;
+    string? _devHoverLine;
 
     void DevHoverStep()
     {
         if (DevHover is not { } spec || Selected is not { } hero) return;
         var parts = spec.Split(':');
+        if (parts[0] == "SelectedHero")
+        {
+            // `--adventure-hover=SelectedHero`: the fake mouse on the selected hero's model (above its tile centre).
+            if (_devHoverFrames++ < 240) World.Camera.CenterOn(hero.Pos);
+            if (World.HeroNode(hero.Id) is { } hn) FakeMouse = World.Camera.UnprojectPosition(hn.GlobalPosition + new Vector3(0, 2.8f, 0));
+            if (Verbose && FakeMouse is { } fm && TileAt(fm) is { } ht)
+            {
+                var target = HoverTarget(fm, ht);
+                var line = $"[H5] dev hover hero tile {ht}: {target.Action} → {target.Dest}, object {target.Object}, hero {target.Hero}, cursor {AdvCursors.Current}";
+                if (line != _devHoverLine) GD.Print(_devHoverLine = line);
+            }
+            return;
+        }
         if (!Enum.TryParse<ObjectKind>(parts[0], true, out var kind)) return;
         var o = Session.Map.Objects
             .Where(x => x.Kind == kind && x.Pos.Floor == hero.Pos.Floor && x.ActiveTiles.Any()
@@ -109,10 +134,11 @@ public partial class AdventureScreen
         FakeMouse = World.Camera.UnprojectPosition(World.TileCenter(tile));
         if (_devHoverFrames == 300 && parts.Contains("click") && TileAt(FakeMouse.Value) is { } ct)
             AdvClick(ct, false, FakeMouse.Value);
-        if (Verbose && Engine.GetProcessFrames() % 60 == 0 && TileAt(FakeMouse.Value) is { } t)
+        if (Verbose && TileAt(FakeMouse.Value) is { } t)
         {
             var target = HoverTarget(FakeMouse.Value, t);
-            GD.Print($"[H5] dev hover tile {t}: {target.Action} → {target.Dest}, object {target.Object}, cursor {AdvCursors.Current}");
+            var line = $"[H5] dev hover tile {t}: {target.Action} → {target.Dest}, object {target.Object}, hero {target.Hero}, cursor {AdvCursors.Current}";
+            if (line != _devHoverLine) GD.Print(_devHoverLine = line);
         }
     }
 

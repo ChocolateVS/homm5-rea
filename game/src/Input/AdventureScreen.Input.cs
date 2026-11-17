@@ -181,7 +181,12 @@ public partial class AdventureScreen
             if (Selected is { } caster) CastAdventureSpell(caster, aimed, tile);
             return;
         }
-        if (s.Heroes.FirstOrDefault(h => h.Alive && !h.Garrisoned && h.Pos == tile && h.Owner == Session.Human.Index) is { } mine)
+        // The same pick as the cursor (005913b0 → 00600e70): an own town picked wins over the hero in its entrance,
+        // a picked hero model over the town.
+        var (pickedObj, pickedHero) = PickFull(screen, tile);
+        var town = pickedObj?.Kind == ObjectKind.Town ? s.Towns.Find(tn => tn.Object == pickedObj.Index) : null;
+        if (town?.Owner != Session.Human.Index) town = null;
+        if (town == null && pickedHero is { } mine && mine.Owner == Session.Human.Index)
         {
             if (doubleClick)
             {
@@ -195,7 +200,7 @@ public partial class AdventureScreen
             Plot(current, tile);
             return;
         }
-        if (Session.Game.TownAt(tile) is { } town && town.Owner == Session.Human.Index && Selected?.Pos != tile)
+        if (town != null)
         {
             if (doubleClick) { World.ClearPath(); _plotted = null; Town.TownScreen.Open(this, town); return; }
             if (Selected == null) { World.Camera.CenterOn(town.Pos); return; }

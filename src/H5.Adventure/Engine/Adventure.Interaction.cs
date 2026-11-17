@@ -27,34 +27,68 @@ public sealed partial class Adventure
     /// <summary>
     /// The object under a map tile when the mouse ray hits no object model (fallback of the pick 005913b0:
     /// 00cea350 — the object standing on / entered from the tile — then 00cea010 — the object whose
-    /// blocked cells cover it). Static decorations are not interactive and never returned.
+    /// blocked cells cover it). Static decorations are not interactive and never returned. Heroes: see <see cref="PickAtTile"/>.
     /// </summary>
     public MapObject? ObjectAtTile(Tile t)
+    {
+        var (o, _) = PickAtTile(t);
+        return o;
+    }
+
+    /// <summary>
+    /// The tile fallback of the pick 005913b0 with heroes. 00cea350 walks the floor's object list (CAdvMapFloor +0x58,
+    /// vf 0x38: every object one of whose interface casts is set — 0098c390, filled by the floor's add 009990d0 in add
+    /// order; heroes are in it, their IAdvMapObject vf 0x2c being the hero cast 008e4b90) and returns the first visible
+    /// one that stands on the tile or has it among its active cells (00cea190); only when none does, 00cea010 gives the
+    /// object whose blocked cells cover the tile. The list order between map objects and heroes is not traced: map
+    /// objects (in map order) are taken before heroes.
+    /// </summary>
+    public (MapObject? Object, HeroState? Hero) PickAtTile(Tile t)
     {
         MapObject? blocked = null;
         foreach (var o in Map.Objects)
         {
-            if (o.Kind == ObjectKind.Static || o.Pos.Floor != t.Floor) continue;
+            if (o.Kind is ObjectKind.Static or ObjectKind.Hero || o.Pos.Floor != t.Floor) continue;
             if (S.Objects.TryGetValue(o.Index, out var os) && os.Removed) continue;
-            if (o.Pos == t || o.ActiveTiles.Contains(t)) return o;
+            if (o.Pos == t || o.ActiveTiles.Contains(t)) return (o, null);
             if (blocked == null && o.BlockedTiles.Contains(t)) blocked = o;
         }
-        return blocked;
+        if (S.Heroes.Find(x => x.Alive && !x.Garrisoned && x.Pos == t) is { } hero) return (null, hero);
+        return (blocked, null);
     }
 
     /// <summary>
-    /// Resolves the action for the selected hero pointing at <paramref name="tile"/> with
-    /// <paramref name="picked"/> the object under the mouse (model pick or <see cref="ObjectAtTile"/>); <paramref name="player"/> is the player looking.
-    /// Objects are approached at their entrance: the active cells sorted by squared distance to the pointed
-    /// tile, the first one with a route wins (00cebd50); heroes and monsters are approached on their tile.
+    /// <see cref="Target(int, HeroState?, Tile, MapObject?, HeroState?)"/> with an object pick only: no object picked
+    /// means the tile fallback (<see cref="PickAtTile"/>, heroes included).
     /// </summary>
     public AdvTarget Target(int player, HeroState? hero, Tile tile, MapObject? picked)
     {
-        // Heroes standing on the tile (picked by model in the exe; their tile here).
-        var other = S.Heroes.Find(x => x.Alive && !x.Garrisoned && x.Pos == tile);
+        if (picked != null) return Target(player, hero, tile, picked, null);
+        var (o, h) = PickAtTile(tile);
+        return Target(player, hero, tile, o, h);
+    }
+
+    /// <summary>
+    /// Resolves the action for the selected hero pointing at <paramref name="tile"/> with the pick under the mouse:
+    /// <paramref name="picked"/> the object or <paramref name="pickedHero"/> the hero (model pick, else
+    /// <see cref="PickAtTile"/>); <paramref name="player"/> is the player looking.
+    /// Objects are approached at their entrance: the active cells sorted by squared distance to the pointed
+    /// tile, the first one with a route wins (00cebd50); heroes and monsters are approached on their tile.
+    /// Order of 00600e70: an allied town picked gives OWN_TOWN (0xb) first — with or without a selected hero, and
+    /// whoever stands in its entrance; then a picked hero: the selected one → 0x10 (finger); then 00600060 → 005ff8f0.
+    /// </summary>
+    public AdvTarget Target(int player, HeroState? hero, Tile tile, MapObject? picked, HeroState? pickedHero)
+    {
+        if (pickedHero != null && (!pickedHero.Alive || pickedHero.Garrisoned)) pickedHero = null;
+        if (picked != null && S.Objects.TryGetValue(picked.Index, out var pos0) && pos0.Removed) picked = null;
+        // Own (allied) town: 00600e70 casts the pick to IAdvMapTown (00420110) and tests the ally (00a85030) before
+        // anything else; the action is set even when no hero is selected. (Pick byte +0x19 — the hit entry's +0x10 < −1,
+        // 005913b0 — also has to be clear; what that value means is not traced, it is taken as clear.)
+        var townPicked = picked?.Kind == ObjectKind.Town ? S.Towns.Find(tn => tn.Object == picked.Index) : null;
+        if (townPicked != null && Allied(townPicked.Owner, hero?.Owner ?? player))
+            return hero == null ? new(AdvAction.OwnTown, tile, null, 0, townPicked.Object, -1) : Approach(hero, AdvAction.OwnTown, O(townPicked.Object), tile);
+        var other = pickedHero;
         if (hero != null && other != null && other.Id == hero.Id) return new(AdvAction.SelfHero, tile, null, 0, -1, hero.Id);
-        // Own (allied) town: OwnTown even without a selected hero (00600e70, FUN_00a85030 ally test).
-        var townPicked = picked?.Kind == ObjectKind.Town ? S.Towns.Find(tn => tn.Object == picked.Index) : TownAt(tile);
         if (hero == null)
         {
             if (other != null && other.Owner == player) return new(AdvAction.MeetHero, tile, null, 0, -1, other.Id);
@@ -68,13 +102,8 @@ public sealed partial class Adventure
         if (townPicked != null)
         {
             var o = O(townPicked.Object);
-            AdvAction act;
-            if (Allied(townPicked.Owner, hero.Owner)) act = AdvAction.OwnTown;
-            else
-            {
-                bool heroInside = S.Heroes.Any(x => x.Alive && x.InTown == townPicked.Object);
-                act = heroInside || townPicked.Garrison.StackCount() > 0 ? AdvAction.Attack : AdvAction.Use;
-            }
+            bool heroInside = S.Heroes.Any(x => x.Alive && x.InTown == townPicked.Object);
+            var act = heroInside || townPicked.Garrison.StackCount() > 0 ? AdvAction.Attack : AdvAction.Use;
             return Approach(hero, act, o, tile);
         }
         if (picked != null && picked.Kind != ObjectKind.Static)

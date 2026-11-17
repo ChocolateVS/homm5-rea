@@ -14,11 +14,6 @@ from the description. Move an item to "Done" with the commit when fixed.
 6. **Browser — data picker page:** the first screen (choosing the game files) is very hard to read;
    make it readable and themed like the game.
 7. **Browser — F11:** the game captures key input, so F11 full screen does not work in the browser.
-8. **Cursor:** there may be a different cursor when hovering a castle's entrance.
-   *Progress:* in the exe (00600e70) an allied town picked under the mouse gives the own-town cursor before a hero
-   standing on the entrance is considered (a picked hero model gives the finger); we test the hero on the tile first and
-   cannot model-pick heroes, so over a town gate with a hero in it we show the finger. Needs hero model picking and the
-   object order of 00cea350 (GAP row in AUDIT_ADVENTURE, "Own town against the hero on its entrance").
 19. **Combat graphics glitches:** "a little bit glitchy" in battle (browser build) — details not given;
     reproduce in a browser duel (smoke harness) and compare with the desktop build to find what
     looks wrong (z-fighting, overlay blend, shadows, flicker). Detail from the user: the blue squares
@@ -41,6 +36,12 @@ from the description. Move an item to "Done" with the commit when fixed.
    empty; the exe (009946e0) uses the RPGRoot texture TEXTURE_INFO (UI/MessageBox/Message) then. (MMH55's Box0p
    has no Face window, so there the box shows no picture at all, as in MMH55.) — commit "adventure: start-of-week
    box shows TEXTURE_INFO for non-creature weeks".
+8. **Cursor over a castle's entrance:** we tested a hero standing on the tile before the town and could not pick hero
+   models, so a town gate with a hero in it showed the finger. Now as the exe: heroes are model-picked like objects
+   (005913b0); 00600e70 tests an allied town in the pick first (OWN_TOWN, with or without a selected hero), then a
+   picked hero (the selected one → finger, else meet / attack); the tile fallback follows 00cea350 (object standing on
+   the tile or with it as an entrance, then heroes, then the object covering it). Clicks use the same pick — commit
+   "adventure: hero model picking and the exe's pick order for the cursor (user report 8)".
 9. **Combat spell book:** looked greyed out because the book used Godot PBR lighting with a guessed sun; it is now
    lit by its own AmbientLight record (SpellBookDesc Light) with the original formula, in the desktop and browser
    renderers. The mana bookmark text is drawn into its own 128×128 texture at (6.4, 16) as in the exe (00685380), not

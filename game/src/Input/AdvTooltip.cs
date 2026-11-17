@@ -62,7 +62,10 @@ public partial class AdvTooltip : Control
         if (_adv.DialogLayer.GetChildCount() == 0 && (AdventureScreen.FakeMouse != null || GetViewport().GuiGetHoveredControl() is not { MouseFilter: MouseFilterEnum.Stop })
             && _adv.World.TileAtRay(_adv.World.Camera.ProjectRayOrigin(mouse), _adv.World.Camera.ProjectRayNormal(mouse)) is { } tile
             && _adv.World.IsExplored(tile))
-            (key, build) = Describe(tile, _adv.PickAt(mouse, tile));
+        {
+            var (po, ph) = _adv.PickFull(mouse, tile);
+            (key, build) = Describe(tile, po, ph);
+        }
         if (key != _key)
         {
             _key = key;
@@ -126,10 +129,11 @@ public partial class AdvTooltip : Control
 
     // ---------------------------------------------------------------- content
 
-    (string?, Func<bool, Control?>?) Describe(Tile tile, MapObject? picked)
+    (string?, Func<bool, Control?>?) Describe(Tile tile, MapObject? picked, H5.Adventure.State.HeroState? pickedHero = null)
     {
         var s = _adv.Session.S;
         var game = _adv.Session.Game;
+        if (pickedHero != null) return ($"h{pickedHero.Id}", full => HeroContent(pickedHero, full)); // a hero model under the mouse
         if (s.Heroes.FirstOrDefault(h => h.Alive && !h.Garrisoned && h.Pos == tile) is { } hero)
             return ($"h{hero.Id}", full => HeroContent(hero, full));
         // The tooltip follows the same pick as the cursor (model first, then the tile's object).
