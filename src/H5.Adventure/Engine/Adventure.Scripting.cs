@@ -456,6 +456,7 @@ public sealed partial class Adventure
     {
         o.Index = Map.Objects.Count;
         Map.Objects.Add(o);
+        o.ScriptCreated = true;
         if (setup) SetupObject(o);
         RefreshBlocking(o.BlockedTiles);
         _activeIndex = null;

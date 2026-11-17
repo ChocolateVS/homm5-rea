@@ -150,13 +150,21 @@ public sealed partial class Adventure
             {
                 case ObjectKind.Monster:
                 {
+                    // CAdvMapMonster ctor 004effd0: the main stack by 004ee750(shared creature, Custom, Amount, Amount2,
+                    // random factor: 0 for a placed creature, 1 / 2 from the random-monster path 0041ca20), then every
+                    // AdditionalStacks item (Creature, CustomAmount, Amount, Amount2) by 004ee750(..., 0).
                     var os = S.Obj(o.Index);
-                    int mult = 1;
+                    int mult = 0;
                     var creature = o.Creature ?? RandomMonster(o.MonsterRandomLevel, out mult);
                     os.Creature = creature;
-                    int count = o.CustomAmount && o.Amount > 0 ? o.Amount : RandomMonsterCount(creature, o) * mult;
-                    os.Guards.Add(new Stack(creature, Math.Max(1, count)));
-                    foreach (var a in o.AdditionalStacks) os.Guards.Add(new Stack(a.Creature, Math.Max(1, a.Count)));
+                    os.Guards.Add(new Stack(creature, MonsterStackCount(creature, o.CustomAmount, o.Amount, o.Amount2, mult)));
+                    for (int i = 0; i < o.AdditionalStacks.Count; i++)
+                    {
+                        var a = o.AdditionalStacks[i];
+                        var (custom, amount2) = i < o.AdditionalStackRolls.Count ? o.AdditionalStackRolls[i] : (true, 0);
+                        os.Guards.Add(new Stack(a.Creature, MonsterStackCount(a.Creature, custom, a.Count, amount2, 0)));
+                    }
+                    if (!o.ScriptCreated) ApplyNeutralCountCoef(o, os);
                     break;
                 }
                 case ObjectKind.Treasure:
@@ -515,12 +523,13 @@ public sealed partial class Adventure
     }
 
     /// <summary>
-    /// Random monster (map loader 0041d360 → 0041ca20): MONSTER_RANDOM_Ln takes the RPGRoot group MONSTER_n, and with
-    /// the chance Respawn/MonsterDowngradeProb (the float at RPGStats +0x9c, compared with rng / 2^32) the group
-    /// MONSTER_(n−1) instead, passing 2 (Respawn/MonsterDowngradeMult) instead of 1 to the monster (004effd0 param 5,
-    /// used here as the count factor); L1 and MONSTER_RANDOM_ANY (group MONSTER_ANY) have no lower group. The
-    /// creature is drawn uniformly among the group's creatures with SubjectOfRandomGeneration (<see cref="AdventureDb.MonsterGroups"/>).
+    /// Random monster (map loader 0041d360 → 0041ca20): MONSTER_RANDOM_Ln takes the RPGRoot group MONSTER_n, and when
+    /// a world draw u satisfies u·2⁻³² &lt; Respawn/MonsterDowngradeProb (the float at RPGStats +0x9c) the group
+    /// MONSTER_(n−1) instead, passing 2 instead of 1 as the random factor (004effd0 param 5 → 004ee750 param 5, see
+    /// <see cref="MonsterStackCount"/>); L1 and MONSTER_RANDOM_ANY (group MONSTER_ANY) have no lower group. The creature
+    /// is drawn as u % n among the group's creatures with SubjectOfRandomGeneration (<see cref="AdventureDb.MonsterGroups"/>).
     /// TODO(exe): the map's RacesRandomGroups filter (object RacesRandomGroupID → map +0x2d0) is not modelled.
+    /// UNVERIFIED: the RNG — the exe uses its world stream, ours the game RNG.
     /// </summary>
     string RandomMonster(int level, out int mult)
     {
@@ -529,12 +538,12 @@ public sealed partial class Adventure
         string? lower = level is >= 2 and <= 7 ? $"MONSTER_{level - 1}" : null;
         var pool = Db.MonsterGroups.GetValueOrDefault(primary);
         if (lower != null && Db.MonsterGroups.TryGetValue(lower, out var low) &&
-            S.Rng.NextDouble() < Db.Stats.Get("adventure/Respawn/MonsterDowngradeProb", 0.05))
+            UnitDraw(NextU32()) < (float)Db.Stats.Get("adventure/Respawn/MonsterDowngradeProb", 0.05))
         {
             pool = low;
-            mult = (int)Db.Stats.Get("adventure/Respawn/MonsterDowngradeMult", 2);
+            mult = 2;
         }
-        if (pool is { Count: > 0 }) return pool[S.Rng.Next(pool.Count)];
+        if (pool is { Count: > 0 }) return pool[(int)(NextU32() % (uint)pool.Count)];
         // No group data: any stock creature of the tier with a map model.
         var any = Core.Creatures.Values
             .Where(c => c.Stock && c.WeeklyGrowth > 0 && c.Id != "CREATURE_UNKNOWN" && c.MonsterSharedPath != null && (level is 0 or 8 || c.Tier == level))
@@ -543,21 +552,106 @@ public sealed partial class Adventure
         return any.Count == 0 ? "CREATURE_PEASANT" : any[S.Rng.Next(any.Count)].Id;
     }
 
+    uint NextU32() => (uint)S.Rng.NextU64();
+
     /// <summary>
-    /// Neutral stack size when the map leaves it random.
-    /// TODO(exe): the original generator is not yet decoded; this uses one to two weeks of
-    /// growth of the creature, scaled by the difficulty CountCoefs (DefaultStats
-    /// adventure/Neutrals[Not]InCampaign/CountCoefs, fan manual p.325).
+    /// The exe's u32 → [0, 1) conversion (0041ca20, 004ee750, 009919a0): FILD of the draw as a signed int, + 2^32
+    /// (double 00e0d2e0) when negative, × 2⁻³² (00e0d2d8), under the game's 24-bit chop precision (<see cref="X87"/>).
     /// </summary>
-    int RandomMonsterCount(string creature, MapObject o)
+    public static float UnitDraw(uint u) => X87.Mul(DrawValue(u), 1.0 / 4294967296.0);
+
+    /// <summary>FILD of a u32 draw read as a signed int, plus 2^32 when negative (FADD under 24-bit chop).</summary>
+    static double DrawValue(uint u) => (int)u < 0 ? X87.Chop(u) : (int)u;
+
+    /// <summary>
+    /// Stack size of a map monster's stack, FUN_004ee750(creature, custom, amount, amount2, random): with Custom set, the
+    /// map's Amount, or Amount + u % (Amount2 − Amount + 1) when Amount2 is larger. Otherwise, from the Respawn block
+    /// (RPGStats +0x90 MonstersMin, +0x94 MonstersMax, +0x98 MonstersRandomUpgradeSub, +0xa0 MonsterDowngradeMult):
+    /// t = (max − min)·u·2⁻³² + min; sub = MonstersRandomUpgradeSub when the random factor is non-zero and the creature
+    /// is an upgrade (BaseCreature, creature +0x100) or of TOWN_NO_TYPE (CreatureTown +0x98 = 2), else 0;
+    /// n = (int)((√CreatureTier · t − sub) · WeeklyGrowth) (creature +0x8c, +0xa8; √ by the table 0046ed30), at least 1;
+    /// with random factor 2 (a downgraded random monster) n = (int)(n · MonsterDowngradeMult). A result below 1 is 1
+    /// ("Zero count monster at …"). All x87 steps under the game's 24-bit chop (<see cref="X87"/>).
+    /// </summary>
+    int MonsterStackCount(string creature, bool custom, int amount, int amount2, int random)
     {
-        int growth = Core.Creatures.TryGetValue(creature, out var c) ? Math.Max(1, c.WeeklyGrowth) : 5;
-        double weeks = 1 + S.Rng.NextDouble();
-        var coefs = Db.Stats.Node(S.Campaign ? "adventure/NeutralsInCampaign/CountCoefs" : "adventure/NeutralsNotInCampaign/CountCoefs")?.Elements("Item").ToList();
-        double k = coefs is { Count: > 0 } && !o.Props.ContainsKey("DoesNotDependOnDifficulty")
-            ? XmlHelpers.ParseDouble(coefs[Math.Min(S.Difficulty, coefs.Count - 1)].Value, 1) : 1;
-        if (o.Props.TryGetValue("DoesNotDependOnDifficulty", out var dnd) && dnd == "true") k = 1;
-        return Math.Max(1, (int)(growth * 4 * weeks * k));
+        var cd = Core.Creatures.GetValueOrDefault(creature);
+        if (cd == null) return 1;   // 0089fbf0 finds no creature: 004ee750 returns 1
+        float Stat(string k, double d) => (float)Db.Stats.Get("adventure/Respawn/" + k, d);
+        uint u = custom && amount2 <= amount ? 0u : NextU32();
+        return NeutralStackCount(cd, custom, amount, amount2, random, u,
+            Stat("MonstersMin", 2), Stat("MonstersMax", 3), Stat("MonstersRandomUpgradeSub", 0.3), Stat("MonsterDowngradeMult", 2));
+    }
+
+    /// <summary>The arithmetic of <see cref="MonsterStackCount"/> for one draw <paramref name="u"/> (FUN_004ee750).</summary>
+    public static int NeutralStackCount(CreatureDef cd, bool custom, int amount, int amount2, int random, uint u,
+        float min, float max, float upgradeSub, float downgradeMult)
+    {
+        int n;
+        if (custom)
+        {
+            n = amount;
+            if (amount < amount2) n = amount + (int)(u % ((uint)(amount2 - amount) + 1));
+        }
+        else
+        {
+            bool upgradeOrNeutral = cd.BaseCreature is { Length: > 0 } and not "CREATURE_UNKNOWN" || cd.Town == "TOWN_NO_TYPE";
+            float sub = random != 0 && upgradeOrNeutral ? upgradeSub : 0f;
+            float t = X87.Add(X87.Mul(X87.Mul(X87.Sub(max, min), DrawValue(u)), 1.0 / 4294967296.0), min);
+            float g = X87.Mul(X87.Sub(X87.Mul(TableSqrt(cd.Tier), t), sub), cd.WeeklyGrowth);
+            n = (int)g;
+            if (n <= 1) n = 1;
+            if (random == 2) n = (int)X87.Mul(n, downgradeMult);
+        }
+        return n < 1 ? 1 : n;
+    }
+
+    /// <summary>
+    /// The exe's table square root FUN_0046ed30: 0 for +0.0; otherwise the exponent ((bits + 0xc0800000) &gt;&gt; 1) +
+    /// 0x3f800000 masked to 0x7f800000, the mantissa from the table 00f92810[(bits &gt;&gt; 8) &amp; 0xffff] that the static
+    /// initialiser 0046ee40 fills for x = 2..4 (index 0..0x7fff) and 1..2 (0x8000..) with the mantissa of the bisection
+    /// root 0046ebb0 (64 halvings of [0, x + 1], keeping the low end) stored as a float. It runs before WinMain sets the
+    /// chop control word, so rounded to nearest: (float)√x of x cut to a 15-bit mantissa.
+    /// </summary>
+    public static float TableSqrt(float x)
+    {
+        uint bits = BitConverter.SingleToUInt32Bits(x);
+        if (bits == 0) return 0f;
+        uint idx = (bits >> 8) & 0xffff;
+        float xm = BitConverter.UInt32BitsToSingle(((idx & 0x8000) != 0 ? 0x3f800000u : 0x40000000u) | ((idx & 0x7fff) << 8));
+        uint mant = BitConverter.SingleToUInt32Bits((float)Math.Sqrt(xm)) & 0x7fffff;
+        uint exp = (((bits + 0xc0800000u) >> 1) + 0x3f800000u) & 0x7f800000u;
+        return BitConverter.UInt32BitsToSingle(exp | mant);
+    }
+
+    /// <summary>
+    /// IAdvMapMonster vf0 = 004ef500, run when the monster enters the world (0041aad0 → 0041aa40 calls vf0 of the first
+    /// of the object's query slots 4 / 0x20 / 0x1c that answers; the monster's 0x1c returns its +0xc8): unless the map
+    /// monster has DoesNotDependOnDifficulty (+0xdd), every stack's count becomes (int)(count · CountCoef) (chop), at
+    /// least 1. The coefficient (0098ded0 → 004f6850) is the difficulty's item of NeutralsInCampaign/CountCoefs
+    /// (RPGStats +0xc8) in a campaign (game settings +9) or NeutralsNotInCampaign/CountCoefs (+0xf0), 1 past the list;
+    /// 004f6850 maps the difficulty enum 0 → item 1, 1 → item 0, 2 → 2, 3 → 3, i.e. items easy, normal, hard, heroic
+    /// as our <see cref="AdvState.Difficulty"/>. Monsters entering with the hook: the map load (0041e600 → 0041e570) and
+    /// the creature-week spawn (009919a0). UNVERIFIED: script-created monsters (CreateMonster 005c8aa0 queues a command)
+    /// are left unscaled. The vf's first part (world vf 0xd4 → 0063ee50) is not ported.
+    /// </summary>
+    void ApplyNeutralCountCoef(MapObject o, ObjState os)
+    {
+        if (o.DoesNotDependOnDifficulty) return;
+        float k = NeutralCoef("CountCoefs");
+        foreach (var g in os.Guards)
+        {
+            if (g.Count <= 0) continue;
+            int n = (int)X87.Mul(g.Count, k);
+            g.Count = n <= 1 ? 1 : n;
+        }
+    }
+
+    /// <summary>The difficulty's item of adventure/Neutrals[Not]InCampaign/&lt;list&gt; (004f6850 / 004f67b0 / 004f68f0), 1 past the list.</summary>
+    float NeutralCoef(string list)
+    {
+        var coefs = Db.Stats.Node((S.Campaign ? "adventure/NeutralsInCampaign/" : "adventure/NeutralsNotInCampaign/") + list)?.Elements("Item").ToList();
+        return coefs != null && S.Difficulty >= 0 && S.Difficulty < coefs.Count ? (float)XmlHelpers.ParseDouble(coefs[S.Difficulty].Value, 1) : 1f;
     }
 
     /// <summary>A random artifact of the class (null = any) from the map's generator (<see cref="GenerateArtifact(int, int)"/>).</summary>

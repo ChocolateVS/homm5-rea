@@ -341,13 +341,18 @@ public sealed class MapLoader
                 o.Amount = e.Int("Amount"); o.Amount2 = e.Int("Amount2");
                 o.Mood = e.Str("Mood"); o.Courage = e.Str("Courage");
                 o.DoesNotGrow = e.Bool("DoesNotGrow");
+                o.DoesNotDependOnDifficulty = e.Bool("DoesNotDependOnDifficulty");
                 var res = Resources.Parse(e.Element("Resources"));
                 if (res != new Resources(0, 0, 0, 0, 0, 0, 0)) o.Reward = res;
                 o.RewardArtifact = e.Str("ArtifactID") is { Length: > 0 } a && a != "ARTIFACT_NONE" ? a : null;
                 foreach (var s in e.Items("AdditionalStacks"))
                 {
                     var cr = s.Str("Creature");
-                    if (cr.Length > 0 && cr != "CREATURE_UNKNOWN") o.AdditionalStacks.Add(new ArmySlot(cr, s.Int("Amount", s.Int("Count"))));
+                    if (cr.Length > 0 && cr != "CREATURE_UNKNOWN")
+                    {
+                        o.AdditionalStacks.Add(new ArmySlot(cr, s.Int("Amount", s.Int("Count"))));
+                        o.AdditionalStackRolls.Add((s.Bool("CustomAmount"), s.Int("Amount2")));
+                    }
                 }
                 break;
             case ObjectKind.Artifact:

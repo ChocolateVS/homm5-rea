@@ -1,6 +1,7 @@
 using H5.Adventure.Map;
 using H5.Adventure.State;
 using H5.Core.Data;
+using H5.Core.Numerics;
 
 namespace H5.Adventure.Engine;
 
@@ -261,6 +262,27 @@ public sealed partial class Adventure
     Resources SiloIncome(string town) =>
         Db.SiloIncome.TryGetValue(town, out var r) ? r : new Resources(0, 0, 0, 0, 0, 0, 0);
 
+    /// <summary>
+    /// A map monster's weekly growth, its IAdvMapWeeklyUpdate vf0 = 004eec20 (skipped with DoesNotGrow, monster +0x70 of
+    /// that interface): per stack v = (int)((remainder + 100·count) · WeeklyGrowCoef) (FILD, FMUL float, chop), the
+    /// remainder (the per-slot array at +0x1c, zeroed by the ctor 004effd0) becomes v % 100 and the stack gains
+    /// v / 100 − count when positive (004bace0). The coefficient is the difficulty's item of
+    /// Neutrals[Not]InCampaign/WeeklyGrowCoefs (004f67b0, RPGStats +0xe0 / +0x108), 1 past the list.
+    /// </summary>
+    public static void NeutralWeeklyGrowth(ObjState os, float k)
+    {
+        if (os.GrowthRemainder.Length < os.Guards.Count) Array.Resize(ref os.GrowthRemainder, os.Guards.Count);
+        for (int i = 0; i < os.Guards.Count; i++)
+        {
+            var g = os.Guards[i];
+            if (g.Count <= 0) continue;
+            int v = (int)X87.Mul(os.GrowthRemainder[i] + g.Count * 100, k);
+            os.GrowthRemainder[i] = v % 100;
+            int add = v / 100 - g.Count;
+            if (add >= 0 && g.Count < g.Count + add) g.Count += add;
+        }
+    }
+
     void WeeklyGrowthAll()
     {
         TownWeeklyGrowth(full: true);
@@ -268,13 +290,7 @@ public sealed partial class Adventure
         foreach (var (idx, os) in S.Objects)
         {
             var o = O(idx);
-            // Neutral stacks grow weekly by the difficulty coefficient (DefaultStats WeeklyGrowCoefs, p.325).
-            if (o.Kind == ObjectKind.Monster && !os.Removed && !o.DoesNotGrow)
-            {
-                var coefs = Db.Stats.Node(S.Campaign ? "adventure/NeutralsInCampaign/WeeklyGrowCoefs" : "adventure/NeutralsNotInCampaign/WeeklyGrowCoefs")?.Elements("Item").ToList();
-                double k = coefs is { Count: > 0 } ? XmlHelpers.ParseDouble(coefs[Math.Min(S.Difficulty, coefs.Count - 1)].Value, 1) : 1.09;
-                foreach (var g in os.Guards) g.Count = Math.Max(g.Count + 1, (int)(g.Count * k));
-            }
+            if (o.Kind == ObjectKind.Monster && !os.Removed && !o.DoesNotGrow) NeutralWeeklyGrowth(os, NeutralCoef("WeeklyGrowCoefs"));
         }
     }
 

@@ -132,9 +132,18 @@ public sealed class MapObject
     public int Amount, Amount2;
     public string Mood = "", Courage = "";
     public bool DoesNotGrow, CustomAmount;
+    /// <summary>AdvMapMonster DoesNotDependOnDifficulty (+0xdd): no CountCoefs scaling when the monster enters the world (004ef500).</summary>
+    public bool DoesNotDependOnDifficulty;
+    /// <summary>Added by a script (<c>ScriptAddObject</c>) rather than placed on the map.</summary>
+    public bool ScriptCreated;
     public Resources? Reward;
     public string? RewardArtifact;
     public List<ArmySlot> AdditionalStacks = new();
+    /// <summary>
+    /// Per AdditionalStacks item (same index; the item's Amount is the slot's Count): its CustomAmount and Amount2
+    /// (item reader 009fdd20). Missing entries (RMG guards) count as custom.
+    /// </summary>
+    public List<(bool Custom, int Amount2)> AdditionalStackRolls = new();
 
     // Artifact / shrine / scroll
     public string? ArtifactId;
