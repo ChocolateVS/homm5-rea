@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Adventure.State;
 
 namespace H5.Adventure.Engine;
@@ -127,12 +128,15 @@ public sealed partial class Adventure
         return null;
     }
 
-    /// <summary>Gold paid for an artifact at a marketplace.</summary>
+    /// <summary>
+    /// Gold paid for an artifact at a marketplace (exe FUN_00623160: FILD cost (FUN_00ca6410) · RPGStats +0x1c8, a plain
+    /// FISTP — truncation under the game's chop control word, not rounding half to even).
+    /// </summary>
     public int ArtifactSellPrice(string artifact)
     {
         if (!Core.Artifacts.TryGetValue(artifact, out var def)) return 0;
-        double coef = Core.Stats.Get("adventure/Marketplace_ArtifactSellCostOfGoldCoef", 0.5);
-        return (int)Math.Round(def.CostOfGold * coef, MidpointRounding.ToEven);
+        float coef = (float)Core.Stats.Get("adventure/Marketplace_ArtifactSellCostOfGoldCoef", 0.5);
+        return (int)X87.Mul(def.CostOfGold, coef);
     }
 
     string? DoSellArtifact(SellArtifactCmd c)

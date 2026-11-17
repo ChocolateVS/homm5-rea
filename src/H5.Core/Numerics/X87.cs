@@ -32,6 +32,21 @@ public static class X87
         return r;
     }
 
+    /// <summary>
+    /// FADD of two exact operands of any size (a float, or a 64-bit integer as FILD qword loads it, below 2^53), chopped
+    /// from the exact sum (the double sum is corrected with its rounding error).
+    /// </summary>
+    public static float AddExact(double a, double b)
+    {
+        double s = a + b;
+        double bb = s - a, err = (a - (s - bb)) + (b - bb);   // TwoSum: exact sum = s + err
+        if (s == 0) return Chop(err);
+        float r = (float)s;
+        double d = (double)r - s;                               // exact (r and s are adjacent)
+        if (s > 0 ? d > err : d < err) r = s > 0 ? MathF.BitDecrement(r) : MathF.BitIncrement(r);
+        return r;
+    }
+
     /// <summary>FSUB of two floats (a − b), chopped like <see cref="Add"/>.</summary>
     public static float Sub(float a, float b) => Chop((double)a - b);
 

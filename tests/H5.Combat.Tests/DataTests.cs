@@ -73,8 +73,8 @@ public class DataTests(GameDataFixture f)
     [InlineData(0, 1)]
     [InlineData(999, 1)]
     [InlineData(1000, 2)]
-    [InlineData(34140, 14)]
-    [InlineData(34141, 15)]
+    [InlineData(34139, 14)]
+    [InlineData(34140, 15)]
     [InlineData(35000, 15)]
     public void ExperienceLevels(int exp, int level) => Assert.Equal(level, f.Db.Experience.LevelFor(exp));
 

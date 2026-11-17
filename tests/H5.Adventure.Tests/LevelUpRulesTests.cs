@@ -19,16 +19,17 @@ public class LevelUpRulesTests(Fixture f)
         Assert.Equal(1000, t.For(2));
         Assert.Equal(20600, t.For(12));
         Assert.Equal(24320, t.For(13));
-        Assert.Equal(48283, t.For(17));
-        Assert.Equal(57540, t.For(18));        // 7714 × 1.2 = 9256.8 → 9257 (the Editor PDF has 57539)
-        Assert.Equal(167844, t.For(24));
-        Assert.Equal(201013, t.For(25));       // × (25 − 13) × 0.1 from here
-        Assert.Equal(786237, t.For(30));
-        Assert.Equal(32979435, t.For(36));
-        Assert.Equal(1216634591, t.For(40));   // single-precision products (D3D9 FPU mode)
+        Assert.Equal(34140, t.For(15));        // 4464 × 1.2 = 5356.8 → 5356: FISTP under OR AH,0xc truncates (00b4c773)
+        Assert.Equal(48279, t.For(17));
+        Assert.Equal(57533, t.For(18));        // (the round-to-nearest reading gave 57540, the Editor PDF 57539)
+        Assert.Equal(167782, t.For(24));
+        Assert.Equal(200933, t.For(25));       // trunc(chop(chop((25 − 13) · step) · 0.1f)) from here (00b4c7b7..00b4c7d9)
+        Assert.Equal(785826, t.For(30));
+        Assert.Equal(32960630, t.For(36));
+        Assert.Equal(1215939194, t.For(40));   // single-precision products (the game's _PC_24 control word)
         Assert.Equal(int.MaxValue, t.For(41));
-        Assert.Equal(17, t.LevelFor(57539));
-        Assert.Equal(18, t.LevelFor(57540));
+        Assert.Equal(17, t.LevelFor(57532));
+        Assert.Equal(18, t.LevelFor(57533));
         Assert.Equal(40, t.LevelFor(int.MaxValue));
     }
 

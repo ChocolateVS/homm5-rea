@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Adventure.Engine;
 using H5.Adventure.Map;
 using H5.Adventure.State;
@@ -419,7 +420,8 @@ public sealed partial class OriginalAdventureAI
         {
             if (!x.Alive || x.Owner < 0 || x.Owner == h.Owner || g.S.Players[x.Owner].Team == team || x.Pos.Floor != h.Pos.Floor || x.Garrisoned) continue;
             if (g.ArmyPower(x.Army.Live(), x) <= myPower) continue;
-            int reach = (int)Math.Round(x.MaxMovePoints * st.SearchDangerEnemyMobilityMultiplier + st.SearchDangerEnemyMobilityBonus);
+            // 00872330: trunc(chop(chop(move points (vf 0xfc) · +0x220) + +0x224)) under an explicit chop control word.
+            int reach = (int)X87.Add(X87.Mul(x.MaxMovePoints, (float)st.SearchDangerEnemyMobilityMultiplier), (float)st.SearchDangerEnemyMobilityBonus);
             set.UnionWith(g.ReachableCosts(x, reach).Keys);
         }
         return set;

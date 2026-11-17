@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using System.Xml.Linq;
 using H5.Core.IO;
 using H5.Core.Xdb;
@@ -390,11 +391,12 @@ public sealed class GameDatabase
 
 /// <summary>
 /// Hero experience thresholds as H5_Game.exe builds them (00b4c6b0, table at 01026d90 indexed by level): levels 1..12
-/// are the constants at 00f755e0; each later step is the previous step × 1.2 (00e12f1c) up to level 24, then
-/// × (level − 13) × 0.1 (00e12f10), rounded to nearest and clamped to [0, 2³¹−1]; level 41 and above read 2³¹−1.
-/// The products are single precision: D3D9 CreateDevice (00a3fe20, flags 0x50 / 0x20) is called without
-/// D3DCREATE_FPU_PRESERVE, so the x87 runs at 24-bit precision (only levels 37–40 depend on this). The Editor
-/// Documentation table (HOMM5_Hero_Level_and_Experience.pdf) used before is 1 lower from level 18 on and drifts.
+/// are the constants at 00f755e0; each later step is trunc(chop(previous step × 1.2f (00e12f1c))) up to level 24, then
+/// trunc(chop(chop((level − 13) × step) × 0.1f (00e12f10))) — FILD / FMUL (FIMUL), and FISTP under FNSTCW; OR AH,0xc
+/// (00b4c760..00b4c77e, 00b4c7b7..00b4c7d9), i.e. truncation, not rounding — summed and clamped to [0, 2³¹−1]; level
+/// 41 and above read 2³¹−1. The products are single precision (the game's control word, _PC_24; only levels 37–40
+/// depend on it): level 15 at 34140 (5356.8 → 5356), 18 at 57533. Neither the earlier round-to-nearest reading nor the
+/// Editor Documentation table (HOMM5_Hero_Level_and_Experience.pdf, 57539 at 18) follows the exe.
 /// </summary>
 public sealed class ExperienceTable
 {
@@ -408,8 +410,7 @@ public sealed class ExperienceTable
         int step = first[^1] - first[^2], total = first[^1];
         for (int level = 13; level <= 40; level++)
         {
-            float x = level <= 24 ? (float)step * 1.2f : (float)(level - 13) * (float)step * 0.1f;
-            step = (int)MathF.Round(x, MidpointRounding.ToEven);
+            step = (int)(level <= 24 ? X87.Mul(step, 1.2f) : X87.Mul(X87.Mul(level - 13, step), 0.1f));
             total = (int)Math.Clamp((long)total + step, 0, int.MaxValue);
             t[level - 1] = total;
         }

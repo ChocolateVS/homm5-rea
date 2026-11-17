@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Adventure.State;
 using HeroState = H5.Adventure.State.HeroState;
 
@@ -17,8 +18,10 @@ public sealed partial class OriginalAdventureAI
     /// <summary>
     /// Army sum of the AI fight estimate (exe FUN_004ea5c0 over FUN_004ea520): per stack max(Power, 1) (004bab00) ·
     /// <see cref="HeroLevelFactor"/> · count, times SiegeShootersCoef (+0x2e0) for a shooter when
-    /// <paramref name="mode"/> is 2 or SiegeFlyerCoef (+0x2f4) for a flyer when it is 1, accumulated with ftol; an army
-    /// whose hero belongs to a human player is then × (1 + CowardiceVersusHuman) (FUN_00c02ac0, row +0xc).
+    /// <paramref name="mode"/> is 2 or SiegeFlyerCoef (+0x2f4) for a flyer when it is 1, accumulated with ftol
+    /// (004ea676..004ea684: FILD qword v · k (1.0 otherwise), FILD qword total, FADDP — each chopped to 24 bits, so v and
+    /// the running total lose their low bits above 2^24); an army whose hero belongs to a human player is then
+    /// ftol(chop(total · chop(CowardiceVersusHuman + 1.0f))) (FUN_00c02ac0, row +0xc; 004ea72e).
     /// GAP-detail: the war machine part (004ea220) is fed by the town's garrison machines (FUN_00cd0a30) only and is
     /// not ported.
     /// </summary>
@@ -28,14 +31,14 @@ public sealed partial class OriginalAdventureAI
         foreach (var s in stacks)
         {
             if (s.Count <= 0 || !g.Core.Creatures.TryGetValue(s.Creature, out var c)) continue;
-            double k = 1.0;
+            float k = 1f;
             if (mode == 2 && c.Shots > 0) k = (float)st.SiegeShootersCoef;
             else if (mode == 1 && c.Flying) k = (float)st.SiegeFlyerCoef;
             long v = Math.Max(c.Power, 1) * level * s.Count;
-            total = (long)(v * k + total);
+            total = (long)X87.AddExact(X87.Mul(v, k), total);
         }
         if (hero != null && hero.Owner >= 0 && g.S.Players[hero.Owner].Human)
-            total = (long)(total * ((float)diff.CowardiceVersusHuman + 1.0));
+            total = (long)X87.Mul(total, X87.Add((float)diff.CowardiceVersusHuman, 1f));
         return total;
     }
 
