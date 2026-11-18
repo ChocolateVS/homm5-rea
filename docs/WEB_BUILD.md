@@ -408,6 +408,15 @@ in parts between frames, so reading starts while it is still being made), and th
 | object pass (`load: objects`) | 31.0 s | 19.5–21 s |
 | decoded store second visit: object pass | – | 7.2 s |
 
+AOT builds, back to back on the same machine (headless Chromium, GPU, cold browser; before = 314f87a, after = 0f07e37):
+
+| | before | after |
+|---|---|---|
+| A2M1 first visit: statics stage | 2.6 s | 1.1 s |
+| A2M1 first visit: object pass | 14.7 s | 7.6 s |
+| page → adventure on screen | 25.5 s | 17.5 s |
+| wasm heap after load | 820 MB | 820 MB |
+
 The rest of a first visit's object pass is CPU: decoding the Granny animations (`ch anim set`, Oodle1 in C#, ~60 %),
 converting clips to Godot animations, building meshes.
 
@@ -428,6 +437,9 @@ before. Characters of the same model share their decoded data (`CharacterBuilder
 | page → first frame (`2dog: first frame`) | 14.3–17.3 s | 5.5 s |
 | longest frame gap up to the menu | 16.6 s | 4.9 s (engine start: Godot's own shader compiles + pak mount; then ≤ ~0.6 s steps) |
 | page → `main menu on screen` | 17.9 s | 12.4 s |
+
+AOT builds, back to back (before = 314f87a, after = 0f07e37): first frame 9.7 s → 3.4 s after the page started,
+longest frame gap up to the menu 9.0 s → 2.7 s, `main menu on screen` 10.1 s → 7.6 s.
 
 When the shader warm-up (*Shaders*) has finished before the engine starts, Godot's renderer start takes 0.1 s instead of
 ~2 s. The decoded store is read with a size call and a copy into the C# array (`h5cache.js` `size` / `copy`) instead of

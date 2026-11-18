@@ -39,7 +39,9 @@ export function findFirefox() {
   return undefined;
 }
 
-const COMMON = ['--enable-precise-memory-info', '--autoplay-policy=no-user-gesture-required'];
+// --disable-domain-blocking-for-3d-apis: after a GPU process failure Chromium blocks WebGL for the page's site (here
+// 127.0.0.1) for a while, so every following page of that browser reported "WebGL2 missing" although a blank page had it.
+const COMMON = ['--enable-precise-memory-info', '--autoplay-policy=no-user-gesture-required', '--disable-domain-blocking-for-3d-apis'];
 const GPU_SET = { name: 'gpu', args: ['--enable-gpu', '--ignore-gpu-blocklist', process.platform === 'win32' ? '--use-angle=d3d11' : '--use-angle=vulkan'] };
 // Software renderers, in the order tried. All are headless and work without a GPU; they differ in which GL backend
 // Chromium's GPU process gets (and whether there is a separate GPU process at all).

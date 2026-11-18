@@ -54,6 +54,20 @@ async function persistent(profile) {
   if (!(await probeWebGL2(ctx)).ok) { await ctx.close(); envFailure('a new browser profile got no WebGL 2'); }
   return ctx;
 }
+// One visit in a persistent profile: a page that finds no WebGL 2 is an environment failure, so the visit is made again
+// in a newly opened browser on the same profile (twice at most). Returns the context (the caller closes it) and page.
+async function visit(profile, name, scenario, before) {
+  for (let attempt = 0; ; attempt++) {
+    const ctx = await persistent(profile);
+    const page = ctx.pages()[0] || await ctx.newPage();
+    await before?.(page);
+    await run(name, page, scenario);
+    if (results[name].result !== 'env:webgl2-missing' || attempt >= 2) return { ctx, page };
+    console.log(`${name}: the page found no WebGL 2 (environment) - reopening the browser and visiting again`);
+    (environment.retries ??= []).push(name);
+    await ctx.close();
+  }
+}
 async function launch(opts) {
   const b = await BT.launch(opts);
   if (!(await probeWebGL2(b)).ok) { await b.close(); envFailure('a new browser got no WebGL 2'); }
@@ -195,15 +209,12 @@ if (only.includes('remember')) {
   // start the game without any picking.
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'h5web-'));
   try {
-    let ctx = await persistent(profile);
-    let page = ctx.pages()[0] || await ctx.newPage();
-    const copied = new Promise((r) => page.on('console', (m) => { if (/H5DATA_OPFS_CACHED/.test(m.text())) r(); }));
-    await run('remember-first', page, SCENARIOS.menu);
+    let copied;
+    let { ctx } = await visit(profile, 'remember-first', SCENARIOS.menu,
+      (page) => { copied = new Promise((r) => page.on('console', (m) => { if (/H5DATA_OPFS_CACHED/.test(m.text())) r(); })); });
     await Promise.race([copied, new Promise((r) => setTimeout(r, timeoutS * 1000))]);
     await ctx.close();
-    ctx = await persistent(profile);
-    page = ctx.pages()[0] || await ctx.newPage();
-    await run('remember-second', page, { ...SCENARIOS.menu, pick: false });
+    ({ ctx } = await visit(profile, 'remember-second', { ...SCENARIOS.menu, pick: false }));
     await ctx.close();
   } finally { fs.rmSync(profile, { recursive: true, force: true }); }
 }
@@ -220,16 +231,15 @@ if (only.includes('decoded')) {
     return { objectsMs: ms(/load: objects (\d+) ms/), chTemplateMs: ms(/ch template=(\d+)ms/), cacheHits: hit ? `${hit[1]}/${hit[2]}` : null };
   };
   try {
-    for (const visit of ['decoded-first', 'decoded-second']) {
-      const ctx = await persistent(profile);
-      const page = ctx.pages()[0] || await ctx.newPage();
-      await run(visit, page, q);
+    for (const name of ['decoded-first', 'decoded-second']) {
+      const { ctx, page } = await visit(profile, name, q);
       // Let the background IndexedDB writes finish before the browser closes.
-      if (visit === 'decoded-first') await page.waitForTimeout(5000);
+      if (name === 'decoded-first') await page.waitForTimeout(5000);
       await ctx.close();
-      Object.assign(results[visit], loadTimes(visit));
+      Object.assign(results[name], loadTimes(name));
     }
-    if (!(results['decoded-second'].cacheHits && !results['decoded-second'].cacheHits.startsWith('0/'))) results['decoded-second'].result = 'no cache hits';
+    const second = results['decoded-second'];
+    if (second.result === 'ok' && !(second.cacheHits && !second.cacheHits.startsWith('0/'))) second.result = 'no cache hits';
   } finally { fs.rmSync(profile, { recursive: true, force: true }); }
 }
 if (only.includes('audio')) {
@@ -309,14 +319,10 @@ if (only.includes('persist')) {
   // export it as a zip and import it back under a new name (applied on the reload of visit 3).
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'h5web-'));
   try {
-    let ctx = await persistent(profile);
-    let page = ctx.pages()[0] || await ctx.newPage();
-    await run('persist-save', page, { query: '?nocache&args=' + encodeURIComponent(opt('--map-arg', '--adventure=A2M1') + ' --save-dev=quicksave'),
+    let { ctx, page } = await visit(profile, 'persist-save', { query: '?nocache&args=' + encodeURIComponent(opt('--map-arg', '--adventure=A2M1') + ' --save-dev=quicksave'),
       marker: /\[H5\] web: adventure on screen/, then: [/\[H5\] saved "/, /user data changed/], settle: 2 });
     await ctx.close();
-    ctx = await persistent(profile);
-    page = ctx.pages()[0] || await ctx.newPage();
-    await run('persist-reload', page, { query: '?nocache&args=--skip-intro', marker: /\[H5\] web: user data .*saves\/[^,]+\.sav/, then: [/\[H5\] web: main menu on screen/], settle: 2,
+    ({ ctx, page } = await visit(profile, 'persist-reload', { query: '?nocache&args=--skip-intro', marker: /\[H5\] web: user data .*saves\/[^,]+\.sav/, then: [/\[H5\] web: main menu on screen/], settle: 2,
       after: async (pg) => {
         const r = await pg.evaluate(async () => {
           const files = await h5saves.listUserFiles();
@@ -328,7 +334,7 @@ if (only.includes('persist')) {
           return { result: back.length === 1 && back[0].data.length === sav.data.length ? 'ok' : 'zip-roundtrip-failed', idbFiles: files.length, saveBytes: sav.data.length };
         });
         return r;
-      } });
+      } }));
     page = ctx.pages()[0];
     await run('persist-import', page, { pick: true, query: '?nocache&args=--skip-intro', marker: /H5SAVES_IMPORTED 1/, then: [/\[H5\] web: user data .*imported-copy\.sav/], settle: 1 });
     await ctx.close();
