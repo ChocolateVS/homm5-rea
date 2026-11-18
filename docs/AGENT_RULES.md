@@ -28,7 +28,12 @@ Never invent behaviour: anything not traced is a GAP row in the relevant ledger 
 - Keep ALL your scratch files (worktree, Ghidra project copy, outputs) under your own named subfolder of the scratchpad; never read from or write to another helper's folder.
 
 ## Machine
-- The user uses this PC. Godot only off-screen AND silent: `--position -32000,-32000 --window-size=1920x1080 --audio-driver Dummy` on every run (never play sound). Headless browsers: the web harness passes `--mute-audio`.
+- The user uses this PC. Every Godot run (game, editor, import, tests that open a window) goes through the hidden-desktop launcher
+  (tools/hidden-desktop/README.md: a separate invisible desktop; no flashing, no taskbar entry, no focus theft; GPU works) and stays
+  off-screen AND silent (never play sound), from any checkout:
+  `tools/hidden-desktop/run.sh "$GODOT" --path game --position -32000,-32000 --window-size=1920x1080 --audio-driver Dummy -- <game args>`
+  (`$GODOT` = G:/H5Reborn/tools/godot/Godot_v4.7.2-stable_mono_win64/Godot_v4.7.2-stable_mono_win64_console.exe; add `--timeout <s>` before
+  `"$GODOT"` to kill a hung run). Headless browsers: the web harness passes `--mute-audio` (no window; the launcher is optional).
 - Never launch H5_Game.exe or any mod exe; never capture the user's screen.
 - Kill only processes you started (no `taskkill /IM`).
 - Portable code (Linux too): use the InstallPath helper for game-folder files, no backslash paths.
