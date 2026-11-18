@@ -136,3 +136,14 @@ from the description. Move an item to "Done" with the commit when fixed.
    shot's damage with "x N"; now as the exe. The ballista already fires 00a75bf0's count of shots in one action (1;
    Triple Ballista 2; Ballista perk +1; Ring of Machine Affinity +1; WarMachineAuditTests) — commit "combat prediction:
    a Ballista's shots summed into one attack per H5_Game.exe 00a63020".
+27. **Auto-combat** ("the auto combat seems to jump around and skip"): reproduced in off-screen duels with auto-combat
+   on (`--autoplay-turns`, the same path as the HUD toggle): the event order was right (one command per turn, played
+   in full before the next), but every turn's AI decision (the original AI, 50–950 ms per decision natively, far more
+   in the browser) ran on the render thread, so the picture froze and then caught up — the camera's return flight
+   after a fight camera jumped ~20 units in one frame, moves started a cell ahead. Auto-combat makes this happen on
+   every turn instead of only the computer's. The exe's toggle (0054b930) only hands the side to the AI controller,
+   whose command goes through the normal command path at turn start (0054b650 → FUN_00559c80), as ours does. The
+   AI now thinks on a copy of the battle on a worker thread (`PendingDecision`, sync in the browser build, which has no
+   threads) and its command is used only for the position it was decided for; frames over 40 ms in the same duel went
+   11 → 1 (PendingDecisionTests) — commit "combat: AI turns decided off the render thread (user report 27)".
+   The adventure battle's computer side (AdventureCombatSession.Tick) still decides in place.

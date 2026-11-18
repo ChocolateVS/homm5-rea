@@ -397,10 +397,23 @@ public partial class CombatScreen : Control
         }
         if (b.SideToAct is int s && Session.LocalSides.Contains(s))
         {
-            Session.Submit(_autoAi.Decide(b, s) with { Side = s });
+            // Auto-combat hands the side to the AI controller (exe 0054b930 → 0054b650), whose command goes
+            // through the normal command path once the previous one has played. The AI thinks on a copy off the
+            // render thread (PendingDecision) so the animations around the decision do not freeze and jump.
+            if (_autoDecision is not { } d) { _autoDecision = PendingDecision.Start(b, s, _autoAi, AiThreads); return; }
+            if (!d.IsCompleted) return;
+            _autoDecision = null;
+            if (d.Error is { } err) GD.PushError($"[H5] auto-combat AI: {err}");
+            if (d.TakeIfCurrent(b) is not { } cmd) return;   // the battle moved on: decide again next frame
+            Session.Submit(cmd);
             if (!Autoplay && CombatLauncher.AutoplayTurns > 0) CombatLauncher.AutoplayTurns--;
         }
     }
+
+    /// <summary>The auto-combat decision being worked out, if any.</summary>
+    PendingDecision? _autoDecision;
+    /// <summary>The AI may think on a worker thread (not in the browser build, which has no threads).</summary>
+    static bool AiThreads => !OS.HasFeature("web");
 
     /// <summary>Dev aid (`--hover-target`): aims the simulated mouse at a legal target on our turn.</summary>
     void AimDevMouse()
