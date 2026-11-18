@@ -155,13 +155,9 @@ public sealed class LocalCombatSession : CombatSession
         }
         if (_battle.SideToAct is int toAct && _aiSides.Contains(toAct))
         {
-            // The AI thinks on a copy off the render thread (see PendingDecision); its command is submitted
-            // only for the position it was decided on.
-            if (_decision is not { } d) { _decision = PendingDecision.Start(_battle, toAct, _ai, !OS.HasFeature("web")); return; }
-            if (!d.IsCompleted) return;
-            _decision = null;
-            if (d.Error is { } err) GD.PushError($"[H5] combat AI: {err}");
-            if (d.TakeIfCurrent(_battle) is { } cmd) Submit(cmd);
+            // The AI thinks on a copy off the render thread, or in steps in the browser (AiThinking); its command
+            // is submitted only for the position it was decided on.
+            if (AiThinking.Poll(ref _decision, _battle, toAct, _ai, "combat AI") is { } cmd) Submit(cmd);
         }
     }
 

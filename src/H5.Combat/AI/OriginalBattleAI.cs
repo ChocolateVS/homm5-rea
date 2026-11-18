@@ -18,7 +18,7 @@ namespace H5.Combat.AI;
 /// with the combat RNG before choosing, which only matters for exact ties; ours keep generation order).
 /// Ledger: docs/rules/AUDIT_AI.md, "Combat AI".
 /// </summary>
-public sealed partial class OriginalBattleAI : IBattleAI
+public sealed partial class OriginalBattleAI : ISteppedBattleAI
 {
     /// <summary>
     /// Game difficulty on the script scale (AdvState.Difficulty: 0 Easy, 1 Normal, 2 Hard, 3 Heroic). The exe reads
@@ -82,19 +82,33 @@ public sealed partial class OriginalBattleAI : IBattleAI
     public int LastLevel { get; private set; }
     public AiDifficulty LastRow { get; private set; }
 
-    public BattleCommand Decide(Battle b, int side)
+    public BattleCommand Decide(Battle b, int side) => ISteppedBattleAI.Finish(DecideSteps(b, side));
+
+    /// <summary>
+    /// <see cref="Decide"/> in steps (<see cref="ISteppedBattleAI"/>): the same work in the same order, with a pause
+    /// (null) after candidate generation, after each candidate's simulation and inside the flee decision's simulated
+    /// round, so a caller without threads can spread one decision over several frames. The last element is the command.
+    /// </summary>
+    public IEnumerable<BattleCommand?> DecideSteps(Battle b, int side)
     {
         _stats ??= CombatAiStats.Load(b.Db);
         var s = b.State;
         // An AI army's tactics phase (004d9520 → army vf 0x44 = 004d95b0): auto placement FUN_0085a190 (the battle-start
         // placement, ExeAutoPlacement), then the phase is ended at once (army vf 0xd0); the AI places nothing itself.
-        if (s.Phase == BattlePhase.Tactics) return new EndTacticsCmd { Side = side };
+        if (s.Phase == BattlePhase.Tactics) { yield return new EndTacticsCmd { Side = side }; yield break; }
         var la = b.GetLegalActions();
-        if (la == null || b.SideToAct != side) return new WaitCmd(Actor.Hero(side)) { Side = side };
+        if (la == null || b.SideToAct != side) { yield return new WaitCmd(Actor.Hero(side)) { Side = side }; yield break; }
 
         // FUN_00c97930 runs the flee decision (FUN_00c972d0) before every think; the flag becomes a retreat (0054b650).
-        LastRetreat = Retreats ? RetreatDecision(b, side) : null;
-        if (LastRetreat != null) return new SurrenderCmd { Side = side, PayRansom = false };
+        string? retreat = null;
+        if (Retreats)
+            foreach (var step in RetreatDecisionSteps(b, side))
+            {
+                if (step.Done) { retreat = step.Reason; break; }
+                yield return null;
+            }
+        LastRetreat = retreat;
+        if (LastRetreat != null) { yield return new SurrenderCmd { Side = side, PayRansom = false }; yield break; }
 
         var start = CombatValue.Of(b, side);
         var mode = SelectMode(start);
@@ -110,6 +124,7 @@ public sealed partial class OriginalBattleAI : IBattleAI
         var candidates = Generate(b, la, side, diff, tooWeak, start);
         // FUN_008d6940: nothing generated with the restricting switches on → clear them and generate again.
         if (candidates.Count == 0 && tooWeak) candidates = Generate(b, la, side, diff, false, start);
+        yield return null;
 
         int manaLimit = ManaLimit(b, side, la, start, human);
         var cache = new Dictionary<BattleCommand, (CombatValue?, int)>();
@@ -121,6 +136,7 @@ public sealed partial class OriginalBattleAI : IBattleAI
                 var sim = new Battle(b.Db, s.Clone());
                 r = sim.Apply(c.Command).Ok ? (CombatValue.Of(sim, side), la.IsHero ? sim.State.Heroes[side].Mana : 0) : (null, 0);
                 cache[c.Command] = r;
+                yield return null;
             }
             if (r.Item1 == null) continue;
             (c.Value, c.ManaAfter) = r;
@@ -128,12 +144,12 @@ public sealed partial class OriginalBattleAI : IBattleAI
             survivors.Add(c);
         }
         LastCandidates = candidates;
-        if (survivors.Count == 0) return Defend(la, side);
+        if (survivors.Count == 0) { yield return Defend(la, side); yield break; }
 
         var best = survivors[0];
         for (int i = 1; i < survivors.Count; i++)
             if (CandidateBetter(best, survivors[i], coefs, mode)) best = survivors[i];
-        return best.Command;
+        yield return best.Command;
     }
 
     // ---------------------------------------------------------------- think level and row

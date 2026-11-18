@@ -348,6 +348,7 @@ public partial class CombatScreen : Control
 
     public override void _Process(double delta)
     {
+        AiThinking.Frame();
         _camera.Process(delta, GetViewport().GuiGetFocusOwner() is not LineEdit);
         _cine.Process(delta);
         foreach (var v in _units.Values) v.PositionPlaque(Arena.Camera);
@@ -399,12 +400,9 @@ public partial class CombatScreen : Control
         {
             // Auto-combat hands the side to the AI controller (exe 0054b930 → 0054b650), whose command goes
             // through the normal command path once the previous one has played. The AI thinks on a copy off the
-            // render thread (PendingDecision) so the animations around the decision do not freeze and jump.
-            if (_autoDecision is not { } d) { _autoDecision = PendingDecision.Start(b, s, _autoAi, AiThreads); return; }
-            if (!d.IsCompleted) return;
-            _autoDecision = null;
-            if (d.Error is { } err) GD.PushError($"[H5] auto-combat AI: {err}");
-            if (d.TakeIfCurrent(b) is not { } cmd) return;   // the battle moved on: decide again next frame
+            // render thread, or in steps over several frames in the browser (AiThinking), so the animations around
+            // the decision do not freeze and jump.
+            if (AiThinking.Poll(ref _autoDecision, b, s, _autoAi, "auto-combat AI") is not { } cmd) return;
             Session.Submit(cmd);
             if (!Autoplay && CombatLauncher.AutoplayTurns > 0) CombatLauncher.AutoplayTurns--;
         }
@@ -412,8 +410,6 @@ public partial class CombatScreen : Control
 
     /// <summary>The auto-combat decision being worked out, if any.</summary>
     PendingDecision? _autoDecision;
-    /// <summary>The AI may think on a worker thread (not in the browser build, which has no threads).</summary>
-    static bool AiThreads => !OS.HasFeature("web");
 
     /// <summary>Dev aid (`--hover-target`): aims the simulated mouse at a legal target on our turn.</summary>
     void AimDevMouse()
@@ -2106,6 +2102,7 @@ public partial class CombatScreen : Control
         _lastHover = null;
         Hud.SetPrediction(null);
         var (winner, reason) = Session.EndResult!.Value;
+        AiThinking.Report();
         GD.Print($"[H5] combat finished: winner side {winner?.ToString() ?? "none"} ({reason}) hash {Session.Battle.State.ComputeHash()} desync={Session.Desynced}");
         Hud.ShowResults(winner, reason);
         if (CombatLauncher.ResultsScreenshot is { } shot)

@@ -78,6 +78,7 @@ public static class CombatLauncher
 
     public static bool HandleArg(string arg)
     {
+        if (AiThinking.HandleArg(arg)) return true;
         if (arg.StartsWith("--combat-vs-ai="))
         {
             var parts = arg["--combat-vs-ai=".Length..].Split(',');

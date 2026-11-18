@@ -27,25 +27,42 @@ public sealed partial class OriginalBattleAI
     /// </summary>
     public string? RetreatDecision(Battle b, int side)
     {
+        foreach (var step in RetreatDecisionSteps(b, side))
+            if (step.Done) return step.Reason;
+        return null;
+    }
+
+    /// <summary>A step of <see cref="RetreatDecisionSteps"/>: a pause (not done), or done with the reason (null = fight on).</summary>
+    readonly record struct RetreatStep(bool Done, string? Reason);
+
+    /// <summary><see cref="RetreatDecision"/> in steps (pauses inside rule 2's simulated round); the last step is done.</summary>
+    IEnumerable<RetreatStep> RetreatDecisionSteps(Battle b, int side)
+    {
         var s = b.State;
-        if (s.Phase != BattlePhase.Combat || s.AiRetreat[side] is not { } info) return null;
-        if (b.RetreatRefusal(side, false) != 0) return null;
+        if (s.Phase != BattlePhase.Combat || s.AiRetreat[side] is not { } info) { yield return new(true, null); yield break; }
+        if (b.RetreatRefusal(side, false) != 0) { yield return new(true, null); yield break; }
         bool human = HumanSides is { } hs ? hs[side] : !s.AiControlled[side];
         int engine = EngineDifficulty(GameDifficulty);
-        if (!human && engine is 0 or 1) return null;
-        if (info.ArtifactValue < 1000 && info.Experience < 2000) return null;
-        if (SimulatedRoundLoses(b, side)) return "rule 2";
-        if (b.RetreatRefusal(side, true) != 0) return null;
+        if (!human && engine is 0 or 1) { yield return new(true, null); yield break; }
+        if (info.ArtifactValue < 1000 && info.Experience < 2000) { yield return new(true, null); yield break; }
+        bool loses = false;
+        foreach (var step in SimulatedRoundLosesSteps(b, side))
+        {
+            if (step is bool l) { loses = l; break; }
+            yield return new(false, null);
+        }
+        if (loses) { yield return new(true, "rule 2"); yield break; }
+        if (b.RetreatRefusal(side, true) != 0) { yield return new(true, null); yield break; }
         var h = s.Heroes[side];
         if (h.Resources is { } res)
         {
             long gold = res[6] - h.ResourcesSpent[6];
-            if (gold < b.SurrenderCost(side) + info.HireCost) return null;
+            if (gold < b.SurrenderCost(side) + info.HireCost) { yield return new(true, null); yield break; }
         }
         float t = RetreatThreshold(info.ArtifactValue, info.Experience, engine, attacker: side == 0);
         var v = CombatValue.Of(b, side);
         double my = v.MyPower, enemy = v.EnemyPower;
-        return my / (enemy * 1.1f + my) < t ? "ratio" : null;
+        yield return new(true, my / (enemy * 1.1f + my) < t ? "ratio" : null);
     }
 
     /// <summary>The threshold of the last test (0x00c97599..0x00c97663), float steps as the exe stores them.</summary>
@@ -71,8 +88,16 @@ public sealed partial class OriginalBattleAI
     /// </summary>
     public bool SimulatedRoundLoses(Battle b, int side)
     {
-        if (NextOwnTurnLimit(b, side) is not double limit) return false;
-        if (!DiesWithin(CombatValue.Of(b, side), 2.0)) return false;
+        foreach (var step in SimulatedRoundLosesSteps(b, side))
+            if (step is bool loses) return loses;
+        return false;
+    }
+
+    /// <summary><see cref="SimulatedRoundLoses"/> in steps: null pauses (the copy's decisions step too), then the result.</summary>
+    IEnumerable<bool?> SimulatedRoundLosesSteps(Battle b, int side)
+    {
+        if (NextOwnTurnLimit(b, side) is not double limit) { yield return false; yield break; }
+        if (!DiesWithin(CombatValue.Of(b, side), 2.0)) { yield return false; yield break; }
         var sim = new Battle(b.Db, b.State.Clone());
         var ai = new OriginalBattleAI
         {
@@ -81,9 +106,15 @@ public sealed partial class OriginalBattleAI
         for (int i = 0; i < 2000 && sim.State.Phase == BattlePhase.Combat && sim.State.Time <= limit; i++)
         {
             if (sim.SideToAct is not int who) break;
-            if (!sim.Apply(ai.Decide(sim, who)).Ok) break;
+            BattleCommand? cmd = null;
+            foreach (var step in ai.DecideSteps(sim, who))
+            {
+                if (step != null) { cmd = step; break; }
+                yield return null;
+            }
+            if (!sim.Apply(cmd!).Ok) break;
         }
-        return DiesWithin(CombatValue.Of(sim, side), 1.0);
+        yield return DiesWithin(CombatValue.Of(sim, side), 1.0);
     }
 
     /// <summary>FUN_00bfa0a0(k): own troop hit points (+0x68) &lt; enemy damage (+0xc) · factor(enemy attack +0x10, own defence +0x64) · k.</summary>

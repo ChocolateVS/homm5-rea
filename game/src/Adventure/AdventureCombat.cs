@@ -122,7 +122,12 @@ public sealed class AdventureCombatSession : CombatSession
                 if (!s.TacticsDone[side]) Submit(new EndTacticsCmd { Side = side });
             return;
         }
-        if (_battle.SideToAct is int toAct && _aiSides.Contains(toAct))
-            Submit(_ai.Decide(_battle, toAct) with { Side = toAct });
+        // The AI thinks on a copy off the render thread, or in steps in the browser (AiThinking); its command is
+        // submitted only for the position it was decided on (a script may change the battle meanwhile).
+        if (_battle.SideToAct is int toAct && _aiSides.Contains(toAct)
+            && AiThinking.Poll(ref _decision, _battle, toAct, _ai, "combat AI") is { } cmd)
+            Submit(cmd);
     }
+
+    PendingDecision? _decision;
 }

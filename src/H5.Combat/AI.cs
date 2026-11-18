@@ -7,6 +7,24 @@ public interface IBattleAI
 }
 
 /// <summary>
+/// An AI whose decision can be worked out in steps (for a caller without threads, which spreads one decision over
+/// several frames). Running every step gives exactly what <see cref="IBattleAI.Decide"/> gives.
+/// </summary>
+public interface ISteppedBattleAI : IBattleAI
+{
+    /// <summary>The decision in steps: null between steps, then the command as the last element.</summary>
+    IEnumerable<BattleCommand?> DecideSteps(Battle battle, int side);
+
+    /// <summary>Runs <paramref name="steps"/> to the end and returns the command.</summary>
+    static BattleCommand Finish(IEnumerable<BattleCommand?> steps)
+    {
+        foreach (var step in steps)
+            if (step != null) return step;
+        throw new InvalidOperationException("the AI decision ended without a command");
+    }
+}
+
+/// <summary>
 /// One-ply search AI: enumerates sensible commands, simulates each on a cloned battle and picks the one
 /// with the best resulting army value (plus small heuristics for buffs and positioning). Uses the same
 /// rules engine, so it is always legal; deterministic for a given state.
