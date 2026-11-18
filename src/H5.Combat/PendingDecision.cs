@@ -54,9 +54,9 @@ public sealed class PendingDecision
     public static PendingDecision Start(Battle live, int side, IBattleAI ai, DecisionMode mode)
     {
         var json = live.State.Serialize();
-        var copy = new Battle(live.Db, BattleState.Deserialize(json));
         if (mode == DecisionMode.Sliced && ai is ISteppedBattleAI stepped)
-            return new PendingDecision(json, side, null, stepped.DecideSteps(copy, side).GetEnumerator());
+            return new PendingDecision(json, side, null, SlicedSteps(live.Db, json, side, stepped).GetEnumerator());
+        var copy = new Battle(live.Db, BattleState.Deserialize(json));
         BattleCommand Run() => ai.Decide(copy, side) with { Side = side };
         Task<BattleCommand> task;
         if (mode == DecisionMode.Background) task = Task.Run(Run);
@@ -66,6 +66,14 @@ public sealed class PendingDecision
             catch (Exception e) { task = Task.FromException<BattleCommand>(e); }
         }
         return new PendingDecision(json, side, task, null);
+    }
+
+    /// <summary>The copy is made in the first step (the frame after the start), then the AI's steps.</summary>
+    static IEnumerable<BattleCommand?> SlicedSteps(H5.Core.Data.GameDatabase db, string json, int side, ISteppedBattleAI ai)
+    {
+        var copy = new Battle(db, BattleState.Deserialize(json));
+        yield return null;
+        foreach (var step in ai.DecideSteps(copy, side)) yield return step;
     }
 
     /// <summary>

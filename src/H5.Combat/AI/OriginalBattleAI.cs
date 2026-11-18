@@ -86,8 +86,9 @@ public sealed partial class OriginalBattleAI : ISteppedBattleAI
 
     /// <summary>
     /// <see cref="Decide"/> in steps (<see cref="ISteppedBattleAI"/>): the same work in the same order, with a pause
-    /// (null) after candidate generation, after each candidate's simulation and inside the flee decision's simulated
-    /// round, so a caller without threads can spread one decision over several frames. The last element is the command.
+    /// (null) inside candidate generation (<see cref="GenerateSteps"/>), after each candidate's simulated command and
+    /// after its scoring, and inside the flee decision's simulated round, so a caller without threads can spread one
+    /// decision over several frames. The last element is the command.
     /// </summary>
     public IEnumerable<BattleCommand?> DecideSteps(Battle b, int side)
     {
@@ -121,10 +122,11 @@ public sealed partial class OriginalBattleAI : ISteppedBattleAI
 
         // FUN_00a2f430 ("We are too weak to win", settings +0xa0 → think +0x1b4).
         bool tooWeak = TooWeak(start);
-        var candidates = Generate(b, la, side, diff, tooWeak, start);
+        var candidates = new List<Candidate>();
+        foreach (var _ in GenerateSteps(b, la, side, diff, tooWeak, start, candidates)) yield return null;
         // FUN_008d6940: nothing generated with the restricting switches on → clear them and generate again.
-        if (candidates.Count == 0 && tooWeak) candidates = Generate(b, la, side, diff, false, start);
-        yield return null;
+        if (candidates.Count == 0 && tooWeak)
+            foreach (var _ in GenerateSteps(b, la, side, diff, false, start, candidates)) yield return null;
 
         int manaLimit = ManaLimit(b, side, la, start, human);
         var cache = new Dictionary<BattleCommand, (CombatValue?, int)>();
@@ -134,7 +136,9 @@ public sealed partial class OriginalBattleAI : ISteppedBattleAI
             if (!cache.TryGetValue(c.Command, out var r))
             {
                 var sim = new Battle(b.Db, s.Clone());
-                r = sim.Apply(c.Command).Ok ? (CombatValue.Of(sim, side), la.IsHero ? sim.State.Heroes[side].Mana : 0) : (null, 0);
+                bool applied = sim.Apply(c.Command).Ok;
+                yield return null;
+                r = applied ? (CombatValue.Of(sim, side), la.IsHero ? sim.State.Heroes[side].Mana : 0) : (null, 0);
                 cache[c.Command] = r;
                 yield return null;
             }
@@ -284,10 +288,13 @@ public sealed partial class OriginalBattleAI : ISteppedBattleAI
 
     // ---------------------------------------------------------------- candidate generation (FUN_008d6940)
 
-    List<Candidate> Generate(Battle b, LegalActions la, int side, CombatDifficulty diff, bool tooWeak, CombatValue start)
+    /// <summary>
+    /// Candidate generation into <paramref name="list"/> in steps (a pause after the spells and after each melee-phase
+    /// record, see <see cref="DecideSteps"/>); the records and their order are those of one uninterrupted pass.
+    /// </summary>
+    IEnumerable<bool> GenerateSteps(Battle b, LegalActions la, int side, CombatDifficulty diff, bool tooWeak, CombatValue start, List<Candidate> list)
     {
         var s = b.State;
-        var list = new List<Candidate>();
         var enemies = s.Living.Where(e => b.Controller(e) != side && !e.IsObject).ToList();
         var hero = la.IsHero ? s.Heroes[side] : null;
 
@@ -341,6 +348,7 @@ public sealed partial class OriginalBattleAI : ISteppedBattleAI
             }
         }
 
+        yield return false;
         if (la.IsHero)
         {
             // Hero turn (FUN_008d2e90 "Hero melee"): a strike at every valid target, priority FUN_008d00d0(target, hero, 0).
@@ -350,7 +358,7 @@ public sealed partial class OriginalBattleAI : ISteppedBattleAI
                     Command = new HeroAttackCmd(t) { Side = side }, Label = $"hero->{t}",
                     Priority = s.Unit(t) is { } tu ? TargetPriority(b, tu, null, false, 0, 0) : 2,
                 });
-            return list;
+            yield break;
         }
 
         var u = s.Unit(la.Actor)!;
@@ -363,7 +371,7 @@ public sealed partial class OriginalBattleAI : ISteppedBattleAI
                     Command = new ShootCmd(u.Id, t) { Side = side }, Label = $"shoot->{t}",
                     Priority = s.Unit(t) is { } tu ? TargetPriority(b, tu, u, false, 0, 0) : 2,
                 });
-            return list;
+            yield break;
         }
 
         // Melee (FUN_008d68c0 → FUN_008d64e0; FUN_008d5b90 when that adds nothing).
@@ -377,22 +385,21 @@ public sealed partial class OriginalBattleAI : ISteppedBattleAI
         // FUN_00b3e1c0 lets through (inside the town); think +0x1bd (settings +0xa9 = FUN_00a2fa20(actor, 1)): the actor guards a shooter.
         var targets = InsideTownOnly(b, side, start) ? enemies.Where(e => b.InsideTown(e.Pos)).ToList() : enemies;
         bool guard = GuardsShooter(b, u, true);
-        void GuardAndBlock()
+        IEnumerable<bool> GuardAndBlock()
         {
-            if (!SideValue.OutShoots(start.My, start.Enemy)) return;
-            if (diff.UseDefendShootersMoves) list.AddRange(DefendShooterMoves(b, u, side, reach, guard));
-            if (diff.UseBlockEnemyMoves) list.AddRange(BlockEnemyMoves(b, u, side, reach, targets, diff));
+            if (!SideValue.OutShoots(start.My, start.Enemy)) yield break;
+            if (diff.UseDefendShootersMoves) foreach (var c in DefendShooterMoves(b, u, side, reach, guard)) { list.Add(c); yield return false; }
+            if (diff.UseBlockEnemyMoves) foreach (var c in BlockEnemyMoves(b, u, side, reach, targets, diff)) { list.Add(c); yield return false; }
         }
-        if (!shortCombat) GuardAndBlock();
+        if (!shortCombat) foreach (var step in GuardAndBlock()) yield return step;
         bool defensive = Defensive(b, side, start);
-        list.AddRange(Attacks(b, u, side, la, targets, diff, tooWeak, defensive, guard));
-        list.AddRange(GoblinGuardMoves(b, u, side, reach));
+        foreach (var c in Attacks(b, u, side, la, targets, diff, tooWeak, defensive, guard)) { list.Add(c); yield return false; }
+        foreach (var c in GoblinGuardMoves(b, u, side, reach)) { list.Add(c); yield return false; }
         // FUN_008d5b90: approach records only while the strategy is not defensive (think +0x1ac).
         if (list.Count == before && la.Moves.Count > 0 && !defensive)
-            list.AddRange(ApproachMoves(b, u, side, la, targets, diff));
+            foreach (var c in ApproachMoves(b, u, side, la, targets, diff)) { list.Add(c); yield return false; }
         // FUN_008d68c0: a short combat that added nothing after the spells clears think +0x1b7 and runs FUN_008d64e0 again.
-        if (shortCombat && list.Count == before) GuardAndBlock();
-        return list;
+        if (shortCombat && list.Count == before) foreach (var step in GuardAndBlock()) yield return step;
     }
 
     /// <summary>

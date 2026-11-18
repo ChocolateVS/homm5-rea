@@ -39,6 +39,13 @@ public static class AiThinking
     /// </summary>
     public static BattleCommand? Poll(ref PendingDecision? pending, Battle live, int side, IBattleAI ai, string what)
     {
+        ulong t0 = FrameStats ? Time.GetTicksUsec() : 0;
+        try { return PollCore(ref pending, live, side, ai, what); }
+        finally { if (FrameStats) _aiUs += Time.GetTicksUsec() - t0; }
+    }
+
+    static BattleCommand? PollCore(ref PendingDecision? pending, Battle live, int side, IBattleAI ai, string what)
+    {
         if (pending is not { } d)
         {
             _aiWork = true;
@@ -56,6 +63,10 @@ public static class AiThinking
 
     public static bool FrameStats;
     static bool _aiWork;
+    /// <summary>Time spent in <see cref="Poll"/> during the current frame (on this thread: the work a frame waits for).</summary>
+    static ulong _aiUs;
+    static int _aiOver20;
+    static double _maxAiPollMs;
     static ulong _lastUs;
     static int _frames, _over40, _over40Ai;
     static double _maxMs, _maxAiMs;
@@ -77,8 +88,12 @@ public static class AiThinking
                 if (ms > 40) _over40Ai++;
             }
         }
+        double aiMs = _aiUs / 1000.0;
+        _maxAiPollMs = Math.Max(_maxAiPollMs, aiMs);
+        if (aiMs > 20) _aiOver20++;
         _lastUs = now;
         _aiWork = false;
+        _aiUs = 0;
     }
 
     /// <summary>Logs and resets the statistics (the battle is over).</summary>
@@ -86,9 +101,10 @@ public static class AiThinking
     {
         if (!FrameStats) return;
         GD.Print($"[H5] frame stats ({Mode}): {_frames} frames, {_over40} over 40 ms (max {_maxMs:F0} ms); "
-            + $"frames with AI work: {_over40Ai} over 40 ms (max {_maxAiMs:F0} ms)");
-        _frames = _over40 = _over40Ai = 0;
-        _maxMs = _maxAiMs = 0;
+            + $"frames with AI work: {_over40Ai} over 40 ms (max {_maxAiMs:F0} ms); "
+            + $"AI time on the frame's thread: {_aiOver20} frames over 20 ms (max {_maxAiPollMs:F0} ms)");
+        _frames = _over40 = _over40Ai = _aiOver20 = 0;
+        _maxMs = _maxAiMs = _maxAiPollMs = 0;
         _lastUs = 0;
     }
 }
