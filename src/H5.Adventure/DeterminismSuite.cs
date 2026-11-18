@@ -54,7 +54,7 @@ public static class DeterminismSuite
                 ["duel-5v6-s11-greedy"] = "18361c51f4e988d3",
                 ["mapheroes-1v2-s5-original"] = "c6cc95d102b08c80",
                 ["mapheroes-6v10-s7-original"] = "4a9f9a29f4f9e56f",
-                ["adv-A2M1-7d-s1"] = "7e14dad10703cf6d",
+                ["adv-A2M1-7d-s1"] = "6d68a259978ce64a",
             },
             ["mmh55"] = new Dictionary<string, string>
             {
@@ -66,7 +66,7 @@ public static class DeterminismSuite
                 ["duel-5v6-s11-greedy"] = "cb6ce33342b2f5ec",
                 ["mapheroes-1v2-s5-original"] = "3b1e536c60a31b37",
                 ["mapheroes-6v10-s7-original"] = "57f967bc9230ec04",
-                ["adv-A2M1-7d-s1"] = "67fda05a77fae8a3",
+                ["adv-A2M1-7d-s1"] = "b6df66edd478ca35",
             },
         };
 

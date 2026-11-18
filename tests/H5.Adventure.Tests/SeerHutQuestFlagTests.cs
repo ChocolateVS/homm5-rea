@@ -88,13 +88,14 @@ public class SeerHutQuestFlagTests(Fixture f)
     [Fact]
     public void TheLastTakerWinsWithoutMultipleActivations()
     {
-        var (g, hut, a, b, _) = Make();
+        var (g, hut, a, b, art) = Make();
         var q = hut.Quest!;
         bool ama = q.AllowMultipleActivations, amc = q.AllowMultipleCompletions;
         try
         {
             q.AllowMultipleActivations = false;
             q.AllowMultipleCompletions = true;
+            a.Artifacts.Remove(art);   // A's objective stays active (state 2): a met one (state 3) would be spared
             Assert.True(As(g, a, new AcceptSeerQuestCmd(a.Id, hut.Index)));
             Assert.Equal(a.Owner, g.S.Obj(hut.Index).QuestBanPlayer);
             // B's take records B (00afb410 overwrites +0x16c) and fails A's active quest.
@@ -104,6 +105,24 @@ public class SeerHutQuestFlagTests(Fixture f)
             Assert.False(g.SeerQuestFailed(b.Owner, hut.Index));
         }
         finally { q.AllowMultipleActivations = ama; q.AllowMultipleCompletions = amc; }
+    }
+
+    [Fact]
+    public void AMetQuestIsSparedByALaterTake()
+    {
+        // 00afb410 re-checks only the other players still active (state 2): A, met at his take (state 3), is not failed.
+        var (g, hut, a, b, _) = Make();
+        var q = hut.Quest!;
+        bool ama = q.AllowMultipleActivations;
+        try
+        {
+            q.AllowMultipleActivations = false;
+            Assert.True(As(g, a, new AcceptSeerQuestCmd(a.Id, hut.Index)));
+            Assert.True(As(g, b, new AcceptSeerQuestCmd(b.Id, hut.Index)));
+            Assert.False(g.SeerQuestFailed(a.Owner, hut.Index));
+            Assert.True(As(g, a, new CompleteSeerQuestCmd(a.Id, hut.Index)));
+        }
+        finally { q.AllowMultipleActivations = ama; }
     }
 
     [Fact]
@@ -174,6 +193,53 @@ public class SeerHutQuestFlagTests(Fixture f)
             Assert.Equal(e1, a.Experience);
         }
         finally { (q.AwardType, q.Experience) = (type, exp); }
+    }
+
+    [Fact]
+    public void AQuestOnceMetStaysMetUntilTheHandIn()
+    {
+        // 00c60520: a completed (state 3) quest objective is re-checked only when it can uncomplete (+0x78); the box
+        // (004f25f0) and the hand-in (004f26b0) read the state. Met at the take (004f2560), then the artifact is lost:
+        // Complete still pays, and the contribution (00b424b0) takes nothing.
+        var (g, hut, a, _, art) = Make();
+        var q = hut.Quest!;
+        var (type, exp, cu) = (q.AwardType, q.Experience, q.CanUncomplete);
+        try
+        {
+            q.AwardType = "AWARD_EXPERIENCE";
+            q.Experience = 1000;
+            q.CanUncomplete = false;
+            Assert.True(As(g, a, new AcceptSeerQuestCmd(a.Id, hut.Index)));
+            Assert.Contains(a.Owner, g.S.Obj(hut.Index).QuestMetBy);
+            a.Artifacts.Remove(art);
+            a.Backpack.Remove(art);
+            Assert.True(g.SeerQuestMet(a, hut.Index));
+            long e0 = a.Experience;
+            Assert.True(As(g, a, new CompleteSeerQuestCmd(a.Id, hut.Index)));
+            Assert.Equal(e0 + g.ExperienceModifiers(a, 1000), a.Experience);
+        }
+        finally { (q.AwardType, q.Experience, q.CanUncomplete) = (type, exp, cu); }
+    }
+
+    [Fact]
+    public void CanUncompleteReturnsTheQuestToActive()
+    {
+        // 00c60480: with +0x78 a check finding the condition no longer met returns the objective to state 2.
+        var (g, hut, a, _, art) = Make();
+        var q = hut.Quest!;
+        bool cu = q.CanUncomplete;
+        try
+        {
+            q.CanUncomplete = true;
+            Assert.True(As(g, a, new AcceptSeerQuestCmd(a.Id, hut.Index)));
+            a.Artifacts.Remove(art);
+            a.Backpack.Remove(art);
+            Assert.False(As(g, a, new CompleteSeerQuestCmd(a.Id, hut.Index)));
+            Assert.DoesNotContain(a.Owner, g.S.Obj(hut.Index).QuestMetBy);
+            a.Backpack.Add(art);
+            Assert.True(As(g, a, new CompleteSeerQuestCmd(a.Id, hut.Index)));
+        }
+        finally { q.CanUncomplete = cu; }
     }
 
     [Fact]

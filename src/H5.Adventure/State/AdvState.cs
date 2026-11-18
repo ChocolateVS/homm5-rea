@@ -478,6 +478,11 @@ public sealed class ObjState
     /// <summary>Players whose taken quest failed (objective state 4: banned by another player, 00afb060 / 00afb170).</summary>
     public HashSet<int> QuestFailedBy = new();
     /// <summary>
+    /// Players whose hidden quest objective is completed (state 3): its condition was met at a check (00c603f0); it stays so
+    /// until the hand-in unless the quest can uncomplete (00c60480).
+    /// </summary>
+    public HashSet<int> QuestMetBy = new();
+    /// <summary>
     /// The common objective's recorded player (+0x16c, set by the state listener 00afb410 when AllowMultipleActivations is
     /// off and a player takes the quest, or AllowMultipleCompletions is off and a player completes it); every other player
     /// is banned from then on. -1: none.

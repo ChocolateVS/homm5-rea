@@ -264,6 +264,8 @@ public sealed class SeerQuest
     public MapObjective Objective = new();
     public string? Description;
     public bool TakeContribution;
+    /// <summary>SObjective +0x101 (reader 00adae90) = objective +0x78: a completed quest objective may return to active.</summary>
+    public bool CanUncomplete;
     /// <summary>
     /// SQuest +0x138 / +0x139 (reader 00adb3f0; record defaults 00892b80: false / true), copied into the common objective
     /// (00afbc20: +0x3c / +0x3d) and read by its state listener 00afb410.

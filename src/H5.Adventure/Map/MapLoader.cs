@@ -372,6 +372,7 @@ public sealed class MapLoader
                     Objective = ReadObjective(q, false, -1, files),
                     Description = files.ReadText(q.Href("DescriptionFileRef"))?.Trim(),
                     TakeContribution = q.Bool("TakeContribution"),
+                    CanUncomplete = q.Bool("CanUncomplete"),
                     AllowMultipleActivations = q.Bool("AllowMultipleActivations", false),
                     AllowMultipleCompletions = q.Bool("AllowMultipleCompletions", true),
                     AwardType = aw.Str("Type") is { Length: > 0 } at ? at : "AWARD_NONE",
