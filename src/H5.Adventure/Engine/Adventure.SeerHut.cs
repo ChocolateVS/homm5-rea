@@ -220,8 +220,11 @@ public sealed partial class Adventure
         // the objective ctor 00c60eb0 then composes the condition's contribution effect (condition vf 0x18 = 00b47450,
         // this + 0x30) with the award (FUN_00a7ea50). The map's own TakeContribution is never read for a hut.
         // OBTAIN_ARTIFACT's effect 00b424b0 removes the artifact worn (00ca6710) or else from the backpack (00ca6c40).
-        // TODO(exe): the exe applies it with the award when the hidden quest objective completes (00c603f0 → 00c5fc90),
-        // to the hero passed to that check; here at the hand-in, from the hand-in hero (see the ledger's timing row).
+        // The award and the contribution are paid once, here, to the hand-in hero: the hut's Initialize (IInitializableObject
+        // slot 0 = 004f22e0, run when the hut is added to the world, 0041aad0 → 0041aa40) moves, for each player, the hidden
+        // quest objective's composed effect (CObjective vf 0x80 = 00c61b80, +0xa8) onto the offer objective (vf 0x84 =
+        // 00c5fd00) and sets the quest objective's to null, so its completion (00c603f0 → 00c5fc90, null-checked) pays
+        // nothing; the hand-in (004f26b0 → offer vf 0x58 = 00c60350, state 3) applies it with the hand-in hero.
         {
             var (kind, id, amount, name) = QuestRequirement(q);
             switch (kind)
@@ -251,8 +254,8 @@ public sealed partial class Adventure
             }
         }
         os.QuestDoneBy.Add(p.Index);
-        // TODO(exe): the exe's quest objective completes (state 3) at the check that first finds it met, which is when the
-        // listener runs for AllowMultipleCompletions off; here at the hand-in.
+        // TODO(exe): the exe's quest objective completes (state 3, no payment, see above) at the check that first finds it
+        // met, which is when the listener runs for AllowMultipleCompletions off; here at the hand-in.
         SeerQuestStateChanged(c.Hut, p.Index, completed: true);
         GiveSeerAward(h, p, q);
         Emit(new ObjectVisited(h.Id, c.Hut, "seerhut:complete"));

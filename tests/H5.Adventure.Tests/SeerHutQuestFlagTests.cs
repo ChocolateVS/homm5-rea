@@ -149,6 +149,34 @@ public class SeerHutQuestFlagTests(Fixture f)
     }
 
     [Fact]
+    public void TheAwardIsPaidOnceAtTheHandIn()
+    {
+        // 004f22e0 (the hut's Initialize) moves the hidden quest objective's award + contribution onto the offer objective
+        // and nulls the quest's, so meeting the condition at the take (004f2560 → 00c60520 → 00c603f0 → 00c5fc90) pays
+        // nothing; the hand-in (004f26b0 → 00c60350) pays it once. The hero already holds the artifact when he accepts.
+        var (g, hut, a, _, art) = Make();
+        var q = hut.Quest!;
+        var (type, exp) = (q.AwardType, q.Experience);
+        try
+        {
+            q.AwardType = "AWARD_EXPERIENCE";
+            q.Experience = 1000;
+            long e0 = a.Experience;
+            Assert.True(As(g, a, new AcceptSeerQuestCmd(a.Id, hut.Index)));
+            Assert.True(g.SeerQuestMet(a, hut.Index));
+            Assert.Equal(e0, a.Experience);
+            Assert.Contains(art, a.Artifacts);
+            Assert.True(As(g, a, new CompleteSeerQuestCmd(a.Id, hut.Index)));
+            long e1 = a.Experience;
+            Assert.Equal(e1 - e0, g.ExperienceModifiers(a, 1000));
+            Assert.DoesNotContain(art, a.Artifacts);
+            Assert.False(As(g, a, new CompleteSeerQuestCmd(a.Id, hut.Index)));
+            Assert.Equal(e1, a.Experience);
+        }
+        finally { (q.AwardType, q.Experience) = (type, exp); }
+    }
+
+    [Fact]
     public void RegionsAreReadFromTheMap()
     {
         var g = f.NewGame("A2M4");
