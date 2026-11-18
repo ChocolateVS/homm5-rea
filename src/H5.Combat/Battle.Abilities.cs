@@ -40,7 +40,7 @@ public sealed partial class Battle
     {
         if (CheckHeroActive(c, out var h) is { } e) return e;
         var t = S.Unit(c.TargetId);
-        if (t == null || !t.Alive || Controller(t) == c.Side || IsSiegeTower(t)) return "invalid target";
+        if (t == null || !t.Alive || t.OffField || Controller(t) == c.Side || IsSiegeTower(t)) return "invalid target";
         if (t.HasEffect(H5.Combat.Fx.Invisible)) return "target is invisible";
         if (t.CreatureId == "BLADE_BARRIER") return "blade barrier cannot be hit by the hero";
         // exe FUN_00bc1b90: Deadeye Shot (HERO_SKILL_SNIPE_DEAD) raises the plain strike's level by 3.
@@ -267,6 +267,7 @@ public sealed partial class Battle
         {
             case AbilityTargeting.None: return null;
             case AbilityTargeting.Cell: return null;
+            case not AbilityTargeting.DeadFriend when t is { OffField: true }: return "invalid target";
             case AbilityTargeting.DeadFriend when info.Id == Ab.ResurrectAllies:
                 return t == null ? "needs a target" : null;   // living or dead friends: ResurrectAlliesRefusal (sweep 13)
             case AbilityTargeting.DeadFriend:
@@ -328,23 +329,8 @@ public sealed partial class Battle
         if (u.Has(Ab.Sabotage)) yield return new(Ab.Sabotage, AbilityTargeting.Enemy);
         if (u.Has(Ab.SwallowGoblin)) yield return new(Ab.SwallowGoblin, AbilityTargeting.Friend, NeedsAdjacency: true);
         if (u.Has(Ab.SacrificeGoblin)) yield return new(Ab.SacrificeGoblin, AbilityTargeting.Friend, NeedsAdjacency: true);
-        if (h.Present && Once(Ab.Gating) && CanGate(u)) yield return new(Ab.Gating, AbilityTargeting.None);
+        if (CanGate(u)) yield return new(Ab.Gating, AbilityTargeting.Cell);
         foreach (var extra in MoreUnitAbilities(u)) yield return extra;
-    }
-
-    /// <summary>Demon Lord Gating eligibility by mastery (p.141).</summary>
-    bool CanGate(Unit u)
-    {
-        var h = HeroOf(u);
-        var m = h.SkillLevel(Sk.Gating);
-        if (m == Mastery.None || u.Town != Towns.Inferno || u.Summoned || u.Kind != UnitKind.Creature) return false;
-        return m switch
-        {
-            Mastery.Basic => u.Tier <= 2,
-            Mastery.Advanced => u.Tier <= 4,
-            Mastery.Expert => u.Tier <= 6,
-            _ => true,
-        };
     }
 
     string? DoAbility(UseAbilityCmd c)
@@ -361,6 +347,7 @@ public sealed partial class Battle
         if (TargetError(info, Controller(u), t) is { } te) return te;
         if (info.NeedsAdjacency && t != null && !AreAdjacent(u, t)) return "target must be adjacent";
         if (info.Targeting == AbilityTargeting.Cell && (c.Cell is not Cell cc || !S.InBounds(cc))) return "needs a target cell";
+        if (c.Ability == Ab.Gating && GatingCellRefusal(u, c.Cell!.Value) is { } ge) return ge;
         if (c.Ability == "CATAPULT_SHOT") return DoCatapultShot(u, c);
         double reset = 0;
         bool allowMorale = true;
@@ -643,16 +630,8 @@ public sealed partial class Battle
                 break;
             }
             case Ab.Gating:
-            {
-                var h = HeroOf(u);
-                u.AbilityUses[c.Ability] = 1;
-                int n = GatingCount(u, h);   // exe FUN_0085fe60 tail: floor + random rounding, may be 0
-                Emit(new AbilityTriggered(u.Id, c.Ability));
-                var g = n > 0 ? SummonStackNear(u, u.CreatureId, n, c.Ability, GatedStartAtb(h)) : null;
-                reset = GatingCallerAtb(h);
-                if (g != null) AddEffect(g, new Effect { Id = GatedEffect, Positive = true, Dispellable = false });
+                reset = CastGating(u, c.Cell!.Value);
                 break;
-            }
             default: return "ability not implemented";
         }
         EndAction(u.Id, reset, allowMorale);

@@ -101,6 +101,12 @@ public sealed class Unit
     /// It stays out of the battle (Removed at combat start) and returns with the army afterwards.
     /// </summary>
     public bool Reserve;
+    /// <summary>
+    /// Off the field (exe placement state 1, unit vf 0x4c, which FUN_00a6af10 treats as not on the map): a gated stack
+    /// between its gating and its arrival (FUN_00c56750 with the state argument 1 from FUN_00861840, cleared when
+    /// FUN_00bbb390 places it). It keeps its cell and its turns but occupies nothing and cannot be picked.
+    /// </summary>
+    public bool OffField;
 
     [JsonIgnore] public bool Alive => Count > 0 && !Removed && !Reserve;
     [JsonIgnore] public bool IsWarMachine => Kind == UnitKind.WarMachine;
@@ -290,8 +296,8 @@ public sealed class BattleState
     public Unit? Unit(int id) => Units.Find(u => u.Id == id);
     public IEnumerable<Unit> Living => Units.Where(u => u.Alive);
     public IEnumerable<Unit> LivingOf(int side) => Units.Where(u => u.Alive && u.Side == side);
-    public Unit? At(Cell c) => Units.Find(u => u.Alive && !u.IsWarMachine && u.Occupies(c))
-                               ?? Units.Find(u => u.Alive && u.IsWarMachine && u.Occupies(c));
+    public Unit? At(Cell c) => Units.Find(u => u.Alive && !u.OffField && !u.IsWarMachine && u.Occupies(c))
+                               ?? Units.Find(u => u.Alive && !u.OffField && u.IsWarMachine && u.Occupies(c));
     public bool InBounds(Cell c) => c.X >= 0 && c.Y >= 0 && c.X < Width && c.Y < Height;
 
     public static readonly JsonSerializerOptions Json = new()

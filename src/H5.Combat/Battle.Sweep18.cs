@@ -137,15 +137,15 @@ public sealed partial class Battle
     /// the cast 00987e8a gives Dash_Duration, RPGStats +0x2f4); Battle Frenzy (0x112), Berserker Rage (0xf5) and
     /// Preparation (0x11e) end (vf 0x270); the Defile Magic release; the Battle Dive finish FUN_00bbc510 (kept in the
     /// turn start, <see cref="BattleDiveTurnStart"/>); FUN_00bbb900 unless the unit is in placement state 1 (vf 0x4c, the
-    /// diving griffins); FUN_00bbb390 when it carries SPELL_ABILITY_GATING (0x9f). True when a gated stack arrived (its
-    /// ATB is then below 1, so it does not act: FUN_00bbcb40 acts only while ATB ≥ 1).
+    /// diving griffins); FUN_00bbb390 when it carries SPELL_ABILITY_GATING (0x9f). True when a gated stack's turn start ran
+    /// (arrived or not, its ATB is then below 1, so it does not act: FUN_00bbcb40 acts only while ATB ≥ 1).
     /// </summary>
     internal bool ExeTurnStartTail(Unit u)
     {
         CountDown(u, H5.Combat.Fx.Dash);
         Sweep7TurnStart(u);
         RemoveEffect(u, PreparationEffect);
-        if (!u.HasEffect(FxDiving)) DamageOverTimeTick(u);
+        if (!u.HasEffect(FxDiving) && !u.OffField) DamageOverTimeTick(u);
         if (u.Alive && u.HasEffect(GatedEffect)) { GatedArrival(u); return true; }
         return false;
     }
@@ -178,19 +178,6 @@ public sealed partial class Battle
         }
     }
 
-    /// <summary>
-    /// FUN_00bbb390, a gated stack's first turn: when it can be placed (FUN_00c558b0: its anchor or the nearest free one,
-    /// FUN_00b3fac0 / FUN_00b3e1e0 — the stack stands on its own cell here, so always) the gating effect 0x9f ends
-    /// (vf 0x270), the arrival plays and its ATB becomes clamp(GatedStartATB, RPGStats +0x5c8, 0, 1) without the ready
-    /// hooks (vf 0x184 / FUN_00a2d6a0); otherwise its ATB is set to 0.5 (vf 0x18c). Either way it does not act. The
-    /// engine kept the effect for the whole combat (gated initiative and no retaliation for ever) and let it act.
-    /// </summary>
-    void GatedArrival(Unit u)
-    {
-        RemoveEffect(u, GatedEffect);
-        Emit(new AbilityTriggered(u.Id, GatedEffect));
-        SetAtb(u.Id, Math.Clamp((float)Stats.Get("combat/HeroSkills/DemonLord/Gating/GatedStartATB", 0), 0f, 1f));
-    }
     const string DefileLink = "DEFILE_LINK:";
 
     /// <summary>

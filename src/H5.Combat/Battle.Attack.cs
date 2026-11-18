@@ -32,7 +32,7 @@ public sealed partial class Battle
     {
         if (CheckActive(c, c.UnitId, out var u) is { } err) return err;
         var t = S.Unit(c.TargetId);
-        if (t == null || !t.Alive || t.IsObject && t.Side == u.Side || IsSiegeTower(t)) return "invalid target";
+        if (t == null || !t.Alive || t.OffField || t.IsObject && t.Side == u.Side || IsSiegeTower(t)) return "invalid target";
         if (t.Id == u.Id) return "cannot attack self";
         if (Controller(t) == Controller(u) && !u.HasEffect("SPELL_BERSERK")) return "cannot attack own unit";
         if (t.HasEffect(H5.Combat.Fx.Invisible) && t.Side != u.Side) return "target is invisible";
@@ -54,7 +54,7 @@ public sealed partial class Battle
     {
         if (CheckActive(c, c.UnitId, out var u) is { } err) return err;
         var t = S.Unit(c.TargetId);
-        if (t == null || !t.Alive || Controller(t) == Controller(u) || IsSiegeTower(t)) return "invalid target";
+        if (t == null || !t.Alive || t.OffField || Controller(t) == Controller(u) || IsSiegeTower(t)) return "invalid target";
         if (t.HasEffect(H5.Combat.Fx.Invisible)) return "target is invisible";
         if (!CanShoot(u)) return "unit cannot shoot";
         if (EldritchProtected(u, t, ranged: true)) return "target is protected by an eldritch aura";   // exe FUN_00b3b330

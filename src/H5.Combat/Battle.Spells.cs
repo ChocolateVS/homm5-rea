@@ -545,6 +545,7 @@ public sealed partial class Battle
         {
             if (targetId is not int tid || S.Unit(tid) is not { } t || (!t.Alive && !sp.CanSelectDead && BaseSpell(sp.Id) is not ("SPELL_RESURRECT" or "SPELL_ANIMATE_DEAD")))
                 return "spell needs a target unit";
+            if (t.OffField) return "spell needs a target unit";   // placement state 1 (FUN_00a6af10): not on the field
             bool friendly = Controller(t) == side;
             string target = sp.Target;
             if (target == "TARGET_HOSTILE" && friendly && sp.Id != "SPELL_DISPEL") return "spell must target an enemy";
@@ -620,7 +621,7 @@ public sealed partial class Battle
         {
             bool hostile = baseDef.Target == "TARGET_HOSTILE";
             IEnumerable<Unit> victims = AreaMass.Contains(sp.Id) && cell is Cell ac
-                ? S.Living.Where(u => !u.IsObject && u.Cells().Any(x => x.X >= ac.X - 1 && x.X <= ac.X + 2 && x.Y >= ac.Y - 1 && x.Y <= ac.Y + 2))
+                ? S.Living.Where(u => !u.IsObject && !u.OffField && u.Cells().Any(x => x.X >= ac.X - 1 && x.X <= ac.X + 2 && x.Y >= ac.Y - 1 && x.Y <= ac.Y + 2))
                 : S.Living.Where(u => !u.IsObject && !u.IsWarMachine && (hostile ? Controller(u) != side : Controller(u) == side));
             if (AreaMass.Contains(sp.Id) && sp.Id != "SPELL_MASS_DISPEL") victims = victims.Where(u => Controller(u) != side);
             foreach (var v in victims.ToList())
@@ -663,7 +664,7 @@ public sealed partial class Battle
                 if (cell is not Cell c) return;
                 var cells = AreaCells(id, c);
                 double dmg = SpellBaseDamage(baseDef, sp, m, power);
-                var victims = S.Living.Where(u => !u.IsObject && u.Cells().Any(cells.Contains)).ToList();
+                var victims = S.Living.Where(u => !u.IsObject && !u.OffField && u.Cells().Any(cells.Contains)).ToList();
                 // exe FUN_0085e7c0: every victim's damage is computed first, Magic Magnetism (FUN_0085e330) redistributes
                 // the amounts, then they are dealt.
                 var hit = new List<(Unit V, double D)>();
@@ -756,7 +757,7 @@ public sealed partial class Battle
                 f.Power = power; f.Mastery = m; f.HeroCaster = hero != null;
                 // exe FUN_0085cda0 → FUN_0085b790: every creature stack (vf 0x6c) or spawn (vf 0x8c) on the cells — not war
                 // machines or siege objects — gets the field's damage (vf 0x1c, resistance rolled) and the fire rider (vf 0x24).
-                foreach (var v in S.Living.Where(u => FirewallVictim(u) && u.Cells().Any(cells.Contains)).ToList())
+                foreach (var v in S.Living.Where(u => FirewallVictim(u) && !u.OffField && u.Cells().Any(cells.Contains)).ToList())
                     if (SpellHits(side, baseDef, v, true, hero, area: true)) { affected.Add(v.Id); FirewallHit(v, f, hero, rollLuck: true); }
                 break;
             }

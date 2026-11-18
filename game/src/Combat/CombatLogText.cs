@@ -258,7 +258,8 @@ public static class CombatLogText
         if (a.Ability == "ABILITY_PURGER") return null;
         if (AbilityLogTexts(a.Ability) is { Count: > 0 } texts && !texts[0].Contains("<value=spell>"))
             return HasDamage(texts[0]) ? null : FillEntry(s, texts[0], a.UnitId, a.Target, null, 0, 0);
-        var name = Game.Instance.Db.Abilities.TryGetValue(a.Ability, out var def) && def.Name.Length > 0 ? def.Name : a.Ability;
+        var name = Game.Instance.Db.Abilities.TryGetValue(a.Ability, out var def) && def.Name.Length > 0 ? def.Name
+            : ResolveSpell(a.Ability) is { } sid && Game.Instance.Db.Spells[sid].Name is { Length: > 0 } sn ? sn : a.Ability;
         return FillEntry(s, Template(a.Target is int ? "ApplyAbilityTargeted" : "ApplyAbility"), a.UnitId, a.Target, Escape(name), 0, 0);
     }
 

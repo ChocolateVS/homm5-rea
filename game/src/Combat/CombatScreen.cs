@@ -108,6 +108,8 @@ public partial class CombatScreen : Control
                     foreach (var f in Session.Battle.State.Fields)
                         if (f.Kind is "BATTLE_DIVE" or "PACK_DIVE" && f.SourceUnit == u.Id) _diveFields[f.Id] = u.Id;
                 }
+                // A stack gating in (placement state 1) is off the field: only its gating mark shows.
+                if (u.OffField) GatingIn(uv, u);
             }
         for (int side = 0; side < 2; side++) AddHeroView(side);
 
@@ -481,6 +483,21 @@ public partial class CombatScreen : Control
             }
             _mode = InputMode.Ability;
             _pendingAbility = abo;
+            if (abo.Targeting == Battle.AbilityTargeting.Cell)
+            {
+                // A cell ability (Gating): hover the legal cell nearest the field's centre.
+                var st = Session.Battle.State;
+                var aim = Enumerable.Range(0, st.Width).SelectMany(x => Enumerable.Range(0, st.Height).Select(y => new Cell(x, y)))
+                    .Where(c => abo.Ability != Ab.Gating || Session.Battle.CanGateAt(la.Actor, c))
+                    .OrderBy(c => Math.Abs(c.X - st.Width / 2) + Math.Abs(c.Y - st.Height / 2)).Cast<Cell?>().FirstOrDefault();
+                CombatLauncher.HoverTarget = null;
+                if (aim is not Cell ac) return;
+                CombatLauncher.FakeMouse = Arena.Camera.UnprojectPosition(Arena.Grid.CellCenter(new Vector2I(ac.X, ac.Y)));
+                GD.Print($"[H5] hover-target: cell {ac.X},{ac.Y} at {CombatLauncher.FakeMouse}");
+                if (_fakeCursor == null) { _fakeCursor = new TextureRect { MouseFilter = MouseFilterEnum.Ignore, ZIndex = 100 }; AddChild(_fakeCursor); }
+                _lastHover = null;
+                return;
+            }
             id = abo.Targets.Where(t => ak.Length < 2 || (Session.Battle.State.Unit(t)?.CreatureId.Contains(ak[1]) ?? false)).Cast<int?>().FirstOrDefault();
         }
         else if (kind.StartsWith("shootby:"))
@@ -696,10 +713,12 @@ public partial class CombatScreen : Control
                     v.Cell = us.Cell;
                     v.Count = us.Count;
                     v.Position = Arena.Grid.StackCenter(new Vector2I(us.Cell.X, us.Cell.Y), v.Size);
-                    if (v.Has("birth")) v.PlayAction("birth");
+                    if (su.OffField) GatingIn(v, su);
+                    else if (v.Has("birth")) v.PlayAction("birth");
                     v.UpdatePlaque();
                 }
-                if (CombatLogText.Summoned(this, us, _lastCast) is { } summonLine) Hud.Log.AddLine(summonLine);
+                // FUN_00861840 writes no log entry for a gating that places a stack.
+                if (us.By != Ab.Gating && CombatLogText.Summoned(this, us, _lastCast) is { } summonLine) Hud.Log.AddLine(summonLine);
                 break;
 
             case SpellCast sc:
@@ -736,6 +755,13 @@ public partial class CombatScreen : Control
 
             case TurnSkipped:
                 // No CCombatLog class or spell text covers a turn lost to Blind, Sleep, Stun or diving: nothing is logged.
+                break;
+
+            case AbilityTriggered { Ability: "SPELL_ABILITY_GATING" } arrived when View(arrived.UnitId) is { } av:
+                GatingArrived(av);
+                break;
+
+            case AbilityTriggered { Ability: Battle.GatingFailed }:
                 break;
 
             case AbilityTriggered at:
@@ -1106,6 +1132,34 @@ public partial class CombatScreen : Control
     }
 
     int _shotCount, _spellCount, _moveCount, _heroStrikeCount, _heroAfterCount;
+
+    /// <summary>The gating marks of the stacks gating in, by unit.</summary>
+    readonly Dictionary<int, Effects.EffectPlayer> _gatingMarks = new();
+
+    /// <summary>
+    /// A stack gating in (FUN_00861840): hidden while off the field, its gating mark (RPGRoot effect GATING_CIRCLE1x1 /
+    /// GATING_CIRCLE2x2 by size, FUN_008a2ff0) at its cell until it arrives (FUN_00bbb390 removes it, vf 0x164 → vf 0x54).
+    /// </summary>
+    void GatingIn(UnitView v, Unit u)
+    {
+        v.Visible = false;
+        v.UpdatePlaque();
+        string href = u.Size == 1 ? "Effects/_(Effect)/Characters/Gating_mark_small.(Effect).xdb" : "Effects/_(Effect)/Characters/Gating_mark_big.(Effect).xdb";
+        if (!Game.Instance.Fs.Exists(href)) return;
+        var pos = Arena.Grid.StackCenter(new Vector2I(u.Pos.X, u.Pos.Y), u.Size);
+        if (Effects.EffectPlayer.PlayAt(href, Arena.Units, pos) is { } fx) _gatingMarks[u.Id] = fx;
+    }
+
+    /// <summary>The arrival (FUN_00bbb390): the mark goes, the stack shows at its cell with the spell's visual reaction
+    /// (vf 0x12c(…, 0x9f): Gating.(SpellVisual) — Effects/Characters/Gating, Devil Teleport_start).</summary>
+    void GatingArrived(UnitView v)
+    {
+        if (_gatingMarks.Remove(v.UnitId, out var mark) && IsInstanceValid(mark)) mark.Stop();
+        v.Visible = true;
+        v.Position = Arena.Grid.StackCenter(new Vector2I(v.Cell.X, v.Cell.Y), v.Size);
+        v.UpdatePlaque();
+        ProcVisual(v, "Effects/_(Effect)/Characters/Gating.xdb", "Sounds/_(Sound)/Creatures/Inferno/Devil/Teleport_start.xdb");
+    }
 
     /// <summary>The catapult hurls its boulder at the building hit next (the following BuildingDamaged event).</summary>
     /// <summary>Dive fields in play → the diving stack (the AbilityTriggered just before the field is added names it).</summary>
@@ -1654,6 +1708,16 @@ public partial class CombatScreen : Control
                 cursor = CombatCursor.CantCast;
                 return null;
             }
+            if (ab.Ability == Ab.Gating)
+            {
+                // The cursor cell is the gated stack's anchor (its footprint's maximum corner); the cast test is the
+                // exe's FUN_00860ce0 (through FUN_00548270 → FUN_00982010).
+                if (s.Unit(la.Actor) is not { } gater || !b.CanGateAt(gater.Id, cell)) { cursor = CombatCursor.CantCast; return null; }
+                cursor = CombatCursor.Ability;
+                hl.Add((new Cell(cell.X - (gater.Size - 1), cell.Y - (gater.Size - 1)), gater.Size, CellMark.Affected));
+                var useG = new UseAbilityCmd(la.Actor, ab.Ability, null, cell) { Side = side };
+                return new PlannedAction(useG, AbilityName(ab.Ability), null, CombatPredictions.Ability(b, useG, CombatLogText.Escape(AbilityName(ab.Ability)), null));
+            }
             if (ab.Targeting == Battle.AbilityTargeting.Cell)
             {
                 if (!s.InBounds(cell)) { cursor = CombatCursor.CantCast; return null; }
@@ -1853,7 +1917,9 @@ public partial class CombatScreen : Control
     /// <summary>Display name of a creature/hero ability id (CombatAbilities texts), the id if unnamed.</summary>
     static string AbilityName(string id) =>
         Game.Instance.Db.Abilities.GetValueOrDefault(id)?.Name is { Length: > 0 } n ? n
-        : Game.Instance.Db.Spells.GetValueOrDefault(id)?.Name is { Length: > 0 } sn ? sn : id;
+        : Game.Instance.Db.Spells.GetValueOrDefault(id)?.Name is { Length: > 0 } sn ? sn
+        // Gating has no CombatAbilities record: its name is the spell's (SPELL_ABILITY_GATING, exe 0x9f).
+        : Game.Instance.Db.Spells.GetValueOrDefault("SPELL_ABILITY_" + id)?.Name is { Length: > 0 } an ? an : id;
 
     CreatureTooltip? _tooltip;
     int _tooltipUnit = -1, _tooltipClicks;

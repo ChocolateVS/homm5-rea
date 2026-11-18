@@ -325,6 +325,11 @@ public sealed partial class OriginalBattleAI : ISteppedBattleAI
                 case Battle.AbilityTargeting.None:
                     list.Add(Spell(b, new UseAbilityCmd(la.Actor, ab.Ability) { Side = side }, ab.Ability, Array.Empty<Unit>(), ab.Ability));
                     break;
+                case Battle.AbilityTargeting.Cell when ab.Ability == Ab.Gating:
+                    // FUN_008d28e0: the ring cells around the field's units (Battle.GatingAiCells).
+                    foreach (var cell in b.GatingAiCells(s.Unit(la.Actor)!, Defensive(b, side, start)))
+                        list.Add(Spell(b, new UseAbilityCmd(la.Actor, ab.Ability, null, cell) { Side = side }, ab.Ability, Array.Empty<Unit>(), $"{ab.Ability}@{cell.X},{cell.Y}"));
+                    break;
                 case Battle.AbilityTargeting.Cell:
                     foreach (var (cell, hit) in SpellCells(b, ab.Ability, side, enemies, diff))
                         list.Add(Spell(b, new UseAbilityCmd(la.Actor, ab.Ability, null, cell) { Side = side }, ab.Ability, hit, $"{ab.Ability}@{cell.X},{cell.Y}"));

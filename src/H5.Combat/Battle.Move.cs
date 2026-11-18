@@ -68,7 +68,7 @@ public sealed partial class Battle
         if (S.Obstacles.Contains(c)) return true;
         if (GateBlocks(c, mover)) return true;
         foreach (var o in S.Units)
-            if (o.Id != mover.Id && o.Alive && !o.IsWarMachine && o.Occupies(c)) return true;
+            if (o.Id != mover.Id && o.Alive && !o.OffField && !o.IsWarMachine && o.Occupies(c)) return true;
         return false;
     }
 

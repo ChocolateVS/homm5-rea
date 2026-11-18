@@ -47,7 +47,7 @@ public sealed partial class Battle
             int side = Actor.HeroSide(a);
             var h = S.Heroes[side];
             la.Side = side;
-            la.HeroAttack = S.Living.Where(u => Controller(u) != side && !u.HasEffect(H5.Combat.Fx.Invisible) && u.CreatureId != "BLADE_BARRIER").Select(u => u.Id).ToList();
+            la.HeroAttack = S.Living.Where(u => !u.OffField && Controller(u) != side && !u.HasEffect(H5.Combat.Fx.Invisible) && u.CreatureId != "BLADE_BARRIER").Select(u => u.Id).ToList();
             foreach (var id in HeroSpells(h))
             {
                 var sp = Db.Spell(id);
@@ -77,12 +77,12 @@ public sealed partial class Battle
         if (!unit.IsWarMachine)
             foreach (var t in S.Living)
             {
-                if (Controller(t) == la.Side || t.HasEffect(H5.Combat.Fx.Invisible) || IsSiegeTower(t)) continue;
+                if (t.OffField || Controller(t) == la.Side || t.HasEffect(H5.Combat.Fx.Invisible) || IsSiegeTower(t)) continue;
                 var pos = CanMove(unit) ? AttackPositions(unit, t) : (AreAdjacent(unit, t) ? new List<Cell> { unit.Pos } : new List<Cell>());
                 if (pos.Count > 0) la.Melee[t.Id] = pos;
             }
         if (CanShoot(unit))
-            la.Shoot = S.Living.Where(t => Controller(t) != la.Side && !t.HasEffect(H5.Combat.Fx.Invisible) && !IsSiegeTower(t)
+            la.Shoot = S.Living.Where(t => !t.OffField && Controller(t) != la.Side && !t.HasEffect(H5.Combat.Fx.Invisible) && !IsSiegeTower(t)
                 && !EldritchProtected(unit, t, ranged: true)).Select(t => t.Id).ToList();
         foreach (var ks in unit.Spells)
         {
@@ -105,9 +105,9 @@ public sealed partial class Battle
 
     List<int> AbilityTargets(AbilityInfo ab, int side, Unit? user) => ab.Targeting switch
     {
-        AbilityTargeting.Friend => S.Living.Where(u => Controller(u) == side && !u.IsObject && (user == null || !ab.NeedsAdjacency || AreAdjacent(user, u)) && u.Id != user?.Id).Select(u => u.Id).ToList(),
-        AbilityTargeting.Enemy => S.Living.Where(u => Controller(u) != side && !u.IsObject && !u.HasEffect(H5.Combat.Fx.Invisible) && (user == null || !ab.NeedsAdjacency || AreAdjacent(user, u))).Select(u => u.Id).ToList(),
-        AbilityTargeting.Any => S.Living.Where(u => !u.IsObject && u.Id != user?.Id).Select(u => u.Id).ToList(),
+        AbilityTargeting.Friend => S.Living.Where(u => !u.OffField && Controller(u) == side && !u.IsObject && (user == null || !ab.NeedsAdjacency || AreAdjacent(user, u)) && u.Id != user?.Id).Select(u => u.Id).ToList(),
+        AbilityTargeting.Enemy => S.Living.Where(u => !u.OffField && Controller(u) != side && !u.IsObject && !u.HasEffect(H5.Combat.Fx.Invisible) && (user == null || !ab.NeedsAdjacency || AreAdjacent(user, u))).Select(u => u.Id).ToList(),
+        AbilityTargeting.Any => S.Living.Where(u => !u.OffField && !u.IsObject && u.Id != user?.Id).Select(u => u.Id).ToList(),
         AbilityTargeting.DeadFriend when ab.Id == Ab.ResurrectAllies && user != null =>
             S.Units.Where(u => ResurrectAlliesRefusal(user, u) == null).Select(u => u.Id).ToList(),
         AbilityTargeting.DeadFriend => S.Units.Where(u => !u.Alive && !u.Removed && u.Kind == UnitKind.Creature && (ab.Id == "CONSUME_CORPSE" || u.Side == side)).Select(u => u.Id).ToList(),

@@ -40,7 +40,7 @@ public class AuditSweep5Tests(GameDataFixture f)
             var imp = Of(b, "CREATURE_IMP");
             Assert.Equal(0.3, b.GatingPortion(imp, h), 6);
             b.State.Active = imp.Id;
-            var r = b.Apply(new UseAbilityCmd(imp.Id, Ab.Gating) { Side = 1 });
+            var r = b.Apply(new UseAbilityCmd(imp.Id, Ab.Gating, null, imp.Pos) { Side = 1 });   // its own cell is allowed (FUN_00860ce0)
             Assert.True(r.Ok, r.Error);
             int summoned = r.Events.OfType<UnitSummoned>().Sum(e => e.Count);
             Assert.InRange(summoned, 0, 1);

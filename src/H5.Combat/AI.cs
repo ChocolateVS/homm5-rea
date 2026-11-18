@@ -141,7 +141,11 @@ public sealed class GreedyBattleAI : IBattleAI
         }
         foreach (var ab in la.Abilities)
         {
-            if (ab.Ability == Ab.Gating) { list.Add((new UseAbilityCmd(u0.Id, ab.Ability) { Side = side }, 0)); continue; }
+            if (ab.Ability == Ab.Gating)
+            {
+                foreach (var cell in b.GatingAiCells(u0, false).Take(2)) list.Add((new UseAbilityCmd(u0.Id, ab.Ability, null, cell) { Side = side }, 0));
+                continue;
+            }
             if (ab.Targeting == Battle.AbilityTargeting.None)
                 list.Add((new UseAbilityCmd(u0.Id, ab.Ability) { Side = side }, ab.Ability is Ab.Dash or Ab.Invisibility or Ab.RageOfForest ? 50 : 0));
             else if (ab.Targeting == Battle.AbilityTargeting.Cell)

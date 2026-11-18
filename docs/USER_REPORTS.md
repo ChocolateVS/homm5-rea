@@ -164,3 +164,11 @@ from the description. Move an item to "Done" with the commit when fixed.
    valid targets get (0055c480 / 0055bf10); affected cells (kind 4) come only from area spells (00548270 → 0097a530).
    We also put affected marks on the target's cells, which the double quad does not hide. Now one quad (capture
    sp_target); the same for shot and melee targets — same commit.
+22. **Imp gating** ("I should be able to choose where to gate and the imps should go there after some turns"): the
+   engine gated at once onto the free cell nearest the caster. Now as the exe (combat_sweep_19g.md): the Gating
+   button arms a cell target (cast test 00860ce0: the caster's footprint free, own cells allowed, not on a stack still
+   gating in); the cast 00861840 creates the stack at that cell off the field (placement state 1) with the gating mark
+   GATING_CIRCLE1x1/2x2; it arrives at its own first turn start (00bbb390: that cell, else the nearest free one) and
+   does not act that turn. Eligibility tier ≤ 2 × Gating mastery (00c54f50), one charge (SpellPoints2), none for the
+   gated stack; the AI picks ring cells round the field's units (008d28e0). Checked in off-screen duels (Veyer vs
+   Wing Commander): target cursor, mark, arrival — commit "combat: Gating …".
