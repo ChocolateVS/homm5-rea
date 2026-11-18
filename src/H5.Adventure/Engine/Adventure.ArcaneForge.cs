@@ -61,7 +61,7 @@ public sealed partial class Adventure
             case MicroEffect.MagicProtection:
                 // 00c0a340..00c0a3a3: FYL2X is not under the precision control (extended, here double); FMUL / FDIVP are
                 // chopped to 24 bits.
-                float v = X87.Div(Math.Log(X87.Mul(k, 10.0)), Math.Log(600.0));   // 00e22a78 = 10.0, 00e88640 = 600.0
+                float v = X87.Div(DetMath.Log(X87.Mul(k, 10.0)), DetMath.Log(600.0));   // 00e22a78 = 10.0, 00e88640 = 600.0
                 v = X87.Mul(v, X87.Mul(v, v));
                 if (v >= 1.0f) v = 1.0f;                                         // 00e12e00
                 float s = TableSin(X87.Mul(v, 1.5707963705062866));              // 00e62098

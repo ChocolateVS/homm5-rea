@@ -76,7 +76,7 @@ public sealed partial class Battle
         }
         double fromX = anchor.X - (a.Size - 1) / 2.0, fromY = anchor.Y - (a.Size - 1) / 2.0;
         var (tx, ty) = main.Center;
-        float theta = (float)Math.Atan2(ty - fromY, tx - fromX);
+        float theta = (float)DetMath.Atan2(ty - fromY, tx - fromX);
         int pick = -1, bestN = 0; float best = 6.2831855f;
         for (int i = 0; i < recs.Count; i++)
         {

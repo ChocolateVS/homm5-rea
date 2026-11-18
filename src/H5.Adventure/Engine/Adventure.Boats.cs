@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Adventure.Map;
 using H5.Adventure.State;
 
@@ -102,7 +103,7 @@ public sealed partial class Adventure
         if (!h.InBoat || BoatOf(h) is not { } b || b.Pos == h.Pos) return;
         var from = b.Pos;
         b.Pos = h.Pos;
-        b.Rot = MathF.Atan2(h.Pos.Y - from.Y, h.Pos.X - from.X);
+        b.Rot = DetMath.Atan2(h.Pos.Y - from.Y, h.Pos.X - from.X);
     }
 
     // ------------------------------------------------------------------ moving between land and sea

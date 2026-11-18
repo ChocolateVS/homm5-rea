@@ -59,6 +59,8 @@ public static class CombatLauncher
     }
     /// <summary>`--autoplay-turns=N`: the AI plays the local side's first N commands, then hands over.</summary>
     public static int AutoplayTurns;
+    /// <summary>`--combat-trace-hash`: log the battle state hash after every command of a local battle.</summary>
+    public static bool TraceHash;
     /// <summary>`--hover-target=melee|shoot|melee:PART|shoot:PART|spell:ID|ability:ID`: point the simulated mouse at the first such legal target.</summary>
     public static string? HoverTarget;
     /// <summary>`--info-unit=ID`: opens the creature info screen for that unit at start.</summary>
@@ -104,6 +106,7 @@ public static class CombatLauncher
         if (arg.StartsWith("--move-frames-interval=") && MoveFrames is { } mfi)
         { MoveFrames = mfi with { Interval = double.Parse(arg["--move-frames-interval=".Length..], System.Globalization.CultureInfo.InvariantCulture) }; return true; }
         if (arg == "--autoplay") { CombatScreen.Autoplay = true; return true; }
+        if (arg == "--combat-trace-hash") { TraceHash = true; return true; }
         if (arg.StartsWith("--fake-mouse="))
         {
             var xy = arg["--fake-mouse=".Length..].Split(',');

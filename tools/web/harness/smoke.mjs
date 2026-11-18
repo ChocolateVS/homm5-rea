@@ -1,7 +1,7 @@
 // Headless smoke test of the web build: serves <dist>, opens it in a headless Chromium (never a visible window),
 // feeds it the local game install through the page's folder picker, and screenshots each scenario.
-//   node smoke.mjs <dist> --install "<game folder>" [--out DIR] [--only menu,duel,adventure,endturn,remember,persist,decoded,audio,lobby,lobby-wss] [--server H5.Server.dll] [--timeout s]
-//                         [--map-arg --adventure=<map>] [--duel-arg --combat-vs-ai=1,2] [--gpu] [--coi] [--init extra-init-script.js]
+//   node smoke.mjs <dist> --install "<game folder>" [--out DIR] [--only menu,duel,adventure,endturn,determinism,remember,persist,decoded,audio,lobby,lobby-wss] [--server H5.Server.dll] [--timeout s]
+//                         [--map-arg --adventure=<map>] [--duel-arg --combat-vs-ai=1,2] [--det-arg --determinism-check=trace] [--gpu] [--coi] [--init extra-init-script.js]
 //                         [--record-shaders web/game/H5Reborn.web/wwwroot/h5shaders.json]
 // --pick-delay <s>: seconds between the page being ready and the folder being picked.
 // --record-shaders: records every WebGL program the game links in the scenarios run (menu,duel,adventure make a good
@@ -32,6 +32,14 @@ const SCENARIOS = {
   // End the first turn on a map with computer players: every computer turn must run and the human get the next day.
   endturn: { query: '?args=' + encodeURIComponent(opt('--map-arg', '--adventure=A2M1') + ' --adventure-close-boxes --save-dev=endturn,endturn,endturn'),
     marker: /\[H5\] web: adventure on screen/, then: [/computer turn/, /adventure day [2-9]\d* player \d+ human turn/], settle: 5 },
+  // Engine results must be bit-identical to the desktop build (network games mix both): the seeded AI duels of
+  // H5.Combat.DeterminismSuite against the hashes recorded on desktop. --det-arg '--determinism-check=trace' logs every
+  // command's state hash (diff against a desktop log of the same run).
+  determinism: { query: '?args=' + encodeURIComponent(opt('--det-arg', '--determinism-check')), marker: /\[H5\] determinism: done/, settle: 0,
+    after: async (page, log) => {
+      const done = log.map((l) => /\[H5\] determinism: done (\d+)\/(\d+) match/.exec(l)).find(Boolean);
+      return { result: done && done[2] !== '0' && done[1] === done[2] ? 'ok' : 'mismatch', determinism: log.filter((l) => /determinism: /.test(l)).map((l) => l.replace(/^\[[^\]]*\] /, '')) };
+    } },
 };
 const only = opt('--only', 'menu,duel,adventure').split(',');
 

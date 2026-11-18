@@ -99,6 +99,7 @@ public partial class Game : Node
             }
             else if (Arena.ArenaViewer.HandleArg(arg)) { }
             else if (Effects.EffectViewer.HandleArg(arg)) { }
+            else if (Dev.DeterminismCheck.HandleArg(arg)) { }
             else if (Combat.CombatLauncher.HandleArg(arg)) { }
             else if (Adventure.AdventureLauncher.HandleArg(arg)) { }
             else if (Town.TownLauncher.HandleArg(arg)) { }

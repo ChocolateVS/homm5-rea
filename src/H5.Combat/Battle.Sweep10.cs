@@ -142,7 +142,7 @@ public sealed partial class Battle
         return u.Alive && u.Pos == goal;
     }
 
-    static readonly float[] AsinTable = Enumerable.Range(0, 514).Select(i => (float)Math.Asin(Math.Min(1.0, i / 512.0))).ToArray();
+    static readonly float[] AsinTable = Enumerable.Range(0, 514).Select(i => (float)DetMath.Asin(Math.Min(1.0, i / 512.0))).ToArray();
 
     /// <summary>
     /// The exe's arcsine FUN_0046eb30: odd; for x ≥ 0 the table 00e125f0 (513 values asin(i / 512)) read at

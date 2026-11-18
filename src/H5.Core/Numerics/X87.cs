@@ -71,10 +71,11 @@ public static class X87
 
     /// <summary>
     /// FSIN / FCOS: not under the precision control (only FADD / FSUB / FMUL / FDIV / FSQRT are); the result keeps
-    /// the 64-bit mantissa. Ours is the double result, which the next chopped operation or float store reads.
+    /// the 64-bit mantissa. Ours is the double result (<see cref="DetMath"/>, the same on every platform), which the next
+    /// chopped operation or float store reads.
     /// </summary>
-    public static double Sin(float a) => Math.Sin(a);
+    public static double Sin(float a) => DetMath.Sin(a);
 
     /// <summary><see cref="Sin"/> for FCOS.</summary>
-    public static double Cos(float a) => Math.Cos(a);
+    public static double Cos(float a) => DetMath.Cos(a);
 }

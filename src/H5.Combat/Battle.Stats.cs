@@ -168,7 +168,7 @@ public sealed partial class Battle
         double own = (double)u.Count * u.Power;
         double adj = Adjacent(u).Where(o => o.Side == u.Side && o.Town == Towns.Fortress && o.Kind == UnitKind.Creature).Sum(o => (double)o.Count * o.Power);
         if (adj <= own || own <= 0) return 0;
-        return Math.Min(cap, Math.Floor(10 * Math.Log10(adj / own) + 1e-9));
+        return Math.Min(cap, Math.Floor(10 * DetMath.Log10(adj / own) + 1e-9));
     }
 
     int AgilityCells(Unit u) => u.AgilityCells < 0 ? u.BaseSpeed : u.AgilityCells;   // exe effect 0x10f value (see Unit.AgilityCells)
@@ -552,7 +552,7 @@ public sealed partial class Battle
         if (stackSize <= 0) return 1;
         int g = Math.Max(1, weeklyGrowth);
         double inner = 10 + Math.Floor(10.0 * stackSize / g);
-        return Math.Max(1, (int)(21 * Math.Log10(inner) - 22 + (double)0.01f));
+        return Math.Max(1, (int)(21 * DetMath.Log10(inner) - 22 + (double)0.01f));
     }
 
     /// <summary>Ability trigger chance (fan manual p.315), scaled by the per-ability ProcFactor from DefaultStats.</summary>

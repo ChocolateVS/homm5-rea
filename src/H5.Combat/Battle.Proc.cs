@@ -18,7 +18,7 @@ public sealed partial class Battle
         long b = a > t ? Math.Min(75, 25 + 3 * a / t) : Math.Max(5, 25 - 3 * t / a);
         double f = procFactor;
         if (soldiersLuckDoubles && HeroOf(attacker).HasPerk(Sk.SoldiersLuck)) f += f;
-        double fail = Math.Pow((100 - b) * (double)0.01f, f);
+        double fail = DetMath.Pow((100 - b) * (double)0.01f, f);
         return 100 - (int)Math.Floor(fail * 100.0 + 0.5);
     }
 

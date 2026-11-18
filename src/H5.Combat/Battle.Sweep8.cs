@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 using H5.Core.Data;
 
 namespace H5.Combat;
@@ -69,11 +70,11 @@ public sealed partial class Battle
                 if (MathF.Sqrt(dx * dx + dy * dy) < 0.001f) next = adj[S.Rng.Next(adj.Count)];
                 else
                 {
-                    float baseAngle = MathF.Atan2(dy, dx), best = 6.2831855f;
+                    float baseAngle = DetMath.Atan2(dy, dx), best = 6.2831855f;
                     var picks = new List<Unit>();
                     foreach (var o in adj)
                     {
-                        float d = MathF.Abs(WrapAngle(MathF.Atan2((float)o.Center.Y - cy, (float)o.Center.X - cx) - baseAngle));
+                        float d = MathF.Abs(WrapAngle(DetMath.Atan2((float)o.Center.Y - cy, (float)o.Center.X - cx) - baseAngle));
                         if (d < best) { picks.Clear(); picks.Add(o); best = d; }
                         else if (MathF.Abs(d - best) < 0.001f) picks.Add(o);
                     }

@@ -126,6 +126,8 @@ public sealed class LocalCombatSession : CombatSession
         var r = _battle.Apply(cmd);
         if (!r.Ok) { LastRejection = r.Error; GD.Print($"[H5] command rejected: {r.Error}"); return; }
         LastRejection = null;
+        // `--combat-trace-hash`: the state hash after every command (diff two builds' logs to find a desync's first command).
+        if (CombatLauncher.TraceHash) GD.Print($"[H5] combat step {++_steps} {_battle.State.ComputeHash()} {MessageJson.Serialize(cmd)}");
         _pending.Enqueue(r.Events);
         CheckEnd();
     }
@@ -162,6 +164,7 @@ public sealed class LocalCombatSession : CombatSession
     }
 
     PendingDecision? _decision;
+    int _steps;
 }
 
 /// <summary>

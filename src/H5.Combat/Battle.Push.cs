@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 namespace H5.Combat;
 
 public sealed partial class Battle
@@ -29,15 +30,15 @@ public sealed partial class Battle
         var (tx, ty) = target.Center;
         // The exe's first argument swaps the two centres: 0 = away from the attacker (push), 1 = towards it (pull).
         float dir = towardAttacker
-            ? MathF.Atan2((float)(ay - ty), (float)(ax - tx))
-            : MathF.Atan2((float)(ty - ay), (float)(tx - ax));
+            ? DetMath.Atan2((float)(ay - ty), (float)(ax - tx))
+            : DetMath.Atan2((float)(ty - ay), (float)(tx - ax));
         float best = 6.2831855f;
         Cell? result = null;
         foreach (var (dx, dy) in PushRing)
         {
             var c = new Cell(target.Pos.X + dx, target.Pos.Y + dy);
             if (!Fits(target, c)) continue;
-            float diff = MathF.Abs(WrapAngle(MathF.Atan2(dy, dx) - dir));
+            float diff = MathF.Abs(WrapAngle(DetMath.Atan2(dy, dx) - dir));
             if (diff <= tolerance && diff < best) { best = diff; result = c; }
         }
         return result;

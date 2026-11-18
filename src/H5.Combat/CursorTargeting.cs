@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 namespace H5.Combat;
 
 /// <summary>
@@ -50,7 +51,7 @@ public static class CursorTargeting
     /// 57.295776 (00e1c570), stored with truncation (FISTP under control word | 0xc00). Grid units; the exe's world
     /// x / y run along the grid's x / y.
     /// </summary>
-    public static int HoverAngle(double dx, double dy) => (int)((float)Math.Atan2(dy, dx) * 57.295776f);
+    public static int HoverAngle(double dx, double dy) => (int)((float)DetMath.Atan2(dy, dx) * 57.295776f);
 
     /// <summary>
     /// FUN_0053e570(angle, n): sector of an angle among n. Step 360/n (float); when n is a multiple of 8 the angle is

@@ -431,7 +431,7 @@ public sealed partial class Battle
                 {
                     int d = Distance(u, v);
                     int baseDamage = (int)((float)u.Count * (wailConst - MoraleOf(v)) * wailCoef);
-                    DealDamage(v, (int)(baseDamage / MathF.Pow(wailArg, d - 1)), u.Id, AttackKind.Ability, c.Ability);
+                    DealDamage(v, (int)(baseDamage / DetMath.Pow(wailArg, d - 1)), u.Id, AttackKind.Ability, c.Ability);
                 }
                 break;
             }

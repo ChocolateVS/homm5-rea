@@ -189,7 +189,7 @@ public static class CreatureWeekSpawn
         return X87.Add(r, 1.5707964f);
     }
 
-    static readonly float[] AsinTable = Enumerable.Range(0, 514).Select(i => (float)Math.Asin(Math.Min(1.0, i / 512.0))).ToArray();
+    static readonly float[] AsinTable = Enumerable.Range(0, 514).Select(i => (float)DetMath.Asin(Math.Min(1.0, i / 512.0))).ToArray();
 
     /// <summary>
     /// 0046eb30: odd; for x ≥ 0, t = 512x (00e12df8), i = trunc(t − 0.5) (FISTP under chop), i &gt; 0x200 → 0x200, masked

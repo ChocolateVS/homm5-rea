@@ -1,3 +1,4 @@
+using H5.Core.Numerics;
 namespace H5.Combat;
 
 // Activated creature abilities checked against the cast switch of H5_Game.exe (FUN_00984a00, jump table 009886d4,
@@ -46,7 +47,7 @@ public sealed partial class Battle
     internal static double SeduceDuration(int casterCount, int casterPower, int targetCount, int targetPower)
     {
         float ratio = (float)(casterCount * Math.Max(1, casterPower)) / (targetCount * Math.Max(1, targetPower));
-        float d = Math.Clamp((float)Math.Log2(ratio) + 1.5f, 0f, 4f);
+        float d = Math.Clamp((float)DetMath.Log2(ratio) + 1.5f, 0f, 4f);
         return (int)(d * 1000f) * 0.001;
     }
 }
