@@ -29,7 +29,9 @@ public sealed partial class OriginalAdventureAI
             (RecruitCmd Cmd, string Creature)? bestCmd = null;
             foreach (var (cmd, creature) in PurchaseOffers(g, buyer, hero))
             {
-                var sim = Simulation(g);
+                // The trial writes no map object's state but the buyer's (a dwelling's stock): the other object states
+                // are shared with g (StateCopy.OfSharingObjects).
+                var sim = g.Simulation(StateCopy.OfSharingObjects(g.S, buyer));
                 if (!BuyOffer(sim, cmd, creature, real: false)) continue;
                 var sh = hero == null ? null : sim.S.Hero(hero.Id);
                 double d = (double)PurchaseValue(sim, st, buyer, sh) - v0 + (ignoreMoney ? 0.0 : ResourceValue(sim, me, sim.Current.Purse)) - m0;

@@ -29,6 +29,32 @@ public class AiSimulationTests(Fixture f)
     }
 
     [Fact]
+    public void Scoped_copy_shares_only_the_other_object_states()
+    {
+        var g = f.NewGame("A2M1", 5);
+        var ai = new OriginalAdventureAI();
+        for (int turn = 0; turn < 10 && !g.S.Finished; turn++) ai.PlayTurn(g, 500UL + (ulong)turn);
+        string before = g.S.ComputeHash();
+        int deep = g.S.Objects.Keys.First();
+        var copy = StateCopy.OfSharingObjects(g.S, deep);
+        Assert.Equal(g.S.Serialize(), copy.Serialize());
+        Assert.Equal(g.S.Objects.Keys, copy.Objects.Keys);
+        Assert.NotSame(g.S.Objects, copy.Objects);
+        foreach (var (k, v) in copy.Objects)
+            if (k == deep) Assert.NotSame(g.S.Objects[k], v); else Assert.Same(g.S.Objects[k], v);
+
+        // Everything but the shared object states is private to the copy.
+        foreach (var p in copy.Players) { p.Purse.R[6] += 1000; p.VisitedObjects.Add(-5); }
+        foreach (var h in copy.Heroes) { h.Experience += 10; foreach (var s in h.Army) if (s != null) s.Count++; }
+        foreach (var t in copy.Towns) { t.Available[0] += 3; t.Built["X"] = 1; }
+        copy.Objects[deep].Removed = !copy.Objects[deep].Removed;
+        copy.Objects[deep].VisitedBy.Add(-1);
+        copy.Objects.Remove(copy.Objects.Keys.Last());
+        copy.Rng.NextU64();
+        Assert.Equal(before, g.S.ComputeHash());
+    }
+
+    [Fact]
     public void State_copy_is_faster_than_the_json_clone()
     {
         var g = f.NewGame("A2M1", 5);

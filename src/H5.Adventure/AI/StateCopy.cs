@@ -21,6 +21,26 @@ public static class StateCopy
 {
     public static AdvState Of(AdvState s) => (AdvState)Copy(s)!;
 
+    /// <summary>
+    /// A copy for a trial that changes no map object's state but <paramref name="deepObject"/>'s: like <see cref="Of"/>,
+    /// except that <see cref="AdvState.Objects"/> is a new dictionary (same keys, same order) sharing every
+    /// <see cref="ObjState"/> with the original but the one of <paramref name="deepObject"/>, which is copied. The object
+    /// states are most of a full copy's cost. Only for code that writes no other object's state (the purchase trial:
+    /// the market trade, its marketplace build, the recruit).
+    /// </summary>
+    public static AdvState OfSharingObjects(AdvState s, int deepObject)
+    {
+        var c = (AdvState)WithoutObjects(s);
+        var objs = s.Objects;
+        var d = new Dictionary<int, ObjState>(objs.Count, objs.Comparer);
+        foreach (var (k, v) in objs) d.Add(k, k == deepObject ? (ObjState)Copy(v)! : v);
+        c.Objects = d;
+        return c;
+    }
+
+    static Func<object, object>? _withoutObjects;
+    static Func<object, object> WithoutObjects => _withoutObjects ??= BuildObject(typeof(AdvState), nameof(AdvState.Objects));
+
     static readonly ConcurrentDictionary<Type, Func<object, object>> Copiers = new();
     static readonly ConcurrentDictionary<Type, bool> ImmutableTypes = new();
     static readonly Func<object, object> Memberwise =
@@ -129,9 +149,12 @@ public static class StateCopy
         return a;
     }
 
-    static Func<object, object> BuildObject(Type t)
+    static Func<object, object> BuildObject(Type t) => BuildObject(t, null);
+
+    /// <summary>The copier of <paramref name="t"/>; the field named <paramref name="share"/> (if any) keeps the original's reference.</summary>
+    static Func<object, object> BuildObject(Type t, string? share)
     {
-        var mutable = Fields(t).Where(f => !IsImmutable(f.FieldType)).ToList();
+        var mutable = Fields(t).Where(f => !IsImmutable(f.FieldType) && f.Name != share).ToList();
         if (mutable.Count == 0) return Memberwise;
         if (t.IsValueType)
         {
