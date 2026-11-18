@@ -18,7 +18,8 @@ public static class DevArgs
     /// <summary>
     /// Further synthetic mouse input for UI tests (repeatable, same `@seconds` timing): `--wheel=x,y,notches`
     /// (positive = down), `--press=x,y` / `--release=x,y` (left button held between them, e.g. scroll-bar arrow or
-    /// track repeat), `--move=x,y` (motion, with the left button down while pressed: lever drags), `--key=NAME@s`
+    /// track repeat), `--dblclick=x,y` (press, release, then a press with the double-click flag as the OS reports the
+    /// second click, and its release), `--move=x,y` (motion, with the left button down while pressed: lever drags), `--key=NAME@s`
     /// (a key press and release, Godot key name such as K or Escape), `--keydown=NAME@s` / `--keyup=NAME@s` (hold / let go).
     /// </summary>
     public static readonly List<(string Op, Vector2 Pos, float Arg, double At)> MouseOps = new();
@@ -44,7 +45,7 @@ public static class DevArgs
                 Clicks.Add((new Vector2(float.Parse(xy[0]), float.Parse(xy[1])),
                     parts.Length > 1 ? double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture) : 1));
             }
-            else if (a.StartsWith("--wheel=") || a.StartsWith("--press=") || a.StartsWith("--release=") || a.StartsWith("--move="))
+            else if (a.StartsWith("--wheel=") || a.StartsWith("--press=") || a.StartsWith("--release=") || a.StartsWith("--move=") || a.StartsWith("--dblclick="))
             {
                 int eq = a.IndexOf('=');
                 var parts = a[(eq + 1)..].Split('@');
@@ -114,6 +115,13 @@ public static class DevArgs
             case "press":
                 _held = true;
                 Input.ParseInputEvent(new InputEventMouseButton { Position = pos, GlobalPosition = pos, ButtonIndex = MouseButton.Left, Pressed = true, ButtonMask = MouseButtonMask.Left });
+                break;
+            case "dblclick":
+                foreach (var dbl in new[] { false, true })
+                {
+                    Input.ParseInputEvent(new InputEventMouseButton { Position = pos, GlobalPosition = pos, ButtonIndex = MouseButton.Left, Pressed = true, DoubleClick = dbl, ButtonMask = MouseButtonMask.Left });
+                    Input.ParseInputEvent(new InputEventMouseButton { Position = pos, GlobalPosition = pos, ButtonIndex = MouseButton.Left, Pressed = false });
+                }
                 break;
             case "release":
                 _held = false;

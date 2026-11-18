@@ -6,15 +6,20 @@ from the description. Move an item to "Done" with the commit when fixed.
 
 ## Open — reported 2026-11-10 (browser build 3c4ea8b)
 
-5. **Town:** double-clicking to buy does not work.
-   Checked (rep-input): a double click on a hire row buys in off-screen desktop runs (both clicks in one frame and
-   frames apart) and in headless Chromium with real mouse events (Playwright dblclick); the rows follow the exe's
-   CHireItem double-click flag (006ddb60 +0x84) and every data-defined dbl command is handled. Not reproduced — need
-   the screen / row the user double-clicked.
 6. **Browser — data picker page:** the first screen (choosing the game files) is very hard to read;
    make it readable and themed like the game.
 7. **Browser — F11:** the game captures key input, so F11 full screen does not work in the browser.
 ## Done
+
+5. **Town hire screen double click:** traced again in the exe: the double click is CHireItem's IClickNotify slot 1
+   006d8a40 — with the row flag +0x3c (1 for the hire_window rows, 006df6d0 → 006ddb60) it presses the dial's Buy
+   (vf 0x174(2)) with the dial's count; the first click of the pair (slot 0 006def90 → 006de370) selects a new column
+   with the count at its maximum, but leaves the selected column alone, so a count set with −/+ is what gets bought.
+   Ours reset the count to the maximum on every click; now as the exe in the town, caravan and map-dwelling hire
+   screens. The double click itself bought in every off-screen run (desktop, `--dblclick=` sends the OS's
+   press / release / double-click press); the user's failing case is still not reproduced. Seen while testing: on
+   MMH55 A2M1 / A2M2 a script message box "+N Mana" reopens endlessly (83 in 40 s, ScriptUiBridge message_box), which
+   covers every screen — commit "town: hire click keeps the selected column's count, double click buys it (user report 5)".
 
 1. **Victory/defeat screen** (combat results): the outcome and experience lines were one text block drawn over
    the container; now DescriptionText / DescriptionExp are filled separately and added as items of the HeaderCont

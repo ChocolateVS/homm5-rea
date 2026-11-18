@@ -14,7 +14,10 @@ namespace H5Reborn.Town;
 /// (00782b70; button_0 Exit, 1 Minus, 2 Buy, 3 Plus, 4 HireAll — screen handler 006e3050).
 ///   • Clicking a column (CHireItem 006def90) selects it; the dial range becomes 0..min(pool, affordable) and the
 ///     count is set to that maximum (006dd9d0).
-///   • Double-clicking (CHireItem 006d8a40, enabled for the town) presses Buy: CHireCreaturesCmd with the dial count.
+///   • Double-clicking (CHireItem IClickNotify slot 1 006d8a40: row flag +0x3c, 1 for the hire_window rows of 006df6d0)
+///     presses the dial's Buy (vf 0x174(2)): CHireCreaturesCmd with the dial count. Only the three creature buttons
+///     notify the row (006ddb60 → 00563e80); the first click of the pair selects a new column (count = maximum) or keeps
+///     the selected column's count.
 ///   • HireAll (006e3050 case 4): the plan of FUN_009a52a0 (006dcfe0) with each row's selected column, its cost in the
 ///     buy_all_header / buy_all_text_format box, then CHireAllCreaturesCmd (<see cref="HireAllCmd"/>).
 /// Creatures go to the garrison hero's army, else the town garrison (0061af30, <see cref="H5.Adventure.Engine.Adventure.TownRecruitArmy"/>).
@@ -80,7 +83,7 @@ public sealed partial class TownHireScreen : TownSubScreen
     public override void _Ready()
     {
         base._Ready();
-        Select(_row, _column[TierOf(_row) - 1]);
+        Select(_row, _column[TierOf(_row) - 1], force: true);
         if (DevTab is { } tab) { DevTab = null; ShowCaravanTab(tab switch { "castles" => 2, "dwellings" => 3, _ => 4 }); }
     }
 
@@ -101,9 +104,15 @@ public sealed partial class TownHireScreen : TownSubScreen
     string? CreatureAt(int row, int col) => row < _tiers.Count ? G.DwellingCreature(Owner.Town, _tiers[row], col) : null;
     int Pool(int row) => row < _tiers.Count ? Owner.Town.Available[_tiers[row] - 1] : 0;
 
-    void Select(int row, int col)
+    /// <summary>
+    /// CHireItem click (006def90 → 006de370): a column other than the selected one becomes the selection and the dial is
+    /// reset to its maximum (006de1e0 → 006dd9d0); clicking the selected column changes nothing, so the dial keeps the
+    /// count the player set. The double click (006d8a40) then presses Buy with that count.
+    /// </summary>
+    void Select(int row, int col, bool force = false)
     {
         if (CreatureAt(row, col) == null) return;
+        if (!force && row == _row && col == _column[TierOf(row) - 1]) return;
         _row = row;
         _column[TierOf(row) - 1] = col;
         SetCount(MaxCount());

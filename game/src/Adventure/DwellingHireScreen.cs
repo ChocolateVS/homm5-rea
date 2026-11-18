@@ -18,8 +18,9 @@ namespace H5Reborn.Adventure;
 /// 006df9a0 / 006de820 over the dwelling's +0x11c list; 006ddb60 hides every item, 006db6b0 shows the filled ones); with no
 /// selection the first row is selected (006df9a0 tail: items[0]'s creature).
 /// The rows are the same CHireItem as the town's hire screen (<see cref="H5Reborn.Town.TownHireScreen"/>):
-///   • clicking a creature (006def90 → 006dd9d0) selects the row and sets the count to min(pool, affordable);
-///   • double-clicking (006d8a40, row flag +0x3c from 006ddb60) presses Buy with that count;
+///   • clicking another creature (006def90 → 006de370 → 006dd9d0) selects the row and sets the count to
+///     min(pool, affordable); clicking the selected one keeps the dial's count;
+///   • double-clicking (006d8a40, row flag +0x3c = 1 from 006df6d0 → 006ddb60) presses Buy with that count;
 ///   • HireAll (006e3050 case 4 → 006da5c0 → CHireAllCreaturesCmd 0042b870 → FUN_009a52a0) hires every row, last row
 ///     first, with the free-slot rule (<see cref="H5.Adventure.Engine.Adventure.DwellingHireAllPlan"/>), after the
 ///     buy_all_header / buy_all_text_format box with the total cost.
@@ -84,7 +85,7 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
     {
         _row = 0;
         base._Ready();
-        Select(_row);
+        Select(_row, force: true);
     }
 
     public override void _UnhandledInput(InputEvent e)
@@ -100,9 +101,10 @@ public sealed partial class DwellingHireScreen : MapBuildingScreen
         base._UnhandledInput(e);
     }
 
-    void Select(int row)
+    /// <summary>006def90 → 006de370: only a different creature resets the dial to its maximum (TownHireScreen.Select).</summary>
+    void Select(int row, bool force = false)
     {
-        if (row >= RowCount) return;
+        if (row >= RowCount || !force && row == _row) return;
         _row = row;
         SetCount(MaxAffordable());
     }

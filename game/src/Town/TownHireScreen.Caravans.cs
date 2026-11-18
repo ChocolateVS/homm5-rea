@@ -136,6 +136,14 @@ public sealed partial class TownHireScreen
     }
 
     /// <summary>The selected row's creature_upgrade_selection frame (as on the town rows: shown on the selected row).</summary>
+    void SelectCaravan(int row, int col)
+    {
+        if (row == _crow && col == _ccol) return;
+        _crow = row; _ccol = col;
+        UpdateCaravanSelection();
+        SetCount(MaxCount());
+    }
+
     void UpdateCaravanSelection()
     {
         for (int i = 0; i < _rowNodes.Count; i++)
@@ -160,11 +168,13 @@ public sealed partial class TownHireScreen
             TownUi.SetPicture(btn, TownUi.CreatureIcon(cr));
             (btn.FindChild("text", false, false) as UiNode)?.SetValue("value", pool.ToString());
             int row = i, col = c;
-            btn.Clicked += _ => { _crow = row; _ccol = col; UpdateCaravanSelection(); SetCount(MaxCount()); };
+            // 006def90 → 006de370: only a different column resets the dial to its maximum; the double click (006d8a40)
+            // presses Buy with the dial's count.
+            btn.Clicked += _ => SelectCaravan(row, col);
             btn.GuiInput += e =>
             {
                 if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true, DoubleClick: true })
-                { _crow = row; _ccol = col; SetCount(MaxCount()); BuyToCaravan(_count); }
+                { SelectCaravan(row, col); BuyToCaravan(_count); }
             };
         }
         var def = Child(node, "definition");
