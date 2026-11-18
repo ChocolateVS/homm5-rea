@@ -247,3 +247,17 @@ Screenshots (half size) and results.tsv stay outside the repo (the agent's scrat
 | `creaturespell:SPELL_BLOODLUST@CREATURE_ZEALOT` | CREATURE_ZEALOT | PASS | target CREATURE_ZEALOT; events ManaChanged,SpellCast,EffectAdded,AtbChanged,TurnStarted | 173_creaturespell-SPELL_BLOODLUST-CREATURE_ZEALOT_*.png |
 
 Counts: FAIL 8, PASS 178, SKIP 1, WARN 16
+
+## Results (MMH55, `--target=mmh55`, same build)
+
+Counts: PASS 196, WARN 15, FAIL 7, SKIP 6 (abilities 50/0/3/2, spells + creature spells 146/15/4/4). Differences from stock:
+
+| Case | Result | Detail |
+|---|---|---|
+| `ability:ABILITY_LEAP` | FAIL | no target in range in this set-up (cursor and engine agree: no target accepted); set-up, not a UI fault |
+| `ability:ABILITY_DEFILE_MAGIC` | SKIP | no MMH55 creature has the ability |
+| `heroability:IMBUE_ARROW:SPELL_MAGIC_ARROW` | SKIP | not offered with Magic Arrow in MMH55 data |
+| `spell:SPELL_WARCRY_FEAR_MY_ROAR`, `spell:SPELL_WARCRY_RALLING_CRY` | SKIP | not offered to the preset hero (level) |
+| other warcries | FAIL | G3 (orc book) |
+| `ability:ABILITY_GOBLIN_THROWER`, `ability:PLAGUE_TENT` | FAIL | G2 |
+| Resurrect / Animate Dead, creature casters with an ability | WARN | G4, G2 |
