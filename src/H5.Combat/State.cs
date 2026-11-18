@@ -310,7 +310,8 @@ public sealed class BattleState
 
     public string Serialize() => JsonSerializer.Serialize(this, Json);
     public static BattleState Deserialize(string json) => JsonSerializer.Deserialize<BattleState>(json, Json)!;
-    public BattleState Clone() => Deserialize(Serialize());
+    /// <summary>A deep copy, equal to the JSON round trip (<see cref="BattleStateCopy"/>).</summary>
+    public BattleState Clone() => BattleStateCopy.Of(this);
 
     /// <summary>Stable 64-bit FNV-1a hash of the canonical serialisation, as hex, for desync detection.</summary>
     public string ComputeHash()
