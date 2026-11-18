@@ -29,6 +29,8 @@ public static class CombatLauncher
     public static (int N, string Path)? SignScreenshot;
     /// <summary>`--hero-strike-screenshot=N:PATH`: capture at the hit of the Nth hero strike.</summary>
     public static (int N, string Path)? HeroStrikeScreenshot;
+    /// <summary>`--hero-after-screenshot=N:PATH`: capture 4 s after the Nth hero strike or spell cast starts (the hero back in its idle at its stand).</summary>
+    public static (int N, string Path)? HeroAfterScreenshot;
     /// <summary>`--shot-screenshot=N:path` / `--spell-screenshot=N:path`: capture mid-flight / mid-visual.</summary>
     public static (int N, string Path)? ShotScreenshot, SpellScreenshot;
     /// <summary>`--open-spellbook`: autoplay the local side until its hero acts, then open the spellbook.</summary>
@@ -166,6 +168,13 @@ public static class CombatLauncher
             var v = arg["--hero-strike-screenshot=".Length..];
             int colon = v.IndexOf(':');
             HeroStrikeScreenshot = (int.Parse(v[..colon]), v[(colon + 1)..]);
+            return true;
+        }
+        if (arg.StartsWith("--hero-after-screenshot="))
+        {
+            var v = arg["--hero-after-screenshot=".Length..];
+            int colon = v.IndexOf(':');
+            HeroAfterScreenshot = (int.Parse(v[..colon]), v[(colon + 1)..]);
             return true;
         }
         if (arg.StartsWith("--results-screenshot=")) { ResultsScreenshot = arg["--results-screenshot=".Length..]; return true; }
