@@ -147,3 +147,20 @@ from the description. Move an item to "Done" with the commit when fixed.
    threads) and its command is used only for the position it was decided for; frames over 40 ms in the same duel went
    11 → 1 (PendingDecisionTests) — commit "combat: AI turns decided off the render thread (user report 27)".
    The adventure battle's computer side (AdventureCombatSession.Tick) still decides in place.
+21. **Moving 2×2 troops by one square** ("hovering either of the squares one up would move the troop one up"): the exe
+   (00548270 move branch → FUN_00576630 / FUN_00c53160) snaps the cursor cell to the first anchor (the stack's high
+   corner) cursor + (dx, dy), dx outer, dy inner, the stack has a path to — over empty ground, its own cells or a
+   friend's. We took the destination whose top-left was the hovered cell (the row above moved a 2×2 by two or
+   diagonally) and only over empty cells. Now as the exe: the cell above the high corner, and at the left edge either
+   cell above, moves it up by one, as does its own high corner (captures mv_upR / mv_upL / mv_own) — commit "combat:
+   move destination and attack position from the cursor per H5_Game.exe". Not ported: the exe's cursor point over a
+   stack is the model hit (it then takes that stack's nearest cell); ours is the ground under the cursor.
+23. **Attack direction from the cursor:** the exe (FUN_00547e50) takes the ring of attack positions round the target
+   (00b3d010, counter-clockwise from +x), the sector of the cursor's angle round the target's centre (00544230,
+   0053e570), that position if the attack from it is valid, else the nearest valid one round the ring; the sword cursor
+   is that direction less the camera yaw in 8 sectors (00540ef0). We matched screen directions instead. Now as the exe
+   for every size pair (captures at_W / at_N / at_NW; CursorTargetingTests) — same commit.
+24. **2×2 spell target half green, half blue:** the exe marks a unit spell target only with the aimable double quad all
+   valid targets get (0055c480 / 0055bf10); affected cells (kind 4) come only from area spells (00548270 → 0097a530).
+   We also put affected marks on the target's cells, which the double quad does not hide. Now one quad (capture
+   sp_target); the same for shot and melee targets — same commit.

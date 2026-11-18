@@ -91,7 +91,19 @@ public sealed class ArenaGrid
     }
 
     /// <summary>Intersects a picking ray with the terrain under the grid (march, then bisect).</summary>
-    public Vector2I? CellAtRay(Vector3 origin, Vector3 dir, bool bordered = false)
+    public Vector2I? CellAtRay(Vector3 origin, Vector3 dir, bool bordered = false) =>
+        GroundAtRay(origin, dir) is { } w ? CellAtWorld(w, bordered) : null;
+
+    /// <summary>The picking ray's ground point in fractional grid coordinates (cell units, origin at the grid corner).</summary>
+    public Vector2? GridPointAtRay(Vector3 origin, Vector3 dir)
+    {
+        if (GroundAtRay(origin, dir) is not { } w) return null;
+        var m = WorldToMap(w);
+        return new Vector2(m.X - OriginTileX, m.Y - OriginTileY);
+    }
+
+    /// <summary>The world point where a picking ray meets the terrain (march, then bisect).</summary>
+    public Vector3? GroundAtRay(Vector3 origin, Vector3 dir)
     {
         if (dir.Y >= -1e-4f) return null;
         dir = dir.Normalized();
@@ -111,7 +123,7 @@ public sealed class ArenaGrid
                     var mq = WorldToMap(q);
                     if (q.Y <= HeightAt(mq.X, mq.Y)) hi = mid; else lo = mid;
                 }
-                return CellAtWorld(origin + dir * hi, bordered);
+                return origin + dir * hi;
             }
             prevT = t;
             t += step;

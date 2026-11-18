@@ -103,6 +103,8 @@ public sealed class CombatCamera
 
     /// <summary>True when the last right-button press turned into a camera drag (suppresses the info click).</summary>
     public bool RightDragged => _rightDragged;
+    /// <summary>The current yaw (SCameraPos +8, radians), read by the attack cursor (00540ef0).</summary>
+    public float Yaw => _current.Yaw;
 
     // ---- configuration (CArenaCameraConfigurator) -------------------------------------------------
 

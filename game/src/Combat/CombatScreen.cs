@@ -423,6 +423,36 @@ public partial class CombatScreen : Control
         if (la == null) return;
         int? id;
         if (kind.StartsWith("spellok:")) kind = "spell:" + kind[8..] + ":ok";
+        if (kind.StartsWith("grid:") || kind.StartsWith("gridclick:"))
+        {
+            // "grid[click]:unit|unit2|target|abs:DX,DY": the mouse on the ground point (grid units) DX, DY from the low cell of the
+            // acting stack, of its first melee target or of the grid (abs, once a melee is possible); gridclick also clicks there after 1 s (logs the action).
+            var gp = kind.Split(':');
+            var refUnit = gp[1] == "target" ? la.Melee.Keys.Select(k => Session.Battle.State.Unit(k)).FirstOrDefault() : Session.Battle.State.Unit(la.Actor);
+            if (gp[1] == "abs" && la.Melee.Count == 0 && !la.IsHero) refUnit = null;   // abs: absolute grid point, once a melee is possible
+            if (gp[1] == "unit2" && refUnit is not { Size: 2 }) refUnit = null;            // unit2: the first acting 2×2 stack of ours
+            if (refUnit == null || la.IsHero)
+            {
+                // Pass turns (defend) until a stack of ours has a melee target / is acting.
+                if (!Session.Busy && !_playing) Session.Submit(new DefendCmd(la.Actor) { Side = la.Side });
+                return;
+            }
+            var dxy = gp[2].Split(',').Select(v => float.Parse(v, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            var org = gp[1] == "abs" ? new Cell(0, 0) : refUnit.Pos;
+            CombatLauncher.FakeMouse = Arena.Camera.UnprojectPosition(Arena.Grid.CellCenter(org.X + dxy[0], org.Y + dxy[1]));
+            CombatLauncher.HoverTarget = null;
+            if (_fakeCursor == null) { _fakeCursor = new TextureRect { MouseFilter = MouseFilterEnum.Ignore, ZIndex = 100 }; AddChild(_fakeCursor); }
+            _lastHover = null;
+            var unitPos = org;
+            GetTree().CreateTimer(1.0).Timeout += () =>
+            {
+                var m = CombatLauncher.FakeMouse!.Value;
+                var act = Resolve(Arena.CellAtScreen(m, bordered: true), m, out var cur, out _);
+                GD.Print($"[H5] hover-grid {gp[1]} {unitPos} +({gp[2]}) -> cell {Arena.CellAtScreen(m, bordered: true)}: {act?.Command} cursor {cur}");
+                if (kind.StartsWith("gridclick:") && act != null) Submit(act.Command);
+            };
+            return;
+        }
         if (kind.StartsWith("spell:"))
         {
             // "spell:SPELL_ID[:ok]": with ":ok" the first enemy stack is hovered instead of a refused one.
@@ -1593,7 +1623,10 @@ public partial class CombatScreen : Control
                     if (occupant != null && sp.Targets.Contains(occupant.Id))
                     {
                         cursor = CombatCursor.Cast;
-                        foreach (var c in occupant.Cells()) hl.Add((c, 1, CellMark.Affected));
+                        // No cell marks of its own: the target shows the aimable quad every valid target of the armed
+                        // spell gets (list +0x37c, kind 5, one double quad for size 2 — 0055c480 / 0055bf10). The
+                        // affected-cell list (kind 4, action +0x54) is filled only for area spells (00548270 →
+                        // 0097a530 when 00a34670 / 00a33f60).
                         var castU = new CastSpellCmd(la.Actor, sp.Spell, occupant.Id, sp.Targeting == Battle.SpellTargeting.UnitAndCell ? occupant.Pos : null) { Side = side };
                         return new PlannedAction(castU, SpellName(sp.Spell), occupant.Id,
                             CombatPredictions.Spell(b, castU, CombatLogText.Escape(SpellName(sp.Spell)), CombatLogText.Escape(CombatLogText.UnitName(this, occupant.Id))));
@@ -1670,27 +1703,29 @@ public partial class CombatScreen : Control
                             && !me.Has("ABILITY_NO_RANGE_PENALTY") && !me.Has("ABILITY_RANGE_PENALTY"))
                            || (s.Siege != null && b.WallsHalveShot(me, occupant));
                 cursor = far ? CombatCursor.ShootPenalty : CombatCursor.Shoot;
-                foreach (var c in occupant.Cells()) hl.Add((c, 1, CellMark.Affected));
+                // The shot target is marked by the aimable list (kind 5) only; the shot fills no affected cells.
                 return new PlannedAction(new ShootCmd(me.Id, occupant.Id) { Side = side }, "Shoot", occupant.Id,
                     CombatPredictions.Attack(b, me.Id, occupant.Id, null, ranged: true));
             }
-            if (la.Melee.TryGetValue(occupant.Id, out var froms) && froms.Count > 0)
+            if (la.Melee.TryGetValue(occupant.Id, out var froms) && froms.Count > 0
+                && PickAttackFrom(me, occupant, froms, mouse) is var (from, dir))
             {
-                var from = PickAttackFrom(me, occupant, froms, mouse);
-                cursor = AttackCursor(from, me.Size, occupant);
-                hl.Add((from, me.Size, CellMark.Target));
-                foreach (var c in occupant.Cells()) hl.Add((c, 1, CellMark.Affected));
+                cursor = AttackCursor(dir);
+                // The destination mark (kind 2, 0055c480) only where the stack has a path to: not its own cell.
+                if (from != me.Pos) hl.Add((from, me.Size, CellMark.Target));
                 return new PlannedAction(new AttackCmd(me.Id, occupant.Id, from == me.Pos ? null : from) { Side = side }, "Attack", occupant.Id,
                     CombatPredictions.Attack(b, me.Id, occupant.Id, from, ranged: false));
             }
             cursor = CombatCursor.Default;
             return null;
         }
-        if (occupant == null)
+        // Not a hostile stack (00548270: 004e5790 false — empty ground, the acting stack itself or a friend): the move
+        // branch snaps the cursor cell to the first anchor the stack has a path to (FUN_00576630 → FUN_00c53160).
+        // The exe takes the hovered stack's cell nearest to the picked point; ours is the cell under the ground point.
+        if (occupant == null || occupant.Side == side || !occupant.Alive)
         {
-            var dest = la.Moves.Where(p => me.CellsAt(p).Contains(cell))
-                .OrderBy(p => p == cell ? 0 : 1).ThenBy(p => Math.Abs(p.X - cell.X) + Math.Abs(p.Y - cell.Y)).Cast<Cell?>().FirstOrDefault();
-            if (dest is Cell d)
+            var moves = la.Moves.ToHashSet();
+            if (CursorTargeting.SnapMove(cell, me.Size, moves.Contains) is Cell d)
             {
                 cursor = me.Flying ? CombatCursor.Fly : CombatCursor.Move;
                 hl.Add((d, me.Size, CellMark.Target));
@@ -1706,45 +1741,34 @@ public partial class CombatScreen : Control
         return Math.Sqrt((ax - bx) * (ax - bx) + (ay - by) * (ay - by));
     }
 
-    /// <summary>The original picks the strike position from where on the target the mouse is.</summary>
-    Cell PickAttackFrom(Unit me, Unit target, List<Cell> froms, Vector2 mouse)
+    /// <summary>
+    /// The attack position from the cursor (FUN_00547e50): the ring of positions round the target (00b3d010), the
+    /// sector of the hover angle (00544230: cursor point − target centre) among them (0053e570), that entry when the
+    /// attack from it is valid, else the nearest valid one round the ring; plus the action's direction (+0x3c).
+    /// The exe's cursor point is the ray's first hit (the creature model when it is hit, 0054dcd0); ours is the ground.
+    /// </summary>
+    (Cell From, int Dir)? PickAttackFrom(Unit me, Unit target, List<Cell> froms, Vector2 mouse)
     {
-        var tCenter = Arena.Grid.StackCenter(new Vector2I(target.Pos.X, target.Pos.Y), target.Size);
-        var screenCenter = Arena.Camera.UnprojectPosition(tCenter);
-        var dir = mouse - screenCenter;
-        if (dir.Length() < 3) return froms.Contains(me.Pos) ? me.Pos : froms[0];
-        Cell best = froms[0];
-        float bestScore = float.MinValue;
-        foreach (var f in froms)
-        {
-            var fp = Arena.Camera.UnprojectPosition(Arena.Grid.StackCenter(new Vector2I(f.X, f.Y), me.Size));
-            var d = fp - screenCenter;
-            float score = d.Normalized().Dot(dir.Normalized()) - (f == me.Pos ? -0.05f : 0);
-            if (score > bestScore) { bestScore = score; best = f; }
-        }
-        return best;
+        var ring = CursorTargeting.AttackRing(target.Pos, target.Size, me.Size);
+        var p = Arena.GridPointAtScreen(mouse) ?? new Vector2(target.Pos.X + target.Size * 0.5f, target.Pos.Y + target.Size * 0.5f);
+        int angle = CursorTargeting.HoverAngle(p.X - (target.Pos.X + target.Size * 0.5), p.Y - (target.Pos.Y + target.Size * 0.5));
+        var valid = froms.ToHashSet();
+        if (CursorTargeting.PickAttackIndex(angle, ring.Count, i => valid.Contains(ring[i])) is not int idx) return null;
+        return (ring[idx], CursorTargeting.AttackDirection(idx, ring.Count));
     }
 
-    /// <summary>Sword cursor pointing from the strike position towards the target (grid directions).</summary>
-    CombatCursor AttackCursor(Cell from, int size, Unit target)
+    /// <summary>The sword cursor for the attack direction (00540ef0 kind 3: sector of direction − camera yaw).</summary>
+    CombatCursor AttackCursor(int dir) => CursorTargeting.AttackCursorSector(dir, _camera.Yaw) switch
     {
-        var a = Arena.Camera.UnprojectPosition(Arena.Grid.StackCenter(new Vector2I(from.X, from.Y), size));
-        var b = Arena.Camera.UnprojectPosition(Arena.Grid.StackCenter(new Vector2I(target.Pos.X, target.Pos.Y), target.Size));
-        var d = b - a;
-        float ang = Mathf.RadToDeg(Mathf.Atan2(d.Y, d.X));   // screen space, y down
-        int sector = (int)Mathf.PosMod(Mathf.Round(ang / 45f), 8);
-        return sector switch
-        {
-            0 => CombatCursor.AttackRight,
-            1 => CombatCursor.AttackRightDown,
-            2 => CombatCursor.AttackDown,
-            3 => CombatCursor.AttackLeftDown,
-            4 => CombatCursor.AttackLeft,
-            5 => CombatCursor.AttackLeftUp,
-            6 => CombatCursor.AttackUp,
-            _ => CombatCursor.AttackRightUp,
-        };
-    }
+        0 => CombatCursor.AttackLeft,
+        1 => CombatCursor.AttackLeftDown,
+        2 => CombatCursor.AttackDown,
+        3 => CombatCursor.AttackRightDown,
+        4 => CombatCursor.AttackRight,
+        5 => CombatCursor.AttackRightUp,
+        6 => CombatCursor.AttackUp,
+        _ => CombatCursor.AttackLeftUp,
+    };
 
     /// <summary>Stock combat key bindings (input_a2.cfg sections combat_screen / combat_screen_tactic).</summary>
     bool HandleKey(InputEventKey k)
