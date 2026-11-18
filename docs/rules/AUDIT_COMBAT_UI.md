@@ -10,6 +10,7 @@ exe yet). Addresses are H5_Game.exe virtual addresses.
 | Element | Original (evidence) | Ours | Status |
 |---|---|---|---|
 | Attack prediction line (PredictionBox) | exe 00a63020 builds `COMBAT_PREDICTION_NORMAL_ATTACK` "Attack. Damage: a-b (Kills: c-d). <retaliate>", `_MULTIPLE` "x N" for multi-strike; shown by 00545ae0 in PredictionText wrapped in UI/CombatArena-Heavy/PredictionFormat.txt | Same strings (RPGRoot COMBAT_* ids), engine `Battle.PredictAttack` | FIXED |
+| Ballista prediction (several shots) | 00a63020: for a Ballista (vf 0x7c war machine, type +0x1c == 1) each target's min/max damage × shots (vf 0x1c0 = 00a75bf0) before the kills (00a635ba..00a635d8); attacks_count forced to 1 (00a637c7), so NORMAL_ATTACK, not _MULTIPLE. Type 2 (Catapult) goes to 00a62e50 instead | `PredictAttack` multiplies the Ballista's damage by `WarMachineShotsPerAction`, Strikes = 1 (user report 26) | FIXED |
 | Damage / kills range format | 00a5b2d0 / 00a5b160: SIMPLE when min = max, SEPARATED otherwise | Same | FIXED |
 | Damage roll used | 00a63020: min and max roll, luck factor 1.0 | `ComputeDamage` with fixed min/max roll, no luck | FIXED |
 | Kills formula | 00a6bd90: dmg / hp + (top ≤ dmg % hp), clamped to count | `Battle.KillsFor` | FIXED |

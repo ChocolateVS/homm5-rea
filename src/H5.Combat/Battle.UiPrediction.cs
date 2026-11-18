@@ -33,6 +33,12 @@ public sealed partial class Battle
         int strikes = ranged
             ? (a.IsWarMachine ? WarMachineShotsPerAction(a) : HasAbilityNow(a, Ab.DoubleShot) ? 2 : 1)
             : (HasAbilityNow(a, Ab.DoubleAttack) ? 2 : 1) + (a.HasEffect(H5.Combat.Fx.RuneBerserking) ? 1 : 0);   // FUN_008a0f90: Berserking +1
+        // A Ballista (attacker vf 0x7c war machine, type +0x1c == 1) shows ALL its shots as one attack: 00a63020 multiplies each
+        // target's min/max damage by its shots (vf 0x1c0 = FUN_00a75bf0) before the kills (00a635ba..00a635d8) and reports
+        // attacks_count 1, so the plain COMBAT_PREDICTION_NORMAL_ATTACK format, never "x N" (00a637c7..00a637d3).
+        bool ballista = ranged && a.IsWarMachine && a.CreatureId == "WAR_MACHINE_BALLISTA";
+        int damageShots = ballista ? strikes : 1;
+        if (ballista) strikes = 1;
 
         // The exe sums the prediction over every target the attack pattern hits (00a63020 loops the target list
         // from FUN_00a62030), each with its share, the hero's per-target elemental extras (Cold Steel FUN_00a5c000,
@@ -52,6 +58,7 @@ public sealed partial class Battle
             if (factor != 1) { lo = (int)(lo * (float)factor); hi = (int)(hi * (float)factor); }   // share truncated (exe 00a67bf3)
             lo += PredictedElementalExtra(a, target, lo);
             hi += PredictedElementalExtra(a, target, hi);
+            lo *= damageShots; hi *= damageShots;
             int klo = KillsFor(lo, target), khi = KillsFor(hi, target);
             if (vorpal) { klo = Math.Min(target.Count, klo + 1); khi = Math.Min(target.Count, khi + 1); }
             dMin += lo; dMax += hi; kMin += klo; kMax += khi;

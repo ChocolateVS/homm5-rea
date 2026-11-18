@@ -50,6 +50,22 @@ public class WarMachineAuditTests(GameDataFixture f)
         Assert.NotEqual(ballista.Id, b.State.Active);
     }
 
+    // exe 00a63020 (00a635ba..00a635d8, 00a637c7): a Ballista's prediction is every shot's damage summed, kills from
+    // that sum, shown as one plain attack (attacks_count 1, never "x N").
+    [Fact]
+    public void TripleBallistaPredictionSumsAllShotsAsOneAttack()
+    {
+        var (one, b1, t1) = BallistaBattle();
+        var (three, b3, t3) = BallistaBattle(Sk.Ballista, Sk.TripleBallista);
+        var p1 = one.PredictAttack(b1.Id, t1.Id, null, ranged: true)!;
+        var p3 = three.PredictAttack(b3.Id, t3.Id, null, ranged: true)!;
+        Assert.Equal(1, p3.Strikes);
+        Assert.Equal(3 * p1.MinDamage, p3.MinDamage);
+        Assert.Equal(3 * p1.MaxDamage, p3.MaxDamage);
+        Assert.Equal(Battle.KillsFor(p3.MinDamage, t3), p3.MinKills);
+        Assert.Equal(Battle.KillsFor(p3.MaxDamage, t3), p3.MaxKills);
+    }
+
     [Fact]
     public void BallistaStopsShootingWhenTheTargetDies()
     {

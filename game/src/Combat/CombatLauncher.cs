@@ -29,8 +29,6 @@ public static class CombatLauncher
     public static (int N, string Path)? SignScreenshot;
     /// <summary>`--hero-strike-screenshot=N:PATH`: capture at the hit of the Nth hero strike.</summary>
     public static (int N, string Path)? HeroStrikeScreenshot;
-    /// <summary>`--hero-after-screenshot=N:PATH`: capture 4 s after the Nth hero strike or spell cast starts (the hero back in its idle at its stand).</summary>
-    public static (int N, string Path)? HeroAfterScreenshot;
     /// <summary>`--shot-screenshot=N:path` / `--spell-screenshot=N:path`: capture mid-flight / mid-visual.</summary>
     public static (int N, string Path)? ShotScreenshot, SpellScreenshot;
     /// <summary>`--open-spellbook`: autoplay the local side until its hero acts, then open the spellbook.</summary>
@@ -85,6 +83,7 @@ public static class CombatLauncher
             Callable.From(() => StartVsAi(a, b, _seed ?? (ulong)Time.GetTicksUsec())).CallDeferred();
             return true;
         }
+        if (arg.StartsWith("--duel-perks=")) { DuelPerks = arg["--duel-perks=".Length..].Split(','); return true; }
         if (arg.StartsWith("--combat-seed=")) { _seed = ulong.Parse(arg["--combat-seed=".Length..]); return true; }
         if (arg.StartsWith("--camera-script=")) { CombatCamera.DevScript = arg["--camera-script=".Length..]; return true; }
         if (arg == "--no-cinematic") { CinematicCameras.Enabled = false; return true; }
@@ -169,13 +168,6 @@ public static class CombatLauncher
             HeroStrikeScreenshot = (int.Parse(v[..colon]), v[(colon + 1)..]);
             return true;
         }
-        if (arg.StartsWith("--hero-after-screenshot="))
-        {
-            var v = arg["--hero-after-screenshot=".Length..];
-            int colon = v.IndexOf(':');
-            HeroAfterScreenshot = (int.Parse(v[..colon]), v[(colon + 1)..]);
-            return true;
-        }
         if (arg.StartsWith("--results-screenshot=")) { ResultsScreenshot = arg["--results-screenshot=".Length..]; return true; }
         if (arg.StartsWith("--combat-speed="))
         {
@@ -246,9 +238,13 @@ public static class CombatLauncher
     }
 
     /// <summary>A local duel: the player commands side 0, the built-in AI side 1.</summary>
+    /// <summary>`--duel-perks=PERK,...`: dev aid, the local duel hero (side 0) also has these perks (e.g. HERO_SKILL_TRIPLE_BALLISTA).</summary>
+    public static string[]? DuelPerks;
+
     public static void StartVsAi(int presetA, int presetB, ulong seed)
     {
         var session = new LocalCombatSession(Game.Instance.Db, presetA, presetB, seed, new[] { 0 });
+        if (DuelPerks != null) session.Battle.State.Heroes[0].Perks.AddRange(DuelPerks.Where(p => !session.Battle.State.Heroes[0].Perks.Contains(p)));
         GD.Print($"[H5] local duel {presetA} vs {presetB}, seed {seed}");
         CombatScreen.Open(session);
         // Dev input (`--key=` / `--click=` …) relative to the battle start, as for the menu and the adventure map.

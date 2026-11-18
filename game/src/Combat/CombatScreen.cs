@@ -296,26 +296,11 @@ public partial class CombatScreen : Control
             c.Rotation = new Vector3(0, Mathf.Atan2(d.X, d.Z), 0);
             Arena.Units.AddChild(c);
             _heroes[side] = c;
-            ReturnToIdleWhenDone(c);
         }
         catch (Exception e) { GD.PushWarning($"[H5] hero model {characterPath}: {e.Message}"); }
     }
 
     public UnitView? View(int id) => _units.GetValueOrDefault(id);
-
-    /// <summary>
-    /// A hero character goes back to its idle loop when a one-shot clip (rangeattack, cast, attack00, strike) ends, with
-    /// the any→idle cross-fade of exe 0054d700 (combat_anim_blend). Without it the hero held the clip's last frame at its
-    /// stand for the rest of the battle (user report 25); stacks get the same return from FinishAttack.
-    /// </summary>
-    static void ReturnToIdleWhenDone(Character c)
-    {
-        c.Player.AnimationFinished += _ =>
-        {
-            if (!IsInstanceValid(c) || !c.Has("idle00") || c.CurrentKind == "idle00") return;
-            c.Play("idle00", true, UnitView.BlendSeconds(c.CurrentKind, "idle00"));
-        };
-    }
 
     // ---------------------------------------------------------------- frame loop
 
@@ -443,6 +428,16 @@ public partial class CombatScreen : Control
             _mode = InputMode.Ability;
             _pendingAbility = abo;
             id = abo.Targets.Where(t => ak.Length < 2 || (Session.Battle.State.Unit(t)?.CreatureId.Contains(ak[1]) ?? false)).Cast<int?>().FirstOrDefault();
+        }
+        else if (kind.StartsWith("shootby:"))
+        {
+            // "shootby:CREATURE_PART": defend (the hero waits) until OUR shooter whose creature id contains the part acts, hover its first shot.
+            if (la.IsHero || !(Session.Battle.State.Unit(la.Actor)?.CreatureId.Contains(kind[8..]) ?? false) || la.Shoot.Count == 0)
+            {
+                if (!Session.Busy && !_playing) Session.Submit(la.IsHero ? new WaitCmd(la.Actor) { Side = la.Side } : new DefendCmd(la.Actor) { Side = la.Side });
+                return;
+            }
+            id = la.Shoot.OrderBy(t => Session.Battle.State.Unit(t)?.IsWarMachine ?? true).Cast<int?>().FirstOrDefault();
         }
         else if (kind.StartsWith("shoot:") || kind.StartsWith("melee:"))
         {
@@ -929,7 +924,6 @@ public partial class CombatScreen : Control
     async Task AnimateHeroStrike(int side, Character hero, UnitView? target)
     {
         MaybeCapture(ref _heroStrikeCount, CombatLauncher.HeroStrikeScreenshot, 0.5);
-        MaybeCapture(ref _heroAfterCount, CombatLauncher.HeroAfterScreenshot, 4.0);
         var info = _heroInfo.GetValueOrDefault(side);
         Character? strike = null;
         if (info.MeleePath != null && !_heroStrike.TryGetValue(side, out strike))
@@ -1056,7 +1050,7 @@ public partial class CombatScreen : Control
         return CombatLogText.BonusElemental(this, ev.UnitId, d.Target, spell, bonus, dead);
     }
 
-    int _shotCount, _spellCount, _moveCount, _heroStrikeCount, _heroAfterCount;
+    int _shotCount, _spellCount, _moveCount, _heroStrikeCount;
 
     /// <summary>The catapult hurls its boulder at the building hit next (the following BuildingDamaged event).</summary>
     /// <summary>Dive fields in play → the diving stack (the AbilityTriggered just before the field is added names it).</summary>
@@ -1163,10 +1157,7 @@ public partial class CombatScreen : Control
             _cine.Begin(CinematicCameras.Action.SpellCast, caster, sc.Target is { } spellTarget ? Participant(View(spellTarget)) : null, sc.Spell, point);
         }
         if (Actor.IsHero(sc.Caster) && _heroes.GetValueOrDefault(Actor.HeroSide(sc.Caster)) is Character hero && hero.Has("cast"))
-        {
-            MaybeCapture(ref _heroAfterCount, CombatLauncher.HeroAfterScreenshot, 4.0);
             hero.Play("cast");
-        }
         else if (View(sc.Caster) is { } cv && cv.Has("cast"))
             cv.PlayAction("cast");
         await Delay(0.4);

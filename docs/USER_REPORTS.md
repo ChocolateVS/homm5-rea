@@ -122,10 +122,10 @@ from the description. Move an item to "Done" with the commit when fixed.
    the particle pass (0087ed90 → 0087e7e0 → 0087e220; 00a904d0 only fills the batches), so particles are always over the
    grid. Our particle material now has the top render priority — commit "combat sweep 19: particles after the material
    layers, Summon Other destination". (The browser renderer's brighter grid fill is not investigated.)
-25. **Hero after attacking:** "sometimes after the hero attacks he freezes somewhere in the battlefield". Reproduced in
-   off-screen duels (2,3 and 6,7): after a ranged strike ("rangeattack") or a spell ("cast") the hero character held
-   the clip's last frame at its stand (the exe's border square, inside the bordered field) for the rest of the
-   battle — the stacks' return to idle (FinishAttack) never covered the heroes. The melee strike character (shown on
-   the target) was already hidden after its clip. Now a hero goes back to idle00 when any one-shot clip ends, with the
-   any→idle combat_anim_blend cross-fade (exe 0054d700); `--hero-after-screenshot=N:PATH` captures 4 s after the Nth
-   hero strike / cast — commit "combat: the hero returns to idle after a strike or cast".
+26. **Triple Shot ballista prediction** ("only shows the damage of the first shot"): the exe's attack prediction
+   (00a63020) multiplies each target's min/max damage by the shots of a Ballista (attacker vf 0x7c war machine, type
+   +0x1c == 1; shots = vf 0x1c0 = 00a75bf0) before counting kills (00a635ba..00a635d8) and passes attacks_count 1, so the
+   box is the plain "Attack. Damage: a-b (Kills: c-d)" with the summed damage, never "x N" (00a637c7). We showed one
+   shot's damage with "x N"; now as the exe. The ballista already fires 00a75bf0's count of shots in one action (1;
+   Triple Ballista 2; Ballista perk +1; Ring of Machine Affinity +1; WarMachineAuditTests) — commit "combat prediction:
+   a Ballista's shots summed into one attack per H5_Game.exe 00a63020".
