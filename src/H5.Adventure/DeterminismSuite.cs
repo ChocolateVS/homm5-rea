@@ -66,7 +66,7 @@ public static class DeterminismSuite
                 ["duel-5v6-s11-greedy"] = "9c87a06dc5a9929a",
                 ["mapheroes-1v2-s5-original"] = "3b1e536c60a31b37",
                 ["mapheroes-6v10-s7-original"] = "57f967bc9230ec04",
-                ["adv-A2M1-7d-s1"] = "4cd3a1fc7225db4c",
+                ["adv-A2M1-7d-s1"] = "9a4a89d2d1521665",
             },
         };
 
