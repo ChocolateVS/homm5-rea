@@ -129,6 +129,26 @@ public class SeerHutQuestFlagTests(Fixture f)
     }
 
     [Fact]
+    public void TheHutAlwaysTakesTheContribution()
+    {
+        // 004f2b50 / 004f2d90: the hut's objectives are built with TakeContribution forced on, whatever the map says;
+        // OBTAIN_ARTIFACT's effect 00b424b0 takes the artifact worn first (00ca6710), else from the backpack (00ca6c40).
+        var (g, hut, a, _, art) = Make();
+        var q = hut.Quest!;
+        bool tc = q.TakeContribution;
+        try
+        {
+            q.TakeContribution = false;
+            a.Backpack.Add(art);
+            Assert.True(As(g, a, new AcceptSeerQuestCmd(a.Id, hut.Index)));
+            Assert.True(As(g, a, new CompleteSeerQuestCmd(a.Id, hut.Index)));
+            Assert.DoesNotContain(art, a.Artifacts);
+            Assert.Contains(art, a.Backpack);
+        }
+        finally { q.TakeContribution = tc; }
+    }
+
+    [Fact]
     public void RegionsAreReadFromTheMap()
     {
         var g = f.NewGame("A2M4");

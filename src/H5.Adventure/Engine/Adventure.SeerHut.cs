@@ -191,7 +191,8 @@ public sealed partial class Adventure
         // (vf 0x60 flags 3): a ban by another recorded player fails it at once.
         SeerQuestStateChanged(c.Hut, p.Index, completed: false);
         if (os.QuestBanPlayer >= 0 && os.QuestBanPlayer != p.Index) os.QuestFailedBy.Add(p.Index);
-        // The KILL_CREATURES baseline (condition vf 8 = 00b427f0); UNVERIFIED: that it runs when the quest is taken.
+        // The KILL_CREATURES baseline (condition vf 8 = 00b427f0): the objective's state setter 00c5fec0 calls the condition's
+        // vf 8(world, player) when the objective enters state 2, which the take (004f2560, vf 0x58(…, 2, 0)) does.
         if (QuestRequirement(o.Quest) is ("kill", { } cr, _, _)) os.QuestKillBaseline[p.Index] = KilledCount(p.Index, cr);
         return null;
     }
@@ -214,8 +215,13 @@ public sealed partial class Adventure
             Emit(new ObjectVisited(h.Id, c.Hut, "seerhut:failed"));
             return null;
         }
-        // The quest item is handed over when the quest takes the contribution.
-        if (q.TakeContribution)
+        // The contribution is always taken: the hut's ctor 004f2b50 builds both of its objectives from a copy of the quest
+        // with TakeContribution forced on (004f2d90: copy +0x52 = 1, the field 00a32820 fills from SObjective +0x100), and
+        // the objective ctor 00c60eb0 then composes the condition's contribution effect (condition vf 0x18 = 00b47450,
+        // this + 0x30) with the award (FUN_00a7ea50). The map's own TakeContribution is never read for a hut.
+        // OBTAIN_ARTIFACT's effect 00b424b0 removes the artifact worn (00ca6710) or else from the backpack (00ca6c40).
+        // TODO(exe): the exe applies it with the award when the hidden quest objective completes (00c603f0 → 00c5fc90),
+        // to the hero passed to that check; here at the hand-in, from the hand-in hero (see the ledger's timing row).
         {
             var (kind, id, amount, name) = QuestRequirement(q);
             switch (kind)
