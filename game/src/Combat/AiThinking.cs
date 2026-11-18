@@ -55,7 +55,7 @@ public static class AiThinking
     // ---------------------------------------------------------------- frame statistics (--frame-stats)
 
     public static bool FrameStats;
-    static bool _aiWork, _lastAiWork;
+    static bool _aiWork;
     static ulong _lastUs;
     static int _frames, _over40, _over40Ai;
     static double _maxMs, _maxAiMs;
@@ -71,14 +71,13 @@ public static class AiThinking
             _frames++;
             _maxMs = Math.Max(_maxMs, ms);
             if (ms > 40) _over40++;
-            if (_lastAiWork)
+            if (_aiWork)   // the AI worked in the frame just measured
             {
                 _maxAiMs = Math.Max(_maxAiMs, ms);
                 if (ms > 40) _over40Ai++;
             }
         }
         _lastUs = now;
-        _lastAiWork = _aiWork;
         _aiWork = false;
     }
 
