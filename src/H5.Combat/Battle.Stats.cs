@@ -23,6 +23,18 @@ public sealed partial class Battle
 
     IEnumerable<Unit> Adjacent(Unit u) => S.Living.Where(o => o.Id != u.Id && !o.IsObject && AreAdjacent(u, o));
 
+    /// <summary><c>Adjacent(u).Any(o => side test &amp;&amp; o.Has(ability))</c> without enumerators: own side (true), the other (false) or either (null).</summary>
+    bool AdjacentHas(Unit u, bool? ownSide, string ability)
+    {
+        foreach (var o in S.Units)
+            if (o.Alive && o.Id != u.Id && !o.IsObject && (ownSide == null || (o.Side == u.Side) == ownSide) && AreAdjacent(u, o) && o.Has(ability))
+                return true;
+        return false;
+    }
+
+    /// <summary>MoraleOf's scratch list of army towns (per thread: the AI values positions off the main thread).</summary>
+    [ThreadStatic] static List<string>? _armyTowns;
+
     SideBonus Side(Unit u) => S.SideBonuses is { Length: 2 } sb ? sb[u.Side] : NoSideBonus;
     static readonly SideBonus NoSideBonus = new();
 
@@ -183,7 +195,7 @@ public sealed partial class Battle
         double init = u.BaseInitiative * Math.Max(0.1, mult);
         init += Fx(u, H5.Combat.Fx.BattleRage) > 0 ? Stats.Get("combat/Creatures/Fortress/BattleRage_InitiativeBonus", 2) : 0;
         if (u.HasEffect(H5.Combat.Fx.RageOfForest)) init += Stats.Get("combat/Creatures/Sylvan/RageOfTheForestInitiativeInc", 5);
-        if (Adjacent(u).Any(o => o.Side == u.Side && o.Has(Ab.PresenceOfCommander)))   // exe 008a4330: flag 0x400, RPGStats +0x4fc
+        if (AdjacentHas(u, true, Ab.PresenceOfCommander))   // exe 008a4330: flag 0x400, RPGStats +0x4fc
             init += (int)Stats.Get("combat/Creatures/Stronghold/PresenceOfCommanderInitiativeInc", 1);
         init += RageBonus(u, "DEMON_RAGE_BONUS_INITIATIVE");
         if (u.HasEffect(H5.Combat.Fx.Frozen) || u.HasEffect(FxSeducing)) return 0;   // a seducing stack's ATB is frozen (p.181)
@@ -317,11 +329,22 @@ public sealed partial class Battle
         var h = HeroOf(u);
         int m = (h.Present ? h.Morale : 0) + Side(u).Morale;
         // Army composition (p.314, rules 2 and 3)
-        var army = S.Units.Where(x => x.Side == u.Side && x.Kind == UnitKind.Creature && !x.Summoned && x.InitialCount > 0).ToList();
-        if (army.Count >= 2)
+        // The army's distinct non-neutral towns in first-seen order (a loop, no LINQ); with one such town, "every stack of
+        // that town" is "no stack of a neutral town".
+        int armyCount = 0;
+        bool neutralStack = false;
+        var towns = _armyTowns ??= new List<string>();
+        towns.Clear();
+        foreach (var x in S.Units)
         {
-            var towns = army.Select(x => x.Town).Where(t => !Towns.IsNeutral(t)).Distinct().ToList();
-            if (towns.Count == 1 && army.All(x => x.Town == towns[0])) m += 1;
+            if (!(x.Side == u.Side && x.Kind == UnitKind.Creature && !x.Summoned && x.InitialCount > 0)) continue;
+            armyCount++;
+            if (Towns.IsNeutral(x.Town)) neutralStack = true;
+            else if (!towns.Contains(x.Town)) towns.Add(x.Town);
+        }
+        if (armyCount >= 2)
+        {
+            if (towns.Count == 1 && !neutralStack) m += 1;
             else if (towns.Count <= 1) { }
             else
             {
@@ -363,17 +386,17 @@ public sealed partial class Battle
         if (u.HasEffect(LionsDemoralized)) m -= (int)Stats.Get("ArtifactsSetsEffectsConsts/Lions_2_HeroAttack_DeMorale", 2);   // exe 00989fd0 case 0x129
         if (u.HasEffect(H5.Combat.Fx.Sacrifice)) m += (int)Fx(u, H5.Combat.Fx.Sacrifice);
         m += SkillAuditH.EnemyArtifactMorale(Enemy(u.Side));   // exe 00989fd0: Nightmarish Ring, Cloak of Mourning
-        if (Adjacent(u).Any(o => o.Side != u.Side && o.Has(Ab.FrightAura))) m -= 3;             // Frightful Aura (p.175)
+        if (AdjacentHas(u, false, Ab.FrightAura)) m -= 3;             // Frightful Aura (p.175)
         if (S.Living.Any(o => o.Side != u.Side && o.Has(Ab.HorrorOfDeath)))                    // Death Stare (p.173)
             m -= (int)Stats.Get("combat/Creatures/Necropolis/HorrorOfDeath_MoraleDecrease", 1);
-        if (!IsUndeadLike(u) && Adjacent(u).Any(o => o.Has(Ab.WeakeningAura)))
+        if (!IsUndeadLike(u) && AdjacentHas(u, null, Ab.WeakeningAura))
             m -= (int)Stats.Get("combat/Creatures/Necropolis/WeakeningAuraMoraleDec", 1);
         if (MoonWeek.IsBalance(S.Week)) m = weekBase;
         // exe 00a6acd0 (00a6ae7b): a Mechanical stack returns max(0, m) before the Bravery / Aura of Bravery minimums.
         if (NeutralMorale(u)) return Math.Max(0, m);
         // Minimum-morale effects come last.
         if (u.Has(Ab.Bravery)) m = Math.Max(m, 1);
-        if (Adjacent(u).Any(o => o.Side == u.Side && o.Has(Ab.AuraBravery)) || u.Has(Ab.AuraBravery))
+        if (AdjacentHas(u, true, Ab.AuraBravery) || u.Has(Ab.AuraBravery))
             m = Math.Max(m, (int)Stats.Get("combat/Creatures/Dungeon/AuraOfBraveryMoraleMin", 1));
         if (NeutralMorale(u)) m = Math.Max(0, m);
         return m;

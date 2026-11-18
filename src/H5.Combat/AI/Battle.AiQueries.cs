@@ -21,36 +21,58 @@ public sealed partial class Battle
     {
         int best = 0;
         int side = creature?.Side ?? hero!.Side;
-        IEnumerable<(SpellDef Sp, Mastery M, double Power, int Mana, int Cost, int Charges)> entries;
+        if (hero != null && !hero.Present) return 0;
+        var enemyHero = S.Heroes[1 - side];
+        // Every test of an entry is a pure query, so the cheap ones (the spell id, a damage spell) run first and an entry's
+        // mastery, power, cost and wand are only worked out when it can count: the same result as the exe order of tests.
         if (hero != null)
         {
-            if (!hero.Present) return 0;
-            entries = HeroSpells(hero).Select(id => Db.Spell(id)).Where(sp => sp != null && sp.School != "MAGIC_SCHOOL_RUNIC" && CanCastWarcry(hero, sp))
-                .Select(sp => (sp!, HeroMastery(hero, sp!), HeroSpellPower(hero, sp!), hero.Mana, HeroManaCost(hero, sp!), WandFor(hero, sp!.Id)?.Charges ?? -1));
+            foreach (var hid in HeroSpells(hero))
+            {
+                var sp = Db.Spell(hid);
+                if (sp == null || sp.School == "MAGIC_SCHOOL_RUNIC" || !CanCastWarcry(hero, sp)) continue;
+                if (!DamageEntry(sp, out var id)) continue;
+                int cost = HeroManaCost(hero, sp), charges = WandFor(hero, sp.Id)?.Charges ?? -1;
+                best = Math.Max(best, EntryPotential(sp, id, HeroMastery(hero, sp), HeroSpellPower(hero, sp), hero.Mana, cost, charges, side, hero, enemyHero));
+            }
         }
         else
         {
             var u = creature!;
-            entries = u.Spells.Select(k => (k, Db.Spell(k.Spell))).Where(p => p.Item2 != null)
-                .Select(p => (p.Item2!, MoonWeek.SpellMastery(p.k.Mastery, p.Item2!.School, S.Week), (double)CreatureCasterPower(u, u.Count), u.Mana, CreatureManaCost(u, p.Item2!), -1));
-        }
-        var enemyHero = S.Heroes[1 - side];
-        foreach (var (sp, m, power, mana, cost, charges) in entries)
-        {
-            if (charges < 0 && cost > mana) continue;                              // vf 0x220
-            if (sp.Id is "SPELL_ABILITY_EXPLOSION" or "SPELL_ABILITY_DEATH_WAIL") continue;
-            if (Counterable(sp) && enemyHero.Present && enemyHero.Links.ContainsKey(LinkCounterspell) && enemyHero.Mana - 2 * cost >= 0) continue;
-            string id = BaseSpell(sp.Id);
-            if (!SpellDamageSpells.Contains(id)) continue;                         // FUN_00976b90 gives 0
-            var baseDef = Db.Spell(id) ?? sp;
-            if (!S.Living.Any(t => !t.IsObject && Controller(t) != side && !ExeSpellImmune(t, sp, id, hero))) continue;   // FUN_00982be0
-            int dmg = (int)ElementArtifactDamage(hero, sp.Element, SpellBaseDamage(baseDef, sp, m, power));
-            if (dmg == 0) continue;
-            int casts = charges >= 0 ? charges : cost > 0 ? mana / cost : 100;
-            if (charges >= 0 || cost > 0) { if (casts < 1) continue; }
-            best = Math.Max(best, Math.Min(casts, 10) * dmg / 10);
+            foreach (var k in u.Spells)
+            {
+                var sp = Db.Spell(k.Spell);
+                if (sp == null || !DamageEntry(sp, out var id)) continue;
+                best = Math.Max(best, EntryPotential(sp, id, MoonWeek.SpellMastery(k.Mastery, sp.School, S.Week), CreatureCasterPower(u, u.Count),
+                    u.Mana, CreatureManaCost(u, sp), -1, side, null, enemyHero));
+            }
         }
         return best;
+    }
+
+    /// <summary><see cref="AiSpellPotential"/>'s id tests: not Explosion / Death Wail and a damage spell (FUN_00976b90 gives 0 otherwise); <paramref name="id"/> = the base spell.</summary>
+    static bool DamageEntry(SpellDef sp, out string id)
+    {
+        id = BaseSpell(sp.Id);
+        if (sp.Id is "SPELL_ABILITY_EXPLOSION" or "SPELL_ABILITY_DEATH_WAIL") return false;
+        return SpellDamageSpells.Contains(id);
+    }
+
+    /// <summary>The value of one <see cref="AiSpellPotential"/> entry that passed <see cref="DamageEntry"/>; 0 when it does not count.</summary>
+    int EntryPotential(SpellDef sp, string id, Mastery m, double power, int mana, int cost, int charges, int side, HeroState? hero, HeroState enemyHero)
+    {
+        if (charges < 0 && cost > mana) return 0;                                   // vf 0x220
+        if (Counterable(sp) && enemyHero.Present && enemyHero.Links.ContainsKey(LinkCounterspell) && enemyHero.Mana - 2 * cost >= 0) return 0;
+        var baseDef = Db.Spell(id) ?? sp;
+        bool target = false;                                                        // FUN_00982be0
+        foreach (var t in S.Units)
+            if (t.Alive && !t.IsObject && Controller(t) != side && !ExeSpellImmune(t, sp, id, hero)) { target = true; break; }
+        if (!target) return 0;
+        int dmg = (int)ElementArtifactDamage(hero, sp.Element, SpellBaseDamage(baseDef, sp, m, power));
+        if (dmg == 0) return 0;
+        int casts = charges >= 0 ? charges : cost > 0 ? mana / cost : 100;
+        if ((charges >= 0 || cost > 0) && casts < 1) return 0;
+        return Math.Min(casts, 10) * dmg / 10;
     }
 
     /// <summary>

@@ -35,8 +35,18 @@ public sealed partial class Battle
     {
         float atb = (float)u.Atb;
         if (atb >= 1f) return 0;
-        var saved = u.Effects.ToList();
         double scale = AtbBaseTime() / 10.0, t = 0, a = atb;   // t in exe units; engine expiries × ATBBaseTime / 10
+        bool timed = false;
+        foreach (var e in u.Effects) if (!double.IsPositiveInfinity(e.Remaining) && e.Remaining > 0) { timed = true; break; }
+        if (!timed)
+        {
+            // No timed effect: the segment walk below takes nothing off (same result, without the copy and restore).
+            if (AtbFrozen(u)) return uint.MaxValue;
+            t += (1.0 - a) * FullTurnTime(u);
+            double exe0 = Math.Floor(t);
+            return exe0 >= uint.MaxValue ? uint.MaxValue : (uint)exe0;
+        }
+        var saved = u.Effects.ToList();
         try
         {
             foreach (var e in saved.Where(e => !double.IsPositiveInfinity(e.Remaining) && e.Remaining > 0).OrderBy(e => e.Remaining))

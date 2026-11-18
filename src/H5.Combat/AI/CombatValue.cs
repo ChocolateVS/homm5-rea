@@ -351,9 +351,11 @@ public sealed class CombatValue
     }
 
     /// <summary>FUN_004e4920: remaining turns of the first of Blind, Frozen, Sabotage, Sleeping Strike, else Seduce; 0 without.</summary>
+    static readonly string[] DisablingEffects = { "SPELL_BLIND", H5.Combat.Fx.Frozen, H5.Combat.Fx.Sabotaged, H5.Combat.Fx.Sleep, H5.Combat.Fx.Seduced };
+
     static float DisabledTime(Unit u)
     {
-        foreach (var id in new[] { "SPELL_BLIND", H5.Combat.Fx.Frozen, H5.Combat.Fx.Sabotaged, H5.Combat.Fx.Sleep, H5.Combat.Fx.Seduced })
+        foreach (var id in DisablingEffects)
             if (u.GetEffect(id) is { } e) return (float)e.Remaining;
         return 0f;
     }
@@ -440,7 +442,11 @@ public sealed class Contact
     Contact(List<Unit> units) { Units = units; _m = new bool[units.Count, units.Count]; }
     public int Count => Units.Count;
     public bool this[int v, int u] => _m[v, u];
-    public int IndexOf(Unit u) => Units.FindIndex(x => x.Id == u.Id);
+    public int IndexOf(Unit u)
+    {
+        for (int i = 0; i < Units.Count; i++) if (Units[i].Id == u.Id) return i;
+        return -1;
+    }
 
     static readonly (int, int)[] Dirs = { (0, -1), (0, 1), (-1, 0), (1, 0), (1, -1), (1, 1), (-1, -1), (-1, 1) };
 
@@ -449,38 +455,49 @@ public sealed class Contact
         var s = b.State;
         var c = new Contact(s.Living.Where(u => !u.IsObject).ToList());
         int n = c.Count, w = s.Width, h = s.Height;
+        // Buffers shared by both sizes and all regions (cleared before reuse); the region is a list with membership flags.
+        var idx = new short[w, h];
+        var blocked = new bool[w, h];
+        var visited = new bool[w, h];
+        var region = new List<int>();
+        var inRegion = new bool[n];
+        var stack = new Stack<(int, int)>();
         for (int size = 1; size <= 2; size++)
         {
-            var idx = new short[w, h];
-            var blocked = new bool[w, h];
-            var visited = new bool[w, h];
+            Array.Clear(blocked);
+            Array.Clear(visited);
             for (int x = 0; x < w; x++) for (int y = 0; y < h; y++) idx[x, y] = -1;
-            void Mark(Cell cell, int label, int expand)
+            void Mark(int cx, int cy, int label, int expand)
             {
                 for (int dx = 0; dx < expand; dx++)
                 for (int dy = 0; dy < expand; dy++)
                 {
-                    int x = cell.X + dx, y = cell.Y + dy;
+                    int x = cx + dx, y = cy + dy;
                     if (x < 0 || y < 0 || x >= w || y >= h) continue;
                     blocked[x, y] = true;
                     idx[x, y] = (short)label;
                 }
             }
-            foreach (var o in s.Obstacles) Mark(o, -1, size);
-            foreach (var o in s.Living.Where(u => u.IsObject)) foreach (var cell in o.CellsAt(o.Pos)) Mark(cell, -1, size);
+            void MarkFootprint(Unit u, int label, int expand)
+            {
+                for (int dx = 0; dx < u.Size; dx++)
+                for (int dy = 0; dy < u.Size; dy++) Mark(u.Pos.X + dx, u.Pos.Y + dy, label, expand);
+            }
+            foreach (var o in s.Obstacles) Mark(o.X, o.Y, -1, size);
+            foreach (var o in s.Units) if (o.Alive && o.IsObject) MarkFootprint(o, -1, size);
             for (int i = 0; i < n; i++)
             {
                 var u = c.Units[i];
                 bool own = u.Side == side;
-                if (own || size < 2) foreach (var cell in u.CellsAt(u.Pos)) Mark(cell, i, own ? size : 1);
-                else Mark(new Cell(u.Pos.X + u.Size - 1, u.Pos.Y + u.Size - 1), i, 1);
+                if (own || size < 2) MarkFootprint(u, i, own ? size : 1);
+                else Mark(u.Pos.X + u.Size - 1, u.Pos.Y + u.Size - 1, i, 1);
             }
             for (int sx = 0; sx < w; sx++)
             for (int sy = 0; sy < h; sy++)
             {
                 if (blocked[sx, sy] || visited[sx, sy]) continue;
-                var region = new List<int>();
-                var stack = new Stack<(int, int)>();
+                foreach (int r in region) inRegion[r] = false;
+                region.Clear();
                 visited[sx, sy] = true;
                 stack.Push((sx, sy));
                 while (stack.Count > 0)
@@ -490,7 +507,8 @@ public sealed class Contact
                     {
                         int x = px + dx, y = py + dy;
                         if (x < 0 || y < 0 || x >= w || y >= h || visited[x, y]) continue;
-                        if (idx[x, y] >= 0 && !region.Contains(idx[x, y])) region.Add(idx[x, y]);
+                        int l = idx[x, y];
+                        if (l >= 0 && !inRegion[l]) { inRegion[l] = true; region.Add(l); }
                         if (!blocked[x, y]) { visited[x, y] = true; stack.Push((x, y)); }
                     }
                 }
