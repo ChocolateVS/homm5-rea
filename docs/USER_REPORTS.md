@@ -122,3 +122,10 @@ from the description. Move an item to "Done" with the commit when fixed.
    the particle pass (0087ed90 → 0087e7e0 → 0087e220; 00a904d0 only fills the batches), so particles are always over the
    grid. Our particle material now has the top render priority — commit "combat sweep 19: particles after the material
    layers, Summon Other destination". (The browser renderer's brighter grid fill is not investigated.)
+25. **Hero after attacking:** "sometimes after the hero attacks he freezes somewhere in the battlefield". Reproduced in
+   off-screen duels (2,3 and 6,7): after a ranged strike ("rangeattack") or a spell ("cast") the hero character held
+   the clip's last frame at its stand (the exe's border square, inside the bordered field) for the rest of the
+   battle — the stacks' return to idle (FinishAttack) never covered the heroes. The melee strike character (shown on
+   the target) was already hidden after its clip. Now a hero goes back to idle00 when any one-shot clip ends, with the
+   any→idle combat_anim_blend cross-fade (exe 0054d700); `--hero-after-screenshot=N:PATH` captures 4 s after the Nth
+   hero strike / cast — commit "combat: the hero returns to idle after a strike or cast".
