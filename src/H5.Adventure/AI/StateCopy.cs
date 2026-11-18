@@ -141,8 +141,26 @@ public static class StateCopy
         return (Func<object, object>)mi.CreateDelegate(typeof(Func<object, object>));
     }
 
+    /// <summary>The copier method (object → object) of a one-dimensional array, List, HashSet or Dictionary type; null otherwise.</summary>
+    static MethodInfo? CollectionCopier(Type t)
+    {
+        string? m = null;
+        Type[] args;
+        if (t.IsArray && t.GetArrayRank() == 1) { m = nameof(CopyArray); args = new[] { t.GetElementType()! }; }
+        else if (t.IsGenericType)
+        {
+            var def = t.GetGenericTypeDefinition();
+            args = t.GetGenericArguments();
+            m = def == typeof(List<>) ? nameof(CopyList) : def == typeof(HashSet<>) ? nameof(CopySet) : def == typeof(Dictionary<,>) ? nameof(CopyDict) : null;
+        }
+        else return null;
+        return m == null ? null : typeof(StateCopy).GetMethod(m, BindingFlags.Static | BindingFlags.NonPublic)!.MakeGenericMethod(args);
+    }
+
     static object CopyArray<T>(object o)
     {
+        // An empty array cannot change: shared.
+        if (((T[])o).Length == 0) return o;
         var a = (T[])((T[])o).Clone();
         if (Imm<T>.V) return a;
         for (int i = 0; i < a.Length; i++) a[i] = Elem<T>.C(a[i]);
@@ -173,15 +191,32 @@ public static class StateCopy
         var slotCopy = typeof(Slot).GetMethod(nameof(Slot.Copy))!;
         var body = new List<Expression> { Expression.Assign(s, Expression.Convert(src, t)), Expression.Assign(d, Expression.Convert(dst, t)) };
         var slow = new List<FieldInfo>();
+        var anyCopy = typeof(StateCopy).GetMethod(nameof(Copy))!;
+        var vars = new List<ParameterExpression> { s, d };
         foreach (var f in mutable)
         {
             if (f.IsInitOnly) { slow.Add(f); continue; }
+            if (CollectionCopier(f.FieldType) is { } direct)
+            {
+                // A collection field: its copier called directly when the value has the field's own type, else the
+                // general lookup (same result, without the per-field delegate dispatch).
+                var v = Expression.Variable(f.FieldType, "v");
+                vars.Add(v);
+                body.Add(Expression.Assign(v, Expression.Field(s, f)));
+                body.Add(Expression.Assign(Expression.Field(d, f),
+                    Expression.Condition(Expression.Equal(v, Expression.Constant(null, f.FieldType)), Expression.Constant(null, f.FieldType),
+                        Expression.Convert(Expression.Condition(
+                            Expression.Equal(Expression.Call(v, typeof(object).GetMethod(nameof(GetType))!), Expression.Constant(f.FieldType, typeof(Type))),
+                            Expression.Call(direct, Expression.Convert(v, typeof(object))),
+                            Expression.Call(anyCopy, Expression.Convert(v, typeof(object)))), f.FieldType))));
+                continue;
+            }
             body.Add(Expression.Assign(Expression.Field(d, f),
                 Expression.Convert(Expression.Call(Expression.Constant(new Slot(f.FieldType)), slotCopy,
                     Expression.Convert(Expression.Field(s, f), typeof(object))), f.FieldType)));
         }
         body.Add(dst);
-        var fill = Expression.Lambda<Func<object, object, object>>(Expression.Block(new[] { s, d }, body), src, dst).Compile();
+        var fill = Expression.Lambda<Func<object, object, object>>(Expression.Block(vars, body), src, dst).Compile();
         return o =>
         {
             var c = Memberwise(o);
@@ -203,6 +238,7 @@ public static class StateCopy
     static object CopySet<T>(object o)
     {
         var l = (HashSet<T>)o;
+        if (l.Count == 0) return new HashSet<T>(l.Comparer);
         if (Imm<T>.V) return new HashSet<T>(l, l.Comparer);
         var c = new HashSet<T>(l.Comparer);
         foreach (var x in l) c.Add(Elem<T>.C(x));
@@ -212,6 +248,7 @@ public static class StateCopy
     static object CopyDict<K, V>(object o) where K : notnull
     {
         var l = (Dictionary<K, V>)o;
+        if (l.Count == 0) return new Dictionary<K, V>(l.Comparer);
         if (Imm<K>.V && Imm<V>.V) return new Dictionary<K, V>(l, l.Comparer);
         var c = new Dictionary<K, V>(l.Count, l.Comparer);
         foreach (var (k, v) in l) c.Add(Imm<K>.V ? k : Elem<K>.C(k), Imm<V>.V ? v : Elem<V>.C(v));
