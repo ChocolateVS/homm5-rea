@@ -48,10 +48,10 @@ public static class DeterminismSuite
             {
                 ["duel-1v2-s5-original"] = "d53b961916b23aed",
                 ["duel-0v3-s42-original"] = "e36e5eff4ab3779b",
-                ["duel-9v12-s99-original"] = "aa8a8f0210675fec",
+                ["duel-9v12-s99-original"] = "26f69470d18fa855",
                 ["duel-4v7-s3-original"] = "042252a9f687cfd7",
-                ["duel-1v2-s5-greedy"] = "a12826cc15ec138d",
-                ["duel-5v6-s11-greedy"] = "18361c51f4e988d3",
+                ["duel-1v2-s5-greedy"] = "c62a7d73b307e7a4",
+                ["duel-5v6-s11-greedy"] = "ae9c2a2e44637305",
                 ["mapheroes-1v2-s5-original"] = "c6cc95d102b08c80",
                 ["mapheroes-6v10-s7-original"] = "4a9f9a29f4f9e56f",
                 ["adv-A2M1-7d-s1"] = "6d68a259978ce64a",
@@ -62,11 +62,11 @@ public static class DeterminismSuite
                 ["duel-0v3-s42-original"] = "f49d9212a0d3d713",
                 ["duel-9v12-s99-original"] = "016494b6f63b8fd5",
                 ["duel-4v7-s3-original"] = "9234471acdd4ea86",
-                ["duel-1v2-s5-greedy"] = "db280a7319f6de11",
-                ["duel-5v6-s11-greedy"] = "cb6ce33342b2f5ec",
+                ["duel-1v2-s5-greedy"] = "e2827d9d2bb4c24f",
+                ["duel-5v6-s11-greedy"] = "9c87a06dc5a9929a",
                 ["mapheroes-1v2-s5-original"] = "3b1e536c60a31b37",
                 ["mapheroes-6v10-s7-original"] = "57f967bc9230ec04",
-                ["adv-A2M1-7d-s1"] = "b6df66edd478ca35",
+                ["adv-A2M1-7d-s1"] = "4cd3a1fc7225db4c",
             },
         };
 

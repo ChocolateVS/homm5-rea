@@ -438,6 +438,7 @@ public sealed partial class Battle
         if ((_scriptCast ? CheckUnitPresent(c, c.ActorId, out var u) : CheckActive(c, c.ActorId, out u)) is { } err) return err;
         var known = u.Spells.Find(s => s.Spell == sp.Id);
         if (known == null) return "creature does not know this spell";
+        if (!_scriptCast && IsAbilityEntry(sp)) return "an ability, not a spell";
         int ucost = CreatureManaCost(u, sp);
         if (u.Mana < ucost) return "not enough mana";
         // exe vf 0x244 = FUN_00a6a7e0: FUN_008a3960 (Magis, then the demon-rage multiplier), then enemy Shatter / Weaken

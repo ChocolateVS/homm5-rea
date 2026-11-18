@@ -511,8 +511,42 @@ public partial class SpellBook3D : Control
 
     // ---------------------------------------------------------------- input
 
-    /// <summary>Screen rectangle of a part in its flat, resting (bind pose) position.</summary>
+    /// <summary>
+    /// Screen rectangle of a part as it is drawn now (the skinned pose of the book's idle animation): the turning sheet's
+    /// parts stand upright in the bind pose (no width on screen, so the right page's spells could not be clicked) and only
+    /// lie on the right page in the posed mesh. Falls back to the bind pose without a posed mesh.
+    /// </summary>
     Rect2? ScreenRect(int part)
+    {
+        ulong frame = Engine.GetProcessFrames();
+        if (_posedFrame != frame) { _posed = PosedRects(); _posedFrame = frame; }
+        if (_posed != null && part >= 0 && part < _posed.Length) return _posed[part];
+        return BindPoseRect(part);
+    }
+
+    Rect2?[]? _posed;
+    ulong _posedFrame = ulong.MaxValue;
+
+    Rect2?[]? PosedRects()
+    {
+        if (_mesh == null || !IsInstanceValid(_mesh) || _mesh.BakeMeshFromCurrentSkeletonPose() is not { } baked) return null;
+        var xf = _mesh.GlobalTransform;
+        var rects = new Rect2?[baked.GetSurfaceCount()];
+        for (int i = 0; i < rects.Length; i++)
+        {
+            Rect2? r = null;
+            foreach (var v in baked.SurfaceGetArrays(i)[(int)Mesh.ArrayType.Vertex].AsVector3Array())
+            {
+                var sp = _cam.UnprojectPosition(xf * v);
+                r = r is { } rr ? rr.Expand(sp) : new Rect2(sp, Vector2.Zero);
+            }
+            rects[i] = r;
+        }
+        return rects;
+    }
+
+    /// <summary>Screen rectangle of a part in its flat, resting (bind pose) position.</summary>
+    Rect2? BindPoseRect(int part)
     {
         var (min, max) = Bounds(new[] { part });
         if (min.X > max.X) return null;

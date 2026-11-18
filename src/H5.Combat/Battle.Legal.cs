@@ -87,7 +87,9 @@ public sealed partial class Battle
         foreach (var ks in unit.Spells)
         {
             var sp = Db.Spell(ks.Spell);
-            if (sp == null || unit.Mana < CreatureManaCost(unit, sp)) continue;
+            // An ability entry (school SPECIAL, FUN_00a34610) of the creature's list is not a spell: it is used as the
+            // creature's ability (UnitAbilities), not cast (docs/rules/audit/combat_book_spells.md).
+            if (sp == null || IsAbilityEntry(sp) || unit.Mana < CreatureManaCost(unit, sp)) continue;
             var opt = new SpellOption { Spell = sp.Id, ManaCost = CreatureManaCost(unit, sp), Mastery = MoonWeek.SpellMastery(ks.Mastery, sp.School, S.Week), Targeting = TargetingOf(sp) };
             if (opt.Targeting is SpellTargeting.Unit)
             {
@@ -102,6 +104,9 @@ public sealed partial class Battle
         if (unit.IsWarMachine) { la.CanDefend = false; }
         return la;
     }
+
+    /// <summary>FUN_00a34610: a spell-list entry of school SPECIAL (7) or the entry 0x43 is an ability, not a castable spell.</summary>
+    internal static bool IsAbilityEntry(H5.Core.Data.SpellDef sp) => sp.School == "MAGIC_SCHOOL_SPECIAL";
 
     List<int> AbilityTargets(AbilityInfo ab, int side, Unit? user) => ab.Targeting switch
     {

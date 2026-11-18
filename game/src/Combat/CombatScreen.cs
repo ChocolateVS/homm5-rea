@@ -548,6 +548,7 @@ public partial class CombatScreen : Control
             while (_queue.Count > 0)
             {
                 var e = _queue.Dequeue();
+                DevEvent?.Invoke(e);
                 try { await Play(e); }
                 catch (Exception ex) { GD.PushError($"[H5] playback {e.GetType().Name}: {ex}"); }
             }
@@ -1684,13 +1685,15 @@ public partial class CombatScreen : Control
                     cursor = CombatCursor.CantCast;
                     return null;
                 case Battle.SpellTargeting.Cell:
-                    if (!s.InBounds(cell)) { cursor = CombatCursor.CantCast; return null; }
+                    var castC = new CastSpellCmd(la.Actor, sp.Spell, null, cell) { Side = side };
+                    // The cast test (FUN_00548270 → FUN_00982010) refuses a cell the spell cannot take (an occupied cell
+                    // for Arcane Crystal / Summon Hive …): can't-cast cursor, as for a refused stack.
+                    if (!s.InBounds(cell) || !CommandAccepted(b, castC)) { cursor = CombatCursor.CantCast; return null; }
                     cursor = CombatCursor.Cast;
                     // Area spells mark the cells they will hit (the engine's area for the spell), others the aimed cell.
                     var area = Battle.AreaCells(sp.Spell, cell);
                     if (area.Count == 0) area.Add(cell);
                     foreach (var ac in area) if (s.InBounds(ac)) hl.Add((ac, 1, CellMark.Affected));
-                    var castC = new CastSpellCmd(la.Actor, sp.Spell, null, cell) { Side = side };
                     return new PlannedAction(castC, SpellName(sp.Spell), null, CombatPredictions.Spell(b, castC, CombatLogText.Escape(SpellName(sp.Spell)), null));
             }
         }
@@ -1720,19 +1723,19 @@ public partial class CombatScreen : Control
             }
             if (ab.Targeting == Battle.AbilityTargeting.Cell)
             {
-                if (!s.InBounds(cell)) { cursor = CombatCursor.CantCast; return null; }
+                var useC = new UseAbilityCmd(la.Actor, ab.Ability, null, cell) { Side = side };
+                if (!s.InBounds(cell) || !CommandAccepted(b, useC)) { cursor = CombatCursor.CantCast; return null; }
                 cursor = CombatCursor.Ability;
                 hl.Add((cell, 1, CellMark.Affected));
-                var useC = new UseAbilityCmd(la.Actor, ab.Ability, null, cell) { Side = side };
                 return new PlannedAction(useC, ab.Ability, null, CombatPredictions.Ability(b, useC, CombatLogText.Escape(AbilityName(ab.Ability)), null));
             }
             var targetId = occupant?.Id ?? (ab.Targeting == Battle.AbilityTargeting.DeadFriend
                 ? s.Units.FirstOrDefault(u => !u.Alive && u.Pos == cell && ab.Targets.Contains(u.Id))?.Id : null);
-            if (targetId is int tid && ab.Targets.Contains(tid))
+            if (targetId is int tid && ab.Targets.Contains(tid) && new UseAbilityCmd(la.Actor, ab.Ability, tid) { Side = side } is var useT
+                && CommandAccepted(b, useT))
             {
                 cursor = CombatCursor.Ability;
                 hl.Add((cell, 1, CellMark.Affected));
-                var useT = new UseAbilityCmd(la.Actor, ab.Ability, tid) { Side = side };
                 return new PlannedAction(useT, ab.Ability, tid, CombatPredictions.Ability(b, useT, CombatLogText.Escape(AbilityName(ab.Ability)),
                     CombatLogText.Escape(CombatLogText.UnitName(this, tid))));
             }
@@ -1963,8 +1966,20 @@ public partial class CombatScreen : Control
         _pendingAbility = null;
         _lastHover = null;
         if (cmd is DeployCmd) { _deploySelected = null; _dragFrom = null; }
+        DevSubmitted?.Invoke(cmd);
         Session.Submit(cmd);
         if (Session.LastRejection is { } why) Hud.Log.AddLine($"<body><color=FFFF6040>{CombatLogText.Escape(why)}");
+    }
+
+    /// <summary>
+    /// An armed ability's (or cell spell's) target passes its own checks (reach, target kind, empty cell…): the exe's cursor runs the
+    /// cast test FUN_00548270 → FUN_00982010 on the hovered target and shows the can't-cast cursor when it fails (as for
+    /// Gating, 00860ce0); the engine's checks are those tests, so a target the engine would refuse is not offered.
+    /// </summary>
+    static bool CommandAccepted(Battle b, BattleCommand cmd)
+    {
+        try { return new Battle(b.Db, b.State.Clone()).Apply(cmd).Ok; }
+        catch (Exception) { return false; }
     }
 
     void CancelTargeting()
