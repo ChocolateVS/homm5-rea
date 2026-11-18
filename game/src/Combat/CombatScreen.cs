@@ -1770,6 +1770,17 @@ public partial class CombatScreen : Control
                 return new PlannedAction(new ShootCmd(me.Id, occupant.Id) { Side = side }, "Shoot", occupant.Id,
                     CombatPredictions.Attack(b, me.Id, occupant.Id, null, ranged: true));
             }
+            // Goblin Thrower is the cyclops' shot (exe 008a4b70 → shot builder 00b3bfc0), no book entry: a hostile stack
+            // it may hit shows the shoot cursor. GAP: whether the exe lets an enemy next to the cyclops be thrown at
+            // instead of struck is not traced; ours strikes it.
+            if (la.Abilities.Find(a => a.Ability == Ab.GoblinThrower) is { } gt && gt.Targets.Contains(occupant.Id)
+                && !Battle.AreAdjacent(me, occupant)
+                && new UseAbilityCmd(me.Id, Ab.GoblinThrower, occupant.Id) { Side = side } is var throwCmd && CommandAccepted(b, throwCmd))
+            {
+                cursor = CombatCursor.Shoot;
+                return new PlannedAction(throwCmd, AbilityName(Ab.GoblinThrower), occupant.Id,
+                    CombatPredictions.Ability(b, throwCmd, CombatLogText.Escape(AbilityName(Ab.GoblinThrower)), CombatLogText.Escape(CombatLogText.UnitName(this, occupant.Id))));
+            }
             if (la.Melee.TryGetValue(occupant.Id, out var froms) && froms.Count > 0
                 && PickAttackFrom(me, occupant, froms, mouse) is var (from, dir))
             {
@@ -2156,10 +2167,17 @@ public partial class CombatScreen : Control
         _lastHover = null;
     }
 
+    /// <summary>OnJog-Special: the lone ability (AbilityBook.ButtonFor shows the button only then).</summary>
     internal void CmdSpecial()
     {
-        if (MySideToAct() is not int side || Session.Battle.GetLegalActions() is not { } la || la.Abilities.Count == 0) return;
-        var ab = la.Abilities[0];
+        if (MySideToAct() is null || Session.Battle.GetLegalActions() is not { } la) return;
+        if (la.Abilities.FirstOrDefault(a => AbilityBook.IsBookAbility(a.Ability)) is { } ab) ChooseAbility(ab);
+    }
+
+    /// <summary>Arms (or, untargeted, uses) an ability picked from the Special button or the book.</summary>
+    internal void ChooseAbility(AbilityOption ab)
+    {
+        if (MySideToAct() is not int side || Session.Battle.GetLegalActions() is not { } la) return;
         if (ab.Targeting == Battle.AbilityTargeting.None) { Submit(new UseAbilityCmd(la.Actor, ab.Ability) { Side = side }); return; }
         _mode = InputMode.Ability;
         _pendingAbility = ab;

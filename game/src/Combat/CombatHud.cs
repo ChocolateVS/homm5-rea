@@ -141,10 +141,14 @@ public partial class CombatHud : Control
         Screen.SetVisible("PlacementBar", tactics);
         Screen.SetVisible("ATBBar", !tactics && !_logVisible);
         Screen.SetVisible("LogWindow", !tactics && _logVisible);
-        bool special = !tactics && _screen.Session.Battle.GetLegalActions() is { Abilities.Count: > 0 } la
-                       && _screen.Session.LocalSides.Contains(la.Side);
-        Screen.SetVisible("OnJog-Special", special);
-        Screen.SetVisible("OnJog-Spellbook", !tactics && !special);
+        // FUN_005464a0 / FUN_0053f730 (AbilityBook.ButtonFor): heroes get the Spellbook (hero abilities are book
+        // entries); a creature gets Special for a lone ability, the Spellbook for spells or several abilities, neither
+        // for nothing usable. Not our side's turn: the Spellbook button as before.
+        var button = AbilityBook.Button.Spellbook;
+        if (!tactics && _screen.Session.Battle.GetLegalActions() is { } la && _screen.Session.LocalSides.Contains(la.Side))
+            button = AbilityBook.ButtonFor(_screen.Session.Battle, la);
+        Screen.SetVisible("OnJog-Special", !tactics && button == AbilityBook.Button.Special);
+        Screen.SetVisible("OnJog-Spellbook", !tactics && button == AbilityBook.Button.Spellbook);
         if (tactics) FillPlacementBar();
         UpdateAtb();
     }
@@ -597,9 +601,31 @@ public partial class CombatHud : Control
             warcries = false;
         }
         else return;
-        if (known.Count == 0) { Log.AddLine("<body>No spells can be cast now."); return; }
-        var book = new SpellBook3D(known, la.Spells, mana, maxMana, warcries, casterKey: casterKey, heroCaster: la.IsHero);
+        var abilities = la.Abilities.Where(a => AbilityBook.IsBookAbility(a.Ability) && AbilityBook.EntryFor(a.Ability) != null).ToList();
+        if (known.Count == 0 && abilities.Count == 0) { Log.AddLine("<body>No spells can be cast now."); return; }
+        var book = new SpellBook3D(known, la.Spells, mana, maxMana, warcries, casterKey: casterKey, heroCaster: la.IsHero, abilities: abilities);
         book.Chosen += _screen.ChooseSpell;
+        book.AbilityChosen += ab =>
+        {
+            if (ab.Ability.StartsWith("IMBUE_ARROW:")) OpenImbueChoice(la, mana, maxMana);
+            else _screen.ChooseAbility(ab);
+        };
+        book.Closed += () => _spellPanel = null;
+        _spellPanel = book;
+        AddChild(book);
+    }
+
+    /// <summary>
+    /// Imbue Arrow (entry SPELL_IMBUE_ARROW, 0x3e): the spell to imbue is chosen from a second book listing the spells
+    /// the engine offers for it. GAP: how the exe asks for the imbued spell is not traced.
+    /// </summary>
+    void OpenImbueChoice(LegalActions la, int mana, int maxMana)
+    {
+        var opts = la.Abilities.Where(a => a.Ability.StartsWith("IMBUE_ARROW:")).ToDictionary(a => a.Ability["IMBUE_ARROW:".Length..]);
+        var choices = opts.Keys.Select(sp => la.Spells.Find(o => o.Spell == sp)
+            ?? new SpellOption { Spell = sp, ManaCost = Game.Instance.Db.Spell(sp)?.ManaCost ?? 0 }).ToList();
+        var book = new SpellBook3D(opts.Keys.ToList(), choices, mana, maxMana, false, heroCaster: false) { ImbueChoice = true };
+        book.Chosen += sp => _screen.ChooseAbility(opts[sp.Spell]);
         book.Closed += () => _spellPanel = null;
         _spellPanel = book;
         AddChild(book);

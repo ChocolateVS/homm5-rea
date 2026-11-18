@@ -327,16 +327,28 @@ public partial class CombatE2E : Node
 
         // Arm it through the HUD.
         var hud = _screen.Hud;
-        if (!isSpell)
+        bool viaBook = isSpell;
+        if (!isSpell && !AbilityBook.IsBookAbility(c.Id))
         {
-            if (hud.Screen.Find("OnJog-Special") is not { } sbtn || !sbtn.IsVisibleInTree())
-                return ("FAIL", "the Special ability button is not shown" + (hud.Screen.Find("OnJog-Spellbook")?.IsVisibleInTree() == true ? " (Spellbook shown)" : ""));
-            if (lact.Abilities[0].Ability != c.Id)
-                return ("FAIL", $"several abilities ({string.Join(" ", lact.Abilities.Select(a => a.Ability))}): the Special button arms only the first");
-            await Click(sbtn.GetGlobalRect().GetCenter());
+            // No book entry (Goblin Thrower: the shoot cursor in normal mode): nothing to arm.
+            // (no note: this is the normal path)
         }
-        else
+        else if (!isSpell)
         {
+            var special = hud.Screen.Find("OnJog-Special");
+            if (special != null && special.IsVisibleInTree())
+            {
+                if (lact.Abilities.First(a => AbilityBook.IsBookAbility(a.Ability)).Ability != c.Id)
+                    return ("FAIL", $"several abilities ({string.Join(" ", lact.Abilities.Select(a => a.Ability))}) but the Special button");
+                await Click(special.GetGlobalRect().GetCenter());
+            }
+            else if (hud.Screen.Find("OnJog-Spellbook") is { } abtn && abtn.IsVisibleInTree()) viaBook = true;
+            else return ("FAIL", "neither the Special nor the Spellbook button is shown");
+        }
+        if (viaBook)
+        {
+            // The book entry: a spell's own id; an ability's entry record (Imbue Arrow: then the imbued spell).
+            string BookKey(SpellBook3D bk) => isSpell ? c.Id : bk.ImbueChoice ? c.Id[(c.Id.IndexOf(':') + 1)..] : AbilityBook.EntryFor(c.Id) ?? c.Id;
             if (hud.Screen.Find("OnJog-Spellbook") is { } bbtn && bbtn.IsVisibleInTree()) await Click(bbtn.GetGlobalRect().GetCenter());
             else
             {
@@ -351,7 +363,7 @@ public partial class CombatE2E : Node
             string what = "";
             for (int step = 0; step < 12 && hud.DevSpellBook is { } book; step++)
             {
-                var at = book.DevNextClick(c.Id, out what);
+                var at = book.DevNextClick(BookKey(book), out what);
                 if (at == null)
                 {
                     if (what == "turning") { await Frames(10); continue; }
@@ -361,6 +373,7 @@ public partial class CombatE2E : Node
                 GD.Print("[E2E] book click: " + what);
                 await Click(at.Value);
                 await Frames(what.StartsWith("spell") ? 5 : 45);
+                if (what.StartsWith("spell") && hud.DevSpellBook is { ImbueChoice: true }) await Frames(150);
             }
             if (hud.DevSpellBook != null)
             {
@@ -382,7 +395,7 @@ public partial class CombatE2E : Node
         else
         {
             var expect = (isSpell ? "spell:" : "ability:") + c.Id;
-            if (_screen.DevArmed != expect) return ("FAIL", $"not armed: {_screen.DevArmed}, expected {expect}");
+            if ((isSpell || AbilityBook.IsBookAbility(c.Id)) && _screen.DevArmed != expect) return ("FAIL", $"not armed: {_screen.DevArmed}, expected {expect}");
             // Targeting scan: per cell, the click's command (cursor accepts) against the engine's verdict on the natural command.
             var s = b.State;
             var accepted = new List<(Vector2I Cell, Vector2 Mouse, BattleCommand Cmd, CombatCursor Cur)>();
@@ -421,7 +434,8 @@ public partial class CombatE2E : Node
             await Frames(4);
             Shot(tag + "_pre");
             await Click(pick.Mouse);
-            if (pick.Cur is not (CombatCursor.Cast or CombatCursor.Ability or CombatCursor.Interact))
+            if (pick.Cur is not (CombatCursor.Cast or CombatCursor.Ability or CombatCursor.Interact)
+                && !(c.Id == H5.Combat.Ab.GoblinThrower && pick.Cur == CombatCursor.Shoot))
                 scanNote += $"; cursor {pick.Cur}";
         }
         if (predicted == null && planned != null) { }

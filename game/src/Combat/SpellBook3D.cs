@@ -29,6 +29,10 @@ public partial class SpellBook3D : Control
         { "MAGIC_SCHOOL_DESTRUCTIVE", "MAGIC_SCHOOL_LIGHT", "MAGIC_SCHOOL_DARK", "MAGIC_SCHOOL_SUMMONING", "MAGIC_SCHOOL_RUNIC" };
 
     public event Action<SpellOption>? Chosen;
+    /// <summary>An ability entry (school SPECIAL, FUN_00a34610) was picked.</summary>
+    public event Action<AbilityOption>? AbilityChosen;
+    /// <summary>Set by the opener when this book is the spell choice of Imbue Arrow (E2E).</summary>
+    public bool ImbueChoice;
     public event Action? Closed;
 
     sealed record Desc(string Model, string AnimSet, string? Light, int[] First, int[] Second, int[] Schools,
@@ -39,7 +43,10 @@ public partial class SpellBook3D : Control
     {
         public required string Spell;
         public SpellOption? Option;   // null when the hero can't cast it now
+        /// <summary>The ability this entry uses (an ability entry usable now), else null.</summary>
+        public AbilityOption? Ability;
         public int Cost;
+        public bool Usable => Option != null || Ability != null;
     }
 
     readonly Desc _d;
@@ -69,7 +76,7 @@ public partial class SpellBook3D : Control
     /// <summary>+0x246: the reversed level order, toggled by clicking the current bookmark again (00685f60).</summary>
     bool _reverse;
 
-    public SpellBook3D(IReadOnlyCollection<string> knownSpells, IReadOnlyList<SpellOption> castable, int mana, int maxMana, bool warcries, bool adventure = false, string? casterKey = null, bool heroCaster = true)
+    public SpellBook3D(IReadOnlyCollection<string> knownSpells, IReadOnlyList<SpellOption> castable, int mana, int maxMana, bool warcries, bool adventure = false, string? casterKey = null, bool heroCaster = true, IReadOnlyList<AbilityOption>? abilities = null)
     {
         _casterKey = casterKey;
         Name = "SpellBook3D";
@@ -89,6 +96,14 @@ public partial class SpellBook3D : Control
             .Where(x => x.def != null)
             .Select(x => new Entry { Spell = x.id, Option = byId.GetValueOrDefault(x.id), Cost = byId.GetValueOrDefault(x.id)?.ManaCost ?? x.def!.ManaCost })
             .ToList();
+        // The abilities usable now, each on its entry (AbilityBook.EntryFor; Imbue Arrow's per-spell options share
+        // SPELL_IMBUE_ARROW and the opener asks for the spell).
+        foreach (var ab in abilities ?? Array.Empty<AbilityOption>())
+        {
+            if (!AbilityBook.IsBookAbility(ab.Ability) || AbilityBook.EntryFor(ab.Ability) is not { } entry) continue;
+            if (_all.Find(e => e.Spell == entry) is { } have) { have.Ability ??= ab; continue; }
+            _all.Add(new Entry { Spell = entry, Ability = ab, Cost = Game.Instance.Db.Spell(entry)!.ManaCost });
+        }
         if (_orcs)
         {
             // Orc book ctor 0067e940: bookmark +0x190 = (adventure flag == 0), i.e. warcries (1) in combat, adventure
@@ -113,7 +128,9 @@ public partial class SpellBook3D : Control
         {
             // GAP: the value a hero holds before its first opening is not traced: the adventure tab on the map, else the
             // first school bookmark holding a spell.
-            _bookmark = adventure ? 1 : 2 + Math.Max(0, Array.FindIndex(SchoolOrder, sc => _all.Any(e => SchoolOf(e) == sc)));
+            // A hero with no school spell (only ability entries) gets the Combat tab, which lists them (00684830).
+            int first = Array.FindIndex(SchoolOrder, sc => _all.Any(e => SchoolOf(e) == sc));
+            _bookmark = adventure ? 1 : first < 0 && _all.Count > 0 ? 0 : 2 + Math.Max(0, first);
         }
     }
 
@@ -222,10 +239,12 @@ public partial class SpellBook3D : Control
         if (spell is "SPELL_DEBUG_TELEPORT" or "SPELL_TIME_SHIFT") return false;
         if (_orcs)
         {
-            // 0067cd10: abilities (00a34610, not decoded; none in our lists) and warcries go to bookmark 1, adventure
-            // spells (00a34580) to bookmark 0.
+            // 0067cd10 (0067ce40..0067cecb): entries that are abilities (00a34610: school SPECIAL or entry 0x43), warcries
+            // (00a345e0) or adventure spells (00a34580) are kept; bookmark 1 takes the non-adventure ones, bookmark 0
+            // the adventure ones (Dark Ritual, 0x43, is an adventure entry).
             var sc = Game.Instance.Db.Spell(spell)?.School;
-            return bm == 1 ? sc == "MAGIC_SCHOOL_WARCRIES" : sc == "MAGIC_SCHOOL_ADVENTURE";
+            bool adv = sc == "MAGIC_SCHOOL_ADVENTURE";
+            return bm == 1 ? !adv && sc is "MAGIC_SCHOOL_WARCRIES" or "MAGIC_SCHOOL_SPECIAL" : adv;
         }
         var school = Game.Instance.Db.Spell(spell)?.School ?? "MAGIC_SCHOOL_NONE";
         if (school is not ("MAGIC_SCHOOL_RUNIC" or "MAGIC_SCHOOL_WARCRIES"))
@@ -313,10 +332,99 @@ public partial class SpellBook3D : Control
         float width = (max.X - min.X) * 1.06f;
         float dist = width / 2 / (Mathf.Tan(Mathf.DegToRad(_cam.Fov) / 2));
         _cam.LookAtFromPosition(center + new Vector3(0, dist, 0), center, new Vector3(0, 0, -1));
+        if (_orcs) FrameScroll();
 
         BuildSlots();
         RefreshPage();
         if (Game.Instance.Fs.Exists("Sounds/_(Sound)/Interface/spellbook.xdb")) Audio.SoundLibrary.Play("Sounds/_(Sound)/Interface/spellbook.xdb", this);
+    }
+
+    /// <summary>
+    /// The orc book (UI/OrcsSpellBook, model SpellBook_H5A2) is a hanging scroll: in its idle poses the parchment stands
+    /// upright, so the top-down view that frames the lying spellbook sees only its rod (the spell parts ~5 px tall, no
+    /// warcry could be clicked). Both descs give the same SpellbookCenterPosition (desc +0xc8, read by 0051a820 and used
+    /// by 0067d950 → 00cf8620), so the exe's view is not told apart by the desc; the camera the exe uses for the book
+    /// scene is not traced. Ours faces the posed spell parts: it looks against the normal of the parchment as drawn
+    /// (skinned pose of the current idle, 0067d950: idle01 / idle02 by bookmark), from the side its slots face, the slot textures upright (texture
+    /// V down = screen down) and the posed scroll filling 1.06 of the view (width or height, whichever is tighter).
+    /// </summary>
+    void FrameScroll()
+    {
+        if (_mesh == null) return;
+        _book.Player.Advance(0);
+        if (_mesh.BakeMeshFromCurrentSkeletonPose() is not { } baked) return;
+        var xf = _mesh.GlobalTransform;
+        // The orientation from the largest slot triangle of the side shown (the two page part lists lie back to back on
+        // the parchment; its UV gives the texture's right / down directions).
+        Vector3 right = Vector3.Zero, down = Vector3.Zero, facing = Vector3.Zero;
+        float best = 0;
+        foreach (var part in SpellParts)
+        {
+            if (part < 0 || part >= baked.GetSurfaceCount()) continue;
+            var arr = baked.SurfaceGetArrays(part);
+            var v = arr[(int)Mesh.ArrayType.Vertex].AsVector3Array();
+            var uv = arr[(int)Mesh.ArrayType.TexUV].AsVector2Array();
+            var idx = arr[(int)Mesh.ArrayType.Index].AsInt32Array();
+            if (uv.Length != v.Length) continue;
+            for (int t = 0; t + 2 < (idx.Length > 0 ? idx.Length : v.Length); t += 3)
+            {
+                int a = idx.Length > 0 ? idx[t] : t, b = idx.Length > 0 ? idx[t + 1] : t + 1, c = idx.Length > 0 ? idx[t + 2] : t + 2;
+                Vector3 p0 = xf * v[a], e1 = xf * v[b] - p0, e2 = xf * v[c] - p0;
+                facing += e1.Cross(e2);
+                float area = e1.Cross(e2).Length();
+                Vector2 d1 = uv[b] - uv[a], d2 = uv[c] - uv[a];
+                float det = d1.X * d2.Y - d2.X * d1.Y;
+                if (area <= best || Mathf.Abs(det) < 1e-8f) continue;
+                best = area;
+                right = (e1 * d2.Y - e2 * d1.Y) / det;   // dP/du
+                down = (e2 * d1.X - e1 * d2.X) / det;    // dP/dv
+            }
+        }
+        if (best <= 0 || right.LengthSquared() < 1e-12f || down.LengthSquared() < 1e-12f) return;
+        var r = right.Normalized();
+        var up = (-down - r * (-down).Dot(r)).Normalized();
+        // Camera +Z (toward the viewer): the side the slot faces turn to (their triangles' summed normal as wound), where
+        // they are drawn; the slot textures then read upright.
+        var back = r.Cross(up).Normalized();
+        if (facing.Dot(back) < 0) back = -back;
+        // Extent of the scroll's interactive parts (spell slots, bookmarks, mana mark, close) in the view plane.
+        float minR = float.MaxValue, maxR = float.MinValue, minU = float.MaxValue, maxU = float.MinValue;
+        var sum = Vector3.Zero;
+        int n = 0;
+        foreach (var s in SpellParts.Append(_d.Combat).Append(_d.Adventure).Append(_d.SP).Append(_d.Close))
+            if (s >= 0 && s < baked.GetSurfaceCount())
+            foreach (var p in baked.SurfaceGetArrays(s)[(int)Mesh.ArrayType.Vertex].AsVector3Array())
+            {
+                var w = xf * p;
+                sum += w; n++;
+                minR = Mathf.Min(minR, w.Dot(r)); maxR = Mathf.Max(maxR, w.Dot(r));
+                minU = Mathf.Min(minU, w.Dot(up)); maxU = Mathf.Max(maxU, w.Dot(up));
+            }
+        if (n == 0) return;
+        // The other parts (parchment, rods, ornaments) widen it, except one taller than twice that extent (the hanging
+        // cord, part 1, reaches far above the parchment).
+        float h0 = maxU - minU;
+        for (int s = 0; s < baked.GetSurfaceCount(); s++)
+        {
+            var vs0 = baked.SurfaceGetArrays(s)[(int)Mesh.ArrayType.Vertex].AsVector3Array();
+            if (vs0.Length == 0) continue;
+            float lo = vs0.Min(p => (xf * p).Dot(up)), hi = vs0.Max(p => (xf * p).Dot(up));
+            if (hi - lo > 2 * h0) continue;
+            foreach (var p in vs0)
+            {
+                var w = xf * p;
+                minR = Mathf.Min(minR, w.Dot(r)); maxR = Mathf.Max(maxR, w.Dot(r));
+                minU = Mathf.Min(minU, w.Dot(up)); maxU = Mathf.Max(maxU, w.Dot(up));
+            }
+        }
+        var mean = sum / n;
+        var center = mean - r * (mean.Dot(r) - (minR + maxR) / 2) - up * (mean.Dot(up) - (minU + maxU) / 2);
+        // KeepAspect Width: Fov is horizontal; the vertical half-angle follows the viewport's aspect.
+        float tanH = Mathf.Tan(Mathf.DegToRad(_cam.Fov) / 2);
+        var vs = GetViewportRect().Size;
+        float tanV = tanH * (vs.X > 0 ? vs.Y / vs.X : 9f / 16f);
+        float dist = Mathf.Max((maxR - minR) * 1.06f / 2 / tanH, (maxU - minU) * 1.06f / 2 / tanV);
+        _cam.LookAtFromPosition(center + back * dist, center, up);
     }
 
     (Vector3 Min, Vector3 Max) Bounds(IEnumerable<int> parts)
@@ -381,7 +489,9 @@ public partial class SpellBook3D : Control
     }
 
     /// <summary>The current bookmark's list, sorted (00689140; the orc book always in the normal order, 0067cede).</summary>
-    List<Entry> SchoolSpells() => ExeSort(_all.Where(e => OnBookmark(_bookmark, e.Spell)).ToList(), !_orcs && _reverse);
+    List<Entry> SchoolSpells() => BookmarkSpells(_bookmark);
+
+    List<Entry> BookmarkSpells(int bm) => ExeSort(_all.Where(e => OnBookmark(bm, e.Spell)).ToList(), !_orcs && _reverse);
 
     // H5_Game.exe 00686020 / 00686080: the index of the first shown spell (+0x190[school], reset to 0 when the school is
     // picked, 00685f60);
@@ -401,7 +511,7 @@ public partial class SpellBook3D : Control
                 var iconHref = (string?)Game.Instance.Xdb.Load(def.SourcePath).Root?.Element("Texture")?.Attribute("href");
                 var icon = iconHref != null ? UiResources.Instance.Texture(XdbRef.Parse(iconHref, def.SourcePath).Path) : null;
                 var cost = (Text("mana") ?? "Mana: <value=cost>").Replace("<value=cost>", e.Cost.ToString());
-                var markup = (Text(e.Option != null ? "SpellInBookCanCast" : "SpellInBookCanNotCast") ?? "<center><value=spell_name><br><value=spell_cost>")
+                var markup = (Text(e.Usable ? "SpellInBookCanCast" : "SpellInBookCanNotCast") ?? "<center><value=spell_name><br><value=spell_cost>")
                     .Replace("<value=spell_name>", CombatLogText.Escape(def.Name)).Replace("<value=spell_cost>", cost);
                 tex = Outline(icon, markup);
             }
@@ -423,11 +533,12 @@ public partial class SpellBook3D : Control
         // (PartSpellsSecondPage) is empty.
         if (_orcs)
         {
-            // Orc book 0067d950: PartSpellsFirstPage takes the list from 0, PartSpellsSecondPage from 4 (0067d4a0);
-            // no spreads.
-            var list = SchoolSpells();
-            FillSet(_d.First, list.Cast<Entry?>().ToList());
-            FillSet(_d.Second, list.Skip(_d.First.Length).Cast<Entry?>().ToList());
+            // Orc book 0067d950: both bookmark lists are built (0067cd10 with 0 and 1); 0067d4a0 fills each part list
+            // from the start of its list (param 5 = 0 / 4 is the slot-texture offset, +0x208 / +0x214, not a list
+            // offset): PartSpellsFirstPage (4 slots, the side idle01 shows) the adventure list, PartSpellsSecondPage
+            // (8 slots, the side idle02 shows) the warcry / ability list. No spreads.
+            FillSet(_d.First, BookmarkSpells(0).Cast<Entry?>().ToList());
+            FillSet(_d.Second, BookmarkSpells(1).Cast<Entry?>().ToList());
             RefreshMarks();
             return;
         }
@@ -458,6 +569,7 @@ public partial class SpellBook3D : Control
         }
         RefreshPage();
         if (_book.Has(IdleKind)) _book.Play(IdleKind, loop: true);
+        FrameScroll();
         _turning = false;
     }
 
@@ -626,7 +738,7 @@ public partial class SpellBook3D : Control
             {
                 if (_hoverPart is int old && _slots.TryGetValue(old, out var o)) BookLit.SetGlow(o.Mat, null);
                 _hoverPart = hover;
-                if (hover is int h && _slots.TryGetValue(h, out var s) && s.E?.Option != null)
+                if (hover is int h && _slots.TryGetValue(h, out var s) && s.E?.Usable == true)
                 {
                     BookLit.SetGlow(s.Mat, _d.Highlight, _d.OverBright * 0.15f);
                 }
@@ -648,15 +760,17 @@ public partial class SpellBook3D : Control
             if (_orcs) _ = OrcTurn(bm); else SelectBookmark(bm);
             return;
         }
-        if (PartAt(pos, SpellParts) is int slotPart && _slots.TryGetValue(slotPart, out var slot) && slot.E?.Option is { } option)
+        if (PartAt(pos, SpellParts) is int slotPart && _slots.TryGetValue(slotPart, out var slot) && slot.E is { Usable: true } picked)
         {
-            Chosen?.Invoke(option);
             Close();
+            if (picked.Option is { } option) Chosen?.Invoke(option);
+            else AbilityChosen?.Invoke(picked.Ability!);
         }
     }
 
-    /// <summary>The parts showing spells at rest: the static pages, and for the orc book both page part lists.</summary>
-    int[] SpellParts => _orcs ? _d.First.Concat(_d.Second).ToArray() : _d.First;
+    /// <summary>The parts showing spells at rest: the static pages; for the orc book the side its idle shows (bookmark 0:
+    /// PartSpellsFirstPage, 1: PartSpellsSecondPage — the two sides lie over each other on screen).</summary>
+    int[] SpellParts => _orcs ? (_bookmark == 0 ? _d.First : _d.Second) : _d.First;
 
     async Task Turn(int dir, int? toPage = null, Entry?[]? oldSpread = null)
     {
