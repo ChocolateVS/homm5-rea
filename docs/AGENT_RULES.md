@@ -28,7 +28,7 @@ Never invent behaviour: anything not traced is a GAP row in the relevant ledger 
 - Keep ALL your scratch files (worktree, Ghidra project copy, outputs) under your own named subfolder of the scratchpad; never read from or write to another helper's folder.
 
 ## Machine
-- The user uses this PC. Godot only off-screen: `--position -32000,-32000 --window-size=1920x1080`.
+- The user uses this PC. Godot only off-screen AND silent: `--position -32000,-32000 --window-size=1920x1080 --audio-driver Dummy` on every run (never play sound). Headless browsers: the web harness passes `--mute-audio`.
 - Never launch H5_Game.exe or any mod exe; never capture the user's screen.
 - Kill only processes you started (no `taskkill /IM`).
 - Portable code (Linux too): use the InstallPath helper for game-folder files, no backslash paths.
