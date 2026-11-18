@@ -1660,7 +1660,7 @@ public partial class AdventureScreen : Control
     int _tourFrames;
 
     /// <summary>A rising caption over a map position (the original's "flyoff" messages).</summary>
-    void FlyTextAt(Vector3 world, string text, Texture2D? icon = null)
+    internal void FlyTextAt(Vector3 world, string text, Texture2D? icon = null)
     {
         // Stock sign style: Text/Interface/FlyingSignFormat_Text.txt ("<flying_signs>").
         Control label;

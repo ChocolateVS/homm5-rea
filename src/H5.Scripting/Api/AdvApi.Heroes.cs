@@ -54,7 +54,7 @@ public sealed partial class AdventureScripting
                 1 => Math.Max(0, h.Attack + WornBonus(h, a => a.Attack)),          // vf 0x10 = 0x00b4cc50 (>= 0)
                 2 => Math.Max(0, h.Defence + WornBonus(h, a => a.Defence)),        // vf 0x14 = 0x00b4ccc0 (>= 0)
                 3 => Math.Max(1, h.SpellPower + WornBonus(h, a => a.SpellPower)),  // vf 0x18 = 0x00b4ccf0 (>= 1)
-                4 => Math.Max(1, h.Knowledge + WornBonus(h, a => a.Knowledge)),    // vf 0x1c = 0x00b4cd80 (>= 1)
+                4 => Game.HeroKnowledge(h),                                        // vf 0x1c = 0x00b4cd80 (>= 1)
                 5 => Math.Clamp(Game.ScriptHeroLuck(h), -5, 5),                    // vf 0x13c = 0x00b4cb40
                 6 => Math.Clamp(Game.ScriptHeroMorale(h), -5, 5),                  // vf 0x140 = 0x00b4cb60
                 7 => h.MovePoints,                                                 // vf 0xf4

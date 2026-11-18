@@ -153,7 +153,11 @@ public partial class ScriptUiBridge : Node
                 var text = ResolveText(V("text"), ParseValues(V("values")));
                 var at = Screen.Session.Game.ObjectByName(V("object")) is { } so ? so.Pos
                     : Screen.Session.Game.HeroByName(V("object")) is { } sh ? sh.Pos : (Tile?)null;
-                if (at is { } t) Screen.Message("", text); // stock signs float over the object; shown as a box until the screen exposes its fly-text layer
+                // ShowFlyingSign (005dc450) floats a non-blocking sign over the object, for the given player only
+                // (-1: everyone); it never opens a box.
+                int signPlayer = (int)F("player");
+                if (at is { } t && (signPlayer == -1 || signPlayer - 1 == Screen.Session.Human.Index))
+                    Screen.FlyTextAt(Screen.World.TileCenter(t), text);
                 break;
             case "objective_state":
                 // The objective notice and its sound are for the objective's own player, and only

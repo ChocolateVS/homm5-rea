@@ -246,7 +246,9 @@ public class Mmh55FeatureTests(Mmh55Install m) : IClassFixture<Mmh55Install>
         Assert.Empty(Mmh55Install.OwnErrors(host));
         Assert.NotEqual(before, h.Pos);
         Assert.Equal(g.EntranceOf(t), h.Pos);
-        Assert.Equal(Math.Min(g.ScriptMaxMana(h), 25), h.Mana);   // ChangeHeroStat clamps mana to [0, max] (0x005c3620)
+        // ChangeHeroStat clamps mana to [0, max] (0x005c3620): 50 - 25 capped at the maximum; H55's mana control may then
+        // refill a hero that stands near its own mage-guild town up to the maximum.
+        Assert.InRange(h.Mana, Math.Min(g.ScriptMaxMana(h), 25), g.ScriptMaxMana(h));
     }
 
     /// <summary>LowResGame: every human player loses 10 wood, 10 ore, 5 of each rare resource and 10000 gold at the start.</summary>

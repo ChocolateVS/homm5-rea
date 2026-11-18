@@ -406,7 +406,7 @@ public sealed partial class Adventure
         // set by the new-week handler 00b50880) is 0x35 WEEK_OF_MEDITATION (00bcdc80), ×2 more when hero vf 0x174(0x28)
         // HERO_SKILL_MYSTICISM > 0; capped at the maximum.
         int max = MaxMana(h);
-        int regen = Math.Max(1, h.Knowledge) * (S.MoonWeek == "WEEK_OF_MEDITATION" ? 2 : 1);
+        int regen = HeroKnowledge(h) * (S.MoonWeek == "WEEK_OF_MEDITATION" ? 2 : 1);
         if (RawMastery(h, "HERO_SKILL_MYSTICISM") > Mastery.None) regen *= 2;
         // 00b50470 regenerates only below the maximum: mana above it (an Eldritch Spring's) stays.
         if (h.Mana < max) h.Mana = Math.Min(max, h.Mana + regen);
@@ -417,11 +417,22 @@ public sealed partial class Adventure
             h.Mana = Math.Max(h.Mana, max);
     }
 
-    /// <summary>Maximum mana: 10 per Knowledge (DefaultStats HeroManaPerKnowledge), ×1.5 with Intelligence.</summary>
+    /// <summary>
+    /// The hero's knowledge as hero vf 0x1c (00b4cd80) returns it: base plus worn artifacts, results below 2 read 1
+    /// (the getter GetHeroStat(STAT_KNOWLEDGE) reports).
+    /// </summary>
+    public int HeroKnowledge(HeroState h) =>
+        Math.Max(1, h.Knowledge + h.Artifacts.Sum(a => Core.Artifacts.TryGetValue(a, out var d) ? d.Knowledge : 0));
+
+    /// <summary>
+    /// Maximum mana (hero vf 0x12c = +0x140, kept as vf 0x130 of vf 0x1c by 00b50470 / 00b5ad10 / the constructor
+    /// 00b58dc0): HeroManaPerKnowledge (clamped to [1, 1000] by 00b4c8f0) per point of the effective knowledge
+    /// (<see cref="HeroKnowledge"/>, worn artifacts included), ×1.5 with Intelligence.
+    /// </summary>
     public int MaxMana(HeroState h)
     {
-        int per = Db.Stats.Root.Element("adventure").Int("HeroManaPerKnowledge", 10);
-        double m = h.Knowledge * per;
+        int per = Math.Clamp(Db.Stats.Root.Element("adventure").Int("HeroManaPerKnowledge", 10), 1, 1000);
+        double m = HeroKnowledge(h) * per;
         if (h.HasPerk("HERO_SKILL_INTELLIGENCE"))
             m *= Db.Stats.Root.Element("adventure")!.Element("HeroSkills").Dbl("Intelligence_ManaPointsBonus", 1.5);
         return (int)m;

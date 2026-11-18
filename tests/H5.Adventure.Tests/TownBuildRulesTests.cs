@@ -369,4 +369,24 @@ public class TownBuildRulesTests(Fixture f)
         while (g.S.Day == day) Assert.True(g.Apply(new EndTurnCmd { Player = g.Current.Index }).Ok);
         Assert.Equal(g.MaxMana(h), h.Mana);
     }
+    [Fact]
+    public void MaxManaCountsWornKnowledgeArtifacts()
+    {
+        // Max mana = vf 0x130(vf 0x1c): the effective knowledge (00b4cd80) includes worn artifacts, the same value
+        // GetHeroStat(STAT_KNOWLEDGE) reports — MMH55's H55_GetMaxMana (10 × that knowledge) must agree with the cap
+        // ChangeHeroStat(STAT_MANA_POINTS) applies (005c3620 case 8), or its refill loop shows its sign forever.
+        var (g, _) = Town();
+        var h = g.S.Heroes.First(x => x.Alive && x.Owner == g.Current.Index);
+        h.Perks.RemoveAll(p => p == "HERO_SKILL_INTELLIGENCE");
+        h.Artifacts.Clear();
+        h.Knowledge = 1;
+        var art = g.Core.Artifacts.First(kv => kv.Value.Knowledge > 0);
+        Assert.Equal(10, g.MaxMana(h));
+        h.Artifacts.Add(art.Key);
+        Assert.Equal(1 + art.Value.Knowledge, g.HeroKnowledge(h));
+        Assert.Equal(10 * (1 + art.Value.Knowledge), g.MaxMana(h));
+        h.Knowledge = 0;
+        h.Artifacts.Clear();
+        Assert.Equal(10, g.MaxMana(h));                    // knowledge below 2 reads 1
+    }
 }
